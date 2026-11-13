@@ -55,7 +55,10 @@ describe("postgres.js sql.begin on a saturated pool", () => {
       // Open both connections, then keep both of them busy so BEGIN has to be
       // pipelined behind a running query (sent.length === max_pipeline).
       await Promise.all([pool`SELECT 1`, pool`SELECT 1`]);
-      const busy = [pool`SELECT pg_sleep(0.5)`, pool`SELECT pg_sleep(0.5)`];
+      // postgres.js queries are lazy: execute() sends them now, and the pause
+      // lets both reach their connection before BEGIN does.
+      const busy = [pool`SELECT pg_sleep(0.5)`.execute(), pool`SELECT pg_sleep(0.5)`.execute()];
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const value = await pool.begin(async (transaction) => {
         const [row] = await transaction<Array<{ one: number }>>`SELECT 1 AS one`;
