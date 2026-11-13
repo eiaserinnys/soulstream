@@ -43,6 +43,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       claudeAccounts: {
         select: vi.fn(),
         reject: vi.fn(),
+        reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(),
       },
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
@@ -416,6 +417,7 @@ describe("applyRunnerHostCall", () => {
     const service = {
       select: vi.fn(async () => selection),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;
@@ -464,6 +466,7 @@ describe("applyRunnerHostCall", () => {
     const service = {
       select: vi.fn(async () => exhausted),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;
@@ -492,6 +495,7 @@ describe("applyRunnerHostCall", () => {
     const service = {
       select: vi.fn(async () => account),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const task = { agentSessionId: "session-a" } as Task;

@@ -241,6 +241,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         available_count: 1,
       }),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn().mockResolvedValue(undefined),
     };
     const sessionStore = {
@@ -339,6 +340,110 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(state.clear).toHaveBeenCalledWith("turn-a");
   });
 
+  it("reports an authentication failure against the selected pool account", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      ...makeClient([], captured),
+      async *runPersistent(options) {
+        captured.push(options);
+        yield { type: "assistant_error", errorType: "authentication_failed" };
+      },
+    };
+    const accountTurnPort = {
+      select: vi.fn().mockResolvedValue({
+        account_id: "account-a",
+        config_dir: "/accounts/account-a",
+        available_count: 1,
+      }),
+      reject: vi.fn(),
+      reportAuthFailure: vi.fn(async (_input: {
+        account_id: string;
+        session_id: string;
+        observed_at: string;
+      }) => undefined),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: {},
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "session-auth-failure",
+      prompt: "hello",
+      inputUuid: "turn-auth-failure",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain
+    }
+
+    expect(accountTurnPort.reportAuthFailure).toHaveBeenCalledOnce();
+    expect(accountTurnPort.reportAuthFailure).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: "account-a",
+      session_id: "session-auth-failure",
+    }));
+    expect(typeof accountTurnPort.reportAuthFailure.mock.calls[0]![0].observed_at).toBe("string");
+  });
+
+  it("does not fail the turn when reporting an authentication failure rejects", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      ...makeClient([], captured),
+      async *runPersistent(options) {
+        captured.push(options);
+        yield { type: "assistant_error", errorType: "authentication_failed" };
+        yield { type: "complete", result: "done" };
+      },
+    };
+    const accountTurnPort = {
+      select: vi.fn().mockResolvedValue({
+        account_id: "account-a",
+        config_dir: "/accounts/account-a",
+        available_count: 1,
+      }),
+      reject: vi.fn(),
+      reportAuthFailure: vi.fn().mockRejectedValue(new Error("account service unavailable")),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: {},
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "session-auth-failure-warn",
+      prompt: "hello",
+      inputUuid: "turn-auth-failure-warn",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain — 보고 실패가 턴을 중단시키지 않는지 확인한다
+    }
+
+    expect(accountTurnPort.reportAuthFailure).toHaveBeenCalledOnce();
+  });
+
   it("waits for an old registry close before selecting a successor account", async () => {
     const events: string[] = [];
     let finishOldChild!: () => void;
@@ -352,6 +457,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         return { account_id: "account-a", config_dir: "/accounts/account-a", available_count: 1 };
       }),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async (input: { clear_all?: boolean }) => {
         if (input.clear_all) events.push("previous-close-release");
       }),
@@ -429,6 +535,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountPort = {
       select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a", available_count: 1 })),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const state = { read: () => null, write: vi.fn(async () => undefined), clear: vi.fn(async () => undefined) };
@@ -511,6 +618,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         return account;
       }),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     let persistedState: {
@@ -633,6 +741,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       select: vi.fn(async (input: { exclude_ids: string[] }) =>
         accounts.find((account) => !input.exclude_ids.includes(account.account_id))!),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const writes: unknown[] = [];
@@ -700,6 +809,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         earliest_available_at: "2026-10-28T09:00:00.000Z",
       })),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const engine = new ClaudeEngineAdapter({
@@ -794,6 +904,7 @@ describe("ClaudeEngineAdapter options parity", () => {
           };
         }),
         reject: vi.fn(async () => undefined),
+        reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(async () => undefined),
       };
       const registry = {
@@ -864,6 +975,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountTurnPort = {
       select: vi.fn(),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const state = {
@@ -942,6 +1054,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         available_count: 1,
       }),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn().mockResolvedValue(undefined),
     };
     const state = {
@@ -1025,6 +1138,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountTurnPort = {
       select: vi.fn(() => selection),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn().mockResolvedValue(undefined),
     };
     const state = {
@@ -1085,6 +1199,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       claudeAccountTurnPort: {
         select,
         reject: vi.fn(),
+        reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(),
       },
     }, silentLogger);
@@ -1133,6 +1248,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       claudeAccountTurnPort: {
         select,
         reject: vi.fn(),
+        reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(),
       },
       persistentSessionRegistry: registry,
@@ -1901,6 +2017,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     const accountPort = {
       select: vi.fn(async () => selections[Math.min(selectionIndex++, selections.length - 1)]!),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const client: ClaudeClient = {

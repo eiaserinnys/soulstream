@@ -96,6 +96,7 @@ describe("Claude account pool live runner adoption", () => {
     const claudeAccounts = {
       select: vi.fn(),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(),
       restoreActiveBinding: vi.fn(async (input: { session_id: string; account_id: string }) => {
         restoredBindings.set(input.session_id, input.account_id);

@@ -161,6 +161,7 @@ function makeFactory(options: {
     claudeAccounts: {
       select: vi.fn(),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(),
     },
     mcpConfigService: {

@@ -172,6 +172,7 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
       claudeAccountTurnPort: {
         select(input: object): Promise<unknown>;
         reject(input: object): Promise<void>;
+        reportAuthFailure(input: object): Promise<void>;
         release(input: object): Promise<void>;
       };
     }).claudeAccountTurnPort;
@@ -191,6 +192,11 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
         resets_at: null,
         observed_at: "2026-10-28T00:00:00.000Z",
       });
+      await accountPort.reportAuthFailure({
+        session_id: "session-a",
+        account_id: "account-a",
+        observed_at: "2026-10-28T00:00:00.000Z",
+      });
       await accountPort.release({ session_id: "session-a" });
       const turnRelease = { session_id: "session-a", account_id: "account-a", turn_id: "turn-a" };
       await accountPort.release(turnRelease);
@@ -198,6 +204,7 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
       expect(hostCall.mock.calls.map(([service, operation, args]) => [service, operation, args])).toEqual([
         ["claude_accounts", "select", ["session-a", selectInput]],
         ["claude_accounts", "reject", ["session-a", expect.objectContaining({ account_id: "account-a" })]],
+        ["claude_accounts", "reportAuthFailure", ["session-a", expect.objectContaining({ account_id: "account-a" })]],
         ["claude_accounts", "release", ["session-a", { session_id: "session-a" }]],
         ["claude_accounts", "release", ["session-a", turnRelease]],
       ]);
@@ -275,6 +282,7 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
       claudeAccountTurnPort: {
         select(input: object): Promise<unknown>;
         reject(input: object): Promise<void>;
+        reportAuthFailure(input: object): Promise<void>;
         release(input: object): Promise<void>;
       };
     }).claudeAccountTurnPort;
