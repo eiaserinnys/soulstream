@@ -54,26 +54,16 @@ export async function reconcileNodeStartup(
       RETURNING session.session_id, session.status, session.termination_reason,
                 session.termination_detail, session.review_state, session.updated_at
     `;
-    // Lock order is session, then worktree, the same as the ingress gate
-    // (event_session_gate.ts) and the SQL functions; each table in key order.
-    await sql`
-      SELECT session_id FROM sessions
-      WHERE node_id = ${nodeId}
-        AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-      ORDER BY session_id
-      FOR UPDATE
-    `;
-    await sql`
-      SELECT id FROM worktrees
-      WHERE id IN (
-        SELECT worktree_id FROM sessions
-        WHERE node_id = ${nodeId}
-          AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-          AND worktree_id IS NOT NULL
-      )
-      ORDER BY id
-      FOR UPDATE
-    `;
+    // Lock order is session, then worktree, each table in key order. The ingress
+    // gate (event_session_gate.ts) and the SQL functions take the same order, so
+    // this transaction cannot deadlock with them on one session and its worktree.
+    // The locks only precede the restore UPDATE below; they write nothing, so the
+    // pinned session write lines (session-machine-inventory test) stay unchanged.
+    await lockRestorableSessionsThenWorktrees(
+      sql,
+      nodeId,
+      runningSessionIds,
+    );
     const restoredRows = await sql<Array<ReconciledSessionRow>>`
       UPDATE sessions
       SET status = 'running', was_running_at_shutdown = FALSE,
@@ -111,6 +101,29 @@ export async function reconcileNodeStartup(
       updates: [...interruptedRows, ...restoredRows].map(mapReconciledSessionRow),
     };
   });
+}
+
+async function lockRestorableSessionsThenWorktrees(
+  sql: import("postgres").TransactionSql<any>, nodeId: string, runningSessionIds: string[],
+) {
+  await sql`
+    SELECT session_id FROM sessions
+    WHERE node_id = ${nodeId}
+      AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+    ORDER BY session_id
+    FOR UPDATE
+  `;
+  await sql`
+    SELECT id FROM worktrees
+    WHERE id IN (
+      SELECT worktree_id FROM sessions
+      WHERE node_id = ${nodeId}
+        AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+        AND worktree_id IS NOT NULL
+    )
+    ORDER BY id
+    FOR UPDATE
+  `;
 }
 
 export type ReconciledSessionRow = {
