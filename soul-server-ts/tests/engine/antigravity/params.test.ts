@@ -13,8 +13,11 @@ describe("Antigravity launch inputs", () => {
     expect(args.slice(-2)).toEqual(["--conversation", "conversation"]);
     expect(args).not.toContain("--agent"); expect(args).not.toContain("--add-dir");
   });
-  it.each(["minimal", "xhigh", "max", "ultra"])("rejects unsupported effort %s", (reasoningEffort) => {
+  it.each(["minimal", "max", "ultra"])("rejects unsupported effort %s", (reasoningEffort) => {
     expect(() => antigravityArguments({ prompt: "x", reasoningEffort: reasoningEffort as "max" }, "/state/log")).toThrow(/effort/);
+  });
+  it("accepts xhigh and forwards it as --effort", () => {
+    expect(antigravityArguments({ prompt: "x", reasoningEffort: "xhigh" }, "/state/log").slice(-2)).toEqual(["--effort", "xhigh"]);
   });
   it("copies environment and removes exactly the three API routing keys", () => {
     const input = { GEMINI_API_KEY: "test-only", GOOGLE_API_KEY: "test-only", GOOGLE_GEMINI_BASE_URL: "test-only", PATH: "/bin", KEEP: "kept" };
