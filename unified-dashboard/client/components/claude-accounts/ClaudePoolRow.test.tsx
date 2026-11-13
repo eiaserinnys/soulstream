@@ -632,4 +632,34 @@ describe("ClaudePoolRow", () => {
     expect(String(requestMock.mock.calls[1]?.[0])).toBe("/api/nodes/node-a/claude-auth/accounts");
     expect(host.textContent).toContain("로그인 중, 10분 남음");
   });
+
+  it("패널을 열어 둔 뒤 시작한 로그인의 남은 시간은 받은 목록 시점의 지금 시각으로 계산한다", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T09:00:00.000Z"));
+    const initial = list([account("first", 1)]);
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      if (path === "/api/nodes/node-a/claude-auth/logins" && method === "POST") {
+        return data(flow("requested", { account_id: "first" }));
+      }
+      if (path === "/api/nodes/node-a/claude-auth/accounts") {
+        return data(list([{
+          ...account("first", 1),
+          auth_state: "logging_in",
+          login_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        }]));
+      }
+      return data(initial);
+    });
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    // 패널을 5분 열어 둔 사이 nowMs 는 마운트 시각에 머문다.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000); });
+    await act(async () => button("재로그인", host.querySelector('[data-account-id="first"]')!).click());
+    await settle();
+
+    expect(host.textContent).toContain("로그인 중, 10분 남음");
+  });
 });

@@ -100,9 +100,11 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
 
   useEffect(() => {
     if (loginExpiries.length === 0) return;
+    // 목록이 바뀐 그 자리에서 지금 시각을 맞춘다. 마운트 때 값이 남아 있으면 남은 분이 틀리게 나온다.
+    setNowMs(Date.now());
     const timer = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(timer);
-  }, [loginExpiries.length]);
+  }, [loginExpiries]);
 
   // 남은 시간이 0이 된 계정마다 한 번만 목록을 다시 받아 행이 실제 상태로 바뀌게 한다.
   useEffect(() => {
