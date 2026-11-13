@@ -40,11 +40,15 @@ import {
 
 export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
 
+/** native 알림 턴이 소울스트림 턴으로 이어지기를 기다리는 기본 시한(2분). */
+export const DEFAULT_CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS = 120_000;
+
 export { buildClaudeRuntimeTaskFollowupPrompt } from
   "./claude_runtime_task_followup_prompt.js";
 
 export interface ClaudeRuntimeTaskFollowupPort {
-  collect(task: Task, event: SSEEventPayload): void;
+  /** 등록한 백그라운드 세대의 generationKey. 완료 사건이 아니면 undefined. */
+  collect(task: Task, event: SSEEventPayload): string | undefined;
   flush(task: Task): Promise<void>;
   collectDetached(task: Task, event: SSEEventPayload): Promise<void>;
   reconcileTranscriptAppend(task: Task): Promise<void>;
@@ -63,6 +67,10 @@ export interface ClaudeRuntimeTaskFollowupDeps {
   logger: Logger;
   deliveryV2Enabled?: boolean;
   sourceNode: string;
+  /**
+   * native 소유권 대기 시한. 넘기면 그 턴을 기다리지 않고 followup을 보낸다(R1).
+   */
+  followupDeadlineMs?: number;
 }
 
 interface NativeDeliveryOwnership {
@@ -97,22 +105,27 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     new Map<string, NativeDeliveryOwnership>();
   private readonly nativeTranscriptTailByGenerationKey =
     new Map<string, Promise<boolean>>();
+  private readonly ownershipDeadlineTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
 
-  collect(task: Task, event: SSEEventPayload): void {
+  /**
+   * 백그라운드 완료 사건을 등록하고 그 세대의 generationKey를 돌려준다.
+   * 사건이 완료 통지가 아니면 undefined.
+   */
+  collect(task: Task, event: SSEEventPayload): string | undefined {
     const payload = event as Record<string, unknown>;
     const type = asString(payload.type);
     if (
       type !== "claude_runtime_task_notification" &&
       type !== "claude_runtime_task_updated"
     ) {
-      return;
+      return undefined;
     }
 
     const taskId = asString(payload.task_id);
-    if (!taskId) return;
+    if (!taskId) return undefined;
     const runtimeTask = task.claudeRuntime?.tasks[taskId];
     const patch = type === "claude_runtime_task_updated"
       ? asRecord(payload.patch) ?? {}
@@ -120,12 +133,12 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const sdkSessionId = task.codexThreadId;
     const eventSdkSessionId = asString(payload.session_id) ??
       readClaudeSdkSessionMetadata(event)?.sessionId;
-    if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return;
+    if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return undefined;
     const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
     const initiatingToolUseId = asString(payload.tool_use_id) ??
       asString(patch.tool_use_id) ?? durableDelivery?.initiatingToolUseId ??
       runtimeTask?.toolUseId;
-    if (!sdkSessionId || !initiatingToolUseId) return;
+    if (!sdkSessionId || !initiatingToolUseId) return undefined;
     const identity = buildClaudeBackgroundGenerationIdentity({
       sourceNode: this.deps.sourceNode,
       agentSessionId: task.agentSessionId,
@@ -133,23 +146,23 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       sdkTaskId: taskId,
       initiatingToolUseId,
     });
-    if (this.flushedGenerationKeys.has(identity.generationKey)) return;
+    if (this.flushedGenerationKeys.has(identity.generationKey)) return undefined;
     const exactRuntimeTask = runtimeTask?.toolUseId === initiatingToolUseId
       ? runtimeTask
       : undefined;
     const status = asString(payload.status) ?? asString(patch.status) ??
       exactRuntimeTask?.status;
-    if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return;
+    if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return undefined;
     const isBackgrounded =
       Boolean(readClaudeBackgroundProvenance(event)) ||
       runtimeTask?.isBackgrounded === true ||
       patch.is_backgrounded === true;
-    if (!isBackgrounded) return;
+    if (!isBackgrounded) return undefined;
     if (
       this.deps.deliveryV2Enabled === true &&
       readClaudeBackgroundProvenance(event) === "sdk_membership" &&
       !durableDelivery
-    ) return;
+    ) return undefined;
     if (durableDelivery) {
       if (
         durableDelivery.relationKey !== identity.relationKey ||
@@ -201,7 +214,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         phase: "awaiting-input",
         proofEpoch: 0,
       });
+      // R1: native 쪽이 이 완료를 이어받든 아니든 시한 안에 정산한다.
+      this.scheduleOwnershipDeadline(task, identity.generationKey);
     }
+    return identity.generationKey;
   }
 
   async flush(task: Task): Promise<void> {
@@ -214,10 +230,32 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   }
 
   async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
-    this.collect(task, event);
+    const generationKey = this.collect(task, event);
     await this.observeNativeEvent(task, event);
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
-    await this.flushPending(task);
+    if (generationKey === undefined) {
+      await this.flushPending(task);
+      await this.deps.releaseRetainedRunner(task);
+      return;
+    }
+    const pending = this.pendingBySession.get(task.agentSessionId);
+    if (!pending?.has(generationKey)) {
+      await this.flushPending(task);
+      await this.deps.releaseRetainedRunner(task);
+      return;
+    }
+    if (this.nativeOwnershipByGenerationKey.has(generationKey)) {
+      // R1/R2: native 알림 턴이 전달을 쥐고 있다. 시한이 정산하므로 여기서는
+      // 보유도 followup도 건드리지 않는다.
+      return;
+    }
+    if (task.status === "running") {
+      await this.flushPending(task);
+      return;
+    }
+    const flushed = await this.flushPending(task);
+    if (flushed > 0) return;
+    if (this.pendingBySession.get(task.agentSessionId)?.size) return;
     await this.deps.releaseRetainedRunner(task);
   }
 
@@ -243,14 +281,14 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (candidates.length === 1) this.retireNativeOwnership(task, candidates[0]!);
   }
 
-  private async flushPending(task: Task): Promise<void> {
+  private async flushPending(task: Task): Promise<number> {
     const pending = this.pendingBySession.get(task.agentSessionId);
-    if (!pending || pending.size === 0) return;
+    if (!pending || pending.size === 0) return 0;
 
     const items = Array.from(pending.values())
       .filter((item) => !this.nativeOwnershipByGenerationKey.has(item.generationKey))
       .sort((a, b) => a.firstSeen - b.firstSeen);
-    if (items.length === 0) return;
+    if (items.length === 0) return 0;
     const durableItems = items.filter((item) =>
       this.durableDeliveryByGenerationKey.has(item.generationKey)
     );
@@ -263,6 +301,44 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     }
     if (pending.size === 0) {
       this.pendingBySession.delete(task.agentSessionId);
+    }
+    return items.length;
+  }
+
+  /**
+   * R1: native 알림 턴이 소울스트림 턴으로 이어지기를 기다리는 시한. 넘기면
+   * native 소유를 놓고 followup을 직접 보낸다.
+   */
+  private scheduleOwnershipDeadline(task: Task, generationKey: string): void {
+    const deadlineMs = this.deps.followupDeadlineMs ??
+      DEFAULT_CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS;
+    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) return;
+    if (this.ownershipDeadlineTimers.has(generationKey)) return;
+    const timer = setTimeout(() => {
+      this.ownershipDeadlineTimers.delete(generationKey);
+      void this.onOwnershipDeadline(task, generationKey);
+    }, deadlineMs);
+    (timer as { unref?: () => void }).unref?.();
+    this.ownershipDeadlineTimers.set(generationKey, timer);
+  }
+
+  private clearOwnershipDeadline(generationKey: string): void {
+    const timer = this.ownershipDeadlineTimers.get(generationKey);
+    if (!timer) return;
+    this.ownershipDeadlineTimers.delete(generationKey);
+    clearTimeout(timer);
+  }
+
+  private async onOwnershipDeadline(task: Task, generationKey: string): Promise<void> {
+    if (!this.nativeOwnershipByGenerationKey.has(generationKey)) return;
+    this.nativeOwnershipByGenerationKey.delete(generationKey);
+    try {
+      await this.flushPending(task);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, generationKey },
+        "Claude background follow-up deadline flush failed",
+      );
     }
   }
 
@@ -473,6 +549,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   private retireNativeOwnership(task: Task, candidate: NativeDeliveryOwnership): void {
     this.nativeOwnershipByGenerationKey.delete(candidate.generationKey);
+    this.clearOwnershipDeadline(candidate.generationKey);
     const pending = this.pendingBySession.get(task.agentSessionId);
     pending?.delete(candidate.generationKey);
     if (pending?.size === 0) this.pendingBySession.delete(task.agentSessionId);

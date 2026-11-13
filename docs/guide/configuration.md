@@ -103,6 +103,8 @@ Defined in [`.env.soul-server-ts.example`](../../.env.soul-server-ts.example):
 - `CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS`: idle time-to-live in milliseconds for cached Claude runtime entries (defaults to `300000`).
 - `CLAUDE_SESSION_RUNTIME_MAX_ENTRIES`: maximum concurrent entries in the Claude session runtime pool (defaults to `16`).
 - `CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS`: maximum inactivity gap in milliseconds during a turn (defaults to `1200000`).
+- `CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS`: how long a retained Claude session waits for the SDK's own background-completion notification turn to continue as a Soulstream turn before the completion is delivered as follow-up input anyway (defaults to `120000`).
+- `CLAUDE_BACKGROUND_RETENTION_CAP_MS`: maximum time a retained Claude session keeps running for background work after its turn ends; when it expires the session is stopped and the caller is told it will not report again (defaults to `3600000`).
 - `DASH_USER_NAME`: optional user display name advertised to the orchestrator.
 - `DASH_USER_PORTRAIT`: optional user portrait URL or path advertised to the orchestrator.
 

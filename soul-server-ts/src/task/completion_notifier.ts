@@ -28,6 +28,12 @@ import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
+import {
+  buildBackgroundStoppedNotice,
+  buildRetainedBackgroundNotice,
+  buildStoppedBackgroundNotice,
+  DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
+} from "./claude_background_retention_notice.js";
 import { OrchInterveneClient, OrchInterveneRequestError } from "./orch_intervene_client.js";
 import {
   classifyCompletionDeliveryResult,
@@ -81,6 +87,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     >,
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryHostClient,
+    private readonly backgroundRetentionCapMs = DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
   ) {
     this.interveneClient = orch ? new OrchInterveneClient(orch, fetchImpl) : undefined;
     if (deliveryV2Enabled && deliveryRepository) {
@@ -114,6 +121,19 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   /**
+   * 보유가 followup 없이 풀렸을 때 부른 세션에 보내는 알림(R3). 까닭 문장 뒤에
+   * 「이 세션은 더 보고하지 않습니다.」 꼬리를 붙인다. 부른 세션이 없으면 생략한다.
+   */
+  async notifyBackgroundStopped(task: Task, firstSentence: string): Promise<void> {
+    const prepared = await this._prepareDelivery(
+      task,
+      buildBackgroundStoppedNotice(firstSentence),
+    );
+    if (prepared === undefined) return;
+    await this._deliverPrepared(task, prepared);
+  }
+
+  /**
    * 삭제 길 전용. 이번 종료 revision의 등록 결과를 실제로 돌려준다 — 실패를
    * 로그로 삼키지 않는다. 등록이 필요 없는 경우(notifyCompletion=false, caller
    * 없음, 자기 자신)는 true다. 일반 완료·멈춤 단추 길은 `notify`를 그대로 쓴다.
@@ -128,6 +148,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
   private async _prepareDelivery(
     task: Task,
+    text?: string,
   ): Promise<PreparedCompletionDelivery | undefined> {
     if (task.notifyCompletion === false) {
       this.logger.info(
@@ -149,7 +170,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     return {
       callerSessionId,
       callerInfo: this._buildCallerInfo(task),
-      text: this._buildNotifyText(task),
+      text: text ?? this._buildNotifyText(task),
     };
   }
 
@@ -337,6 +358,16 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * `(빈 응답)` fallback으로 parent에 빈 메시지가 그대로 가는 것을 차단.
    */
   private _buildNotifyText(task: Task): string {
+    const body = this._buildCompletionBody(task);
+    const remaining = task.backgroundRuntimeAtTurnEnd ?? 0;
+    if (remaining <= 0) return body;
+    const line = task.runnerRetainedForDetachedWork === true
+      ? buildRetainedBackgroundNotice(remaining, this.backgroundRetentionCapMs)
+      : buildStoppedBackgroundNotice();
+    return `${body}\n\n${line}`;
+  }
+
+  private _buildCompletionBody(task: Task): string {
     const sid = task.agentSessionId;
     if (task.terminationDetail === "user_stop") {
       const resultText = task.lastAssistantText?.trim() || "(빈 응답)";

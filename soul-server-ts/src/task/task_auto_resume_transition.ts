@@ -432,6 +432,7 @@ export function prepareTaskForAutoResume(
   task.pendingTerminationHint = undefined;
   task.pendingTerminationDetail = undefined;
   task.rateLimitStopInfo = undefined;
+  task.backgroundRuntimeAtTurnEnd = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
   enqueueInterventionOnce(task, message);

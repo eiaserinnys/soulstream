@@ -199,6 +199,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const publishDetachedClaudeEvent = createDetachedClaudeEventBridge({
     logger,
     findTask: (sessionId) => taskManager.getTask(sessionId),
+    loadTask: (sessionId) => taskManager.hydrateRunnerRecoveryTask(sessionId),
     getPublisher: () => detachedClaudeEventPublisher,
     collectDetached: async (task, payload) =>
       await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
