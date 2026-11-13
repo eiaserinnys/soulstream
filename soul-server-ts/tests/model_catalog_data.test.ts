@@ -304,6 +304,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     model: "gemini-4-hydrogen",
     supported_efforts: ["low", "medium", "high", "xhigh"],
     default_effort: "high",
+    trusted_execution: true,
   },
   "opencode-deepseek-v4.1-flash-free": {
     label: "OpenCode - DeepSeek V4.1 Flash Free",
