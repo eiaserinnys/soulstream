@@ -23,6 +23,7 @@ import {
 import { buildNotificationOutboxPayload, isNotificationDeliveryIntent } from
   "./session_delivery_notification_payload.js";
 import { projectNotificationReceipt } from "./notification_receipt_projection.js";
+import { INSTRUCTION_UNCERTAIN_REASON } from "./state/node_instruction_decision.js";
 import {
   discardConsumedRunnerIntervention,
   matchesConsumedDelivery,
@@ -242,28 +243,14 @@ export class TaskDeliveryLedgerGate {
     if (!attemptToken) {
       throw new Error(`Delivery ${admission.deliveryId} lost its attempt token`);
     }
-    if ("delivered" in result && result.delivered === null) {
-      const retryExhausted =
-        admission.row.attempt_count + 1 >= DELIVERY_NOTIFICATION_MAX_ATTEMPTS
-        || admission.row.created_at <= notificationOldestAllowedCreatedAt();
-      if (!retryExhausted) {
-        const retried = await repository.retryDeliveryAttempt(
-          admission.deliveryId,
-          attemptToken,
-          result.reason,
-          deliveryRetryDelayMs(admission.row.attempt_count),
-        );
-        if (!retried) {
-          throw new Error(`Delivery ${admission.deliveryId} lost retryable-state CAS`);
-        }
-        return;
-      }
-    }
+    // An instruction whose handoff result is unknown is never resent
+    // automatically. The row stays `uncertain` so a person sees it after a
+    // restart too.
     const uncertain = await repository.markUncertain(
       admission.deliveryId,
       attemptToken,
       "delivered" in result && result.delivered === null
-        ? `delivery retry budget exhausted: ${result.reason}`
+        ? INSTRUCTION_UNCERTAIN_REASON
         : "delivery_result_not_accepted",
     );
     if (!uncertain) {

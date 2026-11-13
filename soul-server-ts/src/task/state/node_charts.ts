@@ -12,6 +12,7 @@ import {
   NODE_REQUEST_LABELS,
   NODE_STOP_DISPOSITION_LABELS,
 } from "./node_labels.js";
+import { nodeInstructionRows } from "./node_instruction_decision.js";
 import { NODE_REQUEST_KINDS, nodeRequestMachine } from "./node_request_machine.js";
 import { decideNodeResponse } from "./node_response_decision.js";
 import { nodeResponseMachine } from "./node_response_machine.js";
@@ -103,6 +104,7 @@ export function generateNodeStateDocument() {
   const requestRows = nodeRequestRows();
   const barrierRows = nodeBarrierTransitionRows();
   const guessCells = nodeGuessCells();
+  const instructionRows = nodeInstructionRows();
   const charts = chartPlans().map((plan) => ({
     ...plan,
     ...toMermaid(plan.root, plan.spec),
@@ -239,6 +241,22 @@ export function generateNodeStateDocument() {
   }
   lines.push(
     "",
+    "## 결과를 모르는 지시",
+    "",
+    "러너에 넘긴 지시의 결과를 모를 때(응답 시간 초과, 연결 끊김, 해석할 수 없는 응답, 재시작 뒤 장부에 남은 지시) 노드가 지시 번호로 러너에 물어 답을 셋으로 가른다. 번호는 장부 줄이 있으면 장부 번호이고 없으면 넘기기 전에 정해 지시 메시지에 남긴 번호다. 엔진에 바로 넣는 길과 큐로 가 다음 실행에 넣는 길이 같은 번호를 싣는다. 판정은 `task/state/node_instruction_decision.ts`가 정본이다.",
+    "",
+    "- 모름은 자동으로 다시 보내지 않는다. 큐에 넣지도 않는다. 장부 줄은 uncertain으로 남아 노드가 다시 떠도 남는다.",
+    "- 적용됨은 엔진이 입력을 받았다는 뜻이다. 맡긴 일이 끝났다는 뜻이 아니다. 실시간 길은 정상 전달과 같이 턴 영수증이 소비로 닫고, 재시작 복구는 곧바로 닫는다.",
+    "- 번호를 싣지 않은 옛 길에서 온 지시는 확실히 안 됨으로 치지 않는다. 같은 등록의 러너가 받은 적 없다고 답한 경우만 확실히 안 됨이다.",
+    "",
+    "| 러너의 답 | 장부 | 다시 보내는가 | 장부 처분 |",
+    "| :-- | :-- | :-- | :-- |",
+  );
+  for (const row of instructionRows) {
+    lines.push(cellsRow([row.verdict, row.ledger, row.resend, row.action]));
+  }
+  lines.push(
+    "",
     "## 옛 결정표의 짐작 20칸",
     "",
     "옛 노드 결정표(카드 #1218의 `charts/node-decision-table.md`)에서 코드를 끝까지 따라가지 못해 모형이 짐작으로 둔 20칸이다. 칸마다 지금 판정과 그 칸을 운영 코드로 닫을 단위를 적었다. 닫을 단위는 종료 경로, 지시 경로, 멈춤 가운데 하나다. 지금 판정은 이 문서의 정의가 내는 값이며 운영 코드의 동작이 이와 같다는 뜻이 아니다. 운영 코드로 닫는 일이 그 확인이다.",
@@ -292,6 +310,7 @@ export function generateNodeStateDocument() {
     requestRows,
     barrierRows,
     guessCells,
+    instructionRows,
     responseCount,
   };
 }

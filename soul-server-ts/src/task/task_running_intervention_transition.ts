@@ -19,6 +19,15 @@ import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { createInterventionAttachmentSource } from "./generation_turn_input.js";
 import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
+import {
+  decideNodeInstruction,
+  instructionNumberOf,
+  withInstructionNumber,
+} from "./state/node_instruction_decision.js";
+import {
+  askRunnerInstructionReceipt,
+  handoffRegistrationId,
+} from "./delivery_instruction_receipt.js";
 
 export type RunningInterventionResult =
   | { delivered: true }
@@ -109,20 +118,31 @@ export class RunningInterventionTransition {
     options: { queueIfUndelivered?: boolean },
   ): Promise<RunningInterventionResult> {
     const publishBeforeDelivery = options.queueIfUndelivered !== false;
-    const deliveryMessage = message;
+    // The number is fixed before the handoff and stays on the message, so a
+    // queued copy carries the same number into the next execution.
+    const deliveryMessage = withInstructionNumber(message, randomUUID);
     if (publishBeforeDelivery) {
-      await this.publishAcceptance(task, deliveryMessage);
+      await this.publishAcceptance(task, message);
     }
 
-    const initialResult = await this.tryIntervene(
+    const expectedRegistrationId = handoffRegistrationId(task);
+    const attempted = await this.tryIntervene(
       task,
       deliveryMessage,
       publishBeforeDelivery,
+      message,
     );
+    const initialResult = attempted.status === "unknown"
+      ? await this.resolveUnknown(task, deliveryMessage, attempted, expectedRegistrationId)
+      : attempted;
+    if (initialResult.status === "unknown") {
+      // Neither delivered nor provably undelivered: never resend or queue it.
+      return { delivered: null, reason: "verdict_unknown", consumeWhen: null };
+    }
     if (initialResult.status === "delivered") {
-      await task.activeDeliveryTurnReceipt?.register(deliveryMessage);
+      await task.activeDeliveryTurnReceipt?.register(message);
       if (!publishBeforeDelivery) {
-        await this.publishAcceptance(task, deliveryMessage);
+        await this.publishAcceptance(task, message);
       }
       return { delivered: true };
     }
@@ -166,7 +186,10 @@ export class RunningInterventionTransition {
     if (options.publishEvent !== false) {
       await publishInterventionSent(task, message, this.deps);
     }
-    const queuePosition = enqueueInterventionOnce(task, message);
+    const queuePosition = enqueueInterventionOnce(
+      task,
+      withInstructionNumber(message, randomUUID),
+    );
     this.deps.logger.info(
       {
         sessionId: task.agentSessionId,
@@ -193,10 +216,59 @@ export class RunningInterventionTransition {
     await publishInterventionSent(task, message, this.deps);
   }
 
+  /**
+   * Asks the runner by instruction number when the handoff result is unknown.
+   * Applied counts as delivered, a runner of the same registration that never
+   * received it counts as undelivered, and anything else stays unknown.
+   */
+  private async resolveUnknown(
+    task: Task,
+    message: InterventionMessage,
+    unknown: Extract<EngineInterventionResult, { status: "unknown" }>,
+    expectedRegistrationId: string | undefined,
+  ): Promise<EngineInterventionResult> {
+    const instructionNumber = instructionNumberOf(message);
+    const verdict = instructionNumber === undefined
+      ? "unknown"
+      : await askRunnerInstructionReceipt(
+          task,
+          instructionNumber,
+          expectedRegistrationId,
+          this.deps.logger,
+        );
+    const decision = decideNodeInstruction({
+      verdict,
+      ledger: message.deliveryId ? "line" : "none",
+    });
+    if (verdict === "applied") {
+      return { status: "delivered", mechanism: "active_turn" };
+    }
+    if (decision.resend) {
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "failed",
+        message: "The runner reported that it never received the instruction",
+      };
+    }
+    this.deps.logger.warn(
+      {
+        sessionId: task.agentSessionId,
+        deliveryId: message.deliveryId,
+        instructionNumber,
+        detail: unknown.message,
+        ledger: decision.ledger,
+      },
+      "running intervention result unknown; not resending",
+    );
+    return unknown;
+  }
+
   private async tryIntervene(
     task: Task,
     message: InterventionMessage,
     publishBeforeDelivery: boolean,
+    originMessage: InterventionMessage,
   ): Promise<EngineInterventionResult> {
     const engine = task.runner?.engine;
     if (!engine) {
@@ -241,14 +313,16 @@ export class RunningInterventionTransition {
     // engine, so a later lookup can tell "the engine received it" apart from
     // "this handoff never reached a runner". Precedence follows the durable
     // intervention identity used elsewhere; the queued message is not mutated.
-    const runnerInterventionId = message.runnerInterventionId
-      ?? message.deliveryId
-      ?? randomUUID();
+    const runnerInterventionId = instructionNumberOf(message);
+    if (runnerInterventionId === undefined) {
+      throw new Error("running intervention lost its instruction number");
+    }
     const input = {
       prompt: composed.prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(inputUuid ? { inputUuid } : {}),
-      turnOrigin: interventionTurnOrigin(message, inputUuid),
+      // The origin id stays what it was before a number was filled in.
+      turnOrigin: interventionTurnOrigin(originMessage, inputUuid),
       runnerInterventionId,
     };
     try {

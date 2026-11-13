@@ -45,7 +45,13 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
-import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
+import {
+  composeClaudeRuntime,
+  composeClaudeAccountServices,
+  composeQueuedDeliveryStartupRecovery,
+  createClaudeAccountPoolRegistry,
+} from "./claude_runtime_composition.js";
+import { createInstructionReceiptLookup } from "../task/delivery_instruction_receipt.js";
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -205,6 +211,10 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     terminateAfterFatalEngineError: (task, message) =>
       taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
   });
+  const lookupInstructionReceipt = createInstructionReceiptLookup(
+    (sessionId) => taskManager.getTask(sessionId),
+    logger,
+  );
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
         enabled: true,
@@ -223,6 +233,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
         redeliverContent: (row) => redeliverStoredDeliveryContent(
           row, taskManager, taskRuntime.onResume,
         ),
+        lookupInstructionReceipt,
         detachedEventSink: async (sessionId, event) => {
           const collectDetached = await publishDetachedClaudeEvent(sessionId, event);
           await collectDetached();
@@ -485,7 +496,20 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     sessionPageBindingService,
     ...(worktreeSweeper ? { worktreeSweeper } : {}),
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
-    ...(claudeRuntime.startupRecovery ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery } : {}),
+    claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery
+      ?? composeQueuedDeliveryStartupRecovery({
+        db,
+        agentRegistry,
+        modelCatalog,
+        sessionStore: claudeSessionStore,
+        sourceNode: env.SOULSTREAM_NODE_ID,
+        logger,
+        resolveWorktreeWorkspace: (worktreeId) => resolveWorktreeWorkspace(worktreeService, worktreeId),
+        redeliverContent: (row) => redeliverStoredDeliveryContent(
+          row, taskManager, taskRuntime.onResume,
+        ),
+        lookupInstructionReceipt,
+      }),
     eventOutbox,
     eventOutboxPump,
     eventOutboxPumpMux,

@@ -185,6 +185,8 @@ describe("queued transcript recovery rolling contract", () => {
       state.set(pending.delivery_id, "queued");
     });
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async (deliveryId: string) => row(deliveryId)),
         markConsumed: vi.fn(async () => null),
@@ -232,6 +234,8 @@ describe("queued transcript recovery rolling contract", () => {
     const redeliverContent = vi.fn(async () => undefined);
     const retryDeliveryAttempt = vi.fn(async () => null);
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async () => currentRow),
         markConsumed: vi.fn(async () => null),
@@ -269,23 +273,25 @@ describe("queued transcript recovery rolling contract", () => {
     expect(retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
-  it("holds an unsupported-backend delivery in its ledger instead of redelivering it", async () => {
+  it("leaves an unsupported-backend delivery uncertain when the runner cannot say, instead of holding it pending", async () => {
     const redeliverContent = vi.fn(async () => undefined);
-    const harness = makeDeferredHarness("unavailable", { redeliverContent });
+    const harness = makeDeferredHarness("unavailable", {
+      redeliverContent,
+      instructionVerdict: "unknown",
+    });
 
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
       claimed: 1,
-      settled: 0,
+      settled: 1,
     });
-    expect(harness.retryDeliveryAttempt).toHaveBeenCalledWith(
+    expect(harness.markUncertain).toHaveBeenCalledWith(
       "delivery-deferred",
       "rolling-worker",
-      "unsupported_backend",
-      0,
+      "runner_receipt_unknown",
     );
-    expect(harness.markUncertain).not.toHaveBeenCalled();
+    // Neither redelivered nor parked in pending: nothing picks it up again.
+    expect(harness.retryDeliveryAttempt).not.toHaveBeenCalled();
     expect(redeliverContent).not.toHaveBeenCalled();
-    // The ledger row survives as pending rather than being deleted or consumed.
     await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
       claimed: 0,
       settled: 0,
@@ -309,6 +315,8 @@ describe("queued transcript recovery rolling contract", () => {
     const markUncertain = vi.fn(async () => null);
     const redeliverContent = vi.fn(async () => undefined);
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async () => claimedRow),
         markConsumed: vi.fn(async () => null),
@@ -364,6 +372,7 @@ function makeDeferredHarness(
   options: {
     intent?: DeliveryIntent;
     redeliverContent?: (row: SessionDeliveryRow) => Promise<void>;
+    instructionVerdict?: "applied" | "not_applied" | "unknown";
   } = {},
 ) {
   let claimable = true;
@@ -390,6 +399,10 @@ function makeDeferredHarness(
     attempt_token: null,
   }) as SessionDeliveryRow);
   const recovery = new QueuedDeliveryTranscriptRecovery({
+    // Unless a case names a verdict, the runner "never received it" so the transcript path is unchanged.
+    instructionReceipt: {
+      lookup: async () => options.instructionVerdict ?? "not_applied",
+    },
     deliveryRepository: {
       get: vi.fn(async () => claimedRow),
       markConsumed: vi.fn(async () => null),
@@ -521,6 +534,8 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
     get: vi.fn(async () => row()),
   };
   const recovery = new QueuedDeliveryTranscriptRecovery({
+    // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+    instructionReceipt: { lookup: async () => "not_applied" as const },
     deliveryRepository,
     recoveryRepository,
     transcriptReceipt: {

@@ -587,7 +587,11 @@ describe("RunningInterventionTransition", () => {
       "registration:s1",
     );
     expect(task.interventionQueue).toEqual([
-      { text: "queue after no active turn", user: "soak" },
+      {
+        text: "queue after no active turn",
+        user: "soak",
+        runnerInterventionId: expect.any(String),
+      },
     ]);
   });
 
@@ -645,6 +649,7 @@ describe("RunningInterventionTransition", () => {
         text: "redirect the active turn",
         user: "alice",
         attachmentPaths: ["/tmp/a.png"],
+        runnerInterventionId: expect.any(String),
       },
     ]);
   });
@@ -747,7 +752,7 @@ describe("RunningInterventionTransition", () => {
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
-      { text: "safe boundary", user: "alice" },
+      { text: "safe boundary", user: "alice", runnerInterventionId: expect.any(String) },
     ]);
   });
 
@@ -799,7 +804,11 @@ describe("RunningInterventionTransition", () => {
     );
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
-      { text: "queue after unsafe boundary", user: "alice" },
+      {
+        text: "queue after unsafe boundary",
+        user: "alice",
+        runnerInterventionId: expect.any(String),
+      },
     ]);
   });
 
@@ -842,6 +851,7 @@ describe("RunningInterventionTransition", () => {
         text: "next turn only",
         user: "alice",
         attachmentPaths: ["/tmp/a.png"],
+        runnerInterventionId: expect.any(String),
       },
     ]);
   });
@@ -907,6 +917,7 @@ describe("RunningInterventionTransition", () => {
         callerInfo,
         attachmentPaths: ["/tmp/a.png", "/tmp/a.pdf"],
         context: [{ title: "trace", body: "line 1" }],
+        runnerInterventionId: expect.any(String),
       },
     ]);
   });

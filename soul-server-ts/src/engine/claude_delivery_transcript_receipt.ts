@@ -13,6 +13,9 @@ import { userMessageText } from "./claude_sdk_event_mapper_helpers.js";
 import { isTurnStartingUserInput } from
   "./claude_sdk_persistent_session_support.js";
 
+/** The transcript reader's reason for a backend that has no Claude transcript. */
+export const UNSUPPORTED_BACKEND_REASON = "unsupported_backend";
+
 export type ClaudeDeliveryTranscriptReceipt =
   | { kind: "absent"; inputUuid: string }
   | { kind: "input_pending"; inputUuid: string }
@@ -183,7 +186,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     // stay held rather than be redelivered. Identify the backend before the
     // session-id check because a Codex thread id is not a Claude session id.
     if (backend !== "claude") {
-      return { kind: "unavailable", reason: "unsupported_backend" };
+      return { kind: "unavailable", reason: UNSUPPORTED_BACKEND_REASON };
     }
     if (!session.claude_session_id) return { kind: "absent" };
     if (!session.worktree_id) {

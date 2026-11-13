@@ -1850,6 +1850,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       deliveryRepository: repository,
       recoveryRepository: repository.recovery,
       transcriptReceipt: { inspect },
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       ...(redeliverContent ? { redeliverContent } : {}),
       logger: { warn() {} },
     }, workerId);

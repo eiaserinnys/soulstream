@@ -393,7 +393,7 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("queues an ambiguous IPC timeout once, then consumes that delivery once on retry", async () => {
+  it("leaves an ambiguous IPC timeout unknown instead of queueing it, and never runs it a second time", async () => {
     const terminalStates = new Map<string, TerminalDeliveryState>();
     const timedOut = makeUnansweredInterventionRunner();
     const task = makeTerminalTask({
@@ -425,15 +425,18 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
       agentSessionId: task.agentSessionId,
       ...message,
     }, vi.fn())).resolves.toEqual({
-      delivered: false,
-      queued: true,
-      queuePosition: 1,
-      consumeWhen: "next_turn",
+      delivered: null,
       reason: "verdict_unknown",
+      consumeWhen: null,
     });
 
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0]).toMatchObject({ deliveryId });
+    // The runner could not be asked (this dispatcher has no receipt lookup),
+    // so the instruction is unknown: not queued for the next turn.
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(harness.ledgerGate.recordResult).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId }),
+      { delivered: null, reason: "verdict_unknown", consumeWhen: null },
+    );
     expect(timedOut.dispatcher.invoke).toHaveBeenCalledWith(
       "injectAtToolBoundary",
       [expect.objectContaining({
@@ -449,34 +452,22 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
     expect(terminalStates.has(deliveryId)).toBe(false);
     expect(harness.ledgerGate.recordConsumed).not.toHaveBeenCalled();
 
+    // The ledger leaves the row dead-lettered as uncertain, so a later resume
+    // of the same delivery is suppressed and the content is never run again.
+    terminalStates.set(deliveryId, "dead_letter");
     task.status = "completed";
     task.completedAt = new Date("2026-08-23T20:03:00.000Z");
     task.terminalEventId = task.lastEventId;
     task.executionRegistration = undefined;
     task.runner = undefined;
 
-    await expect(harness.resume(message)).resolves.toEqual({ autoResumed: true });
     await expect(harness.resume(message)).resolves.toMatchObject({
       suppressed: true,
       deliveryId,
-      reason: "delivery_consumed",
+      reason: "delivery_dead_letter",
     });
 
-    expect(harness.executed).toHaveLength(1);
-    expect(harness.executed[0]).toMatchObject({
-      prompt: "deliver exactly once",
-      inputUuid: stableInputUuid,
-      turnOrigin: {
-        kind: "durable_next_turn",
-        id: deliveryId,
-      },
-    });
-    expect(harness.ledgerGate.recordTurnStarted).toHaveBeenCalledOnce();
-    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledOnce();
-    expect(harness.ledgerGate.recordConsumed).toHaveBeenCalledWith(
-      expect.objectContaining({ deliveryId }),
-      harness.task,
-      expect.any(String),
-    );
+    expect(harness.executed).toHaveLength(0);
+    expect(harness.ledgerGate.recordConsumed).not.toHaveBeenCalled();
   });
 });

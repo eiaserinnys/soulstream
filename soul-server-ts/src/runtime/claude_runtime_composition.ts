@@ -26,6 +26,8 @@ import { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
+import type { NodeInstructionVerdict } from
+  "../task/state/node_instruction_decision.js";
 import { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 
@@ -64,8 +66,75 @@ interface ComposeClaudeRuntimeParams {
     event: ClaudeClientEvent,
   ): Promise<void>;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
+  lookupInstructionReceipt(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
   resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
+}
+
+export interface ComposeQueuedDeliveryRecoveryParams {
+  db: SessionDB;
+  agentRegistry: AgentRegistry;
+  modelCatalog: Pick<ModelCatalog, "resolve">;
+  sessionStore: SessionStore;
+  sourceNode: string;
+  logger: Logger;
+  redeliverContent(row: SessionDeliveryRow): Promise<void>;
+  lookupInstructionReceipt(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
+  resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
+}
+
+/**
+ * The node-startup recovery of queued deliveries. It judges a Claude row by its
+ * transcript and every other row by the runner's receipt, so it is assembled
+ * for every backend and does not depend on the Claude session runtime flag.
+ */
+export function composeQueuedDeliveryRecovery(
+  params: ComposeQueuedDeliveryRecoveryParams,
+): {
+  transcriptReceipt: ClaudeDeliveryTranscriptReceiptReader;
+  recovery: QueuedDeliveryTranscriptRecovery;
+} {
+  const deliveryRepository = params.db.sessionDeliveries();
+  const transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
+    sourceNode: params.sourceNode,
+    sessionStore: params.sessionStore,
+    getSession: (sessionId) => params.db.getSession(sessionId),
+    getAgent: (agentId) => params.agentRegistry.get(agentId),
+    ...(params.resolveWorktreeWorkspace
+      ? { resolveWorktreeWorkspace: params.resolveWorktreeWorkspace }
+      : {}),
+    getModelPresetBackend: (presetId) => {
+      try {
+        return params.modelCatalog.resolve(presetId).backend;
+      } catch {
+        return undefined;
+      }
+    },
+  });
+  const recovery = new QueuedDeliveryTranscriptRecovery(
+    {
+      deliveryRepository,
+      recoveryRepository: deliveryRepository.recovery,
+      transcriptReceipt,
+      instructionReceipt: { lookup: params.lookupInstructionReceipt },
+      redeliverContent: params.redeliverContent,
+      logger: params.logger,
+    },
+    `queued-recovery:${params.sourceNode}:${randomUUID()}`,
+  );
+  return { transcriptReceipt, recovery };
+}
+
+/** Startup recovery with only the queued-delivery step, for nodes without the Claude runtime. */
+export function composeQueuedDeliveryStartupRecovery(
+  params: ComposeQueuedDeliveryRecoveryParams,
+): ClaudeRuntimeStartupRecovery {
+  const { recovery } = composeQueuedDeliveryRecovery(params);
+  return new ClaudeRuntimeStartupRecovery({
+    recoverQueuedDeliveries: () => recovery.recoverAfterNodeRestart(params.sourceNode),
+    logger: params.logger,
+    nodeId: params.sourceNode,
+  });
 }
 
 export interface ClaudeRuntimeComposition {
@@ -85,32 +154,8 @@ export async function composeClaudeRuntime(
 ): Promise<ClaudeRuntimeComposition> {
   if (!params.enabled) return {};
   const deliveryRepository = params.db.sessionDeliveries();
-  const transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
-    sourceNode: params.sourceNode,
-    sessionStore: params.sessionStore,
-    getSession: (sessionId) => params.db.getSession(sessionId),
-    getAgent: (agentId) => params.agentRegistry.get(agentId),
-    ...(params.resolveWorktreeWorkspace
-      ? { resolveWorktreeWorkspace: params.resolveWorktreeWorkspace }
-      : {}),
-    getModelPresetBackend: (presetId) => {
-      try {
-        return params.modelCatalog.resolve(presetId).backend;
-      } catch {
-        return undefined;
-      }
-    },
-  });
-  const queuedDeliveryRecovery = new QueuedDeliveryTranscriptRecovery(
-    {
-      deliveryRepository,
-      recoveryRepository: deliveryRepository.recovery,
-      transcriptReceipt,
-      redeliverContent: params.redeliverContent,
-      logger: params.logger,
-    },
-    `queued-recovery:${params.sourceNode}:${randomUUID()}`,
-  );
+  const { transcriptReceipt, recovery: queuedDeliveryRecovery } =
+    composeQueuedDeliveryRecovery(params);
   const backgroundLifecycle = new ClaudeBackgroundTaskLifecycle({
     repository: params.db.claudeBackgroundTasks(),
     sourceNode: params.sourceNode,
