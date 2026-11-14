@@ -2,7 +2,7 @@
  * 합친 훑기의 구성과 값 범위다(카드 #1266 U5c).
  *
  * 원본은 카드 #1218 합의의 파이썬 손 모형 fable_r2_machine.py(이하 M)다. 줄 번호는 그 파일의 것이다.
- * 합친 상태 G = (S, W, L, ch, ex, q, p, life, tail, l2, d2, u2, wt, nt, st) (M:6-11, M:43-58).
+ * 합친 상태 G = (S, W, L, ch, ex, q, p, life, tail, l2, d2, u2, wt, nt, st) (M:6-11, M:41-56).
  * 운영 코드는 이 폴더를 부르지 않는다. 시험 폴더 아래에 두어 빌드에 들어가지 않는다.
  */
 
@@ -100,9 +100,9 @@ export const INITIAL: G = {
   tail: "clean", l2: "down", d2: [], u2: [], wt: "free", nt: "-", st: "-",
 };
 
-/** 러너가 없는 꼴이다(M:78). */
+/** 러너가 없는 꼴이다(M:77). */
 export const NO_RUNNER = { p: "none", life: "none", tail: "clean", l2: "down", d2: [], u2: [] } as const satisfies Partial<G>;
-/** 러너와의 소켓이 끊긴 꼴이다(M:79). */
+/** 러너와의 소켓이 끊긴 꼴이다(M:78). */
 export const CUT2 = { l2: "down", d2: [], u2: [] } as const satisfies Partial<G>;
 
 export function keyOf(g: G): string {

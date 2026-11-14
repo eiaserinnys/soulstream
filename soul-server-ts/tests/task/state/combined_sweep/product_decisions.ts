@@ -118,7 +118,8 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const RUNNER_BEARING = new Set(["execution_registration", "startup_recovery_adopt", "attached_runner_adopt"]);
+/** 실행 등록의 거절은 세계가 칸과 상관없이 러너를 닫으므로(task_executor abandonRejectedAttempt) 덮개에 넣지 않는다. */
+const RUNNER_BEARING = new Set(["startup_recovery_adopt", "attached_runner_adopt"]);
 
 /**
  * 되돌림 시험의 덮개다. 노드 쪽 고침 하나를 옛 동작으로 바꿔 끼운다.
@@ -163,7 +164,7 @@ export type RevertOverlay = keyof typeof REVERT_OVERLAYS;
 /**
  * 모형 대조 덮개다. 되돌림이 아니다. 잇기가 워크트리 점유(worktree_busy)로 거절되면 M처럼
  * 러너를 거두고 오류 종료를 올린다(M:408-412). 제품은 이 거절을 다시 될 수 있는 거절로 두고
- * 거두지 않는다(node_adopt_rejection.ts, design.md:42). 이 칸 하나만 바꾸면 세계가 M의 숫자를 그대로 내는지 본다.
+ * 거두지 않는다(node_adopt_rejection.ts, design.md:42). M은 기록된 끝남을 점유보다 먼저 보므로 세계 스위치 modelAdoptOrder와 함께 쓴다. 둘을 바꾸면 세계가 M의 숫자를 그대로 내는지 본다.
  */
 export function modelWorktreeBusyReap(inner: ProductDecisions): ProductDecisions {
   return {

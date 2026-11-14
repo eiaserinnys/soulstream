@@ -39,6 +39,7 @@ function options(decisions: ProductDecisions, extra: Partial<WorldOptions> = {})
     envOff: new Set(),
     settlePending: true,
     requeue: true,
+    modelAdoptOrder: false,
     decisions,
     ...extra,
   };
@@ -62,7 +63,6 @@ describe("card #1266 U5c combined sweep (lengths 2 and 1)", () => {
     console.log(JSON.stringify({
       product: counts(product),
       productMs: product.elapsedMs,
-      p15WithoutPermReject: [product.p15WithoutPermReject, product.p15FairWithoutPermReject],
       withoutPermReject: counts(withoutPermReject),
       withoutPermRejectMs: withoutPermReject.elapsedMs,
       cache: cache.stats(),
@@ -91,16 +91,19 @@ describe("card #1266 U5c combined sweep (lengths 2 and 1)", () => {
     expect(product.path[id]!.count, `path ${id}: ${LIVENESS[id]![0]}\n${why(product.path[id]!)}`).toBe(0);
   });
 
+  // J35는 스스로 하는 걸음이 아니므로, J35를 끈 세계의 위반이 곧 J35를 거치지 않고 닿는 위반이다.
   it("leaves promise 15 only in configurations reached through a permanent rejection", () => {
     expect(product.path["15"]!.count).toBeGreaterThan(0);
-    expect(product.p15WithoutPermReject, "promise 15 violations reachable without J35").toBe(0);
-    expect(product.p15FairWithoutPermReject, "promise 15 fair violations reachable without J35").toBe(0);
+    expect(withoutPermReject.path["15"]!.count, `path 15 without J35\n${why(withoutPermReject.path["15"]!)}`).toBe(0);
+    expect(withoutPermReject.fair["15"]!.count, `fair 15 without J35\n${why(withoutPermReject.fair["15"]!)}`).toBe(0);
   });
 
-  it("keeps every promise once the permanent rejection step is off", () => {
+  it("keeps every promise, also under the fair judgement, once the permanent rejection step is off", () => {
     for (const id of Object.keys(LIVENESS)) {
       const r = withoutPermReject.path[id]!;
       expect(r.count, `path ${id} without J35\n${why(r)}`).toBe(0);
+      const f = withoutPermReject.fair[id]!;
+      expect(f.count, `fair ${id} without J35\n${why(f)}`).toBe(0);
     }
   });
 
@@ -115,7 +118,8 @@ describe("card #1266 U5c combined sweep (lengths 2 and 1)", () => {
 describe("card #1266 U5c world port against the hand model", () => {
   it("reproduces the model numbers when the worktree-busy adopt rejection reaps as in M", () => {
     // R/fable_r3_results.jsonl 12줄과 14줄(셋째 판의 안, 길이 2와 1)이다.
-    const model = sweep(modelWorktreeBusyReap(PRODUCT));
+    // M은 기록된 끝남을 점유보다 먼저 보고(M:406-409), 점유면 거두고 오류 종료를 올린다.
+    const model = sweep(modelWorktreeBusyReap(PRODUCT), { modelAdoptOrder: true });
     expect(model.configs).toBe(108_500);
     expect(counts(model)).toMatchObject({
       "safety 2": 0, "safety 4": 0, "safety 4b": 0, "safety 5": 0,
@@ -123,9 +127,10 @@ describe("card #1266 U5c world port against the hand model", () => {
       "fair 7": 0, "fair 9": 0, "fair 12": 0, "fair 13": 0, "fair 14": 0, "fair 15": 1_222,
       dupHandover: 0, vanishedStop: 0,
     });
-    const off = sweep(modelWorktreeBusyReap(PRODUCT), { envOff: new Set(["J35"]) });
+    const off = sweep(modelWorktreeBusyReap(PRODUCT), { envOff: new Set(["J35"]), modelAdoptOrder: true });
     expect(off.configs).toBe(76_109);
     expect(Object.values(off.path).map((r) => r.count)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(Object.values(off.fair).map((r) => r.count)).toEqual([0, 0, 0, 0, 0, 0]);
   }, TIMEOUT_MS);
 });
 

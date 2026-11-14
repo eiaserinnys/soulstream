@@ -45,7 +45,7 @@ function inList(g: G): boolean {
 }
 
 /** 서버가 사건 하나를 적용한다 (M:336-382). g는 적용 전 구성, base는 그 사건을 줄에서 뺀 구성이다. */
-function serverApply(g: G, base: G, msg: string): ServerVerdict {
+function serverApply(g: G, base: G, msg: string, modelAdoptOrder: boolean): ServerVerdict {
   const { S, W } = g;
   const occ = g.wt === "occ";
   if (msg === "RESUME") {
@@ -66,7 +66,9 @@ function serverApply(g: G, base: G, msg: string): ServerVerdict {
     return {
       applied,
       outs: [put(base, { S: next })],
-      reason: applied ? "none" : occ && TERMINAL_STATES.has(S) ? "worktree_busy" : "already_terminal",
+      reason: applied
+        ? "none"
+        : occ && TERMINAL_STATES.has(S) && !(modelAdoptOrder && RECORDED.has(S)) ? "worktree_busy" : "already_terminal",
     };
   }
   if (msg === "REG") {
@@ -132,7 +134,7 @@ export function channelSteps(ctx: WorldContext): Record<string, StepFn> {
   /** 노드가 응답을 받는다 (M:383-422). 거절이면 decideNodeResponse의 칸과 의도로 M의 가지를 고른다. */
   const apply = (g: G, base: G, raw: string): G[] => {
     const msg = baseMsg(raw);
-    const { applied, outs, reason } = serverApply(g, base, msg);
+    const { applied, outs, reason } = serverApply(g, base, msg, options.modelAdoptOrder);
     const result: G[] = [];
     for (const o of outs) {
       const want = WAITING[o.ex];

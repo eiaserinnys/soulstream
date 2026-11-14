@@ -113,8 +113,6 @@ export interface Exploration {
   selfEdges: [number, boolean][][];
   /** 걸음별로 구성을 바꾼 횟수다. */
   used: Map<string, number>;
-  /** J35를 한 번도 거치지 않고 닿는 구성인가. */
-  withoutPermReject: boolean[];
 }
 
 /** 넓이 우선 훑기(M:630-655). */
@@ -146,29 +144,7 @@ export function explore(steps: readonly Step[]): Exploration {
       }
     });
   }
-  return { order, index, parent, selfEdges, used, withoutPermReject: reachableWithout(steps, order, index, "J35") };
-}
-
-/** 한 걸음을 빼고 처음 구성에서 닿는 구성을 표시한다. 걸음은 다시 부르지만 판정은 캐시가 받는다. */
-function reachableWithout(steps: readonly Step[], order: G[], index: Map<string, number>, skip: string): boolean[] {
-  const seen = new Array<boolean>(order.length).fill(false);
-  seen[0] = true;
-  const queue = [0];
-  for (let head = 0; head < queue.length; head += 1) {
-    const g = order[queue[head]!]!;
-    for (const step of steps) {
-      if (step.id === skip) continue;
-      for (const next of step.fn(g)) {
-        const j = index.get(keyOf(next));
-        if (j === undefined) throw new Error("sub-exploration left the explored set");
-        if (!seen[j]) {
-          seen[j] = true;
-          queue.push(j);
-        }
-      }
-    }
-  }
-  return seen;
+  return { order, index, parent, selfEdges, used };
 }
 
 /** 경로를 사람이 읽는 걸음 이름으로 낸다(M:658-676). */
@@ -285,16 +261,12 @@ export interface SweepResult {
   fair: Record<string, PromiseResult>;
   steps: { dupHandover: number; vanishedStop: number; republishedEnd: number; heldRunnerUnderOccupiedWorktree: number };
   used: Record<string, number>;
-  /** 약속 15의 길 없음 구성 가운데 J35를 거치지 않고 닿는 구성 수다. */
-  p15WithoutPermReject: number;
-  /** 약속 15의 공정 위반 구성 가운데 J35를 거치지 않고 닿는 구성 수다. */
-  p15FairWithoutPermReject: number;
   elapsedMs: number;
 }
 
 const result = (exp: Exploration, hits: number[]): PromiseResult => ({
   count: hits.length,
-  example: hits.length > 0 ? pathTo(exp, Math.min(...hits)) : null,
+  example: hits.length > 0 ? pathTo(exp, hits.reduce((a, b) => (a < b ? a : b))) : null,
 });
 
 /** 훑고 약속을 잰다(M:742-770). */
@@ -308,16 +280,10 @@ export function analyze(options: WorldOptions): SweepResult {
   }
   const path: Record<string, PromiseResult> = {};
   const fair: Record<string, PromiseResult> = {};
-  let p15WithoutPermReject = 0;
-  let p15FairWithoutPermReject = 0;
   for (const [id, [, concerned, goal, engine]] of Object.entries(LIVENESS)) {
     const [nopath, unfair] = liveness(exp, concerned, goal, engine);
     path[id] = result(exp, nopath);
     fair[id] = result(exp, unfair);
-    if (id === "15") {
-      p15WithoutPermReject = nopath.filter((i) => exp.withoutPermReject[i]).length;
-      p15FairWithoutPermReject = unfair.filter((i) => exp.withoutPermReject[i]).length;
-    }
   }
   const { counters } = world;
   return {
@@ -332,8 +298,6 @@ export function analyze(options: WorldOptions): SweepResult {
       heldRunnerUnderOccupiedWorktree: counters.heldTaken.size,
     },
     used: Object.fromEntries(exp.used),
-    p15WithoutPermReject,
-    p15FairWithoutPermReject,
     elapsedMs: Math.round(performance.now() - started),
   };
 }

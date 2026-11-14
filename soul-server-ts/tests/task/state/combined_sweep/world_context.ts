@@ -7,18 +7,23 @@ import type { ProductDecisions } from "./product_decisions.js";
 import { keyOf, type G, type Instruction, type NodeExec } from "./world_state.js";
 
 export interface WorldOptions {
-  /** 통로 하나의 길이(M:39 K). */
+  /** 통로 하나의 길이(M:35 K). */
   k: number;
-  /** 통로 둘의 길이(M:40 K2). */
+  /** 통로 둘의 길이(M:36 K2). */
   k2: number;
-  /** 참이면 재시작 때 메모리 대기 줄을 장부로 되찾지 못한다(M:41 CODEX). 셋째 판 숫자는 참으로 쟀다. */
+  /** 참이면 재시작 때 메모리 대기 줄을 장부로 되찾지 못한다(M:37 CODEX). 셋째 판 숫자는 참으로 쟀다. */
   codex: boolean;
-  /** 끌 걸음 번호(M:42 ENV_OFF). */
+  /** 끌 걸음 번호(M:38 ENV_OFF). */
   envOff: ReadonlySet<string>;
   /** I3 완료 정산 미결의 영속(M:315-320). 판정이 completion_settlement_sweeper.ts에 있어 세계 스위치다. */
   settlePending: boolean;
   /** I6 코덱스 대기 지시 복구(M:245-251). 장부 다시 잇기가 순수 함수 밖에 있어 세계 스위치다. */
   requeue: boolean;
+  /**
+   * 모형 대조 전용이다. 참이면 잇기 거절의 사유를 M 순서로 낸다: 기록된 끝남(RECORDED)을 워크트리 점유보다
+   * 먼저 본다(M:406-409). 거짓이면 orch 순서다(worktree_busy를 끝남 검사보다 먼저 본다).
+   */
+  modelAdoptOrder: boolean;
   decisions: ProductDecisions;
 }
 
