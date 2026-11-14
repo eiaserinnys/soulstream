@@ -279,6 +279,17 @@ export class RunningInterventionTransition {
         message: "Task runner engine is unavailable",
       };
     }
+    // 기록을 다시 읽는 손잡이 뒤에는 받을 엔진이 없다(러너는 재생 전에 끝난다). 넘기면 죽은
+    // 러너에 보내 결과를 모름으로 잃으므로, 넘기지 않은 것이 확실한 지시로 대기 줄에 쌓는다.
+    // 재생이 끝나면 쌓인 지시로 다시 띄운다(카드 #1266 U5b, 바깥 요청 칸 replaying/intervene).
+    if (task.runnerIsOfflineReplay === true) {
+      return {
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "no_active_turn",
+        message: "Offline replay handle has no live runner to receive the instruction",
+      };
+    }
     let executionMessage = message;
     if ((message.attachmentIds?.length ?? 0) > 0) {
       const prepareAttachmentInput = this.deps.prepareAttachmentInput;

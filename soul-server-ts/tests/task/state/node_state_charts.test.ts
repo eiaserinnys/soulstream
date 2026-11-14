@@ -26,13 +26,14 @@ describe("node state charts", () => {
     );
   }, 300_000);
 
-  it("names the closing unit of every one of the twenty guessed cells", () => {
+  it("shows where each of the twenty guessed cells was closed and by which test", () => {
     const cells = nodeGuessCells();
     expect(cells).toHaveLength(20);
     expect(new Set(cells.map((cell) => cell.no)).size).toBe(20);
     for (const cell of cells) {
-      expect(["종료 경로", "지시 경로", "멈춤"]).toContain(cell.unit);
-      expect(cell.current.length).toBeGreaterThan(0);
+      expect(["request", "barrier", "order"]).toContain(cell.closure.kind);
+      expect(cell.verdict.length).toBeGreaterThan(0);
+      expect(cell.tests.length).toBeGreaterThan(0);
     }
     expect(cells.filter((cell) => cell.oldTable === "C1")).toHaveLength(7);
     expect(cells.filter((cell) => cell.oldTable === "C2")).toHaveLength(11);
@@ -40,14 +41,15 @@ describe("node state charts", () => {
     const document = generateNodeStateDocument().markdown;
     for (const cell of cells) {
       expect(document).toContain(`| ${cell.no} | ${cell.oldTable} |`);
+      for (const test of cell.tests) expect(document).toContain(test);
     }
   });
 
-  it("does not let a stop that waited on a handoff return without a disposition", () => {
+  it("closes a stop that waited on a handoff through the barrier serialization", () => {
     const handoffStop = nodeGuessCells().find(
-      (cell) => cell.request === "stop" && cell.pending === "러너에 넘기고 결과를 기다림",
+      (cell) => cell.closure.kind === "barrier",
     );
-    expect(handoffStop?.current).toBe("넘기기가 끝난 뒤 보통 멈춤 길로");
-    expect(handoffStop?.unit).toBe("멈춤");
+    expect(handoffStop?.pending).toBe("러너에 넘기고 결과를 기다림");
+    expect(handoffStop?.verdict).toBe("넘기기가 끝난 뒤 보통 멈춤 길로");
   });
 });
