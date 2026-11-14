@@ -133,6 +133,12 @@ export class EventReadRepository {
     const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
     if (metadata !== null && order === "desc") {
       // 색인 (session_id, event_type, id)를 거꾸로 타도록 event_type은 리터럴로 둔다.
+      // metadata_type 조건은 CASE boolean으로 감싼다. `payload->>'metadata_type' = ANY(...)`만
+      // 쓰면 플래너가 JSON 추출 비교에 기본 선택도 0.005를 적용해 예상 행수를 LIMIT(50)보다 작게
+      // 잡고, 역방향 스캔이 LIMIT에서 멈출 수 있다고 보지 않아 Bitmap Index Scan + Bitmap Heap
+      // Scan(힙 블록 전수 읽기) + Sort를 고른다(운영에서 12,374블록, 부하 시 5~14초).
+      // CASE boolean은 선택도 0.5로 추정되어 예상 행수가 LIMIT 이상이 되고, 플래너가
+      // idx_events_session_type_id 역방향 스캔(Index Scan Backward)을 골라 최신 50건에서 멈춘다.
       const rows = period
         ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
             SELECT id, session_id, event_type, payload, searchable_text, created_at
@@ -142,7 +148,7 @@ export class EventReadRepository {
               AND created_at >= ${period.since}::timestamptz
               AND created_at < ${period.until}::timestamptz
               AND event_type = 'metadata'
-              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+              AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
             ORDER BY id DESC
             LIMIT ${limit}
           `
@@ -152,7 +158,7 @@ export class EventReadRepository {
             WHERE session_id = ${sessionId}
               AND id > ${afterId}
               AND event_type = 'metadata'
-              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+              AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
             ORDER BY id DESC
             LIMIT ${limit}
           `;

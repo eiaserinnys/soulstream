@@ -910,4 +910,99 @@ describe("buildPersistentDecisionInput", () => {
     });
     expect(result.generation_cost_by_preset?.["gemini-4-hydrogen"]?.initEquivalentInputTokens).toBeCloseTo(272582.2);
   });
+
+  it("reuses generation metadata across decisions and reads only the delta past the cached window", async () => {
+    const task = makeTask();
+    const generationMetadata = (
+      id: number,
+      generation: number,
+      modelPreset: string,
+      inputTokens: number,
+    ) => ({
+      id,
+      session_id: task.agentSessionId,
+      event_type: "metadata",
+      payload: {
+        metadata_type: "persistent_generation",
+        value: {
+          number: generation,
+          first_call: {
+            generation,
+            model_preset: modelPreset,
+            input_tokens: inputTokens,
+          },
+        },
+      },
+      searchable_text: "",
+      created_at: new Date("2026-10-05T00:00:00.000Z"),
+    });
+    const cachedBeforeWindow = generationMetadata(17, 2, "codex-6.1-sol", 28_000);
+    const arrivedInWindow = generationMetadata(512, 3, "claude-opus", 45_000);
+    const arrivedAfterWindow = generationMetadata(701, 4, "codex-6.1-sol", 33_000);
+    const readEvents = vi.fn(async (
+      _sessionId: string,
+      afterId: number,
+      _limit: number,
+      eventTypes?: string[],
+    ) => {
+      if (eventTypes !== undefined) {
+        return afterId === 0 ? [cachedBeforeWindow] : [arrivedAfterWindow];
+      }
+      return afterId === 320 ? [arrivedInWindow] : [];
+    });
+    rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+    const deps = {
+      db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
+      modelCatalog: {
+        resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+      } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
+      providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+      logger: { warn: vi.fn() },
+    };
+
+    const first = await buildPersistentDecisionInput({ task, trigger: "arrival", now }, deps);
+    expect(first.checkpoint_tokens_by_preset).toEqual({ "codex-6.1-sol": 28_000 });
+    expect(readEvents.mock.calls.map((call) => [call[1], call[3] !== undefined])).toEqual([
+      [300, false],
+      [0, true],
+    ]);
+
+    task.lastEventId = 520;
+    const second = await buildPersistentDecisionInput({ task, trigger: "arrival", now }, deps);
+    expect(second.checkpoint_tokens_by_preset).toEqual({
+      "codex-6.1-sol": 28_000,
+      "claude-opus": 45_000,
+    });
+    expect(readEvents.mock.calls.map((call) => [call[1], call[3] !== undefined])).toEqual([
+      [300, false],
+      [0, true],
+      [320, false],
+    ]);
+
+    task.lastEventId = 800;
+    const third = await buildPersistentDecisionInput({ task, trigger: "arrival", now }, deps);
+    expect(third.checkpoint_tokens_by_preset).toEqual({
+      "codex-6.1-sol": 33_000,
+      "claude-opus": 45_000,
+    });
+    expect(readEvents.mock.calls.map((call) => [call[1], call[3] !== undefined])).toEqual([
+      [300, false],
+      [0, true],
+      [320, false],
+      [600, false],
+      [520, true],
+    ]);
+    expect(readEvents).toHaveBeenNthCalledWith(
+      5,
+      task.agentSessionId,
+      520,
+      50,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+      "desc",
+    );
+  });
 });
