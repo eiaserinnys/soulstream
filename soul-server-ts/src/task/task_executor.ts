@@ -328,6 +328,10 @@ export class TaskExecutor {
     Task,
     { fail(error: Error): void; readonly waiters: number }
   >();
+  /** 턴 출력 읽기가 끝난 task. 그 뒤 실행이 끝맺기 전에 온 치명 오류를 쥐어 두는 판단에 쓴다. */
+  private readonly fatalReadEnded = new WeakSet<Task>();
+  /** 읽기가 끝난 뒤 실행이 끝맺기 전에 온 치명 오류. 실행이 끝나거나 다음 읽기가 서면 이어진다. */
+  private readonly lateFatalEngineErrors = new WeakMap<Task, string>();
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
@@ -486,7 +490,42 @@ export class TaskExecutor {
     return await this.startExecutionWithRegistrationRecord(task, agent, activation);
   }
 
+  /**
+   * 실행을 시작하는 모든 길(새 위임, 도구 승인 재개, 직접 시작)이 슬롯을 잡기 전에 거치는 곳이다.
+   * 시동 장벽(executionActivation)을 워크트리 확인 같은 비동기 준비보다 먼저 세운다. 장벽이 이미
+   * 서 있거나(재개 길이 넘긴 것 포함) 실행 등록을 쓰지 않는 노드면 세우지 않고, 겹친 시작은 아래
+   * 기존 검사가 거절한다. 시작이 던지거나 거절로 끝나면 세운 장벽을 거둔다.
+   */
   private startExecutionWithRegistrationRecord(
+    task: Task,
+    agent: AgentProfile,
+    transferredActivation?: ExecutionActivation,
+  ): Promise<void> {
+    const barrier = transferredActivation === undefined
+      && task.executionActivation === undefined
+      && this.supportsExecutionRegistration()
+      ? createExecutionActivation()
+      : undefined;
+    if (!barrier) {
+      return this.startExecutionBehindBarrier(task, agent, transferredActivation);
+    }
+    task.executionActivation = barrier;
+    void barrier.promise.catch(() => undefined);
+    const dropBarrier = (error: unknown): void => {
+      if (task.executionActivation === barrier) task.executionActivation = undefined;
+      void Promise.resolve(barrier.reject(error)).catch(() => undefined);
+    };
+    try {
+      const started = this.startExecutionBehindBarrier(task, agent, barrier);
+      void started.catch(dropBarrier);
+      return started;
+    } catch (error) {
+      dropBarrier(error);
+      throw error;
+    }
+  }
+
+  private startExecutionBehindBarrier(
     task: Task,
     agent: AgentProfile,
     transferredActivation?: ExecutionActivation,
@@ -1072,6 +1111,7 @@ export class TaskExecutor {
     const release = (): void => {
       if (task.executionPromise !== promise) return;
       task.executionPromise = undefined;
+      this.settleLateFatalEngineError(task);
       void this.driveQueuedAfterTerminal(task);
     };
     void promise.then(release, release);
@@ -2757,14 +2797,52 @@ export class TaskExecutor {
       inFlight.fail(new Error(message));
       return true;
     }
+    // 잇기 거절로 멈춰 둔 실행은 읽기 장치가 서 있지 않다. 읽기를 오류로 끝낼 길이 없으므로
+    // 여기서 원 스트림을 놓고 보통 치명 오류와 같은 길(완료 정산 포함)로 종료한다.
+    const parked = this.suspendedRecoveredExecutions.get(task);
+    if (parked) {
+      this.suspendedRecoveredExecutions.delete(task);
+      void Promise.resolve(parked.frames[Symbol.asyncIterator]().return?.())
+        .catch(() => undefined);
+      await this.terminateWithFatalEngineError(task, message);
+      return true;
+    }
+    // 읽기는 끝났는데 실행이 아직 끝맺는 중이면 오류를 버리지 않고 쥐어 둔다. 실행이 끝났는데
+    // 활성이면 종료를 잇고, 다음 읽기가 서면 그 읽기가 이 오류로 끝난다.
+    if (this.fatalReadEnded.has(task) && task.executionPromise !== undefined) {
+      this.logger.warn(
+        { sessionId: task.agentSessionId, message },
+        "fatal engine error arrived after the turn output ended; holding it until the execution settles",
+      );
+      this.lateFatalEngineErrors.set(task, message);
+      return true;
+    }
     if (
       task.executionPromise !== undefined
       || task.runner?.dispatcher.hasActiveExecution?.() === true
     ) return false;
+    await this.terminateWithFatalEngineError(task, message);
+    return true;
+  }
+
+  private async terminateWithFatalEngineError(task: Task, message: string): Promise<void> {
     this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
     task.completedAt = new Date();
     await this._finalize(task);
-    return true;
+  }
+
+  /** 실행이 끝맺은 뒤에도 task가 활성이면, 읽기가 끝난 뒤 온 치명 오류로 종료를 잇는다. */
+  private settleLateFatalEngineError(task: Task): void {
+    const message = this.lateFatalEngineErrors.get(task);
+    if (message === undefined) return;
+    this.lateFatalEngineErrors.delete(task);
+    if (!isActiveTaskStatus(task.status)) return;
+    void this.terminateWithFatalEngineError(task, message).catch((error: unknown) => {
+      this.logger.warn(
+        { err: error, sessionId: task.agentSessionId },
+        "late fatal engine error termination failed",
+      );
+    });
   }
 
   /**
@@ -2780,10 +2858,16 @@ export class TaskExecutor {
     source: AsyncIterable<T>,
   ): AsyncIterable<T> {
     const failers = this.fatalEngineErrorFailers;
+    const readEnded = this.fatalReadEnded;
+    const lateErrors = this.lateFatalEngineErrors;
     return {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         const iterator = source[Symbol.asyncIterator]();
-        let failure: Error | undefined;
+        readEnded.delete(task);
+        // 앞 읽기가 끝난 뒤 쥐어 둔 오류가 있으면 이 읽기가 그 오류로 끝난다.
+        const held = lateErrors.get(task);
+        lateErrors.delete(task);
+        let failure: Error | undefined = held === undefined ? undefined : new Error(held);
         let wake: ((error: Error) => void) | undefined;
         const signal = {
           fail(error: Error): void {
@@ -2809,7 +2893,12 @@ export class TaskExecutor {
                 pending.then(resolve, reject);
               });
               wake = undefined;
-              if (result.done) release();
+              if (result.done) {
+                // done을 받고 깨어나기 전에 온 오류는 이 읽기의 끝맺음을 오류로 만든다.
+                if (failure) throw failure;
+                release();
+                readEnded.add(task);
+              }
               return result;
             } catch (err) {
               wake = undefined;

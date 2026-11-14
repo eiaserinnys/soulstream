@@ -59,12 +59,15 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  *
  * Every other row (an absent Claude input, or a backend with no Claude
  * transcript such as Codex) is judged by asking the runner for the delivery's
- * instruction number. An absent Claude input is already proven unseen by its
- * transcript, so only an "applied" answer changes its redelivery. Applied closes the row as consumed, a runner of the same
- * registration that never received it re-enters durable intervention after
- * spending the ordinary retry budget (an exhausted row becomes dead-lettered
- * without waking its target again), and anything else is left `uncertain` so
- * the next node start does not pick it up again and nothing is sent twice.
+ * instruction number. A queued row that carries no dispatch stamp was never
+ * handed to any runner, so it is simply redelivered without asking. For the
+ * rest, "applied" closes the row as consumed, "not_applied" (a runner of the
+ * same registration that never received it) re-enters durable intervention
+ * after spending the ordinary retry budget (an exhausted row becomes
+ * dead-lettered without waking its target again), and "unknown" is left
+ * `uncertain` so the next node start does not pick it up again and nothing is
+ * sent twice. A transcript that lacks the input line does not overturn the
+ * runner's answer: unknown stays unknown.
  * Older nodes without that capability retain the R18 dead-letter fallback.
  */
 /**

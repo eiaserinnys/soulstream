@@ -339,7 +339,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),
   });
-  settlement.wireTerminationCleanup({ owners: [taskManager, taskRuntime.taskExecutor], retireRejectedRegistration: runnerRecoveryCoordinator && (async (task, id) => await runnerRecoveryCoordinator.retireRejectedTerminalRegistration(task, id)), forgetTask: (id) => taskManager.forgetRunnerRecoveryTask(id) });
+  settlement.wireTerminationCleanup({ owners: [taskManager, taskRuntime.taskExecutor], retireRejectedRegistration: runnerRecoveryCoordinator && (async (task, id) => await runnerRecoveryCoordinator.retireRejectedTerminalRegistration(task, id)), forgetTask: (task) => taskManager.forgetRunnerRecoveryTask(task) });
   db.configureFolderReader(new FolderService(orchHostClientDeps));
   const catalogService = new CatalogService(
     db,

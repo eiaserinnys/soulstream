@@ -185,7 +185,9 @@ describe("card #1266 U2b a task kept only for its rejected registration is forgo
 
     expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
     expect(task.rejectedTerminationRegistrationId).toBeUndefined();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-a" }),
+    );
   });
 
   it("does not forget a task that already ended (the retirement only clears the mark)", async () => {
@@ -254,6 +256,8 @@ describe("card #1266 U2b a task kept only for its rejected registration is forgo
     await subject.coordinator.retireRejectedTerminalRegistration(task, "registration-gone");
 
     expect(task.rejectedTerminationRegistrationId).toBeUndefined();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-a" }),
+    );
   });
 });

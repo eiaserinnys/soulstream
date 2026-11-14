@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import type { InterventionMessage, Task } from "./task_models.js";
+import { instructionNumberOf } from "./state/node_instruction_decision.js";
 
 const LOW_PRIORITY_DELIVERY_INTENTS = new Set([
   "completion_notification",
@@ -38,6 +41,11 @@ export function enqueueInterventionOnce(
   task: Task,
   message: InterventionMessage,
 ): number {
+  // 큐에 들어오는 지시는 어느 길로 왔든 러너에 넘기기 전에 번호를 갖는다. 장부 번호도 넘기기 전
+  // 번호도 없으면 그 자리에서 채운다. 같은 객체가 큐와 시동 장벽에 함께 걸려 있어 복사하지 않는다.
+  if (instructionNumberOf(message) === undefined) {
+    message.runnerInterventionId = randomUUID();
+  }
   if (task.interventionQueue.length > 1) {
     task.interventionQueue = sortInterventionsByPriority(task.interventionQueue);
   }

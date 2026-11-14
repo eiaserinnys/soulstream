@@ -80,8 +80,8 @@ export interface TerminationCleanupPorts {
   releaseLocalOwnership?: (task: Task) => Promise<void>;
   /** 중앙 세션 한 줄을 캐시 없이 읽는다. 없으면 중앙 세션 유무를 확인하지 않는다. */
   readCentralSession?: (sessionId: string) => Promise<unknown | null>;
-  /** 메모리의 task를 잊는다. */
-  forgetTask?: (sessionId: string) => void;
+  /** 메모리의 task를 잊는다. 맵의 지금 값이 이 task 객체일 때만 지운다. */
+  forgetTask?: (task: Task) => void;
   /**
    * 거절된 종료의 러너 등록을 디스크에서 은퇴시킨다. 은퇴는 거절을 받은 때 남아야
    * 재시작 뒤 복구가 같은 종료를 다시 올리지 않는다. 러너 복구가 잇는다.
@@ -838,7 +838,7 @@ export class TaskLifecycleTransition {
       );
       return;
     }
-    this.ports.forgetTask?.(task.agentSessionId);
+    this.ports.forgetTask?.(task);
   }
 
 }

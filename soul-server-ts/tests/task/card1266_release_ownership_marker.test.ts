@@ -12,7 +12,7 @@ import { makeTask, silentLogger } from "./card1266_settlement_harness.js";
  */
 function setup(options: { retire?: (task: Task, registrationId: string) => Promise<void> } = {}) {
   const order: string[] = [];
-  const forget = vi.fn((_id: string) => { order.push("forget"); });
+  const forget = vi.fn((_task: Task) => { order.push("forget"); });
   const retire = vi.fn(async (task: Task, registrationId: string) => {
     order.push("retire");
     if (options.retire) await options.retire(task, registrationId);
@@ -67,7 +67,7 @@ describe("card #1266 U2b local ownership release keeps the rejected terminal mar
 
     await transition.releaseLocalOwnership(task);
 
-    expect(forget).toHaveBeenCalledWith(task.agentSessionId);
+    expect(forget).toHaveBeenCalledWith(task);
   });
 
   it("forgets a task that has no rejected terminal mark exactly as before", async () => {
@@ -77,6 +77,6 @@ describe("card #1266 U2b local ownership release keeps the rejected terminal mar
     await subject.transition.releaseLocalOwnership(task);
 
     expect(subject.retire).not.toHaveBeenCalled();
-    expect(subject.forget).toHaveBeenCalledWith(task.agentSessionId);
+    expect(subject.forget).toHaveBeenCalledWith(task);
   });
 });

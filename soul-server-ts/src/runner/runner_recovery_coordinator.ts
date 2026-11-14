@@ -629,7 +629,10 @@ export class RunnerRecoveryCoordinator {
       }
     }
     await this.registrationControl.retireTerminal(registration);
-    task.rejectedTerminationRegistrationId = undefined;
+    // 은퇴하는 등록의 표시만 지운다. 그 사이 다른 등록의 거절이 남긴 표시는 그 등록의 은퇴를 위해 둔다.
+    if (task.rejectedTerminationRegistrationId === registration.registrationId) {
+      task.rejectedTerminationRegistrationId = undefined;
+    }
     this.forgetIfOrphaned(task);
     this.options.logger.info(
       {
@@ -684,7 +687,7 @@ export class RunnerRecoveryCoordinator {
       || task.executionPromise !== undefined
       || task.executionActivation !== undefined
     ) return;
-    this.options.taskManager.forgetRunnerRecoveryTask?.(task.agentSessionId);
+    this.options.taskManager.forgetRunnerRecoveryTask?.(task);
     this.options.logger.info(
       { sessionId: task.agentSessionId },
       "task forgotten: it was kept only for a rejected terminal registration that is now retired",
@@ -948,6 +951,8 @@ export class RunnerRecoveryCoordinator {
       registrationAppliedAndTurnRunning: registrationAppliedAndTurnRunning(
         task,
         registration,
+        // 다시 될 수 있는 거절이 남긴 기록(attempt > 0)이 있으면 그 거절 뒤의 다시 잇기다.
+        { afterRetryableRejection: (this.centralRetry.get(sessionId)?.attempt ?? 0) > 0 },
       ),
       adoptResponse: this.centralRetry.get(sessionId)?.response ?? "none",
     });
@@ -1067,7 +1072,7 @@ export class RunnerRecoveryCoordinator {
       releaseTaskRunner(task, runner);
     }
     this.adoptionFailureRecovery.clear(sessionId);
-    this.options.taskManager.forgetRunnerRecoveryTask?.(sessionId);
+    this.options.taskManager.forgetRunnerRecoveryTask?.(task);
     this.options.logger.info(
       {
         sessionId,
