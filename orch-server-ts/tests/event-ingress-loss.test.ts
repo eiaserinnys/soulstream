@@ -209,6 +209,27 @@ describe("retrying failure record after a successful commit", () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
+  it("deletes a retrying record written during the same ingress once the event commits", async () => {
+    const store = new FileEventIngressDeadLetterStore(directory);
+    let appendAttempts = 0;
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) return [GATE_ROW];
+      if (text.includes("SELECT event_append")) {
+        appendAttempts += 1;
+        if (appendAttempts === 1) throw new Error("event append failed once");
+        return [{ event_id: 41 }];
+      }
+      return [];
+    });
+
+    const results = await repositoryWith(store, sql).commitBatch("node-a", batchOf(plain()));
+
+    expect(appendAttempts).toBe(2);
+    expect(results).toEqual([expect.objectContaining({ outcome: "committed" })]);
+    expect(await readdir(directory)).toEqual([]);
+  });
+
   it("keeps a dead_lettered record", async () => {
     const store = new FileEventIngressDeadLetterStore(directory);
     for (let i = 0; i < 3; i += 1) {

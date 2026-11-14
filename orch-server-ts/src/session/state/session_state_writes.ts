@@ -62,7 +62,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:1595",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 163 },
+      { file: "src/node/event_session_effect_applier.ts", line: 196 },
     ],
     note: "워크트리 게이트 뒤 실행 등록과 상태를 쓴다.",
   },
@@ -71,7 +71,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:4170",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 74 },
+      { file: "src/node/event_session_effect_applier.ts", line: 77 },
     ],
     note: "워크트리 게이트 뒤 상태와 검수 칸을 쓴다.",
   },
@@ -80,7 +80,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:1736",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 221 },
+      { file: "src/node/event_session_effect_applier.ts", line: 254 },
     ],
     note: "종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다.",
   },

@@ -193,6 +193,8 @@ export class EventIngressRepository {
           if (decision.deadLetter) {
             results[item.index] = deadLetterResult(item.envelope, decision.deadLetter);
           } else {
+            // 이 수신 안에서 새로 쓴 재시도 중 기록도 커밋되면 지운다.
+            retryingRecords.add(item.index);
             retry.push({
               ...item,
               failureCount: decision.failureCount,
