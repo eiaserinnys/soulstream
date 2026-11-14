@@ -263,8 +263,17 @@ function composeBindings(args: {
   const seen = new Map<string, boolean>();
   const push = (binding: MountBinding): void => addBinding(bindings, seen, binding);
 
-  // worktree가 없을 때만 workspace를 RO로 고정한다(스펙 §8). worktree RW bind는
-  // workspace RO bind 뒤에 두어 부모 RO가 자식 RW를 덮지 않게 한다.
+  // 호스트 워크스페이스 루트는 워크트리 유무와 상관없이 RO로 고정한다(스펙 §8).
+  // 워크트리 턴의 workspaceReal은 워크트리 경로라 그것을 RO로 쓰면 아래 RW bind와
+  // 같은 목적지에서 충돌한다. worktree RW bind는 이 RO bind 뒤에 두어 부모 RO가
+  // 자식 RW를 덮지 않게 한다.
+  push({
+    source: args.hostWorkspaceReal,
+    destination: args.hostWorkspaceReal,
+    writable: false,
+  });
+  // 워크트리가 없을 때의 workspaceReal RO bind는 그대로 둔다. 호스트 루트와 같은
+  // 목적지면 addBinding이 하나만 남긴다.
   if (args.worktrees.length === 0) {
     push({
       source: args.workspaceReal,
