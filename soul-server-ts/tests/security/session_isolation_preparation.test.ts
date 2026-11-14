@@ -260,6 +260,9 @@ describe("prepareIsolationPlan", () => {
         testDatabases: [{ nodeId: "node-a", hostPort: 55432, sandboxPort: 15432 }],
       }),
     });
+    // 워크트리 턴의 실제 배선: agent.workspace_dir는 워크트리 경로로 치환되고,
+    // hostWorkspaceRoot는 치환 전 프로필 경로로 남는다.
+    fixture.input.workspaceDir = fixture.worktree;
 
     const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
 
@@ -280,7 +283,7 @@ describe("prepareIsolationPlan", () => {
       enabled: true,
       sessionId: "s1",
       backend: "codex",
-      workspaceDir: fixture.workspace,
+      workspaceDir: fixture.worktree,
       scratchWorkspaceDir: join(fixture.workspace, ".local"),
       sandboxDirectory: sandbox,
       sessionWorktreeRoot,
@@ -301,11 +304,19 @@ describe("prepareIsolationPlan", () => {
     }
 
     // 워크트리와 session worktree root, 두 .local 디렉터리, sandbox, 캐시는 RW.
-    // worktree가 있으면 workspace RO bind를 두지 않아 부모가 자식 RW를 덮지 않는다.
-    expect(bindingOf(prepared.spec.bindings, fixture.workspace)).toBeUndefined();
+    // 워크트리가 있어도 호스트 워크스페이스 루트는 RO bind다. 워크트리 턴의
+    // workspaceDir는 워크트리 경로라 그것을 쓰면 같은 목적지에서 RO와 RW가 겹친다.
+    expect(bindingOf(prepared.spec.bindings, fixture.workspace)).toMatchObject({
+      writable: false,
+    });
     expect(bindingOf(prepared.spec.bindings, fixture.worktree)).toMatchObject({
       writable: true,
     });
+    // 부모 workspace RO bind가 자식 워크트리 RW bind보다 먼저 와야 한다.
+    const destinations = prepared.spec.bindings.map((binding) => binding.destination);
+    expect(destinations.indexOf(fixture.workspace)).toBeLessThan(
+      destinations.indexOf(fixture.worktree),
+    );
     expect(bindingOf(prepared.spec.bindings, sessionWorktreeRoot)).toMatchObject({
       writable: true,
     });
