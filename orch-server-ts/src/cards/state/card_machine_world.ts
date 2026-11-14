@@ -24,6 +24,7 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  if(f.reply===true&&f.hasMode===false)return false;
  if(['owner','ownerAuthor'].includes(event.actor)&&v.assignee!=='session')return false;
  if(f.claim===true&&(v.assignee!=='agent'||!['author','otherAgent'].includes(event.actor)))return false;
+ if(f.supervises===true&&(!['owner','ownerAuthor','author','otherAgent'].includes(event.actor)||statusLeaf(v)!=='review'||f.target!=='done'))return false;
  if(c==='PATCH_CARD_CONTROL'){
  if(f.hasAssignment===false&&f.assignmentChanged===true)return false;
  if(f.hasAssignment===true&&f.assigneeInput!==v.assignee&&f.assignmentChanged!==true)return false;

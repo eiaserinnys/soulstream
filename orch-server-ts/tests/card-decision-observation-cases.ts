@@ -31,7 +31,7 @@ export async function collectAdditionalObservations(world: CardMachineWorld) {
   await cards.patchCard({ ...human, cardId, assignee: null });
   step = 'extra-09: await cards.setCardStatus';
   await cards.setCardStatus({ ...pas, cardId, status: 'on_hold' });
-  // A PAS is an ordinary agent session: no exception for another session's card.
+  // 감독 세션의 완료 예외는 그 카드를 감독하는 영구 세션의 검수 대기→완료에만 적용된다. 여기는 감독 관계가 없고 검수 대기도 아니므로 거절된다.
   step = 'extra-10: await world.apply';
   await world.apply('ASSIGN_SESSION');
   step = 'extra-11: await expect';

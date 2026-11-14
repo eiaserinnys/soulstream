@@ -12,6 +12,7 @@ import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
+import { readCardBoardSessions } from "../session/card_board_connections.js";
 import type { AppendReportTimeline } from "../session/report_timeline_publisher.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
@@ -309,8 +310,11 @@ export class CardControlPlaneService {
       wake_at:wakeAt?.toISOString() ?? null,waiting_for:waitingFor,
     },async (sql,card,eventId,payload) => {
       const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
+      // 감독 판정은 카드가 검수 대기이고 목표가 완료이며 agent 세션이 부를 때만 읽는다.
+      const supervises=card.status==='review'&&params.status==='done'&&params.actorKind==='agent'&&params.actorSessionId
+        ?(await readCardBoardSessions(sql,card.id)).has(params.actorSessionId):false;
       const {writes}=await this.humanDecision(sql,card,{...params,type:'SET_STATUS',wakeAt:wakeAt?.toISOString(),waitingFor:waitingFor??undefined},params,eventId,[],
-        humanCardEvidence(candidates,params.actorSessionId,false),{lazy:{'formatted.verification':()=>verificationWaitNow(waitingFor!,wakeAt!,new Date(),params.actorSessionId)}});
+        {...humanCardEvidence(candidates,params.actorSessionId,false),supervises},{lazy:{'formatted.verification':()=>verificationWaitNow(waitingFor!,wakeAt!,new Date(),params.actorSessionId)}});
       if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });

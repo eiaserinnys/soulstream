@@ -939,7 +939,7 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | 명령 | 전이 설명 | 운영 출처 |
 | :-- | :-- | :-- |
 | CREATE | queue 입력에 따라 todo 또는 queued로 만들고 전달한 담당을 기록한다. 새 카드는 활성 상태이며 queued이면 새 대기열 순서 키를 쓴다. | cards/card_control_plane_service.ts#createCard<br>cards/card_control_plane_service.ts#createCardTx<br>cards/card_control_plane_service.ts#createCardMutation |
-| SET_STATUS | agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
+| SET_STATUS | agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 검수 대기 카드는 그 카드를 감독하는 영구 세션도 완료로 옮길 수 있다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
 | REQUEST_REVIEW | 항목이 있으면 ask가 필요하며, agent는 현재 담당이거나 담당 확보 후보여야 한다. review로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 ask가 있으면 검수 요청 상황판을 쓴다. | cards/card_control_plane_service.ts#requestCardReview |
 | HUMAN_INPUT | 보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다. | cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput |
 | ASK_QUESTION | 다른 세션 담당 여부를 확인한다. 새 질문이면 질문 행을 추가하고 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. question_id가 있으면 같은 카드의 열린 질문만 제자리에서 고치고 카드 상태와 예약은 바꾸지 않는다. | cards/card_control_plane_service.ts#askQuestion |
@@ -1024,7 +1024,7 @@ needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 �
 | 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 0 | 없음 |
 | 질문을 올릴 수 있는 세션은 철회할 수 있다 | 0 | 없음 |
 | 짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다 | 0 | 없음 |
-| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 195 | PAS_APPEARS → {"type":"CREATE","actor":"human","facts":{"queued":false,"assigneeInput":"none"}} → {"type":"SET_STATUS","actor":"human","facts":{"target":"question","claim":false,"wait":"missing"}} → ACK_CARD |
+| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 195 | PAS_APPEARS → {"type":"CREATE","actor":"human","facts":{"queued":false,"assigneeInput":"none"}} → {"type":"SET_STATUS","actor":"human","facts":{"target":"question","claim":false,"supervises":false,"wait":"missing"}} → ACK_CARD |
 | 질문 제자리 고침, 되묻기, 덧붙이기와 질문 답은 열린 질문 수와 카드 상태를 바꾸지 않는다 | 0 | 없음 |
 | 선택 답과 글 답은 같은 마지막 질문 재개 규칙을 쓴다 | 0 | 없음 |
 

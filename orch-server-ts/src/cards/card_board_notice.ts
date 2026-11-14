@@ -39,6 +39,9 @@ export function buildCardReviewNotice(card: NoticeCard & Pick<CardRow, "now" | "
   return `${CARD_NOTICE_TAGS[2]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})가 검수 대기가 됐습니다. 볼 것: ${card.now?.ask || card.now?.text || "없음"}. 확인 항목: ${items.length ? items.map(item => `${item.id}. ${item.title}(${itemStateLabels[item.state]})`).join(", ") : "없음"}.`;
 }
 
-export function buildCardDoneNotice(card: NoticeCard & Pick<CardRow, "completed_kind">): string {
-  return `${CARD_NOTICE_TAGS[3]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})가 완료됐습니다. 완료한 쪽: ${card.completed_kind === "user" ? "사람" : card.completed_kind === "agent" ? "담당 세션" : "시스템"}.`;
+export function buildCardDoneNotice(card: NoticeCard & Pick<CardRow, "completed_kind" | "completed_session_id" | "assignee_session_id">): string {
+  const completedBy = card.completed_kind === "user" ? "사람"
+    : card.completed_kind === "agent" ? card.completed_session_id !== card.assignee_session_id ? "감독 세션" : "담당 세션"
+    : "시스템";
+  return `${CARD_NOTICE_TAGS[3]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})가 완료됐습니다. 완료한 쪽: ${completedBy}.`;
 }

@@ -69,7 +69,7 @@
       "example": [
         "PAS_APPEARS",
         "{\"type\":\"CREATE\",\"actor\":\"human\",\"facts\":{\"queued\":false,\"assigneeInput\":\"none\"}}",
-        "{\"type\":\"SET_STATUS\",\"actor\":\"human\",\"facts\":{\"target\":\"question\",\"claim\":false,\"wait\":\"missing\"}}",
+        "{\"type\":\"SET_STATUS\",\"actor\":\"human\",\"facts\":{\"target\":\"question\",\"claim\":false,\"supervises\":false,\"wait\":\"missing\"}}",
         "ACK_CARD"
       ],
       "discrepancies": []
