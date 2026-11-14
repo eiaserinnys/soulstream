@@ -14,6 +14,7 @@ import { resolveGenerationState } from "./persistent_generation_state.js";
 
 import type {
   ActiveGenerationRollover,
+  PersistentGenerationBootstrap,
   PersistentGenerationRolloverFailure,
   Task,
 } from "./task_models.js";
@@ -209,6 +210,7 @@ export async function commitStart(
   task: Task,
   persistence: EventPersistence,
   sessionMutations: Pick<SessionMutationHost, "setModelSelection">,
+  priceVersion: string | null = null,
 ): Promise<void> {
   const active = task.activeGenerationRollover;
   const current = task.persistentGeneration;
@@ -221,6 +223,10 @@ export async function commitStart(
 
   const applyingState = {
     ...current,
+    bootstrap: current.bootstrap?.generation === active.number
+      && current.bootstrap.modelPreset === (task.modelPreset ?? "")
+      && current.bootstrap.model === (task.model ?? "")
+      ? current.bootstrap : collectingBootstrap(task, active, priceVersion),
     pending: {
       ...pending,
       requestedAt: active.requestedAt,
@@ -262,7 +268,6 @@ export async function publishStarted(
   task: Task,
   checkpoint: PersistentCheckpointStats,
   persistence: EventPersistence,
-  priceVersion: string | null = null,
 ): Promise<void> {
   const active = task.activeGenerationRollover;
   if (!active) return;
@@ -272,29 +277,8 @@ export async function publishStarted(
     throw new Error("Persistent generation model backends are not resolved");
   }
   const current = task.persistentGeneration ?? { number: active.number };
-  if (current.bootstrap?.generation !== active.number
-    || current.bootstrap.modelPreset !== (task.modelPreset ?? "")
-    || current.bootstrap.model !== (task.model ?? "")) {
-    const next = {
-      ...current,
-      bootstrap: {
-        generation: active.number, backendSessionId: null, modelPreset: task.modelPreset ?? "",
-        model: task.model ?? "", contextReset: active.resetContext === true,
-        status: "collecting" as const, firstCall: null, firstTurnContextTokens: null,
-        initInputTokens: null, initCachedTokens: null, initOutputTokens: null,
-        initReasoningTokens: null, modelCallCount: null, growthTokens: null, growthSamples: null,
-        startedAt: new Date().toISOString(), completedAt: null, sourceCompleteEventId: null, priceVersion,
-      },
-    };
-    const entry = buildPersistentGenerationMetadataEntry(next);
-    const id = await persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
-      replaceExistingType: "persistent_generation", waitForAck: true,
-      semanticDedupeKey: `generation_bootstrap_start:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
-      ...(task.executionRegistration ? { registrationId: task.executionRegistration.registrationId } : {}),
-    });
-    task.metadata = replacePersistentGenerationMetadata(task, entry);
-    task.persistentGeneration = next;
-    if (id !== null) task.lastEventId = id;
+  if (current.bootstrap?.generation !== active.number) {
+    task.persistentGeneration = { ...current, bootstrap: collectingBootstrap(task, active, null) };
   }
   const event = {
     type: "generation_started",
@@ -330,6 +314,19 @@ export async function publishStarted(
     task.executionRegistration?.registrationId,
   );
   task.lastEventId = eventId;
+}
+
+function collectingBootstrap(
+  task: Task, active: ActiveGenerationRollover, priceVersion: string | null,
+): PersistentGenerationBootstrap {
+  return {
+    generation: active.number, backendSessionId: null, modelPreset: task.modelPreset ?? "",
+    model: task.model ?? "", contextReset: active.resetContext === true,
+    status: "collecting", firstCall: null, firstTurnContextTokens: null,
+    initInputTokens: null, initCachedTokens: null, initOutputTokens: null,
+    initReasoningTokens: null, modelCallCount: null, growthTokens: null, growthSamples: null,
+    startedAt: new Date().toISOString(), completedAt: null, sourceCompleteEventId: null, priceVersion,
+  };
 }
 
 export async function complete(

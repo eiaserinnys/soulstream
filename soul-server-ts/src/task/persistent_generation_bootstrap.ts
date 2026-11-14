@@ -32,7 +32,7 @@ export function captureGenerationBootstrap(
   eventId: number | null,
 ): BootstrapUpdate | undefined {
   const b = task.persistentGeneration?.bootstrap;
-  if (!b || b.status !== "collecting" || b.generation !== identity.generation
+  if (!b || !identity.nativeId || b.status !== "collecting" || b.generation !== identity.generation
     || b.modelPreset !== identity.modelPreset || b.model !== identity.model
     || (b.backendSessionId !== null && b.backendSessionId !== identity.nativeId)) return undefined;
   const payload = event as Record<string, unknown>;

@@ -2053,6 +2053,10 @@ export class TaskExecutor {
    * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
    * currentTurn=null로 reset, codex_adapter.ts:167-168).
    */
+  private resolveModelPriceVersion(_task: Task): string | null {
+    return this.modelCatalog?.snapshot().price_snapshot?.price_version ?? null;
+  }
+
   private async _consumeEventStream(
     task: Task,
     runner: TaskRunnerRuntime,
@@ -2063,7 +2067,7 @@ export class TaskExecutor {
       if (!this.sessionMutations) {
         throw new Error("Session mutation host is required for persistent generation rollover");
       }
-      await commitGenerationStart(task, this.persistence, this.sessionMutations);
+      await commitGenerationStart(task, this.persistence, this.sessionMutations, this.resolveModelPriceVersion(task));
     }
     // 세대 넘김 창(넘김 기록부터 첫 턴까지) 안에서 멈춤이나 삭제가 왔으면 넘김 시작을 알리지
     // 않고 첫 턴도 보내지 않는다. 꺼낸 지시는 줄에 되돌려 다음 시작이 받게 한다. 넘김은
@@ -2081,7 +2085,6 @@ export class TaskExecutor {
         task,
         initialTurnInput.generationCheckpointStats,
         this.persistence,
-        this.modelCatalog?.snapshot().price_snapshot?.price_version ?? null,
       );
     }
     const endedTurnReceipts: TaskDeliveryTurnReceipt[] = [];
@@ -2166,11 +2169,22 @@ export class TaskExecutor {
         modelPreset: task.modelPreset ?? "",
         model: task.model ?? "",
       };
-      const saveBootstrap = async (eventId: number | null): Promise<void> => {
+      const willCompleteGeneration = (): boolean => Boolean(
+        turnInput.generationRollover && task.activeGenerationRollover
+        && task.codexThreadId && task.codexThreadId !== task.activeGenerationRollover.fromBackendSessionId,
+      );
+      const saveBootstrap = async (eventId: number | null, combineWithRollover: boolean): Promise<void> => {
         if (!terminalEvent) return;
         const update = captureGenerationBootstrap(task, terminalEvent, identity,
           contextRecovery.latestContextUsage?.usedTokens, eventId);
-        if (update) await persistGenerationBootstrap(task, update, this.persistence);
+        if (update && combineWithRollover && task.persistentGeneration) {
+          task.persistentGeneration = {
+            ...task.persistentGeneration, bootstrap: update.bootstrap,
+            ...(update.firstCall ? { firstCall: update.firstCall } : {}),
+          };
+        } else if (update) {
+          await persistGenerationBootstrap(task, update, this.persistence);
+        }
         if (task.persistent === true && update?.bootstrap.contextReset !== true) {
           await persistGenerationGrowth(task, terminalEvent, identity, eventId, this.persistence);
         }
@@ -2235,29 +2249,29 @@ export class TaskExecutor {
           }
         } catch (err) {
           await task.interruptRequest;
+          const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
+            task,
+            err,
+            currentTurnInterventions,
+          );
+          const transition = disposition === "continue_with_accepted_successor"
+            ? resolveTurnLoopTransition(task, agent) : undefined;
+          const acceptedMidTurnSuccessor = transition?.kind === "continue";
           if (terminalEvent) {
             const acknowledgedId = runner.eventPersistence === "runner"
               ? await runner.dispatcher.waitForSessionAck()
               : await this.persistence.waitForSessionAck(task.agentSessionId);
             const eventId = await resolveTerminalEventId(acknowledgedId);
             if (eventId !== null) task.lastEventId = Math.max(task.lastEventId, eventId);
-            await saveBootstrap(eventId);
+            await saveBootstrap(eventId, !acceptedMidTurnSuccessor && willCompleteGeneration());
           }
-          const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
-            task,
-            err,
-            currentTurnInterventions,
-          );
-          if (disposition === "continue_with_accepted_successor") {
-            const transition = resolveTurnLoopTransition(task, agent);
-            if (transition.kind === "continue") {
-              turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-                task,
-                agent,
-                transition.interventions,
-              );
-              continue;
-            }
+          if (transition?.kind === "continue") {
+            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+              task,
+              agent,
+              transition.interventions,
+            );
+            continue;
           }
           if (turnInput.generationRollover) {
             await completeGenerationRollover(task, this.persistence);
@@ -2271,7 +2285,7 @@ export class TaskExecutor {
       if (terminalEventId !== null) {
         task.lastEventId = Math.max(task.lastEventId, terminalEventId);
       }
-      await saveBootstrap(terminalEventId);
+      await saveBootstrap(terminalEventId, willCompleteGeneration());
       await this.setClaudeContextUsage(
         task,
         contextRecovery.compactCompleted
