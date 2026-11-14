@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import type {
@@ -178,6 +179,23 @@ export async function prepareGitView(
         destination: join(commonDirectory, "packed-refs"),
         writable: false,
       });
+    }
+
+    // 기본 체크아웃의 색인. 상자 안 git이 호스트 색인을 읽기 전용으로 본다.
+    // 호스트에 index가 없으면 바인딩을 만들지 않고, bwrap이 파일 bind의
+    // 목적지에 남긴 0바이트 자리 파일을 지운다. 0바이트 index는 git을
+    // fatal로 멈춘다.
+    const index = join(commonDirectoryReal, "index");
+    const indexFact = await ports.lstatPath(index);
+    if (indexFact?.kind === "file") {
+      const source = await ports.resolveRealPath(index);
+      bindings.push({
+        source,
+        destination: join(commonDirectory, "index"),
+        writable: false,
+      });
+    } else {
+      await rm(join(viewRootReal, "index"), { force: true });
     }
 
     // 세션 전용 외곽 값. upstream 설정은 이 사본에만 저장된다.
