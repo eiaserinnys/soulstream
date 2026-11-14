@@ -79,7 +79,7 @@ describe("SessionDB Claude transcript mirror", () => {
     expect(call.values[0]).toBe("project-a");
     expect(call.values[1]).toBe("claude-sess-1");
     expect(call.values[2]).toBeNull();
-    expect(JSON.parse(call.values[3] as string)).toEqual([
+    expect(call.values[3]).toEqual([
       { type: "user", uuid: "u1", message: { content: "hi" } },
       { type: "assistant", uuid: "a1", message: { content: "hello" } },
     ]);
