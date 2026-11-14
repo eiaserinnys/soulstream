@@ -25,6 +25,7 @@ import {
 import {
   SessionCommandRouteError,
   SessionCommandRouter,
+  type SessionOwnerNodeIdLookup,
 } from "./session_command_router.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import {
@@ -49,6 +50,8 @@ export type SessionCommandRouteOptions = {
   bridge: SessionCommandTransportBridge;
   timeoutMs?: number;
   createSessionReconcileTimeoutMs?: number;
+  /** One-shot durable owner lookup after a lost create ack (card #1326). */
+  findSessionOwnerNodeId?: SessionOwnerNodeIdLookup;
   createSessionLifecycle?: SessionCreateLifecycle;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">
     & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
@@ -284,39 +287,26 @@ export async function executeCreateSessionRoute(
       try {
         result = await options.bridge.sendPendingCommand(routed);
       } catch (error) {
-        if (error instanceof PendingNodeCommandTimeoutError) {
-          try {
-            const reconciled = await options.router.waitForCreatedSession(
-              payload.agentSessionId,
-              routed.node.nodeId,
-              { timeoutMs: options.createSessionReconcileTimeoutMs },
-            );
-            if (reconciled) {
-              logger.warn(
-                {
-                  requestId: error.requestId,
-                  agentSessionId: payload.agentSessionId,
-                  nodeId: routed.node.nodeId,
-                },
-                "create_session command timed out but the node session event was observed",
-              );
-              return { status: 201, body: {
-                agentSessionId: payload.agentSessionId,
-                nodeId: routed.node.nodeId,
-                prompt,
-              } };
-            }
-          } catch (reconcileError) {
-            logger.warn(
-              {
-                err: reconcileError,
-                requestId: error.requestId,
-                agentSessionId: payload.agentSessionId,
-                nodeId: routed.node.nodeId,
-              },
-              "create_session timeout reconciliation failed",
-            );
-          }
+        const outcome = await observeCreateAckLoss(
+          options,
+          logger,
+          error,
+          payload.agentSessionId,
+          routed.node.nodeId,
+        );
+        if (outcome === "created") {
+          return { status: 201, body: {
+            agentSessionId: payload.agentSessionId,
+            nodeId: routed.node.nodeId,
+            prompt,
+          } };
+        }
+        if (outcome === "not_created" || outcome === "unknown") {
+          return withCreateOutcome(
+            createMappedError(error),
+            payload.agentSessionId,
+            outcome,
+          );
         }
         throw error;
       }
@@ -342,6 +332,106 @@ export async function executeCreateSessionRoute(
     } catch (error) {
       return createMappedError(error);
     }
+}
+
+type CreateAckLossOutcome =
+  | "created"
+  | "not_created"
+  | "unknown"
+  | "not_applicable";
+
+/**
+ * A create whose ack never reached us (node command timeout, or a disconnect
+ * rejecting the pending command) may still have created the session on the
+ * node. Reuse the existing reconcile wait, then read the durable session row
+ * once so the caller receives an outcome instead of having to poll
+ * list_sessions (card #1326).
+ */
+async function observeCreateAckLoss(
+  options: SessionCommandRouteOptions,
+  logger: Pick<import("fastify").FastifyRequest["log"], "warn">,
+  error: unknown,
+  agentSessionId: string,
+  nodeId: string,
+): Promise<CreateAckLossOutcome> {
+  const timeoutError =
+    error instanceof PendingNodeCommandTimeoutError ? error : undefined;
+  const disconnectError = isDisconnectRejection(error) ? error : undefined;
+  if (timeoutError === undefined && disconnectError === undefined) {
+    return "not_applicable";
+  }
+  const requestId = timeoutError?.requestId ?? disconnectError?.requestId;
+
+  try {
+    const reconciled = await options.router.waitForCreatedSession(
+      agentSessionId,
+      nodeId,
+      { timeoutMs: options.createSessionReconcileTimeoutMs },
+    );
+    if (reconciled) {
+      logger.warn(
+        { requestId, agentSessionId, nodeId },
+        "create_session command timed out but the node session event was observed",
+      );
+      return "created";
+    }
+  } catch (reconcileError) {
+    logger.warn(
+      { err: reconcileError, requestId, agentSessionId, nodeId },
+      "create_session timeout reconciliation failed",
+    );
+  }
+
+  const findOwner = options.findSessionOwnerNodeId;
+  if (findOwner === undefined) return "unknown";
+  try {
+    const ownerNodeId = await findOwner(agentSessionId);
+    if (ownerNodeId === nodeId) {
+      logger.warn(
+        { requestId, agentSessionId, nodeId },
+        "create_session command timed out but the durable session row belongs to the node",
+      );
+      return "created";
+    }
+    // A row owned by another node leaves this node's create unconfirmed.
+    return ownerNodeId === null ? "not_created" : "unknown";
+  } catch (lookupError) {
+    logger.warn(
+      { err: lookupError, requestId, agentSessionId, nodeId },
+      "create_session outcome lookup failed",
+    );
+    return "unknown";
+  }
+}
+
+/** A disconnect rejects pending commands without a node response (registry.rejectAll). */
+function isDisconnectRejection(
+  error: unknown,
+): error is PendingNodeCommandRejectedError {
+  return (
+    error instanceof PendingNodeCommandRejectedError
+    && error.response === undefined
+  );
+}
+
+function withCreateOutcome(
+  response: SessionCreateRouteResponse,
+  agentSessionId: string,
+  outcome: "not_created" | "unknown",
+): SessionCreateRouteResponse {
+  const error = response.body.error;
+  if (!isJsonObject(error)) return response;
+  return {
+    status: response.status,
+    body: {
+      ...response.body,
+      error: {
+        ...error,
+        agentSessionId,
+        ...(outcome === "not_created" ? { created: false } : {}),
+      },
+    },
+  };
 }
 
 async function prepareCreateSession(

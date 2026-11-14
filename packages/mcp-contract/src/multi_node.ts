@@ -63,7 +63,7 @@ export const clusterTools = {
         includeTextDiff: z.boolean().optional(),
       },
     } },
-  create_remote_agent_session: { name: "create_remote_agent_session", audience: "all", timeoutMs: 35000, config: {
+  create_remote_agent_session: { name: "create_remote_agent_session", audience: "all", timeoutMs: 45000, config: {
       description:
         "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다.",
       inputSchema: {
