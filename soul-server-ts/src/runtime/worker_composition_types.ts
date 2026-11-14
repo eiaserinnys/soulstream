@@ -18,6 +18,7 @@ import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
 import type { RunnerRecoveryStorage } from "../runner/runner_recovery_storage.js";
 import type { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
+import type { CompletionSettlementWorker } from "../task/completion_settlement_worker.js";
 import type { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { ServerInstance } from "../server.js";
@@ -75,6 +76,8 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   eventOutboxPump: EventOutboxPump;
   eventOutboxPumpMux: EventOutboxPumpMux;
   runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
+  /** 완료 정산 미결 훑기. 완료 전달 v2 플래그와 무관하게 항상 있다. */
+  completionSettlementWorker: CompletionSettlementWorker;
   runnerRecoveryStorage?: RunnerRecoveryStorage;
   runnerOrphanReaper?: RunnerOrphanReaper;
   runnerStateHostOwnership?: RunnerStateHostLock;

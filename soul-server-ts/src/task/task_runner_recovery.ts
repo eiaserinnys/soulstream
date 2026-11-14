@@ -47,8 +47,13 @@ export class TaskRunnerRecovery {
     task.executionPromise = undefined;
     task.error = message;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "reaped", message);
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
-    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true, { settleCompletion: true });
+    try {
+      await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    } finally {
+      // 도중에 던져도 미결은 남는다. 정상 길의 쥠만 풀어 훑기가 이어 받게 한다.
+      this.deps.lifecycleTransition.releaseSettlementHold(persistence);
+    }
   }
 
   async projectClosed(task: Task, detail: string): Promise<boolean> {
@@ -66,8 +71,13 @@ export class TaskRunnerRecovery {
     }
     task.executionPromise = undefined;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "closed", detail);
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
-    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true, { settleCompletion: true });
+    try {
+      await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    } finally {
+      // 도중에 던져도 미결은 남는다. 정상 길의 쥠만 풀어 훑기가 이어 받게 한다.
+      this.deps.lifecycleTransition.releaseSettlementHold(persistence);
+    }
     return persistence.terminalTransitionApplied;
   }
 

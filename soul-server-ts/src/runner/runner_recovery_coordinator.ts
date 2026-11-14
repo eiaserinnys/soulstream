@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
+import { isActiveTaskStatus, isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
   classifyRunnerRegistration,
@@ -630,6 +630,7 @@ export class RunnerRecoveryCoordinator {
     }
     await this.registrationControl.retireTerminal(registration);
     task.rejectedTerminationRegistrationId = undefined;
+    this.forgetIfOrphaned(task);
     this.options.logger.info(
       {
         sessionId: registration.config.sessionId,
@@ -662,10 +663,32 @@ export class RunnerRecoveryCoordinator {
     if (!registration || registration.retiredAt) {
       if (task.rejectedTerminationRegistrationId === registrationId) {
         task.rejectedTerminationRegistrationId = undefined;
+        this.forgetIfOrphaned(task);
       }
       return;
     }
     await this.retireRejectedTermination(registration, task);
+  }
+
+  /**
+   * 은퇴가 앞서 실패해 로컬 소유 정리가 task를 붙들어 둔 채 남겼다면, 표시가 지워진 지금 그
+   * task를 잊는다. 활성인데 러너도 등록도 실행도 시동 장벽도 없는 task는 아무도 움직이지 않는
+   * 유령이다. 시동 장벽(executionActivation)이 서 있으면 재개나 새 실행이 러너 없이 시작하는
+   * 중이므로 잊지 않는다.
+   */
+  private forgetIfOrphaned(task: Task): void {
+    if (
+      !isActiveTaskStatus(task.status)
+      || task.runner !== undefined
+      || task.executionRegistration !== undefined
+      || task.executionPromise !== undefined
+      || task.executionActivation !== undefined
+    ) return;
+    this.options.taskManager.forgetRunnerRecoveryTask?.(task.agentSessionId);
+    this.options.logger.info(
+      { sessionId: task.agentSessionId },
+      "task forgotten: it was kept only for a rejected terminal registration that is now retired",
+    );
   }
 
   private async recoverClosed(

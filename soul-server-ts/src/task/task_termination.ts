@@ -85,6 +85,16 @@ function terminalDedupeKey(task: Task): string {
   return `session_terminal:${task.agentSessionId}:${task.terminalDedupeIdentity}`;
 }
 
+/**
+ * 이 task의 종료가 이미 쓴 의미 중복 키다. 종료 사건을 한 번도 만들지 않았으면 undefined다.
+ * 완료 정산 미결의 신원이므로 같은 값으로만 가리킨다.
+ */
+export function terminalDedupeKeyOf(task: Task): string | undefined {
+  return task.terminalDedupeIdentity === undefined
+    ? undefined
+    : `session_terminal:${task.agentSessionId}:${task.terminalDedupeIdentity}`;
+}
+
 function resolveTerminationReason(task: Task): TerminationReason {
   if (task.status === "completed") return "completed_ok";
   if (task.pendingTerminationHint) return task.pendingTerminationHint;

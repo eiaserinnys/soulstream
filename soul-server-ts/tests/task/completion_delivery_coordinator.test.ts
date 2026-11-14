@@ -141,6 +141,8 @@ describe("CompletionDeliveryCoordinator", () => {
     const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
       retryable: true,
     });
+    // 등록 전에 같은 신원의 줄이 있는지 먼저 읽는다. 아직 없다.
+    repository.get.mockResolvedValueOnce(null);
     repository.register
       .mockRejectedValueOnce(retryableFailure)
       .mockResolvedValueOnce({ row: pendingRow(), inserted: true, conflict: false });
@@ -198,6 +200,7 @@ describe("CompletionDeliveryCoordinator", () => {
     });
     const repository = repositoryFixture(row);
     repository.get
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(row)
       .mockResolvedValueOnce(queued);
     const dispatch = vi.fn().mockRejectedValue(
