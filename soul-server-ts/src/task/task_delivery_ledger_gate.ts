@@ -39,9 +39,6 @@ export type DeliveryLedgerAdmission =
   | { kind: "admitted"; deliveryId: string; row: SessionDeliveryRow };
 
 const RESERVATION_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
-const FORGOTTEN_TASK_RETURNED_REASON = "task_forgotten_before_dispatch";
-/** 지시를 러너에 넘기는 일이 아직 끝나지 않은 줄 상태다. */
-const HANDOFF_OPEN_STATES: ReadonlySet<string> = new Set(["claimed", "dispatching", "queued"]);
 
 type LedgerRepository = Pick<
   SessionDeliveryHostClient,
@@ -427,49 +424,6 @@ export class TaskDeliveryLedgerGate {
       undefined,
       reason,
     );
-  }
-
-  /**
-   * 잊힌 task의 메모리 큐에 남은 지시를 노드 재시작을 기다리지 않고 장부에서 정리한다
-   * (설계 약속 13: 받은 지시는 적용, 반환, 모름 가운데 하나로 끝난다).
-   *
-   * 러너에 넘기려고 시작한 적이 없는 줄(`dispatching_at` 없음)은 서버가 다시 띄울 수 있는
-   * 대기 상태로 돌려준다. 넘기려 한 적이 있거나 시도 번호가 없어 가를 수 없는 줄은 모름으로
-   * 둔다. 시동 복구가 같은 줄에 쓰는 기준과 같다. 이미 끝난 줄과 이 노드의 줄이 아닌 것은
-   * 건드리지 않는다. 한 줄이 실패해도 나머지는 정리하고, 실패는 한꺼번에 던진다.
-   */
-  async settleQueuedOfForgottenTask(
-    messages: readonly InterventionMessage[],
-  ): Promise<void> {
-    if (!this.enabled) return;
-    const repository = this.requireRepository();
-    const failures: unknown[] = [];
-    for (const message of messages) {
-      if (!isControlledMessage(message) || !message.deliveryId) continue;
-      try {
-        const row = await repository.get(message.deliveryId);
-        if (!row || !HANDOFF_OPEN_STATES.has(row.state)) continue;
-        if (!row.dispatching_at && row.attempt_token) {
-          await repository.retryDeliveryAttempt(
-            row.delivery_id,
-            row.attempt_token,
-            FORGOTTEN_TASK_RETURNED_REASON,
-            0,
-          );
-        } else {
-          await repository.markUncertain(
-            row.delivery_id,
-            row.attempt_token ?? undefined,
-            INSTRUCTION_UNCERTAIN_REASON,
-          );
-        }
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    if (failures.length > 0) {
-      throw new AggregateError(failures, "queued instruction settlement failed for a forgotten task");
-    }
   }
 
   async recordPendingSuperseded(

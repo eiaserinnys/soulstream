@@ -5,6 +5,7 @@ import {
   controlCommandPolicy,
   type ControlCommandFamily,
 } from "./control_command_inventory.js";
+import { completeDurableWork } from "./control_inbox_complete.js";
 import type {
   ControlInboxAdmission,
   ControlInboxResult,
@@ -20,8 +21,6 @@ const ACK_P99_GATE_MS = 250;
 const ACK_MAX_GATE_MS = 1_000;
 const HEALTHY_HEARTBEAT_AGE_MS = 250;
 const AVAILABLE_HEARTBEAT_AGE_MS = 1_000;
-// SQLite completion that fails (a busy database) is tried again a few times before it is reported.
-const COMPLETE_RETRY_DELAYS_MS = [100, 400] as const;
 
 export interface ControlInboxStorage {
   initialize(): {
@@ -277,16 +276,12 @@ export class ControlInboxRuntime {
     if (!runtimeWork) return false;
     this.clearWork(runtimeWork);
     if (runtimeWork.durableWork) {
-      let result: ControlInboxResult;
-      try {
-        result = await this.completeDurable(runtimeWork.durableWork, response);
-      } catch (error) {
-        // 완료를 적지 못한 작업은 아직 끝나지 않은 것으로 되돌려 둔다. 오류는 삼키지 않고 올린다.
-        // 같은 작업 번호로 다시 오는 결과는 이 자리에서 다시 완료되고, 도메인 효과는 반복되지
-        // 않는다(control_channel_service의 활성 작업 중복 막기).
-        this.activeWork.set(workId, runtimeWork);
-        throw error;
-      }
+      // 완료를 못 적으면 작업을 열어 두고 오류를 올린다. 다시 온 결과는 여기서 다시 완료되고 도메인
+      // 효과는 되풀이되지 않는다(control_channel_service의 활성 작업 중복 막기).
+      const { store, schedule } = this;
+      const result = await completeDurableWork({
+        store, schedule, response, work: runtimeWork.durableWork, log: this.options.log,
+      }).catch((error: unknown) => { this.activeWork.set(workId, runtimeWork); throw error; });
       this.options.onDurableCommit?.(workId);
       try {
         await this.sendResult(result);
@@ -305,26 +300,6 @@ export class ControlInboxRuntime {
       { kind: "bounded_result", workId, requestId: runtimeWork.requestId },
     );
     return true;
-  }
-
-  private async completeDurable(
-    work: ControlInboxWork,
-    response: Record<string, unknown>,
-  ): Promise<ControlInboxResult> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return this.store.complete(work, response);
-      } catch (error) {
-        const delayMs = COMPLETE_RETRY_DELAYS_MS[attempt];
-        if (delayMs === undefined) throw error;
-        this.options.log?.("control inbox completion failed; retrying", {
-          requestId: work.requestId,
-          attempt: attempt + 1,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await new Promise<void>((resolve) => this.schedule(resolve, delayMs));
-      }
-    }
   }
 
   async handleDomainFailure(workId: string, error: unknown): Promise<boolean> {

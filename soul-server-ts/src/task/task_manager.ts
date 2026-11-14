@@ -44,6 +44,10 @@ import {
 } from "./task_intervention_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import {
+  settleQueuedOfForgottenTask,
+  type ForgottenQueueLedger,
+} from "./forgotten_task_queue_settlement.js";
 import { SessionNotificationPublisher } from "./task_session_notification.js";
 import { SessionDeliveryNotificationRecovery } from "./session_delivery_notification_recovery.js";
 import { PersistentSessionControl } from "./persistent_session_control.js";
@@ -95,6 +99,8 @@ export class TaskManager {
   private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleRoute: TaskLifecycleRoute;
   private readonly deliveryLedgerGate: TaskDeliveryLedgerGate;
+  /** 배달 장부가 켜져 있을 때만 있다. 잊힌 task의 큐 정리에 쓴다. */
+  private readonly deliveryRepository: ForgottenQueueLedger | undefined;
   private readonly deliveryNotificationRecovery?: SessionDeliveryNotificationRecovery;
   private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
@@ -240,6 +246,7 @@ export class TaskManager {
     const deliveryRepository = deliveryRuntimeV2Enabled
       ? db.sessionDeliveries()
       : undefined;
+    this.deliveryRepository = deliveryRepository;
     this.deliveryLedgerGate = new TaskDeliveryLedgerGate(
       deliveryRuntimeV2Enabled,
       deliveryRepository,
@@ -447,8 +454,8 @@ export class TaskManager {
     }
     this.tasks.delete(task.agentSessionId);
     const queued = task.interventionQueue.splice(0);
-    if (queued.length === 0) return;
-    void this.deliveryLedgerGate.settleQueuedOfForgottenTask(queued).catch((error: unknown) => {
+    if (queued.length === 0 || !this.deliveryRepository) return;
+    void settleQueuedOfForgottenTask(this.deliveryRepository, queued).catch((error: unknown) => {
       this.logger.warn(
         { err: error, sessionId: task.agentSessionId, queued: queued.length },
         "queued instructions of a forgotten task could not be settled in the ledger; node-start recovery still owns them",
