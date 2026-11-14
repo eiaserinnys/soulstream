@@ -18,7 +18,7 @@ function need(command:CardDecisionCommand,stage:ServerEvidenceStage,...condition
  const key=`needs.${command}.${stage}`;decisionGuards[key]=and([fact('evidenceMissing',stage),...conditions]);
  rejections[command]!.push({guard:key,stage});
 }
-function statusRights(command:CardDecisionCommand){reject(command,'statusOwner','statusOwner',and([agent,not(effectiveOwner),not(and([session,not(any('a_human','a_session')),rest]))]));}
+function statusRights(command:CardDecisionCommand){reject(command,'statusOwner','statusOwner',and([agent,not(effectiveOwner),not(and([session,not(any('a_human','a_session')),rest])),not(and([session,inside('s_review'),fact('target','done'),fact('supervises')]))]));}
 statusRights('SET_STATUS');
 reject('SET_STATUS','verificationOwner','verificationOwner',and([fact('target','verification'),not(or([inside('a_session'),and([session,fact('claim')])]))]));
 for(const value of ['missing','empty','tooLong','invalid','past','tooLate'])reject('SET_STATUS',`verification_${value}`,`verification_${value}`,and([fact('target','verification'),fact('wait',value)]));

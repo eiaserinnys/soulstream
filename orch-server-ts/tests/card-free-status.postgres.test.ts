@@ -14,6 +14,7 @@ const key=()=>`free-status-${++sequence}`;
 beforeAll(async()=>{
  h=await createPagePostgresHarness();
  await h.sql`INSERT INTO folders(id,name) VALUES('free','상태')`;
+ await h.sql`ALTER TABLE sessions ADD COLUMN metadata JSONB`;
  await h.sql`INSERT INTO sessions(session_id,status) VALUES('owner','running'),('other','running')`;
  cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
 },60000);
@@ -55,6 +56,25 @@ it.each(['user','agent'] as const)('allows reportless %s transitions with open q
   await cards.answerQuestion({...human,cardId:id,questionId:String(before.questions[0]!.id),answer:'확인',idempotencyKey:key()});
   expect((await cards.getCard(id))!.card.status).toBe('blocked');
  }finally{await app.close();}
+});
+it('lets a supervising persistent session complete a review card and refuses other attempts',async()=>{
+ const metadata=(enabled:boolean)=>h.sql.json([{type:'persistent_session',value:{enabled}}]);
+ await h.sql`INSERT INTO sessions(session_id,status,metadata) VALUES('pas','running',${metadata(true)}),('plain','running',${metadata(false)}),
+  ('owner2','running',NULL),('owner3','running',NULL)`;
+ const created=async(sessionId:string,title:string,assigneeSessionId:string)=>{
+  const id=(await cards.createCard({actorKind:'agent',actorSessionId:sessionId,folderId:'free',title,request:'',assignee:{kind:'session',sessionId:assigneeSessionId}})).operation.target_id;
+  const version=(await cards.getCard(id))!.card.version;
+  await cards.setCardStatus({actorKind:'agent',actorSessionId:assigneeSessionId,cardId:id,status:'review',expectedVersion:version,idempotencyKey:key()});
+  return id;
+ };
+ const supervised=await created('pas','감독 완료','owner');
+ await cards.setCardStatus({actorKind:'agent',actorSessionId:'pas',cardId:supervised,status:'done',expectedVersion:(await cards.getCard(supervised))!.card.version,idempotencyKey:key()});
+ expect((await cards.getCard(supervised))!.card).toMatchObject({status:'done',completed_kind:'agent',completed_session_id:'pas'});
+ await cards.patchCard({...human,cardId:supervised,assignee:null});
+ const other=await created('pas','비감독 완료','owner2');
+ await expect(cards.setCardStatus({actorKind:'agent',actorSessionId:'other',cardId:other,status:'done',expectedVersion:(await cards.getCard(other))!.card.version,idempotencyKey:key()})).rejects.toMatchObject({statusCode:403});
+ const plain=await created('plain','비영구 완료','owner3');
+ await expect(cards.setCardStatus({actorKind:'agent',actorSessionId:'plain',cardId:plain,status:'done',expectedVersion:(await cards.getCard(plain))!.card.version,idempotencyKey:key()})).rejects.toMatchObject({statusCode:403});
 });
 it('keeps assignee authority, CAS and enum integrity for direct status changes',async()=>{
  const made=await cards.createCard({...human,folderId:'free',title:'권한',request:'',assignee:{kind:'session',sessionId:'owner'}});

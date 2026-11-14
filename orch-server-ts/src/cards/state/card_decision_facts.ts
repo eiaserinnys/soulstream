@@ -12,7 +12,7 @@ const admission=admissionResults;
 /** One finite value inventory drives types and world enumeration. Stored regions are excluded. */
 export const CARD_FACT_VALUES={
  CREATE:{queued:flag,assigneeInput:['none','agent','human','session'] as const},
- SET_STATUS:{target:TARGETS,claim:flag,wait},REQUEST_REVIEW:{claim:flag,hasItems:flag,hasAsk:flag},HUMAN_INPUT:{},
+ SET_STATUS:{target:TARGETS,claim:flag,supervises:flag,wait},REQUEST_REVIEW:{claim:flag,hasItems:flag,hasAsk:flag},HUMAN_INPUT:{},
  ASK_QUESTION:{hasCurrentNow:flag,editing:flag,targetQuestion:question},ANSWER_QUESTION:{question,otherOpen:flag},WITHDRAW_QUESTION:{question,otherOpen:flag},
  ADD_COMMENT:{entrance:['direct','followup'] as const,requestedSpoken:flag,claim:flag,reply:flag,hasItems:flag,hasMode:flag,userInput:flag,replyLength:['within','tooLong'] as const,hasItem:flag,itemExists:flag,hasQuestion:flag,targetQuestion:question},
  START_WORK:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.START_WORK] as const,claim:flag,execution:flag,admitted:flag,admissionReceipt:flag,admissionValid:flag},
@@ -39,7 +39,7 @@ export type RemainingCardCommand={type:Exclude<CardDecisionCommand,HumanCardComm
 export type CardCommand=HumanCardCommand|ServerCardCommand|RemainingCardCommand;
 export interface CardDecisionEvidence {
  loaded?:readonly ServerEvidenceStage[];
- claim?:boolean;userInput?:boolean;execution?:boolean;admitted?:boolean;admissionReceipt?:boolean;admissionValid?:boolean;
+ claim?:boolean;supervises?:boolean;userInput?:boolean;execution?:boolean;admitted?:boolean;admissionReceipt?:boolean;admissionValid?:boolean;
  sessionCardId?:string;statusChanged?:boolean;pending?:boolean;policyEnabled?:boolean;admission?:AdmissionResult;
  termination?:boolean;resumeAt?:Date|string|null;ownerState?:string;previousOwnerMatch?:boolean;
 }
@@ -71,7 +71,7 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  const stageMap:Partial<Record<CardDecisionCommand,readonly ServerEvidenceStage[]>>={...CARD_SERVER_EVIDENCE_STAGES,...CARD_REMAINING_EVIDENCE_STAGES};
  const stages=stageMap[command.type];
  const evidenceMissing=stages?.find(stage=>!evidence.loaded?.includes(stage))??'none';
- const all:Record<string,any>={hasOwnerSession:c.assignee_session_id!=null,evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
+ const all:Record<string,any>={hasOwnerSession:c.assignee_session_id!=null,evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,supervises:evidence.supervises===true,wait:waiting,
  hasCurrentNow:c.now!=null,hasItems:(c.items??[]).length>0,hasAsk:command.ask!==undefined,question:!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  editing:command.questionId!==undefined,hasQuestion:command.questionId!==undefined,targetQuestion:!command.questionId?'missing':!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  otherOpen:questions.some(other=>other.id!==command.questionId&&other.answer===null&&other.withdrawn_at===null),

@@ -9,6 +9,24 @@ it('keeps rejected commands in all stored regions', () => {
   expect(result.kind).toBe('reject');
   expect(result.next).toEqual(rowToStateValue(row, []));
 });
+it('lets a supervising persistent session complete a review card only', () => {
+  const review = { ...row, status: 'review' };
+  const command = { type: 'SET_STATUS' as const, status: 'done' as const };
+  const actor = { kind: 'agent', sessionId: 'pas' };
+  const allowed = decideCardTransition(review, [], { supervises: true }, command, actor, 0);
+  expect(allowed.kind).toBe('apply');
+  expect(allowed.next).toMatchObject({ status: { off: 'done' } });
+  const denied = decideCardTransition(review, [], { supervises: false }, command, actor, 0);
+  expect(denied.kind).toBe('reject');
+  if (denied.kind === 'reject') expect(denied.failure.guard).toBe('reject.SET_STATUS.statusOwner');
+});
+it('does not extend the supervising exception past review and done', () => {
+  const actor = { kind: 'agent', sessionId: 'pas' };
+  const toTodo = decideCardTransition({ ...row, status: 'review' }, [], { supervises: true }, { type: 'SET_STATUS', status: 'todo' }, actor, 0);
+  expect(toTodo.kind).toBe('reject');
+  const fromRunning = decideCardTransition(row, [], { supervises: true }, { type: 'SET_STATUS', status: 'done' }, actor, 0);
+  expect(fromRunning.kind).toBe('reject');
+});
 it('changes question and status together in one pure transition', () => {
   const result = decideCardTransition(row, [], {}, { type: 'ASK_QUESTION', text: '확인', options: ['진행'] }, { kind: 'agent', sessionId: 'owner' }, 0);
   expect(result.kind).toBe('apply');

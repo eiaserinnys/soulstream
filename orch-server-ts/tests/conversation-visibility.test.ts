@@ -7,7 +7,7 @@ const notices = [
   buildCardBlockedNotice({...card,blocked_detail:null,blocked_kind:"limit",assignee_session_id:null,node_id:null,assignee_agent_id:null,model_preset:null},null),
   buildCardQuestionNotice(card,"질문?",["예"]),
   buildCardReviewNotice({...card,now:null,items:[]}),
-  buildCardDoneNotice({...card,completed_kind:"user"}),
+  buildCardDoneNotice({...card,completed_kind:"user",completed_session_id:null,assignee_session_id:"owner"}),
 ];
 
 describe("card notice visibility", () => {
@@ -19,6 +19,10 @@ describe("card notice visibility", () => {
       for (const source of ["browser","agent"]) expect(isCardNoticeInput(type,{text,caller_info:{source}})).toBe(false);
     }
     expect(isCardNoticeInput("assistant_message",{text,caller_info:{source:"system"}})).toBe(false);
+  });
+  it("names the completing side by supervising relation", () => {
+    expect(buildCardDoneNotice({...card,completed_kind:"agent",completed_session_id:"pas",assignee_session_id:"owner"})).toContain("완료한 쪽: 감독 세션");
+    expect(buildCardDoneNotice({...card,completed_kind:"agent",completed_session_id:"owner",assignee_session_id:"owner"})).toContain("완료한 쪽: 담당 세션");
   });
   it("hides keepalive inputs and keeps other system text visible", () => {
     expect(isHiddenConversationInput("user_message",{purpose:"cache_keepalive"})).toBe(true);
