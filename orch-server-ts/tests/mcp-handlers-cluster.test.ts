@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { recurringJobTools, type McpToolName } from "@soulstream/mcp-contract";
+import { PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "../src/mcp/types.js";
 import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
@@ -114,6 +115,29 @@ describe("create_remote_agent_session", () => {
     const { caller_session_id: _caller, ...args } = remote;
     expect(await f.call("create_remote_agent_session", args, { ...context, callerSessionId: null })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("caller_session_id") } });
     expect(f.createSession).not.toHaveBeenCalled();
+  });
+  it("생성 ack이 유실되고 세션 행도 없으면 만들어지지 않았다는 말과 agent_session_id를 보인다", async () => {
+    const f = fixture();
+    const sessions = f.options.cluster.sessions as unknown as Record<string, unknown>;
+    sessions.waitForCreatedSession = async () => false;
+    sessions.findSessionOwnerNodeId = async () => null;
+    f.send.mockImplementation(() => {
+      throw new PendingNodeCommandTimeoutError({ commandType: "create_session", requestId: "req-1", timeoutMs: 30_000 });
+    });
+    const result = await f.call("create_remote_agent_session", remote);
+    expect(result).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("Session was not created as of this check") } });
+    expect(result).toMatchObject({ structuredContent: { error: expect.stringContaining("agent_session_id=") } });
+  });
+  it("생성 여부를 조회할 수 없으면 확인하지 못했다는 말과 agent_session_id를 보인다", async () => {
+    const f = fixture();
+    const sessions = f.options.cluster.sessions as unknown as Record<string, unknown>;
+    sessions.waitForCreatedSession = async () => false;
+    f.send.mockImplementation(() => {
+      throw new PendingNodeCommandTimeoutError({ commandType: "create_session", requestId: "req-1", timeoutMs: 30_000 });
+    });
+    const result = await f.call("create_remote_agent_session", remote);
+    expect(result).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("Session creation could not be confirmed") } });
+    expect(result).toMatchObject({ structuredContent: { error: expect.stringContaining("agent_session_id=") } });
   });
   it("dedicated external ingress는 부모 없이 remote session에 external-llm을 전달한다", async () => {
     const f = fixture();

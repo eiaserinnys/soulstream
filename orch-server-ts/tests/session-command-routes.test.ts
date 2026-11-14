@@ -916,12 +916,15 @@ describe("session command HTTP route harness", () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);
     let requestId = "";
+    let agentSessionId = "";
     transports.attach({
       nodeId: "fake-node",
       connectionId,
       transport: {
         send: (data) => {
-          requestId = (JSON.parse(data) as { requestId: string }).requestId;
+          const message = JSON.parse(data) as { requestId: string; agentSessionId: string };
+          requestId = message.requestId;
+          agentSessionId = message.agentSessionId;
           // Keep the command pending until its timeout.
         },
       },
@@ -949,8 +952,232 @@ describe("session command HTTP route harness", () => {
         code: "NODE_COMMAND_TIMEOUT",
         message: `Command create_session timed out after 1ms (requestId=${requestId})`,
         requestId,
+        agentSessionId,
       },
     });
+  });
+
+  it("answers 201 when a timed-out create's durable row belongs to the target node", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    let agentSessionId = "";
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          agentSessionId = (JSON.parse(data) as { agentSessionId: string }).agentSessionId;
+          // Keep the command pending until its timeout.
+        },
+      },
+    });
+    const findSessionOwnerNodeId = vi.fn(async () => "fake-node");
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 0,
+        findSessionOwnerNodeId,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      agentSessionId,
+      nodeId: "fake-node",
+      prompt: "hello",
+    });
+    expect(findSessionOwnerNodeId).toHaveBeenCalledOnce();
+    expect(findSessionOwnerNodeId).toHaveBeenCalledWith(agentSessionId);
+  });
+
+  it("answers 201 when a disconnected create's durable row belongs to the target node", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    let agentSessionId = "";
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          agentSessionId = (JSON.parse(data) as { agentSessionId: string }).agentSessionId;
+          registry.disconnectNode("fake-node", { connectionId, reason: "socket closed" });
+        },
+      },
+    });
+    const findSessionOwnerNodeId = vi.fn(async () => "fake-node");
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        timeoutMs: 50,
+        createSessionReconcileTimeoutMs: 0,
+        findSessionOwnerNodeId,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      agentSessionId,
+      nodeId: "fake-node",
+      prompt: "hello",
+    });
+    expect(findSessionOwnerNodeId).toHaveBeenCalledWith(agentSessionId);
+  });
+
+  it("marks a timed-out create as not created when the durable row is absent", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    let requestId = "";
+    let agentSessionId = "";
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as { requestId: string; agentSessionId: string };
+          requestId = message.requestId;
+          agentSessionId = message.agentSessionId;
+        },
+      },
+    });
+    const findSessionOwnerNodeId = vi.fn(async () => null);
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 0,
+        findSessionOwnerNodeId,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      error: {
+        code: "NODE_COMMAND_TIMEOUT",
+        message: `Command create_session timed out after 1ms (requestId=${requestId})`,
+        requestId,
+        agentSessionId,
+        created: false,
+      },
+    });
+    expect(findSessionOwnerNodeId).toHaveBeenCalledWith(agentSessionId);
+  });
+
+  it("marks a disconnected create as not created when the durable row is absent", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    let agentSessionId = "";
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          agentSessionId = (JSON.parse(data) as { agentSessionId: string }).agentSessionId;
+          registry.disconnectNode("fake-node", { connectionId, reason: "socket closed" });
+        },
+      },
+    });
+    const findSessionOwnerNodeId = vi.fn(async () => null);
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        timeoutMs: 50,
+        createSessionReconcileTimeoutMs: 0,
+        findSessionOwnerNodeId,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "NODE_COMMAND_REJECTED",
+        agentSessionId,
+        created: false,
+      },
+    });
+  });
+
+  it("omits created when the durable outcome lookup itself fails", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    let requestId = "";
+    let agentSessionId = "";
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as { requestId: string; agentSessionId: string };
+          requestId = message.requestId;
+          agentSessionId = message.agentSessionId;
+        },
+      },
+    });
+    const findSessionOwnerNodeId = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const app = createApp({
+      config,
+      sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        timeoutMs: 1,
+        createSessionReconcileTimeoutMs: 0,
+        findSessionOwnerNodeId,
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    const body = response.json() as { error: Record<string, unknown> };
+    expect(body.error).toMatchObject({
+      code: "NODE_COMMAND_TIMEOUT",
+      requestId,
+      agentSessionId,
+    });
+    expect(body.error).not.toHaveProperty("created");
   });
 
   it.each([

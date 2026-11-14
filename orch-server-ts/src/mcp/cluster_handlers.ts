@@ -12,7 +12,16 @@ type Args = Record<string, unknown>;
 type Handler = (options: McpHostOptions, args: Args, context: McpCallContext) => Promise<CallToolResult>;
 type Response = { status: number; body: unknown };
 class OrchHttpError extends Error {
-  constructor(message: string, readonly code?: string, readonly detailMessage?: string) { super(message); }
+  constructor(message: string, readonly code?: string, readonly detailMessage?: string, readonly errorDetail?: Record<string, unknown>) { super(message); }
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+/** The flat error record orch sent, regardless of the envelope shape. */
+function readErrorDetail(body: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(body)) return undefined;
+  const envelope = isRecord(body.detail) ? body.detail : body;
+  return isRecord(envelope.error) ? envelope.error : envelope;
 }
 async function request(method: string, path: string, run: () => Response | Promise<Response>): Promise<unknown> {
   const response = await run();
@@ -20,7 +29,24 @@ async function request(method: string, path: string, run: () => Response | Promi
   if (response.status >= 200 && response.status < 300) return body;
   const statusText = STATUS_CODES[response.status] ?? "";
   const detail = readOrchErrorEnvelopeText({ status: response.status, statusText }, JSON.stringify(body));
-  throw new OrchHttpError(`orch ${method} ${path} failed: ${response.status} ${statusText} ${detail.message}`, detail.code ?? undefined, detail.message);
+  throw new OrchHttpError(`orch ${method} ${path} failed: ${response.status} ${statusText} ${detail.message}`, detail.code ?? undefined, detail.message, readErrorDetail(body));
+}
+/**
+ * The create route reports whether a lost create ack still produced a session
+ * (card #1326). Surface that state in the tool text so callers no longer have
+ * to poll list_sessions to learn the outcome.
+ */
+function createOutcomeSuffix(detail: Record<string, unknown> | undefined): string {
+  if (detail === undefined) return "";
+  const agentSessionId = detail.agentSessionId;
+  if (typeof agentSessionId !== "string" || agentSessionId.length === 0) return "";
+  if (detail.created === false) {
+    return ` Session was not created as of this check (agent_session_id=${agentSessionId}).`;
+  }
+  if (!Object.hasOwn(detail, "created")) {
+    return ` Session creation could not be confirmed (agent_session_id=${agentSessionId}).`;
+  }
+  return "";
 }
 async function run(fn: () => Promise<unknown>) {
   try { return jsonResult(await fn()); }
@@ -72,8 +98,10 @@ export const clusterHandlers = {
     try { return jsonResult(await request("POST", "/api/sessions", () => executeCreateSessionRoute(o.cluster.sessions, SERVICE_CALLER, JSON.parse(JSON.stringify(body)), o.cluster.logger))); }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return errorResult(error instanceof OrchHttpError && error.code === "MODEL_PRESET_NOT_FOUND"
-        ? `${error.detailMessage ?? message}. Call list_node_model_presets with node_id '${a.node_id}' to list valid preset ids.` : message);
+      if (error instanceof OrchHttpError && error.code === "MODEL_PRESET_NOT_FOUND") {
+        return errorResult(`${error.detailMessage ?? message}. Call list_node_model_presets with node_id '${a.node_id}' to list valid preset ids.`);
+      }
+      return errorResult(`${message}${error instanceof OrchHttpError ? createOutcomeSuffix(error.errorDetail) : ""}`);
     }
   },
 } satisfies Record<keyof typeof clusterTools, Handler>;

@@ -200,6 +200,7 @@ export function createOrchestratorRuntimeServices(
       router: sessionRouter,
       bridge: sessionBridge,
       timeoutMs: options.commandTimeoutMs,
+      findSessionOwnerNodeId: options.findSessionOwnerNodeId,
       nodeCredentials: options.nodeCredentials,
     },
     ...(options.enableSessionActionCommandRoutes === true

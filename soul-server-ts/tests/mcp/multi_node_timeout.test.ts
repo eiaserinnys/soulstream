@@ -59,12 +59,15 @@ afterEach(() => {
 });
 
 describe("multi-node common forwarding deadlines", () => {
-  it("allows command tools 35 seconds while query tools retain the 10-second default", async () => {
+  it("allows command tools 35 seconds, remote create 45, while query tools retain the 10-second default", async () => {
     expect(sessionTools.list_sessions.timeoutMs).toBe(35_000);
     expect(sessionTools.list_user_messages.timeoutMs).toBe(35_000);
-    for (const name of ["plan_remote_agent_profile_update", "apply_remote_agent_profile_update", "rollback_remote_agents_config", "create_remote_agent_session"] as const) {
+    for (const name of ["plan_remote_agent_profile_update", "apply_remote_agent_profile_update", "rollback_remote_agents_config"] as const) {
       expect(clusterTools[name].timeoutMs).toBe(35_000);
     }
+    // Remote create waits for the node command, the reconcile window and the
+    // durable outcome lookup before the caller gives up (card #1326).
+    expect(clusterTools.create_remote_agent_session.timeoutMs).toBe(45_000);
     const timeout = vi.spyOn(AbortSignal, "timeout");
     vi.stubGlobal(
       "fetch",
@@ -108,7 +111,7 @@ describe("multi-node common forwarding deadlines", () => {
       35_000,
       35_000,
       35_000,
-      35_000,
+      45_000,
       35_000,
       35_000,
       10_000,
