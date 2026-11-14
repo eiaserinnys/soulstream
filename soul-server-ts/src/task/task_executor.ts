@@ -2797,13 +2797,10 @@ export class TaskExecutor {
       inFlight.fail(new Error(message));
       return true;
     }
-    // 잇기 거절로 멈춰 둔 실행은 읽기 장치가 서 있지 않다. 읽기를 오류로 끝낼 길이 없으므로
-    // 여기서 원 스트림을 놓고 보통 치명 오류와 같은 길(완료 정산 포함)로 종료한다.
-    const parked = this.suspendedRecoveredExecutions.get(task);
-    if (parked) {
-      this.suspendedRecoveredExecutions.delete(task);
-      void Promise.resolve(parked.frames[Symbol.asyncIterator]().return?.())
-        .catch(() => undefined);
+    // 잇기 거절로 멈춰 둔 실행은 읽기 장치가 서 있지 않다. 읽기를 오류로 끝낼 길이 없으므로 멈춤
+    // 기록을 지우고 보통 치명 오류와 같은 길(완료 정산 포함)로 종료한다. 종료가 러너를 놓으면서
+    // 붙잡아 둔 프레임 통로도 함께 닫힌다.
+    if (this.suspendedRecoveredExecutions.delete(task)) {
       await this.terminateWithFatalEngineError(task, message);
       return true;
     }

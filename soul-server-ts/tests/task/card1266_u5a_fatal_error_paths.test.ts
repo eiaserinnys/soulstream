@@ -86,12 +86,8 @@ describe("card #1266 U5a 가: a fatal engine error reaches an execution parked b
 
   function parkExecution() {
     const never = new Promise<never>(() => undefined);
-    const returnFrames = vi.fn(async () => ({ done: true as const, value: undefined as never }));
     const frames = {
-      [Symbol.asyncIterator]: () => ({
-        next: () => never,
-        return: returnFrames,
-      }),
+      [Symbol.asyncIterator]: () => ({ next: () => never }),
     };
     const dispatcher = {
       dispatch: vi.fn(),
@@ -142,11 +138,11 @@ describe("card #1266 U5a 가: a fatal engine error reaches an execution parked b
       "execute-old",
       "adopt",
     );
-    return { executor, double, task, adoption, returnFrames, dispatcher };
+    return { executor, double, task, adoption, dispatcher };
   }
 
-  it("ends the parked execution as an error with one termination event and lets the source stream go", async () => {
-    const { executor, double, task, adoption, returnFrames } = parkExecution();
+  it("ends the parked execution as an error with one termination event and releases the runner that holds its frame stream", async () => {
+    const { executor, double, task, adoption, dispatcher } = parkExecution();
     await expect(adoption).rejects.toThrow();
     expect(parkedOf(executor, task)).toBeDefined();
     expect(task.status).toBe("initializing");
@@ -160,7 +156,10 @@ describe("card #1266 U5a 가: a fatal engine error reaches an execution parked b
     expect(task.terminationReason).toBe("error_aborted");
     expect(task.terminationEventRecorded).toBe(true);
     expect(double.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
-    expect(returnFrames).toHaveBeenCalledOnce();
+    // 종료가 붙잡아 둔 러너를 놓아 프레임 통로도 함께 닫힌다.
+    expect(task.runner).toBeUndefined();
+    expect(dispatcher.close.mock.calls.length + dispatcher.detachHost.mock.calls.length)
+      .toBeGreaterThan(0);
     expect(parkedOf(executor, task)).toBeUndefined();
   });
 
