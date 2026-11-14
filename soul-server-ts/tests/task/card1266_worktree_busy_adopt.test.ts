@@ -7,6 +7,8 @@ import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { classifyRunnerAdoptRejection } from "../../src/task/state/node_adopt_rejection.js";
 import type { NodeAdoptionApplication } from "../../src/task/state/node_response_handling.js";
+import type { CompletionNotifier } from "../../src/task/completion_notifier.js";
+import { EventOutboxDeadLetterError } from "../../src/upstream/event_outbox_pump_protocol.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
@@ -26,7 +28,11 @@ interface CentralRow {
 const RECORDED_END: CentralRow = { status: "completed", termination_event_id: 7 };
 const DISCONNECT_INTERRUPTED: CentralRow = { status: "interrupted", termination_event_id: null };
 
-function setup(rejectionReason: string | undefined, central: CentralRow) {
+function setup(
+  rejectionReason: string | undefined,
+  central: CentralRow,
+  adoptError?: Error,
+) {
   const double = makeEventPersistenceTestDouble();
   const enqueueTerminal = vi.fn(async (..._args: unknown[]) => ({
     eventId: 9,
@@ -39,7 +45,9 @@ function setup(rejectionReason: string | undefined, central: CentralRow) {
     canonicalExecutionRegistration: null,
   }));
   Object.assign(double.persistence, {
-    enqueueRunningTransitionAndWaitForApplication: vi.fn(async () => ({
+    enqueueRunningTransitionAndWaitForApplication: vi.fn(async () => {
+      if (adoptError) throw adoptError;
+      return {
       eventId: 5,
       applied: false,
       ...(rejectionReason === undefined ? {} : { rejectionReason }),
@@ -52,7 +60,8 @@ function setup(rejectionReason: string | undefined, central: CentralRow) {
         updated_at: "2026-11-14T00:00:00.000Z",
         last_event_id: 5,
       },
-    })),
+      };
+    }),
     enqueueTerminalTransitionAndWaitForApplication: enqueueTerminal,
   });
   const engine = {
@@ -60,12 +69,15 @@ function setup(rejectionReason: string | undefined, central: CentralRow) {
     async interrupt() { return true; }, async close() {},
   } as unknown as EnginePort;
   const getSession = vi.fn(async () => ({ session_id: "sess-1", node_id: "node-a", ...central }));
+  const notify = vi.fn(async (_task: Task) => ({ kind: "registered" as const }));
   const executor = new TaskExecutor(
     () => engine,
     { updateSession: vi.fn(), getSession } as unknown as SessionDB,
     double.persistence,
     { emitEventEnvelope: vi.fn(), emitSessionUpdated: vi.fn() } as unknown as SessionBroadcaster,
     pino({ level: "silent" }),
+    undefined,
+    { notify } as unknown as CompletionNotifier,
   );
   const task: Task = {
     agentSessionId: "sess-1",
@@ -75,13 +87,14 @@ function setup(rejectionReason: string | undefined, central: CentralRow) {
     lastEventId: 3,
     lastReadEventId: 0,
     interventionQueue: [],
+    callerSessionId: "parent-session",
     runner: {
       engine,
       dispatcher: { registrationId: () => "registration-adopt" } as never,
       eventPersistence: "runner",
     },
   };
-  return { executor, task, enqueueTerminal, getSession };
+  return { executor, task, enqueueTerminal, getSession, notify };
 }
 
 /** 러너 복구가 읽는 분류다(runner_recovery_coordinator recordCentralAdoptionResponse). */
@@ -99,6 +112,7 @@ describe("card #1266 U5c an adoption rejected because the worktree is busy", () 
     expect(responseOf(application)).toBe("terminal_rejection");
     expect(subject.getSession).toHaveBeenCalledWith("sess-1");
     expect(subject.enqueueTerminal).not.toHaveBeenCalled();
+    expect(subject.notify).not.toHaveBeenCalled();
     expect(subject.task.status).toBe("running");
   });
 
@@ -110,6 +124,20 @@ describe("card #1266 U5c an adoption rejected because the worktree is busy", () 
     expect(responseOf(application)).toBe("terminal_rejection");
     expect(subject.enqueueTerminal).toHaveBeenCalledOnce();
     expect(subject.enqueueTerminal.mock.calls[0]?.[3]).toBe("registration-adopt");
+    // 세션을 닫는 종료라 기다리는 부모에게 완료를 알린다(M:386-387, M:318).
+    expect(subject.notify).toHaveBeenCalledOnce();
+    expect(subject.notify.mock.calls[0]?.[0]).toBe(subject.task);
+  });
+
+  it("keeps a permanent rejection's central error mark without a completion notice", async () => {
+    const subject = setup(undefined, DISCONNECT_INTERRUPTED, new EventOutboxDeadLetterError(
+      4, "REPEATED_FAILURE", "2026-11-14T00:00:01.000Z", "repeated failure",
+    ));
+
+    await subject.executor.adoptAttachedRunnerExecution(subject.task, "execute-1");
+
+    expect(subject.enqueueTerminal).toHaveBeenCalledOnce();
+    expect(subject.notify).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -123,6 +151,7 @@ describe("card #1266 U5c an adoption rejected because the worktree is busy", () 
 
       expect(responseOf(application)).toBe("retryable_rejection");
       expect(subject.enqueueTerminal).not.toHaveBeenCalled();
+      expect(subject.notify).not.toHaveBeenCalled();
       expect(subject.task.runner).toBeDefined();
     }
   });

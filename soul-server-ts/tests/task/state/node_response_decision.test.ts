@@ -193,8 +193,9 @@ describe("busy worktree adoption rejection", () => {
     }
   });
 
-  it("does not mark the central error for a stale registration, an execution registration or other reasons", () => {
+  it("does not mark the central error for a stale registration, a retained runner, an execution registration or other reasons", () => {
     expect(decide({ reason: "worktree_busy", registration: "different" }).intents).toEqual([]);
+    expect(decide({ reason: "worktree_busy", retained: true }).intents).toEqual([]);
     expect(decide({ call: "execution_registration", reason: "worktree_busy" }).intents)
       .toEqual(["reap_runner"]);
     expect(decide({ reason: "already_terminal" }).intents).toEqual(["reap_runner"]);

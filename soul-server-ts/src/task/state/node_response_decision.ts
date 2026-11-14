@@ -97,6 +97,7 @@ function cleanupIntents(
       && ADOPT_CALLS.includes(facts.call)
       && facts.centralSession === "present"
       && facts.termination === "absent"
+      && !facts.retained
       && !stale
     ) {
       // 다른 세션이 워크트리를 쥐어 잇지 못한 세션은 오류 종료로 닫는다(M:408-412). orch는 기록된
