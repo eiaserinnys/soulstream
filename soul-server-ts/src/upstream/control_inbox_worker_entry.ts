@@ -6,6 +6,7 @@ import { WebSocket } from "ws";
 
 import { ControlInboxRuntime } from "./control_inbox_runtime.js";
 import { ControlInboxStore } from "./control_inbox_store.js";
+import { attachWsLiveness } from "./ws_liveness.js";
 
 type WorkerInput = {
   nodeId: string;
@@ -106,6 +107,9 @@ function connect(): void {
   if (input.authBearerToken) headers.Authorization = `Bearer ${input.authBearerToken}`;
   const ws = new WebSocket(controlUrl(input.upstreamUrl), { headers });
   socket = ws;
+  // A control lane whose peer silently vanished stays half-open; protocol
+  // pings turn that into a close, which reuses the reconnect path below.
+  attachWsLiveness(ws);
   ws.once("open", () => {
     sendOn(ws, {
       type: "node_control_register",

@@ -1,16 +1,16 @@
 /**
  * Exponential backoff 재연결 정책. Python `upstream/reconnect.py` 등가:
- * initial 3s · max 60s · ×2.
+ * initial 1s · max 5s · ×2.
  *
- * 정책 시퀀스: 3 → 6 → 12 → 24 → 48 → 60 → 60 ...
+ * 정책 시퀀스: 1 → 2 → 4 → 5 → 5 ...
  */
 export class ReconnectPolicy {
   private currentDelay: number;
   private attemptCount = 0;
 
   constructor(
-    private readonly initialDelay = 3.0,
-    private readonly maxDelay = 60.0,
+    private readonly initialDelay = 1.0,
+    private readonly maxDelay = 5.0,
     private readonly multiplier = 2.0,
   ) {
     this.currentDelay = initialDelay;
