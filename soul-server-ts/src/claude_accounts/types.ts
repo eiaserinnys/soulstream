@@ -127,6 +127,8 @@ export interface ClaudeAccountSelectionExhausted {
   pool_exhausted: true;
   available_count: 0;
   earliest_available_at: string | null;
+  /** 켜진 계정이 모두 needs_relogin이라 선택이 실패했을 때만 붙는다. */
+  reason?: "needs_relogin";
 }
 
 /** restricted(격리) 선택 응답에만 붙는 접근 토큰. 호스트 내부 전달용이다. */

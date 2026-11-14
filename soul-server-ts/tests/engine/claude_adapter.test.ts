@@ -844,6 +844,53 @@ describe("ClaudeEngineAdapter options parity", () => {
       }));
   });
 
+  it("keeps the pool exhaustion code but asks for relogin when every account needs it", async () => {
+    const client: ClaudeClient = {
+      run: vi.fn(async function* () {}),
+      runPersistent: vi.fn(async function* () {}),
+      close: vi.fn(async () => undefined),
+    };
+    const accountTurnPort = {
+      select: vi.fn(async () => ({
+        pool_exhausted: true as const,
+        available_count: 0 as const,
+        earliest_available_at: null,
+        reason: "needs_relogin" as const,
+      })),
+      reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      client,
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      claudeAccountTurnPort: accountTurnPort,
+    }, silentLogger);
+    const frames: import("../../src/runner/frame_protocol.js").RunnerEventFrame[] = [];
+    try {
+      for await (const frame of engine.executeFrames({
+        agentSessionId: "account-session",
+        inputUuid: "p5-turn",
+        prompt: "original user input",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) frames.push(frame);
+    } catch {
+      // The fatal error event ends the turn.
+    }
+
+    expect(accountTurnPort.select).toHaveBeenCalledOnce();
+    expect(client.runPersistent).not.toHaveBeenCalled();
+    expect(frames.filter((frame) => frame.kind === "engine_event").map((frame) => frame.payload))
+      .toContainEqual(expect.objectContaining({
+        type: "error",
+        error_code: "claude_rate_limit_stop_failure",
+        message: expect.stringContaining("sign in again"),
+      }));
+  });
+
   it.each(["not_sent", "ambiguous"] as const)(
     "handles a first turn without a Claude session ID when input delivery is %s",
     async (inputDelivery) => {

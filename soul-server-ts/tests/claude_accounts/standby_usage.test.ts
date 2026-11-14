@@ -19,6 +19,13 @@ function writeCredentials(dir: string, expiresAt: number): void {
   }));
 }
 
+function writeWipedCredentials(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({
+    claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, loginEnded: "time_limit" },
+  }));
+}
+
 function usage(sevenDay: number | null = null, fable: number | null = null): ClaudeAccountUsage {
   return {
     five_hour: null,
@@ -107,7 +114,9 @@ describe("standby account usage", () => {
     const select = () => svc.select({ session_id: "s", turn_id: "t", model: "sonnet" });
     const list = () => svc.getAccountList();
     if (first === "select") {
-      expect(await select()).toMatchObject({ pool_exhausted: true, available_count: 0, earliest_available_at: reset });
+      const beforeRenewal = await select();
+      expect(beforeRenewal).toMatchObject({ pool_exhausted: true, available_count: 0, earliest_available_at: reset });
+      expect(beforeRenewal).not.toHaveProperty("reason");
       expect(renew).not.toHaveBeenCalled();
     }
     const expired = await list();
@@ -161,6 +170,29 @@ describe("standby account usage", () => {
       auth_state: "idle", stale: false, observed_at: null, usage: usage(),
     });
     expect(renew).not.toHaveBeenCalled();
+  });
+
+  it("reports renew_failed and caches idle when the refresh token was wiped", async () => {
+    const onAuthOutcome = vi.fn();
+    const renew = vi.fn(async () => {});
+    const fetchImpl = vi.fn(async () => fetchUsage());
+    const collector = new ClaudeAccountUsageCollector({ now: () => now, fetchImpl: fetchImpl as typeof fetch,
+      credentialRenewer: { renew }, onAuthOutcome });
+    writeWipedCredentials(profileDir);
+    const result = await collector.collectAll([{ accountId: ID, profileDir, renewExpiredCredentials: true }]);
+    expect(onAuthOutcome).toHaveBeenCalledWith(ID, "renew_failed");
+    expect(result.get(ID)).toMatchObject({ auth_state: "idle", stale: false, observed_at: null, usage: usage() });
+  });
+
+  it("keeps an empty claudeAiOauth object idle without an auth outcome", async () => {
+    const onAuthOutcome = vi.fn();
+    const collector = new ClaudeAccountUsageCollector({ now: () => now,
+      fetchImpl: vi.fn(async () => fetchUsage()) as typeof fetch, onAuthOutcome });
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(path.join(profileDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: {} }));
+    const result = await collector.collectAll([{ accountId: ID, profileDir, renewExpiredCredentials: true }]);
+    expect(onAuthOutcome).not.toHaveBeenCalled();
+    expect(result.get(ID)).toMatchObject({ auth_state: "idle", stale: false, observed_at: null, usage: usage() });
   });
 
   it("fetches when credentials become valid despite a fresh idle cache", async () => {
