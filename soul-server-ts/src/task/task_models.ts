@@ -689,6 +689,12 @@ export interface Task {
    */
   interruptBarrierKind?: NodeBarrierKind;
 
+  /**
+   * Runtime-only: a delete is in flight. An instruction queued while stopping
+   * is not restarted after the stop when the session is being deleted.
+   */
+  deletionRequested?: boolean;
+
   /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
   hydratedFromDb?: boolean;
 

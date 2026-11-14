@@ -100,6 +100,7 @@ export const NODE_REQUEST_DISPOSITION_LABELS: Readonly<
   Record<NodeRequestDisposition, string>
 > = {
   reject_not_running: "실행 중이 아니라고 거절",
+  already_converged: "이미 끝나 멈춤이 수렴했다고 참을 돌려줌",
   terminate_without_runner: "러너 없이 종료 기록을 만듦",
   interrupt_and_terminate: "러너에 멈춤 명령 후 멈춤으로 종료",
   join_stop: "앞선 멈춤에 붙음",

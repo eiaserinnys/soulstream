@@ -13,6 +13,7 @@ import {
   NODE_PHASE_LABELS,
   NODE_REASON_LABELS,
   NODE_REQUEST_DISPOSITION_LABELS,
+  NODE_REQUEST_LABELS,
   NODE_ROUTE_LABELS,
   NODE_STOP_DISPOSITION_LABELS,
   NODE_TERMINATION_LABELS,
@@ -317,8 +318,7 @@ export interface NodeRequestRow {
 
 const BASIS_LABELS: Readonly<Record<NodeRequestBasis, string>> = {
   design: "설계",
-  current: "지금 동작",
-  open: "확인 못 함",
+  current: "운영 확인",
 };
 
 /** 바깥 요청 칸 표다. 모든 상태와 요청 조합에 기계가 처분을 낸다. 없으면 던진다. */
@@ -331,6 +331,22 @@ export function nodeRequestRows(): NodeRequestRow[] {
       return `${NODE_REQUEST_DISPOSITION_LABELS[disposition]} (${BASIS_LABELS[basis]})`;
     }),
   }));
+}
+
+export interface NodeRequestTestRow {
+  phase: string;
+  request: string;
+  test: string;
+}
+
+/** 바깥 요청 칸마다 그 칸을 운영 진입 함수로 확인하는 경계 시험이다. */
+export function nodeRequestTestRows(): NodeRequestTestRow[] {
+  return NODE_EXECUTION_PHASES.flatMap((phase) =>
+    NODE_REQUEST_KINDS.map((request) => ({
+      phase: NODE_PHASE_LABELS[phase],
+      request: NODE_REQUEST_LABELS[request],
+      test: NODE_REQUEST_TABLE[phase][request].test,
+    })));
 }
 
 export interface NodeBarrierTransitionRow {

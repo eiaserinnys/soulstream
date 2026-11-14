@@ -3,7 +3,11 @@ import { toMermaid, type ChartSpec } from "@soulstream/statechart";
 import { decideNodeStopRequest } from "./node_barrier_decision.js";
 import { nodeBarrierMachine, NODE_BARRIER_STATES } from "./node_barrier_machine.js";
 import { NODE_EXECUTION_PHASES, nodeExecutionMachine } from "./node_execution_machine.js";
-import { nodeGuessCells, nodeGuessPhaseLabel } from "./node_guess_cells.js";
+import {
+  nodeGuessCells,
+  nodeGuessClosureLabel,
+  nodeGuessPhaseLabel,
+} from "./node_guess_cells.js";
 import {
   NODE_BARRIER_KIND_LABELS,
   NODE_BARRIER_STATE_LABELS,
@@ -13,7 +17,11 @@ import {
   NODE_STOP_DISPOSITION_LABELS,
 } from "./node_labels.js";
 import { nodeInstructionRows } from "./node_instruction_decision.js";
-import { NODE_REQUEST_KINDS, nodeRequestMachine } from "./node_request_machine.js";
+import {
+  NODE_REQUEST_BOUNDARY_TEST_FILES,
+  NODE_REQUEST_KINDS,
+  nodeRequestMachine,
+} from "./node_request_machine.js";
 import { decideNodeResponse } from "./node_response_decision.js";
 import { nodeResponseMachine } from "./node_response_machine.js";
 import {
@@ -22,6 +30,7 @@ import {
   nodeBarrierTransitionRows,
   nodeIntentRows,
   nodeRequestRows,
+  nodeRequestTestRows,
   nodeResponseCellRows,
   nodeScenarioRows,
 } from "./node_tables.js";
@@ -102,6 +111,7 @@ export function generateNodeStateDocument() {
   const intentRows = nodeIntentRows();
   const scenarioRows = nodeScenarioRows();
   const requestRows = nodeRequestRows();
+  const requestTestRows = nodeRequestTestRows();
   const barrierRows = nodeBarrierTransitionRows();
   const guessCells = nodeGuessCells();
   const instructionRows = nodeInstructionRows();
@@ -197,7 +207,7 @@ export function generateNodeStateDocument() {
     "",
     "## 바깥 요청 칸",
     "",
-    "실행 상태마다 멈춤, 지시, 삭제, 재개 요청의 처분이다. 괄호는 칸의 근거다. 설계는 설계가 정한 처분, 지금 동작은 지금 코드를 그대로 적은 것, 확인 못 함은 옛 결정표에서 확인 못 함이었거나 설계가 정하지 않아 뒤 단위가 코드로 닫을 칸이다. 러너 없이 올린 활성 task의 멈춤과 삭제는 SESSION_NOT_RUNNING 답이나 조용한 삭제가 아니라 종료 기록을 만드는 처분이다.",
+    "실행 상태마다 멈춤, 지시, 삭제, 재개 요청의 처분이다. 괄호는 칸의 근거다. 설계는 설계가 정한 처분, 운영 확인은 그 상태를 운영 코드로 만든 뒤 운영 진입 함수(멈춤 `TaskManager.cancelTask`, 지시 `addIntervention`, 삭제 `deleteTask`, 재개 `ensureRunning`)를 불러 확인한 처분이다. 확인 못 한 칸은 없다(카드 #1266 U5b). 러너 없이 올린 활성 task의 멈춤과 삭제는 SESSION_NOT_RUNNING 답이나 조용한 삭제가 아니라 종료 기록을 만드는 처분이다.",
     "",
     `모든 실행 상태 ${NODE_EXECUTION_PHASES.length}개와 요청 ${NODE_REQUEST_KINDS.length}개의 조합에 처분이 있으며 빈 칸은 없다.`,
     "",
@@ -205,6 +215,16 @@ export function generateNodeStateDocument() {
     cellsRow([":--", ...NODE_REQUEST_KINDS.map(() => ":--")]),
   );
   for (const row of requestRows) lines.push(cellsRow([row.phase, ...row.cells]));
+  lines.push(
+    "",
+    "### 칸마다 경계 시험",
+    "",
+    `칸을 확인하는 시험은 ${NODE_REQUEST_BOUNDARY_TEST_FILES.map((file) => `\`${file}\``).join(", ")}에 있다. 표의 이름과 시험의 이름이 어긋나면 시험이 실패한다.`,
+    "",
+    cellsRow(["실행 상태", "요청", "경계 시험"]),
+    cellsRow([":--", ":--", ":--"]),
+  );
+  for (const row of requestTestRows) lines.push(cellsRow([row.phase, row.request, row.test]));
   lines.push(
     "",
     "## 장벽 직렬화",
@@ -258,12 +278,12 @@ export function generateNodeStateDocument() {
   }
   lines.push(
     "",
-    "## 옛 결정표의 짐작 20칸",
+    "## 옛 결정표의 짐작 20칸을 닫은 자리",
     "",
-    "옛 노드 결정표(카드 #1218의 `charts/node-decision-table.md`)에서 코드를 끝까지 따라가지 못해 모형이 짐작으로 둔 20칸이다. 칸마다 지금 판정과 그 칸을 운영 코드로 닫을 단위를 적었다. 닫을 단위는 종료 경로, 지시 경로, 멈춤 가운데 하나다. 지금 판정은 이 문서의 정의가 내는 값이며 운영 코드의 동작이 이와 같다는 뜻이 아니다. 운영 코드로 닫는 일이 그 확인이다.",
+    "옛 노드 결정표(카드 #1218의 `charts/node-decision-table.md`)에서 코드를 끝까지 따라가지 못해 모형이 짐작으로 둔 20칸이다. 카드 #1266 U5b가 칸마다 그 상태를 운영 코드로 만들고 운영 진입 함수로 요청을 보내 닫았다. 닫은 자리는 바깥 요청 칸, 장벽 직렬화, 쌓인 지시와 복구 훑기의 순서 가운데 하나다. 처분은 닫은 자리의 정의가 내는 값이고, 경계 시험이 운영 동작과 같음을 확인한다. 옛 투영은 옛 결정표가 접은 실행 상태이고 운영 투영과 다르면 운영에서 본 것에 적었다.",
     "",
-    "| 번호 | 옛 표 | 옛 실행 상태 | 기다리는 지시 | 노드가 보는 러너 | 투영 상태 | 지금 판정 | 닫을 단위 |",
-    "| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |",
+    "| 번호 | 옛 표 | 옛 실행 상태 | 기다리는 지시 | 노드가 보는 러너 | 옛 투영 | 닫은 자리 | 처분 | 운영에서 본 것 | 경계 시험 |",
+    "| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |",
   );
   for (const cell of guessCells) {
     lines.push(
@@ -274,8 +294,10 @@ export function generateNodeStateDocument() {
         cell.pending,
         cell.runner,
         nodeGuessPhaseLabel(cell),
-        cell.current,
-        cell.unit,
+        nodeGuessClosureLabel(cell),
+        cell.verdict,
+        cell.observed,
+        cell.tests.join("<br>"),
       ]),
     );
   }
@@ -299,7 +321,7 @@ export function generateNodeStateDocument() {
     "corepack pnpm@10.32.1 --dir soul-server-ts exec tsx scripts/node-state-charts.ts",
     "```",
     "",
-    `응답을 받은 칸은 입력 ${responseCount}가지, 바깥 요청 칸은 ${requestRows.length * NODE_REQUEST_KINDS.length}칸, 짐작 칸은 ${guessCells.length}칸이다.`,
+    `응답을 받은 칸은 입력 ${responseCount}가지, 바깥 요청 칸은 ${requestRows.length * NODE_REQUEST_KINDS.length}칸, 닫은 짐작 칸은 ${guessCells.length}칸이다.`,
     "",
   );
   return {
