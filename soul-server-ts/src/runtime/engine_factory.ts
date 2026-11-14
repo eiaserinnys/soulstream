@@ -77,6 +77,10 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
         processEnv: antigravityProcessEnv,
         resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
         internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
+        ...(agent.allowed_tools ? { allowedTools: agent.allowed_tools } : {}),
+        ...(agent.disallowed_tools ? { disallowedTools: agent.disallowed_tools } : {}),
+        ...(agent.claude_permission_mode ? { claudePermissionMode: agent.claude_permission_mode } : {}),
+        profileWorkspaceDir: agent.workspace_dir,
         getModelCatalog,
       }, logger);
     }

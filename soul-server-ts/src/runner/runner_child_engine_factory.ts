@@ -85,6 +85,12 @@ function createRunnerChildEnginePort(
       processEnv: process.env,
       resolvedMcpServers: config.resolvedMcpServers,
       internalMcpUrl: config.internalMcpUrl,
+      ...(config.agent.allowed_tools ? { allowedTools: config.agent.allowed_tools } : {}),
+      ...(config.agent.disallowed_tools ? { disallowedTools: config.agent.disallowed_tools } : {}),
+      ...(config.agent.claude_permission_mode
+        ? { claudePermissionMode: config.agent.claude_permission_mode }
+        : {}),
+      profileWorkspaceDir: config.agent.workspace_dir,
       ...(getModelCatalog ? { getModelCatalog } : {}),
     }, logger);
   }

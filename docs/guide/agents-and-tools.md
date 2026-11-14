@@ -9,6 +9,10 @@ Each worker node loads its agent profiles from `agents.yaml` (`AGENTS_CONFIG_PAT
 - **Profile management**: operators and agents can inspect and update profiles from the web dashboard (`AgentProfileEditorTab`), mobile app (`SettingsScreen`), or MCP tools (`get_agents_config`, `plan_agent_profile_update`, `update_agent_profile`, `rollback_agents_config`). Remote node profile updates can also be planned and applied through the orchestrator (`plan_remote_agent_profile_update`, `apply_remote_agent_profile_update`, `rollback_remote_agents_config`).
 - **Preset availability**: `list_node_model_presets` combines node configuration, provider usage snapshots, and rate-limit events to report preset status. Presets surface explicit availability reasons such as `env_unresolved` (missing environment variables), `not_authenticated` (missing provider credentials), `limit_rejected` (active provider rate-limit or usage rejection until `resets_at`), `quota_exhausted`, or `usage_warning`.
 
+### Antigravity restricted tool policy
+
+An agent profile with `claude_permission_mode: dontAsk` and an explicit `allowed_tools` array keeps that policy on the `antigravity` backend as well. The engine maps the profile's Claude tool names onto agy definition tools (deny list wins), attaches a `PreToolUse` hook to the main definition that rejects writes outside allowed paths, shell commands outside allowed prefixes, and MCP tools outside `allowed_tools`, and converts the profile workspace's `.claude/agents/*.md` into agy subagent definitions reachable through `invoke_subagent`. The generated bundle lives in the session state directory and is written into `~/.gemini/config/agents` on every turn, including resumed turns, then removed when the turn ends. Profiles without `dontAsk` or without an `allowed_tools` list keep the previous antigravity behavior.
+
 ## Skill catalog and `load_skill` link blocks
 
 Agents receive a compact skill catalog at startup and load full procedural instructions on demand via `load_skill(name, intent, pins)`.
