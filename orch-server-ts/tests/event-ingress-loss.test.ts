@@ -82,7 +82,7 @@ function committingSql(
   return fakeSql(async (text) => {
     statements.push(text);
     if (text.includes("FROM event_ingress_receipts")) return [];
-    if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) return [GATE_ROW];
+    if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) return [GATE_ROW];
     if (text.includes("SELECT claude_session_id")) {
       return [{ claude_session_id: storedClaudeId }];
     }
@@ -214,7 +214,7 @@ describe("retrying failure record after a successful commit", () => {
     let appendAttempts = 0;
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) return [GATE_ROW];
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) return [GATE_ROW];
       if (text.includes("SELECT event_append")) {
         appendAttempts += 1;
         if (appendAttempts === 1) throw new Error("event append failed once");
@@ -255,7 +255,10 @@ describe("retrying failure record after a successful commit", () => {
       batchOf(stale),
     );
 
-    expect(results).toEqual([expect.objectContaining({ outcome: "dead_lettered" })]);
+    expect(results).toEqual([expect.objectContaining({
+      outcome: "dead_lettered",
+      deadLetter: expect.objectContaining({ code: "STALE_REGISTRATION" }),
+    })]);
     expect(await readdir(directory)).toHaveLength(1);
   });
 
