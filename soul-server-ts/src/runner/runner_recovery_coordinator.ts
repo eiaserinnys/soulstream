@@ -52,6 +52,10 @@ import type {
   RunnerAdoptionApplication,
 } from "../task/runner_adoption_rejected_error.js";
 import { RunnerAdoptionRejectedError } from "../task/runner_adoption_rejected_error.js";
+import {
+  NodeAdoptionRejectedError,
+  type NodeAdoptionApplication,
+} from "../task/state/node_response_handling.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
@@ -461,6 +465,17 @@ export class RunnerRecoveryCoordinator {
     onRunnerAttached?: () => void,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
+    if (
+      task !== undefined
+      && task.rejectedTerminationRegistrationId !== undefined
+      && task.rejectedTerminationRegistrationId === registration.registrationId
+      && task.runnerRetainedForDetachedWork !== true
+      // 새 실행이 돌고 있으면 그 등록은 새 턴의 것이다. 거절된 종료의 은퇴는 실행이 끝난 뒤의 훑기가 한다.
+      && task.executionPromise === undefined
+    ) {
+      await this.retireRejectedTermination(registration, task);
+      return;
+    }
     const facts: RunnerHandleFacts = {
       disposition,
       hasTask: task !== undefined,
@@ -585,6 +600,74 @@ export class RunnerRecoveryCoordinator {
     }
   }
 
+  /**
+   * 종료가 영구 거절됐거나 다시 될 까닭 없이 거절된 그 러너 등록을 은퇴시킨다(카드 #1266).
+   * 같은 종료를 다시 올릴 까닭이 없는데 등록이 남아 있으면 주기 훑기와 재시작이 복구로
+   * 그 종료를 다시 올린다. 같은 세션의 다른 등록은 건드리지 않는다. 완료 정산 미결이
+   * 남았으면 은퇴 문이 막으므로 다음 훑기가 다시 시도한다.
+   */
+  private async retireRejectedTermination(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<void> {
+    const runner = task.runner;
+    // 정상 보유 중인 러너는 거절된 종료에도 거두지 않는다. 표시는 남겨 두고 보유가 끝난 뒤 은퇴한다.
+    if (
+      runner
+      && task.runnerRetainedForDetachedWork === true
+      && registrationOwnsAttachedRunner(task, registration)
+    ) return;
+    if (runner && registrationOwnsAttachedRunner(task, registration)) {
+      releaseTaskRunner(task, runner);
+      try {
+        await runner.dispatcher.detachHost();
+      } catch (error) {
+        this.options.logger.warn(
+          { err: error, sessionId: registration.config.sessionId },
+          "rejected terminal runner host detach failed",
+        );
+      }
+    }
+    await this.registrationControl.retireTerminal(registration);
+    task.rejectedTerminationRegistrationId = undefined;
+    this.options.logger.info(
+      {
+        sessionId: registration.config.sessionId,
+        registrationId: registration.registrationId,
+      },
+      "runner registration retired because its terminal was rejected for good",
+    );
+  }
+
+  /**
+   * 종료가 거절된 때 그 등록을 바로 디스크에서 은퇴시킨다(카드 #1266). 훑기를 기다리면
+   * 그 사이 재시작이 같은 종료를 한 번 더 올린다. 디스크에 이미 없거나 은퇴한 등록이면 할 일이 없다.
+   */
+  async retireRejectedTerminalRegistration(
+    task: Task,
+    registrationId: string,
+  ): Promise<void> {
+    const scan = await (this.options.scan ?? scanRunnerRegistrations)(
+      this.options.stateDirectory,
+      {
+        cache: this.scanCache,
+        ...(this.options.recoveryStorage
+          ? { recoveryStorage: this.options.recoveryStorage }
+          : {}),
+      },
+    );
+    const registration = scan.registrations.find((candidate) =>
+      candidate.config.sessionId === task.agentSessionId
+      && candidate.registrationId === registrationId);
+    if (!registration || registration.retiredAt) {
+      if (task.rejectedTerminationRegistrationId === registrationId) {
+        task.rejectedTerminationRegistrationId = undefined;
+      }
+      return;
+    }
+    await this.retireRejectedTermination(registration, task);
+  }
+
   private async recoverClosed(
     registration: RunnerRegistration,
     task: Task | undefined,
@@ -689,14 +772,23 @@ export class RunnerRecoveryCoordinator {
       registration,
       disposition,
       ...(task ? { task } : {}),
-      handle: async (owned, ownedDisposition, recoveredTask) =>
-        await this.handle(
-          owned,
-          ownedDisposition,
-          recoveredTask,
-          onRunnerAttached,
-          phaseObservation,
-        ),
+      handle: async (owned, ownedDisposition, recoveredTask) => {
+        // 복구 중 올린 종료가 거절되면 그 거절은 지금 복구하는 등록의 것이다.
+        if (recoveredTask) {
+          recoveredTask.runnerRecoveryRegistrationId = owned.registrationId ?? undefined;
+        }
+        try {
+          await this.handle(
+            owned,
+            ownedDisposition,
+            recoveredTask,
+            onRunnerAttached,
+            phaseObservation,
+          );
+        } finally {
+          if (recoveredTask) recoveredTask.runnerRecoveryRegistrationId = undefined;
+        }
+      },
       recoveryLogger: this.recoveryLogger,
     });
   }
@@ -847,7 +939,9 @@ export class RunnerRecoveryCoordinator {
       this.centralRetry.delete(sessionId);
       return;
     }
-    const response = classifyRunnerAdoptRejection(application.rejectionReason);
+    // 응답 칸 결정 함수가 가른 분류가 있으면 그것을, 없으면 사유로 가른다.
+    const response = (application as NodeAdoptionApplication).response
+      ?? classifyRunnerAdoptRejection(application.rejectionReason);
     if (response === "terminal_rejection") {
       // 다음 훑기의 중앙 확인이 거둔다.
       this.centralRetry.set(sessionId, {
@@ -1081,7 +1175,10 @@ export class RunnerRecoveryCoordinator {
               this.recordCentralAdoptionResponse(sessionId, {
                 applied: false,
                 rejectionReason: error.rejectionReason,
-              });
+                ...(error instanceof NodeAdoptionRejectedError
+                  ? { response: error.response }
+                  : {}),
+              } as NodeAdoptionApplication);
             }
             this.options.logger.info(
               { sessionId, rejectionReason: error.reason, mode },

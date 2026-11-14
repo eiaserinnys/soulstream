@@ -34,7 +34,7 @@ import {
   TaskExecutor,
   type RunnerProcessRuntimeFactory,
 } from "../../src/task/task_executor.js";
-import type { Task } from "../../src/task/task_models.js";
+import { createExecutionActivation, type Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
@@ -332,8 +332,13 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     interventionQueue: [],
   };
 
-  await executor.startNewExecution(task, agent);
-  await task.executionActivation?.promise.catch(() => undefined);
+  // 카드 #1266 R5: 정본의 등록 번호가 다른 등록 거절은 새 실행의 중앙 상태를 오류로 덮지 않는다.
+  // 실패는 이 시도를 부른 쪽에 보인다(activation 거부).
+  const activation = createExecutionActivation();
+  let surfacedToCaller = false;
+  activation.promise.catch(() => { surfacedToCaller = true; });
+  await executor.startNewExecution(task, agent, activation);
+  await activation.promise.catch(() => undefined);
 
   const identity = await readRunnerRegistrationIdentity(paths.sessionDirectory);
   const authoritativeLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath);
@@ -362,7 +367,8 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   const delivered = emitted.some((event) =>
     event.type === "assistant_message" || event.type === "complete" || event.type === "result"
   );
-  const visibleFailure = task.status === "error"
+  const visibleFailure = surfacedToCaller
+    || task.status === "error"
     || emitted.some((event) => event.type === "error" || event.type === "session_notification");
   const outcome = delivered
     ? "delivered" as const

@@ -92,10 +92,7 @@ export const nodeResponseMachine = setup({
     notRejected: ({ event }) =>
       event.route === "transport_retryable" || event.route === "no_response",
     terminationAlreadyRecorded: ({ event }) =>
-      event.route === "applied_false"
-      && event.call === "termination"
-      && event.reason === "none"
-      && event.termination === "same",
+      event.call === "termination" && event.termination === "same",
     terminalReason: ({ event }) =>
       event.route === "applied_false"
       && classifyRunnerAdoptRejection(wireReason(event.reason)) === "terminal_rejection",
@@ -116,6 +113,11 @@ export const nodeResponseMachine = setup({
       on: {
         RESPOND: [
           {
+            guard: "terminationAlreadyRecorded",
+            target: "applied",
+            description: "종료 호출에서 정본의 종료 사건이 우리 종료다(응답 길과 사유는 보지 않는다)",
+          },
+          {
             guard: "quarantined",
             target: "quarantine",
             description: "전송 거절이 영구라 아웃박스 맨 앞 줄을 격리했다",
@@ -129,11 +131,6 @@ export const nodeResponseMachine = setup({
             guard: "notRejected",
             target: "retryable",
             description: "전송 거절이 다시 될 수 있거나 응답이 없다",
-          },
-          {
-            guard: "terminationAlreadyRecorded",
-            target: "applied",
-            description: "종료 거절에 사유가 없고 정본의 종료 사건이 우리 종료다",
           },
           {
             guard: "terminalReason",

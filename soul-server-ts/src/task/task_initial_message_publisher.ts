@@ -9,6 +9,12 @@ import type { Task } from "./task_models.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import {
+  NodeResponseRejectedError,
+  judgeNodeResponse,
+  nodeResponseFactsFromApplication,
+  nodeResponseFactsFromError,
+} from "./state/node_response_handling.js";
+import {
   buildUserMessageEvent,
   finishUserMessageEvent,
   persistUserMessageEvent,
@@ -52,12 +58,39 @@ export class TaskInitialMessagePublisher {
     });
     await persistUserMessageEvent(task, event, this.deps);
     if (!task.executionRegistration) {
-      const application = await this.deps.persistence
-        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-          reviewState: task.reviewState ?? "not_required",
-          transitionId: "initial",
-        });
+      const context = { call: "first_message" } as const;
+      let application: Awaited<ReturnType<
+        EventPersistence["enqueueRunningTransitionAndWaitForApplication"]
+      >>;
+      try {
+        application = await this.deps.persistence
+          .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+            reviewState: task.reviewState ?? "not_required",
+            transitionId: "initial",
+          });
+      } catch (error) {
+        const facts = nodeResponseFactsFromError(context, error);
+        if (!facts || facts.route === "no_response") throw error;
+        throw new NodeResponseRejectedError(
+          judgeNodeResponse(facts),
+          `initial running transition was rejected for ${task.agentSessionId}`,
+          { cause: error },
+        );
+      }
       applyCanonicalSessionProjection(task, application.canonicalSession);
+      if (!application.applied) {
+        const verdict = judgeNodeResponse(
+          nodeResponseFactsFromApplication(context, application),
+        );
+        // 다시 될 수 있는 거절(사유 없음, 옛 서버)은 옛 동작대로 이 시도를 잇는다.
+        // 다시 될 까닭 없는 거절과 영구 거절은 이 시도를 그만둔다.
+        if (verdict.decision.cell !== "retryable") {
+          throw new NodeResponseRejectedError(
+            verdict,
+            `initial running transition was rejected for ${task.agentSessionId}`,
+          );
+        }
+      }
     }
     await finishUserMessageEvent(task, event, this.deps);
   }

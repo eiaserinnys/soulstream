@@ -94,8 +94,10 @@ function cleanupIntents(
   if (facts.centralSession === "absent") {
     // 중앙 세션 없음이 확인되면 어느 칸이든 로컬 소유를 정리한다.
     // 받아 줄 세션이 없으므로 다시 시도하는 의도는 함께 내지 않는다.
+    // 종료는 같은 종료를 다시 올리지 않는 대신 완료 정산 미결을 닫는다.
     intents.delete("retry_later");
     intents.delete("resubmit_same_termination");
+    if (termination) intents.add("close_settlement_pending");
     intents.add("release_local_ownership");
   }
   return NODE_CLEANUP_INTENTS.filter((intent) => intents.has(intent));

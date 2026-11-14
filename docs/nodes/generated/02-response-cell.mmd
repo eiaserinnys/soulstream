@@ -10,10 +10,10 @@ state "서버 응답을 받은 칸 하나로 가른다" as nodeResponse {
     state "다시 될 까닭이 없는 거절" as nodeResponse_no_retry
     state "영구 거절" as nodeResponse_permanent
     state "격리" as nodeResponse_quarantine
+    nodeResponse_decide --> nodeResponse_applied: 종료 호출에서 정본의 종료 사건이 우리 종료다(응답 길과 사유는 보지 않는다)
     nodeResponse_decide --> nodeResponse_quarantine: 전송 거절이 영구라 아웃박스 맨 앞 줄을 격리했다
     nodeResponse_decide --> nodeResponse_permanent: 응답 안에 dead letter가 실렸다
     nodeResponse_decide --> nodeResponse_retryable: 전송 거절이 다시 될 수 있거나 응답이 없다
-    nodeResponse_decide --> nodeResponse_applied: 종료 거절에 사유가 없고 정본의 종료 사건이 우리 종료다
     nodeResponse_decide --> nodeResponse_no_retry: 사유가 다시 될 까닭 없는 것이다
     nodeResponse_decide --> nodeResponse_no_retry: 종료 거절에 사유가 없고 다른 종료가 이미 있다
     nodeResponse_decide --> nodeResponse_retryable: 사유가 없거나 다시 될 수 있는 사유다(옛 서버 호환)

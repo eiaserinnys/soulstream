@@ -23,6 +23,13 @@ import {
 import { releaseTaskRunner } from "./task_runner_release.js";
 import { decideNodeStopRequest } from "./state/node_barrier_decision.js";
 import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
+import {
+  judgeNodeResponse,
+  nodeResponseFactsFromApplication,
+  nodeResponseFactsFromError,
+  type NodeResponseContext,
+  type NodeResponseVerdict,
+} from "./state/node_response_handling.js";
 
 export interface ExternalFinalizeParams {
   result?: string;
@@ -41,7 +48,30 @@ interface CompletionNotificationPort {
   notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
 }
 
-interface TaskLifecycleTransitionDeps {
+/** 종료 응답의 정리 의도를 실행하는 포트다. 모두 없을 수 있다. */
+export interface TerminationCleanupPorts {
+  /**
+   * 완료 정산 미결 닫기의 호출점이다. 기본 구현은 아무것도 하지 않는다.
+   * 미결의 영속과 닫기는 다음 단위(카드 #1266 I3)가 채운다.
+   */
+  closeSettlementPending?: (
+    task: Task,
+    info: { registrationId: string | null },
+  ) => Promise<void>;
+  /** 중앙 세션이 없을 때 로컬 소유를 정리한다. 없으면 러너와 등록을 놓고 task를 잊는다. */
+  releaseLocalOwnership?: (task: Task) => Promise<void>;
+  /** 중앙 세션 한 줄을 캐시 없이 읽는다. 없으면 중앙 세션 유무를 확인하지 않는다. */
+  readCentralSession?: (sessionId: string) => Promise<unknown | null>;
+  /** 메모리의 task를 잊는다. */
+  forgetTask?: (sessionId: string) => void;
+  /**
+   * 거절된 종료의 러너 등록을 디스크에서 은퇴시킨다. 은퇴는 거절을 받은 때 남아야
+   * 재시작 뒤 복구가 같은 종료를 다시 올리지 않는다. 러너 복구가 잇는다.
+   */
+  retireRejectedRegistration?: (task: Task, registrationId: string) => Promise<void>;
+}
+
+interface TaskLifecycleTransitionDeps extends TerminationCleanupPorts {
   logger: Logger;
   persistence?: EventPersistence;
   completionNotifier?: CompletionNotificationPort;
@@ -80,13 +110,29 @@ export function isUserStopConverged(task: Task | undefined): boolean {
 
 export class TaskLifecycleTransition {
   private completionNotifier?: CompletionNotificationPort;
+  private ports: TerminationCleanupPorts;
 
   constructor(private readonly deps: TaskLifecycleTransitionDeps) {
     this.completionNotifier = deps.completionNotifier;
+    this.ports = {
+      closeSettlementPending: deps.closeSettlementPending,
+      releaseLocalOwnership: deps.releaseLocalOwnership,
+      readCentralSession: deps.readCentralSession,
+      forgetTask: deps.forgetTask,
+      retireRejectedRegistration: deps.retireRejectedRegistration,
+    };
   }
 
   setCompletionNotifier(completionNotifier: CompletionNotificationPort): void {
     this.completionNotifier = completionNotifier;
+  }
+
+  /**
+   * 종료 정리 포트를 나중에 잇는다. 완료 정산 미결 닫기는 다음 단위(카드 #1266 I3)가
+   * 영속 구현으로 여기에 잇는다.
+   */
+  setCleanupPorts(ports: TerminationCleanupPorts): void {
+    this.ports = { ...this.ports, ...ports };
   }
 
   /**
@@ -463,18 +509,34 @@ export class TaskLifecycleTransition {
       ...common,
     };
     const registrationId = task.executionRegistration?.registrationId;
-    const application = registrationId === undefined
-      ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
-          task.agentSessionId,
-          event,
-          effect,
-        )
-      : await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
-          task.agentSessionId,
-          event,
-          effect,
-          registrationId,
-        );
+    const context: NodeResponseContext = {
+      call: "termination",
+      registrationId: registrationId ?? null,
+      retained: task.runnerRetainedForDetachedWork === true,
+    };
+    let application: Awaited<
+      ReturnType<EventPersistence["enqueueTerminalTransitionAndWaitForApplication"]>
+    >;
+    try {
+      application = registrationId === undefined
+        ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+            task.agentSessionId,
+            event,
+            effect,
+          )
+        : await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+            task.agentSessionId,
+            event,
+            effect,
+            registrationId,
+          );
+    } catch (error) {
+      const facts = nodeResponseFactsFromError(context, error);
+      // 응답이 아닌 오류와 응답 없음은 다시 올릴 수 있으므로 그대로 던진다.
+      if (!facts || facts.route === "no_response") throw error;
+      await this.settleRejection(task, judgeNodeResponse(facts), this.rejectedRegistrationOf(task, registrationId));
+      return false;
+    }
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (
       isTerminalTaskStatus(task.status)
@@ -482,7 +544,135 @@ export class TaskLifecycleTransition {
     ) {
       task.executionRegistration = undefined;
     }
-    return application.applied;
+    if (application.applied) return true;
+    const verdict = judgeNodeResponse(
+      nodeResponseFactsFromApplication(context, application),
+    );
+    if (verdict.decision.cell === "applied") return true;
+    await this.settleRejection(task, verdict, this.rejectedRegistrationOf(task, registrationId));
+    return false;
+  }
+
+  /** 거절된 종료의 러너 등록이다. 복구 중이면 복구하는 등록, 아니면 이 실행의 등록이다. */
+  private rejectedRegistrationOf(task: Task, executionRegistrationId: string | undefined): string | null {
+    return task.runnerRecoveryRegistrationId ?? executionRegistrationId ?? null;
+  }
+
+  private async probeCentralSession(
+    sessionId: string,
+  ): Promise<"present" | "absent" | "unknown"> {
+    const read = this.ports.readCentralSession;
+    if (!read) return "unknown";
+    try {
+      return (await read(sessionId)) === null ? "absent" : "present";
+    } catch (error) {
+      this.deps.logger.warn(
+        { err: error, sessionId },
+        "central session lookup failed while settling a rejected terminal",
+      );
+      return "unknown";
+    }
+  }
+
+  /**
+   * 거절 응답이 고른 정리 의도를 실행하고 최종 판정을 돌려준다. 중앙 세션 유무를 모르면
+   * 먼저 확인해 다시 판정한다. 같은 종료를 다시 올리는 의도는 실행할 것이 없다(주기 훑기가
+   * 다시 올리는 것은 등록 은퇴가 막는다). 중앙 오류 표시는 여기서 실행하지 않는다: 덮는
+   * 길이 호출마다 다르므로 돌려준 판정을 보고 호출자가 한다(실행 등록과 첫 메시지는
+   * 실행기의 오류 종료, 잇기는 실행기의 settleAdoptRejection, 재개는 재개 전이의 거절을 받은 쪽).
+   * 정리 하나가 실패해도 다음 정리와 마무리를 막지 않는다.
+   */
+  async settleRejection(
+    task: Task,
+    verdict: NodeResponseVerdict,
+    registrationId: string | null,
+  ): Promise<NodeResponseVerdict> {
+    verdict = await this.judgeWithCentralSession(task, verdict);
+    for (const intent of verdict.decision.intents) {
+      try {
+        if (intent === "close_settlement_pending") {
+          await this.ports.closeSettlementPending?.(task, { registrationId });
+        } else if (intent === "retire_rejected_registration") {
+          if (registrationId !== null) {
+            // 표시는 은퇴가 끝나기 전의 대비다. 은퇴가 못 끝나면 러너 복구가 다음 훑기에서 마저 한다.
+            task.rejectedTerminationRegistrationId = registrationId;
+            // 러너가 붙어 있으면 마무리가 러너를 닫거나 보유할지 정한 뒤에 한다(retireRejectedTerminal).
+            if (!task.runner) await this.retireRejectedTerminal(task);
+          }
+        } else if (intent === "release_local_ownership") {
+          await this.releaseLocalOwnershipThroughPorts(task);
+        }
+      } catch (error) {
+        this.deps.logger.warn(
+          { err: error, sessionId: task.agentSessionId, intent },
+          "rejected response cleanup step failed",
+        );
+      }
+    }
+    this.deps.logger.info(
+      {
+        sessionId: task.agentSessionId,
+        cell: verdict.decision.cell,
+        intents: verdict.decision.intents,
+      },
+      "node response was rejected",
+    );
+    return verdict;
+  }
+
+  /**
+   * 거절된 종료가 남긴 표시의 그 등록만 디스크에서 은퇴시킨다. 정상 보유 중인 러너는
+   * 거두지 않는다. 실패하면 표시가 남아 러너 복구가 다시 시도한다.
+   */
+  async retireRejectedTerminal(task: Task): Promise<void> {
+    const registrationId = task.rejectedTerminationRegistrationId;
+    if (registrationId === undefined) return;
+    if (task.runnerRetainedForDetachedWork === true) return;
+    const retire = this.ports.retireRejectedRegistration;
+    if (!retire) return;
+    try {
+      await retire(task, registrationId);
+    } catch (error) {
+      this.deps.logger.warn(
+        { err: error, sessionId: task.agentSessionId, registrationId },
+        "rejected terminal registration retirement failed; recovery retries it",
+      );
+    }
+  }
+
+  /** 중앙 세션 유무를 모르는 판정이면 확인해 다시 판정한다. 확인하지 못하면 그대로 둔다. */
+  async judgeWithCentralSession(
+    task: Task,
+    verdict: NodeResponseVerdict,
+  ): Promise<NodeResponseVerdict> {
+    if (verdict.facts.centralSession !== "unknown") return verdict;
+    const centralSession = await this.probeCentralSession(task.agentSessionId);
+    return centralSession === "unknown"
+      ? verdict
+      : judgeNodeResponse({ ...verdict.facts, centralSession });
+  }
+
+  /** 로컬 소유를 정리한다. 정리 포트가 이어져 있으면 그것을, 없으면 기본 정리를 쓴다. */
+  async releaseLocalOwnershipThroughPorts(task: Task): Promise<void> {
+    await (this.ports.releaseLocalOwnership ?? ((owned) => this.releaseLocalOwnership(owned)))(task);
+  }
+
+  /** 중앙 세션이 없을 때의 로컬 소유 정리다. 러너를 놓고 등록 번호와 task를 잊는다. */
+  async releaseLocalOwnership(task: Task): Promise<void> {
+    const runner = task.runner;
+    if (runner && releaseTaskRunner(task, runner)) {
+      try {
+        await runner.dispatcher.detachHost();
+      } catch (error) {
+        this.deps.logger.warn(
+          { err: error, sessionId: task.agentSessionId },
+          "runner detach failed while releasing local ownership",
+        );
+      }
+    }
+    task.executionRegistration = undefined;
+    task.executionPromise = undefined;
+    this.ports.forgetTask?.(task.agentSessionId);
   }
 
 }
