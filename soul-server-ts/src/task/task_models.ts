@@ -70,6 +70,28 @@ export interface PersistentGenerationFirstCall {
   contextReset?: boolean;
 }
 
+export interface PersistentGenerationBootstrap {
+  generation: number;
+  backendSessionId: string | null;
+  modelPreset: string;
+  model: string;
+  contextReset: boolean;
+  status: "collecting" | "complete" | "unavailable";
+  firstCall: { inputTokens: number; cachedInputTokens: number } | null;
+  firstTurnContextTokens: number | null;
+  initInputTokens: number | null;
+  initCachedTokens: number | null;
+  initOutputTokens: number | null;
+  initReasoningTokens: number | null;
+  modelCallCount: number | null;
+  growthTokens: number | null;
+  growthSamples: number | null;
+  startedAt: string;
+  completedAt: string | null;
+  sourceCompleteEventId: number | null;
+  priceVersion: string | null;
+}
+
 export interface PersistentGenerationPending {
   number: number;
   reason: string;
@@ -89,6 +111,7 @@ export interface PersistentGenerationState {
   backendSessionId?: string;
   startedAt?: string;
   firstCall?: PersistentGenerationFirstCall;
+  bootstrap?: PersistentGenerationBootstrap;
   pending?: PersistentGenerationPending;
 }
 

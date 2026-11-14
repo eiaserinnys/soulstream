@@ -10,7 +10,10 @@ import type {
   ProviderLimits,
   ProviderUsageCommandHandler,
 } from "../auth/provider_usage.js";
-import { DEFAULT_CONFIG } from "./persistent_decision_config.js";
+import { DEFAULT_CONFIG, GENERATION_COST_SEEDS, firstCallCacheEstimate } from "./persistent_decision_config.js";
+import { findModelRow } from "@soulstream/model-catalog";
+import { extractPersistentGeneration } from "./task_metadata.js";
+import type { GenerationCostProfile } from "./persistent_generation_cost.js";
 import type {
   AccountObservation,
   DecisionInput,
@@ -118,6 +121,67 @@ export async function buildPersistentDecisionInput(
     deps.providerUsage,
     deps.logger,
   );
+  const catalog = deps.modelCatalog.snapshot();
+  const generationCosts: Record<string, GenerationCostProfile | undefined> = {};
+  const cacheFractions: Record<string, number | null> = {};
+  const idle = (now.getTime() - Date.parse(lastCallEndedAt)) / 1000;
+  for (const [preset, provider] of Object.entries(presetProviders)) {
+    if (provider !== "antigravity") continue;
+    const model = deps.modelCatalog.resolve(preset).model;
+    const row = findModelRow(catalog, model);
+    const rates = row?.provider === "antigravity" ? row.rates : null;
+    if (!rates?.input || rates.cache_read === null || rates.output === null) continue;
+    const read = rates.cache_read / rates.input;
+    const out = rates.output / rates.input;
+    const seed = GENERATION_COST_SEEDS[preset as keyof typeof GENERATION_COST_SEEDS];
+    const states = [...generationMetadataEvents].sort((a, b) => b.id - a.id)
+      .map(event => extractPersistentGeneration([{ type: "persistent_generation", value: event.payload.value }]));
+    if (task.persistentGeneration) states.unshift(task.persistentGeneration);
+    const measured = states.map(state => state?.bootstrap).find(b =>
+      b?.status === "complete" && !b.contextReset && b.modelPreset === preset && b.model === model
+      && b.firstTurnContextTokens !== null && b.firstTurnContextTokens > 0 && b.initInputTokens !== null && b.initInputTokens > 0
+      && b.initCachedTokens !== null && b.initCachedTokens <= b.initInputTokens
+      && b.initOutputTokens !== null && b.initReasoningTokens !== null);
+    const growthEntry = task.metadata?.find(entry => entry.type === "persistent_generation_growth");
+    const growthValue = asRecord(growthEntry?.value);
+    const growthPreset = asRecord(asRecord(growthValue?.presets)?.[preset]);
+    const growthTokens = growthPreset?.tokens;
+    const growthSamples = growthPreset?.samples;
+    const bootstraps = new Map<number, NonNullable<NonNullable<typeof states[number]>["bootstrap"]>>();
+    for (const state of states) {
+      const b = state?.bootstrap;
+      if (b?.status === "complete" && !b.contextReset && b.modelPreset === preset && b.model === model
+        && b.growthTokens !== null && b.growthSamples !== null && b.growthSamples > 0
+        && !bootstraps.has(b.generation)) bootstraps.set(b.generation, b);
+    }
+    const bootstrapTotals = [...bootstraps.values()].reduce(
+      (sum, b) => ({ tokens: sum.tokens + b.growthTokens!, samples: sum.samples + b.growthSamples! }),
+      { tokens: 0, samples: 0 },
+    );
+    const growth = growthPreset?.model === model && typeof growthTokens === "number" && Number.isFinite(growthTokens)
+      && growthTokens >= 0 && typeof growthSamples === "number" && Number.isFinite(growthSamples) && growthSamples > 0
+      ? growthTokens / growthSamples
+      : bootstrapTotals.samples > 0 ? bootstrapTotals.tokens / bootstrapTotals.samples
+      : seed?.growthTokensPerCall;
+    if (measured) {
+      if (growth !== undefined) generationCosts[preset] = {
+        baselineTokens: measured.firstTurnContextTokens!,
+        initEquivalentInputTokens: measured.initInputTokens! - (1 - read) * measured.initCachedTokens!
+          + out * (measured.initOutputTokens! + measured.initReasoningTokens!),
+        growthTokensPerCall: growth, readMultiplier: read,
+        source: "session-bootstrap", sampleCount: typeof growthSamples === "number" ? growthSamples : 0,
+        priceVersion: catalog.price_snapshot.price_version,
+      };
+    } else if (seed) {
+      generationCosts[preset] = {
+        baselineTokens: seed.baselineTokens,
+        initEquivalentInputTokens: seed.input - (1 - read) * seed.cached + out * (seed.output + seed.reasoning),
+        growthTokensPerCall: growth ?? seed.growthTokensPerCall, readMultiplier: read,
+        source: seed.source, sampleCount: seed.sampleCount, priceVersion: catalog.price_snapshot.price_version,
+      };
+    }
+    cacheFractions[preset] = firstCallCacheEstimate(preset, idle).fraction;
+  }
 
   return {
     trigger,
@@ -131,6 +195,9 @@ export async function buildPersistentDecisionInput(
     fallback_models: supportedFallbackModels,
     preset_providers: presetProviders,
     checkpoint_tokens_by_preset: checkpointTokens,
+    generation_cost_by_preset: generationCosts,
+    first_call_cache_fraction_by_preset: cacheFractions,
+    context_max_tokens: task.claudeContextUsage?.maxTokens ?? contextUsage?.maxTokens ?? 1_000_000,
     accounts,
     ...(options.limitResetAt ? { limit_reset_at: options.limitResetAt } : {}),
   };
@@ -152,7 +219,7 @@ export function countKeepalivesSinceHumanInput(
 
 function latestContextUsage(
   events: readonly { event_type: string; payload: Record<string, unknown> }[],
-): { usedTokens: number; estimated: boolean } | undefined {
+): { usedTokens: number; maxTokens?: number; estimated: boolean } | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
     if (event.event_type !== "context_usage") continue;
@@ -160,6 +227,7 @@ function latestContextUsage(
     if (typeof usedTokens !== "number") continue;
     return {
       usedTokens,
+      ...(typeof event.payload.max_tokens === "number" ? { maxTokens: event.payload.max_tokens } : {}),
       estimated: event.payload.estimated === true,
     };
   }

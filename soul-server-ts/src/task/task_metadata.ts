@@ -2,6 +2,7 @@ import type {
   CallerInfo,
   ObservedClaudeContextUsage,
   PersistentGenerationFirstCall,
+  PersistentGenerationBootstrap,
   PersistentGenerationPending,
   PersistentGenerationState,
 } from "./task_models.js";
@@ -138,6 +139,7 @@ export function buildPersistentGenerationMetadataEntry(
               : { context_reset: firstCall.contextReset }),
           }
         : null,
+      ...(state.bootstrap ? { bootstrap: serializeBootstrap(state.bootstrap) } : {}),
       pending: pending
         ? {
             number: pending.number,
@@ -176,6 +178,7 @@ export function extractPersistentGeneration(
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const recordValue = value as Record<string, unknown>;
     const firstCall = parsePersistentGenerationFirstCall(recordValue.first_call);
+    const bootstrap = parseBootstrap(recordValue.bootstrap);
     const pending = parsePersistentGenerationPending(recordValue.pending);
     return {
       number: positiveSafeInteger(recordValue.number) ? recordValue.number : 1,
@@ -186,10 +189,54 @@ export function extractPersistentGeneration(
         ? { startedAt: recordValue.started_at }
         : {}),
       ...(firstCall === undefined ? {} : { firstCall }),
+      ...(bootstrap === undefined ? {} : { bootstrap }),
       ...(pending === undefined ? {} : { pending }),
     };
   }
   return undefined;
+}
+
+function serializeBootstrap(b: PersistentGenerationBootstrap): Record<string, unknown> {
+  return {
+    generation: b.generation, backend_session_id: b.backendSessionId, model_preset: b.modelPreset,
+    model: b.model, context_reset: b.contextReset, status: b.status,
+    first_call: b.firstCall ? { input_tokens: b.firstCall.inputTokens, cached_input_tokens: b.firstCall.cachedInputTokens } : null,
+    first_turn_context_tokens: b.firstTurnContextTokens, init_input_tokens: b.initInputTokens,
+    init_cached_tokens: b.initCachedTokens, init_output_tokens: b.initOutputTokens,
+    init_reasoning_tokens: b.initReasoningTokens, model_call_count: b.modelCallCount,
+    growth_tokens: b.growthTokens, growth_samples: b.growthSamples, started_at: b.startedAt,
+    completed_at: b.completedAt, source_complete_event_id: b.sourceCompleteEventId, price_version: b.priceVersion,
+  };
+}
+
+function parseBootstrap(value: unknown): PersistentGenerationBootstrap | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const r = value as Record<string, unknown>;
+  const nullableNumber = (v: unknown): v is number | null => v === null || nonNegativeFiniteNumber(v);
+  const nullableString = (v: unknown): v is string | null => v === null || typeof v === "string";
+  const fc = r.first_call && typeof r.first_call === "object" && !Array.isArray(r.first_call)
+    ? r.first_call as Record<string, unknown> : undefined;
+  if (!positiveSafeInteger(r.generation) || !nullableString(r.backend_session_id)
+    || typeof r.model_preset !== "string" || typeof r.model !== "string"
+    || typeof r.context_reset !== "boolean"
+    || (r.status !== "collecting" && r.status !== "complete" && r.status !== "unavailable")
+    || !(r.first_call === null || (fc && nonNegativeFiniteNumber(fc.input_tokens) && nonNegativeFiniteNumber(fc.cached_input_tokens)))
+    || !nullableNumber(r.first_turn_context_tokens) || !nullableNumber(r.init_input_tokens)
+    || !nullableNumber(r.init_cached_tokens) || !nullableNumber(r.init_output_tokens)
+    || !nullableNumber(r.init_reasoning_tokens) || !nullableNumber(r.model_call_count)
+    || !nullableNumber(r.growth_tokens) || !nullableNumber(r.growth_samples)
+    || typeof r.started_at !== "string" || !nullableString(r.completed_at)
+    || !nullableNumber(r.source_complete_event_id) || !nullableString(r.price_version)) return undefined;
+  return {
+    generation: r.generation, backendSessionId: r.backend_session_id, modelPreset: r.model_preset,
+    model: r.model, contextReset: r.context_reset, status: r.status,
+    firstCall: fc ? { inputTokens: fc.input_tokens as number, cachedInputTokens: fc.cached_input_tokens as number } : null,
+    firstTurnContextTokens: r.first_turn_context_tokens, initInputTokens: r.init_input_tokens,
+    initCachedTokens: r.init_cached_tokens, initOutputTokens: r.init_output_tokens,
+    initReasoningTokens: r.init_reasoning_tokens, modelCallCount: r.model_call_count,
+    growthTokens: r.growth_tokens, growthSamples: r.growth_samples, startedAt: r.started_at,
+    completedAt: r.completed_at, sourceCompleteEventId: r.source_complete_event_id, priceVersion: r.price_version,
+  };
 }
 
 function parsePersistentGenerationFirstCall(value: unknown):

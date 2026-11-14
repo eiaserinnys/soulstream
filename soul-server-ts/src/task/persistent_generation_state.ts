@@ -49,6 +49,7 @@ export function resolveGenerationState(
         number: pending.number,
         ...(currentNativeSessionId ? { backendSessionId: currentNativeSessionId } : {}),
         ...(current.firstCall === undefined ? {} : { firstCall: current.firstCall }),
+        ...(current.bootstrap === undefined ? {} : { bootstrap: current.bootstrap }),
         ...(targetChanged ? { pending: { ...requested, number: pending.number + 1 } } : {}),
       },
       activeGenerationRollover: undefined,

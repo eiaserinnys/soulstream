@@ -1,4 +1,5 @@
-import { DEFAULT_CONFIG } from "./persistent_decision_config.js";
+import { DEFAULT_CONFIG, firstCallCacheEstimate } from "./persistent_decision_config.js";
+import { generationCostThresholds, type GenerationCostProfile } from "./persistent_generation_cost.js";
 
 export const MIN_CONVERSATION_HEADROOM_TOKENS = 80_000;
 
@@ -31,6 +32,9 @@ export interface DecisionInput {
   fallback_models: string[];
   preset_providers: Record<string, Provider>;
   checkpoint_tokens_by_preset: Record<string, number | undefined>;
+  generation_cost_by_preset?: Record<string, GenerationCostProfile | undefined>;
+  first_call_cache_fraction_by_preset?: Record<string, number | null>;
+  context_max_tokens?: number;
   accounts: Partial<Record<Provider, AccountObservation>>;
   limit_reset_at?: string;
 }
@@ -38,7 +42,7 @@ export interface DecisionInput {
 export interface PresetDecisionConfig {
   read_mult: number;
   write_mult: number;
-  cache_ttl_seconds: number;
+  cache_policy: { kind: "fixed_ttl"; ttl_seconds: number } | { kind: "implicit"; profile_version: string };
   checkpoint_default_tokens: number;
 }
 
@@ -117,7 +121,34 @@ export function decidePersistentGeneration(
       }
     }
 
-    if (context.idleSeconds > context.presetConfig.cache_ttl_seconds) {
+    if (context.presetConfig.cache_policy.kind === "implicit") {
+      const cache = firstCallCacheEstimate(input.current_preset, context.idleSeconds);
+      const fractions = input.first_call_cache_fraction_by_preset;
+      const fraction = fractions && input.current_preset in fractions
+        ? fractions[input.current_preset]! : cache.fraction;
+      const profile = input.generation_cost_by_preset?.[input.current_preset];
+      const max = input.context_max_tokens ?? 1_000_000;
+      const thresholds = profile
+        ? generationCostThresholds(profile, fraction, max, MIN_CONVERSATION_HEADROOM_TOKENS)
+        : undefined;
+      const threshold = thresholds?.arrivalTokens ?? max - MIN_CONVERSATION_HEADROOM_TOKENS;
+      const snapshot = {
+        generation_cost: profile ?? "unavailable",
+        cache_policy: context.presetConfig.cache_policy,
+        cache_sample: cache,
+        cache_fraction: fraction,
+        warm_threshold_tokens: thresholds?.warmTokens ?? threshold,
+        arrival_threshold_tokens: threshold,
+        cache_estimate: thresholds?.cacheEstimate ?? "unknown",
+      };
+      return input.context_tokens >= threshold
+        ? newGenerationResult(context, "arrival.cost.over_threshold",
+          "문맥이 추정 비용 기준을 넘어 새 세대를 엽니다.", config, snapshot)
+        : createResult(context, "continue", "arrival.cost.within_threshold",
+          "문맥이 추정 비용 기준 안에 있어 현재 세대를 이어갑니다.", snapshot);
+    }
+
+    if (context.idleSeconds > context.presetConfig.cache_policy.ttl_seconds) {
       const coldThreshold = config.cold_ratio * context.checkpointTokens;
       if (input.context_tokens > coldThreshold) {
         return newGenerationResult(
@@ -153,21 +184,30 @@ export function decidePersistentGeneration(
   }
 
   if (input.trigger === "turn_end") {
-    if (input.context_tokens > context.effectiveBudgetTokens) {
+    const profile = input.generation_cost_by_preset?.[input.current_preset];
+    const implicit = context.presetConfig.cache_policy.kind === "implicit";
+    const warm = implicit
+      ? profile
+        ? generationCostThresholds(profile, null, input.context_max_tokens ?? 1_000_000, MIN_CONVERSATION_HEADROOM_TOKENS).warmTokens
+        : (input.context_max_tokens ?? 1_000_000) - MIN_CONVERSATION_HEADROOM_TOKENS
+      : context.effectiveBudgetTokens;
+    if (implicit ? input.context_tokens >= warm : input.context_tokens > warm) {
       return createResult(
         context,
         "let_cool",
         "turn_end.over_budget",
-        `문맥이 예산 ${context.effectiveBudgetTokens} 토큰을 넘었으므로 세대를 식히고 다음 입력에서 다시 판단합니다.`,
+        `문맥이 예산 ${warm} 토큰을 넘었으므로 세대를 식히고 다음 입력에서 다시 판단합니다.`,
+        implicit ? { warm_threshold_tokens: warm, generation_cost: profile ?? "unavailable" } : {},
       );
     }
 
-    if (input.preset_providers[input.current_preset] === "antigravity") {
+    if (implicit) {
       return createResult(
         context,
         "let_cool",
         "turn_end.no_keepalive_provider",
         "이 계정은 캐시 유지 호출을 하지 않습니다.",
+        { warm_threshold_tokens: warm, generation_cost: profile ?? "unavailable" },
       );
     }
 
@@ -223,7 +263,7 @@ export function decidePersistentGeneration(
 
     const wakeAt = new Date(
       Date.parse(input.last_call_ended_at)
-        + (context.presetConfig.cache_ttl_seconds - config.keepalive_margin_seconds) * 1_000,
+        + ((context.presetConfig.cache_policy as { kind: "fixed_ttl"; ttl_seconds: number }).ttl_seconds - config.keepalive_margin_seconds) * 1_000,
     ).toISOString();
     return createResult(
       context,
@@ -302,7 +342,7 @@ function createResult(
       idle_seconds: context.idleSeconds,
       checkpoint_tokens: context.checkpointTokens,
       checkpoint_source: context.checkpointSource,
-      cache_ttl_seconds: context.presetConfig.cache_ttl_seconds,
+      cache_ttl_seconds: context.presetConfig.cache_policy.kind === "fixed_ttl" ? context.presetConfig.cache_policy.ttl_seconds : null,
       budget_tokens: context.effectiveBudgetTokens,
       ...snapshotExtras,
     },

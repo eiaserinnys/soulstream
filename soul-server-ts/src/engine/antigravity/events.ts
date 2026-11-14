@@ -16,6 +16,11 @@ export interface AntigravityUsage {
   output_tokens: number;
   reasoning_output_tokens: number;
 }
+export interface AntigravityGenerationUsage {
+  model_call_count: number;
+  context_growth_tokens: number;
+  context_growth_samples: number;
+}
 export interface AntigravityEvent {
   event: string;
   conversation_id?: string;
@@ -58,6 +63,7 @@ export function addAntigravityUsage(
 export class AntigravityEventMapper {
   usage: AntigravityUsage | undefined;
   model: string | undefined;
+  nativeSessionId: string | undefined;
   private result: AntigravityEvent["result"];
   private readonly counted = new Set<number>();
   private readonly calls = new Set<number>();
@@ -67,7 +73,11 @@ export class AntigravityEventMapper {
   private sawErrorMessage = false;
   /** First model step with input tokens; priced from the whole input incl. cache. */
   firstCall: AntigravityFirstCall | null = null;
-  private lastContextTokens = 0;
+  lastContextTokens = 0;
+  firstContextTokens: number | undefined;
+  generationUsage: AntigravityGenerationUsage = {
+    model_call_count: 0, context_growth_tokens: 0, context_growth_samples: 0,
+  };
 
   constructor(
     private readonly turnId: string,
@@ -79,6 +89,7 @@ export class AntigravityEventMapper {
   accept(raw: AntigravityEvent): SSEEventPayload[] {
     const timestamp = Date.now() / 1000;
     if (raw.event === "init" && raw.conversation_id !== undefined) {
+      this.nativeSessionId = raw.conversation_id;
       this.model = raw.init?.model;
       return [{ type: "session", session_id: raw.conversation_id, ...(this.model ? { model: this.model } : {}), timestamp }];
     }
@@ -101,7 +112,14 @@ export class AntigravityEventMapper {
           input_tokens: stepInputTokens,
           cached_input_tokens: u.cache_read_tokens ?? 0,
         };
-        this.lastContextTokens = stepInputTokens + stepOutputTokens;
+        const contextTokens = stepInputTokens + stepOutputTokens;
+        this.firstContextTokens ??= contextTokens;
+        this.generationUsage.model_call_count += 1;
+        if (this.lastContextTokens > 0 && contextTokens >= this.lastContextTokens) {
+          this.generationUsage.context_growth_tokens += contextTokens - this.lastContextTokens;
+          this.generationUsage.context_growth_samples += 1;
+        }
+        this.lastContextTokens = contextTokens;
       }
     }
     const events: SSEEventPayload[] = [];
@@ -163,6 +181,7 @@ export class AntigravityEventMapper {
     const billing = {
       ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
       ...(this.firstCall !== null ? { first_call: this.firstCall } : {}),
+      ...(this.generationUsage.model_call_count > 0 ? { generation_usage: this.generationUsage } : {}),
     };
     const contextUsage = this.lastContextTokens > 0
       ? makeContextUsagePayload(this.lastContextTokens, 1_000_000)

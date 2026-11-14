@@ -17,6 +17,24 @@ const step = (index: number, extra: object) => ({ event: "step_update", step_upd
 } });
 
 describe("AntigravityEventMapper", () => {
+  it("counts growth once per positive DONE and excludes decreases", () => {
+    const mapper = new AntigravityEventMapper("turn");
+    const usage = (index: number, input: number, output: number) =>
+      step(index, { usage: { input_tokens: input, output_tokens: output } });
+    mapper.accept(usage(1, 100, 10));
+    mapper.accept(usage(2, 120, 10));
+    mapper.accept(usage(2, 120, 10));
+    mapper.accept(usage(3, 120, 10));
+    mapper.accept(usage(4, 70, 10));
+    mapper.accept(usage(5, 80, 10));
+    mapper.accept({ event: "result", result: { status: "SUCCESS" } });
+    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject([
+      { type: "context_usage" },
+      { type: "complete", generation_usage: {
+        model_call_count: 5, context_growth_tokens: 30, context_growth_samples: 3,
+      } },
+    ]);
+  });
   it("unwraps only the configured gateway server name", () => {
     const mapper = new AntigravityEventMapper("turn", false, "profile-test");
     const tool = (index: number, server: string, name: string) => step(index, { step_type: "tool",

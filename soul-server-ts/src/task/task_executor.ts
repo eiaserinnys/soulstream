@@ -31,6 +31,7 @@ import type {
   SupportsCompact,
 } from "../engine/protocol.js";
 import { makeContextUsagePayload } from "../engine/context_usage.js";
+import { captureGenerationBootstrap, persistGenerationBootstrap, persistGenerationGrowth } from "./persistent_generation_bootstrap.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
@@ -2080,6 +2081,7 @@ export class TaskExecutor {
         task,
         initialTurnInput.generationCheckpointStats,
         this.persistence,
+        this.modelCatalog?.snapshot().price_snapshot?.price_version ?? null,
       );
     }
     const endedTurnReceipts: TaskDeliveryTurnReceipt[] = [];
@@ -2156,6 +2158,38 @@ export class TaskExecutor {
       const isCacheKeepaliveTurn = currentTurnInterventions.some(isCacheKeepaliveInput);
       const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
       let turnCompletedEvent: SSEEventPayload | undefined;
+      let terminalEvent: SSEEventPayload | undefined;
+      const turnStartEventId = task.lastEventId;
+      const identity = {
+        generation: task.activeGenerationRollover?.number ?? task.persistentGeneration?.number ?? 1,
+        nativeId: task.activeGenerationRollover ? undefined : task.codexThreadId,
+        modelPreset: task.modelPreset ?? "",
+        model: task.model ?? "",
+      };
+      const saveBootstrap = async (eventId: number | null): Promise<void> => {
+        if (!terminalEvent) return;
+        const update = captureGenerationBootstrap(task, terminalEvent, identity,
+          contextRecovery.latestContextUsage?.usedTokens, eventId);
+        if (update) await persistGenerationBootstrap(task, update, this.persistence);
+        if (task.persistent === true && update?.bootstrap.contextReset !== true) {
+          await persistGenerationGrowth(task, terminalEvent, identity, eventId, this.persistence);
+        }
+      };
+      const resolveTerminalEventId = async (acknowledgedId: number | null): Promise<number | null> => {
+        if (acknowledgedId !== null || !terminalEvent || typeof this.db.readEvents !== "function") {
+          return acknowledgedId;
+        }
+        try {
+          const rows = await this.db.readEvents(task.agentSessionId, turnStartEventId, 20, [terminalEvent.type]);
+          return rows.reduce<number | null>(
+            (latest, row) => row.id > turnStartEventId && (latest === null || row.id > latest) ? row.id : latest,
+            null,
+          );
+        } catch (error) {
+          this.logger.warn({ err: error, sessionId: task.agentSessionId }, "terminal event ID lookup failed");
+          return null;
+        }
+      };
       try {
         try {
           for await (const event of this.failOnFatalEngineError(task, this.engineTurnRunner.executeTurn({
@@ -2189,16 +2223,26 @@ export class TaskExecutor {
           },
           }))) {
             if (event.type === "complete") turnCompletedEvent = event;
+            if (event.type === "complete" || event.type === "error") terminalEvent = event;
             observeClaudeContextRecoveryEvent(contextRecovery, event);
             await this.observeDeliveryTurn(task, turnReceipt, event);
             await this.engineEventPublisher.publishEngineEvent(task, event, {
               alreadyPersisted: runner.eventPersistence === "runner",
               isCacheKeepaliveTurn,
             });
+            if (event.type === "session") identity.nativeId = task.codexThreadId;
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
           await task.interruptRequest;
+          if (terminalEvent) {
+            const acknowledgedId = runner.eventPersistence === "runner"
+              ? await runner.dispatcher.waitForSessionAck()
+              : await this.persistence.waitForSessionAck(task.agentSessionId);
+            const eventId = await resolveTerminalEventId(acknowledgedId);
+            if (eventId !== null) task.lastEventId = Math.max(task.lastEventId, eventId);
+            await saveBootstrap(eventId);
+          }
           const disposition = await this.engineFailureRecovery.recoverFromExecuteFailure(
             task,
             err,
@@ -2220,12 +2264,14 @@ export class TaskExecutor {
           }
           break;
         }
-        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+        const acknowledgedId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
-      if (lastAcknowledgedEventId !== null) {
-        task.lastEventId = lastAcknowledgedEventId;
+      const terminalEventId = await resolveTerminalEventId(acknowledgedId);
+      if (terminalEventId !== null) {
+        task.lastEventId = Math.max(task.lastEventId, terminalEventId);
       }
+      await saveBootstrap(terminalEventId);
       await this.setClaudeContextUsage(
         task,
         contextRecovery.compactCompleted

@@ -934,4 +934,28 @@ describe("ranked persistent fallback models", () => {
       reason: "이 계정은 캐시 유지 호출을 하지 않습니다.",
     });
   });
+
+  it("keeps a 297-sized context after a complete miss and switches at the cost boundary", () => {
+    const profile = {
+      baselineTokens: 130418, initEquivalentInputTokens: 233769.25,
+      growthTokensPerCall: 9446 / 3, readMultiplier: 0.05,
+      source: "test", sampleCount: 3, priceVersion: "test",
+    };
+    const input = makeInput({
+      current_preset: "gemini-4-hydrogen",
+      preset_providers: { "gemini-4-hydrogen": "antigravity" },
+      generation_cost_by_preset: { "gemini-4-hydrogen": profile },
+      first_call_cache_fraction_by_preset: { "gemini-4-hydrogen": null },
+      context_max_tokens: 1000000, context_tokens: 146765,
+      accounts: { antigravity: healthyAccount },
+    });
+    expect(decidePersistentGeneration(input)).toMatchObject({
+      action: "continue", inputs_snapshot: { arrival_threshold_tokens: 162548, cache_ttl_seconds: null },
+    });
+    expect(decidePersistentGeneration({ ...input, context_tokens: 162548 }).action).toBe("new_generation");
+    expect(decidePersistentGeneration({ ...input, trigger: "turn_end" })).toMatchObject({
+      action: "let_cool", rule: "turn_end.no_keepalive_provider",
+      inputs_snapshot: { warm_threshold_tokens: 302007 },
+    });
+  });
 });
