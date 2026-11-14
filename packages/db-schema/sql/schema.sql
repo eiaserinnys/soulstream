@@ -1161,13 +1161,8 @@ BEGIN
  WHERE session_key=v_session_key AND event_id=NEW.id;
  v_tokens := event_search_tokenize(NEW.searchable_text);
  v_doc_len := cardinality(v_tokens);
- -- Nothing to write: no old search document and no term in the new text. Return
- -- before the stats row so an event that needs no search row never queues on it.
- IF v_old_doc_len IS NULL AND v_doc_len = 0 THEN
-  RETURN NULL;
- END IF;
- -- Same serialization point as the old writer, before DF or mapping writes. A
- -- term-changing update with a (0, 0) delta still takes the stats row first.
+ -- Nothing to index (no old document, no term): return before the stats row, the serialization point of DF and mapping writes.
+ IF v_old_doc_len IS NULL AND v_doc_len = 0 THEN RETURN NULL; END IF;
  PERFORM event_search_adjust_corpus_stats(
   CASE WHEN v_doc_len>0 THEN 1 ELSE 0 END - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
   v_doc_len-COALESCE(v_old_doc_len,0));
@@ -1241,22 +1236,15 @@ BEGIN
 END;
 $$;
 
--- Deferred constraint triggers: the search tables and the corpus stats row are written at
--- commit, so the stats row is the last lock a transaction takes. Deferred events run in the
--- order they were queued, so an event inserted and then updated or deleted in one
--- transaction leaves the same search rows as before.
 DROP TRIGGER IF EXISTS trg_event_search_terms ON events;
 CREATE CONSTRAINT TRIGGER trg_event_search_terms
-    AFTER INSERT OR UPDATE OF searchable_text ON events
-    DEFERRABLE INITIALLY DEFERRED
+    AFTER INSERT OR UPDATE OF searchable_text ON events DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION refresh_event_search_terms();
 
 DROP TRIGGER IF EXISTS trg_event_search_corpus_stats_delete ON events;
 CREATE CONSTRAINT TRIGGER trg_event_search_corpus_stats_delete
-    AFTER DELETE ON events
-    DEFERRABLE INITIALLY DEFERRED
+    AFTER DELETE ON events DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION decrement_event_search_corpus_stats();
-
 
 CREATE OR REPLACE FUNCTION event_search_adjust_term_document_frequency(
     p_term TEXT,
@@ -3608,14 +3596,6 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_folder ON cards(folder_id, position_key COLLATE "C");
-CREATE INDEX IF NOT EXISTS idx_cards_assignee_session_id
-    ON cards(assignee_session_id) WHERE assignee_session_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_cards_created_session_id
-    ON cards(created_session_id) WHERE created_session_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_cards_updated_session_id
-    ON cards(updated_session_id) WHERE updated_session_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_cards_completed_session_id
-    ON cards(completed_session_id) WHERE completed_session_id IS NOT NULL;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE UNIQUE INDEX IF NOT EXISTS uq_cards_assignee_session ON cards(assignee_session_id)
     WHERE assignee_session_id IS NOT NULL AND NOT archived;
@@ -3698,10 +3678,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_ops_idem
 
 CREATE INDEX IF NOT EXISTS idx_folder_ops_target
     ON folder_operations(target_kind, target_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_folder_operations_actor_session
-    ON folder_operations(actor_session_id, actor_event_id)
-    WHERE actor_session_id IS NOT NULL;
 
 -- Pages and blocks: Y.Doc-backed page replicas, mutation provenance, and backlinks.
 CREATE TABLE IF NOT EXISTS pages (
@@ -4676,3 +4652,17 @@ CREATE TABLE IF NOT EXISTS node_credentials (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_node_credentials_active_node
     ON node_credentials (node_id)
     WHERE revoked_at IS NULL;
+
+-- Indexes for the ON DELETE SET NULL checks that run when a session or an event is deleted
+-- (migration 160). Kept at the end of the file so the pinned definition lines above stay put.
+CREATE INDEX IF NOT EXISTS idx_folder_operations_actor_session
+    ON folder_operations(actor_session_id, actor_event_id)
+    WHERE actor_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_assignee_session_id
+    ON cards(assignee_session_id) WHERE assignee_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_created_session_id
+    ON cards(created_session_id) WHERE created_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_updated_session_id
+    ON cards(updated_session_id) WHERE updated_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_completed_session_id
+    ON cards(completed_session_id) WHERE completed_session_id IS NOT NULL;

@@ -34,13 +34,8 @@ BEGIN
  WHERE session_key=v_session_key AND event_id=NEW.id;
  v_tokens := event_search_tokenize(NEW.searchable_text);
  v_doc_len := cardinality(v_tokens);
- -- Nothing to write: no old search document and no term in the new text. Return
- -- before the stats row so an event that needs no search row never queues on it.
- IF v_old_doc_len IS NULL AND v_doc_len = 0 THEN
-  RETURN NULL;
- END IF;
- -- Same serialization point as the old writer, before DF or mapping writes. A
- -- term-changing update with a (0, 0) delta still takes the stats row first.
+ -- Nothing to index (no old document, no term): return before the stats row, the serialization point of DF and mapping writes.
+ IF v_old_doc_len IS NULL AND v_doc_len = 0 THEN RETURN NULL; END IF;
  PERFORM event_search_adjust_corpus_stats(
   CASE WHEN v_doc_len>0 THEN 1 ELSE 0 END - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
   v_doc_len-COALESCE(v_old_doc_len,0));
