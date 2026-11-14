@@ -36,9 +36,13 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
   describe("러너의 남은 기록을 올리는 중", () => {
     async function replaying() {
       const frames = deferred();
-      // 오프라인 재생의 엔진 프록시는 죽은 러너로 명령을 보내므로 던진다(runner_process_dispatcher.ts).
+      // 오프라인 재생 손잡이 뒤에는 러너 프로세스가 없다. 살아 있던 러너도 재생 전에 끝낸다
+      // (runner_recovery_disposition.ts). 그래서 멈춤 명령과 엔진 명령 모두 던진다.
       const runner = fakeRunner({
         frames: frames.promise,
+        interrupt: async () => {
+          throw new Error(`Runner process is unavailable: ${SESSION_ID}`);
+        },
         engine: {
           intervene: vi.fn(async () => {
             throw new Error(`Runner process is unavailable: ${SESSION_ID}`);
@@ -61,10 +65,11 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       await recovery;
       await flush();
 
-      expect(stopped.value).toBe(true);
+      // 멈춤 명령이 실패해 멈춤 확인 실패로 종료를 한 번 올리고 거절(거짓)로 답한다(약속 15).
+      expect(stopped.value).toBe(false);
       expect(runner.interrupt).toHaveBeenCalledOnce();
-      expectOneTerminal(world, "killed");
-      expect(task.status).toBe("interrupted");
+      expectOneTerminal(world, "error_aborted");
+      expect(task.status).toBe("error");
     });
 
     it("남은 기록을 올리는 중에 지시가 오면 대기 줄에 쌓았다가 재생이 끝난 뒤 다시 띄운다", async () => {
@@ -95,8 +100,9 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       frames.resolve();
       await recovery;
       await flush();
+      // 멈춤 명령은 실패하지만 종료를 한 번 올린 뒤 줄을 지운다.
       expect(deleted.value).toBe(true);
-      expectOneTerminal(world, "killed");
+      expectOneTerminal(world, "error_aborted");
       expect(world.deleteSession).toHaveBeenCalledOnce();
     });
 
@@ -112,7 +118,7 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       frames.resolve();
     });
 
-    it("남은 기록을 올리는 중 넘기기를 기다리던 멈춤은 넘기기가 끝난 뒤 멈춤으로 닫힌다", async () => {
+    it("남은 기록을 올리는 중 넘기기를 기다리던 멈춤은 넘기기가 끝난 뒤 보통 멈춤 길로 닫힌다", async () => {
       const { world, task, runner, frames, recovery } = await replaying();
       // 지시 접수 사건의 영속이 끝나지 않아 넘기기 장벽이 서 있는 동안 멈춤이 온다.
       const accepted = deferred();
@@ -136,10 +142,11 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       await recovery;
       await flush();
 
-      expect(stopped.value).toBe(true);
+      // 넘기기가 끝난 뒤 보통 멈춤 길을 타고, 위 멈춤 칸과 같이 거절로 닫힌다.
+      expect(stopped.value).toBe(false);
       expect(runner.interrupt).toHaveBeenCalledOnce();
-      expectOneTerminal(world, "killed");
-      expect(task.status).toBe("interrupted");
+      expectOneTerminal(world, "error_aborted");
+      expect(task.status).toBe("error");
     });
   });
 

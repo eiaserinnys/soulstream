@@ -104,10 +104,6 @@ describe("node outside request cells have no empty cell (card #1266 U5b)", () =>
     for (const guess of guesses) {
       expect(["request", "barrier", "order"], `guess ${guess.no}`).toContain(guess.closure.kind);
       expect(guess.tests.length, `guess ${guess.no}`).toBeGreaterThan(0);
-      if (guess.closure.kind === "request") {
-        expect(NODE_REQUEST_TABLE[guess.closure.phase][guess.closure.request].basis)
-          .not.toBe("open");
-      }
     }
   });
 

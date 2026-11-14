@@ -249,7 +249,8 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
           upstreamRegistrationReady: Promise.resolve(),
           runnerRecoveryCoordinator: coordinator,
           claudeRuntimeStartupRecovery: {
-            // 재시작 전에 쌓였던 지시가 장부에서 다시 들어오는 자리다.
+            // 재시작 전에 쌓였던 지시가 장부에서 다시 들어오는 자리다. 진짜 recoverQueuedDeliveries 대신
+            // 같은 자리에서 addIntervention을 부르는 대역이다. 순서는 진짜 startWorkerRuntime과 코디네이터가 정한다.
             afterRunnerRecovery: async () => {
               order.push("redeliver");
               await world.manager.addIntervention(world.message("쌓인 지시"), world.onResume);

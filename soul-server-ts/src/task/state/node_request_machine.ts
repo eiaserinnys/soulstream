@@ -211,7 +211,7 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
     stop: cell(
       "interrupt_and_terminate",
       "current",
-      "재생 손잡이에 멈춤 명령을 보내고 멈춤으로 종료를 올린다. 재생은 멈춤 마무리를 기다린 뒤 끝나 종료를 다시 올리지 않는다",
+      "재생 손잡이에 멈춤 명령을 보낸다. 손잡이 뒤에는 러너가 없어 명령이 실패하므로, 멈춤 확인 실패로 종료를 한 번 올리고 거짓을 돌려준다. 재생은 멈춤 마무리를 기다린 뒤 끝나 종료를 다시 올리지 않는다",
       "남은 기록을 올리는 중에 멈춤이 오면 멈춤 하나로 닫힌다",
     ),
     intervene: cell(
@@ -223,7 +223,7 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
     delete: cell(
       "stop_then_delete",
       "current",
-      "러너가 붙은 활성 task라 멈춘 뒤 지운다",
+      "러너가 붙은 활성 task라 멈춘 뒤 지운다. 멈춤 명령은 실패하지만 종료를 한 번 올리고 줄을 지운다",
       "남은 기록을 올리는 중에 지우면 멈춘 뒤 지운다",
     ),
     resume: cell(
