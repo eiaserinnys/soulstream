@@ -24,9 +24,10 @@ async function setup(options: {
   notifierOptions?: Parameters<typeof makeNotifier>[1];
   reservations?: () => Promise<Array<{ scheduleId: string; toolUseId: string | null }>>;
   now?: () => number;
+  storeNow?: () => number;
 } = {}) {
   const directory = await makeOutboxDirectory();
-  const store = makeStore(directory);
+  const store = makeStore(directory, options.storeNow);
   const outbox = makeOutbox();
   const rows = options.rows ?? new Map<string, Record<string, unknown>>();
   const harness = makeNotifier(rows, options.notifierOptions);
@@ -184,23 +185,47 @@ describe("card #1266 U2b settlement sweep: which terminal is ours", () => {
 });
 
 describe("card #1266 U2b settlement sweep: giving up", () => {
-  it("closes an entry that could not be registered within the delivery retry age limit, so it does not block runner retirement forever", async () => {
-    let failing = true;
+  it("closes an entry whose attempt ended in a central read failure once it is older than the delivery retry age limit, so it does not block runner retirement forever", async () => {
     const subject = await setup({
       entry: { sourceSeq: 5, terminationEventId: 41 },
-      central: async () => {
-        if (failing) throw new Error("central unavailable");
-        return centralRow();
-      },
+      central: async () => { throw new Error("central unavailable"); },
       now: () => Date.now() + 25 * 60 * 60 * 1000,
     });
     subject.outbox.ackedSeq = 5;
 
     await subject.sweeper.sweepOnce();
-    failing = false;
 
+    expect(subject.central).toHaveBeenCalledTimes(1);
     expect(await subject.store.list()).toEqual([]);
     expect(subject.repository.register).not.toHaveBeenCalled();
+  });
+
+  it("closes an entry whose registration still needs a retry once it is older than the limit", async () => {
+    const subject = await setup({
+      entry: { sourceSeq: 5, terminationEventId: 41 },
+      now: () => Date.now() + 25 * 60 * 60 * 1000,
+    });
+    subject.outbox.ackedSeq = 5;
+    subject.repository.register.mockRejectedValue(new Error("store unavailable"));
+
+    await subject.sweeper.sweepOnce();
+
+    expect(subject.repository.register).toHaveBeenCalled();
+    expect(await subject.store.list()).toEqual([]);
+  });
+
+  it("still tries an entry older than the limit once: a node that was down for more than a day registers a healthy completion instead of dropping it", async () => {
+    const subject = await setup({
+      entry: { sourceSeq: 5, terminationEventId: 41 },
+      now: () => Date.now() + 25 * 60 * 60 * 1000,
+    });
+    subject.outbox.ackedSeq = 5;
+
+    await subject.sweeper.sweepOnce();
+
+    expect(subject.repository.register).toHaveBeenCalledTimes(1);
+    expect([...subject.rows.values()]).toHaveLength(1);
+    expect(await subject.store.list()).toEqual([]);
   });
 
   it("still retries an entry that is younger than the limit", async () => {
@@ -214,6 +239,92 @@ describe("card #1266 U2b settlement sweep: giving up", () => {
     await subject.sweeper.sweepOnce();
 
     expect(await subject.store.list()).toHaveLength(1);
+  });
+});
+
+describe("card #1266 U2b settlement sweep: race with the normal path", () => {
+  const NEW_KEY = `session_terminal:${SESSION_ID}:command:execute-2`;
+  const NEW_IDENTITY = { ...IDENTITY, dedupeKey: NEW_KEY, executionCommandId: "execute-2" };
+
+  it("skips every entry of a session while the normal path holds a newer terminal of it", async () => {
+    const subject = await setup({ entry: { sourceSeq: 5 } });
+    subject.outbox.ackedSeq = 5;
+    await subject.store.begin(NEW_IDENTITY);
+
+    await subject.sweeper.sweepOnce();
+
+    expect(subject.central).not.toHaveBeenCalled();
+    expect(subject.repository.register).not.toHaveBeenCalled();
+    expect(await subject.store.list()).toHaveLength(2);
+  });
+
+  it("closes a numberless older entry without delivery when a newer entry of the session exists; the newer entry reports", async () => {
+    let tick = 1_000;
+    const subject = await setup({
+      entry: null,
+      storeNow: () => tick,
+      central: async () => centralRow({ termination_event_id: 42, last_event_id: 42 }),
+    });
+    subject.outbox.ackedSeq = 9;
+    await subject.store.begin(IDENTITY);
+    tick = 2_000;
+    await subject.store.begin(NEW_IDENTITY);
+    await subject.store.recordApplied(NEW_KEY, 42);
+    subject.store.release(DEDUPE_KEY);
+    subject.store.release(NEW_KEY);
+    const notify = vi.spyOn(subject.notifier, "notify");
+
+    await subject.sweeper.sweepOnce();
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(subject.repository.register).toHaveBeenCalledTimes(1);
+    expect(subject.central).toHaveBeenCalledTimes(1);
+    expect(await subject.store.list()).toEqual([]);
+  });
+
+  it("does not treat a numbered older entry as superseded: the number decides", async () => {
+    let tick = 1_000;
+    const subject = await setup({
+      entry: null,
+      storeNow: () => tick,
+      central: async () => centralRow({ termination_event_id: 42, last_event_id: 42 }),
+    });
+    subject.outbox.ackedSeq = 9;
+    await subject.store.begin(IDENTITY);
+    await subject.store.recordApplied(DEDUPE_KEY, 41);
+    tick = 2_000;
+    await subject.store.begin(NEW_IDENTITY);
+    await subject.store.recordApplied(NEW_KEY, 42);
+    subject.store.release(DEDUPE_KEY);
+    subject.store.release(NEW_KEY);
+    const notify = vi.spyOn(subject.notifier, "notify");
+
+    await subject.sweeper.sweepOnce();
+
+    // 옛 미결은 번호가 달라 전달 없이 닫히고, 새 미결이 한 번 등록한다.
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(await subject.store.list()).toEqual([]);
+  });
+
+  it("does not register when the normal path takes the session while the sweep reads the central row", async () => {
+    const holder: { store?: Awaited<ReturnType<typeof setup>>["store"] } = {};
+    const subject = await setup({
+      entry: { sourceSeq: 5 },
+      central: async () => {
+        // 중앙을 읽는 사이 정상 길이 이 세션의 새 종료를 쥔다.
+        await holder.store!.begin(NEW_IDENTITY);
+        return centralRow({ termination_event_id: 42, last_event_id: 42 });
+      },
+    });
+    holder.store = subject.store;
+    subject.outbox.ackedSeq = 5;
+    const notify = vi.spyOn(subject.notifier, "notify");
+
+    await subject.sweeper.sweepOnce();
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(subject.repository.register).not.toHaveBeenCalled();
+    expect(await subject.store.list()).toHaveLength(2);
   });
 });
 

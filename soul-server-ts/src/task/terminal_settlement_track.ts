@@ -57,8 +57,8 @@ export class TerminalSettlementTrack {
   };
 
   /**
-   * 종료를 올리다 던졌다. 이번 시도가 붙지 못했고 앞 시도도 없었으면 지운다. 붙었거나 앞 시도의
-   * 줄이 있을 수 있으면 쥠을 풀어 훑기에 맡긴다(훑기가 줄을 종료 의미 키로 찾는다).
+   * 종료를 올리다 던졌다. 이번 시도가 붙지 못했고 앞 시도도 없었고 아웃박스에도 그 줄이 없으면
+   * 지운다. 붙었거나 줄이 있을 수 있으면 쥠을 풀어 훑기에 맡긴다(훑기가 줄을 종료 의미 키로 찾는다).
    */
   async failed(): Promise<void> {
     if (this.appendedToOutbox || this.replacedEarlierAttempt) {
@@ -66,7 +66,8 @@ export class TerminalSettlementTrack {
       return;
     }
     try {
-      await this.ledger.discard(this.key);
+      // 붙이기가 줄을 쓴 뒤(메타데이터 쓰기)에 던졌을 수 있다. 줄이 있으면 미결을 남긴다.
+      await this.ledger.discardUnlessAppended(this.key);
     } catch (err) {
       this.logger.warn(
         { err, sessionId: this.sessionId },

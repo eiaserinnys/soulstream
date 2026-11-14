@@ -415,32 +415,37 @@ export class TaskLifecycleTransition {
       }
       return false;
     }
-    if (!isTerminalTaskStatus(task.status)) {
-      task.completedAt = stopCompletedAt;
-      if (forDelete) {
+    try {
+      if (!isTerminalTaskStatus(task.status)) {
+        task.completedAt = stopCompletedAt;
+        if (forDelete) {
+          throw new Error(
+            `user stop did not reach a terminal status before delete: ${task.agentSessionId}`,
+          );
+        }
+        return false;
+      }
+      // 삭제가 일으킨 멈춤은 종료 사건이 실제로 기록됐을 때만 줄을 지운다. status만
+      // 보고 넘어가면 영속이 유실된 세션 행을 지워 버린다.
+      if (forDelete && task.terminationEventRecorded !== true) {
         throw new Error(
-          `user stop did not reach a terminal status before delete: ${task.agentSessionId}`,
+          `user stop terminal event was not recorded before delete: ${task.agentSessionId}`,
         );
       }
-      return false;
-    }
-    // 삭제가 일으킨 멈춤은 종료 사건이 실제로 기록됐을 때만 줄을 지운다. status만
-    // 보고 넘어가면 영속이 유실된 세션 행을 지워 버린다.
-    if (forDelete && task.terminationEventRecorded !== true) {
-      throw new Error(
-        `user stop terminal event was not recorded before delete: ${task.agentSessionId}`,
-      );
-    }
 
-    // 디렉터 결정(261112): 멈춤 버튼도 부른 세션에 알린다. 통지 등록이 끝난 뒤에
-    // 러너를 닫아야 삭제 경로가 등록을 잃지 않는다.
-    const notified = await this.notifyCompletionIfApplied(task, persistence, {
-      requireRegistration: forDelete,
-    });
-    if (forDelete && !notified) {
-      throw new Error(
-        `completion notification registration failed before delete: ${task.agentSessionId}`,
-      );
+      // 디렉터 결정(261112): 멈춤 버튼도 부른 세션에 알린다. 통지 등록이 끝난 뒤에
+      // 러너를 닫아야 삭제 경로가 등록을 잃지 않는다.
+      const notified = await this.notifyCompletionIfApplied(task, persistence, {
+        requireRegistration: forDelete,
+      });
+      if (forDelete && !notified) {
+        throw new Error(
+          `completion notification registration failed before delete: ${task.agentSessionId}`,
+        );
+      }
+    } finally {
+      // 어느 갈래로 나가든 정상 길의 쥠을 푼다(남은 미결은 훑기가 이어 받는다).
+      this.releaseSettlementHold(persistence);
     }
 
     if (runner) {
@@ -659,23 +664,29 @@ export class TaskLifecycleTransition {
       await this.settleRejection(task, judgeNodeResponse(facts), this.rejectedRegistrationOf(task, registrationId));
       return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
     }
-    applyCanonicalSessionProjection(task, application.canonicalSession);
-    if (
-      isTerminalTaskStatus(task.status)
-      && application.canonicalExecutionRegistration == null
-    ) {
-      task.executionRegistration = undefined;
+    try {
+      applyCanonicalSessionProjection(task, application.canonicalSession);
+      if (
+        isTerminalTaskStatus(task.status)
+        && application.canonicalExecutionRegistration == null
+      ) {
+        task.executionRegistration = undefined;
+      }
+      const verdict = application.applied
+        ? undefined
+        : judgeNodeResponse(nodeResponseFactsFromApplication(context, application));
+      if (application.applied || verdict?.decision.cell === "applied") {
+        await track?.applied(application.canonicalSession.termination_event_id);
+        return { applied: true, ...(settlementKey === undefined ? {} : { settlementKey }) };
+      }
+      await this.settleRejection(task, verdict!, this.rejectedRegistrationOf(task, registrationId));
+      track?.release();
+      return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
+    } catch (error) {
+      // 호출자에게 키가 가지 못하므로 쥠을 여기서 푼다. 쥠은 시간으로 풀리지 않는다.
+      track?.release();
+      throw error;
     }
-    const verdict = application.applied
-      ? undefined
-      : judgeNodeResponse(nodeResponseFactsFromApplication(context, application));
-    if (application.applied || verdict?.decision.cell === "applied") {
-      await track?.applied(application.canonicalSession.termination_event_id);
-      return { applied: true, ...(settlementKey === undefined ? {} : { settlementKey }) };
-    }
-    await this.settleRejection(task, verdict!, this.rejectedRegistrationOf(task, registrationId));
-    track?.release();
-    return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
   }
 
   /** 거절된 종료의 러너 등록이다. 복구 중이면 복구하는 등록, 아니면 이 실행의 등록이다. */

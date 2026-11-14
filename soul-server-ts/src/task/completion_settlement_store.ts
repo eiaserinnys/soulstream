@@ -16,8 +16,6 @@ import { renameWithTransientRetry } from "../atomic_file_rename.js";
 /** 미결 파일이 놓이는 EVENT_OUTBOX_DIR 아래 하위 폴더 이름이다. */
 export const COMPLETION_SETTLEMENT_SUBDIRECTORY = "completion-settlements";
 const QUARANTINE_SUBDIRECTORY = "quarantine";
-/** 정상 길이 미결을 쥐고 있다고 보는 최대 시간이다. 그 안에는 훑기가 건드리지 않는다. */
-export const COMPLETION_SETTLEMENT_HOLD_MS = 10 * 60_000;
 
 /**
  * 완료 정산 미결 하나다. 종료 사건의 좌표(세션, 종료의 의미 중복 키, 러너 등록과 실행
@@ -58,8 +56,12 @@ export interface CompletionSettlementLedger {
   ): Promise<void>;
   /** 응답을 받은 뒤 중앙이 적용한 종료 사건 번호를 덧붙인다. */
   recordApplied(dedupeKey: string, terminationEventId: number): Promise<void>;
-  /** 아웃박스에 붙이지 못한 종료의 미결을 지운다. */
-  discard(dedupeKey: string): Promise<void>;
+  /**
+   * 아웃박스에 붙이지 못한 종료의 미결을 지운다. 붙이기가 줄을 쓴 뒤에 던졌을 수 있으므로
+   * 아웃박스에 그 종료의 줄이 있으면 지우지 않고 쥠을 풀어 훑기에 맡긴다(찾지 못해도 마찬가지).
+   * 지웠으면 true다.
+   */
+  discardUnlessAppended(dedupeKey: string): Promise<boolean>;
   /** 정산을 마쳤으므로 지운다. */
   close(dedupeKey: string): Promise<void>;
   /** 정상 길이 쥔 것을 풀고 미결은 훑기에 맡긴다. */
@@ -77,15 +79,19 @@ export interface CompletionSettlementLedger {
 export class CompletionSettlementStore implements CompletionSettlementLedger {
   private readonly directory: string;
   private readonly quarantineDirectory: string;
-  /** 정상 길이 쥐고 있는 키와 놓아야 하는 시각이다. 재시작하면 비어 있다. */
-  private readonly holds = new Map<string, number>();
+  /**
+   * 정상 길이 쥐고 있는 키와 그 세션이다. 시간으로 풀지 않는다: 정상 길이 마무리 단계에서
+   * 놓는다. 메모리뿐이라 새는 쥠도 프로세스를 넘지 않는다.
+   */
+  private readonly holds = new Map<string, string>();
   private operationTail: Promise<void> = Promise.resolve();
 
   constructor(
     outboxDirectory: string,
     private readonly logger: Pick<Logger, "warn" | "info">,
     private readonly now: () => number = Date.now,
-    private readonly holdMs = COMPLETION_SETTLEMENT_HOLD_MS,
+    /** 있으면 붙이기 실패 때 줄이 이미 아웃박스에 있는지 본다. */
+    private readonly outbox?: { findBySemanticDedupeKey(key: string): Promise<unknown | null> },
   ) {
     if (!outboxDirectory) throw new Error("EVENT_OUTBOX_DIR required");
     this.directory = join(outboxDirectory, COMPLETION_SETTLEMENT_SUBDIRECTORY);
@@ -96,7 +102,7 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
     return await this.exclusive(async () => {
       await mkdir(this.directory, { recursive: true });
       const replaced = (await this.read(this.pathOf(identity.dedupeKey))) !== null;
-      this.holds.set(identity.dedupeKey, this.now() + this.holdMs);
+      this.holds.set(identity.dedupeKey, identity.sessionId);
       try {
         await this.write({
           version: 1,
@@ -130,8 +136,25 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
     await this.update(dedupeKey, (entry) => ({ ...entry, terminationEventId }));
   }
 
-  async discard(dedupeKey: string): Promise<void> {
+  async discardUnlessAppended(dedupeKey: string): Promise<boolean> {
+    if (this.outbox) {
+      try {
+        if ((await this.outbox.findBySemanticDedupeKey(dedupeKey)) !== null) {
+          this.release(dedupeKey);
+          return false;
+        }
+      } catch (err) {
+        // 줄이 있는지 모르면 지우지 않는다. 미결을 남기는 쪽이 안전하다(훑기가 중앙을 보고 가른다).
+        this.logger.warn(
+          { err },
+          "completion settlement could not check the outbox for an unappended terminal; it stays pending",
+        );
+        this.release(dedupeKey);
+        return false;
+      }
+    }
     await this.close(dedupeKey);
+    return true;
   }
 
   async close(dedupeKey: string): Promise<void> {
@@ -148,7 +171,7 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
   /** 훑기가 쓴다. 정상 길이 그사이 다시 쥐었으면 지우지 않는다. */
   async closeUnlessHeld(dedupeKey: string): Promise<boolean> {
     return await this.exclusive(async () => {
-      if (this.isHeld(dedupeKey)) return false;
+      if (this.holds.has(dedupeKey)) return false;
       await this.remove(dedupeKey);
       return true;
     });
@@ -169,22 +192,26 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
       (await this.readAll()).some((entry) => entry.sessionId === sessionId));
   }
 
-  /** 정상 길이 쥐지 않은 미결을 모두 읽는다. */
+  /**
+   * 정상 길이 쥔 세션의 미결은 건너뛰고 나머지를 읽는다. 같은 세션에 쥔 미결이 하나라도 있으면
+   * 그 세션의 미결을 모두 건너뛴다: 쥔 종료의 정상 길이 그 세션의 보고를 맡고 있다.
+   */
   async listUnheld(): Promise<CompletionSettlementEntry[]> {
     return await this.exclusive(async () =>
-      (await this.readAll()).filter((entry) => !this.isHeld(entry.dedupeKey)));
+      (await this.readAll()).filter((entry) =>
+        !this.holds.has(entry.dedupeKey) && !this.isSessionHeld(entry.sessionId)));
+  }
+
+  /** 그 세션에서 정상 길이 쥔 미결이 있는지 본다. */
+  isSessionHeld(sessionId: string): boolean {
+    for (const held of this.holds.values()) {
+      if (held === sessionId) return true;
+    }
+    return false;
   }
 
   async list(): Promise<CompletionSettlementEntry[]> {
     return await this.exclusive(async () => await this.readAll());
-  }
-
-  private isHeld(dedupeKey: string): boolean {
-    const until = this.holds.get(dedupeKey);
-    if (until === undefined) return false;
-    if (until > this.now()) return true;
-    this.holds.delete(dedupeKey);
-    return false;
   }
 
   private pathOf(dedupeKey: string): string {

@@ -25,7 +25,7 @@ export interface SettlementOutboxView {
 }
 
 export interface CompletionSettlementSweeperDeps {
-  store: Pick<CompletionSettlementStore, "listUnheld" | "closeUnlessHeld">;
+  store: Pick<CompletionSettlementStore, "listUnheld" | "closeUnlessHeld" | "isSessionHeld">;
   outbox: SettlementOutboxView;
   /** 중앙 세션 한 줄을 캐시 없이 읽는다. 없으면 null이다. */
   readCentralSession(sessionId: string): Promise<SessionRow | null>;
@@ -47,6 +47,7 @@ type CloseReason =
   | "central_session_running"
   | "terminal_not_applied"
   | "other_terminal_applied"
+  | "superseded_by_newer_settlement"
   | "gave_up_after_max_age";
 
 /**
@@ -60,9 +61,10 @@ export class CompletionSettlementSweeper {
   constructor(private readonly deps: CompletionSettlementSweeperDeps) {}
 
   async sweepOnce(): Promise<void> {
-    for (const entry of await this.deps.store.listUnheld()) {
+    const entries = await this.deps.store.listUnheld();
+    for (const entry of entries) {
       try {
-        await this.settle(entry);
+        await this.settle(entry, entries);
       } catch (err) {
         this.deps.logger.warn(
           { err, sessionId: entry.sessionId, dedupeKey: entry.dedupeKey },
@@ -72,19 +74,33 @@ export class CompletionSettlementSweeper {
     }
   }
 
-  private async settle(entry: CompletionSettlementEntry): Promise<void> {
-    if (!(await this.outboxAcknowledged(entry))) return;
-    // 등록이 영구히 되지 않는 미결(부른 세션이 없어졌거나 중앙 줄을 되살릴 수 없음)이 러너 은퇴를
-    // 영구히 막지 않도록 완료 전달 장부의 재시도 나이 한도에서 접는다.
-    const ageMs = (this.deps.now ?? Date.now)() - Date.parse(entry.createdAt);
-    if (ageMs > DELIVERY_NOTIFICATION_MAX_AGE_MS) {
-      this.deps.logger.error(
-        { sessionId: entry.sessionId, dedupeKey: entry.dedupeKey, ageMs },
-        "completion settlement gave up: the completion could not be registered within the retry age limit",
-      );
-      return await this.close(entry, "gave_up_after_max_age");
+  private async settle(
+    entry: CompletionSettlementEntry,
+    entries: readonly CompletionSettlementEntry[],
+  ): Promise<void> {
+    // 종료 번호를 받지 못한 옛 미결은 어느 종료의 것인지 중앙으로 가를 수 없다. 같은 세션에 더 새로
+    // 만든 미결이 있으면 그 미결이 이 세션의 보고를 맡는다(지금 중앙의 종료로 등록하면 새 종료의
+    // 정상 길과 본문이 달라 orch가 먼저 선 줄을 죽인다).
+    if (
+      entry.terminationEventId === undefined
+      && entries.some((other) =>
+        other.sessionId === entry.sessionId
+        && other.dedupeKey !== entry.dedupeKey
+        && Date.parse(other.createdAt) > Date.parse(entry.createdAt))
+    ) {
+      return await this.close(entry, "superseded_by_newer_settlement");
     }
-    const row = await this.deps.readCentralSession(entry.sessionId);
+    if (!(await this.outboxAcknowledged(entry))) return;
+    let row: SessionRow | null;
+    try {
+      row = await this.deps.readCentralSession(entry.sessionId);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: entry.sessionId },
+        "completion settlement could not read the central session; it stays pending",
+      );
+      return await this.giveUpIfTooOld(entry);
+    }
     if (row === null) return await this.close(entry, "central_session_absent");
     if (isTaskStatus(row.status) && isActiveTaskStatus(row.status)) {
       return await this.close(entry, "central_session_running");
@@ -94,7 +110,8 @@ export class CompletionSettlementSweeper {
       return await this.close(entry, "terminal_not_applied");
     }
     // 번호가 있으면 우리 종료인지 대조한다. 번호가 없으면(응답을 받기 전에 죽음) 중앙에
-    // 적용된 지금 종료로 등록한다. 더 새 종료라면 그 종료의 정상 길과 관계 키가 같아 중복이 막힌다.
+    // 적용된 지금 종료로 등록한다. 더 새 종료의 정상 길과 겹치지 않도록 위의 더 새 미결 검사와,
+    // 목록을 읽은 뒤 정상 길이 쥔 세션을 건너뛰는 아래 검사가 막는다.
     if (entry.terminationEventId !== undefined && entry.terminationEventId !== centralEventId) {
       return await this.close(entry, "other_terminal_applied", {
         entryEventId: entry.terminationEventId,
@@ -107,7 +124,7 @@ export class CompletionSettlementSweeper {
         { sessionId: entry.sessionId },
         "completion settlement could not restore the central session row; it stays pending",
       );
-      return;
+      return await this.giveUpIfTooOld(entry);
     }
     // 오류 본문은 종료 상세가 그대로 담고 있다.
     if (task.status === "error" && !task.error) task.error = task.terminationDetail ?? undefined;
@@ -115,15 +132,41 @@ export class CompletionSettlementSweeper {
       { sessionId: entry.sessionId, terminalEventId: centralEventId },
       "completion text restored from the central session row; limit text, background notice and portrait are not restored",
     );
-    const continues = await nextGenerationContinues(
-      task,
-      this.deps.listReservations,
-    );
-    const result = await this.deps.notifier.notify(task, {
-      nextGenerationContinues: continues,
-    });
-    if (result && result.kind === "retry_required") return;
+    let result: CompletionSettleResult | void;
+    try {
+      const continues = await nextGenerationContinues(
+        task,
+        this.deps.listReservations,
+      );
+      // 중앙을 읽는 사이 정상 길이 이 세션의 새 종료를 쥐었다면 등록하지 않는다(그 길이 보고를 맡는다).
+      if (this.deps.store.isSessionHeld(entry.sessionId)) return;
+      result = await this.deps.notifier.notify(task, {
+        nextGenerationContinues: continues,
+      });
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: entry.sessionId },
+        "completion settlement could not register the completion; it stays pending",
+      );
+      return await this.giveUpIfTooOld(entry);
+    }
+    if (result && result.kind === "retry_required") return await this.giveUpIfTooOld(entry);
     await this.close(entry, result?.kind === "skipped" ? "skipped" : "registered");
+  }
+
+  /**
+   * 한 번 시도한 뒤 다시 해야 함이나 읽기 실패로 끝난 미결만 나이로 접는다. 등록이 영영 되지 않는
+   * 미결(부른 세션이 없어졌거나 중앙 줄을 되살릴 수 없음)이 러너 은퇴를 영구히 막지 않도록
+   * 완료 전달 장부의 재시도 나이 한도에서 접는다. 시도하지 않은 미결은 나이로 닫지 않는다.
+   */
+  private async giveUpIfTooOld(entry: CompletionSettlementEntry): Promise<void> {
+    const ageMs = (this.deps.now ?? Date.now)() - Date.parse(entry.createdAt);
+    if (ageMs <= DELIVERY_NOTIFICATION_MAX_AGE_MS) return;
+    this.deps.logger.error(
+      { sessionId: entry.sessionId, dedupeKey: entry.dedupeKey, ageMs },
+      "completion settlement gave up: the completion could not be registered within the retry age limit",
+    );
+    await this.close(entry, "gave_up_after_max_age");
   }
 
   private async outboxAcknowledged(entry: CompletionSettlementEntry): Promise<boolean> {

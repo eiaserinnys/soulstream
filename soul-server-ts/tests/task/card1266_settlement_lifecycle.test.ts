@@ -79,9 +79,12 @@ async function makeSubject(options: {
   directory?: string;
   extraPorts?: Partial<TerminationCleanupPorts>;
   v2?: boolean;
+  /** 아웃박스에 이미 있는 줄을 흉내 낸다(붙이기가 줄을 쓴 뒤 던진 경우). */
+  outbox?: { findBySemanticDedupeKey(key: string): Promise<unknown | null> };
+  storeNow?: () => number;
 }) {
   const directory = options.directory ?? await makeOutboxDirectory();
-  const store = makeStore(directory);
+  const store = makeStore(directory, options.storeNow, options.outbox);
   const rows = options.rows ?? new Map<string, Record<string, unknown>>();
   const harness = makeNotifier(rows);
   const persistence = makePersistence(store, options.respond);
@@ -157,6 +160,63 @@ describe("card #1266 U2b settlement: written before the outbox append", () => {
     await expect(subject.transition.persistExecutorFinalState(task, true, { settleCompletion: true }))
       .rejects.toThrow("disk full");
 
+    expect(await subject.store.listUnheld()).toHaveLength(1);
+  });
+
+  it("does not let the sweep register while the normal path is still waiting for the ack, however long the wait is", async () => {
+    let tick = 1_000;
+    const holder: { sweep?: () => Promise<void> } = {};
+    const subject = await makeSubject({
+      storeNow: () => tick,
+      respond: async () => {
+        // 응답을 오래 기다리는 사이 주기 훑기가 돈다(예전에는 10분 뒤에 쥠이 풀렸다).
+        tick += 60 * 60_000;
+        await holder.sweep!();
+        return applied();
+      },
+    });
+    const outbox = makeOutbox();
+    outbox.ackedSeq = 5;
+    const sweeper = makeSweeper({
+      store: subject.store, outbox, central: async () => centralRow(), notifier: subject.notifier, now: () => tick,
+    });
+    holder.sweep = () => sweeper.sweepOnce();
+    const task = makeTask({ terminationEventRecorded: false });
+
+    const result = await subject.transition.persistExecutorFinalState(task, true, { settleCompletion: true });
+
+    expect(subject.repository.register).not.toHaveBeenCalled();
+    await subject.transition.notifyCompletionIfApplied(task, result);
+    expect(subject.repository.register).toHaveBeenCalledTimes(1);
+    expect(await subject.store.list()).toEqual([]);
+  });
+
+  it("keeps the entry when the append wrote its line and then threw (metadata write), instead of deleting it", async () => {
+    const subject = await makeSubject({
+      respond: async function appendFails() { throw new Error("metadata write failed"); },
+      // 줄은 datasync까지 갔으므로 아웃박스에 있다.
+      outbox: { findBySemanticDedupeKey: async (key) => (key === DEDUPE_KEY ? { source_seq: 5 } : null) },
+    });
+    const task = makeTask({ terminationEventRecorded: false, status: "completed" });
+
+    await expect(subject.transition.persistExecutorFinalState(task, true, { settleCompletion: true }))
+      .rejects.toThrow("metadata write failed");
+
+    expect(await subject.store.list()).toHaveLength(1);
+    expect(await subject.store.listUnheld()).toHaveLength(1);
+  });
+
+  it("releases the normal path's hold when the projection of the applied response throws, so the sweep is not blocked until restart", async () => {
+    const subject = await makeSubject({
+      respond: () => ({ eventId: EVENT_ID, applied: true, canonicalSession: null, canonicalExecutionRegistration: null }),
+    });
+    const task = makeTask({ terminationEventRecorded: false });
+
+    await expect(subject.transition.persistExecutorFinalState(task, true, { settleCompletion: true }))
+      .rejects.toThrow();
+
+    expect(await subject.store.list()).toHaveLength(1);
+    expect(subject.store.isSessionHeld(SESSION_ID)).toBe(false);
     expect(await subject.store.listUnheld()).toHaveLength(1);
   });
 

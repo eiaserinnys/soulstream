@@ -89,6 +89,7 @@ function liveRegistration(sessionId: string): RunnerRegistration {
 function setup(task: Task) {
   const retireTerminalRegistration = vi.fn(async () => {});
   const terminate = vi.fn(async () => {});
+  const forgetRunnerRecoveryTask = vi.fn();
   const disk = { registrations: [liveRegistration(task.agentSessionId)] };
   const coordinator = new RunnerRecoveryCoordinator({
     nodeId: "node-a",
@@ -110,7 +111,7 @@ function setup(task: Task) {
       markRunnerFailure: vi.fn(async () => {}),
       projectClosedRunner: vi.fn(async () => {}),
       listTasks: () => [task],
-      forgetRunnerRecoveryTask: vi.fn(),
+      forgetRunnerRecoveryTask,
     },
     taskExecutor: {
       recoverRegisteredRunner: vi.fn(async () => {}),
@@ -119,7 +120,7 @@ function setup(task: Task) {
       completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
     },
   } as never);
-  return { coordinator, retireTerminalRegistration, terminate };
+  return { coordinator, retireTerminalRegistration, terminate, forgetRunnerRecoveryTask };
 }
 
 function markedTask(overrides: Partial<Task>): Task {
@@ -170,5 +171,57 @@ describe("card #1266 U2b the pre-check of the rejected-terminal mark skips a tas
     await subject.coordinator.waitForSettled();
 
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+  });
+});
+
+describe("card #1266 U2b a task kept only for its rejected registration is forgotten once that registration retires", () => {
+  it("forgets an active task that has no runner, registration or execution after the later retirement succeeds", async () => {
+    // 로컬 소유 정리가 은퇴 실패 때문에 붙들어 둔 꼴이다: 활성인데 러너도 등록도 실행도 없다.
+    const task = markedTask({ status: "running", completedAt: undefined });
+    const subject = setup(task);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(task.rejectedTerminationRegistrationId).toBeUndefined();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
+  });
+
+  it("does not forget a task that already ended (the retirement only clears the mark)", async () => {
+    const subject = setup(markedTask({}));
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("does not forget an active task that still has a registration", async () => {
+    const subject = setup(markedTask({
+      status: "running",
+      completedAt: undefined,
+      executionRegistration: { registrationId: "registration-live", executionCommandId: "execute-live" },
+    }));
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("forgets the orphan when the registration is already gone from disk and only the mark is cleared", async () => {
+    const task = markedTask({ status: "running", completedAt: undefined });
+    const subject = setup(task);
+    // 디스크에서 등록이 이미 없다: 은퇴할 것이 없고 표시만 지운다.
+    await subject.coordinator.retireRejectedTerminalRegistration(task, "registration-gone");
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+
+    task.rejectedTerminationRegistrationId = "registration-gone";
+    await subject.coordinator.retireRejectedTerminalRegistration(task, "registration-gone");
+
+    expect(task.rejectedTerminationRegistrationId).toBeUndefined();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
   });
 });

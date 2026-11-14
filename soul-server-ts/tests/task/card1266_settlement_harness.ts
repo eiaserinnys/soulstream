@@ -151,8 +151,12 @@ export function makeSweeper(options: {
   });
 }
 
-export function makeStore(directory: string, now?: () => number) {
-  return new CompletionSettlementStore(directory, silentLogger, now);
+export function makeStore(
+  directory: string,
+  now?: () => number,
+  outbox?: { findBySemanticDedupeKey(key: string): Promise<unknown | null> },
+) {
+  return new CompletionSettlementStore(directory, silentLogger, now, outbox);
 }
 
 export const IDENTITY = {

@@ -41,7 +41,7 @@ export function composeCompletionSettlement(options: {
   scheduleService: Pick<SoulstreamScheduleService, "listSchedules">;
 }): CompletionSettlementComposition {
   const { env, logger, db } = options;
-  const store = new CompletionSettlementStore(env.EVENT_OUTBOX_DIR, logger);
+  const store = new CompletionSettlementStore(env.EVENT_OUTBOX_DIR, logger, Date.now, options.eventOutbox);
   const sweeper = new CompletionSettlementSweeper({
     store,
     outbox: options.eventOutbox,

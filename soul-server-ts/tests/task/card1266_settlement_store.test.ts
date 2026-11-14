@@ -101,24 +101,75 @@ describe("card #1266 U2b settlement store", () => {
     expect(await readdir(join(settlementDirectory(outbox), "quarantine"))).toHaveLength(1);
   });
 
-  it("keeps entries the normal path holds out of the sweep list and expires the hold", async () => {
+  it("keeps entries the normal path holds out of the sweep list and never expires the hold by time", async () => {
     const outbox = await makeOutboxDirectory();
     let nowMs = 1_000;
-    const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), () => nowMs, 60_000);
+    const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), () => nowMs);
     await store.begin(IDENTITY);
 
     expect(await store.listUnheld()).toEqual([]);
     expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(false);
     expect(await store.list()).toHaveLength(1);
 
-    store.release(DEDUPE_KEY);
-    expect(await store.listUnheld()).toHaveLength(1);
+    // 시간이 아무리 지나도 쥠은 정상 길이 놓을 때까지 남는다(10분 만료가 경합을 열었다).
+    nowMs += 24 * 60 * 60_000;
+    expect(await store.listUnheld()).toEqual([]);
+    expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(false);
 
-    await store.begin(IDENTITY);
-    nowMs += 61_000;
+    store.release(DEDUPE_KEY);
     expect(await store.listUnheld()).toHaveLength(1);
     expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(true);
     expect(await store.list()).toEqual([]);
+  });
+
+  it("skips every entry of a session while the normal path holds any entry of that session", async () => {
+    const outbox = await makeOutboxDirectory();
+    const store = makeStore(outbox);
+    const OLD_KEY = `${DEDUPE_KEY}-old`;
+    await store.begin({ ...IDENTITY, dedupeKey: OLD_KEY });
+    store.release(OLD_KEY);
+    await store.begin({ ...IDENTITY, sessionId: "other", dedupeKey: "session_terminal:other:x" });
+    store.release("session_terminal:other:x");
+    // 같은 세션의 새 종료를 정상 길이 쥔다.
+    await store.begin(IDENTITY);
+
+    expect(store.isSessionHeld(IDENTITY.sessionId)).toBe(true);
+    expect((await store.listUnheld()).map((entry) => entry.dedupeKey)).toEqual(["session_terminal:other:x"]);
+
+    store.release(DEDUPE_KEY);
+    expect(store.isSessionHeld(IDENTITY.sessionId)).toBe(false);
+    expect(await store.listUnheld()).toHaveLength(3);
+  });
+
+  it("discards an unappended terminal only when the outbox has no line for it", async () => {
+    const outbox = await makeOutboxDirectory();
+    const lines = new Set<string>();
+    const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), Date.now, {
+      findBySemanticDedupeKey: async (key) => (lines.has(key) ? { source_seq: 1 } : null),
+    });
+
+    await store.begin(IDENTITY);
+    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(true);
+    expect(await store.list()).toEqual([]);
+
+    // 붙이기가 줄을 쓴 뒤 던졌다: 줄이 있으면 미결을 남기고 쥠을 푼다.
+    await store.begin(IDENTITY);
+    lines.add(DEDUPE_KEY);
+    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(false);
+    expect(await store.list()).toHaveLength(1);
+    expect(await store.listUnheld()).toHaveLength(1);
+  });
+
+  it("keeps the pending entry when the outbox lookup itself fails", async () => {
+    const outbox = await makeOutboxDirectory();
+    const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), Date.now, {
+      findBySemanticDedupeKey: async () => { throw new Error("outbox unreadable"); },
+    });
+    await store.begin(IDENTITY);
+
+    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(false);
+    expect(await store.list()).toHaveLength(1);
+    expect(await store.listUnheld()).toHaveLength(1);
   });
 
   it("closes every entry of a session and reports pending per session", async () => {
