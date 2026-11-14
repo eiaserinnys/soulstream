@@ -155,4 +155,38 @@ describe("card #1266 U5a 바: the start barrier stands before the slot is held",
     expect(task.executionActivation).toBeUndefined();
     expect(task.executionPromise).toBeDefined();
   });
+
+  it("throws a preparation failure to the caller as before instead of ending the task, and takes the barrier down", () => {
+    const { executor } = makeExecutor();
+    // 러너가 붙은 task에 새 실행을 시작하는 직접 길은 준비에서 동기 예외가 난다.
+    const runner = {
+      engine: {} as never,
+      dispatcher: { registrationId: () => "registration-old" } as never,
+      eventPersistence: "runner",
+    } as TaskRunnerRuntime;
+    const task = makeTask({ runner });
+
+    expect(() => executor.startNewExecution(task, agent)).toThrow(/already has a runner/);
+
+    expect(task.executionActivation).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    // 예전처럼 호출자에게 던질 뿐 task를 오류로 끝내지 않는다.
+    expect(task.status).toBe("completed");
+  });
+
+  it("rejects to the caller for the same preparation failure behind a worktree resolution", async () => {
+    const resolver = { resolveExecutionWorkspace: vi.fn(async () => "/tmp/worktree") };
+    const { executor } = makeExecutor({ resolver });
+    const runner = {
+      engine: {} as never,
+      dispatcher: { registrationId: () => "registration-old" } as never,
+      eventPersistence: "runner",
+    } as TaskRunnerRuntime;
+    const task = makeTask({ worktreeId: "wt-1", runner });
+
+    await expect(executor.startNewExecution(task, agent)).rejects.toThrow(/already has a runner/);
+
+    expect(task.executionActivation).toBeUndefined();
+    expect(task.status).toBe("completed");
+  });
 });

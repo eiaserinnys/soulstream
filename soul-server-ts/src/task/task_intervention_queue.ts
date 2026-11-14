@@ -37,6 +37,31 @@ export function compareInterventionPriority(
   return laneRank(interventionPriorityLane(left)) - laneRank(interventionPriorityLane(right));
 }
 
+/**
+ * 러너에 넘기려 한 적이 있는 지시. 넘김을 시도한 뒤 큐로 되돌아온 지시에 노드가 남기는 표시다.
+ * 메모리에만 두고 wire에 싣지 않는다. 잊힌 task의 큐 정산이 이 표시로 「넘기려 한 적 없음」과
+ * 「넘김 시도 뒤 되돌아옴」을 가른다(ledger의 dispatching_at은 서버가 노드에 넘기기 시작한 표시라
+ * 메모리 큐 지시에는 거의 늘 값이 있어 기준이 되지 못한다).
+ */
+const handoffAttempted = new WeakSet<InterventionMessage>();
+
+export function markHandoffAttempted(message: InterventionMessage): void {
+  handoffAttempted.add(message);
+}
+
+export function wasHandoffAttempted(message: InterventionMessage): boolean {
+  return handoffAttempted.has(message);
+}
+
+/** 러너에 넘긴 뒤 큐로 되돌아오는 지시를 시도 표시와 함께 다시 큐에 넣는다. */
+export function requeueAfterHandoffAttempt(
+  task: Task,
+  message: InterventionMessage,
+): number {
+  markHandoffAttempted(message);
+  return enqueueInterventionOnce(task, message);
+}
+
 export function enqueueInterventionOnce(
   task: Task,
   message: InterventionMessage,

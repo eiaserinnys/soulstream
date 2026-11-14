@@ -281,6 +281,17 @@ export class ControlInboxStore {
     return { ...work, state, resultId, response };
   }
 
+  reclaimExpired(): number {
+    const now = this.nowMs();
+    const result = this.requireDatabase().prepare(`
+      UPDATE control_inbox
+      SET state = 'pending', host_generation = NULL, lease_expires_at = NULL, updated_at = ?
+      WHERE node_id = ? AND state = 'claimed'
+        AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+    `).run(now, this.options.nodeId, now);
+    return Number(result.changes);
+  }
+
   listReplayableResults(): ControlInboxResult[] {
     const rows = this.requireDatabase()
       .prepare(CONTROL_INBOX_LIST_REPLAYABLE_RESULTS_SQL)

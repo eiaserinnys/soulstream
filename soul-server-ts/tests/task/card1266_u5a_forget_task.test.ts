@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { INSTRUCTION_UNCERTAIN_REASON } from "../../src/task/state/node_instruction_decision.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
+import { requeueAfterHandoffAttempt, wasHandoffAttempted } from "../../src/task/task_intervention_queue.js";
 import { TaskManager } from "../../src/task/task_manager.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
@@ -11,8 +12,9 @@ import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.
  * 카드 #1266 U5a 아·차.
  * 아: 잊기는 맵의 지금 값이 넘겨받은 그 task 객체일 때만 지운다(낡은 객체로 새 task를 지우지 않는다).
  * 차: task를 잊을 때 메모리 큐에 남은 지시는 노드 재시작을 기다리지 않고 장부에서 정리된다.
- *     러너에 넘긴 적 없는 지시는 서버가 다시 띄울 수 있게 돌려주고, 넘긴 적 있거나 가를 수 없는
- *     지시는 모름(uncertain)으로 둔다.
+ *     가르는 기준은 노드 자신의 넘김 시도 기록이다. 러너에 넘기려 한 적 없는 지시는 서버가 다시 띄울
+ *     수 있게 돌려주고, 넘김 시도 뒤 큐로 되돌아온 지시와 가를 수 없는 지시는 모름(uncertain)으로
+ *     둔다. 장부의 dispatching_at은 메모리 큐 지시에는 거의 늘 값이 있어 기준이 아니다.
  */
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -33,7 +35,8 @@ function row(overrides: Record<string, unknown>) {
     state: "queued",
     aggregate_state: "pending",
     attempt_token: "token-1",
-    dispatching_at: null,
+    // 서버가 노드에 넘기기 시작한 표시다. 메모리 큐에 있는 지시에는 거의 늘 값이 있다.
+    dispatching_at: new Date(),
     ...overrides,
   };
 }
@@ -140,39 +143,60 @@ describe("card #1266 U5a 아: forgetting a task removes only the task object it 
 });
 
 describe("card #1266 U5a 차: instructions queued in a forgotten task settle in the ledger without a node restart", () => {
-  it("returns never-dispatched instructions and marks dispatched or undecidable ones uncertain", async () => {
+  it("returns instructions this node never tried to hand to a runner even though the server stamped dispatching_at", async () => {
     const subject = makeSubject({
       rows: {
         "d-fresh": row({ delivery_id: "d-fresh" }),
-        "d-sent": row({ delivery_id: "d-sent", dispatching_at: new Date(), attempt_token: "token-2" }),
-        "d-open": row({ delivery_id: "d-open", state: "dispatching", dispatching_at: new Date(), attempt_token: null }),
         "d-done": row({ delivery_id: "d-done", state: "consumed", aggregate_state: "consumed" }),
       },
     });
     const task = makeTask({
-      interventionQueue: [msg("d-fresh"), msg("d-sent"), msg("d-open"), msg("d-done"), msg(undefined), msg("d-gone")],
+      interventionQueue: [msg("d-fresh"), msg("d-done"), msg(undefined), msg("d-gone")],
     });
     subject.tasks.set(task.agentSessionId, task);
 
     subject.manager.forgetRunnerRecoveryTask(task);
 
-    await vi.waitFor(() => expect(subject.repository.get).toHaveBeenCalledTimes(5));
-    await vi.waitFor(() => expect(subject.repository.markUncertain).toHaveBeenCalledTimes(2));
-    expect(subject.repository.retryDeliveryAttempt).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(subject.repository.get).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(subject.repository.retryDeliveryAttempt).toHaveBeenCalledOnce());
     expect(subject.repository.retryDeliveryAttempt).toHaveBeenCalledWith(
       "d-fresh",
       "token-1",
       "task_forgotten_before_dispatch",
       0,
     );
+    expect(subject.repository.markUncertain).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([]);
+    expect(subject.tasks.has(task.agentSessionId)).toBe(false);
+  });
+
+  it("marks uncertain an instruction that came back to the queue after a hand-off attempt, and one that cannot be returned", async () => {
+    const subject = makeSubject({
+      rows: {
+        "d-sent": row({ delivery_id: "d-sent", attempt_token: "token-2" }),
+        "d-open": row({ delivery_id: "d-open", state: "dispatching", attempt_token: null }),
+      },
+    });
+    const returned = msg("d-sent");
+    const holder = makeTask();
+    // 넘김을 시도한 뒤 큐로 되돌아오는 자리가 쓰는 함수로 시도 표시를 남긴다.
+    requeueAfterHandoffAttempt(holder, returned);
+    expect(wasHandoffAttempted(returned)).toBe(true);
+    expect(wasHandoffAttempted(msg("d-open"))).toBe(false);
+    // 시도 번호가 장부에도 메시지에도 없어 돌려줄 수 없는 줄이다.
+    const task = makeTask({ interventionQueue: [returned, msg("d-open")] });
+    subject.tasks.set(task.agentSessionId, task);
+
+    subject.manager.forgetRunnerRecoveryTask(task);
+
+    await vi.waitFor(() => expect(subject.repository.markUncertain).toHaveBeenCalledTimes(2));
+    expect(subject.repository.retryDeliveryAttempt).not.toHaveBeenCalled();
     expect(subject.repository.markUncertain).toHaveBeenCalledWith(
       "d-sent", "token-2", INSTRUCTION_UNCERTAIN_REASON,
     );
     expect(subject.repository.markUncertain).toHaveBeenCalledWith(
       "d-open", undefined, INSTRUCTION_UNCERTAIN_REASON,
     );
-    expect(task.interventionQueue).toEqual([]);
-    expect(subject.tasks.has(task.agentSessionId)).toBe(false);
   });
 
   it("settles the other instructions when one ledger read fails and logs the failure", async () => {

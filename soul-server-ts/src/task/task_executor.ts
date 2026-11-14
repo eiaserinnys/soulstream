@@ -115,7 +115,7 @@ import {
 import { buildClaudeContextUsageMetadataEntry } from "./task_metadata.js";
 import {
   dequeueInterventionsInLane,
-  enqueueInterventionOnce,
+  requeueAfterHandoffAttempt,
   isRuntimeFollowup,
   rejoinUnstartedInterventions,
   removeInterventionMessage,
@@ -322,16 +322,32 @@ interface PersistentDecisionRuntime {
   >;
 }
 
+/** 거절된 전이가 이 러너가 아닌 낡은 등록의 것이면 그 표시를 잇기 응답에 싣는다. */
+function staleRegistrationMark(verdict: NodeResponseVerdict): { staleRegistration?: true } {
+  return verdict.facts.registration === "different" ? { staleRegistration: true } : {};
+}
+
 export class TaskExecutor {
   /** 턴 출력을 읽는 중인 task가 엔진 치명 오류로 그 읽기를 오류로 끝내는 길. */
   private readonly fatalEngineErrorFailers = new WeakMap<
     Task,
     { fail(error: Error): void; readonly waiters: number }
   >();
-  /** 턴 출력 읽기가 끝난 task. 그 뒤 실행이 끝맺기 전에 온 치명 오류를 쥐어 두는 판단에 쓴다. */
-  private readonly fatalReadEnded = new WeakSet<Task>();
-  /** 읽기가 끝난 뒤 실행이 끝맺기 전에 온 치명 오류. 실행이 끝나거나 다음 읽기가 서면 이어진다. */
-  private readonly lateFatalEngineErrors = new WeakMap<Task, string>();
+  /**
+   * 턴 출력 읽기가 끝난 task와 그때 서 있던 실행 슬롯. 그 뒤 같은 실행이 끝맺기 전에 온 치명 오류를
+   * 쥐어 두는 판단에 쓴다. 실행이 끝나면(슬롯이 풀리면) 지운다.
+   */
+  private readonly fatalReadEnded = new WeakMap<Task, Promise<void>>();
+  /**
+   * 읽기가 끝난 뒤 실행이 끝맺기 전에 온 치명 오류와 그것이 온 실행 슬롯. 그 실행이 끝나거나 같은
+   * 실행의 다음 읽기가 서면 이어진다. 다른 실행에는 쓰지 않는다.
+   */
+  private readonly lateFatalEngineErrors = new WeakMap<
+    Task,
+    { message: string; execution: Promise<void> }
+  >();
+  /** 시동 장벽을 이 클래스가 직접 세운 것(넘겨받은 장벽과 구분한다). */
+  private readonly ownedStartBarriers = new WeakSet<ExecutionActivation>();
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
@@ -506,6 +522,7 @@ export class TaskExecutor {
       && this.supportsExecutionRegistration()
       ? createExecutionActivation()
       : undefined;
+    if (barrier) this.ownedStartBarriers.add(barrier);
     if (!barrier) {
       return this.startExecutionBehindBarrier(task, agent, transferredActivation);
     }
@@ -636,7 +653,9 @@ export class TaskExecutor {
     try {
       prepared = this.prepareExecution(task, agent);
     } catch (error) {
-      if (!transferredActivation) throw error;
+      // 직접 길의 준비 실패는 예전처럼 호출자에게 던진다. 이 클래스가 세운 시동 장벽은 호출자(시작
+      // 함수)가 거둔다. 재개 길이 넘긴 장벽만 오류 종료로 끝낸다.
+      if (!transferredActivation || this.ownedStartBarriers.has(transferredActivation)) throw error;
       task.executionActivation = transferredActivation;
       void transferredActivation.promise.catch(() => undefined);
       const promise = this.handleExecutionFailure(task, transferredActivation, error);
@@ -1111,7 +1130,8 @@ export class TaskExecutor {
     const release = (): void => {
       if (task.executionPromise !== promise) return;
       task.executionPromise = undefined;
-      this.settleLateFatalEngineError(task);
+      if (this.fatalReadEnded.get(task) === promise) this.fatalReadEnded.delete(task);
+      this.settleLateFatalEngineError(task, promise);
       void this.driveQueuedAfterTerminal(task);
     };
     void promise.then(release, release);
@@ -1636,7 +1656,11 @@ export class TaskExecutor {
           if (facts && facts.route !== "no_response") {
             const verdict = await this.settleAdoptRejection(task, judgeNodeResponse(facts));
             const response = adoptResponseOfVerdict(verdict);
-            const answered: NodeAdoptionApplication = { applied: false, response };
+            const answered: NodeAdoptionApplication = {
+              applied: false,
+              response,
+              ...staleRegistrationMark(verdict),
+            };
             onAdoptionApplication?.(answered);
             throw new NodeAdoptionRejectedError(
               task.agentSessionId,
@@ -1658,6 +1682,7 @@ export class TaskExecutor {
               applied: false,
               rejectionReason: application.rejectionReason,
               response: adoptResponseOfVerdict(adoptVerdict),
+              ...staleRegistrationMark(adoptVerdict),
             }
           : application;
         onAdoptionApplication?.(answered);
@@ -1786,6 +1811,14 @@ export class TaskExecutor {
     if (!task.runner) {
       throw new Error(`Task ${task.agentSessionId} has no attached runner to adopt`);
     }
+    // 잇기 전이를 기다리는 동안 이 실행이 끝나거나 바뀔 수 있다(멈춘 실행의 치명 오류 종료 등).
+    // 그 사이 도착한 응답은 보낼 때의 실행에만 반영한다.
+    const sentWith = {
+      status: task.status,
+      runner: task.runner,
+      execution: task.executionPromise,
+      suspended: this.suspendedRecoveredExecutions.get(task),
+    };
     const registrationId = task.runner.dispatcher.registrationId();
     const responseContext: NodeResponseContext = {
       call: "attached_runner_adopt",
@@ -1808,23 +1841,35 @@ export class TaskExecutor {
     } catch (error) {
       const facts = nodeResponseFactsFromError(responseContext, error);
       if (!facts || facts.route === "no_response") throw error;
+      const verdict = await this.settleAdoptRejection(task, judgeNodeResponse(facts));
       const answered: NodeAdoptionApplication = {
         applied: false,
-        response: adoptResponseOfVerdict(
-          await this.settleAdoptRejection(task, judgeNodeResponse(facts)),
-        ),
+        response: adoptResponseOfVerdict(verdict),
+        ...staleRegistrationMark(verdict),
       };
       return answered;
     }
     if (application.applied) {
+      const sameExecution = task.runner === sentWith.runner
+        && task.executionPromise === sentWith.execution
+        && this.suspendedRecoveredExecutions.get(task) === sentWith.suspended
+        && (!isActiveTaskStatus(sentWith.status) || isActiveTaskStatus(task.status));
+      if (!sameExecution) {
+        this.logger.info(
+          { sessionId: task.agentSessionId, status: task.status },
+          "adoption applied after the execution it was sent for ended; not projecting it onto the task",
+        );
+        return { applied: true, rejectionReason: application.rejectionReason };
+      }
       applyCanonicalSessionProjection(task, application.canonicalSession);
       this.resumeSuspendedRecoveredExecution(task);
       return { applied: true, rejectionReason: application.rejectionReason };
     }
-    const response = adoptResponseOfVerdict(await this.settleAdoptRejection(
+    const rejectedVerdict = await this.settleAdoptRejection(
       task,
       judgeNodeResponse(nodeResponseFactsFromApplication(responseContext, application)),
-    ));
+    );
+    const response = adoptResponseOfVerdict(rejectedVerdict);
     // 사유로 가른 분류와 같으면 분류를 싣지 않는다. 낡은 등록처럼 사유만으로 가를 수
     // 없는 거절만 분류를 싣는다.
     const answered: NodeAdoptionApplication = {
@@ -1833,6 +1878,7 @@ export class TaskExecutor {
       ...(response === classifyRunnerAdoptRejection(application.rejectionReason)
         ? {}
         : { response }),
+      ...staleRegistrationMark(rejectedVerdict),
     };
     return answered;
   }
@@ -2261,7 +2307,8 @@ export class TaskExecutor {
       if (runtimeFollowupReceiptMissing) {
         for (const intervention of currentTurnInterventions) {
           if (intervention.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) {
-            enqueueInterventionOnce(task, intervention);
+            // 러너에 넘긴 뒤 큐로 되돌아오는 지시다. 잊힐 때 장부에서 모름으로 정리되도록 표시한다.
+            requeueAfterHandoffAttempt(task, intervention);
           }
         }
       }
@@ -2806,12 +2853,13 @@ export class TaskExecutor {
     }
     // 읽기는 끝났는데 실행이 아직 끝맺는 중이면 오류를 버리지 않고 쥐어 둔다. 실행이 끝났는데
     // 활성이면 종료를 잇고, 다음 읽기가 서면 그 읽기가 이 오류로 끝난다.
-    if (this.fatalReadEnded.has(task) && task.executionPromise !== undefined) {
+    const endedExecution = this.fatalReadEnded.get(task);
+    if (endedExecution !== undefined && task.executionPromise === endedExecution) {
       this.logger.warn(
         { sessionId: task.agentSessionId, message },
         "fatal engine error arrived after the turn output ended; holding it until the execution settles",
       );
-      this.lateFatalEngineErrors.set(task, message);
+      this.lateFatalEngineErrors.set(task, { message, execution: endedExecution });
       return true;
     }
     if (
@@ -2829,12 +2877,12 @@ export class TaskExecutor {
   }
 
   /** 실행이 끝맺은 뒤에도 task가 활성이면, 읽기가 끝난 뒤 온 치명 오류로 종료를 잇는다. */
-  private settleLateFatalEngineError(task: Task): void {
-    const message = this.lateFatalEngineErrors.get(task);
-    if (message === undefined) return;
+  private settleLateFatalEngineError(task: Task, execution: Promise<void>): void {
+    const held = this.lateFatalEngineErrors.get(task);
+    if (held === undefined || held.execution !== execution) return;
     this.lateFatalEngineErrors.delete(task);
     if (!isActiveTaskStatus(task.status)) return;
-    void this.terminateWithFatalEngineError(task, message).catch((error: unknown) => {
+    void this.terminateWithFatalEngineError(task, held.message).catch((error: unknown) => {
       this.logger.warn(
         { err: error, sessionId: task.agentSessionId },
         "late fatal engine error termination failed",
@@ -2861,10 +2909,13 @@ export class TaskExecutor {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         const iterator = source[Symbol.asyncIterator]();
         readEnded.delete(task);
-        // 앞 읽기가 끝난 뒤 쥐어 둔 오류가 있으면 이 읽기가 그 오류로 끝난다.
+        // 같은 실행에서 앞 읽기가 끝난 뒤 쥐어 둔 오류가 있으면 이 읽기가 그 오류로 끝난다. 다른
+        // 실행에서 쥔 오류는 이 읽기와 무관하므로 쓰지 않고 버린다.
         const held = lateErrors.get(task);
-        lateErrors.delete(task);
-        let failure: Error | undefined = held === undefined ? undefined : new Error(held);
+        if (held !== undefined) lateErrors.delete(task);
+        let failure: Error | undefined = held !== undefined && held.execution === task.executionPromise
+          ? new Error(held.message)
+          : undefined;
         let wake: ((error: Error) => void) | undefined;
         const signal = {
           fail(error: Error): void {
@@ -2894,7 +2945,9 @@ export class TaskExecutor {
                 // done을 받고 깨어나기 전에 온 오류는 이 읽기의 끝맺음을 오류로 만든다.
                 if (failure) throw failure;
                 release();
-                readEnded.add(task);
+                if (task.executionPromise !== undefined) {
+                  readEnded.set(task, task.executionPromise);
+                }
               }
               return result;
             } catch (err) {

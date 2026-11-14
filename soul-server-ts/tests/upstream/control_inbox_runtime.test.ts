@@ -383,6 +383,7 @@ function failingStorage(error: Error): ControlInboxStorage {
       throw error;
     },
     claimPending: () => [],
+    reclaimExpired: () => 0,
     complete: () => {
       throw new Error("unexpected complete");
     },

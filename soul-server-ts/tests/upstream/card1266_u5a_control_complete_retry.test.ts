@@ -12,8 +12,9 @@ import { ControlInboxStore } from "../../src/upstream/control_inbox_store.js";
 
 /**
  * 카드 #1266 U5a 사: control 워커가 내구 작업을 끝낼 때 store.complete가 실패해도 삼키지 않는다.
- * 짧게 다시 해 보고, 그래도 안 되면 오류를 올리며 작업은 끝나지 않은 채로 남는다. 다시 처리될
- * 때 도메인 효과가 되풀이되지 않는 것은 메인 스레드의 활성 작업 중복 막기(control_channel_service)가
+ * 짧게 다시 해 보고, 그래도 안 되면 오류를 올리며 작업은 끝나지 않은 채로 남는다. 연결이 붙어 있으면
+ * lease가 끝난 뒤 스스로 다시 집어 완료한다(다음 연결이나 명령을 기다리지 않는다). 다시 처리될 때
+ * 도메인 효과가 되풀이되지 않는 것은 메인 스레드의 활성 작업 중복 막기(control_channel_service)가
  * 맡는다.
  */
 const roots: string[] = [];
@@ -23,13 +24,19 @@ afterEach(async () => {
     rm(root, { recursive: true, force: true })));
 });
 
+const LEASE_MS = 30_000;
+
 async function setup(failures: { count: number }) {
+  const clock = { now: 1_700_000_000_000 };
+  // 재집기 타이머(lease 길이)는 손으로 돌리고, 완료 재시도의 짧은 지연은 곧바로 돌린다.
+  const timers: Array<() => void> = [];
   const root = await mkdtemp(join(tmpdir(), "card1266-u5a-control-"));
   roots.push(root);
   const store = new ControlInboxStore({
     databasePath: join(root, "_control", "control-inbox.sqlite"),
     nodeId: "node-a",
     hostGeneration: "host-a",
+    nowMs: () => clock.now,
   });
   const originalComplete = store.complete.bind(store);
   let completeCalls = 0;
@@ -51,7 +58,12 @@ async function setup(failures: { count: number }) {
     mainHeartbeatAgeMs: () => 0,
     postWork: (item) => work.push(item),
     // 기다림 없이 곧바로 돌려 지연 값만 기록한다.
-    schedule: (callback, delayMs) => { delays.push(delayMs); queueMicrotask(callback); return delays.length; },
+    schedule: (callback, delayMs) => {
+      delays.push(delayMs);
+      if (delayMs === LEASE_MS) timers.push(callback);
+      else queueMicrotask(callback);
+      return delays.length;
+    },
     clearScheduled: () => {},
     log: (message) => logs.push(message),
   });
@@ -60,7 +72,7 @@ async function setup(failures: { count: number }) {
   const command = { type: "create_card_orchestration_decision", requestId: "req-1", agentSessionId: "s-1" };
   await runtime.handleCommand(command);
   expect(work).toHaveLength(1);
-  return { runtime, store, frames, work, delays, logs, calls: () => completeCalls };
+  return { runtime, store, frames, work, delays, logs, clock, timers, command, calls: () => completeCalls };
 }
 
 describe("card #1266 U5a 사: durable control work completion failures are not swallowed", () => {
@@ -79,7 +91,7 @@ describe("card #1266 U5a 사: durable control work completion failures are not s
     subject.runtime.close();
   });
 
-  it("raises the error after the last try and keeps the work open instead of dropping it", async () => {
+  it("raises the error after the last try, keeps the work open, and picks it up again by itself after the lease ends", async () => {
     const subject = await setup({ count: 99 });
     const workId = subject.work[0]!.workId;
 
@@ -88,18 +100,56 @@ describe("card #1266 U5a 사: durable control work completion failures are not s
     ).rejects.toThrow("database is locked");
 
     expect(subject.calls()).toBe(3);
-    expect(subject.delays).toEqual([100, 400]);
+    expect(subject.delays).toEqual([100, 400, LEASE_MS]);
     expect(subject.frames.filter((frame) => frame.type === "control_result")).toEqual([]);
     expect(subject.store.listReplayableResults()).toEqual([]);
+    expect(subject.timers).toHaveLength(1);
 
-    // 같은 작업 번호로 다시 온 결과는 아직 열린 작업으로 완료된다. 도메인 실행은 다시 하지 않는다.
-    expect(subject.work).toHaveLength(1);
+    // lease가 끝나면 연결이 붙은 채로 스스로 같은 작업을 다시 집는다. 새 명령이나 재연결 없이.
     (subject.store as unknown as { complete: unknown }).complete =
       ControlInboxStore.prototype.complete.bind(subject.store);
+    subject.clock.now += LEASE_MS + 1;
+    subject.timers[0]!();
+    expect(subject.work).toHaveLength(2);
+    expect(subject.work[1]!.workId).toBe(workId);
+
+    // 메인 스레드가 같은 작업 번호의 결과를 다시 보내면 완료된다. 도메인 실행은 다시 하지 않는다.
     await expect(
       subject.runtime.handleDomainResult(workId, { type: "session_created", status: "ready" }),
     ).resolves.toBe(true);
     expect(subject.store.listReplayableResults()).toHaveLength(1);
+    expect(subject.frames).toContainEqual(expect.objectContaining({ type: "control_result", requestId: "req-1" }));
+    subject.runtime.close();
+  });
+
+  it("does not pick the work up before the lease has ended", async () => {
+    const subject = await setup({ count: 99 });
+    const workId = subject.work[0]!.workId;
+    await expect(
+      subject.runtime.handleDomainResult(workId, { type: "session_created", status: "ready" }),
+    ).rejects.toThrow("database is locked");
+
+    subject.clock.now += LEASE_MS - 1_000;
+    subject.timers[0]!();
+
+    expect(subject.work).toHaveLength(1);
+    subject.runtime.close();
+  });
+
+  it("schedules no pick-up while disconnected; the next connect picks the expired work up", async () => {
+    const subject = await setup({ count: 99 });
+    const workId = subject.work[0]!.workId;
+    subject.runtime.disconnect();
+    await expect(
+      subject.runtime.handleDomainResult(workId, { type: "session_created", status: "ready" }),
+    ).rejects.toThrow("database is locked");
+    expect(subject.timers).toHaveLength(0);
+
+    subject.clock.now += LEASE_MS + 1;
+    await subject.runtime.connect(async () => {});
+
+    expect(subject.work).toHaveLength(2);
+    expect(subject.work[1]!.workId).toBe(workId);
     subject.runtime.close();
   });
 });
