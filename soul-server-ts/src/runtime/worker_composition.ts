@@ -51,7 +51,7 @@ import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_log
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { backgroundLifecycleObserver, composeRunnerOrphanReaper, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
-import { composeSessionIsolation } from "./session_isolation_composition.js";
+import { composeSessionIsolation } from "./session_isolation_composition.js"; import { composeCompletionSettlement } from "./completion_settlement_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter, createBroadcasterSend } from "./worker_upstream_composition.js";
@@ -110,8 +110,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const eventOutboxPumpMux = new EventOutboxPumpMux(eventOutboxPump);
   const db = new SessionDB();
   const claudeSessionStore = new DbClaudeSessionStore(db);
-  const send = createBroadcasterSend(() => upstreamAdapter, logger);
-  const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
+  const broadcaster = new SessionBroadcaster(createBroadcasterSend(() => upstreamAdapter, logger), agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(
     db,
     broadcaster,
@@ -318,7 +317,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     sessionIsolation,
   });
   taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
+  const settlement = composeCompletionSettlement({ env, logger, db, eventOutbox, completionNotifier: taskRuntime.completionNotifier, scheduleService });
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
+    hasPendingRunnerSettlement: settlement.hasPendingRunnerSettlement,
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
     releaseGarbageCollector: runnerProcess?.releaseGarbageCollector,
@@ -338,9 +339,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),
   });
-  for (const owner of [taskManager, taskRuntime.taskExecutor]) owner.setTerminationCleanupPorts({ retireRejectedRegistration: async (task, id) => await runnerRecoveryCoordinator?.retireRejectedTerminalRegistration(task, id), forgetTask: (id) => taskManager.forgetRunnerRecoveryTask(id) });
-  const folderService = new FolderService(orchHostClientDeps);
-  db.configureFolderReader(folderService);
+  settlement.wireTerminationCleanup({ owners: [taskManager, taskRuntime.taskExecutor], retireRejectedRegistration: runnerRecoveryCoordinator && (async (task, id) => await runnerRecoveryCoordinator.retireRejectedTerminalRegistration(task, id)), forgetTask: (id) => taskManager.forgetRunnerRecoveryTask(id) });
+  db.configureFolderReader(new FolderService(orchHostClientDeps));
   const catalogService = new CatalogService(
     db,
     broadcaster,
@@ -489,6 +489,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     eventOutboxPump,
     eventOutboxPumpMux,
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
+    completionSettlementWorker: settlement.worker,
     ...composeRunnerOrphanReaper({ runnerProcess, logger, intervalMs: env.SOUL_RUNNER_REAPER_INTERVAL_MS }),
     ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
     ...(runnerProcess ? { runnerRecoveryStorage: runnerProcess.recoveryStorage } : {}),

@@ -48,6 +48,9 @@ export type CompletionDeliveryRegistrationResult =
   | { registered: true; deliveryId: string; conflict: boolean }
   | { registered: false; reason: "registration_failed" | "identity_conflict" | "delivery_dead_lettered" };
 
+/** 등록 함수의 결과다. 정책상 생략은 알림 쪽이 정하므로 여기에는 없다. */
+export type CompletionEnqueueOutcome = "registered" | "retry_required";
+
 type CompletionDeliveryRepository = Pick<
   SessionDeliveryHostClient,
   | "register"
@@ -109,21 +112,47 @@ export class CompletionDeliveryCoordinator {
     this.workerId = workerId;
   }
 
-  async enqueue(input: DurableCompletionInput): Promise<void> {
+  /**
+   * 완료 전달을 등록하고 발송을 한 번 시도한다. 돌려주는 값은 등록의 결과다: 장부에 줄이
+   * 있으면 `registered`(이미 있던 줄 포함), 저장이 실패해 줄이 없으면 `retry_required`다.
+   * 같은 신원의 다른 본문이 오면 중앙이 기존 줄을 죽이므로 등록 전에 줄이 있는지 먼저 읽는다.
+   * 정상 길과 재시작 뒤 훑기(되살린 본문은 한도 문구와 초상이 빠져 해시가 다르다)가 같은 종료를
+   * 서로 다른 본문으로 등록하려 해도 먼저 선 줄이 이긴다. 줄이 이미 있으면 등록은 건너뛰되, 같은
+   * 명시 의도의 재호출이 발송을 다시 시도하는 기존 계약은 그대로 둔다.
+   */
+  async enqueue(input: DurableCompletionInput): Promise<CompletionEnqueueOutcome> {
     const registration = buildCompletionRegistration(input);
+    try {
+      const existing = await this.deps.repository.get(registration.deliveryId);
+      if (existing) {
+        this.deps.logger.info(
+          { deliveryId: existing.delivery_id, relationKey: registration.relationKey },
+          "Completion delivery already registered for this terminal revision",
+        );
+        await this.attemptPending(existing.delivery_id);
+        return "registered";
+      }
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, deliveryId: registration.deliveryId },
+        "Completion delivery lookup failed before registration",
+      );
+      return "retry_required";
+    }
     const registered = await this.registerWithRetry(
       registration,
       input.sourceSessionId,
     );
-    if (!registered) return;
+    if (!registered) return "retry_required";
     if (registered.conflict) {
       this.deps.logger.error(
         { deliveryId: registered.row.delivery_id },
         "Completion delivery identity conflict",
       );
-      return;
+      return "registered";
     }
     await this.attemptPending(registered.row.delivery_id);
+    return "registered";
   }
 
   /**

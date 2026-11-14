@@ -86,13 +86,19 @@ export abstract class EventTransitionPublisher {
     );
   }
 
+  /**
+   * `onAppended`는 아웃박스에 붙은 직후, 응답을 기다리기 전에 불린다. 붙인 좌표를 영속하는
+   * 호출자가 쓴다. 이 콜백이 던지면 응답 기다림도 하지 않으므로 호출자가 삼켜야 한다.
+   */
   async enqueueTerminalTransitionAndWaitForApplication(
     sessionId: string,
     event: SSEEventPayload,
     effect: Extract<EventOutboxSessionEffect, { kind: "terminal_transition" }>,
     registrationId?: string,
+    onAppended?: (record: EventOutboxRecord) => Promise<void>,
   ): Promise<EventSessionTransitionApplication> {
     const record = await this.enqueueEvent(sessionId, event, effect, registrationId);
+    await onAppended?.(record);
     return await this.waitForTransitionApplication(sessionId, record, "terminal");
   }
 

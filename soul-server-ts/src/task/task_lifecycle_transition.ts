@@ -1,3 +1,9 @@
+/**
+ * 500줄을 넘긴 파일이다(카드 #1266 U2a 이전부터 678줄). 종료 영속, 거절 정리, 멈춤 장벽, 완료
+ * 정산 미결이 한 전이 객체의 상태(포트, 완료 통지, 영속)를 같이 써서 지금은 쪼개면 포트를 되넘기는
+ * 얕은 모듈이 된다. 미결 기록 자체는 terminal_settlement_track.ts로 뺐다. 거절 정리와 삭제 정산을
+ * 따로 떼는 것은 후속 정리 몫이다.
+ */
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -21,6 +27,9 @@ import {
   recordTerminationHint,
 } from "./task_termination.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import type { CompletionSettlementLedger } from "./completion_settlement_store.js";
+import { TerminalSettlementTrack, closeSettledTerminal } from "./terminal_settlement_track.js";
+import type { CompletionNotifyOptions, CompletionSettleResult } from "./completion_notifier.js";
 import { decideNodeStopRequest } from "./state/node_barrier_decision.js";
 import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
 import {
@@ -43,7 +52,7 @@ export interface ExternalFinalizeParams {
  * 없으므로 삭제를 멈춘다(등록 없이 세션 행을 지우지 않는다).
  */
 interface CompletionNotificationPort {
-  notify(task: Task): Promise<void>;
+  notify(task: Task, options?: CompletionNotifyOptions): Promise<CompletionSettleResult | void>;
   notifyForDelete?(task: Task): Promise<boolean>;
   notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
 }
@@ -51,8 +60,14 @@ interface CompletionNotificationPort {
 /** 종료 응답의 정리 의도를 실행하는 포트다. 모두 없을 수 있다. */
 export interface TerminationCleanupPorts {
   /**
-   * 완료 정산 미결 닫기의 호출점이다. 기본 구현은 아무것도 하지 않는다.
-   * 미결의 영속과 닫기는 다음 단위(카드 #1266 I3)가 채운다.
+   * 완료 정산 미결의 저장소다. 있으면 종료를 아웃박스에 붙이기 전에 미결을 영속하고,
+   * 완료 전달을 등록하거나 정책상 생략을 확인한 뒤에 지운다. 완료 전달 v2가 꺼진 노드는
+   * 장부 확인이 없으므로 잇지 않는다.
+   */
+  settlement?: CompletionSettlementLedger;
+  /**
+   * 완료 정산 미결 닫기의 호출점이다. 영구 거절 칸과 중앙 세션 없음 칸이 부른다.
+   * 없으면 아무것도 하지 않는다.
    */
   closeSettlementPending?: (
     task: Task,
@@ -80,6 +95,8 @@ interface TaskLifecycleTransitionDeps extends TerminationCleanupPorts {
 export interface TaskFinalStatePersistenceResult {
   newlyFinalized: boolean;
   terminalTransitionApplied: boolean;
+  /** 이번 종료가 쓴 완료 정산 미결의 키다. 저장소가 이어져 있고 종료를 올렸을 때만 있다. */
+  settlementKey?: string;
 }
 
 export const USER_STOP_PROJECTION = {
@@ -115,6 +132,7 @@ export class TaskLifecycleTransition {
   constructor(private readonly deps: TaskLifecycleTransitionDeps) {
     this.completionNotifier = deps.completionNotifier;
     this.ports = {
+      settlement: deps.settlement,
       closeSettlementPending: deps.closeSettlementPending,
       releaseLocalOwnership: deps.releaseLocalOwnership,
       readCentralSession: deps.readCentralSession,
@@ -146,10 +164,16 @@ export class TaskLifecycleTransition {
     options: { requireRegistration?: boolean } = {},
   ): Promise<boolean> {
     const requireRegistration = options.requireRegistration === true;
+    const key = persistence.settlementKey;
     if (!requireRegistration && !persistence.terminalTransitionApplied) {
+      // 적용되지 않은 종료는 정산할 것이 없다. 남은 미결은 훑기가 중앙을 보고 닫는다.
+      this.releaseSettlementKey(key);
       return true;
     }
-    if (!task.callerSessionId || !this.completionNotifier) return true;
+    if (!task.callerSessionId || !this.completionNotifier) {
+      await this.closeSettlementKey(task, key);
+      return true;
+    }
 
     try {
       if (requireRegistration) {
@@ -159,18 +183,86 @@ export class TaskLifecycleTransition {
             { sessionId: task.agentSessionId },
             "completion notifier cannot confirm registration before delete",
           );
+          this.releaseSettlementKey(key);
           return false;
         }
-        return await notifyForDelete.call(this.completionNotifier, task);
+        const registered = await notifyForDelete.call(this.completionNotifier, task);
+        if (registered) await this.closeSettlementKey(task, key);
+        else this.releaseSettlementKey(key);
+        return registered;
       }
-      await this.completionNotifier.notify(task);
+      const result = await this.completionNotifier.notify(task);
+      if (result?.kind === "retry_required") {
+        this.releaseSettlementKey(key);
+        return false;
+      }
+      await this.closeSettlementKey(task, key);
       return true;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "completion notification failed after terminal transition was applied",
       );
+      this.releaseSettlementKey(key);
       return false;
+    }
+  }
+
+  /**
+   * 「다음 세대가 이어 감」으로 완료 통지를 건너뛴 종료의 미결을 닫는다. 호출한 쪽이 이어가기
+   * 예약이 실제로 만들어진 것을 확인한 뒤에만 부른다.
+   */
+  async settleSkippedCompletion(
+    task: Task,
+    persistence: TaskFinalStatePersistenceResult,
+  ): Promise<void> {
+    await this.closeSettlementKey(task, persistence.settlementKey);
+  }
+
+  /** 정상 길이 끝났으므로 이 종료의 미결 쥠을 푼다. 남은 미결은 훑기가 이어 받는다. */
+  releaseSettlementHold(persistence: TaskFinalStatePersistenceResult): void {
+    this.releaseSettlementKey(persistence.settlementKey);
+  }
+
+  /** 정상 길이 쥔 미결을 풀고 훑기에 맡긴다. */
+  private releaseSettlementKey(key: string | undefined): void {
+    if (key !== undefined) this.ports.settlement?.release(key);
+  }
+
+  private async closeSettlementKey(task: Task, key: string | undefined): Promise<void> {
+    await closeSettledTerminal(this.ports.settlement, this.deps.logger, task.agentSessionId, key);
+  }
+
+  /**
+   * 세션 행을 지우기 전에 그 세션의 완료 정산 미결을 정산한다. 종료가 중앙에 기록된
+   * 세션이 미결을 가지면 등록이나 정책상 생략을 확인한다. 등록하지 못하면 던져 삭제를 멈춘다.
+   */
+  async settleBeforeDelete(task: Task): Promise<void> {
+    const settlement = this.ports.settlement;
+    if (!settlement) return;
+    if (!(await settlement.hasPendingForSession(task.agentSessionId))) return;
+    if (!task.terminationEventRecorded) return;
+    const registered = await this.notifyCompletionIfApplied(
+      task,
+      { newlyFinalized: false, terminalTransitionApplied: false },
+      { requireRegistration: true },
+    );
+    if (!registered) {
+      throw new Error(
+        `completion notification registration failed before delete: ${task.agentSessionId}`,
+      );
+    }
+  }
+
+  /** 삭제를 마친 세션의 미결을 남기지 않는다(중앙 줄이 없어 훑기가 되살릴 수 없다). */
+  async discardSettlementsAfterDelete(sessionId: string): Promise<void> {
+    try {
+      await this.ports.settlement?.closeAllForSession(sessionId);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId },
+        "completion settlement of a deleted session could not be removed",
+      );
     }
   }
 
@@ -309,7 +401,7 @@ export class TaskLifecycleTransition {
     task.completedAt = stopCompletedAt;
     let persistence: TaskFinalStatePersistenceResult;
     try {
-      persistence = await this.persistFinalState(task, true);
+      persistence = await this.persistFinalState(task, true, { settleCompletion: true });
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -435,11 +527,17 @@ export class TaskLifecycleTransition {
     return task;
   }
 
+  /**
+   * `settleCompletion`이면 이 종료는 완료 통지 의무가 걸린다: 미결을 영속하고 호출자가
+   * `notifyCompletionIfApplied`로 정산한다. 통지하지 않는 종료(오류 표시 등)는 미결을 만들지 않는다.
+   * `registrationId`는 task에 실행 등록이 없을 때 종료가 지킬 러너 등록이다(잇기 거절의 오류 종료).
+   */
   async persistExecutorFinalState(
     task: Task,
     retryUnrecordedTerminal = false,
+    options: { settleCompletion?: boolean; registrationId?: string } = {},
   ): Promise<TaskFinalStatePersistenceResult> {
-    return await this.persistFinalState(task, retryUnrecordedTerminal);
+    return await this.persistFinalState(task, retryUnrecordedTerminal, options);
   }
 
   applyRunnerTerminalFact(
@@ -463,35 +561,45 @@ export class TaskLifecycleTransition {
   private async persistFinalState(
     task: Task,
     retryUnrecordedTerminal = false,
+    options: { settleCompletion?: boolean; registrationId?: string } = {},
   ): Promise<TaskFinalStatePersistenceResult> {
     const termination = finalizeTaskTermination(task);
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
-    let terminalTransitionApplied = false;
+    let settled: { applied: boolean; settlementKey?: string } = { applied: false };
     if (
-      !terminalTransitionApplied
-      && (termination.newlyFinalized || retryUnrecordedTerminal)
+      (termination.newlyFinalized || retryUnrecordedTerminal)
       && isTerminalTaskStatus(task.status)
       && !task.terminationEventRecorded
     ) {
-      terminalTransitionApplied = await this.enqueueAndAwaitSessionEnded(
+      settled = await this.enqueueAndAwaitSessionEnded(
         task,
         termination.reason,
         termination.detail,
+        options,
       );
     }
     return {
       newlyFinalized: termination.newlyFinalized,
-      terminalTransitionApplied,
+      terminalTransitionApplied: settled.applied,
+      ...(settled.settlementKey === undefined
+        ? {}
+        : { settlementKey: settled.settlementKey }),
     };
   }
 
+  /**
+   * 종료 사건을 올리고 중앙의 적용을 기다린다. 완료 정산 미결은 아웃박스에 붙이기 전에
+   * 영속한다(불변식 1): 붙이기가 던지면 지우고, 붙은 뒤에는 아웃박스 좌표를, 적용 응답을
+   * 받으면 적용된 종료 사건 번호를 덧붙인다. 러너 등록과 정상 보유 여부는 보지 않는다.
+   */
   private async enqueueAndAwaitSessionEnded(
     task: Task,
     terminationReason: string,
     terminationDetail: string | null,
-  ): Promise<boolean> {
+    options: { settleCompletion?: boolean; registrationId?: string },
+  ): Promise<{ applied: boolean; settlementKey?: string }> {
     if (!this.deps.persistence) {
       throw new Error("session_ended durable event persistence is required");
     }
@@ -508,17 +616,30 @@ export class TaskLifecycleTransition {
       termination_reason: terminationReason,
       ...common,
     };
-    const registrationId = task.executionRegistration?.registrationId;
+    const registrationId = task.executionRegistration?.registrationId ?? options.registrationId;
     const context: NodeResponseContext = {
       call: "termination",
       registrationId: registrationId ?? null,
       retained: task.runnerRetainedForDetachedWork === true,
     };
+    const ledger = options.settleCompletion === true ? this.ports.settlement : undefined;
+    const track = ledger
+      ? await TerminalSettlementTrack.begin(ledger, this.deps.logger, task, event._dedupe_key, registrationId)
+      : undefined;
+    const settlementKey = track?.key;
     let application: Awaited<
       ReturnType<EventPersistence["enqueueTerminalTransitionAndWaitForApplication"]>
     >;
     try {
-      application = registrationId === undefined
+      application = track
+        ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
+            task.agentSessionId,
+            event,
+            effect,
+            registrationId,
+            track.onAppended,
+          )
+        : registrationId === undefined
         ? await this.deps.persistence.enqueueTerminalTransitionAndWaitForApplication(
             task.agentSessionId,
             event,
@@ -531,11 +652,12 @@ export class TaskLifecycleTransition {
             registrationId,
           );
     } catch (error) {
+      await track?.failed();
       const facts = nodeResponseFactsFromError(context, error);
       // 응답이 아닌 오류와 응답 없음은 다시 올릴 수 있으므로 그대로 던진다.
       if (!facts || facts.route === "no_response") throw error;
       await this.settleRejection(task, judgeNodeResponse(facts), this.rejectedRegistrationOf(task, registrationId));
-      return false;
+      return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
     }
     applyCanonicalSessionProjection(task, application.canonicalSession);
     if (
@@ -544,13 +666,16 @@ export class TaskLifecycleTransition {
     ) {
       task.executionRegistration = undefined;
     }
-    if (application.applied) return true;
-    const verdict = judgeNodeResponse(
-      nodeResponseFactsFromApplication(context, application),
-    );
-    if (verdict.decision.cell === "applied") return true;
-    await this.settleRejection(task, verdict, this.rejectedRegistrationOf(task, registrationId));
-    return false;
+    const verdict = application.applied
+      ? undefined
+      : judgeNodeResponse(nodeResponseFactsFromApplication(context, application));
+    if (application.applied || verdict?.decision.cell === "applied") {
+      await track?.applied(application.canonicalSession.termination_event_id);
+      return { applied: true, ...(settlementKey === undefined ? {} : { settlementKey }) };
+    }
+    await this.settleRejection(task, verdict!, this.rejectedRegistrationOf(task, registrationId));
+    track?.release();
+    return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
   }
 
   /** 거절된 종료의 러너 등록이다. 복구 중이면 복구하는 등록, 아니면 이 실행의 등록이다. */
@@ -657,7 +782,12 @@ export class TaskLifecycleTransition {
     await (this.ports.releaseLocalOwnership ?? ((owned) => this.releaseLocalOwnership(owned)))(task);
   }
 
-  /** 중앙 세션이 없을 때의 로컬 소유 정리다. 러너를 놓고 등록 번호와 task를 잊는다. */
+  /**
+   * 로컬 소유를 정리한다. 러너를 놓고 등록 번호를 잊은 뒤 task를 잊는다. 거절된 종료의 표시
+   * (`rejectedTerminationRegistrationId`)는 메모리에만 있어 task와 함께 사라지므로, 잊기 전에 그
+   * 등록을 은퇴시킨다. 은퇴하지 못해 표시가 남으면 task를 잊지 않는다: 잊으면 러너 복구가 같은
+   * 종료를 한 번 더 올린다.
+   */
   async releaseLocalOwnership(task: Task): Promise<void> {
     const runner = task.runner;
     if (runner && releaseTaskRunner(task, runner)) {
@@ -672,6 +802,22 @@ export class TaskLifecycleTransition {
     }
     task.executionRegistration = undefined;
     task.executionPromise = undefined;
+    await this.retireRejectedTerminal(task);
+    // 은퇴를 맡을 러너 복구가 이어져 있을 때만 표시가 남은 task를 붙든다. 이어져 있지 않으면
+    // (러너 프로세스를 쓰지 않는 노드) 표시를 지울 주체가 없으므로 지금까지처럼 잊는다.
+    if (
+      task.rejectedTerminationRegistrationId !== undefined
+      && this.ports.retireRejectedRegistration !== undefined
+    ) {
+      this.deps.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          registrationId: task.rejectedTerminationRegistrationId,
+        },
+        "task kept in memory: its rejected terminal registration is not retired yet",
+      );
+      return;
+    }
     this.ports.forgetTask?.(task.agentSessionId);
   }
 

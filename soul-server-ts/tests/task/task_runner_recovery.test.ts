@@ -38,7 +38,7 @@ describe("TaskRunnerRecovery", () => {
     });
     await recovery.markFailure(current, "runner exited");
     expect(persistExecutorFinalState).toHaveBeenCalledOnce();
-    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true);
+    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true, { settleCompletion: true });
     expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "reaped", "runner exited");
     expect(notifyCompletionIfApplied).toHaveBeenCalledOnce();
     expect(current).toMatchObject({ status: "error", error: "runner exited" });
@@ -94,7 +94,7 @@ describe("TaskRunnerRecovery", () => {
     });
     await expect(recovery.projectClosed(current, "runner closed")).resolves.toBe(true);
     expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "closed", "runner closed");
-    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true);
+    expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true, { settleCompletion: true });
     expect(notifyCompletionIfApplied).toHaveBeenCalledOnce();
     expect(detachHost).toHaveBeenCalledOnce();
   });

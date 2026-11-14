@@ -17,6 +17,7 @@ export interface WorkerStartupRuntime {
   upstreamRegistrationReady: Promise<void>;
   runnerRecoveryCoordinator?: WorkerStartupCoordinator;
   runnerOrphanReaper?: { start(): void };
+  completionSettlementWorker?: { start(): Promise<unknown> };
   claudeRuntimeStartupRecovery?: WorkerStartupRecovery;
 }
 
@@ -59,6 +60,8 @@ export async function startWorkerRuntime<
     if (runnerRecovery) {
       options.logger.info("Runner recovery initial scan completed");
     }
+    // 러너 복구가 수렴한 뒤 첫 훑기를 돌고 이후 주기로 돈다. 재시작 전에 남은 미결을 이어 받는다.
+    void runtime.completionSettlementWorker?.start();
     if (runtime.claudeRuntimeStartupRecovery) {
       await runtime.upstreamRegistrationReady;
       options.logger.info(

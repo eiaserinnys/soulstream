@@ -30,13 +30,15 @@ import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
+import { decideCompletionSkip, type CompletionSkipReason } from "./completion_skip_policy.js";
 import {
   buildBackgroundStoppedNotice,
   buildRetainedBackgroundNotice,
   buildStoppedBackgroundNotice,
   DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
 } from "./claude_background_retention_notice.js";
-import { OrchInterveneClient, OrchInterveneRequestError } from "./orch_intervene_client.js";
+import { OrchInterveneClient } from "./orch_intervene_client.js";
+import { relayCompletionCrossNode } from "./completion_cross_node_relay.js";
 import {
   classifyCompletionDeliveryResult,
   type CompletionDeliveryVerdict,
@@ -56,12 +58,30 @@ import type { Task } from "./task_models.js";
  * 돌려준다. 등록이 확인되지 않으면 삭제 경로가 세션 행을 지우지 않는다.
  */
 export interface CompletionNotifier {
-  notify(task: Task): Promise<void>;
+  notify(task: Task, options?: CompletionNotifyOptions): Promise<CompletionSettleResult | void>;
   notifyForDelete?(task: Task): Promise<boolean>;
   /** 보유가 followup 없이 풀렸을 때 부른 세션에 알린다(R3/R5). */
   notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
   recoverPending?(): Promise<void>;
 }
+
+/**
+ * 완료 통지 한 번의 정산 결과다. 등록됨과 정책상 생략됨은 정산이 끝난 것이고,
+ * 다시 해야 함이면 완료 정산 미결을 남겨 다음 훑기가 다시 본다.
+ */
+export type CompletionSettleResult =
+  | { kind: "registered" }
+  | { kind: "skipped"; reason: CompletionSkipReason }
+  | { kind: "retry_required" };
+
+export interface CompletionNotifyOptions {
+  /** 다음 세대가 이어 가는 것이 확인됐다. 호출한 쪽이 예약의 실재를 보고 넘긴다. */
+  nextGenerationContinues?: boolean;
+}
+
+type CompletionPreparation =
+  | { skip: CompletionSkipReason }
+  | { skip: null; prepared: PreparedCompletionDelivery };
 
 interface PreparedCompletionDelivery {
   callerSessionId: string;
@@ -118,10 +138,20 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     }
   }
 
-  async notify(task: Task): Promise<void> {
-    const prepared = await this._prepareDelivery(task);
-    if (prepared === undefined) return;
-    await this._deliverPrepared(task, prepared);
+  async notify(
+    task: Task,
+    options: CompletionNotifyOptions = {},
+  ): Promise<CompletionSettleResult | undefined> {
+    const preparation = await this._prepareDelivery(
+      task,
+      undefined,
+      options.nextGenerationContinues === true,
+    );
+    if (preparation.skip !== null) return { kind: "skipped", reason: preparation.skip };
+    const registered = await this._deliverPrepared(task, preparation.prepared);
+    // 완료 전달 v2가 꺼진 노드는 장부 확인이 없어 정산할 것이 없다. 지금 동작대로 결과를 돌려주지 않는다.
+    if (!this.deliveryV2Enabled) return undefined;
+    return registered ? { kind: "registered" } : { kind: "retry_required" };
   }
 
   /**
@@ -129,12 +159,12 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * 「이 세션은 더 보고하지 않습니다.」 꼬리를 붙인다. 부른 세션이 없으면 생략한다.
    */
   async notifyBackgroundStopped(task: Task, firstSentence: string): Promise<void> {
-    const prepared = await this._prepareDelivery(
+    const preparation = await this._prepareDelivery(
       task,
       buildBackgroundStoppedNotice(firstSentence),
     );
-    if (prepared === undefined) return;
-    await this._deliverPrepared(task, prepared, {
+    if (preparation.skip !== null) return;
+    await this._deliverPrepared(task, preparation.prepared, {
       relationSuffix: backgroundStopRelationSuffix(firstSentence),
     });
   }
@@ -145,9 +175,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * 없음, 자기 자신)는 true다. 일반 완료·멈춤 단추 길은 `notify`를 그대로 쓴다.
    */
   async notifyForDelete(task: Task): Promise<boolean> {
-    const prepared = await this._prepareDelivery(task);
-    if (prepared === undefined) return true;
-    return await this._deliverPrepared(task, prepared, {
+    const preparation = await this._prepareDelivery(task);
+    if (preparation.skip !== null) return true;
+    return await this._deliverPrepared(task, preparation.prepared, {
       requireRegistration: true,
     });
   }
@@ -155,35 +185,41 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   private async _prepareDelivery(
     task: Task,
     text?: string,
-  ): Promise<PreparedCompletionDelivery | undefined> {
-    if (task.notifyCompletion === false) {
+    nextGenerationContinues = false,
+  ): Promise<CompletionPreparation> {
+    const decision = await decideCompletionSkip(
+      task,
+      async () => await this._resolveCallerSessionId(task),
+      nextGenerationContinues,
+    );
+    if (decision.skip !== null) {
       this.logger.info(
-        { childId: task.agentSessionId, callerSessionId: task.callerSessionId },
-        "Completion notification suppressed by task notifyCompletion=false",
+        {
+          childId: task.agentSessionId,
+          callerSessionId: task.callerSessionId,
+          reason: decision.skip,
+        },
+        "Completion notification suppressed",
       );
-      return undefined;
-    }
-
-    const callerSessionId = await this._resolveCallerSessionId(task);
-    if (!callerSessionId) return undefined;
-    if (callerSessionId === task.agentSessionId) {
-      this.logger.info(
-        { childId: task.agentSessionId, callerSessionId },
-        "Self completion notification suppressed to preserve terminal session state",
-      );
-      return undefined;
+      return { skip: decision.skip };
     }
     return {
-      callerSessionId,
-      callerInfo: this._buildCallerInfo(task),
-      text: text ?? this._buildNotifyText(task),
+      skip: null,
+      prepared: {
+        callerSessionId: decision.callerSessionId,
+        callerInfo: this._buildCallerInfo(task),
+        text: text ?? this._buildNotifyText(task),
+      },
     };
   }
 
   private async _deliverPrepared(
     task: Task,
     prepared: PreparedCompletionDelivery,
-    options: { requireRegistration?: boolean; relationSuffix?: string } = {},
+    options: {
+      requireRegistration?: boolean;
+      relationSuffix?: string;
+    } = {},
   ): Promise<boolean> {
     const { callerSessionId, callerInfo, text } = prepared;
     const childId = task.agentSessionId;
@@ -209,8 +245,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         const registration = await this.durableCoordinator.enqueueForDelete(input);
         return registration.registered;
       }
-      await this.durableCoordinator.enqueue(input);
-      return true;
+      return await this.durableCoordinator.enqueue(input) === "registered";
     }
     const verdict = await this._deliver({
       agentSessionId: callerSessionId,
@@ -313,7 +348,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       );
       return { kind: "failed", reason: "orch_fallback_unavailable" };
     }
-    return await this._relayCrossNode(params, sourceSessionId);
+    return await relayCompletionCrossNode(this.interveneClient, this.logger, params, sourceSessionId);
   }
 
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
@@ -389,90 +424,6 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     }
     const resultText = task.lastAssistantText?.trim() || "(빈 응답)";
     return `✅ 에이전트 세션 완료 (ID: \`${sid}\`)\n\n${resultText}`;
-  }
-
-  /**
-   * orch /api/sessions/{caller}/intervene HTTP POST.
-   *
-   * 키 케이스 *고정* — orch TypeScript `InterveneNodeCommandPayload`
-   * (`orch-server-ts/src/session/session_action_command_payloads.ts`) 정합:
-   *   - text         : str
-   *   - user         : str (=== "agent")
-   *   - caller_info  : Optional[dict]   ← snake_case! `callerInfo`(camelCase)는 무시됨.
-   *
-   * 활성 TypeScript wire 계약과 같은 payload — 양 서버가 같은 키 케이스로 일관 처리하여
-   * atom F-11C 회로(cross-node fallback caller_info 누락) 차단.
-   *
-   * 응답 non-2xx 또는 fetch throw 모두 *child finalize에 throw 전파 금지*.
-   */
-  private async _relayCrossNode(
-    params: AddInterventionParams,
-    sourceSessionId?: string,
-  ): Promise<CompletionDeliveryVerdict> {
-    const client = this.interveneClient;
-    if (!client) {
-      return { kind: "failed", reason: "orch_fallback_unavailable" };
-    }
-    const callerSessionId = params.agentSessionId;
-    try {
-      const { verdict } = await client.send(params);
-      if (verdict.kind === "accepted") {
-        this.logger.info(
-          {
-            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-            callerSessionId,
-            deliveryId: params.deliveryId,
-            disposition: verdict.disposition,
-          },
-          "Completion notification accepted via cross-node relay",
-        );
-      } else if (verdict.kind === "settled") {
-        this.logger.info(
-          {
-            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-            callerSessionId,
-            deliveryId: params.deliveryId,
-            disposition: verdict.disposition,
-          },
-          "Completion notification was already settled via cross-node relay",
-        );
-      } else {
-        this.logger.warn(
-          {
-            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-            callerSessionId,
-            deliveryId: params.deliveryId,
-            reason: verdict.reason,
-          },
-          verdict.kind === "unknown"
-            ? "Cross-node completion notification delivery verdict is unknown"
-            : "Cross-node completion notification was not accepted",
-        );
-      }
-      return verdict;
-    } catch (err) {
-      if (err instanceof OrchInterveneRequestError) {
-        this.logger.error(
-          {
-            ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-            callerSessionId,
-            status: err.status,
-            body: err.responseBody,
-          },
-          "Cross-node completion notification: orch returned non-2xx",
-        );
-        return { kind: "failed", reason: `orch_http_${err.status}` };
-      }
-      this.logger.error(
-        {
-          err,
-          ...(sourceSessionId ? { childId: sourceSessionId } : {}),
-          callerSessionId,
-        },
-        "Cross-node completion notification failed",
-      );
-      return { kind: "failed", reason: "cross_node_relay_failed" };
-    }
   }
 }
 

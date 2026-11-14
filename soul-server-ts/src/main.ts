@@ -307,6 +307,7 @@ async function main(): Promise<void> {
         "Completion delivery recovery shutdown drain finished",
       );
     }
+    await runtime.completionSettlementWorker.stop(5_000);
     runtime.worktreeSweeper?.stop();
     runtime.sessionPageBindingService.stop();
     await runtime.runnerOrphanReaper?.stop();

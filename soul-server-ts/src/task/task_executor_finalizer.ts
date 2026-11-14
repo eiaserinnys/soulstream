@@ -26,7 +26,7 @@ interface TaskExecutorFinalizerDeps {
   lifecycleTransition: Pick<
     TaskLifecycleTransition,
     "persistExecutorFinalState" | "notifyCompletionIfApplied"
-  > & Partial<Pick<TaskLifecycleTransition, "retireRejectedTerminal">>;
+  > & Partial<Pick<TaskLifecycleTransition, "retireRejectedTerminal" | "settleSkippedCompletion" | "releaseSettlementHold">>;
   logger: Logger;
   /** 보유가 followup 없이 풀릴 때 부른 세션에 알리는 길. */
   notifyBackgroundStopped?: (task: Task, firstSentence: string) => Promise<void>;
@@ -67,17 +67,26 @@ export class TaskExecutorFinalizer {
     // Snapshot before closeEngine can terminalize the remaining background
     // work: the completion notice reports what was still running at turn end.
     task.backgroundRuntimeAtTurnEnd = countPendingClaudeBackgroundRuntimeWork(task);
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
-    // The sessions-row release ACK is the durable terminal/owner boundary. Keep
-    // the runner handle until it commits so the same owner can retry on failure.
-    await this.closeEngine(task);
-    // 거절된 종료의 등록은 러너를 닫거나 보유할지 정한 뒤에 은퇴시킨다.
-    await this.deps.lifecycleTransition.retireRejectedTerminal?.(task);
-    if (persistence.terminalTransitionApplied && settleEndedTurnDeliveries) {
-      await settleEndedTurnDeliveries();
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true, { settleCompletion: true });
+    try {
+      // The sessions-row release ACK is the durable terminal/owner boundary. Keep
+      // the runner handle until it commits so the same owner can retry on failure.
+      await this.closeEngine(task);
+      // 거절된 종료의 등록은 러너를 닫거나 보유할지 정한 뒤에 은퇴시킨다.
+      await this.deps.lifecycleTransition.retireRejectedTerminal?.(task);
+      if (persistence.terminalTransitionApplied && settleEndedTurnDeliveries) {
+        await settleEndedTurnDeliveries();
+      }
+      if (beforeNotify && await beforeNotify(persistence.terminalTransitionApplied)) {
+        // 이어가기 예약이 만들어진 것을 확인한 뒤의 생략이므로 완료 정산 미결을 닫는다.
+        await this.deps.lifecycleTransition.settleSkippedCompletion?.(task, persistence);
+        return;
+      }
+      await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
+    } finally {
+      // 도중에 던져도 미결은 남는다. 정상 길의 쥠만 풀어 훑기가 이어 받게 한다.
+      this.deps.lifecycleTransition.releaseSettlementHold?.(persistence);
     }
-    if (beforeNotify && await beforeNotify(persistence.terminalTransitionApplied)) return;
-    await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
   }
 
   async releaseRetainedClaudeRunner(task: Task): Promise<void> {

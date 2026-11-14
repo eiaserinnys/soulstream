@@ -47,7 +47,7 @@ export class TaskRunnerRecovery {
     task.executionPromise = undefined;
     task.error = message;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "reaped", message);
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true, { settleCompletion: true });
     await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
   }
 
@@ -66,7 +66,7 @@ export class TaskRunnerRecovery {
     }
     task.executionPromise = undefined;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "closed", detail);
-    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
+    const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true, { settleCompletion: true });
     await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
     return persistence.terminalTransitionApplied;
   }

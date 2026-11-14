@@ -122,6 +122,22 @@ export class EventOutbox {
     });
   }
 
+  /**
+   * 종료의 의미 중복 키로 가장 마지막에 붙은 줄을 찾는다. 압축이 이미 지운 줄은 찾지 못한다.
+   * 완료 정산 미결이 아웃박스 좌표를 적기 전에 죽었을 때 그 종료가 응답받았는지 가르는 데 쓴다.
+   */
+  async findBySemanticDedupeKey(
+    semanticDedupeKey: string,
+  ): Promise<{ source_seq: number } | null> {
+    return await this.exclusive(async () => {
+      const matches = (await this.readRecords()).filter(
+        (record) => record.semantic_dedupe_key === semanticDedupeKey,
+      );
+      const last = matches.at(-1);
+      return last ? { source_seq: last.source_seq } : null;
+    });
+  }
+
   async readBatch(maxEvents = EVENT_OUTBOX_MAX_BATCH_EVENTS): Promise<EventOutboxBatch | null> {
     return await this.exclusive(async () => {
       assertBatchEventLimit(maxEvents);

@@ -634,7 +634,7 @@ describe("TaskExecutorFinalizer.finalize", () => {
     await finalizer.finalize(task);
 
     expect(calls).toEqual(["persist:runner", "close", "notify:no-runner"]);
-    expect(persistExecutorFinalState).toHaveBeenCalledWith(task, true);
+    expect(persistExecutorFinalState).toHaveBeenCalledWith(task, true, { settleCompletion: true });
     expect(close).toHaveBeenCalledTimes(1);
     expect(task.runner).toBeUndefined();
     expect(notify).toHaveBeenCalledWith(task);

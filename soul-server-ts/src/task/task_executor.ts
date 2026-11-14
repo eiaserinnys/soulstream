@@ -1825,7 +1825,14 @@ export class TaskExecutor {
           `runner adoption was rejected (${settled.decision.cell})`,
         );
         task.completedAt = new Date();
-        await this.lifecycleTransition.persistExecutorFinalState(task, true);
+        // 수화된 실행 등록이 없어도 거절된 그 러너 등록으로 종료를 지켜, 낡은 등록의 오류가
+        // 새 실행의 중앙 상태를 덮지 않게 한다(R5).
+        const adoptedRegistrationId = task.runnerRecoveryRegistrationId
+          ?? task.runner?.dispatcher.registrationId?.()
+          ?? undefined;
+        await this.lifecycleTransition.persistExecutorFinalState(task, true, {
+          ...(adoptedRegistrationId === undefined ? {} : { registrationId: adoptedRegistrationId }),
+        });
       } catch (error) {
         this.logger.warn(
           { err: error, sessionId: task.agentSessionId },

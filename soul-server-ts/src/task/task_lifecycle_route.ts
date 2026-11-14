@@ -33,6 +33,10 @@ export interface TaskLifecycleTransitionPort {
     task: Task,
     params: ExternalFinalizeParams,
   ): Promise<Task>;
+  /** 지우기 전에 그 세션의 완료 정산 미결을 정산한다. 등록하지 못하면 던진다. */
+  settleBeforeDelete?(task: Task): Promise<void>;
+  /** 지운 세션의 완료 정산 미결을 남기지 않는다. */
+  discardSettlementsAfterDelete?(sessionId: string): Promise<void>;
 }
 
 interface TaskLifecycleRouteDeps {
@@ -124,6 +128,9 @@ export class TaskLifecycleRoute {
         );
       }
     }
+    // 이미 종료 상태라 멈춤 없이 지우는 갈래도 여기서 미결을 정산한다. 등록이나 정책상 생략을
+    // 확인하지 못하면 던져 줄을 지우지 않는다(지운 뒤에는 중앙 줄이 없어 훑기가 되살릴 수 없다).
+    await this.deps.lifecycleTransition.settleBeforeDelete?.(task);
     const runtimeClosed = await this.closeSessionRuntimeIfPresent(
       sessionId,
       "session_delete",
@@ -150,6 +157,7 @@ export class TaskLifecycleRoute {
       `delete_session:${sessionId}`,
     );
     this.deps.forgetTask(sessionId);
+    await this.deps.lifecycleTransition.discardSettlementsAfterDelete?.(sessionId);
 
     try {
       await this.deps.broadcaster.emitSessionDeleted(sessionId);

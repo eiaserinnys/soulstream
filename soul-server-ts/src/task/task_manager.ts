@@ -312,7 +312,7 @@ export class TaskManager {
   }
 
   setCompletionNotifier(
-    completionNotifier: { notify(task: Task): Promise<void> },
+    completionNotifier: Parameters<TaskLifecycleTransition["setCompletionNotifier"]>[0],
   ): void {
     this.lifecycleTransition.setCompletionNotifier(completionNotifier);
   }
