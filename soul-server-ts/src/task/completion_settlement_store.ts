@@ -291,7 +291,7 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
       );
     } catch (error) {
       this.logger.warn(
-        { err: error, cause, path },
+        { err: error, path, unreadableReason: cause instanceof Error ? cause.message : String(cause) },
         "completion settlement file was unreadable and could not be quarantined",
       );
     }

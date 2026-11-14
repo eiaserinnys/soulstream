@@ -34,7 +34,7 @@ const RAW_PAYLOAD_FIELD_NAMES = new Set([
 ]);
 const ALLOWED_RESPONSE_DIAGNOSTICS = new Set([
   // This is the non-2xx response body, not the outbound frame or a collection.
-  "task/completion_notifier.ts:body",
+  "task/completion_cross_node_relay.ts:body",
 ]);
 
 describe("upstream failure payload logging", () => {
