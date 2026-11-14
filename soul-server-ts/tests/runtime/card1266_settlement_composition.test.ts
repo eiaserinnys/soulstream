@@ -47,8 +47,7 @@ function owner() {
 describe("card #1266 U2b production wiring of the settlement", () => {
   it("sweeps from the assembled worker even when the Claude session runtime v2 flag is off", async () => {
     const subject = await compose(false);
-    await subject.settlement.store.begin(IDENTITY);
-    subject.settlement.store.release(DEDUPE_KEY);
+    subject.settlement.store.release((await subject.settlement.store.begin(IDENTITY)).hold);
 
     await subject.settlement.worker.runOnce();
 

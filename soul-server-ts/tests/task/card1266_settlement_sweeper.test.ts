@@ -33,7 +33,7 @@ async function setup(options: {
   const harness = makeNotifier(rows, options.notifierOptions);
   const central = vi.fn(options.central ?? (async () => centralRow()));
   if (options.entry !== null) {
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
     if (options.entry?.sourceSeq !== undefined) {
       await store.recordAppended(DEDUPE_KEY, { streamId: outbox.streamId, sourceSeq: options.entry.sourceSeq });
     }
@@ -41,7 +41,7 @@ async function setup(options: {
       await store.recordApplied(DEDUPE_KEY, options.entry.terminationEventId);
     }
     // 재시작했으므로 정상 길의 쥠은 없다.
-    store.release(DEDUPE_KEY);
+    store.release(hold);
   }
   const sweeper = makeSweeper({
     store, outbox, central, notifier: harness.notifier, reservations: options.reservations, now: options.now,
@@ -228,6 +228,35 @@ describe("card #1266 U2b settlement sweep: giving up", () => {
     expect(await subject.store.list()).toEqual([]);
   });
 
+  it("closes an entry whose outbox lookup keeps throwing once it is older than the limit, so it does not block runner retirement forever", async () => {
+    // 좌표를 적기 전에 죽은 미결이라 아웃박스 줄을 종료 의미 키로 찾아야 한다. 그 조회가 계속 던진다.
+    const subject = await setup({
+      entry: {},
+      now: () => Date.now() + 25 * 60 * 60 * 1000,
+    });
+    const lookup = vi.fn(async () => { throw new Error("outbox unreadable"); });
+    subject.outbox.findBySemanticDedupeKey = lookup;
+
+    await subject.sweeper.sweepOnce();
+
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(subject.central).not.toHaveBeenCalled();
+    expect(subject.repository.register).not.toHaveBeenCalled();
+    expect(await subject.store.list()).toEqual([]);
+  });
+
+  it("keeps an entry whose outbox lookup throws while it is younger than the limit", async () => {
+    const subject = await setup({
+      entry: {},
+      now: () => Date.now() + 23 * 60 * 60 * 1000,
+    });
+    subject.outbox.findBySemanticDedupeKey = async () => { throw new Error("outbox unreadable"); };
+
+    await subject.sweeper.sweepOnce();
+
+    expect(await subject.store.list()).toHaveLength(1);
+  });
+
   it("still retries an entry that is younger than the limit", async () => {
     const subject = await setup({
       entry: { sourceSeq: 5, terminationEventId: 41 },
@@ -266,12 +295,12 @@ describe("card #1266 U2b settlement sweep: race with the normal path", () => {
       central: async () => centralRow({ termination_event_id: 42, last_event_id: 42 }),
     });
     subject.outbox.ackedSeq = 9;
-    await subject.store.begin(IDENTITY);
+    const older = await subject.store.begin(IDENTITY);
     tick = 2_000;
-    await subject.store.begin(NEW_IDENTITY);
+    const newer = await subject.store.begin(NEW_IDENTITY);
     await subject.store.recordApplied(NEW_KEY, 42);
-    subject.store.release(DEDUPE_KEY);
-    subject.store.release(NEW_KEY);
+    subject.store.release(older.hold);
+    subject.store.release(newer.hold);
     const notify = vi.spyOn(subject.notifier, "notify");
 
     await subject.sweeper.sweepOnce();
@@ -290,13 +319,13 @@ describe("card #1266 U2b settlement sweep: race with the normal path", () => {
       central: async () => centralRow({ termination_event_id: 42, last_event_id: 42 }),
     });
     subject.outbox.ackedSeq = 9;
-    await subject.store.begin(IDENTITY);
+    const older = await subject.store.begin(IDENTITY);
     await subject.store.recordApplied(DEDUPE_KEY, 41);
     tick = 2_000;
-    await subject.store.begin(NEW_IDENTITY);
+    const newer = await subject.store.begin(NEW_IDENTITY);
     await subject.store.recordApplied(NEW_KEY, 42);
-    subject.store.release(DEDUPE_KEY);
-    subject.store.release(NEW_KEY);
+    subject.store.release(older.hold);
+    subject.store.release(newer.hold);
     const notify = vi.spyOn(subject.notifier, "notify");
 
     await subject.sweeper.sweepOnce();

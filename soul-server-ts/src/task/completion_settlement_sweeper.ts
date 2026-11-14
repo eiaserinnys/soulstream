@@ -90,7 +90,18 @@ export class CompletionSettlementSweeper {
     ) {
       return await this.close(entry, "superseded_by_newer_settlement");
     }
-    if (!(await this.outboxAcknowledged(entry))) return;
+    let acknowledged: boolean;
+    try {
+      acknowledged = await this.outboxAcknowledged(entry);
+    } catch (err) {
+      // 아웃박스 조회가 계속 던지면 이 미결이 러너 은퇴를 영구히 막는다. 시도한 것으로 세어 나이로 접는다.
+      this.deps.logger.warn(
+        { err, sessionId: entry.sessionId, dedupeKey: entry.dedupeKey },
+        "completion settlement could not look up the outbox line; it stays pending",
+      );
+      return await this.giveUpIfTooOld(entry);
+    }
+    if (!acknowledged) return;
     let row: SessionRow | null;
     try {
       row = await this.deps.readCentralSession(entry.sessionId);
@@ -155,7 +166,7 @@ export class CompletionSettlementSweeper {
   }
 
   /**
-   * 한 번 시도한 뒤 다시 해야 함이나 읽기 실패로 끝난 미결만 나이로 접는다. 등록이 영영 되지 않는
+   * 한 번 시도한 뒤 다시 해야 함이나 읽기 실패(아웃박스 조회 포함)로 끝난 미결만 나이로 접는다. 등록이 영영 되지 않는
    * 미결(부른 세션이 없어졌거나 중앙 줄을 되살릴 수 없음)이 러너 은퇴를 영구히 막지 않도록
    * 완료 전달 장부의 재시도 나이 한도에서 접는다. 시도하지 않은 미결은 나이로 닫지 않는다.
    */

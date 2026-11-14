@@ -21,8 +21,7 @@ async function setup(task: Task, options: { pending?: boolean } = {}) {
   const rows = new Map<string, Record<string, unknown>>();
   const harness = makeNotifier(rows);
   if (options.pending !== false) {
-    await store.begin(IDENTITY);
-    store.release(DEDUPE_KEY);
+    store.release((await store.begin(IDENTITY)).hold);
   }
   const transition = new TaskLifecycleTransition({
     logger: silentLogger,

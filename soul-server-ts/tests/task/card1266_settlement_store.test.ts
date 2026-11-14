@@ -51,14 +51,15 @@ describe("card #1266 U2b settlement store", () => {
     ]);
   });
 
-  it("starts over when the same terminal begins again, dropping the old coordinate and number", async () => {
+  it("starts over when the same terminal begins again after the earlier attempt let go, dropping the old coordinate and number", async () => {
     const outbox = await makeOutboxDirectory();
     const store = makeStore(outbox);
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
     await store.recordAppended(DEDUPE_KEY, { streamId: "stream-1", sourceSeq: 7 });
     await store.recordApplied(DEDUPE_KEY, 41);
+    store.release(hold);
 
-    await store.begin(IDENTITY);
+    expect((await store.begin(IDENTITY)).replaced).toBe(true);
 
     const [entry] = await store.list();
     expect(entry?.sourceSeq).toBeUndefined();
@@ -105,7 +106,7 @@ describe("card #1266 U2b settlement store", () => {
     const outbox = await makeOutboxDirectory();
     let nowMs = 1_000;
     const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), () => nowMs);
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
 
     expect(await store.listUnheld()).toEqual([]);
     expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(false);
@@ -116,7 +117,7 @@ describe("card #1266 U2b settlement store", () => {
     expect(await store.listUnheld()).toEqual([]);
     expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(false);
 
-    store.release(DEDUPE_KEY);
+    store.release(hold);
     expect(await store.listUnheld()).toHaveLength(1);
     expect(await store.closeUnlessHeld(DEDUPE_KEY)).toBe(true);
     expect(await store.list()).toEqual([]);
@@ -126,17 +127,15 @@ describe("card #1266 U2b settlement store", () => {
     const outbox = await makeOutboxDirectory();
     const store = makeStore(outbox);
     const OLD_KEY = `${DEDUPE_KEY}-old`;
-    await store.begin({ ...IDENTITY, dedupeKey: OLD_KEY });
-    store.release(OLD_KEY);
-    await store.begin({ ...IDENTITY, sessionId: "other", dedupeKey: "session_terminal:other:x" });
-    store.release("session_terminal:other:x");
+    store.release((await store.begin({ ...IDENTITY, dedupeKey: OLD_KEY })).hold);
+    store.release((await store.begin({ ...IDENTITY, sessionId: "other", dedupeKey: "session_terminal:other:x" })).hold);
     // 같은 세션의 새 종료를 정상 길이 쥔다.
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
 
     expect(store.isSessionHeld(IDENTITY.sessionId)).toBe(true);
     expect((await store.listUnheld()).map((entry) => entry.dedupeKey)).toEqual(["session_terminal:other:x"]);
 
-    store.release(DEDUPE_KEY);
+    store.release(hold);
     expect(store.isSessionHeld(IDENTITY.sessionId)).toBe(false);
     expect(await store.listUnheld()).toHaveLength(3);
   });
@@ -148,14 +147,13 @@ describe("card #1266 U2b settlement store", () => {
       findBySemanticDedupeKey: async (key) => (lines.has(key) ? { source_seq: 1 } : null),
     });
 
-    await store.begin(IDENTITY);
-    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(true);
+    expect(await store.discardUnlessAppended((await store.begin(IDENTITY)).hold)).toBe(true);
     expect(await store.list()).toEqual([]);
 
     // 붙이기가 줄을 쓴 뒤 던졌다: 줄이 있으면 미결을 남기고 쥠을 푼다.
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
     lines.add(DEDUPE_KEY);
-    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(false);
+    expect(await store.discardUnlessAppended(hold)).toBe(false);
     expect(await store.list()).toHaveLength(1);
     expect(await store.listUnheld()).toHaveLength(1);
   });
@@ -165,9 +163,9 @@ describe("card #1266 U2b settlement store", () => {
     const store = new CompletionSettlementStore(outbox, pino({ level: "silent" }), Date.now, {
       findBySemanticDedupeKey: async () => { throw new Error("outbox unreadable"); },
     });
-    await store.begin(IDENTITY);
+    const { hold } = await store.begin(IDENTITY);
 
-    expect(await store.discardUnlessAppended(DEDUPE_KEY)).toBe(false);
+    expect(await store.discardUnlessAppended(hold)).toBe(false);
     expect(await store.list()).toHaveLength(1);
     expect(await store.listUnheld()).toHaveLength(1);
   });

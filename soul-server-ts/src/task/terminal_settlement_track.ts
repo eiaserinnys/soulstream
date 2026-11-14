@@ -1,6 +1,9 @@
 import type { Logger } from "pino";
 
-import type { CompletionSettlementLedger } from "./completion_settlement_store.js";
+import type {
+  CompletionSettlementHold,
+  CompletionSettlementLedger,
+} from "./completion_settlement_store.js";
 import type { Task } from "./task_models.js";
 
 type Warn = Pick<Logger, "warn">;
@@ -17,8 +20,9 @@ export class TerminalSettlementTrack {
     private readonly ledger: CompletionSettlementLedger,
     private readonly logger: Warn,
     private readonly sessionId: string,
-    readonly key: string,
-    /** 앞 시도의 미결이 이미 있었다. 그 시도의 줄이 아웃박스에 있을 수 있다. */
+    /** 이 길이 쥔 표다. 같은 종료 키를 다른 길이 함께 쥘 수 있다. */
+    readonly hold: CompletionSettlementHold,
+    /** 앞 시도나 함께 쥔 길의 미결이 이미 있었다. 그 줄이 아웃박스에 있을 수 있다. */
     private readonly replacedEarlierAttempt: boolean,
   ) {}
 
@@ -29,13 +33,13 @@ export class TerminalSettlementTrack {
     key: string,
     registrationId: string | undefined,
   ): Promise<TerminalSettlementTrack> {
-    const { replaced } = await ledger.begin({
+    const { replaced, hold } = await ledger.begin({
       sessionId: task.agentSessionId,
       dedupeKey: key,
       registrationId: registrationId ?? null,
       executionCommandId: task.executionRegistration?.executionCommandId ?? null,
     });
-    return new TerminalSettlementTrack(ledger, logger, task.agentSessionId, key, replaced);
+    return new TerminalSettlementTrack(ledger, logger, task.agentSessionId, hold, replaced);
   }
 
   /** 아웃박스에 붙은 직후, 응답을 기다리기 전에 부른다. */
@@ -44,7 +48,7 @@ export class TerminalSettlementTrack {
   ): Promise<void> => {
     this.appendedToOutbox = true;
     try {
-      await this.ledger.recordAppended(this.key, {
+      await this.ledger.recordAppended(this.hold.dedupeKey, {
         streamId: record.stream_id,
         sourceSeq: record.source_seq,
       });
@@ -62,12 +66,12 @@ export class TerminalSettlementTrack {
    */
   async failed(): Promise<void> {
     if (this.appendedToOutbox || this.replacedEarlierAttempt) {
-      this.ledger.release(this.key);
+      this.ledger.release(this.hold);
       return;
     }
     try {
       // 붙이기가 줄을 쓴 뒤(메타데이터 쓰기)에 던졌을 수 있다. 줄이 있으면 미결을 남긴다.
-      await this.ledger.discardUnlessAppended(this.key);
+      await this.ledger.discardUnlessAppended(this.hold);
     } catch (err) {
       this.logger.warn(
         { err, sessionId: this.sessionId },
@@ -79,7 +83,7 @@ export class TerminalSettlementTrack {
   async applied(terminationEventId: number | null): Promise<void> {
     if (terminationEventId === null) return;
     try {
-      await this.ledger.recordApplied(this.key, terminationEventId);
+      await this.ledger.recordApplied(this.hold.dedupeKey, terminationEventId);
     } catch (err) {
       this.logger.warn(
         { err, sessionId: this.sessionId },
@@ -89,20 +93,23 @@ export class TerminalSettlementTrack {
   }
 
   release(): void {
-    this.ledger.release(this.key);
+    this.ledger.release(this.hold);
   }
 }
 
-/** 정산을 마친 종료의 미결을 지운다. 지우지 못해도 훑기가 다시 닫으므로 흐름을 막지 않는다. */
+/**
+ * 이 길이 정산을 마친 종료의 표를 놓고 미결을 지운다(함께 쥔 길이 남았으면 그 길에 맡긴다).
+ * 지우지 못해도 훑기가 다시 닫으므로 흐름을 막지 않는다.
+ */
 export async function closeSettledTerminal(
   ledger: CompletionSettlementLedger | undefined,
   logger: Warn,
   sessionId: string,
-  key: string | undefined,
+  hold: CompletionSettlementHold | undefined,
 ): Promise<void> {
-  if (!ledger || key === undefined) return;
+  if (!ledger || hold === undefined) return;
   try {
-    await ledger.close(key);
+    await ledger.settle(hold);
   } catch (err) {
     logger.warn(
       { err, sessionId },

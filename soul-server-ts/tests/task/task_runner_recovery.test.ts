@@ -34,6 +34,7 @@ describe("TaskRunnerRecovery", () => {
         applyRunnerTerminalFact,
         persistExecutorFinalState,
         notifyCompletionIfApplied,
+        releaseSettlementHold: vi.fn(),
       } as never,
     });
     await recovery.markFailure(current, "runner exited");
@@ -63,6 +64,7 @@ describe("TaskRunnerRecovery", () => {
       lifecycleTransition: {
         persistExecutorFinalState,
         notifyCompletionIfApplied: vi.fn(),
+        releaseSettlementHold: vi.fn(),
       } as never,
     });
 
@@ -90,6 +92,7 @@ describe("TaskRunnerRecovery", () => {
         applyRunnerTerminalFact,
         persistExecutorFinalState,
         notifyCompletionIfApplied,
+        releaseSettlementHold: vi.fn(),
       } as never,
     });
     await expect(recovery.projectClosed(current, "runner closed")).resolves.toBe(true);

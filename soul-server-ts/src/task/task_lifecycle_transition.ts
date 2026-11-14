@@ -27,7 +27,10 @@ import {
   recordTerminationHint,
 } from "./task_termination.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
-import type { CompletionSettlementLedger } from "./completion_settlement_store.js";
+import type {
+  CompletionSettlementHold,
+  CompletionSettlementLedger,
+} from "./completion_settlement_store.js";
 import { TerminalSettlementTrack, closeSettledTerminal } from "./terminal_settlement_track.js";
 import type { CompletionNotifyOptions, CompletionSettleResult } from "./completion_notifier.js";
 import { decideNodeStopRequest } from "./state/node_barrier_decision.js";
@@ -95,8 +98,11 @@ interface TaskLifecycleTransitionDeps extends TerminationCleanupPorts {
 export interface TaskFinalStatePersistenceResult {
   newlyFinalized: boolean;
   terminalTransitionApplied: boolean;
-  /** 이번 종료가 쓴 완료 정산 미결의 키다. 저장소가 이어져 있고 종료를 올렸을 때만 있다. */
-  settlementKey?: string;
+  /**
+   * 이번 종료에서 이 길이 쥔 완료 정산 미결의 표다. 저장소가 이어져 있고 종료를 올렸을 때만 있다.
+   * 정산하거나 놓는 것은 이 표로 한다(같은 종료를 다른 길이 함께 쥘 수 있다).
+   */
+  settlementHold?: CompletionSettlementHold;
 }
 
 export const USER_STOP_PROJECTION = {
@@ -164,14 +170,14 @@ export class TaskLifecycleTransition {
     options: { requireRegistration?: boolean } = {},
   ): Promise<boolean> {
     const requireRegistration = options.requireRegistration === true;
-    const key = persistence.settlementKey;
+    const hold = persistence.settlementHold;
     if (!requireRegistration && !persistence.terminalTransitionApplied) {
       // 적용되지 않은 종료는 정산할 것이 없다. 남은 미결은 훑기가 중앙을 보고 닫는다.
-      this.releaseSettlementKey(key);
+      this.releaseHold(hold);
       return true;
     }
     if (!task.callerSessionId || !this.completionNotifier) {
-      await this.closeSettlementKey(task, key);
+      await this.settleHold(task, hold);
       return true;
     }
 
@@ -183,27 +189,27 @@ export class TaskLifecycleTransition {
             { sessionId: task.agentSessionId },
             "completion notifier cannot confirm registration before delete",
           );
-          this.releaseSettlementKey(key);
+          this.releaseHold(hold);
           return false;
         }
         const registered = await notifyForDelete.call(this.completionNotifier, task);
-        if (registered) await this.closeSettlementKey(task, key);
-        else this.releaseSettlementKey(key);
+        if (registered) await this.settleHold(task, hold);
+        else this.releaseHold(hold);
         return registered;
       }
       const result = await this.completionNotifier.notify(task);
       if (result?.kind === "retry_required") {
-        this.releaseSettlementKey(key);
+        this.releaseHold(hold);
         return false;
       }
-      await this.closeSettlementKey(task, key);
+      await this.settleHold(task, hold);
       return true;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "completion notification failed after terminal transition was applied",
       );
-      this.releaseSettlementKey(key);
+      this.releaseHold(hold);
       return false;
     }
   }
@@ -216,21 +222,24 @@ export class TaskLifecycleTransition {
     task: Task,
     persistence: TaskFinalStatePersistenceResult,
   ): Promise<void> {
-    await this.closeSettlementKey(task, persistence.settlementKey);
+    await this.settleHold(task, persistence.settlementHold);
   }
 
   /** 정상 길이 끝났으므로 이 종료의 미결 쥠을 푼다. 남은 미결은 훑기가 이어 받는다. */
   releaseSettlementHold(persistence: TaskFinalStatePersistenceResult): void {
-    this.releaseSettlementKey(persistence.settlementKey);
+    this.releaseHold(persistence.settlementHold);
   }
 
   /** 정상 길이 쥔 미결을 풀고 훑기에 맡긴다. */
-  private releaseSettlementKey(key: string | undefined): void {
-    if (key !== undefined) this.ports.settlement?.release(key);
+  private releaseHold(hold: CompletionSettlementHold | undefined): void {
+    if (hold !== undefined) this.ports.settlement?.release(hold);
   }
 
-  private async closeSettlementKey(task: Task, key: string | undefined): Promise<void> {
-    await closeSettledTerminal(this.ports.settlement, this.deps.logger, task.agentSessionId, key);
+  private async settleHold(
+    task: Task,
+    hold: CompletionSettlementHold | undefined,
+  ): Promise<void> {
+    await closeSettledTerminal(this.ports.settlement, this.deps.logger, task.agentSessionId, hold);
   }
 
   /**
@@ -572,7 +581,7 @@ export class TaskLifecycleTransition {
     if (termination.newlyFinalized) {
       task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
     }
-    let settled: { applied: boolean; settlementKey?: string } = { applied: false };
+    let settled: { applied: boolean; settlementHold?: CompletionSettlementHold } = { applied: false };
     if (
       (termination.newlyFinalized || retryUnrecordedTerminal)
       && isTerminalTaskStatus(task.status)
@@ -588,9 +597,9 @@ export class TaskLifecycleTransition {
     return {
       newlyFinalized: termination.newlyFinalized,
       terminalTransitionApplied: settled.applied,
-      ...(settled.settlementKey === undefined
+      ...(settled.settlementHold === undefined
         ? {}
-        : { settlementKey: settled.settlementKey }),
+        : { settlementHold: settled.settlementHold }),
     };
   }
 
@@ -604,7 +613,7 @@ export class TaskLifecycleTransition {
     terminationReason: string,
     terminationDetail: string | null,
     options: { settleCompletion?: boolean; registrationId?: string },
-  ): Promise<{ applied: boolean; settlementKey?: string }> {
+  ): Promise<{ applied: boolean; settlementHold?: CompletionSettlementHold }> {
     if (!this.deps.persistence) {
       throw new Error("session_ended durable event persistence is required");
     }
@@ -631,7 +640,7 @@ export class TaskLifecycleTransition {
     const track = ledger
       ? await TerminalSettlementTrack.begin(ledger, this.deps.logger, task, event._dedupe_key, registrationId)
       : undefined;
-    const settlementKey = track?.key;
+    const settlementHold = track?.hold;
     let application: Awaited<
       ReturnType<EventPersistence["enqueueTerminalTransitionAndWaitForApplication"]>
     >;
@@ -662,7 +671,7 @@ export class TaskLifecycleTransition {
       // 응답이 아닌 오류와 응답 없음은 다시 올릴 수 있으므로 그대로 던진다.
       if (!facts || facts.route === "no_response") throw error;
       await this.settleRejection(task, judgeNodeResponse(facts), this.rejectedRegistrationOf(task, registrationId));
-      return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
+      return { applied: false, ...(settlementHold === undefined ? {} : { settlementHold }) };
     }
     try {
       applyCanonicalSessionProjection(task, application.canonicalSession);
@@ -677,11 +686,11 @@ export class TaskLifecycleTransition {
         : judgeNodeResponse(nodeResponseFactsFromApplication(context, application));
       if (application.applied || verdict?.decision.cell === "applied") {
         await track?.applied(application.canonicalSession.termination_event_id);
-        return { applied: true, ...(settlementKey === undefined ? {} : { settlementKey }) };
+        return { applied: true, ...(settlementHold === undefined ? {} : { settlementHold }) };
       }
       await this.settleRejection(task, verdict!, this.rejectedRegistrationOf(task, registrationId));
       track?.release();
-      return { applied: false, ...(settlementKey === undefined ? {} : { settlementKey }) };
+      return { applied: false, ...(settlementHold === undefined ? {} : { settlementHold }) };
     } catch (error) {
       // 호출자에게 키가 가지 못하므로 쥠을 여기서 푼다. 쥠은 시간으로 풀리지 않는다.
       track?.release();

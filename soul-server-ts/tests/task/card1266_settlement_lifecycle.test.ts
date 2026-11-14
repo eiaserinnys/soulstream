@@ -120,7 +120,7 @@ describe("card #1266 U2b settlement: written before the outbox append", () => {
     expect(entryAt(subject.seen.atAppend[0])?.sourceSeq).toBeUndefined();
     expect(entryAt(subject.seen.afterAppend[0])).toMatchObject({ streamId: "stream-1", sourceSeq: 5 });
     expect(entryAt(subject.seen.afterAck[0])).toMatchObject({ sourceSeq: 5 });
-    expect(result.settlementKey).toBe(DEDUPE_KEY);
+    expect(result.settlementHold?.dedupeKey).toBe(DEDUPE_KEY);
     // 응답을 받은 뒤에는 적용된 종료 사건 번호가 덧붙고, 등록 전에는 남아 있다.
     expect(await subject.store.list()).toEqual([
       expect.objectContaining({ sourceSeq: 5, terminationEventId: EVENT_ID }),
@@ -152,10 +152,9 @@ describe("card #1266 U2b settlement: written before the outbox append", () => {
     });
     const task = makeTask({ terminationEventRecorded: false, status: "completed" });
     // 앞 시도가 이미 미결을 남겼다(그 시도의 줄은 아웃박스에 있을 수 있다).
-    await subject.store.begin({
+    subject.store.release((await subject.store.begin({
       sessionId: SESSION_ID, dedupeKey: DEDUPE_KEY, registrationId: "registration-1", executionCommandId: "execute-1",
-    });
-    subject.store.release(DEDUPE_KEY);
+    })).hold);
 
     await expect(subject.transition.persistExecutorFinalState(task, true, { settleCompletion: true }))
       .rejects.toThrow("disk full");

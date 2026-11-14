@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../src/agent_registry.js";
 import { RunnerRecoveryCoordinator } from "../../src/runner/runner_recovery_coordinator.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
-import type { Task } from "../../src/task/task_models.js";
+import { createExecutionActivation, type Task } from "../../src/task/task_models.js";
 
 /**
  * 카드 #1266 U2b 8-나. 러너 복구의 앞 검사(거절된 종료의 등록을 은퇴시키는 갈래)는 새 실행이 돌고
@@ -208,6 +208,38 @@ describe("card #1266 U2b a task kept only for its rejected registration is forgo
     await subject.coordinator.scanOnce();
     await subject.coordinator.waitForSettled();
 
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("does not forget a task that is starting behind its start barrier when the retirement succeeds", async () => {
+    // 자동 재개가 status를 initializing으로 바꾸고 시동 장벽을 세운 뒤 러너 없이 기다리는 꼴이다.
+    const activation = createExecutionActivation();
+    void activation.promise.catch(() => undefined);
+    const task = markedTask({ status: "initializing", completedAt: undefined, executionActivation: activation });
+    const subject = setup(task);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(task.rejectedTerminationRegistrationId).toBeUndefined();
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("does not forget a starting task when the registration is already gone from disk and only the mark is cleared", async () => {
+    const activation = createExecutionActivation();
+    void activation.promise.catch(() => undefined);
+    const task = markedTask({
+      status: "initializing",
+      completedAt: undefined,
+      executionActivation: activation,
+      rejectedTerminationRegistrationId: "registration-gone",
+    });
+    const subject = setup(task);
+
+    await subject.coordinator.retireRejectedTerminalRegistration(task, "registration-gone");
+
+    expect(task.rejectedTerminationRegistrationId).toBeUndefined();
     expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
   });
 

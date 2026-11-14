@@ -672,7 +672,9 @@ export class RunnerRecoveryCoordinator {
 
   /**
    * 은퇴가 앞서 실패해 로컬 소유 정리가 task를 붙들어 둔 채 남겼다면, 표시가 지워진 지금 그
-   * task를 잊는다. 활성인데 러너도 등록도 실행도 없는 task는 아무도 움직이지 않는 유령이다.
+   * task를 잊는다. 활성인데 러너도 등록도 실행도 시동 장벽도 없는 task는 아무도 움직이지 않는
+   * 유령이다. 시동 장벽(executionActivation)이 서 있으면 재개나 새 실행이 러너 없이 시작하는
+   * 중이므로 잊지 않는다.
    */
   private forgetIfOrphaned(task: Task): void {
     if (
@@ -680,6 +682,7 @@ export class RunnerRecoveryCoordinator {
       || task.runner !== undefined
       || task.executionRegistration !== undefined
       || task.executionPromise !== undefined
+      || task.executionActivation !== undefined
     ) return;
     this.options.taskManager.forgetRunnerRecoveryTask?.(task.agentSessionId);
     this.options.logger.info(

@@ -41,14 +41,28 @@ export type CompletionSettlementIdentity = Pick<
   "sessionId" | "dedupeKey" | "registrationId" | "executionCommandId"
 >;
 
-/** 종료를 올리는 정상 길이 쓰는 좌표다. 이 좌표만으로 같은 미결을 다시 가리킨다. */
+/**
+ * 정상 길 하나가 쥔 표다. begin마다 새로 나오고 객체 자체가 신원이다. 같은 종료 키를 두 길이
+ * 함께 쥘 수 있다(사람의 멈춤과 실행 마무리가 같은 종료를 함께 올린다). 같은 표를 두 번 놓아도
+ * 한 번만 센다.
+ */
+export interface CompletionSettlementHold {
+  readonly dedupeKey: string;
+  readonly sessionId: string;
+}
+
+/** 종료를 올리는 정상 길이 쓰는 좌표다. */
 export interface CompletionSettlementLedger {
   /**
-   * 종료를 아웃박스에 붙이기 전에 미결을 영속하고 정상 길이 쥔다. 같은 키가 이미
-   * 있으면 아웃박스 좌표와 사건 번호를 비우고 처음부터 다시 시작하고 `replaced`로 알린다
-   * (앞 시도의 줄이 이미 아웃박스에 있을 수 있으므로 붙이기 실패가 지워서는 안 된다).
+   * 종료를 아웃박스에 붙이기 전에 미결을 영속하고 정상 길이 쥔다. 같은 키가 이미 있으면
+   * `replaced`로 알린다(앞 시도나 함께 쥔 길의 줄이 이미 아웃박스에 있을 수 있으므로 붙이기
+   * 실패가 지워서는 안 된다). 다른 길이 쥐고 있으면 그 기록을 그대로 쓰고 쥠만 나눈다. 아무도
+   * 쥐지 않은 옛 기록이면 아웃박스 좌표와 사건 번호를 비우고 처음부터 다시 쓴다.
    */
-  begin(identity: CompletionSettlementIdentity): Promise<{ replaced: boolean }>;
+  begin(identity: CompletionSettlementIdentity): Promise<{
+    replaced: boolean;
+    hold: CompletionSettlementHold;
+  }>;
   /** 붙인 뒤 받은 아웃박스 좌표를 덧붙인다. */
   recordAppended(
     dedupeKey: string,
@@ -57,15 +71,19 @@ export interface CompletionSettlementLedger {
   /** 응답을 받은 뒤 중앙이 적용한 종료 사건 번호를 덧붙인다. */
   recordApplied(dedupeKey: string, terminationEventId: number): Promise<void>;
   /**
-   * 아웃박스에 붙이지 못한 종료의 미결을 지운다. 붙이기가 줄을 쓴 뒤에 던졌을 수 있으므로
+   * 아웃박스에 붙이지 못한 종료의 미결을 지운다. 같은 키를 다른 길이 아직 쥐고 있으면 그 길이
+   * 붙일 수 있으므로 지우지 않고 이 표만 놓는다. 붙이기가 줄을 쓴 뒤에 던졌을 수 있으므로
    * 아웃박스에 그 종료의 줄이 있으면 지우지 않고 쥠을 풀어 훑기에 맡긴다(찾지 못해도 마찬가지).
    * 지웠으면 true다.
    */
-  discardUnlessAppended(dedupeKey: string): Promise<boolean>;
-  /** 정산을 마쳤으므로 지운다. */
-  close(dedupeKey: string): Promise<void>;
-  /** 정상 길이 쥔 것을 풀고 미결은 훑기에 맡긴다. */
-  release(dedupeKey: string): void;
+  discardUnlessAppended(hold: CompletionSettlementHold): Promise<boolean>;
+  /**
+   * 이 길이 정산을 마쳤다. 표를 놓고, 같은 키를 쥔 다른 길이 없으면 미결을 지운다. 다른 길이
+   * 남아 있으면 미결은 그 길이 닫거나, 놓은 뒤 훑기가 「이미 등록됨」으로 닫는다.
+   */
+  settle(hold: CompletionSettlementHold): Promise<void>;
+  /** 이 길의 표를 놓고 미결은 훑기에 맡긴다. */
+  release(hold: CompletionSettlementHold): void;
   /** 그 세션의 미결을 모두 지운다(삭제, 중앙 세션 없음). */
   closeAllForSession(sessionId: string): Promise<void>;
   hasPendingForSession(sessionId: string): Promise<boolean>;
@@ -80,10 +98,10 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
   private readonly directory: string;
   private readonly quarantineDirectory: string;
   /**
-   * 정상 길이 쥐고 있는 키와 그 세션이다. 시간으로 풀지 않는다: 정상 길이 마무리 단계에서
-   * 놓는다. 메모리뿐이라 새는 쥠도 프로세스를 넘지 않는다.
+   * 종료 키마다 정상 길이 쥔 표들이다. 마지막 표가 놓일 때만 그 키의 쥠이 풀린다. 시간으로 풀지
+   * 않는다: 정상 길이 마무리 단계에서 놓는다. 메모리뿐이라 새는 쥠도 프로세스를 넘지 않는다.
    */
-  private readonly holds = new Map<string, string>();
+  private readonly holds = new Map<string, Set<CompletionSettlementHold>>();
   private operationTail: Promise<void> = Promise.resolve();
 
   constructor(
@@ -98,26 +116,35 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
     this.quarantineDirectory = join(this.directory, QUARANTINE_SUBDIRECTORY);
   }
 
-  async begin(identity: CompletionSettlementIdentity): Promise<{ replaced: boolean }> {
+  async begin(identity: CompletionSettlementIdentity): Promise<{
+    replaced: boolean;
+    hold: CompletionSettlementHold;
+  }> {
     return await this.exclusive(async () => {
       await mkdir(this.directory, { recursive: true });
       const replaced = (await this.read(this.pathOf(identity.dedupeKey))) !== null;
-      this.holds.set(identity.dedupeKey, identity.sessionId);
-      try {
-        await this.write({
-          version: 1,
-          sessionId: identity.sessionId,
-          dedupeKey: identity.dedupeKey,
-          registrationId: identity.registrationId,
-          executionCommandId: identity.executionCommandId,
-          createdAt: new Date(this.now()).toISOString(),
-        });
-      } catch (error) {
-        // 쓰지 못한 미결은 쥘 것이 없다. 던져서 종료를 올리지 않는다.
-        this.holds.delete(identity.dedupeKey);
-        throw error;
+      const hold: CompletionSettlementHold = {
+        dedupeKey: identity.dedupeKey,
+        sessionId: identity.sessionId,
+      };
+      const holders = this.holds.get(identity.dedupeKey);
+      // 다른 길이 같은 종료를 쥐고 올리는 중이다. 그 길이 덧붙인 좌표를 지우지 않고 쥠만 나눈다.
+      if (replaced && holders !== undefined) {
+        holders.add(hold);
+        return { replaced, hold };
       }
-      return { replaced };
+      // 쓰지 못하면 던져서 종료를 올리지 않는다. 쥘 것이 없으므로 표도 남기지 않는다.
+      await this.write({
+        version: 1,
+        sessionId: identity.sessionId,
+        dedupeKey: identity.dedupeKey,
+        registrationId: identity.registrationId,
+        executionCommandId: identity.executionCommandId,
+        createdAt: new Date(this.now()).toISOString(),
+      });
+      if (holders === undefined) this.holds.set(identity.dedupeKey, new Set([hold]));
+      else holders.add(hold);
+      return { replaced, hold };
     });
   }
 
@@ -136,11 +163,16 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
     await this.update(dedupeKey, (entry) => ({ ...entry, terminationEventId }));
   }
 
-  async discardUnlessAppended(dedupeKey: string): Promise<boolean> {
+  async discardUnlessAppended(hold: CompletionSettlementHold): Promise<boolean> {
+    if (this.heldByOthers(hold)) {
+      // 함께 쥔 길이 아직 붙이는 중일 수 있다. 그 길의 미결을 지우지 않는다.
+      this.release(hold);
+      return false;
+    }
     if (this.outbox) {
       try {
-        if ((await this.outbox.findBySemanticDedupeKey(dedupeKey)) !== null) {
-          this.release(dedupeKey);
+        if ((await this.outbox.findBySemanticDedupeKey(hold.dedupeKey)) !== null) {
+          this.release(hold);
           return false;
         }
       } catch (err) {
@@ -149,14 +181,31 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
           { err },
           "completion settlement could not check the outbox for an unappended terminal; it stays pending",
         );
-        this.release(dedupeKey);
+        this.release(hold);
         return false;
       }
     }
-    await this.close(dedupeKey);
-    return true;
+    return await this.settleHold(hold);
   }
 
+  async settle(hold: CompletionSettlementHold): Promise<void> {
+    await this.settleHold(hold);
+  }
+
+  /** 표를 놓고, 같은 키를 쥔 길이 더 없으면 미결을 지운다. 지웠으면 true다. */
+  private async settleHold(hold: CompletionSettlementHold): Promise<boolean> {
+    return await this.exclusive(async () => {
+      this.release(hold);
+      if (this.holds.has(hold.dedupeKey)) return false;
+      await this.remove(hold.dedupeKey);
+      return true;
+    });
+  }
+
+  /**
+   * 쥔 길과 무관하게 그 종료의 미결을 지운다. 종료가 영구 거절되는 등 그 종료로는 보고할 것이
+   * 없을 때 쓴다. 함께 쥔 길의 표는 무효가 된다(놓아도 아무 일이 없다).
+   */
   async close(dedupeKey: string): Promise<void> {
     await this.exclusive(async () => {
       this.holds.delete(dedupeKey);
@@ -164,8 +213,16 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
     });
   }
 
-  release(dedupeKey: string): void {
-    this.holds.delete(dedupeKey);
+  release(hold: CompletionSettlementHold): void {
+    const holders = this.holds.get(hold.dedupeKey);
+    if (!holders?.delete(hold)) return;
+    if (holders.size === 0) this.holds.delete(hold.dedupeKey);
+  }
+
+  private heldByOthers(hold: CompletionSettlementHold): boolean {
+    const holders = this.holds.get(hold.dedupeKey);
+    if (holders === undefined) return false;
+    return holders.size > (holders.has(hold) ? 1 : 0);
   }
 
   /** 훑기가 쓴다. 정상 길이 그사이 다시 쥐었으면 지우지 않는다. */
@@ -204,8 +261,10 @@ export class CompletionSettlementStore implements CompletionSettlementLedger {
 
   /** 그 세션에서 정상 길이 쥔 미결이 있는지 본다. */
   isSessionHeld(sessionId: string): boolean {
-    for (const held of this.holds.values()) {
-      if (held === sessionId) return true;
+    for (const holders of this.holds.values()) {
+      for (const hold of holders) {
+        if (hold.sessionId === sessionId) return true;
+      }
     }
     return false;
   }
