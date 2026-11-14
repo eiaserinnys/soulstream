@@ -318,4 +318,34 @@ describe("card #1266 U6 scan and a successor turn on a recorded-terminal registr
     expect(subject.spawnerRetire).toHaveBeenCalledOnce();
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
   });
+
+  it("defers a held execution whose registration carries another command number", async () => {
+    const subject = setup();
+    subject.task.executionPromise = new Promise<void>(() => {});
+    subject.task.executionRegistration = {
+      registrationId: REGISTRATION_ID,
+      executionCommandId: "execute-next",
+    };
+
+    expect(await scanWithin(subject, SCAN_BUDGET_MS)).toBe("scanned");
+
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(subject.task.runner).toBe(subject.runner);
+  });
+
+  it("still waits to settle the terminal command's own held execution", async () => {
+    const subject = setup();
+    let settle!: () => void;
+    subject.task.executionPromise = new Promise<void>((resolve) => { settle = resolve; })
+      .finally(() => { subject.task.executionPromise = undefined; });
+    // 종료가 적용될 때 중앙이 등록을 비웠으므로 실행 등록도 시동 장벽도 없다.
+    expect(subject.task.executionRegistration).toBeUndefined();
+    expect(subject.task.executionActivation).toBeUndefined();
+
+    const scan = subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce());
+    settle();
+    await scan;
+  });
 });
