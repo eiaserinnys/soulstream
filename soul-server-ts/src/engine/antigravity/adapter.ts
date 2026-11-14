@@ -9,7 +9,14 @@ import { runnerProcessPaths } from "../../runner/runner_process_paths.js";
 import { engineEventFrame, type RunnerEventFrame } from "../../runner/frame_protocol.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
-import type { EngineExecuteParams, EngineInterventionResult, EnginePort, EngineUserInput, SSEEventPayload } from "../protocol.js";
+import type {
+  ClaudePermissionMode,
+  EngineExecuteParams,
+  EngineInterventionResult,
+  EnginePort,
+  EngineUserInput,
+  SSEEventPayload,
+} from "../protocol.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import { antigravityMcpGatewayUpstreams, writeAntigravityAgentDefinition, writeAntigravityMcpGatewayConfig } from "./agent_definition.js";
 import { antigravityTurnCostUsd } from "../list_price.js";
@@ -23,6 +30,7 @@ import { resolveAntigravityMcpGatewayLaunch } from "./mcp_schema_proxy_launch.js
 import { antigravityGatewayServerName } from "./mcp_gateway.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
 import { launchAntigravityProcess } from "./process.js";
+import { materializeAntigravityRestrictedBundle, writeAntigravityRestrictedBundle } from "./restricted_bundle.js";
 
 export interface AntigravityAdapterOptions {
   workspaceDir: string;
@@ -34,6 +42,12 @@ export interface AntigravityAdapterOptions {
   processEnv: NodeJS.ProcessEnv;
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
+  /** Effective tool policy carried by the engine factory; turn parameters take precedence. */
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  claudePermissionMode?: ClaudePermissionMode;
+  /** Profile workspace whose `.claude/agents/*.md` become agy subagent definitions. */
+  profileWorkspaceDir?: string;
   /** Latest catalogue snapshot; read once per terminal event. */
   getModelCatalog?: () => ModelCatalogConfig;
 }
@@ -69,7 +83,8 @@ export class AntigravityEngineAdapter implements EnginePort {
       antigravityGatewayServerName(this.options.agentId),
       this.options.getModelCatalog,
     );
-    let definition: Awaited<ReturnType<typeof writeAntigravityAgentDefinition>> | undefined;
+    let agentSelection: { name: string } | undefined;
+    let removeDefinitions: (() => Promise<void>) | undefined;
     let process: ReturnType<typeof launchAntigravityProcess> | undefined;
     try {
       if (!this.options.executablePath) throw new Error("Antigravity CLI not found; configure AGY_CLI_PATH or install agy on this node");
@@ -84,17 +99,47 @@ export class AntigravityEngineAdapter implements EnginePort {
           resolvedMcpServers: this.options.resolvedMcpServers, useMcp: params.useMcp, logger: this.logger,
         }));
       }
-      if (!params.resumeSessionId) {
+      const effectiveAllowedTools = params.allowedTools ?? this.options.allowedTools;
+      const effectivePermissionMode = params.claudePermissionMode ?? this.options.claudePermissionMode;
+      const restrictedAllowedTools = effectivePermissionMode === "dontAsk" && Array.isArray(effectiveAllowedTools)
+        ? effectiveAllowedTools
+        : undefined;
+      if (restrictedAllowedTools) {
+        const policyDirectory = join(sessionDirectory, "antigravity-tool-policy");
+        if (!params.resumeSessionId) {
+          if (params.systemPrompt === undefined) throw new Error("이 세션은 첫 턴에서 대화를 만들지 못했습니다. 새 세션을 시작해 주십시오.");
+          const bundle = await writeAntigravityRestrictedBundle({
+            directory: policyDirectory,
+            agentId: this.options.agentId,
+            agentSessionId: params.agentSessionId,
+            systemPrompt: params.systemPrompt,
+            gatewayConfigPath,
+            resolvedMcpServers: this.options.resolvedMcpServers,
+            internalMcpUrl: this.options.internalMcpUrl,
+            useMcp: params.useMcp,
+            mcpGatewayLaunch: resolveAntigravityMcpGatewayLaunch(import.meta.url, nodeProcess.execPath),
+            allowedTools: restrictedAllowedTools,
+            disallowedTools: params.disallowedTools ?? this.options.disallowedTools,
+            profileWorkspaceDir: this.options.profileWorkspaceDir ?? this.options.workspaceDir,
+            logger: this.logger,
+          });
+          agentSelection = { name: bundle.mainName };
+        }
+        const materialized = await materializeAntigravityRestrictedBundle(policyDirectory);
+        removeDefinitions = materialized.remove;
+      } else if (!params.resumeSessionId) {
         if (params.systemPrompt === undefined) throw new Error("이 세션은 첫 턴에서 대화를 만들지 못했습니다. 새 세션을 시작해 주십시오.");
-        definition = await writeAntigravityAgentDefinition({
+        const written = await writeAntigravityAgentDefinition({
           agentId: this.options.agentId, agentSessionId: params.agentSessionId, systemPrompt: params.systemPrompt, gatewayConfigPath,
           resolvedMcpServers: this.options.resolvedMcpServers, internalMcpUrl: this.options.internalMcpUrl,
           useMcp: params.useMcp, mcpGatewayLaunch: resolveAntigravityMcpGatewayLaunch(import.meta.url, nodeProcess.execPath),
           logger: this.logger,
         });
+        agentSelection = { name: written.name };
+        removeDefinitions = written.remove;
       }
       process = launchAntigravityProcess({ executablePath: this.options.executablePath,
-        args: antigravityArguments(params, join(sessionDirectory, "antigravity.log"), definition),
+        args: antigravityArguments(params, join(sessionDirectory, "antigravity.log"), agentSelection),
         cwd: this.workspaceDir,
         env: withScratchWorkspaceEnv(
           Object.fromEntries(Object.entries(this.options.processEnv).filter(
@@ -104,7 +149,7 @@ export class AntigravityEngineAdapter implements EnginePort {
         ),
         input: antigravityUserMessage(params.prompt), logger: this.logger,
       });
-      const cleanedUp = process.done.then(async () => await definition?.remove());
+      const cleanedUp = process.done.then(async () => await removeDefinitions?.());
       this.active = { process, cleanedUp };
       for await (const raw of process.events) for (const event of mapper.accept(raw)) yield engineEventFrame(event);
       const exit = await process.done;
@@ -139,7 +184,7 @@ export class AntigravityEngineAdapter implements EnginePort {
       }
     } catch (error) {
       if (process) { process.interrupt(); await process.done; }
-      await definition?.remove();
+      await removeDefinitions?.();
       const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
       const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
       this.usageCarry = undefined;
@@ -157,7 +202,7 @@ export class AntigravityEngineAdapter implements EnginePort {
     } finally {
       // If a frame consumer stops early, keep ownership until the CLI closes.
       if (process) { process.interrupt(); await process.done; }
-      await definition?.remove();
+      await removeDefinitions?.();
       this.active = undefined;
       this.executing = false;
     }

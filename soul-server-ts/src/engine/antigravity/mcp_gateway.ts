@@ -8,14 +8,17 @@ import { sanitizeAntigravityInputSchema } from "./mcp_schema_sanitizer.js";
 
 export type AntigravityMcpGatewayUpstream = { name: string; upstream: AntigravityMcpProxyConfig };
 
+/** Gateway tool names and the tool-policy gate both split on this separator. */
+export const ANTIGRAVITY_GATEWAY_TOOL_SEPARATOR = "__";
+
 export function antigravityGatewayToolName(server: string, tool: string): string {
-  return `${server}__${tool}`;
+  return `${server}${ANTIGRAVITY_GATEWAY_TOOL_SEPARATOR}${tool}`;
 }
 
 export function splitAntigravityGatewayToolName(name: string): { server: string; tool: string } | undefined {
-  const index = name.indexOf("__");
-  if (index <= 0 || index + 2 === name.length) return undefined;
-  return { server: name.slice(0, index), tool: name.slice(index + 2) };
+  const index = name.indexOf(ANTIGRAVITY_GATEWAY_TOOL_SEPARATOR);
+  if (index <= 0 || index + ANTIGRAVITY_GATEWAY_TOOL_SEPARATOR.length === name.length) return undefined;
+  return { server: name.slice(0, index), tool: name.slice(index + ANTIGRAVITY_GATEWAY_TOOL_SEPARATOR.length) };
 }
 
 export function antigravityGatewayServerName(agentId: string): string {
