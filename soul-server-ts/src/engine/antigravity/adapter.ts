@@ -25,6 +25,7 @@ import {
   AntigravityEventMapper,
   type AntigravityFirstCall,
   type AntigravityUsage,
+  type AntigravityGenerationUsage,
 } from "./events.js";
 import { resolveAntigravityMcpGatewayLaunch } from "./mcp_schema_proxy_launch.js";
 import { antigravityGatewayServerName } from "./mcp_gateway.js";
@@ -60,6 +61,35 @@ export class AntigravityEngineAdapter implements EnginePort {
   private active?: { process: ReturnType<typeof launchAntigravityProcess>; cleanedUp: Promise<unknown> };
   private usageCarry?: AntigravityUsage;
   private firstCallCarry?: AntigravityFirstCall;
+  private generationUsageCarry?: AntigravityGenerationUsage;
+  private lastContextCarry?: number;
+  private nativeSessionCarry?: string;
+  private resumeStructureCarry?: boolean;
+
+  private mergeGenerationUsage(mapper: AntigravityEventMapper, resumeStructure: boolean): AntigravityGenerationUsage | undefined {
+    const previous = this.generationUsageCarry;
+    const current = mapper.generationUsage;
+    if (!previous && current.model_call_count === 0) return undefined;
+    const connected = previous && this.nativeSessionCarry !== undefined
+      && this.nativeSessionCarry === mapper.nativeSessionId
+      && this.resumeStructureCarry === true && resumeStructure
+      && this.lastContextCarry !== undefined && mapper.firstContextTokens !== undefined
+      && mapper.firstContextTokens >= this.lastContextCarry;
+    return {
+      model_call_count: (previous?.model_call_count ?? 0) + current.model_call_count,
+      context_growth_tokens: (previous?.context_growth_tokens ?? 0) + current.context_growth_tokens
+        + (connected ? mapper.firstContextTokens! - this.lastContextCarry! : 0),
+      context_growth_samples: (previous?.context_growth_samples ?? 0) + current.context_growth_samples
+        + (connected ? 1 : 0),
+    };
+  }
+
+  private clearGenerationCarry(): void {
+    this.generationUsageCarry = undefined;
+    this.lastContextCarry = undefined;
+    this.nativeSessionCarry = undefined;
+    this.resumeStructureCarry = undefined;
+  }
 
   constructor(private readonly options: AntigravityAdapterOptions, private readonly logger: Logger) {
     this.workspaceDir = options.workspaceDir;
@@ -77,6 +107,7 @@ export class AntigravityEngineAdapter implements EnginePort {
     if (this.closed) throw new Error("Antigravity engine is closed");
     if (this.executing) throw new Error("Antigravity engine already has an active turn");
     this.executing = true;
+    const resumeStructure = Boolean(params.resumeSessionId) && params.systemPrompt === undefined;
     const mapper = new AntigravityEventMapper(
       randomUUID(),
       Boolean(params.resumeSessionId),
@@ -155,11 +186,13 @@ export class AntigravityEngineAdapter implements EnginePort {
       const exit = await process.done;
       await cleanedUp;
       const terminalEvents = mapper.terminal(exit, process.interrupted);
+      const generationUsage = this.mergeGenerationUsage(mapper, resumeStructure);
       if (terminalEvents.length > 0) {
         const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
         const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
         this.usageCarry = undefined;
         this.firstCallCarry = undefined;
+        this.clearGenerationCarry();
         const catalog = this.options.getModelCatalog?.();
         const turnCostUsd = usage && catalog
           ? antigravityTurnCostUsd(catalog, usage, mapper.model)
@@ -176,19 +209,28 @@ export class AntigravityEngineAdapter implements EnginePort {
                   ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
                 }
               : {}),
+            ...(isLast && generationUsage ? { generation_usage: generationUsage } : {}),
           } as SSEEventPayload);
         }
       } else {
         this.usageCarry = addAntigravityUsage(this.usageCarry, mapper.usage);
         this.firstCallCarry ??= mapper.firstCall ?? undefined;
+        this.generationUsageCarry = generationUsage;
+        if (mapper.lastContextTokens > 0) {
+          this.lastContextCarry = mapper.lastContextTokens;
+          this.nativeSessionCarry = mapper.nativeSessionId;
+          this.resumeStructureCarry = resumeStructure;
+        }
       }
     } catch (error) {
       if (process) { process.interrupt(); await process.done; }
       await removeDefinitions?.();
       const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
       const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
+      const generationUsage = this.mergeGenerationUsage(mapper, resumeStructure);
       this.usageCarry = undefined;
       this.firstCallCarry = undefined;
+      this.clearGenerationCarry();
       const catalog = this.options.getModelCatalog?.();
       const turnCostUsd = usage && catalog
         ? antigravityTurnCostUsd(catalog, usage, mapper.model)
@@ -197,6 +239,7 @@ export class AntigravityEngineAdapter implements EnginePort {
         message: error instanceof Error ? error.message : String(error), timestamp: Date.now() / 1000,
         ...(mapper.model ? { model: mapper.model } : {}), ...(usage ? { usage } : {}),
         ...(firstCall ? { first_call: firstCall } : {}),
+        ...(generationUsage ? { generation_usage: generationUsage } : {}),
         ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
       });
     } finally {

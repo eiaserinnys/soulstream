@@ -113,6 +113,7 @@ function makeFixture(
     orch: { baseUrl: "http://orch.invalid", headers: {} },
     logger,
   } as never);
+  const readEvents = vi.fn(async (..._args: unknown[]) => [] as Array<{ id: number }>);
   const db = {
     getFolderById: vi.fn(async () => null),
     getBoardItems: vi.fn(async () => []),
@@ -121,6 +122,7 @@ function makeFixture(
     claudeBackgroundTasks: vi.fn(() => ({ resolveGeneration: vi.fn() })),
     updateSession: vi.fn(async () => undefined),
     setClaudeSessionId: vi.fn(async () => undefined),
+    readEvents,
   } as unknown as SessionDB;
   const broadcaster = {
     emitSessionCreated: vi.fn(async () => undefined),
@@ -279,6 +281,7 @@ function makeFixture(
     runner,
     engine,
     runnerProcessFactorySpy,
+    readEvents,
   };
 }
 
@@ -316,6 +319,71 @@ describe("persistent generation rollover through the production resume path", ()
     expect(fixture.executed).toHaveLength(1);
     expect(fixture.executed[0]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID });
     expect(fixture.executed[0]).not.toHaveProperty("resumeSessionId");
+  });
+
+  it("persists the first logical execution after rollover finishes before its resumed complete", async () => {
+    const fixture = makeFixture();
+    let execution = 0;
+    fixture.dispatcher.executeFrames.mockImplementation((params: EngineExecuteParams) => {
+      fixture.executed.push(params);
+      execution += 1;
+      return (async function* () {
+        if (execution === 1) {
+          yield engineEventFrame({ type: "session", session_id: "native-new" } as SSEEventPayload);
+          const task = fixture.taskManager.getTask(SESSION_ID)!;
+          task.interventionQueue.push({ text: "후속 알림", user: "system" });
+          return;
+        }
+        yield engineEventFrame({ type: "session", session_id: "native-new" } as SSEEventPayload);
+        yield engineEventFrame({ type: "context_usage", used_tokens: 146765, max_tokens: 1000000 } as SSEEventPayload);
+        yield engineEventFrame({
+          type: "complete", status: "completed", timestamp: 2,
+          first_call: { input_tokens: 35891, cached_input_tokens: 0 },
+          usage: { input_tokens: 846767, cached_input_tokens: 700384, output_tokens: 11446, reasoning_output_tokens: 6790 },
+          generation_usage: { model_call_count: 34, context_growth_tokens: 90000, context_growth_samples: 32 },
+        } as SSEEventPayload);
+      })();
+    });
+    const task = await resume(fixture);
+    expect(fixture.executed).toHaveLength(2);
+    expect(fixture.executed[1]).toMatchObject({ resumeSessionId: "native-new" });
+    expect(task.persistentGeneration).toMatchObject({
+      number: 2, backendSessionId: "native-new",
+      firstCall: { generation: 2, inputTokens: 35891, cachedInputTokens: 0 },
+      bootstrap: {
+        generation: 2, backendSessionId: "native-new", status: "complete",
+        firstTurnContextTokens: 146765, initInputTokens: 846767, initCachedTokens: 700384,
+        initOutputTokens: 11446, initReasoningTokens: 6790, modelCallCount: 34,
+        growthTokens: 90000, growthSamples: 32,
+      },
+    });
+    expect(fixture.persistenceDouble.enqueueMetadataEffect).toHaveBeenCalledWith(
+      SESSION_ID, expect.anything(),
+      expect.objectContaining({ semanticDedupeKey: `generation_bootstrap:${SESSION_ID}:2:native-new` }),
+    );
+  });
+
+  it("recovers an already acknowledged complete event ID for bootstrap and growth", async () => {
+    const fixture = makeFixture();
+    fixture.dispatcher.waitForSessionAck.mockResolvedValue(null as never);
+    fixture.readEvents.mockResolvedValue([{ id: 999 }, { id: 1001 }, { id: 1000 }]);
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "session", session_id: "native-new" } as SSEEventPayload,
+      { type: "context_usage", used_tokens: 146765, max_tokens: 1000000 } as SSEEventPayload,
+      {
+        type: "complete", status: "completed", timestamp: 2,
+        first_call: { input_tokens: 35891, cached_input_tokens: 0 },
+        usage: { input_tokens: 846767, cached_input_tokens: 700384, output_tokens: 11446, reasoning_output_tokens: 6790 },
+        generation_usage: { model_call_count: 34, context_growth_tokens: 90000, context_growth_samples: 32 },
+      } as SSEEventPayload,
+    );
+    const task = await resume(fixture);
+    expect(fixture.readEvents).toHaveBeenCalledWith(SESSION_ID, expect.any(Number), 20, ["complete"]);
+    expect(task.persistentGeneration?.bootstrap).toMatchObject({ status: "complete", sourceCompleteEventId: 1001 });
+    expect(task.metadata).toContainEqual({
+      type: "persistent_generation_growth",
+      value: { presets: { "claude-opus": { model: "opus", tokens: 90000, samples: 32, last_event_id: 1001 } } },
+    });
   });
 });
 

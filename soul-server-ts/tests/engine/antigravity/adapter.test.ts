@@ -170,6 +170,30 @@ describe("AntigravityEngineAdapter", () => {
     expect((await collect(engine,resume)).find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:5,cached_input_tokens:3,output_tokens:4,reasoning_output_tokens:1 } });
     await engine.close();
   });
+  it("excludes the initial-to-resumed boundary and connects two resumed processes", async () => {
+    const { engine } = fixture();
+    try {
+      const resumed = { ...input, systemPrompt: undefined, resumeSessionId: "fixture-conversation" };
+      for await (const event of engine.execute({ ...input, model: "blocking" })) {
+        if (event.type === "assistant_message") await engine.interrupt();
+      }
+      for await (const event of engine.execute({ ...resumed, model: "blocking" })) {
+        if (event.type === "assistant_message") await engine.interrupt();
+      }
+      const events = [];
+      for await (const event of engine.execute(resumed)) events.push(event);
+      expect(events.find(event => event.type === "complete")).toMatchObject({
+        generation_usage: {
+          model_call_count: 3, context_growth_tokens: 0, context_growth_samples: 1,
+        },
+      });
+      const next = [];
+      for await (const event of engine.execute(resumed)) next.push(event);
+      expect(next.find(event => event.type === "complete")).toMatchObject({
+        generation_usage: { model_call_count: 1, context_growth_tokens: 0, context_growth_samples: 0 },
+      });
+    } finally { await engine.close(); }
+  });
   it("adds carry to an error too and clears it", async () => {
     const { engine } = fixture();
     for await (const event of engine.execute({ ...input, model: "blocking" })) if(event.type==='assistant_message') await engine.interrupt();

@@ -225,7 +225,7 @@ describe("beginGenerationRolloverIfPending", () => {
       summarizedThroughTurn: 4,
       recentFromEventId: 10,
       recentToEventId: 12,
-    }, { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence);
+    }, { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence);
 
     const event = enqueueEventAndWaitForSessionAck.mock.calls[0]?.[1] as unknown as
       Record<string, unknown>;
@@ -286,7 +286,7 @@ describe("beginGenerationRolloverIfPending", () => {
     await publishStarted(
       task,
       checkpoint,
-      { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence,
+      { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence,
     );
     await commitStart(
       task,
@@ -296,7 +296,7 @@ describe("beginGenerationRolloverIfPending", () => {
     await publishStarted(
       task,
       checkpoint,
-      { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence,
+      { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence,
     );
 
     const keys = enqueueEventAndWaitForSessionAck.mock.calls.map((call) => {
@@ -350,7 +350,7 @@ describe("beginGenerationRolloverIfPending", () => {
       _key: string,
     ) => undefined);
     const persistence = { enqueueMetadataEffect } as unknown as EventPersistence;
-    const eventPersistence = { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence;
+    const eventPersistence = { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence;
 
     await commitStart(task, persistence, { setModelSelection });
     await publishStarted(task, checkpoint, eventPersistence);
@@ -510,7 +510,7 @@ describe("beginGenerationRolloverIfPending", () => {
       record: {} as never,
       eventId: 26,
     }));
-    const persistence = { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence;
+    const persistence = { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence;
 
     await publishStarted(task, checkpoint, persistence);
 
@@ -567,7 +567,7 @@ describe("beginGenerationRolloverIfPending", () => {
       summarizedThroughTurn: null,
       recentFromEventId: null,
       recentToEventId: null,
-    }, { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence);
+    }, { enqueueEventAndWaitForSessionAck, enqueueMetadataEffect: vi.fn(async () => 25) } as unknown as EventPersistence);
 
     const started = enqueueEventAndWaitForSessionAck.mock.calls[0]?.[1] as unknown as
       Record<string, unknown>;

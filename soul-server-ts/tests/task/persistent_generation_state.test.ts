@@ -35,6 +35,22 @@ const applyingState = {
 };
 
 describe("extractPersistentGeneration", () => {
+  it("retains a collecting bootstrap through serialization and rollover reconciliation", () => {
+    const bootstrap = {
+      generation: 2, backendSessionId: null, modelPreset: "gemini-4-hydrogen",
+      model: "gemini-4-hydrogen", contextReset: false, status: "collecting" as const,
+      firstCall: null, firstTurnContextTokens: null, initInputTokens: null,
+      initCachedTokens: null, initOutputTokens: null, initReasoningTokens: null,
+      modelCallCount: null, growthTokens: null, growthSamples: null,
+      startedAt: "2026-11-14T05:18:18Z", completedAt: null,
+      sourceCompleteEventId: null, priceVersion: null,
+    };
+    const state = { ...applyingState, bootstrap };
+    const restored = extractPersistentGeneration([buildPersistentGenerationMetadataEntry(state)]);
+    expect(restored?.bootstrap).toEqual(bootstrap);
+    expect(resolveGenerationState(restored, "native-new", {}).persistentGeneration.bootstrap)
+      .toEqual(bootstrap);
+  });
   it("restores the metadata entry and first-call usage", () => {
     expect(extractPersistentGeneration([{
       type: "persistent_generation",

@@ -225,13 +225,14 @@ describe("buildPersistentDecisionInput", () => {
         modelCatalog: {
           resolve: (id: string) => ({
             id,
+            model: id,
             backend: id === "gemini-4-argon"
               ? "antigravity"
               : id === "opencode-unsupported"
                 ? "opencode"
                 : id.startsWith("claude") ? "claude" : "codex",
           }),
-          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+          snapshot: () => ({ models: [], persistent_defaults: { fallback_models: [] } }),
         } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn },
@@ -290,11 +291,12 @@ describe("buildPersistentDecisionInput", () => {
         modelCatalog: {
           resolve: (id: string) => ({
             id,
+            model: id,
             backend: id === "gemini-4-argon"
               ? "antigravity"
               : id.startsWith("claude") ? "claude" : "codex",
           }),
-          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+          snapshot: () => ({ models: [], persistent_defaults: { fallback_models: [] } }),
         } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
@@ -877,5 +879,35 @@ describe("buildPersistentDecisionInput", () => {
 
     expect(input.fallback_models).toEqual(["codex-6.1-sol"]);
     expect(input.preset_providers).toMatchObject({ "codex-6.1-sol": "codex" });
+  });
+
+  it("prices the latest valid bootstrap and uses its growth when aggregate metadata is absent", async () => {
+    const task = makeTask();
+    task.modelPreset = "gemini-4-hydrogen";
+    task.metadata = [{ type: "persistent_session", value: { enabled: true } }];
+    task.persistentGeneration = {
+      number: 297, bootstrap: {
+        generation: 297, backendSessionId: "native-297", modelPreset: "gemini-4-hydrogen",
+        model: "gemini-4-hydrogen", contextReset: false, status: "complete",
+        firstCall: { inputTokens: 35891, cachedInputTokens: 0 }, firstTurnContextTokens: 146765,
+        initInputTokens: 846767, initCachedTokens: 700384, initOutputTokens: 11446,
+        initReasoningTokens: 6790, modelCallCount: 34, growthTokens: 12000, growthSamples: 4,
+        startedAt: now.toISOString(), completedAt: now.toISOString(), sourceCompleteEventId: 95715,
+        priceVersion: "previous",
+      },
+    };
+    const catalog = new ModelCatalog(openModelCatalogFile({
+      path: fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+    }));
+    const result = await buildPersistentDecisionInput({ task, trigger: "arrival", now }, {
+      db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+      modelCatalog: catalog, providerUsage: { fetchUsage: vi.fn(async () => ({ success: false })) } as unknown as ProviderUsageCommandHandler,
+      logger: { warn: vi.fn() },
+    });
+    expect(result.generation_cost_by_preset?.["gemini-4-hydrogen"]).toMatchObject({
+      baselineTokens: 146765,
+      growthTokensPerCall: 3000, source: "session-bootstrap",
+    });
+    expect(result.generation_cost_by_preset?.["gemini-4-hydrogen"]?.initEquivalentInputTokens).toBeCloseTo(272582.2);
   });
 });

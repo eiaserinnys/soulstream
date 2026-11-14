@@ -31,6 +31,7 @@ import type {
   SupportsCompact,
 } from "../engine/protocol.js";
 import { makeContextUsagePayload } from "../engine/context_usage.js";
+import { captureGenerationBootstrap, persistGenerationBootstrap, persistGenerationGrowth } from "./persistent_generation_bootstrap.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
@@ -2052,6 +2053,10 @@ export class TaskExecutor {
    * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
    * currentTurn=null로 reset, codex_adapter.ts:167-168).
    */
+  private resolveModelPriceVersion(_task: Task): string | null {
+    return this.modelCatalog?.snapshot().price_snapshot?.price_version ?? null;
+  }
+
   private async _consumeEventStream(
     task: Task,
     runner: TaskRunnerRuntime,
@@ -2062,7 +2067,7 @@ export class TaskExecutor {
       if (!this.sessionMutations) {
         throw new Error("Session mutation host is required for persistent generation rollover");
       }
-      await commitGenerationStart(task, this.persistence, this.sessionMutations);
+      await commitGenerationStart(task, this.persistence, this.sessionMutations, this.resolveModelPriceVersion(task));
     }
     // 세대 넘김 창(넘김 기록부터 첫 턴까지) 안에서 멈춤이나 삭제가 왔으면 넘김 시작을 알리지
     // 않고 첫 턴도 보내지 않는다. 꺼낸 지시는 줄에 되돌려 다음 시작이 받게 한다. 넘김은
@@ -2156,6 +2161,49 @@ export class TaskExecutor {
       const isCacheKeepaliveTurn = currentTurnInterventions.some(isCacheKeepaliveInput);
       const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
       let turnCompletedEvent: SSEEventPayload | undefined;
+      let terminalEvent: SSEEventPayload | undefined;
+      const turnStartEventId = task.lastEventId;
+      const identity = {
+        generation: task.activeGenerationRollover?.number ?? task.persistentGeneration?.number ?? 1,
+        nativeId: task.activeGenerationRollover ? undefined : task.codexThreadId,
+        modelPreset: task.modelPreset ?? "",
+        model: task.model ?? "",
+      };
+      const willCompleteGeneration = (): boolean => Boolean(
+        turnInput.generationRollover && task.activeGenerationRollover
+        && task.codexThreadId && task.codexThreadId !== task.activeGenerationRollover.fromBackendSessionId,
+      );
+      const saveBootstrap = async (eventId: number | null, combineWithRollover: boolean): Promise<void> => {
+        if (!terminalEvent) return;
+        const update = captureGenerationBootstrap(task, terminalEvent, identity,
+          contextRecovery.latestContextUsage?.usedTokens, eventId);
+        if (update && combineWithRollover && task.persistentGeneration) {
+          task.persistentGeneration = {
+            ...task.persistentGeneration, bootstrap: update.bootstrap,
+            ...(update.firstCall ? { firstCall: update.firstCall } : {}),
+          };
+        } else if (update) {
+          await persistGenerationBootstrap(task, update, this.persistence);
+        }
+        if (task.persistent === true && update?.bootstrap.contextReset !== true) {
+          await persistGenerationGrowth(task, terminalEvent, identity, eventId, this.persistence);
+        }
+      };
+      const resolveTerminalEventId = async (acknowledgedId: number | null): Promise<number | null> => {
+        if (acknowledgedId !== null || !terminalEvent || typeof this.db.readEvents !== "function") {
+          return acknowledgedId;
+        }
+        try {
+          const rows = await this.db.readEvents(task.agentSessionId, turnStartEventId, 20, [terminalEvent.type]);
+          return rows.reduce<number | null>(
+            (latest, row) => row.id > turnStartEventId && (latest === null || row.id > latest) ? row.id : latest,
+            null,
+          );
+        } catch (error) {
+          this.logger.warn({ err: error, sessionId: task.agentSessionId }, "terminal event ID lookup failed");
+          return null;
+        }
+      };
       try {
         try {
           for await (const event of this.failOnFatalEngineError(task, this.engineTurnRunner.executeTurn({
@@ -2189,12 +2237,14 @@ export class TaskExecutor {
           },
           }))) {
             if (event.type === "complete") turnCompletedEvent = event;
+            if (event.type === "complete" || event.type === "error") terminalEvent = event;
             observeClaudeContextRecoveryEvent(contextRecovery, event);
             await this.observeDeliveryTurn(task, turnReceipt, event);
             await this.engineEventPublisher.publishEngineEvent(task, event, {
               alreadyPersisted: runner.eventPersistence === "runner",
               isCacheKeepaliveTurn,
             });
+            if (event.type === "session") identity.nativeId = task.codexThreadId;
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
@@ -2204,28 +2254,38 @@ export class TaskExecutor {
             err,
             currentTurnInterventions,
           );
-          if (disposition === "continue_with_accepted_successor") {
-            const transition = resolveTurnLoopTransition(task, agent);
-            if (transition.kind === "continue") {
-              turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-                task,
-                agent,
-                transition.interventions,
-              );
-              continue;
-            }
+          const transition = disposition === "continue_with_accepted_successor"
+            ? resolveTurnLoopTransition(task, agent) : undefined;
+          const acceptedMidTurnSuccessor = transition?.kind === "continue";
+          if (terminalEvent) {
+            const acknowledgedId = runner.eventPersistence === "runner"
+              ? await runner.dispatcher.waitForSessionAck()
+              : await this.persistence.waitForSessionAck(task.agentSessionId);
+            const eventId = await resolveTerminalEventId(acknowledgedId);
+            if (eventId !== null) task.lastEventId = Math.max(task.lastEventId, eventId);
+            await saveBootstrap(eventId, !acceptedMidTurnSuccessor && willCompleteGeneration());
+          }
+          if (transition?.kind === "continue") {
+            turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+              task,
+              agent,
+              transition.interventions,
+            );
+            continue;
           }
           if (turnInput.generationRollover) {
             await completeGenerationRollover(task, this.persistence);
           }
           break;
         }
-        const lastAcknowledgedEventId = runner.eventPersistence === "runner"
+        const acknowledgedId = runner.eventPersistence === "runner"
         ? await runner.dispatcher.waitForSessionAck()
         : await this.persistence.waitForSessionAck(task.agentSessionId);
-      if (lastAcknowledgedEventId !== null) {
-        task.lastEventId = lastAcknowledgedEventId;
+      const terminalEventId = await resolveTerminalEventId(acknowledgedId);
+      if (terminalEventId !== null) {
+        task.lastEventId = Math.max(task.lastEventId, terminalEventId);
       }
+      await saveBootstrap(terminalEventId, willCompleteGeneration());
       await this.setClaudeContextUsage(
         task,
         contextRecovery.compactCompleted
