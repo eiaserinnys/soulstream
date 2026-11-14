@@ -186,10 +186,10 @@ describe("busy worktree adoption rejection", () => {
     }
   });
 
-  it("does not mark the central error before the central session is read", () => {
+  it("keeps the adoption retryable before the central session is read", () => {
     for (const call of ADOPTS) {
       expect(decide({ call, reason: "worktree_busy", centralSession: "unknown" }).intents)
-        .toEqual(["reap_runner"]);
+        .toEqual(["retry_later"]);
     }
   });
 

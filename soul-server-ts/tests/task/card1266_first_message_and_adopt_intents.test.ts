@@ -113,6 +113,19 @@ describe("card #1266 U2a first message runs every cleanup intent", () => {
     expect(subject.task.status).toBe("completed");
   });
 
+  it("continues the first message attempt when the worktree is busy", async () => {
+    const subject = await runFirstMessage(async () => ({
+      eventId: 4,
+      applied: false,
+      rejectionReason: "worktree_busy",
+      canonicalSession: canonicalSession("initializing"),
+    }));
+
+    expect(subject.execute).toHaveBeenCalledOnce();
+    expect(terminalStatuses(subject.double)).not.toContain("error");
+    expect(subject.releaseLocalOwnership).not.toHaveBeenCalled();
+  });
+
   it("marks the central state as an error and releases local ownership on a permanent rejection without a central session", async () => {
     const subject = await runFirstMessage(async () => {
       throw new EventOutboxDeadLetterError(

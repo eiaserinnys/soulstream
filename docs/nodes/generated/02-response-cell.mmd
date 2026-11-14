@@ -14,6 +14,7 @@ state "서버 응답을 받은 칸 하나로 가른다" as nodeResponse {
     nodeResponse_decide --> nodeResponse_quarantine: 전송 거절이 영구라 아웃박스 맨 앞 줄을 격리했다
     nodeResponse_decide --> nodeResponse_permanent: 응답 안에 dead letter가 실렸다
     nodeResponse_decide --> nodeResponse_retryable: 전송 거절이 다시 될 수 있거나 응답이 없다
+    nodeResponse_decide --> nodeResponse_retryable: 점유 거절의 첫 메시지는 이어 가고, 중앙 줄을 못 읽은 잇기는 다음 주기에 다시 판정한다
     nodeResponse_decide --> nodeResponse_no_retry: 사유가 다시 될 까닭 없는 것이다
     nodeResponse_decide --> nodeResponse_no_retry: 종료 거절에 사유가 없고 다른 종료가 이미 있다
     nodeResponse_decide --> nodeResponse_retryable: 사유가 없거나 다시 될 수 있는 사유다(옛 서버 호환)

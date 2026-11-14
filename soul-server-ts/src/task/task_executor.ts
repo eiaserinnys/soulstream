@@ -1917,7 +1917,7 @@ export class TaskExecutor {
           ?? task.runner?.dispatcher.registrationId?.()
           ?? undefined;
         // 워크트리 점유로 끊김 중단 세션을 닫는 오류 종료는 세션의 끝남이라 완료를 알린다
-        // (합의 모형 M:386-387, M:318, 카드 #1266 U5c). 영구 거절과 격리의 오류 표시는 알리지 않는다.
+        // (합의 모형 M:239-240, :357-365, :415-417, :310-313). 영구 거절과 격리의 오류 표시는 알리지 않는다.
         // 다음 훑기의 거둠이 부른 세션을 지우므로 여기서 알린다.
         const notifies = settled.facts.reason === "worktree_busy";
         const persistence = await this.lifecycleTransition.persistExecutorFinalState(task, true, {

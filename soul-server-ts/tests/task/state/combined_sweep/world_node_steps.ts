@@ -4,6 +4,14 @@
  */
 import type { RunnerHandleFacts } from "../../../../src/runner/state/runner_handle_machine.js";
 import type { RunnerLifecycleState } from "../../../../src/runner/state/runner_lifecycle_machine.js";
+import {
+  NODE_DELETE_REQUEST_DISPOSITIONS,
+  NODE_INTERVENE_REQUEST_DISPOSITIONS,
+  NODE_RESUME_REQUEST_DISPOSITIONS,
+  NODE_STOP_REQUEST_DISPOSITIONS,
+  type NodeRequestDisposition,
+  type NodeRequestKind,
+} from "../../../../src/task/state/node_request_machine.js";
 import type { WorldContext } from "./world_context.js";
 import {
   ACTIVE,
@@ -22,6 +30,20 @@ import {
 } from "./world_state.js";
 
 export type StepFn = (g: G) => G[];
+
+/** 요청별 처분을 빠짐없이 읽는다. 새 처분을 모르는 세계가 조용히 대기로 바꾸면 안 된다. */
+export function worldRequestDisposition(request: NodeRequestKind, disposition: string): NodeRequestDisposition {
+  const known: Record<NodeRequestKind, readonly string[]> = {
+    stop: NODE_STOP_REQUEST_DISPOSITIONS,
+    intervene: NODE_INTERVENE_REQUEST_DISPOSITIONS,
+    delete: NODE_DELETE_REQUEST_DISPOSITIONS,
+    resume: NODE_RESUME_REQUEST_DISPOSITIONS,
+  };
+  if (!known[request].includes(disposition)) {
+    throw new Error(`unmapped ${request} disposition: ${disposition}`);
+  }
+  return disposition as NodeRequestDisposition;
+}
 
 /** 모형의 러너 수명을 제품의 수명 기록으로 옮긴다. 한도 끝남과 정상 보유는 완료 기록이다. */
 export function lifecycleOf(life: RunnerLife): RunnerLifecycleState {
@@ -47,11 +69,19 @@ export function nodeSteps(ctx: WorldContext): Record<string, StepFn> {
   // J01 지시가 온다 (M:164-169). 처분은 decideNodeRequest가 낸다.
   const instruction: StepFn = (g) => {
     if (!conn(g) || g.q === "waiting" || g.q === "handing") return [];
-    const disposition = d.nodeRequest(ctx.phase(g), "intervene");
-    if (disposition === "deliver_or_queue" && g.q !== "blocked" && g.l2 === "up" && g.d2.length < k2) {
-      return [put(g, { q: "handing", d2: [...g.d2, "HAND"] })];
+    const disposition = worldRequestDisposition("intervene", d.nodeRequest(ctx.phase(g), "intervene"));
+    switch (disposition) {
+      case "deliver_or_queue":
+        if (g.q !== "blocked" && g.l2 === "up" && g.d2.length < k2) {
+          return [put(g, { q: "handing", d2: [...g.d2, "HAND"] })];
+        }
+        return [put(g, { q: "waiting" })];
+      case "queue_and_restart":
+      case "hold_until_started":
+        return [put(g, { q: "waiting" })];
+      default:
+        throw new Error(`unmapped instruction disposition: ${disposition}`);
     }
-    return [put(g, { q: "waiting" })];
   };
 
   // J02 쌓인 지시로 다시 띄운다 (M:171-174).
@@ -88,7 +118,7 @@ export function nodeSteps(ctx: WorldContext): Record<string, StepFn> {
   // J07 사람이 멈춘다 (M:201-209). 처분은 decideNodeRequest와 decideNodeStopRequest가 낸다.
   const stop: StepFn = (g) => {
     if (!(conn(g) && g.ex === "turn")) return [];
-    const disposition = d.nodeRequest(ctx.phase(g), "stop");
+    const disposition = worldRequestDisposition("stop", d.nodeRequest(ctx.phase(g), "stop"));
     if (disposition !== "interrupt_and_terminate") {
       throw new Error(`unmapped stop disposition in a turn: ${disposition}`);
     }

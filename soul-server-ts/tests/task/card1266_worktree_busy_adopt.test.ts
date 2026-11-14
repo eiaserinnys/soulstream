@@ -103,6 +103,24 @@ function responseOf(application: NodeAdoptionApplication): string {
 }
 
 describe("card #1266 U5c an adoption rejected because the worktree is busy", () => {
+  it.each([RECORDED_END, DISCONNECT_INTERRUPTED])("retries after a central read failure, then settles the readable row %j", async (central) => {
+    const subject = setup("worktree_busy", central);
+    subject.getSession.mockRejectedValueOnce(new Error("central unavailable"));
+
+    const unread = await subject.executor.adoptAttachedRunnerExecution(subject.task, "execute-1");
+
+    expect(responseOf(unread)).toBe("retryable_rejection");
+    expect(subject.task.runner).toBeDefined();
+    expect(subject.enqueueTerminal).not.toHaveBeenCalled();
+    expect(subject.notify).not.toHaveBeenCalled();
+
+    const readable = await subject.executor.adoptAttachedRunnerExecution(subject.task, "execute-1");
+    expect(responseOf(readable)).toBe("terminal_rejection");
+    expect(subject.getSession).toHaveBeenCalledTimes(2);
+    expect(subject.enqueueTerminal).toHaveBeenCalledTimes(central === DISCONNECT_INTERRUPTED ? 1 : 0);
+    expect(subject.notify).toHaveBeenCalledTimes(central === DISCONNECT_INTERRUPTED ? 1 : 0);
+  });
+
   it("reaps without raising a terminal when the central session already recorded its end", async () => {
     const subject = setup("worktree_busy", RECORDED_END);
 
@@ -124,7 +142,7 @@ describe("card #1266 U5c an adoption rejected because the worktree is busy", () 
     expect(responseOf(application)).toBe("terminal_rejection");
     expect(subject.enqueueTerminal).toHaveBeenCalledOnce();
     expect(subject.enqueueTerminal.mock.calls[0]?.[3]).toBe("registration-adopt");
-    // 세션을 닫는 종료라 기다리는 부모에게 완료를 알린다(M:386-387, M:318).
+    // 세션을 닫는 종료라 기다리는 부모에게 완료를 알린다(M:239-240, :357-365, :415-417, :310-313).
     expect(subject.notify).toHaveBeenCalledOnce();
     expect(subject.notify.mock.calls[0]?.[0]).toBe(subject.task);
   });

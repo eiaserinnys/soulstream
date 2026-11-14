@@ -1,6 +1,6 @@
 # 합친 훑기
 
-카드 #1218 합의(설계 넷째 판)가 파이썬 손 모형으로 하던 합친 훑기를 soul-server-ts의 시험으로 옮겼다(카드 #1266 U5c). 손 모형은 분석 근거로 남고, 제품 완료의 근거는 이 시험이다. 숫자의 정본은 시험이 찍는 값이고, 아래 숫자는 이 문서를 쓴 때(origin/main `4156d14a`)의 값이다.
+카드 #1218 합의(설계 넷째 판)가 파이썬 손 모형으로 하던 합친 훑기를 soul-server-ts의 시험으로 옮겼다(카드 #1266 U5c). 손 모형은 분석 근거로 남고, 제품 완료의 근거는 이 시험이다. 숫자의 정본은 시험이 찍는 값이고, 아래 숫자는 U5a와 U5b를 합친 origin/main `0c7b8add9`에 맞춘 값이다.
 
 - 세계: `soul-server-ts/tests/task/state/combined_sweep/`
 - 시험: `soul-server-ts/tests/task/state/card1266_combined_sweep.test.ts`
@@ -92,11 +92,17 @@
 | :-- | :-- | :-- |
 | 끝남이 기록됨(종료 사건 번호 있음, 또는 서버가 스스로 닫은 끝남) | 러너만 은퇴 | 러너 거둠 |
 | 끊김 중단(종료 사건 없는 interrupted) | 러너를 거두고 오류 종료를 올림. 서버는 끊김 중단에 닿은 종료를 받아 끝남으로 적고, 노드는 완료 전달을 등록한다 | 러너 거둠, 오류 종료와 완료 통지 |
-| 읽지 못함 | (없음) | 러너 거둠만 |
+| 읽지 못함 | (없음) | 러너를 살려 두고 다음 주기에 다시 판정. 읽히면 위 두 칸으로 감 |
 
 「준비 안 됨」(`worktree_not_ready`)과 사유 없는 옛 서버 거절은 다시 될 수 있는 거절로 남아 거두지 않는다. 정상 보유 중인 러너는 거두지 않고 오류 종료도 올리지 않는다. 영구 거절과 격리의 중앙 오류 표시는 지금처럼 완료를 알리지 않는다.
 
 같은 사유 분류를 실행 등록도 쓴다. 점유로 거절된 실행 등록은 이제 오류 종료를 올리지 않고 그 시도만 접는다(`abandonRejectedAttempt`). M의 실행 등록 거절(러너만 닫음)과 같다. 같은 워크트리에 활성 세션은 하나뿐이라(`uq_sessions_active_worktree`) 이 거절은 그 세션이 이미 끝난 때만 나온다.
+
+첫 메시지(`first_message`)는 점유로 거절되어도 기존처럼 실행 시도를 잇는다. orch의 `event_session_gate.ts:149-156`은 비-adopt `running_transition`에서도 점유 사실을 읽고, `src/session/state/session_decision_guards.ts:76`은 `worktree_busy`로 거절한다. M에는 첫 메시지 칸이 없으므로 이 호출까지 잇기의 재분류를 넓히지 않는다. 경계 시험 `continues the first message attempt when the worktree is busy`가 운영 진입 함수를 부른다.
+
+중앙 줄 조회 실패도 M에 없는 걸음이다. 모형 대조 세계의 걸음과 수는 유지하고, 경계 시험 `retries after a central read failure, then settles the readable row`에서 조회 오류 뒤 재시도와 읽힌 줄에 따른 종료·완료 통지를 확인한다. 끊김 중단의 근거는 M:239-240, :357-365, :415-417, :310-313이다.
+
+세계의 요청 처분은 요청 종류별 목록으로 확인하고, 목록에 없는 값은 던진다. U5b의 `already_converged`(주인 없음/멈춤), `start_on_retained_runner`(코덱스 보유/재개)도 표 전수 시험에서 읽는다. 세계가 실행하는 J01 지시는 `deliver_or_queue`, `queue_and_restart`, `hold_until_started`를 명시적으로 가른다. M에는 주인 없는 멈춤과 보유 러너의 재개 걸음이 없어 두 처분을 실행하는 걸음은 더하지 않았다.
 
 ## 알려진 한계: 약속 15
 

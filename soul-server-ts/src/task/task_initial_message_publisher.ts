@@ -82,7 +82,9 @@ export class TaskInitialMessagePublisher {
         const verdict = judgeNodeResponse(
           nodeResponseFactsFromApplication(context, application),
         );
-        // 다시 될 수 있는 거절(사유 없음, 옛 서버)은 옛 동작대로 이 시도를 잇는다.
+        // 다시 될 수 있는 거절(사유 없음, 옛 서버, 첫 메시지의 점유 거절)은 옛 동작대로 이 시도를 잇는다.
+        // orch event_session_gate.ts:149-156, session_decision_guards.ts:76은 비-adopt도 점유로 거절한다.
+        // 합의 모형 M에 첫 메시지 칸이 없어 이 호출의 기존 동작을 지킨다.
         // 다시 될 까닭 없는 거절과 영구 거절은 이 시도를 그만둔다.
         if (verdict.decision.cell !== "retryable") {
           throw new NodeResponseRejectedError(

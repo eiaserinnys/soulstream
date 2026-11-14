@@ -162,7 +162,7 @@ export function generateNodeStateDocument() {
     "",
     "서버 응답이 노드에 닿는 길은 다섯이고 호출은 일곱이다. 적용 응답(applied=true)은 이 칸을 거치지 않는다. 입력은 호출 종류, 응답 길, 와이어 사유, 거절된 등록이 지금 등록과 같은가, 정본 투영의 termination_event_id와 우리 종료의 관계, 중앙 세션 유무, 정상 보유 여부다. 출력은 적용됨이나 칸 넷 가운데 하나와 그 칸이 할 정리의 의도 목록이다.",
     "",
-    `입력 조합 ${NODE_RESPONSE_COMBINATIONS}가지 모두에 칸이 있으며 빈 칸은 없다. 사유 분류는 \`task/state/node_adopt_rejection.ts\`가 정본이고 ${TERMINAL_ADOPT_REJECTION_REASONS.join(", ")}가 다시 될 까닭 없는 사유다. 워크트리 점유로 거절된 잇기는 러너를 거두고, 중앙 세션 줄에 끝남이 기록되지 않았으면(끊김 중단) 오류 종료도 올린다. 잇기 호출의 정본 종료 사건 칸은 그 중앙 줄의 끝남 기록이다(카드 #1266 U5c).`,
+    `입력 조합 ${NODE_RESPONSE_COMBINATIONS}가지 모두에 칸이 있으며 빈 칸은 없다. 사유 분류는 \`task/state/node_adopt_rejection.ts\`가 정본이고 ${TERMINAL_ADOPT_REJECTION_REASONS.join(", ")}가 다시 될 까닭 없는 사유다. 워크트리 점유로 거절된 잇기는 중앙 줄을 읽을 때까지 다시 시도하고, 읽히면 러너를 거둔다. 끝남이 기록되지 않았으면(끊김 중단) 오류 종료도 올린다. 첫 메시지의 점유 거절은 기존처럼 시도를 이어 간다. 잇기 호출의 정본 종료 사건 칸은 그 중앙 줄의 끝남 기록이다(카드 #1266 U5c).`,
     "",
     "### 칸 결정표",
     "",

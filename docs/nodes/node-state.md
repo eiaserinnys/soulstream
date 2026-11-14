@@ -26,7 +26,7 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 
 서버 응답이 노드에 닿는 길은 다섯이고 호출은 일곱이다. 적용 응답(applied=true)은 이 칸을 거치지 않는다. 입력은 호출 종류, 응답 길, 와이어 사유, 거절된 등록이 지금 등록과 같은가, 정본 투영의 termination_event_id와 우리 종료의 관계, 중앙 세션 유무, 정상 보유 여부다. 출력은 적용됨이나 칸 넷 가운데 하나와 그 칸이 할 정리의 의도 목록이다.
 
-입력 조합 7560가지 모두에 칸이 있으며 빈 칸은 없다. 사유 분류는 `task/state/node_adopt_rejection.ts`가 정본이고 already_terminal, session_missing, owner_node_changed, worktree_busy가 다시 될 까닭 없는 사유다. 워크트리 점유로 거절된 잇기는 러너를 거두고, 중앙 세션 줄에 끝남이 기록되지 않았으면(끊김 중단) 오류 종료도 올린다. 잇기 호출의 정본 종료 사건 칸은 그 중앙 줄의 끝남 기록이다(카드 #1266 U5c).
+입력 조합 7560가지 모두에 칸이 있으며 빈 칸은 없다. 사유 분류는 `task/state/node_adopt_rejection.ts`가 정본이고 already_terminal, session_missing, owner_node_changed, worktree_busy가 다시 될 까닭 없는 사유다. 워크트리 점유로 거절된 잇기는 중앙 줄을 읽을 때까지 다시 시도하고, 읽히면 러너를 거둔다. 끝남이 기록되지 않았으면(끊김 중단) 오류 종료도 올린다. 첫 메시지의 점유 거절은 기존처럼 시도를 이어 간다. 잇기 호출의 정본 종료 사건 칸은 그 중앙 줄의 끝남 기록이다(카드 #1266 U5c).
 
 ### 칸 결정표
 
@@ -50,7 +50,24 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | owner_node_changed | 해당 없음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_busy | 다른 종료 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_busy | 없음 | 다시 될 까닭이 없는 거절 |
-| applied=false와 거절 사유 | 종료 밖의 여섯 호출 | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 실행 등록 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 실행 등록 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 실행 등록 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 시동 복구 잇기 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 시동 복구 잇기 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 시동 복구 잇기 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
+| applied=false와 거절 사유 | 붙은 러너 잇기 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 붙은 러너 잇기 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 붙은 러너 잇기 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
+| applied=false와 거절 사유 | 재개 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 재개 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 재개 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 재개 보정 종료 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 재개 보정 종료 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 재개 보정 종료 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 까닭이 없는 거절 |
+| applied=false와 거절 사유 | 첫 메시지 (중앙 세션: present) | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
+| applied=false와 거절 사유 | 첫 메시지 (중앙 세션: absent) | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
+| applied=false와 거절 사유 | 첫 메시지 (중앙 세션: unknown) | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_not_ready | 다른 종료 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_not_ready | 없음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | worktree_not_ready | 해당 없음 | 다시 될 수 있는 거절 |
@@ -119,6 +136,8 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 | 붙은 러너 잇기가 worktree_busy로 거절됨 | 다시 될 까닭이 없는 거절 | 중앙 상태를 오류로 덮음(거절된 그 등록과 실행 명령에만), 러너 거둠 |
 | 같은 거절인데 중앙 세션에 끝남이 기록됨 | 다시 될 까닭이 없는 거절 | 러너 거둠 |
 | 붙은 러너 잇기가 사유 없이 거절됨(옛 서버) | 다시 될 수 있는 거절 | 나중에 다시 시도 |
+| 점유로 거절된 잇기의 중앙 세션 줄을 읽지 못함 | 다시 될 수 있는 거절 | 나중에 다시 시도 |
+| 첫 메시지가 worktree_busy로 거절됨(기존처럼 시도를 이음) | 다시 될 수 있는 거절 | 나중에 다시 시도 |
 | 첫 메시지가 격리됨 | 격리 | 이 시도를 그만둠, 중앙 상태를 오류로 덮음(거절된 그 등록과 실행 명령에만) |
 | 종료 거절 뒤 중앙 세션 없음이 확인됨 | 다시 될 까닭이 없는 거절 | 완료 정산 미결 닫기, 거절된 그 러너 등록 은퇴, 로컬 소유 정리 |
 | 종료가 응답 없이 끝났는데 중앙 세션 없음이 확인됨 | 다시 될 수 있는 거절 | 완료 정산 미결 닫기, 로컬 소유 정리 |
@@ -325,13 +344,14 @@ state "서버 응답을 받은 칸 하나로 가른다" as nodeResponse {
     nodeResponse_decide --> nodeResponse_quarantine: 전송 거절이 영구라 아웃박스 맨 앞 줄을 격리했다
     nodeResponse_decide --> nodeResponse_permanent: 응답 안에 dead letter가 실렸다
     nodeResponse_decide --> nodeResponse_retryable: 전송 거절이 다시 될 수 있거나 응답이 없다
+    nodeResponse_decide --> nodeResponse_retryable: 점유 거절의 첫 메시지는 이어 가고, 중앙 줄을 못 읽은 잇기는 다음 주기에 다시 판정한다
     nodeResponse_decide --> nodeResponse_no_retry: 사유가 다시 될 까닭 없는 것이다
     nodeResponse_decide --> nodeResponse_no_retry: 종료 거절에 사유가 없고 다른 종료가 이미 있다
     nodeResponse_decide --> nodeResponse_retryable: 사유가 없거나 다시 될 수 있는 사유다(옛 서버 호환)
 }
 ```
 
-응답 길과 사유와 정본 투영으로 위에서부터 처음 맞는 칸으로 간다. 전이 화살표 7개.
+응답 길과 사유와 정본 투영으로 위에서부터 처음 맞는 칸으로 간다. 전이 화살표 8개.
 
 ### 장벽 직렬화
 

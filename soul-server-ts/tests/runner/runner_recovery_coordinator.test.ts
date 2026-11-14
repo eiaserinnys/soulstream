@@ -3224,7 +3224,7 @@ describe("RunnerRecoveryCoordinator central check", () => {
     // 목 등록부는 은퇴한 등록을 지우지 않아 같은 훑기의 시동 복구가 다시 붙인다. 거둠 자체만 본다.
     expect(adopt).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(target);
     expect(subject.logger.info).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "session-a" }),
       "runner reaped because the central session no longer carries this execution",

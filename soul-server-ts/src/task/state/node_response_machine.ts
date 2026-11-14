@@ -96,6 +96,12 @@ export const nodeResponseMachine = setup({
       event.route === "transport_retryable" || event.route === "no_response",
     terminationAlreadyRecorded: ({ event }) =>
       event.call === "termination" && event.termination === "same",
+    busyNeedsRetry: ({ event }) =>
+      event.route === "applied_false"
+      && event.reason === "worktree_busy"
+      && (event.call === "first_message"
+        || ((event.call === "startup_recovery_adopt" || event.call === "attached_runner_adopt")
+          && event.centralSession === "unknown")),
     terminalReason: ({ event }) =>
       event.route === "applied_false"
       && classifyRunnerAdoptRejection(wireReason(event.reason)) === "terminal_rejection",
@@ -134,6 +140,11 @@ export const nodeResponseMachine = setup({
             guard: "notRejected",
             target: "retryable",
             description: "전송 거절이 다시 될 수 있거나 응답이 없다",
+          },
+          {
+            guard: "busyNeedsRetry",
+            target: "retryable",
+            description: "점유 거절의 첫 메시지는 이어 가고, 중앙 줄을 못 읽은 잇기는 다음 주기에 다시 판정한다",
           },
           {
             guard: "terminalReason",
