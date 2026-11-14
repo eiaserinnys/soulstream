@@ -286,7 +286,10 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(false);
     await holdExecutionSlot.call(
-      Object.create(TaskExecutor.prototype),
+      Object.assign(Object.create(TaskExecutor.prototype), {
+        lateFatalEngineErrors: new WeakMap(),
+        fatalReadEnded: new WeakMap(),
+      }),
       task,
       finalizer.finalize(task, consumeSuccessfulDeliveries),
     );

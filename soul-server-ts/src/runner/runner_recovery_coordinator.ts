@@ -80,6 +80,11 @@ interface CentralCheckRetry {
   response: RunnerAdoptResponse;
   attempt: number;
   nextAttemptAtMs: number;
+  /**
+   * 그 거절이 조건이 풀릴 수 있는 것이다. 어느 거절이 풀릴 수 있는지는 node_adopt_rejection.ts의
+   * 분류를 따른다. 낡은 등록의 거절처럼 같은 러너로는 풀릴 수 없는 거절은 false라 간격마다 다시 잇지 않는다.
+   */
+  conditionMayClear: boolean;
 }
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
@@ -629,7 +634,10 @@ export class RunnerRecoveryCoordinator {
       }
     }
     await this.registrationControl.retireTerminal(registration);
-    task.rejectedTerminationRegistrationId = undefined;
+    // 은퇴하는 등록의 표시만 지운다. 그 사이 다른 등록의 거절이 남긴 표시는 그 등록의 은퇴를 위해 둔다.
+    if (task.rejectedTerminationRegistrationId === registration.registrationId) {
+      task.rejectedTerminationRegistrationId = undefined;
+    }
     this.forgetIfOrphaned(task);
     this.options.logger.info(
       {
@@ -672,8 +680,8 @@ export class RunnerRecoveryCoordinator {
 
   /**
    * 은퇴가 앞서 실패해 로컬 소유 정리가 task를 붙들어 둔 채 남겼다면, 표시가 지워진 지금 그
-   * task를 잊는다. 활성인데 러너도 등록도 실행도 시동 장벽도 없는 task는 아무도 움직이지 않는
-   * 유령이다. 시동 장벽(executionActivation)이 서 있으면 재개나 새 실행이 러너 없이 시작하는
+   * task를 잊는다. 활성인데 러너도 등록도 실행도 시동 장벽도 거절 표시도 없는 task는 아무도
+   * 움직이지 않는 유령이다. 시동 장벽(executionActivation)이 서 있으면 재개나 새 실행이 러너 없이 시작하는
    * 중이므로 잊지 않는다.
    */
   private forgetIfOrphaned(task: Task): void {
@@ -683,8 +691,11 @@ export class RunnerRecoveryCoordinator {
       || task.executionRegistration !== undefined
       || task.executionPromise !== undefined
       || task.executionActivation !== undefined
+      // 다른 등록의 거절 표시가 남았으면 그 등록의 은퇴가 끝나야 한다. 지금 잊으면 표시가 task와 함께
+      // 사라져 앞 종료가 한 번 더 올라갈 수 있다. 그 등록을 은퇴시키면 표시와 함께 다시 여기로 온다.
+      || task.rejectedTerminationRegistrationId !== undefined
     ) return;
-    this.options.taskManager.forgetRunnerRecoveryTask?.(task.agentSessionId);
+    this.options.taskManager.forgetRunnerRecoveryTask?.(task);
     this.options.logger.info(
       { sessionId: task.agentSessionId },
       "task forgotten: it was kept only for a rejected terminal registration that is now retired",
@@ -940,6 +951,7 @@ export class RunnerRecoveryCoordinator {
         response: "none",
         attempt: retry.attempt,
         nextAttemptAtMs: 0,
+        conditionMayClear: retry.conditionMayClear,
       });
     }
     return decideRunnerCentralCheck({
@@ -948,6 +960,12 @@ export class RunnerRecoveryCoordinator {
       registrationAppliedAndTurnRunning: registrationAppliedAndTurnRunning(
         task,
         registration,
+        // 조건이 풀릴 수 있는 거절이 남긴 기록이 있으면 그 거절 뒤의 다시 잇기다. 낡은 등록의 거절은
+        // 같은 러너로 풀리지 않으므로 이전처럼 등록 일치를 요구해 keep에 둔다.
+        {
+          afterRetryableRejection: (this.centralRetry.get(sessionId)?.attempt ?? 0) > 0
+            && this.centralRetry.get(sessionId)?.conditionMayClear === true,
+        },
       ),
       adoptResponse: this.centralRetry.get(sessionId)?.response ?? "none",
     });
@@ -971,13 +989,19 @@ export class RunnerRecoveryCoordinator {
         response,
         attempt: 0,
         nextAttemptAtMs: 0,
+        conditionMayClear: false,
       });
       return;
     }
     const attempt = (this.centralRetry.get(sessionId)?.attempt ?? 0) + 1;
     const nextAttemptAtMs = (this.options.now ?? Date.now)()
       + runnerCentralRetryDelayMs(attempt);
-    this.centralRetry.set(sessionId, { response, attempt, nextAttemptAtMs });
+    this.centralRetry.set(sessionId, {
+      response,
+      attempt,
+      nextAttemptAtMs,
+      conditionMayClear: application.staleRegistration !== true,
+    });
     this.options.logger.info(
       {
         sessionId,
@@ -1067,7 +1091,7 @@ export class RunnerRecoveryCoordinator {
       releaseTaskRunner(task, runner);
     }
     this.adoptionFailureRecovery.clear(sessionId);
-    this.options.taskManager.forgetRunnerRecoveryTask?.(sessionId);
+    this.options.taskManager.forgetRunnerRecoveryTask?.(task);
     this.options.logger.info(
       {
         sessionId,

@@ -185,7 +185,9 @@ describe("card #1266 U2b a task kept only for its rejected registration is forgo
 
     expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
     expect(task.rejectedTerminationRegistrationId).toBeUndefined();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-a" }),
+    );
   });
 
   it("does not forget a task that already ended (the retirement only clears the mark)", async () => {
@@ -254,6 +256,39 @@ describe("card #1266 U2b a task kept only for its rejected registration is forgo
     await subject.coordinator.retireRejectedTerminalRegistration(task, "registration-gone");
 
     expect(task.rejectedTerminationRegistrationId).toBeUndefined();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("sess-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-a" }),
+    );
+  });
+});
+
+describe("card #1266 U5a 자: retiring a registration clears only its own rejected-terminal mark", () => {
+  it("keeps the mark another registration left, and does not forget the task that still carries it", async () => {
+    // 디스크의 등록(registration-a)은 은퇴하지만 task의 표시는 다른 등록(registration-b)의 것이다.
+    const task = markedTask({
+      status: "running",
+      completedAt: undefined,
+      rejectedTerminationRegistrationId: "registration-b",
+    });
+    const subject = setup(task);
+
+    await subject.coordinator.retireRejectedTerminalRegistration(task, REGISTRATION_ID);
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(task.rejectedTerminationRegistrationId).toBe("registration-b");
+    // 활성이고 러너도 등록도 실행도 없지만 표시가 남아 있어 잊지 않는다.
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("clears its own mark and forgets the orphan once no other mark remains", async () => {
+    const task = markedTask({ status: "running", completedAt: undefined });
+    const subject = setup(task);
+
+    await subject.coordinator.retireRejectedTerminalRegistration(task, REGISTRATION_ID);
+
+    expect(task.rejectedTerminationRegistrationId).toBeUndefined();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-a" }),
+    );
   });
 });

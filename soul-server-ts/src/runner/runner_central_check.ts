@@ -49,15 +49,20 @@ export function terminalRetainedForRegistration(
 export function registrationAppliedAndTurnRunning(
   task: Task,
   registration: RunnerRegistration,
+  options: { afterRetryableRejection?: boolean } = {},
 ): boolean {
   const runner = task.runner;
   if (!runner) return false;
   if (runner.dispatcher.registrationId() !== registration.registrationId) return false;
   if (runner.dispatcher.isClosed?.() === true) return false;
   if (task.runnerIsOfflineReplay === true) return false;
-  if (task.executionRegistration?.registrationId !== registration.registrationId) {
-    return false;
-  }
+  // 시동 복구의 잇기가 다시 될 수 있는 거절을 받았으면 등록 적용 응답이 없고, 중앙 줄에서 되살린
+  // 실행 등록은 비어 있거나 이 러너의 것이 아닐 수 있다. 그 거절을 받은 세션의 다시 잇기는 실행
+  // 등록 일치를 요구하지 않는다. 요구하면 중앙이 활성이 아닌 채로 keep에 영영 머문다. 붙은 러너가
+  // 이 등록의 것이고 턴이 도는 중임은 위에서 이미 확인했다. 서버가 다시 거절하면 그 응답이 다시
+  // 간격을 정하거나 거둔다.
+  const applied = task.executionRegistration?.registrationId === registration.registrationId;
+  if (!applied && options.afterRetryableRejection !== true) return false;
   return runner.dispatcher.hasActiveExecution() === true;
 }
 

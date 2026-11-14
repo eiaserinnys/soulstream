@@ -204,7 +204,9 @@ describe("card #1266 U2a registration rejection", () => {
 
     // 접힌 시도가 task를 running으로 남기면 이 노드가 돌리지 않는 세션을 실행 중으로
     // 알린다. 중앙 상태는 덮지 않고 로컬 소유만 정리한다(R5).
-    expect(forgetTask).toHaveBeenCalledWith("sess-1");
+    expect(forgetTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "sess-1" }),
+    );
     expect(task.runner).toBeUndefined();
     expect(subject.double.enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
   });

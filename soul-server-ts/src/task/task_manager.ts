@@ -44,6 +44,10 @@ import {
 } from "./task_intervention_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
+import {
+  settleQueuedOfForgottenTask,
+  type ForgottenQueueLedger,
+} from "./forgotten_task_queue_settlement.js";
 import { SessionNotificationPublisher } from "./task_session_notification.js";
 import { SessionDeliveryNotificationRecovery } from "./session_delivery_notification_recovery.js";
 import { PersistentSessionControl } from "./persistent_session_control.js";
@@ -95,6 +99,8 @@ export class TaskManager {
   private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleRoute: TaskLifecycleRoute;
   private readonly deliveryLedgerGate: TaskDeliveryLedgerGate;
+  /** 배달 장부가 켜져 있을 때만 있다. 잊힌 task의 큐 정리에 쓴다. */
+  private readonly deliveryRepository: ForgottenQueueLedger | undefined;
   private readonly deliveryNotificationRecovery?: SessionDeliveryNotificationRecovery;
   private readonly sessionNotificationPublisher: SessionNotificationPublisher;
   private readonly claudeRuntimeControlRoute: TaskClaudeRuntimeControlRoute;
@@ -194,9 +200,7 @@ export class TaskManager {
       persistence,
       // 종료가 거절되면 중앙 세션 없음을 확인하고 로컬 소유를 정리한다(카드 #1266).
       readCentralSession: (sessionId) => db.getSession(sessionId),
-      forgetTask: (sessionId) => {
-        this.tasks.delete(sessionId);
-      },
+      forgetTask: (task) => this.forgetTaskObject(task),
     });
     this.lifecycleTransition = lifecycleTransition;
     this.lifecycleRoute = new TaskLifecycleRoute({
@@ -242,6 +246,7 @@ export class TaskManager {
     const deliveryRepository = deliveryRuntimeV2Enabled
       ? db.sessionDeliveries()
       : undefined;
+    this.deliveryRepository = deliveryRepository;
     this.deliveryLedgerGate = new TaskDeliveryLedgerGate(
       deliveryRuntimeV2Enabled,
       deliveryRepository,
@@ -429,8 +434,33 @@ export class TaskManager {
   }
 
   /** 거둔 러너의 메모리 task를 내린다. 다음 조회는 저장소에서 다시 읽는다. */
-  forgetRunnerRecoveryTask(sessionId: string): void {
-    this.tasks.delete(sessionId);
+  forgetRunnerRecoveryTask(task: Task): void {
+    this.forgetTaskObject(task);
+  }
+
+  /**
+   * 맵의 지금 값이 넘겨받은 그 task 객체일 때만 지운다. 낡은 task 객체로 같은 세션의 새
+   * task를 지우지 않는다. 지울 때 메모리 큐에 남은 지시는 노드 재시작을 기다리지 않고
+   * 장부에서 정리한다(설계 약속 13: 받은 지시는 적용, 반환, 모름 가운데 하나로 끝난다).
+   */
+  private forgetTaskObject(task: Task): void {
+    const current = this.tasks.get(task.agentSessionId);
+    if (current !== task) {
+      this.logger.info(
+        { sessionId: task.agentSessionId, mapHasTask: current !== undefined },
+        "task forget skipped: the memory map no longer holds this task object",
+      );
+      return;
+    }
+    this.tasks.delete(task.agentSessionId);
+    const queued = task.interventionQueue.splice(0);
+    if (queued.length === 0 || !this.deliveryRepository) return;
+    void settleQueuedOfForgottenTask(this.deliveryRepository, queued).catch((error: unknown) => {
+      this.logger.warn(
+        { err: error, sessionId: task.agentSessionId, queued: queued.length },
+        "queued instructions of a forgotten task could not be settled in the ledger; node-start recovery still owns them",
+      );
+    });
   }
 
   async markRunnerFailure(

@@ -2,6 +2,11 @@
 export interface RunnerAdoptionApplication {
   applied: boolean;
   rejectionReason?: string;
+  /**
+   * 거절된 것이 이 러너가 아닌 다른(낡은) 등록의 전이였다. 같은 러너로 다시 잇는다고 풀리지 않는
+   * 거절이라, 러너 복구는 이 거절 뒤 간격마다 잇기를 되풀이하지 않는다.
+   */
+  staleRegistration?: boolean;
 }
 
 /**

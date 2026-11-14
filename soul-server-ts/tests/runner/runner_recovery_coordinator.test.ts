@@ -2791,7 +2791,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
       "registration-a",
     );
     expect(detachHost).toHaveBeenCalledOnce();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-a" }),
+    );
     expect(target.runner).toBeUndefined();
     // Clearing the recipient suppresses the completion delivery a late
     // execution end would otherwise register.
@@ -2827,7 +2829,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
 
     expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
     expect(target.runner).toBeUndefined();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-a" }),
+    );
   });
 
   it("changes nothing when the central lookup fails", async () => {
@@ -2991,6 +2995,140 @@ describe("RunnerRecoveryCoordinator central check", () => {
     expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
   });
 
+  // 카드 #1266 U5a 마: 시동 복구의 잇기가 다시 될 수 있는 거절을 받으면 실행 등록이 비어 있거나
+  // 이 러너의 것이 아닐 수 있다. 그래도 세션은 다음 주기에 다시 판정되어 다시 잇기로 간다.
+  // 조건이 풀릴 수 있다고 분류된 거절(준비 안 됨, 사유 없는 옛 서버 거절)만 다시 잇는다. 어떤 사유가
+  // 다시 될 수 있는지는 node_adopt_rejection의 분류가 정하고 여기서는 사유 이름을 따로 다루지 않는다.
+  it.each([
+    ["has no execution registration at all", undefined, "worktree_not_ready"],
+    ["carries another registration's execution", {
+      registrationId: "registration-other",
+      executionCommandId: "execute-other",
+    }, undefined],
+  ] as const)(
+    "re-adopts after the interval when startup adoption was rejected (%s -> reason %s)",
+    async (_name, executionRegistration, reason) => {
+      const target = task("session-a");
+      if (executionRegistration) target.executionRegistration = { ...executionRegistration };
+      const runner = finishedRunner("registration-a", "execute-a").runner;
+      let nowMs = RECOVERY_NOW_MS;
+      const adopt = vi.fn(async () => ({ applied: false, rejectionReason: reason }));
+      const recoverRegisteredRunner = vi.fn(async (
+        owned: Task,
+        _registration: RunnerRegistration,
+        _commandId: string | undefined,
+        _mode: "adopt" | "replay" | "offline",
+        onAttemptCreated?: (attempt: NonNullable<Task["runner"]>) => (() => void) | undefined,
+        _phaseObservation?: unknown,
+        onAdoptionApplication?: (application: {
+          applied: boolean;
+          rejectionReason?: string;
+        }) => void,
+      ) => {
+        owned.runner = runner;
+        onAttemptCreated?.(runner)?.();
+        onAdoptionApplication?.({ applied: false, ...(reason === undefined ? {} : { rejectionReason: reason }) });
+        throw new RunnerAdoptionRejectedError("session-a", reason);
+      });
+      const subject = makeCentralSubject({
+        tasks: [target],
+        hydrateRunnerRecoveryTask: async () => target,
+        now: () => nowMs,
+        readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+        adopt,
+        recoverRegisteredRunner,
+      });
+
+      await settle(subject);
+      expect(adopt).not.toHaveBeenCalled();
+
+      // 다음 주기(첫 간격 15초) 안에 다시 잇기를 보낸다. keep에 머물지 않는다.
+      nowMs += 15_000;
+      await settle(subject);
+      expect(adopt).toHaveBeenCalledOnce();
+
+      // 그 거절도 다시 될 수 있으면 간격이 늘어난 다음 주기에 또 다시 잇는다.
+      nowMs += 29_999;
+      await settle(subject);
+      expect(adopt).toHaveBeenCalledOnce();
+      nowMs += 1;
+      await settle(subject);
+      expect(adopt).toHaveBeenCalledTimes(2);
+      expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    },
+  );
+
+  // 낡은 등록의 거절은 같은 러너로 다시 잇는다고 풀리지 않는다. 간격이 몇 번 지나도 잇기를 되풀이하지 않는다.
+  it("does not keep re-adopting after a rejection of another registration's transition", async () => {
+    const target = task("session-a");
+    target.executionRegistration = {
+      registrationId: "registration-other",
+      executionCommandId: "execute-other",
+    };
+    const runner = finishedRunner("registration-a", "execute-a").runner;
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({ applied: false, rejectionReason: "already_terminal" }));
+    const recoverRegisteredRunner = vi.fn(async (
+      owned: Task,
+      _registration: RunnerRegistration,
+      _commandId: string | undefined,
+      _mode: "adopt" | "replay" | "offline",
+      onAttemptCreated?: (attempt: NonNullable<Task["runner"]>) => (() => void) | undefined,
+      _phaseObservation?: unknown,
+      onAdoptionApplication?: (application: {
+        applied: boolean;
+        rejectionReason?: string;
+        staleRegistration?: boolean;
+      }) => void,
+    ) => {
+      owned.runner = runner;
+      onAttemptCreated?.(runner)?.();
+      // 낡은 등록의 거절은 사유가 종료 거절이어도 거둘 수 없어 다시 될 수 있음으로 분류되어 오고, 낡은
+      // 등록의 것이라는 표시를 싣는다.
+      onAdoptionApplication?.({
+        applied: false,
+        rejectionReason: "already_terminal",
+        staleRegistration: true,
+        response: "retryable_rejection",
+      } as never);
+      throw new RunnerAdoptionRejectedError("session-a", "already_terminal");
+    });
+    const subject = makeCentralSubject({
+      tasks: [target],
+      hydrateRunnerRecoveryTask: async () => target,
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+      recoverRegisteredRunner,
+    });
+
+    await settle(subject);
+    for (const step of [15_000, 30_000, 60_000, 300_000, 300_000]) {
+      nowMs += step;
+      await settle(subject);
+    }
+
+    expect(adopt).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(target.runner).toBeDefined();
+  });
+
+  it("does not send adoption for a runner without a rejection record when its registration was never applied", async () => {
+    const target = task("session-a");
+    target.runner = finishedRunner("registration-a", "execute-a").runner;
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    await settle(subject);
+
+    expect(adopt).not.toHaveBeenCalled();
+  });
+
   it("does not block the scan or another session while an adoption response is pending", async () => {
     const first = runningTask("session-a");
     const second = task("session-b");
@@ -3077,7 +3215,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
       "registration-a",
     );
     expect(attached.detachHost).toHaveBeenCalledOnce();
-    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "session-a" }),
+    );
     expect(target.runner).toBeUndefined();
     expect(target.callerSessionId).toBeUndefined();
     expect(subject.markReaped).not.toHaveBeenCalled();

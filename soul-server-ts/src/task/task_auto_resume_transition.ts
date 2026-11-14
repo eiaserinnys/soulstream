@@ -16,6 +16,12 @@ import {
   type TerminationReason,
 } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
+import {
+  captureTerminalResumeSnapshot,
+  findLastCallerInfoMetadataEntry,
+  stableSerialize,
+  type TerminalResumeSnapshot,
+} from "./task_auto_resume_snapshot.js";
 import { annotateTerminalSystemAbort } from "./system_abort_notice.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
@@ -56,18 +62,6 @@ export interface AutoResumeTransitionDeps {
    * 없으면 정리 없이 판정만 담아 던진다.
    */
   settleRejection?: (task: Task, verdict: NodeResponseVerdict) => Promise<NodeResponseVerdict>;
-}
-
-interface TerminalResumeSnapshot {
-  status: Extract<TaskStatus, "completed" | "error" | "interrupted">;
-  terminationReason: TerminationReason;
-  terminationDetail: string | null;
-  reviewState: NonNullable<Task["reviewState"]>;
-  lastAssistantText: string | null;
-  result: string | undefined;
-  error: string | undefined;
-  pendingTerminationHint: Task["pendingTerminationHint"];
-  pendingTerminationDetail: Task["pendingTerminationDetail"];
 }
 
 /**
@@ -113,6 +107,11 @@ export class AutoResumeTransition {
   ): Promise<{ autoResumed: true }> {
     const releaseClaim = task.runnerReleaseClaim;
     if (releaseClaim) await this.awaitRunnerReleaseClaim(task, releaseClaim);
+    // 거절 응답의 등록 비교가 쓰는 번호다. 재개가 시작될 때의 등록이며, 낡은 등록의 거절이
+    // 새 실행의 중앙 상태를 오류로 덮지 않게 한다(R5, 대조 task_lifecycle_transition).
+    const registrationId = task.executionRegistration?.registrationId
+      ?? task.runner?.dispatcher.registrationId?.()
+      ?? null;
     const originalStatus = task.status;
     if (originalStatus === "running" && hasLiveExecutionEvidence(task)) {
       throw new Error(
@@ -171,7 +170,7 @@ export class AutoResumeTransition {
       if (!this.deps.persistence) {
         throw new Error("running transition durable event persistence is required");
       }
-      const resumeContext = { call: "resume" } as const;
+      const resumeContext = { call: "resume", registrationId } as const;
       let application: Awaited<ReturnType<
         NonNullable<typeof this.deps.persistence>["enqueueRunningTransitionAndWaitForApplication"]
       >>;
@@ -215,6 +214,7 @@ export class AutoResumeTransition {
             task,
             terminalSnapshot,
             transitionRevision,
+            registrationId,
           );
         });
       }
@@ -357,6 +357,7 @@ export class AutoResumeTransition {
     task: Task,
     snapshot: TerminalResumeSnapshot,
     transitionRevision: number,
+    registrationId: string | null,
   ): Promise<void> {
     const persistence = this.deps.persistence;
     if (!persistence) {
@@ -372,7 +373,10 @@ export class AutoResumeTransition {
       _dedupe_key:
         `resume_compensation:${task.agentSessionId}:${transitionRevision}`,
     };
-    const compensationContext = { call: "resume_compensation_terminal" } as const;
+    const compensationContext = {
+      call: "resume_compensation_terminal",
+      registrationId,
+    } as const;
     let application: Awaited<ReturnType<
       typeof persistence.enqueueTerminalTransitionAndWaitForApplication
     >>;
@@ -419,52 +423,6 @@ export class AutoResumeTransition {
     if (task.executionActivation) task.executionActivation = undefined;
   }
 
-}
-
-function captureTerminalResumeSnapshot(
-  task: Task,
-  status: TerminalResumeSnapshot["status"],
-): TerminalResumeSnapshot {
-  return {
-    status,
-    terminationReason: task.terminationReason
-      ?? (status === "completed" ? "completed_ok" : "unknown"),
-    terminationDetail: task.terminationDetail ?? null,
-    reviewState: task.reviewState ?? "not_required",
-    lastAssistantText: task.lastAssistantText ?? null,
-    result: task.result,
-    error: task.error,
-    pendingTerminationHint: task.pendingTerminationHint,
-    pendingTerminationDetail: task.pendingTerminationDetail,
-  };
-}
-
-function findLastCallerInfoMetadataEntry(
-  metadata: readonly Record<string, unknown>[],
-): Record<string, unknown> | undefined {
-  for (let index = metadata.length - 1; index >= 0; index -= 1) {
-    const entry = metadata[index];
-    if (entry?.type === "caller_info") return entry;
-  }
-  return undefined;
-}
-
-function stableSerialize(value: unknown): string {
-  const serialized = JSON.stringify(sortJsonKeys(value));
-  if (serialized === undefined) {
-    throw new Error("caller_info metadata entry is not JSON serializable");
-  }
-  return serialized;
-}
-
-function sortJsonKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJsonKeys);
-  if (value === null || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-      .map(([key, entry]) => [key, sortJsonKeys(entry)]),
-  );
 }
 
 export function prepareTaskForAutoResume(

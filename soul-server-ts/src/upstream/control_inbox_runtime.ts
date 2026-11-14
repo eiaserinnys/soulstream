@@ -5,6 +5,8 @@ import {
   controlCommandPolicy,
   type ControlCommandFamily,
 } from "./control_command_inventory.js";
+import { type AckSample, recordAckSample } from "./control_ack_metrics.js";
+import { completeDurableWork, UncommittedWorkRedispatch } from "./control_inbox_complete.js";
 import type {
   ControlInboxAdmission,
   ControlInboxResult,
@@ -15,9 +17,6 @@ import type {
 const DEFAULT_LEASE_MS = 30_000;
 // Leave scheduler/send headroom beneath the externally observed one-second max.
 const DEFAULT_BOUNDED_RESULT_TIMEOUT_MS = 900;
-const ACK_WINDOW_MS = 5 * 60_000;
-const ACK_P99_GATE_MS = 250;
-const ACK_MAX_GATE_MS = 1_000;
 const HEALTHY_HEARTBEAT_AGE_MS = 250;
 const AVAILABLE_HEARTBEAT_AGE_MS = 1_000;
 
@@ -33,6 +32,8 @@ export interface ControlInboxStorage {
     command: Record<string, unknown>,
   ): ControlInboxAdmission;
   claimPending(options: { leaseMs: number; limit: number }): ControlInboxWork[];
+  /** lease가 끝난 claimed 작업을 pending으로 되돌린다. 되돌린 수를 준다. */
+  reclaimExpired(): number;
   complete(
     work: ControlInboxWork,
     response: Record<string, unknown>,
@@ -74,8 +75,6 @@ type RuntimeWork = {
   timeoutHandle?: unknown;
 };
 
-type AckSample = { observedAtMs: number; durationMs: number };
-
 export class ControlInboxRuntime {
   private readonly store: ControlInboxStorage;
   private readonly nowEpochMs: () => number;
@@ -86,6 +85,7 @@ export class ControlInboxRuntime {
   private readonly ackSamples = new Map<ControlCommandFamily, AckSample[]>();
   private sendFrame: ((frame: Record<string, unknown>) => Promise<void>) | undefined;
   private workSequence = 0;
+  private readonly uncommitted: UncommittedWorkRedispatch;
 
   constructor(private readonly options: ControlInboxRuntimeOptions) {
     this.store = options.store;
@@ -93,6 +93,10 @@ export class ControlInboxRuntime {
     this.nowMonoMs = options.nowMonoMs ?? performance.now.bind(performance);
     this.schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     this.clearScheduled = options.clearScheduled ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
+    this.uncommitted = new UncommittedWorkRedispatch({
+      schedule: this.schedule, clearScheduled: this.clearScheduled, nowEpochMs: this.nowEpochMs,
+      isConnected: () => this.sendFrame !== undefined, redispatch: () => this.dispatchPending(), log: options.log,
+    });
   }
 
   initialize(): ReturnType<ControlInboxStorage["initialize"]> {
@@ -105,6 +109,7 @@ export class ControlInboxRuntime {
     this.sendFrame = sendFrame;
     await this.replayResults();
     this.dispatchPending();
+    this.uncommitted.reschedule();
   }
 
   disconnect(): void {
@@ -275,7 +280,18 @@ export class ControlInboxRuntime {
     if (!runtimeWork) return false;
     this.clearWork(runtimeWork);
     if (runtimeWork.durableWork) {
-      const result = this.store.complete(runtimeWork.durableWork, response);
+      // 완료를 못 적으면 작업을 열어 두고 오류를 올린다. 다시 온 결과는 여기서 다시 완료되고 도메인
+      // 효과는 되풀이되지 않는다(control_channel_service의 활성 작업 중복 막기).
+      const { store, schedule } = this;
+      const work = runtimeWork.durableWork;
+      const result = await completeDurableWork({
+        store, schedule, response, work, log: this.options.log,
+      }).catch((error: unknown) => {
+        this.activeWork.set(workId, runtimeWork);
+        this.uncommitted.markFailed(workId, work.leaseExpiresAt);
+        throw error;
+      });
+      this.uncommitted.committed(workId);
       this.options.onDurableCommit?.(workId);
       try {
         await this.sendResult(result);
@@ -313,6 +329,7 @@ export class ControlInboxRuntime {
   }
 
   close(): void {
+    this.uncommitted.cancel();
     for (const work of this.activeWork.values()) this.clearWork(work);
     this.activeWork.clear();
     this.store.close();
@@ -320,6 +337,8 @@ export class ControlInboxRuntime {
   }
 
   private dispatchPending(): void {
+    // lease가 끝난 채 남은 claimed(완료 기록 실패 등)를 다시 집을 수 있게 되돌린다.
+    this.store.reclaimExpired();
     while (true) {
       const claimed = this.store.claimPending({
         leaseMs: this.options.leaseMs ?? DEFAULT_LEASE_MS,
@@ -339,6 +358,7 @@ export class ControlInboxRuntime {
           durableWork,
         };
         this.activeWork.set(workId, runtimeWork);
+        this.uncommitted.refreshLease(workId, durableWork.leaseExpiresAt);
         try {
           this.options.postWork(runtimeWork.dispatch);
         } catch (error) {
@@ -437,26 +457,9 @@ export class ControlInboxRuntime {
     family: ControlCommandFamily,
     durationMs: number,
   ): Record<string, unknown> {
-    const now = this.nowEpochMs();
     const samples = this.ackSamples.get(family) ?? [];
-    samples.push({ observedAtMs: now, durationMs });
-    while (samples[0] && now - samples[0].observedAtMs > ACK_WINDOW_MS) samples.shift();
     this.ackSamples.set(family, samples);
-    const durations = samples.map((sample) => sample.durationMs).sort((a, b) => a - b);
-    const maxMs = durations.at(-1) ?? 0;
-    const p99Ms = durations.length < 20
-      ? null
-      : durations[Math.max(0, Math.ceil(durations.length * 0.99) - 1)]!;
-    return {
-      windowMs: ACK_WINDOW_MS,
-      sampleCount: durations.length,
-      p99Ms,
-      maxMs,
-      p99GateMs: ACK_P99_GATE_MS,
-      maxGateMs: ACK_MAX_GATE_MS,
-      withinGate: maxMs <= ACK_MAX_GATE_MS
-        && (p99Ms === null || p99Ms <= ACK_P99_GATE_MS),
-    };
+    return recordAckSample(samples, this.nowEpochMs(), durationMs);
   }
 
   private clearWork(work: RuntimeWork): void {

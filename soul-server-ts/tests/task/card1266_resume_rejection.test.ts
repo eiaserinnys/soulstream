@@ -89,7 +89,9 @@ describe("card #1266 U2a resume rejection", () => {
     // 중앙 상태를 오류로 덮지 않는다: 이 호출은 종료 사건을 올리지 않는다.
     expect(subject.persistence.enqueueTerminalTransitionAndWaitForApplication)
       .not.toHaveBeenCalled();
-    expect(subject.forgetTask).toHaveBeenCalledWith("s1");
+    expect(subject.forgetTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "s1" }),
+    );
   });
 
   it("confirms the central session before releasing when the rejection carries no reason", async () => {
@@ -106,7 +108,9 @@ describe("card #1266 U2a resume rejection", () => {
       vi.fn(),
     )).rejects.toBeInstanceOf(NodeResponseRejectedError);
 
-    expect(subject.forgetTask).toHaveBeenCalledWith("s1");
+    expect(subject.forgetTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "s1" }),
+    );
   });
 
   it("keeps local ownership when the central session is present", async () => {
@@ -145,7 +149,9 @@ describe("card #1266 U2a resume rejection", () => {
     );
     await activation.promise.catch(() => undefined);
 
-    await vi.waitFor(() => expect(subject.forgetTask).toHaveBeenCalledWith("s1"));
+    await vi.waitFor(() => expect(subject.forgetTask).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: "s1" }),
+    ));
     expect(subject.settle).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
