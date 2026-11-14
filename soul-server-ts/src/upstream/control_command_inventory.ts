@@ -98,6 +98,8 @@ export function controlCommandPolicy(commandType: string): ControlCommandInvento
   return inventory;
 }
 
+export const LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS = 85_000;
+
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
   switch (commandType) {
     case "prepare_card_orchestration_decision":
@@ -111,7 +113,13 @@ export function boundedResultTimeoutMs(commandType: string, fallbackMs: number):
       // The first inventory after a soul-server restart waits for the runner
       // start scan and the live inventory before it can answer. The 900ms
       // control default rejected every retry (card #1273).
-      return 14_500;
+      // Orch gives this command 90s (orch-server-ts RUNNER_INVENTORY_COMMAND_TIMEOUT_MS)
+      // and sends it over control whenever control is attached. The node must
+      // answer inside that window, or its timeout error frame never reaches orch
+      // in time: 5s under orch's limit leaves room for the frame to arrive. The
+      // earlier 14.5s was the usage commands' "below orch's 15s" value, which
+      // made every control retry fail once a scan ran past 14.5s (card #1266).
+      return LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS;
     default:
       return fallbackMs;
   }

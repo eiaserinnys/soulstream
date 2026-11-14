@@ -1361,6 +1361,17 @@ export class RunnerRecoveryCoordinator {
     if (runner.dispatcher.hasActiveExecution() === true && !terminalOwnsAdmission) {
       return false;
     }
+    // 붙은 명령이 없는데 실행 슬롯만 잡혀 있으면 그 실행이 누구 것인지 먼저 가른다. 종료 명령 자신의
+    // 걸린 실행이면 아래에서 끝나기를 기다려 정리한다. 뒤이은 턴이거나 가를 수 없으면 기다리지 않고
+    // 미룬다(카드 #1266 U6): 기다리면 스캔과 등록, 러너 목록 응답이 그 턴이 끝날 때까지 묶이고,
+    // 은퇴시키면 그 턴이 쓰는 러너가 죽는다. 옛 등록은 그 턴이 끝난 뒤의 스캔이 정리한다.
+    if (
+      attachedExecutionCommandId === undefined
+      && task.executionPromise !== undefined
+      && !executionBelongsToTerminalCommand(task, terminalExecutionCommandId)
+    ) {
+      return false;
+    }
     const retire = runner.dispatcher.retireTerminalRegistration;
     if (!retire) {
       throw new Error(
@@ -1448,6 +1459,21 @@ function hasRecordedTerminal(task: Task): boolean {
     && typeof task.terminalEventId === "number"
     && Number.isSafeInteger(task.terminalEventId)
     && task.terminalEventId > 0;
+}
+
+/**
+ * task의 실행 슬롯이 종료가 기록된 그 명령 자신의 실행인지 가른다. 뒤이은 턴은 시작할 때
+ * 실행 등록을 비우고(startRecordedExecution) 중앙이 새 등록을 받을 때까지 실행 승인(activation)을
+ * 쥐며, 받은 뒤에는 다른 명령 번호를 단다. 종료 명령 자신의 실행만 같은 번호의 등록을 쥔다.
+ * 이 증거가 없으면 자기 것으로 보지 않는다.
+ */
+function executionBelongsToTerminalCommand(
+  task: Task,
+  terminalExecutionCommandId: string | undefined,
+): boolean {
+  return task.executionActivation === undefined
+    && terminalExecutionCommandId !== undefined
+    && task.executionRegistration?.executionCommandId === terminalExecutionCommandId;
 }
 
 function registrationOwnsAttachedRunner(

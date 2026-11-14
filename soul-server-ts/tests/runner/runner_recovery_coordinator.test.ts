@@ -517,6 +517,12 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
     strandedTask.runner = runner;
     strandedTask.executionPromise = originalExecution;
+    // 종료 명령 자신의 걸린 실행이다: 실행 등록의 명령 번호가 종료가 기록된 명령(execute-a)과 같다.
+    // 카드 #1266 U6부터 이 증거가 있어야 스캔이 그 실행의 정리를 기다린다.
+    strandedTask.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
     const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
