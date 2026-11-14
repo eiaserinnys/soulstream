@@ -37,6 +37,10 @@ const WORKTREE_MIGRATION_PATH = join(
   REPOSITORY_ROOT,
   "packages/db-schema/sql/migrations/093_worktrees.sql",
 );
+const LOCK_LEVEL_MIGRATION_PATH = join(
+  REPOSITORY_ROOT,
+  "packages/db-schema/sql/migrations/160_event_search_deferred_stats_and_session_lock_levels.sql",
+);
 const SCHEMA_PATH = join(REPOSITORY_ROOT, "packages/db-schema/sql/schema.sql");
 
 const DELIVERY_SOURCE_FILES = [
@@ -249,6 +253,16 @@ describeWithPostgres.sequential("086 delivery attempt terminology migration", ()
     await sql.unsafe(readFileSync(LOCK_ORDER_MIGRATION_PATH, "utf8"));
     await sql.unsafe("CREATE TABLE tasks (id TEXT PRIMARY KEY)");
     await sql.unsafe(readFileSync(WORKTREE_MIGRATION_PATH, "utf8"));
+    // Migration 160 later moved the sessions row lock of these two functions to FOR NO KEY UPDATE.
+    // It also touches events and cards objects this partial schema does not have, so replay just
+    // the two function definitions it carries.
+    const lockLevelMigration = readFileSync(LOCK_LEVEL_MIGRATION_PATH, "utf8");
+    for (const name of ["session_record_execution_registration", "session_apply_running_transition"]) {
+      const start = lockLevelMigration.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
+      const end = lockLevelMigration.indexOf("\n$$;\n", start) + "\n$$;\n".length;
+      expect(start).toBeGreaterThanOrEqual(0);
+      await sql.unsafe(lockLevelMigration.slice(start, end));
+    }
 
     await sql.unsafe("CREATE SCHEMA fresh; SET search_path TO fresh");
     await sql.unsafe(readFileSync(SCHEMA_PATH, "utf8"));

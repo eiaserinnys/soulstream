@@ -45,7 +45,7 @@ describe("EventIngressRepository", () => {
         expect(values).toEqual(["node-a", STREAM_ID, 2]);
         return [];
       }
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         order.push("session-lock");
         return [{ execution_registration_id: null }];
       }
@@ -136,7 +136,7 @@ describe("EventIngressRepository", () => {
     const order: string[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -203,7 +203,7 @@ describe("EventIngressRepository", () => {
           ? [{ session_id: "session-a", payload_hash: "a".repeat(64), event_id: 41 }]
           : [];
       }
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -262,7 +262,7 @@ describe("EventIngressRepository", () => {
     const order: string[] = [];
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -317,7 +317,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text) => {
       statements.push(text);
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("SELECT event_append")) return [{ event_id: 42 }];
@@ -356,7 +356,7 @@ describe("EventIngressRepository", () => {
           execution_command_id: "execution-E1",
         }];
       }
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         order.push("session-lock");
         return [GATE_ROW];
       }
@@ -427,7 +427,7 @@ describe("EventIngressRepository", () => {
   ])("commits when the registration identity $label", async ({ envelopeRegistrationId, expected }) => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: "registration-current" }];
       }
       if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
@@ -462,7 +462,7 @@ describe("EventIngressRepository", () => {
   }) => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: currentRegistrationId }];
       }
       throw new Error(`stale registration must not reach another statement: ${text}`);
@@ -562,7 +562,7 @@ describe("EventIngressRepository", () => {
     let semanticEventId: number | undefined;
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -618,7 +618,7 @@ describe("EventIngressRepository", () => {
     let receiptValues: unknown[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [GATE_ROW];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -669,7 +669,7 @@ describe("EventIngressRepository", () => {
     let receiptValues: unknown[] = [];
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -709,7 +709,7 @@ describe("EventIngressRepository", () => {
   it("raises a protocol conflict when a replayed transition has no canonical effect", async () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -744,7 +744,7 @@ describe("EventIngressRepository", () => {
   it("raises a protocol conflict when the canonical row is double-encoded", async () => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts") && text.includes("FOR UPDATE")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
@@ -786,7 +786,7 @@ describe("EventIngressRepository", () => {
       const sql = fakeSql(async (text) => {
         statements.push(text);
         if (text.includes("FROM event_ingress_receipts")) return [];
-        if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) return [];
+        if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) return [];
         if (text.includes("SELECT 1 AS event_ingress_health")) return [{ event_ingress_health: 1 }];
         throw new Error(`deleted-session event must not reach another statement: ${text}`);
       });
@@ -876,7 +876,7 @@ describe("EventIngressRepository", () => {
     });
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];

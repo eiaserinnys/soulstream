@@ -149,10 +149,15 @@ async def test_event_search_prefix_helpers_are_retained_after_write_switch():
         "CREATE OR REPLACE FUNCTION event_search_adjust_corpus_stats",
         "CREATE OR REPLACE FUNCTION refresh_event_search_terms",
         "CREATE OR REPLACE FUNCTION decrement_event_search_corpus_stats",
-        "CREATE TRIGGER trg_event_search_corpus_stats_delete",
     ]:
         assert required in migration_sql
         assert required in schema_sql
+
+    # 031 created the delete trigger as a plain BEFORE trigger; migration 160 made it a
+    # deferred AFTER constraint trigger, and schema.sql carries the latest form.
+    assert "CREATE TRIGGER trg_event_search_corpus_stats_delete" in migration_sql
+    assert "CREATE CONSTRAINT TRIGGER trg_event_search_corpus_stats_delete" in schema_sql
+    assert "CREATE CONSTRAINT TRIGGER trg_event_search_terms" in schema_sql
 
 
 async def test_event_search_scoped_read_migration_is_mirrored_in_schema_sql():

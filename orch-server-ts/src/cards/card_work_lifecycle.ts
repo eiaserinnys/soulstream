@@ -8,7 +8,7 @@ export async function readWorkExecution(sql: RepositorySql, sessionId: string, e
   const rows = await sql`SELECT session_id FROM sessions WHERE session_id=${sessionId}
     AND execution_registration_id=${execution.registrationId} AND execution_command_id=${execution.executionCommandId}
     AND status NOT IN ('completed','error','interrupted')
-    AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(metadata,'[]'::jsonb)) m WHERE m->>'type'='card_orchestration_decision') FOR SHARE`;
+    AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(metadata,'[]'::jsonb)) m WHERE m->>'type'='card_orchestration_decision')`;
   return rows.length>0;
 }
 

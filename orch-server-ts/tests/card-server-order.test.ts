@@ -133,16 +133,16 @@ for(const [name,options,count,message] of [
  const h=harness('queued',options,{assignee_kind:'session',assignee_session_id:'other'});
  await expect(h.service.startCardWork({cardId:'card',actorKind:'agent',actorSessionId:'worker-session',execution:{registrationId:'r',executionCommandId:'c'}})).rejects.toThrow(message);
  expect(h.queries).toHaveLength(count);
- expect(h.queries[1]).toContain('FOR SHARE');
+ expect(h.queries[1]).toContain('FROM sessions');expect(h.queries[1]).not.toMatch(/FOR (SHARE|UPDATE)/);
  if(count>=4)expect(h.queries[2]).toContain('FOR UPDATE');
 });
-it('baseline 50f25bbfc confirm rejects session mismatch after session FOR SHARE, before status timestamp',async()=>{
+it('baseline 50f25bbfc confirm rejects session mismatch after the session read, before status timestamp',async()=>{
  const h=harness('running',{}, {assignee_kind:'session',assignee_session_id:'other'});
  await expect(h.service.recordExecution({cardId:'card',actorKind:'system',actorSessionId:null,requestId:'request',sessionId:'worker-session'})).rejects.toThrow('실행 세션과 카드 담당이 일치하지 않습니다.');
  expect(h.queries).toHaveLength(2);
- expect(h.queries[1]).toContain('FOR SHARE');
+ expect(h.queries[1]).toContain('FROM sessions');expect(h.queries[1]).not.toMatch(/FOR (SHARE|UPDATE)/);
 });
-it('baseline 50f25bbfc block limit rejects state before owner FOR SHARE',async()=>{
+it('baseline 50f25bbfc block limit rejects state before the owner read',async()=>{
  const h=harness('queued');
  await expect(h.service.blockCardForLimit({cardId:'card',expectedVersion:2,sessionId:'worker-session',terminationEventId:9})).rejects.toThrow('Only the current running assignee may enter limit-blocked');
  expect(h.queries).toHaveLength(1);
@@ -151,7 +151,7 @@ it('baseline 50f25bbfc block limit rejects termination before reset-event reads'
  const h=harness('running',{},limit);
  await expect(h.service.blockCardForLimit({cardId:'card',expectedVersion:2,sessionId:'worker-session',terminationEventId:9})).rejects.toThrow('Quota termination changed before the card was blocked');
  expect(h.queries).toHaveLength(2);
- expect(h.queries[1]).toContain('FOR SHARE');
+ expect(h.queries[1]).toContain('FROM sessions');expect(h.queries[1]).not.toMatch(/FOR (SHARE|UPDATE)/);
 });
 for(const [now,expectedCount,success] of [[999,1,false],[1000,3,true],[1001,3,true]] as const)it(`baseline 50f25bbfc short limit due boundary ${now}`,async()=>{
  const at=new Date(1000).toISOString(),h=harness('blocked',{}, {...limit,limit_resume_at:at});
@@ -181,15 +181,15 @@ it('baseline 50f25bbfc confirm reads timestamp only after session and preserves 
  await h.service.recordExecution({cardId:'card',actorKind:'system',actorSessionId:null,requestId:'request',sessionId:'worker-session'});
  expect(h.queries).toHaveLength(4);
  expect(h.queries[1]).toContain('SELECT card_id FROM sessions');
- expect(h.queries[1]).toContain('FOR SHARE');
+ expect(h.queries[1]).toContain('FROM sessions');expect(h.queries[1]).not.toMatch(/FOR (SHARE|UPDATE)/);
  expect(h.queries[2]).toContain('status_changed_at>r.updated_at');
  expect(h.card.status).toBe('done');
 });
-it('baseline 50f25bbfc valid termination reads reset events only after owner FOR SHARE',async()=>{
+it('baseline 50f25bbfc valid termination reads reset events only after the owner read',async()=>{
  const h=harness('running',{termination:true},limit);
  await h.service.blockCardForLimit({cardId:'card',expectedVersion:2,sessionId:'worker-session',terminationEventId:9});
  expect(h.queries).toHaveLength(4);
- expect(h.queries[1]).toContain('FOR SHARE');
+ expect(h.queries[1]).toContain('FROM sessions');expect(h.queries[1]).not.toMatch(/FOR (SHARE|UPDATE)/);
  expect(h.queries[2]).toContain('WITH bounds');
  expect(h.card).toMatchObject({status:'blocked',limit_resume_session_id:'worker-session',limit_resume_at:null});
 });

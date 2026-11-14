@@ -132,7 +132,7 @@ export class CardWorkDispatchService {
       const ownerSessionId = card.assignee_kind === "session" ? card.assignee_session_id : null;
       if (!ownerSessionId) throw failure("Card has no assigned session", 409);
       const owner = (await sql<{ session_id: string }[]>`
-        SELECT session_id FROM sessions WHERE session_id=${ownerSessionId} AND card_id=${card.id} FOR SHARE
+        SELECT session_id FROM sessions WHERE session_id=${ownerSessionId} AND card_id=${card.id}
       `)[0];
       if (!owner) throw failure("Assigned session does not own this card", 409);
 

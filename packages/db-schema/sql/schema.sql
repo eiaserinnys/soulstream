@@ -1161,7 +1161,8 @@ BEGIN
  WHERE session_key=v_session_key AND event_id=NEW.id;
  v_tokens := event_search_tokenize(NEW.searchable_text);
  v_doc_len := cardinality(v_tokens);
- -- Same serialization point as the old writer, before DF or mapping writes.
+ -- Nothing to index (no old document, no term): return before the stats row, the serialization point of DF and mapping writes.
+ IF v_old_doc_len IS NULL AND v_doc_len = 0 THEN RETURN NULL; END IF;
  PERFORM event_search_adjust_corpus_stats(
   CASE WHEN v_doc_len>0 THEN 1 ELSE 0 END - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
   v_doc_len-COALESCE(v_old_doc_len,0));
@@ -1204,7 +1205,7 @@ BEGIN
    PERFORM event_search_adjust_term_document_frequency(v_delta.term,v_delta.delta);
   END LOOP;
  END IF;
- RETURN NEW;
+ RETURN NULL;
 END;
 $$;
 
@@ -1231,20 +1232,19 @@ BEGIN
   END LOOP;
   DELETE FROM event_search_documents WHERE session_key=v_session_key AND event_id=OLD.id;
  END IF;
- RETURN OLD;
+ RETURN NULL;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_event_search_terms ON events;
-CREATE TRIGGER trg_event_search_terms
-    AFTER INSERT OR UPDATE OF searchable_text ON events
+CREATE CONSTRAINT TRIGGER trg_event_search_terms
+    AFTER INSERT OR UPDATE OF searchable_text ON events DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION refresh_event_search_terms();
 
 DROP TRIGGER IF EXISTS trg_event_search_corpus_stats_delete ON events;
-CREATE TRIGGER trg_event_search_corpus_stats_delete
-    BEFORE DELETE ON events
+CREATE CONSTRAINT TRIGGER trg_event_search_corpus_stats_delete
+    AFTER DELETE ON events DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION decrement_event_search_corpus_stats();
-
 
 CREATE OR REPLACE FUNCTION event_search_adjust_term_document_frequency(
     p_term TEXT,
@@ -1496,7 +1496,7 @@ BEGIN
     SELECT claude_session_id INTO v_existing
     FROM sessions
     WHERE session_id = p_session_id
-    FOR UPDATE;
+    FOR NO KEY UPDATE;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Session not found: %', p_session_id;
@@ -1631,7 +1631,7 @@ BEGIN
     SELECT session.worktree_id INTO v_worktree_id
       FROM sessions AS session
      WHERE session.session_id = p_session_id
-     FOR UPDATE;
+     FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'session not found: %', p_session_id;
     END IF;
@@ -2039,7 +2039,7 @@ BEGIN
       INTO v_metadata
       FROM sessions
      WHERE session_id = p_session_id
-     FOR UPDATE;
+     FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Session not found: %', p_session_id;
     END IF;
@@ -2105,7 +2105,7 @@ BEGIN
       INTO v_existing
       FROM sessions
      WHERE session_id = p_session_id
-     FOR UPDATE;
+     FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Session not found: %', p_session_id;
     END IF;
@@ -2271,7 +2271,7 @@ BEGIN
     END IF;
 
     -- 행 잠금으로 동시 append 직렬화
-    PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR UPDATE;
+    PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR NO KEY UPDATE;
 
     IF p_dedupe_key IS NOT NULL THEN
         SELECT e.id INTO v_event_id
@@ -4188,7 +4188,7 @@ BEGIN
     SELECT session.worktree_id INTO v_worktree_id
       FROM sessions AS session
      WHERE session.session_id = p_session_id
-     FOR UPDATE;
+     FOR NO KEY UPDATE;
 
     IF v_worktree_id IS NOT NULL THEN
         SELECT worktree.state, worktree.setup_required, worktree.setup_status
@@ -4652,3 +4652,17 @@ CREATE TABLE IF NOT EXISTS node_credentials (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_node_credentials_active_node
     ON node_credentials (node_id)
     WHERE revoked_at IS NULL;
+
+-- Indexes for the ON DELETE SET NULL checks that run when a session or an event is deleted
+-- (migration 160). Kept at the end of the file so the pinned definition lines above stay put.
+CREATE INDEX IF NOT EXISTS idx_folder_operations_actor_session
+    ON folder_operations(actor_session_id, actor_event_id)
+    WHERE actor_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_assignee_session_id
+    ON cards(assignee_session_id) WHERE assignee_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_created_session_id
+    ON cards(created_session_id) WHERE created_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_updated_session_id
+    ON cards(updated_session_id) WHERE updated_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cards_completed_session_id
+    ON cards(completed_session_id) WHERE completed_session_id IS NOT NULL;

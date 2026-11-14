@@ -28,7 +28,7 @@ export function cardServerEvidenceReader(sql:RepositorySql,card:CardRow,command:
   break;
  }
  case 'CONFIRM_EXECUTION':{
-  readers.executionSession=async()=>{input.sessionCardId=(await sql<{card_id:string}[]>`SELECT card_id FROM sessions WHERE session_id=${command.sessionId} FOR SHARE`)[0]?.card_id;};
+  readers.executionSession=async()=>{input.sessionCardId=(await sql<{card_id:string}[]>`SELECT card_id FROM sessions WHERE session_id=${command.sessionId}`)[0]?.card_id;};
   readers.executionStatus=async()=>{input.statusChanged=(await sql`SELECT c.status_changed_at>r.updated_at AS changed FROM cards c
         JOIN card_execution_requests r ON r.card_id=c.id WHERE c.id=${card.id} AND r.id=${command.requestId} AND r.session_id=${command.sessionId}`)[0]?.changed===true;};
   break;
@@ -43,7 +43,7 @@ export function cardServerEvidenceReader(sql:RepositorySql,card:CardRow,command:
  }
  case 'BLOCK_FOR_LIMIT':{
   readers.termination=async()=>{
-   input.owner=(await sql<LimitResumeOwner[]>`SELECT session_id,status,termination_reason,termination_event_id FROM sessions WHERE session_id=${command.sessionId} FOR SHARE`)[0];
+   input.owner=(await sql<LimitResumeOwner[]>`SELECT session_id,status,termination_reason,termination_event_id FROM sessions WHERE session_id=${command.sessionId}`)[0];
    input.terminationEventId=command.terminationEventId;
   };
   readers.limitReset=async()=>{input.resumeAt=await readLimitAutoResumeAt(sql,input.owner!);};

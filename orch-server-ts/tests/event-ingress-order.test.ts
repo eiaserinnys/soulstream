@@ -22,7 +22,7 @@ describe("event ingress batch ordering", () => {
     const attempts = new Map<number, number>();
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("SELECT event_append")) {
@@ -88,7 +88,7 @@ describe("event ingress transient failures", () => {
     let attempts = 0;
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("SELECT event_append")) {
@@ -157,7 +157,7 @@ describe("event ingress transient failures", () => {
   ])("permanently rejects $label after five failures", async ({ makeError }) => {
     const sql = fakeSql(async (text) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
-      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("SELECT event_append")) throw makeError();
