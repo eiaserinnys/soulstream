@@ -34,6 +34,7 @@ export type LivePostgresOptions = {
   readonly connect_timeout?: number;
   readonly connection: {
     readonly statement_timeout: number;
+    readonly idle_in_transaction_session_timeout?: number;
     readonly jit?: "off";
   };
 };
@@ -90,6 +91,7 @@ export type CreateLiveDbSqlResolverOptions = {
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly maxConnections?: number;
   readonly statementTimeoutMs?: number;
+  readonly idleInTransactionTimeoutMs?: number;
   readonly closeTimeoutSeconds?: number;
 };
 
@@ -99,6 +101,9 @@ const DEFAULT_POSTGRES_MAX_CONNECTIONS = 10;
 // postgres.js has no asyncpg-style command_timeout; PostgreSQL statement_timeout
 // is the explicit server-side equivalent for executable commands.
 const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 30_000;
+// 트랜잭션을 열어 둔 채 멈춘 연결을 서버가 끊는다. 0은 postgres.js가 시작
+// 메시지에서 빼므로 기본값으로 쓰지 않는다.
+const DEFAULT_POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
 const DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS = 5;
 export const SEARCH_DB_STATEMENT_TIMEOUT_MS = 8_000;
 const SEARCH_DB_CLOSE_TIMEOUT_SECONDS = 1;
@@ -277,6 +282,9 @@ export function createLiveDbSqlResolver(
     options.maxConnections ?? DEFAULT_POSTGRES_MAX_CONNECTIONS;
   const statementTimeoutMs =
     options.statementTimeoutMs ?? DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS;
+  const idleInTransactionTimeoutMs =
+    options.idleInTransactionTimeoutMs
+      ?? DEFAULT_POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS;
   const closeTimeoutSeconds =
     options.closeTimeoutSeconds ?? DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS;
 
@@ -288,7 +296,10 @@ export function createLiveDbSqlResolver(
       const factory = options.postgresFactory ?? defaultLivePostgresFactory;
       sql = factory(databaseUrl, {
         max: maxConnections,
-        connection: { statement_timeout: statementTimeoutMs },
+        connection: {
+          statement_timeout: statementTimeoutMs,
+          idle_in_transaction_session_timeout: idleInTransactionTimeoutMs,
+        },
       });
       ownsSql = true;
       return sql;

@@ -52,6 +52,9 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     };
   }
   if (effect.kind === "set_backend_session_id") {
+    if (await hasConflictingBackendSessionId(sql, input)) {
+      return { applied: false, canonicalSession: null };
+    }
     await sql`SELECT session_set_claude_id(${envelope.session_id}, ${effect.backend_session_id})`;
     return appliedWithoutCanonicalProjection();
   }
@@ -133,6 +136,36 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
   `;
   return appliedWithoutCanonicalProjection();
 };
+
+/**
+ * 저장된 claude_session_id가 있고 들어온 값과 다르면 true. 세션 행은 호출 앞에서
+ * lockSession이 이미 잡았으므로 잠금 없이 읽는다. true이면 불변 예외로 사건 전체가
+ * 버려지지 않게 호출부가 효과만 건너뛰고 사건은 그대로 커밋한다.
+ * 호출부 줄 번호가 session_state_writes.ts에 못 박혀 있어 이 검사는 파일 끝에 둔다.
+ */
+async function hasConflictingBackendSessionId(
+  sql: EventIngressQuerySql,
+  input: Parameters<EventSessionEffectApplier>[1],
+): Promise<boolean> {
+  const { envelope, effect, eventId } = input;
+  if (effect.kind !== "set_backend_session_id") return false;
+  const stored = await sql<Array<{ claude_session_id: string | null }>>`
+    SELECT claude_session_id FROM sessions
+    WHERE session_id = ${envelope.session_id}
+  `;
+  const storedId = stored[0]?.claude_session_id ?? null;
+  if (storedId === null || storedId === "" || storedId === effect.backend_session_id) {
+    return false;
+  }
+  console.warn({
+    cause_code: "BACKEND_SESSION_ID_MISMATCH_SKIPPED",
+    session_id: envelope.session_id,
+    stored_claude_session_id: storedId,
+    incoming_claude_session_id: effect.backend_session_id,
+    event_id: eventId,
+  });
+  return true;
+}
 
 type CanonicalTransitionRow = {
   applied: boolean;

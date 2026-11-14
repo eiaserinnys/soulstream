@@ -8,6 +8,7 @@ import type {
   EventSessionEffect,
 } from "./event_ingress_types.js";
 import {
+  isRetryingFailure,
   type EventIngressDeadLetterStore,
   type PersistedEventIngressDeadLetter,
 } from "./event_ingress_dead_letter_store.js";
@@ -138,11 +139,17 @@ export class EventIngressRepository {
   ): Promise<EventIngressResult[]> {
     const results = new Array<EventIngressResult | undefined>(batch.events.length);
     let pending: PendingIngressEntry[] = [];
+    // 재시도 중 실패 기록이 있던 사건. 커밋이 성공하면 기록 파일을 지운다.
+    const retryingRecords = new Set<number>();
     for (let index = 0; index < batch.events.length; index += 1) {
       const envelope = batch.events[index]!;
       const existing = await this.deadLetterStore?.find({ nodeId, envelope }) ?? null;
-      if (existing) results[index] = deadLetterResult(envelope, existing);
-      else pending.push({ index, envelope, failureCount: 0, transientAttempts: 0 });
+      if (existing && !isRetryingFailure(existing)) {
+        results[index] = deadLetterResult(envelope, existing);
+      } else {
+        if (existing) retryingRecords.add(index);
+        pending.push({ index, envelope, failureCount: 0, transientAttempts: 0 });
+      }
     }
     if (pending.length === 0) return completedIngressResults(results);
 
@@ -161,6 +168,9 @@ export class EventIngressRepository {
         try {
           results[item.index] = await sql.begin(async (transaction) =>
             await this.commitEnvelope(transaction, nodeId, batch.stream_id, item.envelope));
+          if (retryingRecords.has(item.index) && results[item.index]?.outcome === "committed") {
+            await this.removeRetryingRecord(nodeId, item.envelope);
+          }
         } catch (error) {
           if (!this.deadLetterStore) throw error;
           blockedSessions.add(item.envelope.session_id);
@@ -183,6 +193,8 @@ export class EventIngressRepository {
           if (decision.deadLetter) {
             results[item.index] = deadLetterResult(item.envelope, decision.deadLetter);
           } else {
+            // 이 수신 안에서 새로 쓴 재시도 중 기록도 커밋되면 지운다.
+            retryingRecords.add(item.index);
             retry.push({
               ...item,
               failureCount: decision.failureCount,
@@ -198,6 +210,23 @@ export class EventIngressRepository {
       pending = retry;
     }
     return completedIngressResults(results);
+  }
+
+  /** 지우기 실패는 수신 결과를 바꾸지 않는다. 경고만 남긴다. */
+  private async removeRetryingRecord(
+    nodeId: string,
+    envelope: EventIngressEnvelope,
+  ): Promise<void> {
+    try {
+      await this.deadLetterStore?.removeRetrying?.({ nodeId, envelope });
+    } catch (error) {
+      console.warn({
+        cause_code: "EVENT_INGRESS_RETRYING_RECORD_REMOVE_FAILED",
+        session_id: envelope.session_id,
+        source_seq: envelope.source_seq,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async commitEnvelope(

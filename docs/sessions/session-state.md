@@ -773,9 +773,9 @@ state "한도 재개 예약" as sessionReservation {
 | session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1386 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
 | session_update | 예 | packages/db-schema/sql/schema.sql:1518 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
 | session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1425 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
-| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1595 | src/node/event_session_effect_applier.ts:163 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
-| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4170 | src/node/event_session_effect_applier.ts:74 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
-| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1736 | src/node/event_session_effect_applier.ts:221 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
+| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1595 | src/node/event_session_effect_applier.ts:196 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
+| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4170 | src/node/event_session_effect_applier.ts:77 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
+| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1736 | src/node/event_session_effect_applier.ts:254 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
 
 ### 직접 UPDATE
 
