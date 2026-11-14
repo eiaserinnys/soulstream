@@ -312,6 +312,12 @@ describe("session-data read repositories", () => {
     expect(call.text).toContain("FROM events");
     expect(call.text).toContain("AND id > ?");
     expect(call.text).toContain("event_type = 'metadata'");
+    // 플래너가 JSON 추출 비교의 기본 선택도(0.005)로 Bitmap Heap Scan + Sort를 고르지 않게
+    // CASE boolean(선택도 0.5)으로 감싼 형태를 유지한다. ?는 바인딩 자리이고 뒤의 ::text[]는
+    // 파라미터 배열 캐스트다.
+    expect(call.text).toContain(
+      "CASE WHEN payload->>'metadata_type' = ANY(?::text[]) THEN true ELSE false END",
+    );
     expect(call.text).toContain("ORDER BY id DESC");
     expect(call.text).not.toContain("event_read(");
     expect(call.values).toEqual(["s1", 4, ["persistent_generation"], 5]);

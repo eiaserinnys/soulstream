@@ -21,6 +21,7 @@ import type {
 } from "./persistent_decision.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { SessionEventRow } from "../control_plane/session_data_host_client.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
@@ -30,6 +31,18 @@ const DECISION_EVENT_WINDOW = 200;
 const GENERATION_METADATA_READ_LIMIT = 50;
 const HUMAN_SOURCES = new Set(["browser", "soul-app", "slack"]);
 const INPUT_EVENT_TYPES = new Set(["user_message", "intervention_sent"]);
+
+interface GenerationMetadataCacheEntry {
+  /** 이만큼의 이벤트까지 세대 기록을 합쳐 두었다. */
+  upToEventId: number;
+  events: SessionEventRow[];
+}
+
+/**
+ * Task 인스턴스는 여러 턴과 세대 동안 메모리에 남는다. 판정마다 afterId = 0에서 세대 기록을
+ * 다시 읽으면 원격 읽기가 5초 시한에 걸리므로, 마지막으로 합친 지점 이후만 읽어 재사용한다.
+ */
+const generationMetadataCache = new WeakMap<Task, GenerationMetadataCacheEntry>();
 
 export interface PersistentDecisionInputDependencies {
   db: Pick<SessionDB, "readEvents">;
@@ -57,17 +70,7 @@ export async function buildPersistentDecisionInput(
     DECISION_EVENT_WINDOW,
   );
   const orderedEvents = [...events].sort((left, right) => left.id - right.id);
-  const generationMetadataEvents = task.lastEventId > 0
-    ? await deps.db.readEvents(
-        task.agentSessionId,
-        0,
-        GENERATION_METADATA_READ_LIMIT,
-        ["metadata"],
-        undefined,
-        ["persistent_generation"],
-        "desc",
-      )
-    : [];
+  const generationMetadataEvents = await readGenerationMetadataEvents(task, orderedEvents, deps);
   const contextUsage = latestContextUsage(orderedEvents);
   const catalogDefaults = deps.modelCatalog.snapshot().persistent_defaults;
   const settings = readStoredPersistentSettings(
@@ -201,6 +204,68 @@ export async function buildPersistentDecisionInput(
     accounts,
     ...(options.limitResetAt ? { limit_reset_at: options.limitResetAt } : {}),
   };
+}
+
+/**
+ * 최신 순 50건 세대 기록을 돌려준다. 직전 판정에서 합친 지점(cached.upToEventId) 이후만 읽고,
+ * 최근 창 읽기가 그 구간을 이미 덮으면 원격 읽기를 아예 하지 않는다.
+ */
+async function readGenerationMetadataEvents(
+  task: Task,
+  orderedEvents: readonly SessionEventRow[],
+  deps: PersistentDecisionInputDependencies,
+): Promise<SessionEventRow[]> {
+  if (task.lastEventId <= 0) return [];
+  const cached = generationMetadataCache.get(task);
+  if (cached === undefined || cached.upToEventId > task.lastEventId) {
+    const rows = await readGenerationMetadataPage(task, 0, deps);
+    const merged = mergeGenerationMetadata(rows, orderedEvents);
+    generationMetadataCache.set(task, { upToEventId: task.lastEventId, events: merged });
+    return merged;
+  }
+  const windowAfterId = Math.max(0, task.lastEventId - DECISION_EVENT_WINDOW);
+  if (cached.upToEventId >= windowAfterId) {
+    // 최근 창 읽기가 캐시 지점 이후를 모두 덮는다.
+    const merged = mergeGenerationMetadata(cached.events, orderedEvents);
+    generationMetadataCache.set(task, { upToEventId: task.lastEventId, events: merged });
+    return merged;
+  }
+  const delta = await readGenerationMetadataPage(task, cached.upToEventId, deps);
+  const merged = mergeGenerationMetadata(cached.events, delta, orderedEvents);
+  generationMetadataCache.set(task, { upToEventId: task.lastEventId, events: merged });
+  return merged;
+}
+
+function readGenerationMetadataPage(
+  task: Task,
+  afterId: number,
+  deps: PersistentDecisionInputDependencies,
+): Promise<SessionEventRow[]> {
+  return deps.db.readEvents(
+    task.agentSessionId,
+    afterId,
+    GENERATION_METADATA_READ_LIMIT,
+    ["metadata"],
+    undefined,
+    ["persistent_generation"],
+    "desc",
+  );
+}
+
+function mergeGenerationMetadata(
+  ...groups: ReadonlyArray<readonly SessionEventRow[]>
+): SessionEventRow[] {
+  const byId = new Map<number, SessionEventRow>();
+  for (const group of groups) {
+    for (const event of group) {
+      if (event.event_type !== "metadata") continue;
+      if (event.payload.metadata_type !== "persistent_generation") continue;
+      byId.set(event.id, event);
+    }
+  }
+  return [...byId.values()]
+    .sort((left, right) => right.id - left.id)
+    .slice(0, GENERATION_METADATA_READ_LIMIT);
 }
 
 export function countKeepalivesSinceHumanInput(
