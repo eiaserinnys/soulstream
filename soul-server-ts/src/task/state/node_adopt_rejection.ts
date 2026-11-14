@@ -7,11 +7,16 @@
 /** 거절 분류다. 러너 쪽 `RunnerAdoptResponse`의 두 값과 같은 문자열이다. */
 export type AdoptRejectionClass = "terminal_rejection" | "retryable_rejection";
 
-/** 다시 될 까닭 없는 거절 사유다. */
+/**
+ * 다시 될 까닭 없는 거절 사유다. 다른 세션이 워크트리를 쥔 거절(worktree_busy)도 여기에 든다.
+ * 합의 모형은 그 거절에서 러너를 거둔다(카드 #1218 M:406-412, 카드 #1266 U5c). 다시 될 수 있는
+ * 거절은 「준비 안 됨」(worktree_not_ready)과 사유 없는 옛 서버 거절에 남는다.
+ */
 export const TERMINAL_ADOPT_REJECTION_REASONS: readonly string[] = [
   "already_terminal",
   "session_missing",
   "owner_node_changed",
+  "worktree_busy",
 ];
 
 /**

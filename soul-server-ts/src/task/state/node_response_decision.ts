@@ -37,6 +37,12 @@ const RUNNER_BEARING_CALLS: readonly NodeResponseCall[] = [
   "attached_runner_adopt",
 ];
 
+/** 잇기 호출이다. 점유 거절의 오류 종료는 이 둘에만 건다. */
+const ADOPT_CALLS: readonly NodeResponseCall[] = [
+  "startup_recovery_adopt",
+  "attached_runner_adopt",
+];
+
 /** 응답을 받은 칸을 기계 정의에서 낸다. 칸이 없으면 빈 칸이므로 던진다. */
 export function decideNodeResponseCell(facts: NodeResponseFacts): NodeResponseCell {
   const snapshot = nodeResponseMachine.resolveState({
@@ -83,6 +89,20 @@ function cleanupIntents(
       && !stale
     ) {
       // 거절된 그 등록과 그 실행 명령에만 거는 정리다.
+      intents.add("mark_central_error");
+    }
+    if (
+      cell === "no_retry"
+      && facts.reason === "worktree_busy"
+      && ADOPT_CALLS.includes(facts.call)
+      && facts.centralSession === "present"
+      && facts.termination === "absent"
+      && !facts.retained
+      && !stale
+    ) {
+      // 다른 세션이 워크트리를 쥐어 잇지 못한 세션은 오류 종료로 닫는다(M:408-412). orch는 기록된
+      // 끝남보다 점유를 먼저 보므로, 중앙 세션 줄에 끝남이 기록돼 있으면(termination: different)
+      // 종료를 다시 올리지 않고 러너만 거둔다(M:406-407). 중앙 줄을 읽기 전에는 올리지 않는다.
       intents.add("mark_central_error");
     }
     if (runnerBearing) {

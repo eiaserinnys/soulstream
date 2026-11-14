@@ -3720,10 +3720,14 @@ describe("TaskExecutor runner process boundary", () => {
       pump as never,
     );
     const { runner } = makeRunnerProcessRuntime([]);
-    // 중앙 세션 읽기가 null이 아닌 값을 돌려준다. 실행기는 이 줄의 필드를 읽지 않고 있는지 없는지만
-    // 본다(task_lifecycle_transition.probeCentralSession). null이면 중앙 세션 없음으로 판정해 다시 될
-    // 수 있는 거절에도 로컬 소유를 정리하므로, 이 시험은 있는 줄로 그 정리를 막는다(카드 #1266).
-    vi.mocked(mocks.db.getSession).mockResolvedValue({ agent_session_id: "sess-1" } as never);
+    // 중앙 세션 읽기가 null이 아닌 줄을 돌려준다. null이면 중앙 세션 없음으로 판정해 로컬 소유를
+    // 정리하므로, 이 시험은 있는 줄로 그 정리를 막는다(카드 #1266). 잇기 거절은 그 줄의 끝남 기록도
+    // 읽는다(centralSessionFactsOf). 끝남이 기록된 줄이라 점유 거절에도 오류 종료를 올리지 않는다(U5c).
+    vi.mocked(mocks.db.getSession).mockResolvedValue({
+      agent_session_id: "sess-1",
+      status: "completed",
+      termination_event_id: 7,
+    } as never);
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,

@@ -42,7 +42,10 @@ export type NodeWireReason = (typeof NODE_WIRE_REASONS)[number];
 export const NODE_REGISTRATION_MATCHES = ["same", "different"] as const;
 export type NodeRegistrationMatch = (typeof NODE_REGISTRATION_MATCHES)[number];
 
-/** 정본 투영의 termination_event_id와 우리 종료의 관계다. */
+/**
+ * 정본 투영의 termination_event_id와 우리 종료의 관계다. 잇기 호출에는 우리 종료가 없으므로,
+ * 중앙 세션 줄을 읽어 끝남이 기록돼 있으면 `different`, 끊김 중단처럼 기록이 없으면 `absent`다.
+ */
 export const NODE_TERMINATION_PROJECTIONS = ["same", "different", "absent"] as const;
 export type NodeTerminationProjection = (typeof NODE_TERMINATION_PROJECTIONS)[number];
 
@@ -93,6 +96,12 @@ export const nodeResponseMachine = setup({
       event.route === "transport_retryable" || event.route === "no_response",
     terminationAlreadyRecorded: ({ event }) =>
       event.call === "termination" && event.termination === "same",
+    busyNeedsRetry: ({ event }) =>
+      event.route === "applied_false"
+      && event.reason === "worktree_busy"
+      && (event.call === "first_message"
+        || ((event.call === "startup_recovery_adopt" || event.call === "attached_runner_adopt")
+          && event.centralSession === "unknown")),
     terminalReason: ({ event }) =>
       event.route === "applied_false"
       && classifyRunnerAdoptRejection(wireReason(event.reason)) === "terminal_rejection",
@@ -131,6 +140,11 @@ export const nodeResponseMachine = setup({
             guard: "notRejected",
             target: "retryable",
             description: "전송 거절이 다시 될 수 있거나 응답이 없다",
+          },
+          {
+            guard: "busyNeedsRetry",
+            target: "retryable",
+            description: "점유 거절의 첫 메시지는 이어 가고, 중앙 줄을 못 읽은 잇기는 다음 주기에 다시 판정한다",
           },
           {
             guard: "terminalReason",

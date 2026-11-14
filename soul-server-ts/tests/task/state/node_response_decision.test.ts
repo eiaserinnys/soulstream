@@ -127,7 +127,8 @@ describe("node response cell", () => {
       expect(decide({ call }).cell).toBe("retryable");
     }
     expect(decide({ call: "termination", termination: "absent" }).cell).toBe("retryable");
-    expect(decide({ reason: "worktree_busy" }).cell).toBe("retryable");
+    // 카드 #1266 U5c: 워크트리 점유는 다시 될 까닭이 없는 거절이다(합의 모형 M:408-412).
+    expect(decide({ reason: "worktree_busy" }).cell).toBe("no_retry");
     expect(decide({ reason: "worktree_not_ready" }).cell).toBe("retryable");
     expect(decide({ reason: "session_missing" }).cell).toBe("no_retry");
   });
@@ -163,17 +164,57 @@ describe("node response cell", () => {
   });
 });
 
+// 카드 #1266 U5c: 합의 모형 M:406-412. 점유로 거절된 잇기는 러너를 거두고, 중앙 세션이 끝남을 기록하지
+// 않았으면(끊김 중단) 오류 종료를 올린다. orch가 끝남보다 점유를 먼저 보므로 노드가 중앙 줄로 가른다.
+describe("busy worktree adoption rejection", () => {
+  const ADOPTS = ["startup_recovery_adopt", "attached_runner_adopt"] as const;
+
+  it("reaps and marks the central error when no end is recorded", () => {
+    for (const call of ADOPTS) {
+      expect(decide({ call, reason: "worktree_busy" })).toEqual({
+        cell: "no_retry",
+        reason: "worktree_busy",
+        intents: ["mark_central_error", "reap_runner"],
+      });
+    }
+  });
+
+  it("only reaps when the central session already recorded its end", () => {
+    for (const call of ADOPTS) {
+      expect(decide({ call, reason: "worktree_busy", termination: "different" }).intents)
+        .toEqual(["reap_runner"]);
+    }
+  });
+
+  it("keeps the adoption retryable before the central session is read", () => {
+    for (const call of ADOPTS) {
+      expect(decide({ call, reason: "worktree_busy", centralSession: "unknown" }).intents)
+        .toEqual(["retry_later"]);
+    }
+  });
+
+  it("does not mark the central error for a stale registration, a retained runner, an execution registration or other reasons", () => {
+    expect(decide({ reason: "worktree_busy", registration: "different" }).intents).toEqual([]);
+    expect(decide({ reason: "worktree_busy", retained: true }).intents).toEqual([]);
+    expect(decide({ call: "execution_registration", reason: "worktree_busy" }).intents)
+      .toEqual(["reap_runner"]);
+    expect(decide({ reason: "already_terminal" }).intents).toEqual(["reap_runner"]);
+    expect(decide({ reason: "worktree_not_ready" }).intents).toEqual(["retry_later"]);
+  });
+});
+
 describe("adopt rejection classification", () => {
   it("is owned by task/state and keeps its classification", () => {
     expect(TERMINAL_ADOPT_REJECTION_REASONS).toEqual([
       "already_terminal",
       "session_missing",
       "owner_node_changed",
+      "worktree_busy",
     ]);
     for (const reason of TERMINAL_ADOPT_REJECTION_REASONS) {
       expect(classifyRunnerAdoptRejection(reason)).toBe("terminal_rejection");
     }
-    for (const reason of ["worktree_busy", "worktree_not_ready", "unknown", "", null, undefined]) {
+    for (const reason of ["worktree_not_ready", "unknown", "", null, undefined]) {
       expect(classifyRunnerAdoptRejection(reason)).toBe("retryable_rejection");
     }
   });

@@ -125,6 +125,20 @@ export function nodeResponseCellRows(): NodeResponseCellRow[] {
               inGroup(facts) && facts.termination === projection),
           });
         }
+      } else if (reason === "worktree_busy") {
+        for (const call of NODE_RESPONSE_CALLS) {
+          if (call === "termination") continue;
+          for (const centralSession of NODE_CENTRAL_SESSIONS) {
+            rows.push({
+              route: NODE_ROUTE_LABELS.applied_false,
+              call: `${NODE_CALL_LABELS[call]} (중앙 세션: ${centralSession})`,
+              reason: NODE_REASON_LABELS[reason],
+              termination: "해당 없음",
+              cell: uniqueCell(`${reason}/${call}/${centralSession}`, (facts) =>
+                inGroup(facts) && facts.call === call && facts.centralSession === centralSession),
+            });
+          }
+        }
       } else {
         rows.push({
           route: NODE_ROUTE_LABELS.applied_false,
@@ -265,8 +279,32 @@ export function nodeScenarioRows(): NodeScenarioRow[] {
       },
     },
     {
+      scenario: "같은 거절인데 중앙 세션에 끝남이 기록됨",
+      facts: {
+        ...BASE_FACTS,
+        call: "attached_runner_adopt",
+        route: "applied_false",
+        reason: "worktree_busy",
+        termination: "different",
+      },
+    },
+    {
       scenario: "붙은 러너 잇기가 사유 없이 거절됨(옛 서버)",
       facts: { ...BASE_FACTS, call: "attached_runner_adopt", route: "applied_false" },
+    },
+    {
+      scenario: "점유로 거절된 잇기의 중앙 세션 줄을 읽지 못함",
+      facts: {
+        ...BASE_FACTS,
+        call: "attached_runner_adopt",
+        route: "applied_false",
+        reason: "worktree_busy",
+        centralSession: "unknown",
+      },
+    },
+    {
+      scenario: "첫 메시지가 worktree_busy로 거절됨(기존처럼 시도를 이음)",
+      facts: { ...BASE_FACTS, call: "first_message", route: "applied_false", reason: "worktree_busy" },
     },
     {
       scenario: "첫 메시지가 격리됨",

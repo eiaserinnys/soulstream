@@ -31,15 +31,14 @@ describe("runner central session lookup", () => {
 });
 
 describe("runner adoption rejection classification", () => {
-  it("treats the three terminal reasons as not worth retrying", () => {
-    for (const reason of ["already_terminal", "session_missing", "owner_node_changed"]) {
+  it("treats the terminal reasons and a busy worktree as not worth retrying", () => {
+    for (const reason of ["already_terminal", "session_missing", "owner_node_changed", "worktree_busy"]) {
       expect(classifyRunnerAdoptRejection(reason)).toBe("terminal_rejection");
     }
   });
 
-  it("treats worktree rejections, a missing reason, and unknown values as retryable", () => {
+  it("treats a worktree that is not ready, a missing reason, and unknown values as retryable", () => {
     for (const reason of [
-      "worktree_busy",
       "worktree_not_ready",
       undefined,
       null,

@@ -2899,6 +2899,55 @@ describe("RunnerRecoveryCoordinator central check", () => {
     expect(target.runner).toBeUndefined();
   });
 
+  // 카드 #1266 U5c: 워크트리 점유 거절은 다시 될 까닭이 없는 거절이다(합의 모형 M:406-412).
+  it("reaps after an adoption rejected because another session holds the worktree", async () => {
+    const { task: target } = runningTask();
+    const adopt = vi.fn(async () => ({
+      applied: false,
+      rejectionReason: "worktree_busy",
+    }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledOnce();
+
+    await settle(subject);
+
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(target.runner).toBeUndefined();
+  });
+
+  it.each([
+    ["worktree_not_ready", "worktree_not_ready"],
+    ["no reason (old server)", undefined],
+  ])("keeps a runner whose adoption was rejected with %s", async (_name, rejectionReason) => {
+    const { task: target } = runningTask();
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({
+      applied: false,
+      ...(rejectionReason === undefined ? {} : { rejectionReason }),
+    }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    nowMs += 15_000;
+    await settle(subject);
+
+    expect(adopt).toHaveBeenCalledTimes(2);
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(target.runner).toBeDefined();
+  });
+
   it("keeps a retryably rejected runner and backs off 15s, 30s, then 5 minutes", async () => {
     const { task: target } = runningTask();
     let nowMs = RECOVERY_NOW_MS;
@@ -2967,8 +3016,8 @@ describe("RunnerRecoveryCoordinator central check", () => {
     ) => {
       owned.runner = runner;
       onAttemptCreated?.(runner)?.();
-      onAdoptionApplication?.({ applied: false, rejectionReason: "worktree_busy" });
-      throw new RunnerAdoptionRejectedError("session-a", "worktree_busy");
+      onAdoptionApplication?.({ applied: false, rejectionReason: "worktree_not_ready" });
+      throw new RunnerAdoptionRejectedError("session-a", "worktree_not_ready");
     });
     const subject = makeCentralSubject({
       tasks: [target],
@@ -3127,6 +3176,59 @@ describe("RunnerRecoveryCoordinator central check", () => {
     await settle(subject);
 
     expect(adopt).not.toHaveBeenCalled();
+  });
+
+  // 카드 #1266 U5c: 시동 복구 잇기의 점유 거절도 다음 훑기의 중앙 확인이 거둔다.
+  it("reaps on the next scan when startup adoption was rejected because the worktree is busy", async () => {
+    const target = task("session-a");
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    const runner = finishedRunner("registration-a", "execute-a").runner;
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const recoverRegisteredRunner = vi.fn(async (
+      owned: Task,
+      _registration: RunnerRegistration,
+      _commandId: string | undefined,
+      _mode: "adopt" | "replay" | "offline",
+      onAttemptCreated?: (attempt: NonNullable<Task["runner"]>) => (() => void) | undefined,
+      _phaseObservation?: unknown,
+      onAdoptionApplication?: (application: {
+        applied: boolean;
+        rejectionReason?: string;
+      }) => void,
+    ) => {
+      owned.runner = runner;
+      onAttemptCreated?.(runner)?.();
+      onAdoptionApplication?.({ applied: false, rejectionReason: "worktree_busy" });
+      throw new RunnerAdoptionRejectedError("session-a", "worktree_busy");
+    });
+    const subject = makeCentralSubject({
+      tasks: [target],
+      hydrateRunnerRecoveryTask: async () => target,
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+      recoverRegisteredRunner,
+    });
+
+    await settle(subject);
+    expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+
+    nowMs += 15_000;
+    await settle(subject);
+
+    // 목 등록부는 은퇴한 등록을 지우지 않아 같은 훑기의 시동 복구가 다시 붙인다. 거둠 자체만 본다.
+    expect(adopt).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith(target);
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a" }),
+      "runner reaped because the central session no longer carries this execution",
+    );
   });
 
   it("does not block the scan or another session while an adoption response is pending", async () => {
