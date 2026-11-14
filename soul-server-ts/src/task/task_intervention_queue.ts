@@ -53,13 +53,20 @@ export function wasHandoffAttempted(message: InterventionMessage): boolean {
   return handoffAttempted.has(message);
 }
 
-/** 러너에 넘긴 뒤 큐로 되돌아오는 지시를 시도 표시와 함께 다시 큐에 넣는다. */
+/**
+ * 러너에 넘긴 뒤 큐로 되돌아오는 지시를 시도 표시와 함께 다시 큐에 넣는다. 같은 지시 번호나
+ * deliveryId의 항목이 이미 큐에 있으면 그 항목과 합쳐지고 큐에 있던 항목이 남으므로, 남는 항목에도
+ * 표시를 남긴다(그러지 않으면 시도한 지시가 「시도한 적 없음」으로 서버에 돌아가 두 번 들어갈 수 있다).
+ */
 export function requeueAfterHandoffAttempt(
   task: Task,
   message: InterventionMessage,
 ): number {
   markHandoffAttempted(message);
-  return enqueueInterventionOnce(task, message);
+  const position = enqueueInterventionOnce(task, message);
+  const kept = task.interventionQueue[position - 1];
+  if (kept) markHandoffAttempted(kept);
+  return position;
 }
 
 export function enqueueInterventionOnce(

@@ -81,8 +81,8 @@ interface CentralCheckRetry {
   attempt: number;
   nextAttemptAtMs: number;
   /**
-   * 그 거절이 조건이 풀릴 수 있는 것(워크트리 점유, 준비 안 됨, 사유 없는 옛 서버 거절)이다.
-   * 낡은 등록의 거절처럼 같은 러너로는 풀릴 수 없는 거절은 false라 간격마다 다시 잇지 않는다.
+   * 그 거절이 조건이 풀릴 수 있는 것이다. 어느 거절이 풀릴 수 있는지는 node_adopt_rejection.ts의
+   * 분류를 따른다. 낡은 등록의 거절처럼 같은 러너로는 풀릴 수 없는 거절은 false라 간격마다 다시 잇지 않는다.
    */
   conditionMayClear: boolean;
 }

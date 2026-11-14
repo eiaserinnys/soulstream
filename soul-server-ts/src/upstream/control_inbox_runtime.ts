@@ -6,7 +6,7 @@ import {
   type ControlCommandFamily,
 } from "./control_command_inventory.js";
 import { type AckSample, recordAckSample } from "./control_ack_metrics.js";
-import { completeDurableWork } from "./control_inbox_complete.js";
+import { completeDurableWork, UncommittedWorkRedispatch } from "./control_inbox_complete.js";
 import type {
   ControlInboxAdmission,
   ControlInboxResult,
@@ -85,7 +85,7 @@ export class ControlInboxRuntime {
   private readonly ackSamples = new Map<ControlCommandFamily, AckSample[]>();
   private sendFrame: ((frame: Record<string, unknown>) => Promise<void>) | undefined;
   private workSequence = 0;
-  private redispatchHandle: unknown;
+  private readonly uncommitted: UncommittedWorkRedispatch;
 
   constructor(private readonly options: ControlInboxRuntimeOptions) {
     this.store = options.store;
@@ -93,6 +93,10 @@ export class ControlInboxRuntime {
     this.nowMonoMs = options.nowMonoMs ?? performance.now.bind(performance);
     this.schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     this.clearScheduled = options.clearScheduled ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
+    this.uncommitted = new UncommittedWorkRedispatch({
+      schedule: this.schedule, clearScheduled: this.clearScheduled, nowEpochMs: this.nowEpochMs,
+      isConnected: () => this.sendFrame !== undefined, redispatch: () => this.dispatchPending(), log: options.log,
+    });
   }
 
   initialize(): ReturnType<ControlInboxStorage["initialize"]> {
@@ -105,6 +109,7 @@ export class ControlInboxRuntime {
     this.sendFrame = sendFrame;
     await this.replayResults();
     this.dispatchPending();
+    this.uncommitted.reschedule();
   }
 
   disconnect(): void {
@@ -278,13 +283,15 @@ export class ControlInboxRuntime {
       // 완료를 못 적으면 작업을 열어 두고 오류를 올린다. 다시 온 결과는 여기서 다시 완료되고 도메인
       // 효과는 되풀이되지 않는다(control_channel_service의 활성 작업 중복 막기).
       const { store, schedule } = this;
+      const work = runtimeWork.durableWork;
       const result = await completeDurableWork({
-        store, schedule, response, work: runtimeWork.durableWork, log: this.options.log,
+        store, schedule, response, work, log: this.options.log,
       }).catch((error: unknown) => {
         this.activeWork.set(workId, runtimeWork);
-        this.scheduleRedispatchAfterLease();
+        this.uncommitted.markFailed(workId, work.leaseExpiresAt);
         throw error;
       });
+      this.uncommitted.committed(workId);
       this.options.onDurableCommit?.(workId);
       try {
         await this.sendResult(result);
@@ -322,25 +329,11 @@ export class ControlInboxRuntime {
   }
 
   close(): void {
-    if (this.redispatchHandle !== undefined) this.clearScheduled(this.redispatchHandle);
-    this.redispatchHandle = undefined;
+    this.uncommitted.cancel();
     for (const work of this.activeWork.values()) this.clearWork(work);
     this.activeWork.clear();
     this.store.close();
     this.sendFrame = undefined;
-  }
-
-  /**
-   * 완료를 못 적은 작업은 claimed로 남는다. 연결이 붙어 있으면 lease가 끝난 뒤 스스로 다시 집어
-   * 처리 결과를 다시 완료한다(다음 연결이나 명령을 기다리지 않는다). 도메인 효과는 메인 스레드의 활성
-   * 작업 중복 막기가 되풀이하지 않는다.
-   */
-  private scheduleRedispatchAfterLease(): void {
-    if (!this.sendFrame || this.redispatchHandle !== undefined) return;
-    this.redispatchHandle = this.schedule(() => {
-      this.redispatchHandle = undefined;
-      if (this.sendFrame) this.dispatchPending();
-    }, this.options.leaseMs ?? DEFAULT_LEASE_MS);
   }
 
   private dispatchPending(): void {
@@ -365,6 +358,7 @@ export class ControlInboxRuntime {
           durableWork,
         };
         this.activeWork.set(workId, runtimeWork);
+        this.uncommitted.refreshLease(workId, durableWork.leaseExpiresAt);
         try {
           this.options.postWork(runtimeWork.dispatch);
         } catch (error) {
