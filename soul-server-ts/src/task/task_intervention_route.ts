@@ -27,6 +27,7 @@ import type {
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
+import { restartQueuedAfterStop, stopEndOf } from "./task_stopping_intervention.js";
 import {
   appendSystemAbortNotice,
   type PreviousSessionTermination,
@@ -133,6 +134,8 @@ export interface TaskInterventionRouteDeps {
    * current dependency surface.
    */
   projectClosedRunner?: (task: Task, detail: string) => Promise<boolean>;
+  /** 멈추는 중에 쌓은 지시로 멈춤이 끝난 뒤 다시 띄운다(끝난 뒤 쌓인 지시 다시 띄우기). */
+  resumeQueuedAfterStop?: (task: Task, onResume: StartExecutionCallback) => Promise<boolean>;
 }
 
 /**
@@ -154,7 +157,11 @@ export class TaskInterventionRoute {
       if (previous) await previous.catch(() => undefined);
       const task = await this.resolveTask(params.agentSessionId);
       await this.awaitInitializingTask(task);
-      const live = hasLiveExecutionEvidence(task);
+      // 멈추는 중이거나 종료를 올리는 중인 실행은 끝나 가는 실행이다. 그 실행으로 답하면
+      // 시작 프롬프트가 사라지므로 멈춤이 끝나기를 기다린 뒤 새 실행으로 시작한다. 종료를
+      // 올리는 중은 상태가 이미 끝남이라 새 실행 길이 앞 실행이 빠지기를 기다린다(U5b).
+      await stopEndOf(task);
+      const live = hasLiveExecutionEvidence(task) && isActiveTaskStatus(task.status);
       if (!live) await this.addIntervention(params, onResume, true);
       const execution = task.executionRegistration;
       if (!execution) throw new Error("실행 등록을 확인하지 못했습니다. 같은 요청을 다시 확인하세요.");
@@ -229,6 +236,7 @@ export class TaskInterventionRoute {
     let startedActivation: Task["executionActivation"];
     let notificationDisposition: "queued" | "auto_resume" | undefined;
     let notificationPublication: NotificationPublication | undefined;
+    let restartAfterStop: Promise<void> | undefined;
     const startDeferredResumeOnce = (): void => {
       if (deferredResumeStarted || !deferredResume) return;
       deferredResumeStarted = true;
@@ -284,7 +292,16 @@ export class TaskInterventionRoute {
         && hasPriorDispatchAttempt(admission.row)
         && !request.targetContentReceiptAbsent;
       let result: AddInterventionResult;
-      if (isRunning && ensureOnly) {
+      const stopEnd = ensureOnly ? undefined : stopEndOf(task);
+      if (stopEnd) {
+        // 멈추는 중에는 끊길 턴에 넣지 않고 멈춤 장벽도 건드리지 않는다. 대기 줄에 쌓고
+        // 멈춤이 끝나면 한 번 다시 띄운다(카드 #1266 U5b, 바깥 요청 칸 stopping/intervene).
+        result = await this.deps.runningInterventionTransition.queueOnly(task, message);
+        restartAfterStop = stopEnd;
+        if (admission.kind === "admitted" && isNotificationDeliveryIntent(admission.row.intent)) {
+          notificationDisposition = "queued";
+        }
+      } else if (isRunning && ensureOnly) {
         result = {suppressed:true,deliveryId:request.deliveryId ?? "",reason:"already_running"};
       } else if (isRunning) {
         result = heldHumanRetry
@@ -367,6 +384,12 @@ export class TaskInterventionRoute {
       // can dequeue it. A worker crash before this callback is recoverable from
       // the ledger; starting first would leave a running task with no receipt.
       startDeferredResumeOnce();
+      if (restartAfterStop) {
+        void restartQueuedAfterStop(task, restartAfterStop, onResume, {
+          ...this.deps,
+          ensuring: (sessionId) => this.ensuring.has(sessionId),
+        });
+      }
       if ("autoResumed" in result && startedActivation) {
         await startedActivation.promise;
       }

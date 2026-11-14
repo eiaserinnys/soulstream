@@ -41,6 +41,18 @@ export const intervene = (world: CellWorld, text = "새 지시") =>
 export const resume = (world: CellWorld) =>
   world.manager.ensureRunning(world.message("시작", { deliveryId: "delivery-start" }), world.onResume);
 
+/**
+ * 카드 착수의 재개다. orch는 사람이 시작하면 browser, 자동 배정이면 system 발신으로
+ * 「이어서 수행하세요」 프롬프트를 ensure_session_running으로 보낸다(card_dispatch_runtime.ts).
+ */
+export const CARD_START_CALLERS = ["browser", "system"] as const;
+export const cardStartResume = (world: CellWorld, source: (typeof CARD_START_CALLERS)[number]) =>
+  world.manager.ensureRunning(world.message("카드 「시험」를 이어서 수행하세요.", {
+    deliveryId: `card-execution:${source}`,
+    user: source,
+    callerInfo: { source },
+  }), world.onResume);
+
 /** 끝난 세션을 다시 띄우되 활성화를 붙들어 시동 중에 멈춰 둔다. */
 export async function startStarting(world: CellWorld) {
   const task = await hydrate(world);

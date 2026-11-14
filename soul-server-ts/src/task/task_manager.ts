@@ -307,6 +307,7 @@ export class TaskManager {
       projectClosedRunner: async (task, detail) =>
         await this.runnerRecovery.projectClosed(task, detail),
       readSessionTermination: (sessionId) => this.db.getSession(sessionId),
+      resumeQueuedAfterStop: (task, onResume) => this.resumeQueuedAfterTerminal(task, onResume),
       logger: this.logger,
     });
   }

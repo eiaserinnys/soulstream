@@ -21,6 +21,8 @@ import {
   track,
 } from "./card1266_request_cells_harness.js";
 import {
+  CARD_START_CALLERS,
+  cardStartResume,
   deleteTask,
   expectDefinition,
   expectOneTerminal,
@@ -187,14 +189,41 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       expectOneTerminal(world, "killed");
     });
 
-    it("멈추는 중에 지시가 오면 멈추는 턴의 엔진에 넘긴다", async () => {
-      const { world, runner, finish } = await stopping();
-      expectDefinition("stopping", "intervene", "deliver_or_queue");
+    it("멈추는 중에 지시가 오면 대기 줄에 쌓았다가 멈춤이 끝난 뒤 다시 띄운다", async () => {
+      const { world, task, runner, firstStop, finish } = await stopping();
+      expectDefinition("stopping", "intervene", "queue_and_restart");
 
-      await expect(intervene(world)).resolves.toEqual({ delivered: true });
-      expect(runner.engine.intervene).toHaveBeenCalledOnce();
+      await expect(intervene(world)).resolves.toMatchObject({ delivered: false, queued: true });
+      expect(runner.engine.intervene).not.toHaveBeenCalled();
+      // 지시는 멈춤 장벽을 건드리지 않으므로 뒤에 온 멈춤도 앞 멈춤에 붙는다(약속 15).
+      expect(task.interruptBarrierKind).toBe("stop");
+      const secondStop = track(stopTask(world));
+      await flush();
+      expect(secondStop.settled).toBe(false);
+      expect(world.resumes).toHaveLength(0);
+
       await finish();
+      expect([firstStop.value, secondStop.value]).toEqual([true, true]);
+      expect(runner.interrupt).toHaveBeenCalledOnce();
       expectOneTerminal(world, "killed");
+      // 멈춤이 끝난 뒤 새 턴에 정확히 한 번 들어간다(약속 13).
+      expect(world.resumes.map((record) => record.queueAtStart)).toEqual([["새 지시"]]);
+      expect(world.resumes[0]!.runnerAtStart).toBeUndefined();
+    });
+
+    it("멈추는 중 지시 뒤에 지우면 멈춤을 기다려 지우고 지시로 다시 띄우지 않는다", async () => {
+      const { world, runner, firstStop, finish } = await stopping();
+
+      await expect(intervene(world)).resolves.toMatchObject({ delivered: false, queued: true });
+      const deleted = track(deleteTask(world));
+      await flush();
+      expect(world.deleteSession).not.toHaveBeenCalled();
+
+      await finish();
+      expect([firstStop.value, deleted.value]).toEqual([true, true]);
+      expect(runner.interrupt).toHaveBeenCalledOnce();
+      expectOneTerminal(world, "killed");
+      expect(world.deleteSession).toHaveBeenCalledOnce();
       expect(world.resumes).toHaveLength(0);
     });
 
@@ -212,13 +241,38 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       expect(world.deleteSession).toHaveBeenCalledOnce();
     });
 
-    it("멈추는 중에 재개가 오면 새 실행을 시작하지 않는다", async () => {
-      const { world, finish } = await stopping();
-      expectDefinition("stopping", "resume", "reject_runner_attached");
-
-      await expect(resume(world)).resolves.toMatchObject({ state: "already_running" });
-      expect(world.resumes).toHaveLength(0);
+    it("멈추는 중에 재개가 오면 멈춤이 끝난 뒤 그 프롬프트로 새 실행을 시작한다", async () => {
+      expectDefinition("stopping", "resume", "wait_then_start");
+      // 사람이 카드를 시작한 재개와 자동 배정의 재개 둘 다 같은 길이다.
+      for (const source of CARD_START_CALLERS) {
+        const { world, firstStop, finish } = await stopping();
+        const started = track(cardStartResume(world, source));
+        await flush();
+        expect(started.settled, source).toBe(false);
+        await finish();
+        expect(firstStop.value, source).toBe(true);
+        expectOneTerminal(world, "killed");
+        expect(started.value, source).toMatchObject({
+          state: "started",
+          execution: { registrationId: "registration-resumed-1" },
+        });
+        expect(world.resumes.map((record) => record.queueAtStart), source)
+          .toEqual([["카드 「시험」를 이어서 수행하세요."]]);
+      }
+    });
+    it("멈추는 중에 지시와 카드 착수가 겹치면 착수가 새 실행 하나로 둘 다 받는다", async () => {
+      const { world, firstStop, finish } = await stopping();
+      await expect(intervene(world)).resolves.toMatchObject({ queued: true });
+      const started = track(cardStartResume(world, "system"));
+      await flush();
       await finish();
+
+      expect(firstStop.value).toBe(true);
+      expectOneTerminal(world, "killed");
+      expect(started.value).toMatchObject({ state: "started" });
+      expect(world.resumes).toHaveLength(1);
+      expect([...world.resumes[0]!.queueAtStart].sort())
+        .toEqual(["새 지시", "카드 「시험」를 이어서 수행하세요."].sort());
     });
   });
 
@@ -276,13 +330,22 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       expectOneTerminal(world, "completed_ok");
     });
 
-    it("종료를 올리는 중에 재개가 오면 새 실행을 시작하지 않는다", async () => {
-      const { world, finish } = await terminating();
-      expectDefinition("terminating", "resume", "reject_runner_attached");
-
-      await expect(resume(world)).resolves.toMatchObject({ state: "already_running" });
-      expect(world.resumes).toHaveLength(0);
-      await finish();
+    it("종료를 올리는 중에 재개가 오면 종료가 끝난 뒤 그 프롬프트로 새 실행을 시작한다", async () => {
+      expectDefinition("terminating", "resume", "wait_then_start");
+      for (const source of CARD_START_CALLERS) {
+        const { world, finish } = await terminating();
+        const started = track(cardStartResume(world, source));
+        await flush();
+        expect(started.settled, source).toBe(false);
+        await finish();
+        expectOneTerminal(world, "completed_ok");
+        expect(started.value, source).toMatchObject({
+          state: "started",
+          execution: { registrationId: "registration-resumed-1" },
+        });
+        expect(world.resumes.map((record) => record.queueAtStart), source)
+          .toEqual([["카드 「시험」를 이어서 수행하세요."]]);
+      }
     });
   });
 });

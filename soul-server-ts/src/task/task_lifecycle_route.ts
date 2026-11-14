@@ -9,6 +9,7 @@ import {
 } from "./task_lifecycle_transition.js";
 import { isActiveTaskStatus, type Task } from "./task_models.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import { stopBarrierOf } from "./task_stopping_intervention.js";
 import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
 import type { ClaudeRuntimeRegistryCloseReason } from
   "../engine/claude_session_client_registry.js";
@@ -92,7 +93,18 @@ export class TaskLifecycleRoute {
   async deleteTask(sessionId: string): Promise<boolean> {
     const task = this.deps.getTask(sessionId);
     if (!task) return false;
+    // 멈추는 중에 쌓인 지시가 멈춤 뒤 지울 세션을 다시 띄우지 않게 한다(U5b). 지우지
+    // 못하고 던지면 표지를 거둬 쌓인 지시가 다음 실행에 들어갈 수 있게 둔다.
+    task.deletionRequested = true;
+    try {
+      return await this.deleteKnownTask(sessionId, task);
+    } catch (err) {
+      task.deletionRequested = undefined;
+      throw err;
+    }
+  }
 
+  private async deleteKnownTask(sessionId: string, task: Task): Promise<boolean> {
     const runner = task.runner;
     // 실행 중인 세션은 사람이 멈춘 것과 같은 경로로 멈춘다. 부른 세션 통지 등록이
     // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다. 러너가 아직 붙지 않은
@@ -107,8 +119,7 @@ export class TaskLifecycleRoute {
     // 지시 넘기기 장벽은 멈춤 마무리가 아니므로 멈춤 대기로 읽지 않는다. 러너 없이
     // DB에서 올린 활성 task는 지연 로더가 만든 것이라 조용히 지우지 않고 같은 멈춤
     // 경로로 종료 기록과 통지 등록을 만든 뒤 지운다.
-    const stopFinalizationPending = task.interruptRequest !== undefined
-      && task.interruptBarrierKind !== "intervention_handoff";
+    const stopFinalizationPending = stopBarrierOf(task) !== undefined;
     const runnerlessActive = isActiveTaskStatus(task.status)
       && !runner
       && nodeExecutionPhaseOfTask(task) === "hydrated_active";

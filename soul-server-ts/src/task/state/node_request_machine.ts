@@ -241,10 +241,10 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
       "멈추는 중에 멈춤이 오면 앞선 멈춤에 붙는다",
     ),
     intervene: cell(
-      "deliver_or_queue",
+      "queue_and_restart",
       "current",
-      "멈춤 응답 전이라 아직 살아 있는 실행으로 보고 엔진에 넣어 본다. 안 들어가면 대기 줄에 쌓는다",
-      "멈추는 중에 지시가 오면 멈추는 턴의 엔진에 넘긴다",
+      "끊길 턴에 넣지 않고 멈춤 장벽도 건드리지 않은 채 대기 줄에 쌓는다. 멈춤이 끝나면 그 지시로 한 번 다시 띄우고, 뒤이은 삭제가 있으면 띄우지 않는다",
+      "멈추는 중에 지시가 오면 대기 줄에 쌓았다가 멈춤이 끝난 뒤 다시 띄운다",
     ),
     delete: cell(
       "stop_then_delete",
@@ -253,10 +253,10 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
       "멈추는 중에 지우면 멈춤 마무리를 기다린 뒤 지운다",
     ),
     resume: cell(
-      "reject_runner_attached",
+      "wait_then_start",
       "current",
-      "멈춤 응답 전이라 살아 있는 실행으로 보고 새 실행을 시작하지 않는다",
-      "멈추는 중에 재개가 오면 새 실행을 시작하지 않는다",
+      "끝나 가는 실행으로 답하지 않는다. 멈춤이 끝난 뒤 그 프롬프트로 새 실행을 시작하고, 시작하지 못하면 오류로 돌려준다",
+      "멈추는 중에 재개가 오면 멈춤이 끝난 뒤 그 프롬프트로 새 실행을 시작한다",
     ),
   },
   terminating: {
@@ -279,10 +279,10 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
       "종료를 올리는 중에 지우면 줄을 지운다",
     ),
     resume: cell(
-      "reject_runner_attached",
+      "wait_then_start",
       "current",
-      "종료 정리가 실행 등록을 놓기 전이라 새 실행을 시작하지 않고 그 실행을 돌려준다",
-      "종료를 올리는 중에 재개가 오면 새 실행을 시작하지 않는다",
+      "끝나 가는 실행으로 답하지 않는다. 종료가 끝난 뒤 그 프롬프트로 새 실행을 시작하고, 시작하지 못하면 오류로 돌려준다",
+      "종료를 올리는 중에 재개가 오면 종료가 끝난 뒤 그 프롬프트로 새 실행을 시작한다",
     ),
   },
   retained_claude_background: {

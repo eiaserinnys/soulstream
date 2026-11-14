@@ -1966,8 +1966,15 @@ export class TaskExecutor {
       }
       await commitGenerationStart(task, this.persistence, this.sessionMutations);
     }
-    const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
-    if (initialTurnInput.generationRollover) {
+    // 세대 넘김 창(넘김 기록부터 첫 턴까지) 안에서 멈춤이나 삭제가 왔으면 넘김 시작을 알리지
+    // 않고 첫 턴도 보내지 않는다. 꺼낸 지시는 줄에 되돌려 다음 시작이 받게 한다. 넘김은
+    // 적용 중으로 남아 다음 실행이 잇는다(카드 #1266 U5b, 약속 13과 15).
+    const stoppedInGenerationWindow = (): boolean =>
+      task.activeGenerationRollover !== undefined && !isActiveTaskStatus(task.status);
+    const initialTurnInput = stoppedInGenerationWindow()
+      ? undefined
+      : await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
+    if (initialTurnInput?.generationRollover && !stoppedInGenerationWindow()) {
       if (!initialTurnInput.generationCheckpointStats) {
         throw new Error("Generation rollover input is missing checkpoint statistics");
       }
@@ -1979,13 +1986,21 @@ export class TaskExecutor {
     }
     const endedTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     try {
-      await this.consumeTurnLoop(
-        task,
-        agent,
-        runner,
-        initialTurnInput,
-        endedTurnReceipts,
-      );
+      if (initialTurnInput && !stoppedInGenerationWindow()) {
+        await this.consumeTurnLoop(
+          task,
+          agent,
+          runner,
+          initialTurnInput,
+          endedTurnReceipts,
+        );
+      } else {
+        if (initialTurnInput?.interventions?.length) {
+          task.interventionQueue = [...initialTurnInput.interventions, ...task.interventionQueue];
+        }
+        // 멈춤이 종료를 올리는 중이면 그 마무리를 기다린다. 먼저 마무리하면 종료가 두 번 오른다.
+        await task.interruptRequest?.catch(() => false);
+      }
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         if (task.terminationEventRecorded !== true) task.completedAt = new Date();

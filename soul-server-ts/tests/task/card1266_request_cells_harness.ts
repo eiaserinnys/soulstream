@@ -246,6 +246,9 @@ export interface ResumeRecord {
 export interface WorldOptions {
   /** 실행 시작과 러너 복구가 붙일 러너다. */
   runner?: FakeRunner;
+  /** 세대 넘김이 목표 프리셋을 찾는 목록과 새 세대 맥락을 짓는 쪽이다. */
+  modelCatalog?: unknown;
+  contextBuilder?: unknown;
 }
 
 /** 운영 조립과 같은 TaskManager와 TaskExecutor다. */
@@ -326,18 +329,20 @@ export function makeWorld(row: SessionRow | null = sessionRow(), options: WorldO
     persistence,
     broadcaster,
     silentLogger,
-    undefined,
+    options.contextBuilder as never,
     completionNotifier as never,
     undefined,
     undefined,
     undefined,
-    undefined,
+    options.modelCatalog as never,
     runnerFactory as never,
     undefined,
     // 운영 조립(task_runtime_composition.ts)과 같이 끝난 실행 뒤의 쌓인 지시를 다시 띄운다.
     async (task: Task) => {
       await manager.resumeQueuedAfterTerminal(task, onResume);
     },
+    undefined,
+    sessionMutations,
   );
   const message = (text: string, overrides: Partial<AddInterventionParams> = {}) => ({
     agentSessionId: SESSION_ID,
@@ -354,6 +359,7 @@ export function makeWorld(row: SessionRow | null = sessionRow(), options: WorldO
     completionNotifier,
     deleteSession,
     getSession,
+    sessionMutations,
     resumes,
     onResume,
     message,
