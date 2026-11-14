@@ -42,7 +42,10 @@ export type NodeWireReason = (typeof NODE_WIRE_REASONS)[number];
 export const NODE_REGISTRATION_MATCHES = ["same", "different"] as const;
 export type NodeRegistrationMatch = (typeof NODE_REGISTRATION_MATCHES)[number];
 
-/** 정본 투영의 termination_event_id와 우리 종료의 관계다. */
+/**
+ * 정본 투영의 termination_event_id와 우리 종료의 관계다. 잇기 호출에는 우리 종료가 없으므로,
+ * 중앙 세션 줄을 읽어 끝남이 기록돼 있으면 `different`, 끊김 중단처럼 기록이 없으면 `absent`다.
+ */
 export const NODE_TERMINATION_PROJECTIONS = ["same", "different", "absent"] as const;
 export type NodeTerminationProjection = (typeof NODE_TERMINATION_PROJECTIONS)[number];
 

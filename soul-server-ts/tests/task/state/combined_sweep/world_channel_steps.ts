@@ -45,7 +45,7 @@ function inList(g: G): boolean {
 }
 
 /** 서버가 사건 하나를 적용한다 (M:336-382). g는 적용 전 구성, base는 그 사건을 줄에서 뺀 구성이다. */
-function serverApply(g: G, base: G, msg: string, modelAdoptOrder: boolean): ServerVerdict {
+function serverApply(g: G, base: G, msg: string): ServerVerdict {
   const { S, W } = g;
   const occ = g.wt === "occ";
   if (msg === "RESUME") {
@@ -66,9 +66,8 @@ function serverApply(g: G, base: G, msg: string, modelAdoptOrder: boolean): Serv
     return {
       applied,
       outs: [put(base, { S: next })],
-      reason: applied
-        ? "none"
-        : occ && TERMINAL_STATES.has(S) && !(modelAdoptOrder && RECORDED.has(S)) ? "worktree_busy" : "already_terminal",
+      // orch 순서: 워크트리 점유를 끝남 검사보다 먼저 본다. 기록된 끝남은 노드가 중앙 줄로 가른다.
+      reason: applied ? "none" : occ && TERMINAL_STATES.has(S) ? "worktree_busy" : "already_terminal",
     };
   }
   if (msg === "REG") {
@@ -126,7 +125,10 @@ export function channelSteps(ctx: WorldContext): Record<string, StepFn> {
     route,
     reason,
     registration: "same" as const,
-    termination: (TERMS.has(msg) || msg === "T_COPY") && RECORDED.has(g.S) ? "different" as const : "absent" as const,
+    // 종료 호출은 정본 투영의 종료와, 잇기 호출은 중앙 세션 줄의 끝남 기록과 견준다(centralSessionFactsOf).
+    termination: (TERMS.has(msg) || msg === "T_COPY" || msg === "ADOPT") && RECORDED.has(g.S)
+      ? "different" as const
+      : "absent" as const,
     centralSession: "present" as const,
     retained: o.life === "held" && o.p === "up",
   });
@@ -134,7 +136,7 @@ export function channelSteps(ctx: WorldContext): Record<string, StepFn> {
   /** 노드가 응답을 받는다 (M:383-422). 거절이면 decideNodeResponse의 칸과 의도로 M의 가지를 고른다. */
   const apply = (g: G, base: G, raw: string): G[] => {
     const msg = baseMsg(raw);
-    const { applied, outs, reason } = serverApply(g, base, msg, options.modelAdoptOrder);
+    const { applied, outs, reason } = serverApply(g, base, msg);
     const result: G[] = [];
     for (const o of outs) {
       const want = WAITING[o.ex];

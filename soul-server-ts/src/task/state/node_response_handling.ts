@@ -64,6 +64,49 @@ export function judgeNodeResponse(facts: NodeResponseFacts): NodeResponseVerdict
   return { facts, decision: decideNodeResponse(facts) };
 }
 
+/**
+ * 캐시 없이 읽은 중앙 세션 줄 하나를 응답 사실로 옮긴다. 줄이 없으면 중앙 세션 없음이다.
+ * 잇기 호출에는 우리 종료가 없으므로 그 줄에 끝남이 기록됐는지를 종료 투영으로 싣는다
+ * (기록됨은 `different`, 끊김 중단처럼 기록 없음은 `absent`, 카드 #1266 U5c).
+ */
+export function centralSessionFactsOf(
+  facts: NodeResponseFacts,
+  row: unknown | null,
+): NodeResponseFacts {
+  if (row === null) return { ...facts, centralSession: "absent" };
+  if (facts.call !== "startup_recovery_adopt" && facts.call !== "attached_runner_adopt") {
+    return { ...facts, centralSession: "present" };
+  }
+  return {
+    ...facts,
+    centralSession: "present",
+    termination: centralEndRecorded(row) ? "different" : "absent",
+  };
+}
+
+/**
+ * 중앙 세션 줄에 끝남이 기록돼 있는가. 종료 사건 번호가 있으면 기록됐다. 번호 없는 끝남 가운데
+ * 끊김 중단(interrupted)은 종료를 받는 칸이라 기록 없음이고, 서버가 스스로 닫은 다른 끝남은
+ * 종료 거절의 판정과 같이 기록된 것으로 본다(nodeResponseFactsFromApplication).
+ */
+function centralEndRecorded(row: unknown): boolean {
+  if (typeof row !== "object" || row === null) return false;
+  const { status, termination_event_id: terminationEventId } = row as {
+    status?: unknown;
+    termination_event_id?: unknown;
+  };
+  if (
+    typeof terminationEventId === "number"
+    && Number.isSafeInteger(terminationEventId)
+    && terminationEventId > 0
+  ) {
+    return true;
+  }
+  return typeof status === "string"
+    && status !== "interrupted"
+    && isTerminalTaskStatus(status as TaskStatus);
+}
+
 function wireReason(reason: string | undefined): NodeWireReason {
   return (NODE_WIRE_REASONS as readonly string[]).includes(reason ?? "")
     ? (reason as NodeWireReason)

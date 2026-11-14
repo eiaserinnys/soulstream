@@ -36,6 +36,7 @@ import type { CompletionNotifyOptions, CompletionSettleResult } from "./completi
 import { decideNodeStopRequest } from "./state/node_barrier_decision.js";
 import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
 import {
+  centralSessionFactsOf,
   judgeNodeResponse,
   nodeResponseFactsFromApplication,
   nodeResponseFactsFromError,
@@ -703,19 +704,20 @@ export class TaskLifecycleTransition {
     return task.runnerRecoveryRegistrationId ?? executionRegistrationId ?? null;
   }
 
-  private async probeCentralSession(
+  /** 중앙 세션 줄을 캐시 없이 읽는다. 읽지 못하면 undefined다. */
+  private async readCentralSessionRow(
     sessionId: string,
-  ): Promise<"present" | "absent" | "unknown"> {
+  ): Promise<{ row: unknown | null } | undefined> {
     const read = this.ports.readCentralSession;
-    if (!read) return "unknown";
+    if (!read) return undefined;
     try {
-      return (await read(sessionId)) === null ? "absent" : "present";
+      return { row: await read(sessionId) };
     } catch (error) {
       this.deps.logger.warn(
         { err: error, sessionId },
         "central session lookup failed while settling a rejected terminal",
       );
-      return "unknown";
+      return undefined;
     }
   }
 
@@ -791,10 +793,10 @@ export class TaskLifecycleTransition {
     verdict: NodeResponseVerdict,
   ): Promise<NodeResponseVerdict> {
     if (verdict.facts.centralSession !== "unknown") return verdict;
-    const centralSession = await this.probeCentralSession(task.agentSessionId);
-    return centralSession === "unknown"
+    const read = await this.readCentralSessionRow(task.agentSessionId);
+    return read === undefined
       ? verdict
-      : judgeNodeResponse({ ...verdict.facts, centralSession });
+      : judgeNodeResponse(centralSessionFactsOf(verdict.facts, read.row));
   }
 
   /** 로컬 소유를 정리한다. 정리 포트가 이어져 있으면 그것을, 없으면 기본 정리를 쓴다. */

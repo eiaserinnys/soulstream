@@ -8,7 +8,6 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   PRODUCT,
   REVERT_OVERLAYS,
-  modelWorktreeBusyReap,
   withCache,
   type CachedDecisions,
   type DecisionName,
@@ -39,7 +38,6 @@ function options(decisions: ProductDecisions, extra: Partial<WorldOptions> = {})
     envOff: new Set(),
     settlePending: true,
     requeue: true,
-    modelAdoptOrder: false,
     decisions,
     ...extra,
   };
@@ -115,19 +113,18 @@ describe("card #1266 U5c combined sweep (lengths 2 and 1)", () => {
   });
 });
 
-describe("card #1266 U5c world port against the hand model", () => {
-  it("reproduces the model numbers when the worktree-busy adopt rejection reaps as in M", () => {
+describe("card #1266 U5c product against the hand model", () => {
+  it("reproduces the model numbers of the third proposal", () => {
     // R/fable_r3_results.jsonl 12줄과 14줄(셋째 판의 안, 길이 2와 1)이다.
-    // M은 기록된 끝남을 점유보다 먼저 보고(M:406-409), 점유면 거두고 오류 종료를 올린다.
-    const model = sweep(modelWorktreeBusyReap(PRODUCT), { modelAdoptOrder: true });
-    expect(model.configs).toBe(108_500);
-    expect(counts(model)).toMatchObject({
+    const product = sweep(PRODUCT);
+    expect(product.configs).toBe(108_500);
+    expect(counts(product)).toMatchObject({
       "safety 2": 0, "safety 4": 0, "safety 4b": 0, "safety 5": 0,
       "path 7": 0, "path 9": 0, "path 12": 0, "path 13": 0, "path 14": 0, "path 15": 1_210,
       "fair 7": 0, "fair 9": 0, "fair 12": 0, "fair 13": 0, "fair 14": 0, "fair 15": 1_222,
       dupHandover: 0, vanishedStop: 0,
     });
-    const off = sweep(modelWorktreeBusyReap(PRODUCT), { envOff: new Set(["J35"]), modelAdoptOrder: true });
+    const off = sweep(PRODUCT, { envOff: new Set(["J35"]) });
     expect(off.configs).toBe(76_109);
     expect(Object.values(off.path).map((r) => r.count)).toEqual([0, 0, 0, 0, 0, 0]);
     expect(Object.values(off.fair).map((r) => r.count)).toEqual([0, 0, 0, 0, 0, 0]);

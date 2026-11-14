@@ -19,11 +19,6 @@ export interface WorldOptions {
   settlePending: boolean;
   /** I6 코덱스 대기 지시 복구(M:245-251). 장부 다시 잇기가 순수 함수 밖에 있어 세계 스위치다. */
   requeue: boolean;
-  /**
-   * 모형 대조 전용이다. 참이면 잇기 거절의 사유를 M 순서로 낸다: 기록된 끝남(RECORDED)을 워크트리 점유보다
-   * 먼저 본다(M:406-409). 거짓이면 orch 순서다(worktree_busy를 끝남 검사보다 먼저 본다).
-   */
-  modelAdoptOrder: boolean;
   decisions: ProductDecisions;
 }
 

@@ -160,20 +160,3 @@ export const REVERT_OVERLAYS = {
 } as const satisfies Record<string, (inner: ProductDecisions) => ProductDecisions>;
 
 export type RevertOverlay = keyof typeof REVERT_OVERLAYS;
-
-/**
- * 모형 대조 덮개다. 되돌림이 아니다. 잇기가 워크트리 점유(worktree_busy)로 거절되면 M처럼
- * 러너를 거두고 오류 종료를 올린다(M:408-412). 제품은 이 거절을 다시 될 수 있는 거절로 두고
- * 거두지 않는다(node_adopt_rejection.ts, design.md:42). M은 기록된 끝남을 점유보다 먼저 보므로 세계 스위치 modelAdoptOrder와 함께 쓴다. 둘을 바꾸면 세계가 M의 숫자를 그대로 내는지 본다.
- */
-export function modelWorktreeBusyReap(inner: ProductDecisions): ProductDecisions {
-  return {
-    ...inner,
-    nodeResponse: (facts) =>
-      (facts.call === "startup_recovery_adopt" || facts.call === "attached_runner_adopt")
-      && facts.route === "applied_false"
-      && facts.reason === "worktree_busy"
-        ? { cell: "no_retry", reason: "worktree_busy", intents: ["mark_central_error", "reap_runner"] }
-        : inner.nodeResponse(facts),
-  };
-}

@@ -265,6 +265,16 @@ export function nodeScenarioRows(): NodeScenarioRow[] {
       },
     },
     {
+      scenario: "같은 거절인데 중앙 세션에 끝남이 기록됨",
+      facts: {
+        ...BASE_FACTS,
+        call: "attached_runner_adopt",
+        route: "applied_false",
+        reason: "worktree_busy",
+        termination: "different",
+      },
+    },
+    {
       scenario: "붙은 러너 잇기가 사유 없이 거절됨(옛 서버)",
       facts: { ...BASE_FACTS, call: "attached_runner_adopt", route: "applied_false" },
     },
