@@ -62,6 +62,8 @@ export type ControlInboxRuntimeOptions = {
   nowMonoMs?: () => number;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   clearScheduled?: (handle: unknown) => void;
+  /** Reports a reply that was dropped because the control connection was gone. */
+  log?(message: string, fields: Record<string, unknown>): void;
 };
 
 type RuntimeWork = {
@@ -234,14 +236,17 @@ export class ControlInboxRuntime {
     runtimeWork.timeoutHandle = this.schedule(() => {
       if (this.activeWork.get(workId) !== runtimeWork) return;
       this.activeWork.delete(workId);
-      void this.sendError({
-        family: inventory.family,
-        requestId,
-        receivedAtMonoMs,
-        code: "CONTROL_RESULT_TIMEOUT",
-        message: `${commandType} did not produce a result within the bounded deadline`,
-        status: "degraded",
-      });
+      void this.sendBestEffort(
+        () => this.sendError({
+          family: inventory.family,
+          requestId,
+          receivedAtMonoMs,
+          code: "CONTROL_RESULT_TIMEOUT",
+          message: `${commandType} did not produce a result within the bounded deadline`,
+          status: "degraded",
+        }),
+        { kind: "bounded_timeout", commandType, requestId },
+      );
     }, boundedResultTimeoutMs(
       commandType,
       this.options.boundedResultTimeoutMs ?? DEFAULT_BOUNDED_RESULT_TIMEOUT_MS,
@@ -280,10 +285,13 @@ export class ControlInboxRuntime {
       }
       return true;
     }
-    await this.sendAck(
-      runtimeWork.dispatch.commandFamily,
-      runtimeWork.receivedAtMonoMs,
-      { ...response, requestId: runtimeWork.requestId },
+    await this.sendBestEffort(
+      () => this.sendAck(
+        runtimeWork.dispatch.commandFamily,
+        runtimeWork.receivedAtMonoMs,
+        { ...response, requestId: runtimeWork.requestId },
+      ),
+      { kind: "bounded_result", workId, requestId: runtimeWork.requestId },
     );
     return true;
   }
@@ -359,6 +367,31 @@ export class ControlInboxRuntime {
       state: result.state,
       response: result.response,
     });
+  }
+
+  /**
+   * Sends a reply to a bounded query whose answer only matters on the connection that asked.
+   * With no connection (disconnected, or the socket closing mid-send) the reply has nowhere to
+   * go: it is dropped with one log line. Throwing here reached the worker thread as an
+   * unhandled rejection and killed it (card #1266 U6). Durable results are not sent through
+   * this path; they replay after reconnect.
+   */
+  private async sendBestEffort(
+    send: () => Promise<void>,
+    context: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.sendFrame) {
+      this.options.log?.("control reply dropped: control channel is not connected", context);
+      return;
+    }
+    try {
+      await send();
+    } catch (error) {
+      this.options.log?.("control reply dropped: send failed", {
+        ...context,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async sendError(input: {

@@ -36,6 +36,15 @@ const runtime = new ControlInboxRuntime({
   onDurableCommit: (workId) => {
     parent.postMessage({ type: "control_domain_committed", workId });
   },
+  log: (message, fields) => postLog("warn", message, fields),
+});
+
+// 마지막 안전망이다. 근본 자리(연결 없을 때의 응답 버리기)를 지나 새는 rejection 하나로 워커가
+// 죽으면 진행 중인 bounded 작업의 결과와 오류 프레임이 함께 버려진다. 로그만 남기고 산다.
+process.on("unhandledRejection", (reason) => {
+  postLog("error", "control worker unhandled rejection", {
+    error: reason instanceof Error ? reason.message : String(reason),
+  });
 });
 
 let activeConnectionId: string | undefined;
@@ -87,17 +96,39 @@ async function commitDomainResult(
   workId: string,
   response: Record<string, unknown>,
 ): Promise<void> {
-  await runtime.handleDomainResult(workId, response);
+  try {
+    await runtime.handleDomainResult(workId, response);
+  } catch (error) {
+    postLog("error", "control domain result commit failed", {
+      workId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   if (!workId.startsWith("durable:")) {
     parent.postMessage({ type: "control_domain_committed", workId });
   }
 }
 
 async function commitDomainFailure(workId: string, error: unknown): Promise<void> {
-  await runtime.handleDomainFailure(workId, error);
+  try {
+    await runtime.handleDomainFailure(workId, error);
+  } catch (commitError) {
+    postLog("error", "control domain failure commit failed", {
+      workId,
+      error: commitError instanceof Error ? commitError.message : String(commitError),
+    });
+  }
   if (!workId.startsWith("durable:")) {
     parent.postMessage({ type: "control_domain_committed", workId });
   }
+}
+
+function postLog(
+  level: "warn" | "error",
+  message: string,
+  fields: Record<string, unknown>,
+): void {
+  parent.postMessage({ type: "control_worker_log", level, message, fields });
 }
 
 function connect(): void {

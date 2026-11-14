@@ -18,7 +18,13 @@ export type ControlWorkerMessage =
   | { type: "control_work"; work: ControlInboxDispatchWork }
   | { type: "control_domain_committed"; workId: string }
   | { type: "control_worker_initialized"; stats: Record<string, number> }
-  | { type: "control_worker_fatal"; message: string };
+  | { type: "control_worker_fatal"; message: string }
+  | {
+    type: "control_worker_log";
+    level: "warn" | "error";
+    message: string;
+    fields: Record<string, unknown>;
+  };
 
 export type ControlWorkerBoundary = {
   postMessage(message: unknown): void;
@@ -134,6 +140,10 @@ export class ControlChannelService {
     }
     if (message.type === "control_worker_fatal") {
       this.options.logger.error({ message: message.message }, "Control worker startup failed");
+      return;
+    }
+    if (message.type === "control_worker_log") {
+      this.options.logger[message.level](message.fields, message.message);
       return;
     }
     if (message.type === "control_domain_committed") {
