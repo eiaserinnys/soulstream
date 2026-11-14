@@ -67,6 +67,10 @@ export type NodeWsRouteOptions = {
   onCommittedProviderEvent?: NodeEventIngressControllerOptions["onCommittedProviderEvent"];
   registrationTimeoutMs?: number;
   heartbeatTimeoutMs?: number;
+  /** Control lane protocol ping interval (default 15000ms). */
+  controlPingIntervalMs?: number;
+  /** Consecutive unanswered control pings before the lane is terminated (default 2). */
+  controlPingMissLimit?: number;
   releaseActivationReceipts?: ReleaseActivationReceiptStore;
 };
 

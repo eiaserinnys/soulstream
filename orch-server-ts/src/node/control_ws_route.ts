@@ -21,6 +21,8 @@ const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 const REGISTRATION_TIMEOUT_CLOSE_CODE = 4001;
 const INTERNAL_ERROR_CLOSE_CODE = 1011;
+const DEFAULT_CONTROL_PING_INTERVAL_MS = 15_000;
+const DEFAULT_CONTROL_PING_MISS_LIMIT = 2;
 
 export function registerNodeControlWsRoute(
   app: FastifyInstance,
@@ -29,10 +31,18 @@ export function registerNodeControlWsRoute(
     nodeCredentials: NodeCredentialResolver | null;
     transportHub?: NodeCommandTransportHub;
     eventSink?: (events: NodeRegistryEvent[]) => void;
+    controlPingIntervalMs?: number;
+    controlPingMissLimit?: number;
   },
   security: { environment: string; authBearerToken: string },
   registrationTimeoutMs: number,
 ): void {
+  const controlPingIntervalMs = resolveControlPingIntervalMs(
+    options.controlPingIntervalMs,
+  );
+  const controlPingMissLimit = resolveControlPingMissLimit(
+    options.controlPingMissLimit,
+  );
   // The principal resolved in preValidation rides the same Fastify request
   // object into the websocket handler; the value never leaves this route.
   const principalByRequest = new WeakMap<object, NodePrincipal | null>();
@@ -71,11 +81,20 @@ export function registerNodeControlWsRoute(
     let finalized = false;
     let registrationTimer: ReturnType<typeof setTimeout> | undefined;
     let unregisterRevocation: (() => void) | undefined;
+    let missedPongs = 0;
+    let pingTimer: ReturnType<typeof setInterval> | undefined;
+
+    const clearPingTimer = (): void => {
+      if (pingTimer === undefined) return;
+      clearInterval(pingTimer);
+      pingTimer = undefined;
+    };
 
     const finalize = (reason: string): void => {
       if (finalized) return;
       finalized = true;
       if (registrationTimer !== undefined) clearTimeout(registrationTimer);
+      clearPingTimer();
       if (options.transportHub && attachment) {
         options.transportHub.detach(attachment);
       }
@@ -97,6 +116,20 @@ export function registerNodeControlWsRoute(
       } finally {
         finalize(reason);
       }
+    };
+    /**
+     * A half-open TCP connection never delivers a close handshake. Detach the
+     * control lane first so the next command falls back to the data lane, then
+     * drop the socket without waiting for the peer to answer a close frame.
+     */
+    const terminateAndFinalize = (reason: string): void => {
+      clearPingTimer();
+      try {
+        socket.terminate();
+      } catch {
+        // Canonical attachment cleanup still runs below.
+      }
+      finalize(reason);
     };
     const send = (frame: Record<string, unknown>): boolean => {
       try {
@@ -128,6 +161,30 @@ export function registerNodeControlWsRoute(
         if (closers.size === 0) connectionsByCredential.delete(credentialId);
       };
     }
+
+    // Every control socket, regardless of the node's capabilities or version,
+    // gets protocol pings: a half-open control lane otherwise blackholes
+    // commands until the OS TCP retransmission limit. A pong proves the peer
+    // is still there; two intervals without one drop the lane.
+    socket.on("pong", () => {
+      missedPongs = 0;
+    });
+    pingTimer = setInterval(() => {
+      if (finalized) {
+        clearPingTimer();
+        return;
+      }
+      if (missedPongs >= controlPingMissLimit) {
+        terminateAndFinalize("control ping timeout");
+        return;
+      }
+      missedPongs += 1;
+      try {
+        socket.ping();
+      } catch {
+        // A broken socket surfaces through its close event.
+      }
+    }, controlPingIntervalMs);
 
     registrationTimer = setTimeout(() => {
       closeAndFinalize(
@@ -229,6 +286,22 @@ export function registerNodeControlWsRoute(
       "websocket error",
     ));
   });
+}
+
+function resolveControlPingIntervalMs(value: number | undefined): number {
+  const intervalMs = value ?? DEFAULT_CONTROL_PING_INTERVAL_MS;
+  if (!Number.isInteger(intervalMs) || intervalMs <= 0) {
+    throw new Error(`controlPingIntervalMs must be a positive integer: ${intervalMs}`);
+  }
+  return intervalMs;
+}
+
+function resolveControlPingMissLimit(value: number | undefined): number {
+  const missLimit = value ?? DEFAULT_CONTROL_PING_MISS_LIMIT;
+  if (!Number.isInteger(missLimit) || missLimit <= 0) {
+    throw new Error(`controlPingMissLimit must be a positive integer: ${missLimit}`);
+  }
+  return missLimit;
 }
 
 type JsonFrameParseResult =

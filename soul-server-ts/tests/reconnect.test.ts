@@ -11,15 +11,15 @@ describe("ReconnectPolicy", () => {
     vi.useRealTimers();
   });
 
-  it("기본 정책: initial 3s, max 60s, ×2 (Python upstream/reconnect.py 등가)", () => {
+  it("기본 정책: initial 1s, max 5s, ×2 (Python upstream/reconnect.py 등가)", () => {
     const p = new ReconnectPolicy();
-    expect(p.currentDelaySeconds).toBe(3.0);
+    expect(p.currentDelaySeconds).toBe(1.0);
     expect(p.attempt).toBe(0);
   });
 
-  it("wait 호출 시 attempt 증가 + delay 진행 (3→6→12→24→48→60→60)", async () => {
+  it("wait 호출 시 attempt 증가 + delay 진행 (1→2→4→5→5)", async () => {
     const p = new ReconnectPolicy();
-    const expectedSequence = [3, 6, 12, 24, 48, 60, 60];
+    const expectedSequence = [1, 2, 4, 5, 5];
 
     for (let i = 0; i < expectedSequence.length; i++) {
       const expectedDelay = expectedSequence[i]!;
@@ -38,18 +38,18 @@ describe("ReconnectPolicy", () => {
 
     // 두 번 wait
     const w1 = p.wait();
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(1000);
     await w1;
     const w2 = p.wait();
-    await vi.advanceTimersByTimeAsync(6000);
+    await vi.advanceTimersByTimeAsync(2000);
     await w2;
 
     expect(p.attempt).toBe(2);
-    expect(p.currentDelaySeconds).toBe(12);
+    expect(p.currentDelaySeconds).toBe(4);
 
     p.reset();
     expect(p.attempt).toBe(0);
-    expect(p.currentDelaySeconds).toBe(3.0);
+    expect(p.currentDelaySeconds).toBe(1.0);
   });
 
   it("커스텀 파라미터 (initial 1, max 10, multiplier 3)", async () => {
