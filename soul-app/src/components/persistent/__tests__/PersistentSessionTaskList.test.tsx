@@ -6,6 +6,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import type { CardStatus } from '../../../api/cardTypes';
 import { cardFixture } from '../../../test-support/cards';
 import { useAuthStore } from '../../../store/authStore';
+import { useCardStore } from '../../../store/cardStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useTokens } from '../../../theme';
 import { PersistentSessionTaskList } from '../PersistentSessionTaskList';
@@ -14,6 +15,7 @@ beforeEach(() => {
   const payload = Buffer.from(JSON.stringify({ email: 'task-list@example.com', sub: 'task-list@example.com', exp: 2_000_000_000 })).toString('base64url');
   useAuthStore.setState({ jwt: `header.${payload}.signature` });
   useSettingsStore.setState({ serverUrl: 'https://task-list.test', persistentSessionDevicePrefs: {} });
+  useCardStore.setState({ rows: {}, seq: 0, rowSeq: {}, details: {}, pendingItemConfirmations: {} });
 });
 
 test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 열기를 전달한다', async () => {
@@ -37,6 +39,27 @@ test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 
 
   fireEvent.press(screen.getByTestId('card-row-card-running-summary'));
   expect(onOpenCard).toHaveBeenCalledWith('card-running');
+});
+
+test('첫 목록 응답 전에는 스토어에 남은 오래된 실행 중 행을 그리지 않는다', async () => {
+  let respond!: (value: { cards: ReturnType<typeof cardFixture>[] }) => void;
+  const listCards = jest.fn(() => new Promise<{ cards: ReturnType<typeof cardFixture>[] }>((resolve) => { respond = resolve; }));
+  useCardStore.setState({
+    rows: { stale: cardFixture({ id: 'stale', status: 'running', version: 1 }) },
+    seq: 1, rowSeq: { stale: 1 },
+  });
+  const screen = render(<PersistentSessionTaskList api={{ listCards } as any} onOpenCard={jest.fn()} />);
+
+  expect(screen.getByTestId('persistent-task-list-loading')).toBeTruthy();
+  expect(screen.queryByTestId('card-row-stale-summary')).toBeNull();
+  expect(screen.queryByTestId('persistent-task-group-running')).toBeNull();
+
+  await act(async () => { respond({ cards: [cardFixture({ id: 'stale', status: 'review', version: 2 })] }); });
+
+  await waitFor(() => expect(screen.getByTestId('persistent-task-group-review')).toBeTruthy());
+  expect(screen.getByTestId('card-row-stale-summary')).toBeTruthy();
+  expect(screen.queryByTestId('persistent-task-group-running')).toBeNull();
+  expect(useCardStore.getState().rows.stale).toMatchObject({ status: 'review', version: 2 });
 });
 
 test('전체 목록 조회 실패에서 기존 새로고침 동작으로 다시 불러온다', async () => {

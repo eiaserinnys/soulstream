@@ -75,7 +75,7 @@ type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "s
 type PreparedCardAttachments = { refs: AttachmentRef[]; skip: CardLegacyLocation[] };
 type CardCommentRow = NonNullable<Awaited<ReturnType<CardRepository["getComment"]>>>;
 export type CardReportSyncParams = {
-  previousStatus: CardStatus | undefined;
+  previousStatus: CardStatus | null | undefined;
   committedCard: CardRow | undefined;
   questionChanged: boolean;
   cardChanged?: boolean;
@@ -171,7 +171,12 @@ export class CardControlPlaneService {
     const a=assigneeToFields(params.assignee);
     const result=await this.core.mutate(this.createCardMutation(params,id,prepared))
       .catch(error=>translateAssigneeConflict(this.repoSql,error,a.assignee_session_id));
-    if (!result.idempotent) this.onMutation?.({result});
+    if (!result.idempotent) {
+      this.onMutation?.({result});
+      // 생성도 상태 전이다. 생성 시점 줄을 남겨 PAS 대화 중간 현황에 카드가 바로 나오게 한다.
+      const committedCard=(await this.repoSql<CardRow[]>`SELECT * FROM cards WHERE id=${id}`)[0];
+      await this.syncReportsAfterCommit(id,{previousStatus:null,committedCard,questionChanged:false,cardChanged:true});
+    }
     return result;
   }
   /**

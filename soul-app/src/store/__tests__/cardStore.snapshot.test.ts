@@ -37,6 +37,30 @@ test('인증 scope가 바뀌면 행과 함께 sequence도 초기화한다', () =
   expect(useCardStore.getState()).toMatchObject({ rows: {}, seq: 0, rowSeq: {} });
 });
 
+test('목록 일괄 쓰기는 낮은 version 행을 버리고 최신 행과 상세를 갱신한다', () => {
+  useCardStore.getState().putCard(cardFixture({ id: 'card-a', version: 5, status: 'review' }));
+  const detail = {
+    card: cardFixture({ id: 'card-a', version: 5, status: 'review' }),
+    reports: [], comments: [], questions: [], sessions: [],
+  } as CardDetail;
+  useCardStore.getState().putDetail(detail);
+
+  useCardStore.getState().putCards([
+    cardFixture({ id: 'card-a', version: 3, status: 'running' }),
+    cardFixture({ id: 'card-b', version: 1 }),
+  ]);
+
+  const state = useCardStore.getState();
+  expect(state.rows['card-a']).toMatchObject({ version: 5, status: 'review' });
+  expect(state.rows['card-b']).toMatchObject({ version: 1 });
+  expect(state.rowSeq).toEqual({ 'card-a': 2, 'card-b': 3 });
+
+  useCardStore.getState().putCards([cardFixture({ id: 'card-a', version: 5, status: 'done' })]);
+  expect(useCardStore.getState().rows['card-a']).toMatchObject({ version: 5, status: 'done' });
+  expect(useCardStore.getState().details['card-a']?.card.status).toBe('done');
+  expect(useCardStore.getState().seq).toBe(4);
+});
+
 test('목록 snapshot에 없던 행은 snapshot 이후 쓰인 경우에만 병합한다', () => {
   const before = cardFixture({ id: 'before' });
   const after = cardFixture({ id: 'after' });

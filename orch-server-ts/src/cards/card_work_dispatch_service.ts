@@ -365,6 +365,7 @@ export class CardWorkDispatchService {
         work: { kind: "execution", requestId: request.id, sessionId: request.session_id },
       },
       folderId: created.card.folder_id,
+      postCommitSync: { previousStatus: null, committedCard: created.card, questionChanged: false, cardChanged: true },
     };
   }
 

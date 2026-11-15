@@ -34,7 +34,10 @@ type CardQuestionAnswer = CardQuestionAnswerChoice | CardQuestionAnswerText;
 type ReportRow = Record<string, unknown> & { session_id: string; node_id: string | null; metadata: unknown; session_type: string | null };
 type CardQuestionRow = { card_id: string; options: string[] | null; answer: string | null; selected_option: string | null; withdrawn_at: Date | null };
 type CardStateRow = BoardCard;
-const CARD_TIMELINE_STATUSES = new Set(["review", "blocked", "done", "cancelled", "on_hold"]);
+const CARD_TIMELINE_STATUSES = new Set([
+  "todo", "queued", "running", "awaiting_verification",
+  "review", "blocked", "done", "cancelled", "on_hold",
+]);
 
 export class PersistentReportService {
   constructor(
@@ -246,9 +249,10 @@ export class PersistentReportService {
     if (!card || card.archived || !CARD_TIMELINE_STATUSES.has(card.status)) return;
     if (card.status === "blocked" && card.blocked_kind === "question") return;
     const status = card.status as ReportTimelineStatus;
-    const detail = status === "review" || status === "blocked"
-      ? clip(cardSituationText(card), 120)
-      : "";
+    // 종료·보류 상태는 이전 상황판 글이 남지 않게 비우고, 활성 상태는 현재 상황을 싣는다.
+    const detail = status === "done" || status === "cancelled" || status === "on_hold"
+      ? ""
+      : clip(cardSituationText(card), 120);
     const line: ReportTimelineLine = {
       line_key: `card:${card.id}`,
       status,
