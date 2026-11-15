@@ -22,11 +22,13 @@ export function useCardList(api: ApiClient | null, folderId?: string) {
       if (!api) return;
       setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], snapshotSeq: previous.owner === owner ? previous.snapshotSeq : 0, hasSnapshot: previous.owner === owner ? previous.hasSnapshot : false, loading: true, error: null }));
       try {
+        // 스냅숏 경계는 요청을 시작한 시점이다. 요청 전에 스토어에만 있던 행은 목록에 없으면 버리고,
+        // 응답을 기다리는 동안 들어온 행은 경계 뒤로 남겨 목록에 없어도 보이게 한다.
+        const snapshotSeq = useCardStore.getState().seq;
         const result = await api.listCards(folderId,{includeCompleted:false});
         if (!cancelled) {
-          // 목록 응답도 전역 행을 최신 버전으로 맞춘 뒤 그 시점을 snapshot 경계로 삼는다.
+          // 목록 응답도 전역 행을 최신 버전으로 맞춘 뒤 그 행을 기준으로 첫 스냅숏을 연다.
           useCardStore.getState().putCards(result.cards);
-          const snapshotSeq = useCardStore.getState().seq;
           setState({ owner, cards: result.cards, snapshotSeq, hasSnapshot: true, loading: false, error: null });
         }
       } catch (cause) {
