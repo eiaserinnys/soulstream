@@ -12,11 +12,16 @@ import { IsolationAuthUnavailableError } from "./session_filesystem_errors.js";
 const CODEX_ALLOWED_TEMP_PREFIX = ".auth-";
 const CODEX_SESSION_FILE = "auth.json";
 const CODEX_LOCK_FILE = "auth.lock";
+const CODEX_COMMIT_LOCK_FILE = "auth.json.lock";
 const CODEX_CLI_VERSION_PATTERN = /^codex-cli (\S+)$/;
 const CODEX_VERSION_TIMEOUT_MS = 20_000;
 
 /** restricted Codex writer로 확인한 codex-cli 판. */
-export const VERIFIED_CODEX_WRITER_VERSIONS: readonly string[] = ["0.167.0"];
+export const VERIFIED_CODEX_WRITER_VERSIONS: readonly string[] = [
+  "0.167.0",
+  "0.168.0",
+  "0.169.0",
+];
 
 export type CodexVersionCommand = (
   command: string,
@@ -40,7 +45,7 @@ async function statForAuth(path: string, label: string): Promise<Stats> {
   }
 }
 
-/** canonical Codex 디렉터리 항목은 auth.json, auth.lock, `.auth-*` 일반 파일만 허용한다. */
+/** canonical Codex 디렉터리 항목은 auth.json, auth.lock, auth.json.lock, `.auth-*` 일반 파일만 허용한다. */
 async function assertCodexDirectoryEntries(canonicalDirectory: string): Promise<void> {
   let entries: Dirent[];
   try {
@@ -54,7 +59,11 @@ async function assertCodexDirectoryEntries(canonicalDirectory: string): Promise<
       hasAuthJson = true;
       continue;
     }
-    if (entry.name === CODEX_LOCK_FILE || entry.name.startsWith(CODEX_ALLOWED_TEMP_PREFIX)) {
+    if (
+      entry.name === CODEX_LOCK_FILE ||
+      entry.name === CODEX_COMMIT_LOCK_FILE ||
+      entry.name.startsWith(CODEX_ALLOWED_TEMP_PREFIX)
+    ) {
       if (!entry.isFile()) {
         throw new IsolationAuthUnavailableError(
           `canonical Codex 디렉터리에 일반 파일이 아닌 항목이 있습니다: ${entry.name}`,
