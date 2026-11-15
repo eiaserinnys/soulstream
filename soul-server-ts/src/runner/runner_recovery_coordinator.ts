@@ -87,6 +87,15 @@ interface CentralCheckRetry {
   conditionMayClear: boolean;
 }
 
+/**
+ * 중앙 확인 상태의 키다. 세션과 등록을 함께 묶는다. 같은 세션의 새 등록은 앞 등록의
+ * 재시도 간격이나 거둠 표시를 이어받지 않고, 두 세션이 같은 등록 번호를 쓰는 경우에도
+ * 서로의 상태를 지우지 않는다(카드 #1400).
+ */
+function centralCheckKey(registration: RunnerRegistration): string {
+  return `${registration.config.sessionId}\u0000${registration.registrationId}`;
+}
+
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
   private readonly scanCache = new RunnerRegistrationScanCache();
@@ -829,14 +838,12 @@ export class RunnerRecoveryCoordinator {
 
   /** 사라진 등록의 중앙 확인 상태를 버린다. */
   private pruneCentralState(registrations: RunnerRegistration[]): void {
-    const live = new Set(
-      registrations.map((registration) => registration.config.sessionId),
-    );
-    for (const sessionId of this.centralRetry.keys()) {
-      if (!live.has(sessionId)) this.centralRetry.delete(sessionId);
+    const live = new Set(registrations.map(centralCheckKey));
+    for (const key of this.centralRetry.keys()) {
+      if (!live.has(key)) this.centralRetry.delete(key);
     }
-    for (const sessionId of this.reapedSessions) {
-      if (!live.has(sessionId)) this.reapedSessions.delete(sessionId);
+    for (const key of this.reapedSessions) {
+      if (!live.has(key)) this.reapedSessions.delete(key);
     }
   }
 
@@ -859,6 +866,7 @@ export class RunnerRecoveryCoordinator {
     const nowMs = (this.options.now ?? Date.now)();
     for (const registration of registrations) {
       const sessionId = registration.config.sessionId;
+      const key = centralCheckKey(registration);
       const task = tasksBySession.get(sessionId);
       if (!task) continue;
       if (!task.runner && !task.executionPromise) continue;
@@ -866,8 +874,8 @@ export class RunnerRecoveryCoordinator {
       if (this.adoptionSends.has(sessionId)) continue;
       if (this.adoptionResponseWaits.has(sessionId)) continue;
       if (this.adoptionFailureRecovery.has(sessionId)) continue;
-      if (this.reapedSessions.has(sessionId)) continue;
-      const retry = this.centralRetry.get(sessionId);
+      if (this.reapedSessions.has(key)) continue;
+      const retry = this.centralRetry.get(key);
       if (retry && nowMs < retry.nextAttemptAtMs) continue;
       this.runCentralCheck(registration, task);
     }
@@ -893,7 +901,6 @@ export class RunnerRecoveryCoordinator {
       }
       const nowMs = (this.options.now ?? Date.now)();
       const decision = this.decideCentralCheck(
-        sessionId,
         task,
         registration,
         lookup,
@@ -909,7 +916,7 @@ export class RunnerRecoveryCoordinator {
         case "keep":
           if (lookup === "active") {
             // 활성을 보면 다시 판정 간격을 처음으로 되돌린다.
-            this.centralRetry.delete(sessionId);
+            this.centralRetry.delete(centralCheckKey(registration));
           }
           return;
         case "keep_retry":
@@ -933,13 +940,13 @@ export class RunnerRecoveryCoordinator {
   }
 
   private decideCentralCheck(
-    sessionId: string,
     task: Task,
     registration: RunnerRegistration,
     lookup: RunnerCentralLookup,
     nowMs: number,
   ): RunnerCentralCheckDecision {
-    const retry = this.centralRetry.get(sessionId);
+    const key = centralCheckKey(registration);
+    const retry = this.centralRetry.get(key);
     if (
       retry
       && retry.response === "retryable_rejection"
@@ -947,7 +954,7 @@ export class RunnerRecoveryCoordinator {
     ) {
       // 다시 될 수 있는 거절의 간격이 지났다. 받아 둔 응답을 지우고 새로
       // 판정한다. 이 판정이 잇기를 고르면 새 시도 UUID로 다시 보낸다.
-      this.centralRetry.set(sessionId, {
+      this.centralRetry.set(key, {
         response: "none",
         attempt: retry.attempt,
         nextAttemptAtMs: 0,
@@ -963,21 +970,23 @@ export class RunnerRecoveryCoordinator {
         // 조건이 풀릴 수 있는 거절이 남긴 기록이 있으면 그 거절 뒤의 다시 잇기다. 낡은 등록의 거절은
         // 같은 러너로 풀리지 않으므로 이전처럼 등록 일치를 요구해 keep에 둔다.
         {
-          afterRetryableRejection: (this.centralRetry.get(sessionId)?.attempt ?? 0) > 0
-            && this.centralRetry.get(sessionId)?.conditionMayClear === true,
+          afterRetryableRejection: (this.centralRetry.get(key)?.attempt ?? 0) > 0
+            && this.centralRetry.get(key)?.conditionMayClear === true,
         },
       ),
-      adoptResponse: this.centralRetry.get(sessionId)?.response ?? "none",
+      adoptResponse: this.centralRetry.get(key)?.response ?? "none",
     });
   }
 
   /** 잇기 전이의 응답을 적는다. 적용과 활성은 간격을 처음으로 되돌린다. */
   private recordCentralAdoptionResponse(
-    sessionId: string,
+    registration: RunnerRegistration,
     application: RunnerAdoptionApplication,
   ): void {
+    const sessionId = registration.config.sessionId;
+    const key = centralCheckKey(registration);
     if (application.applied) {
-      this.centralRetry.delete(sessionId);
+      this.centralRetry.delete(key);
       return;
     }
     // 응답 칸 결정 함수가 가른 분류가 있으면 그것을, 없으면 사유로 가른다.
@@ -985,7 +994,7 @@ export class RunnerRecoveryCoordinator {
       ?? classifyRunnerAdoptRejection(application.rejectionReason);
     if (response === "terminal_rejection") {
       // 다음 훑기의 중앙 확인이 거둔다.
-      this.centralRetry.set(sessionId, {
+      this.centralRetry.set(key, {
         response,
         attempt: 0,
         nextAttemptAtMs: 0,
@@ -993,10 +1002,10 @@ export class RunnerRecoveryCoordinator {
       });
       return;
     }
-    const attempt = (this.centralRetry.get(sessionId)?.attempt ?? 0) + 1;
+    const attempt = (this.centralRetry.get(key)?.attempt ?? 0) + 1;
     const nextAttemptAtMs = (this.options.now ?? Date.now)()
       + runnerCentralRetryDelayMs(attempt);
-    this.centralRetry.set(sessionId, {
+    this.centralRetry.set(key, {
       response,
       attempt,
       nextAttemptAtMs,
@@ -1028,7 +1037,7 @@ export class RunnerRecoveryCoordinator {
         task,
         registration.lifecycle?.execution_command_id,
       );
-      this.recordCentralAdoptionResponse(sessionId, application);
+      this.recordCentralAdoptionResponse(registration, application);
     } catch (error) {
       // 거절이 아닌 전송 실패는 이 길이 아니다. 다음 훑기에서 다시 본다.
       this.options.logger.warn(
@@ -1053,11 +1062,20 @@ export class RunnerRecoveryCoordinator {
     lookup: RunnerCentralLookup,
   ): Promise<void> {
     const sessionId = registration.config.sessionId;
+    const key = centralCheckKey(registration);
     // 완료 정산 미결이면 은퇴하지 않는다. 프로세스를 건드리기 전에 묻는다.
     await this.registrationControl.assertNoPendingSettlement(registration);
-    this.reapedSessions.add(sessionId);
-    this.centralRetry.delete(sessionId);
-    task.callerSessionId = undefined;
+    // 기다리는 사이 이 등록의 실행이 끝나고 자동 재개가 같은 Task에 새 실행을 시작할 수 있다.
+    // task를 고치기 전에 한 번 판정하고, 그때의 실행 값을 잡아 둔다(카드 #1400).
+    const executionAtReap = {
+      promise: task.executionPromise,
+      registration: task.executionRegistration,
+      activation: task.executionActivation,
+    };
+    const holdsRegistrationExecution = taskHoldsRegistrationExecution(task, registration);
+    this.reapedSessions.add(key);
+    this.centralRetry.delete(key);
+    if (holdsRegistrationExecution) task.callerSessionId = undefined;
     const runner = task.runner !== undefined
       && registrationOwnsAttachedRunner(task, registration)
       ? task.runner
@@ -1076,7 +1094,7 @@ export class RunnerRecoveryCoordinator {
       // 은퇴 길이 기록된 신원의 프로세스를 정확히 종료한다.
       await this.registrationControl.retireTerminal(registration);
     } catch (error) {
-      this.reapedSessions.delete(sessionId);
+      this.reapedSessions.delete(key);
       throw error;
     }
     if (runner) {
@@ -1091,7 +1109,20 @@ export class RunnerRecoveryCoordinator {
       releaseTaskRunner(task, runner);
     }
     this.adoptionFailureRecovery.clear(sessionId);
-    this.options.taskManager.forgetRunnerRecoveryTask?.(task);
+    // 그 사이 새 실행이 시작됐으면 그 task는 살아 있는 실행을 쥐고 있으므로 잊지 않는다.
+    // 거둠 자신이 interrupt와 은퇴로 그 실행을 끝내면 슬롯이 비므로, 비워진 것은 새 실행이
+    // 아니다. 판정 때와 다른 값을 세운 새 실행일 때만 잊지 않는다(카드 #1400).
+    if (
+      holdsRegistrationExecution
+      && executionUnchangedOrCleared(task.executionPromise, executionAtReap.promise)
+      && executionUnchangedOrCleared(
+        task.executionRegistration,
+        executionAtReap.registration,
+      )
+      && executionUnchangedOrCleared(task.executionActivation, executionAtReap.activation)
+    ) {
+      this.options.taskManager.forgetRunnerRecoveryTask?.(task);
+    }
     this.options.logger.info(
       {
         sessionId,
@@ -1198,7 +1229,7 @@ export class RunnerRecoveryCoordinator {
               if (application === undefined) return;
               adoptionAnswered = true;
               this.adoptionResponseWaits.delete(sessionId);
-              this.recordCentralAdoptionResponse(sessionId, application);
+              this.recordCentralAdoptionResponse(registration, application);
             },
           )
         : this.options.taskExecutor.recoverRegisteredRunner(...recoveryCall);
@@ -1219,7 +1250,7 @@ export class RunnerRecoveryCoordinator {
           // 간격 뒤 다시 판정한다. 거절이 아닌 잇기 실패만 A가 맡는다.
           if (error instanceof RunnerAdoptionRejectedError) {
             if (!adoptionAnswered) {
-              this.recordCentralAdoptionResponse(sessionId, {
+              this.recordCentralAdoptionResponse(registration, {
                 applied: false,
                 rejectionReason: error.rejectionReason,
                 ...(error instanceof NodeAdoptionRejectedError
@@ -1233,7 +1264,7 @@ export class RunnerRecoveryCoordinator {
             );
             return { task, replayed: false };
           }
-          if (this.reapedSessions.has(sessionId)) {
+          if (this.reapedSessions.has(centralCheckKey(registration))) {
             this.options.logger.info(
               { sessionId, mode },
               "startup runner adoption failure ignored because the session runner was reaped",
@@ -1533,4 +1564,31 @@ function registrationOwnsAttachedRunner(
   const attachedRegistrationId = task.runner?.dispatcher.registrationId();
   return attachedRegistrationId !== undefined
     && registration.registrationId === attachedRegistrationId;
+}
+
+/**
+ * 거둘 등록이 지금 task가 쥔 실행인가. 붙은 러너가 이 등록의 것이면 그 실행이다. 러너가
+ * 없으면 task의 실행 등록이 이 등록과 같은지로 정한다. 실행 등록이 없을 때만 시동 장벽과
+ * 실행 슬롯이 모두 비어야 한다(준비 중인 새 실행은 등록이 비어 있고 슬롯을 쥔다).
+ * `forgetIfOrphaned`와 `executionIsSuccessorTurn`이 보는 자리와 같은 기준이다.
+ */
+function taskHoldsRegistrationExecution(
+  task: Task,
+  registration: RunnerRegistration,
+): boolean {
+  if (task.runner !== undefined) return registrationOwnsAttachedRunner(task, registration);
+  const registered = task.executionRegistration?.registrationId;
+  if (registered !== undefined) return registered === registration.registrationId;
+  return task.executionActivation === undefined && task.executionPromise === undefined;
+}
+
+/**
+ * 판정 때 잡아 둔 실행 값이 그대로이거나 비었는가. 거둠 자신이 실행을 끝내면 슬롯과 실행
+ * 등록이 비므로, 비워진 것은 새 실행이 아니다. 판정 때와 다른 값이 세워졌을 때만 새 실행이다.
+ */
+function executionUnchangedOrCleared<T>(
+  now: T | undefined,
+  atReap: T | undefined,
+): boolean {
+  return now === undefined || now === atReap;
 }

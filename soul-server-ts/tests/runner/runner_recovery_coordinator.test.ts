@@ -3359,6 +3359,128 @@ describe("RunnerRecoveryCoordinator central check", () => {
   });
 });
 
+describe("RunnerRecoveryCoordinator central check card1400 execution boundary", () => {
+  async function settle(subject: { coordinator: RunnerRecoveryCoordinator }) {
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+  }
+
+  it("keeps the caller of a newer execution when an older registration is reaped", async () => {
+    const target = task("session-a");
+    const attached = finishedRunner("registration-new", "execute-new");
+    target.runner = attached.runner;
+    target.executionRegistration = {
+      registrationId: "registration-new",
+      executionCommandId: "execute-new",
+    };
+    target.callerSessionId = "caller-session";
+    const forgetRunnerRecoveryTask = vi.fn();
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      readCentralSession: async () => null,
+      taskManager: {
+        listTasks: () => [target],
+        hydrateRunnerRecoveryTask: async () => null,
+        forgetRunnerRecoveryTask,
+      } as never,
+    });
+
+    await settle(subject);
+
+    // 낡은 등록은 은퇴하지만, 그 등록은 지금 task가 쥔 실행이 아니다.
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      registration().config.paths,
+      "registration-a",
+    );
+    expect(target.runner).toBe(attached.runner);
+    expect(attached.detachHost).not.toHaveBeenCalled();
+    expect(target.callerSessionId).toBe("caller-session");
+    expect(forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("checks a new registration while the previous registration's retry interval is pending", async () => {
+    let nowMs = RECOVERY_NOW_MS;
+    const scanned: RunnerRegistration[] = [registration()];
+    const target = task("session-a");
+    target.runner = finishedRunner("registration-a", "execute-a").runner;
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    const adopt = vi.fn(async (_task: Task, _commandId?: string) => ({
+      applied: false,
+      rejectionReason: "worktree_not_ready",
+    }));
+    const subject = makeSubject(scanned, RECOVERY_NOW_MS, [], {
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      taskManager: {
+        listTasks: () => [target],
+        hydrateRunnerRecoveryTask: async () => null,
+      } as never,
+      taskExecutor: { adoptAttachedRunnerExecution: adopt } as never,
+    });
+
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledOnce();
+
+    // 같은 세션에 새 실행이 새 등록으로 시작됐다. 앞 등록의 재시도 간격은 남아 있다.
+    const previous = registration();
+    const next: RunnerRegistration = {
+      ...previous,
+      registrationId: "registration-b",
+      lifecycle: previous.lifecycle === null
+        ? null
+        : { ...previous.lifecycle, execution_command_id: "execute-b" },
+    };
+    scanned.length = 0;
+    scanned.push(next);
+    target.runner = finishedRunner("registration-b", "execute-b").runner;
+    target.executionRegistration = {
+      registrationId: "registration-b",
+      executionCommandId: "execute-b",
+    };
+    nowMs += 1_000;
+    await settle(subject);
+
+    expect(adopt).toHaveBeenCalledTimes(2);
+    expect(adopt.mock.calls.map((call) => call[1])).toEqual(["execute-a", "execute-b"]);
+  });
+
+  it("forgets a task whose running execution the reap ended itself", async () => {
+    const target = task("session-a");
+    const attached = finishedRunner("registration-a", "execute-a");
+    target.runner = attached.runner;
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    target.executionPromise = new Promise<void>(() => undefined);
+    target.callerSessionId = "caller-session";
+    // 거둠의 interrupt가 그 턴을 끝내 실행 슬롯을 비운다. 그 자리에 새 실행은 시작되지 않는다.
+    (attached.runner.dispatcher as unknown as {
+      interrupt: () => Promise<boolean>;
+    }).interrupt = vi.fn(async () => {
+      target.executionPromise = undefined;
+      return true;
+    });
+    const forgetRunnerRecoveryTask = vi.fn();
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      readCentralSession: async () => null,
+      taskManager: {
+        listTasks: () => [target],
+        hydrateRunnerRecoveryTask: async () => null,
+        forgetRunnerRecoveryTask,
+      } as never,
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(forgetRunnerRecoveryTask).toHaveBeenCalledWith(target);
+  });
+});
+
 function makeSubject(
   registrations: RunnerRegistration[],
   now = Date.parse("2026-08-11T00:00:30.000Z"),
