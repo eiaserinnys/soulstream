@@ -236,7 +236,7 @@ function setup() {
 }
 
 describe("card #1400 an adoption rejection settles only for the execution it was sent for", () => {
-  it("leaves the auto-resumed new execution running and raises no terminal with its registration", async () => {
+  async function expectNewExecutionSurvives(centralRowOverrides: Record<string, unknown>) {
     const subject = setup();
     const { executor, task } = subject;
 
@@ -276,10 +276,10 @@ describe("card #1400 an adoption rejection settles only for the execution it was
       expect(task.executionRegistration?.registrationId).toBe("registration-B"));
     expect(task.executionPromise).toBeDefined();
 
-    // 5. 늦게 중앙 행 읽기가 풀린다. 행은 새 실행의 등록을 싣는다.
+    // 5. 늦게 중앙 행 읽기가 풀린다. 행의 실행 등록 칸은 잇기 시점에 따라 달라진다.
     subject.centralRead.resolve(centralRow({
-      execution_registration_id: "registration-B",
       execution_command_id: "execute-B",
+      ...centralRowOverrides,
     }));
     await expect(adoption).resolves.toMatchObject({ applied: false });
 
@@ -294,6 +294,16 @@ describe("card #1400 an adoption rejection settles only for the execution it was
     const terminalRegistrations = subject.enqueueTerminal.mock.calls
       .map((call) => call[3]);
     expect(terminalRegistrations).not.toContain("registration-B");
+  }
+
+  it("leaves the auto-resumed new execution running and raises no terminal with its registration", async () => {
+    await expectNewExecutionSurvives({ execution_registration_id: "registration-B" });
+  });
+
+  // 중앙은 종료를 적용하면 등록 칸을 비운다. 옛 실행 종료 직후처럼 행의 등록이 비어 있으면
+  // 등록 비교로는 stale을 가릴 수 없다. settle 안의 동기 검사만이 새 실행을 지킨다.
+  it("leaves the new execution running when the central row's registration column was cleared", async () => {
+    await expectNewExecutionSurvives({ execution_registration_id: null });
   });
 });
 

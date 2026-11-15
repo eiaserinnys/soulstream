@@ -3446,6 +3446,39 @@ describe("RunnerRecoveryCoordinator central check card1400 execution boundary", 
     expect(adopt).toHaveBeenCalledTimes(2);
     expect(adopt.mock.calls.map((call) => call[1])).toEqual(["execute-a", "execute-b"]);
   });
+
+  it("forgets a task whose running execution the reap ended itself", async () => {
+    const target = task("session-a");
+    const attached = finishedRunner("registration-a", "execute-a");
+    target.runner = attached.runner;
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    target.executionPromise = new Promise<void>(() => undefined);
+    target.callerSessionId = "caller-session";
+    // 거둠의 interrupt가 그 턴을 끝내 실행 슬롯을 비운다. 그 자리에 새 실행은 시작되지 않는다.
+    (attached.runner.dispatcher as unknown as {
+      interrupt: () => Promise<boolean>;
+    }).interrupt = vi.fn(async () => {
+      target.executionPromise = undefined;
+      return true;
+    });
+    const forgetRunnerRecoveryTask = vi.fn();
+    const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
+      readCentralSession: async () => null,
+      taskManager: {
+        listTasks: () => [target],
+        hydrateRunnerRecoveryTask: async () => null,
+        forgetRunnerRecoveryTask,
+      } as never,
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(forgetRunnerRecoveryTask).toHaveBeenCalledWith(target);
+  });
 });
 
 function makeSubject(

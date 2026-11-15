@@ -1110,12 +1110,16 @@ export class RunnerRecoveryCoordinator {
     }
     this.adoptionFailureRecovery.clear(sessionId);
     // 그 사이 새 실행이 시작됐으면 그 task는 살아 있는 실행을 쥐고 있으므로 잊지 않는다.
-    // 판정 때의 실행이 그대로일 때만 잊는다.
+    // 거둠 자신이 interrupt와 은퇴로 그 실행을 끝내면 슬롯이 비므로, 비워진 것은 새 실행이
+    // 아니다. 판정 때와 다른 값을 세운 새 실행일 때만 잊지 않는다(카드 #1400).
     if (
       holdsRegistrationExecution
-      && task.executionPromise === executionAtReap.promise
-      && task.executionRegistration === executionAtReap.registration
-      && task.executionActivation === executionAtReap.activation
+      && executionUnchangedOrCleared(task.executionPromise, executionAtReap.promise)
+      && executionUnchangedOrCleared(
+        task.executionRegistration,
+        executionAtReap.registration,
+      )
+      && executionUnchangedOrCleared(task.executionActivation, executionAtReap.activation)
     ) {
       this.options.taskManager.forgetRunnerRecoveryTask?.(task);
     }
@@ -1564,8 +1568,9 @@ function registrationOwnsAttachedRunner(
 
 /**
  * 거둘 등록이 지금 task가 쥔 실행인가. 붙은 러너가 이 등록의 것이면 그 실행이다. 러너가
- * 없으면 task가 다른 등록의 실행 등록, 시동 장벽, 준비 중인 새 실행을 쥐고 있지 않을 때만
- * 그렇다. `forgetIfOrphaned`와 `executionIsSuccessorTurn`이 보는 자리와 같은 기준이다.
+ * 없으면 task의 실행 등록이 이 등록과 같은지로 정한다. 실행 등록이 없을 때만 시동 장벽과
+ * 실행 슬롯이 모두 비어야 한다(준비 중인 새 실행은 등록이 비어 있고 슬롯을 쥔다).
+ * `forgetIfOrphaned`와 `executionIsSuccessorTurn`이 보는 자리와 같은 기준이다.
  */
 function taskHoldsRegistrationExecution(
   task: Task,
@@ -1573,6 +1578,17 @@ function taskHoldsRegistrationExecution(
 ): boolean {
   if (task.runner !== undefined) return registrationOwnsAttachedRunner(task, registration);
   const registered = task.executionRegistration?.registrationId;
-  if (registered !== undefined && registered !== registration.registrationId) return false;
+  if (registered !== undefined) return registered === registration.registrationId;
   return task.executionActivation === undefined && task.executionPromise === undefined;
+}
+
+/**
+ * 판정 때 잡아 둔 실행 값이 그대로이거나 비었는가. 거둠 자신이 실행을 끝내면 슬롯과 실행
+ * 등록이 비므로, 비워진 것은 새 실행이 아니다. 판정 때와 다른 값이 세워졌을 때만 새 실행이다.
+ */
+function executionUnchangedOrCleared<T>(
+  now: T | undefined,
+  atReap: T | undefined,
+): boolean {
+  return now === undefined || now === atReap;
 }
