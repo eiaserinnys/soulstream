@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openTimelinePostgresDatabase } from "./report-timeline-postgres-database.js";
 
 const backfillSql = readFileSync(
   new URL("../../packages/db-schema/sql/backfills/20261112_report_timeline_question_closed.sql", import.meta.url),
@@ -11,21 +10,13 @@ const backfillSql = readFileSync(
 
 describe("report timeline question closed backfill", () => {
   let sql: ReturnType<typeof postgres>;
-  let url: string;
-  let stop: () => void;
+  let database: Awaited<ReturnType<typeof openTimelinePostgresDatabase>>;
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({
+    database = await openTimelinePostgresDatabase({
       user: "question_closed_backfill", password: "question_closed_backfill", database: "question_closed_backfill_db",
     });
-    stop = container.stop;
-    url = `postgres://question_closed_backfill:question_closed_backfill@127.0.0.1:${container.port}/question_closed_backfill_db`;
-    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
-    try {
-      await waitForPostgres(bootstrap);
-      await bootstrap.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
-    } finally { await bootstrap.end({ timeout: 2 }); }
-    sql = postgres(url, { max: 4, onnotice: () => undefined });
+    sql = database.sql;
     await sql`INSERT INTO folders(id,name) VALUES ('backfill-folder','백필')`;
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,agent_id) VALUES
       ('backfill-pas','backfill-folder','test-node','test-agent')`;
@@ -55,7 +46,7 @@ describe("report timeline question closed backfill", () => {
     await line("card-answered", "이미 question_id가 있는 줄", "2026-11-01T01:00:00Z", { question_id: "q-answered" });
   }, 90_000);
 
-  afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await database?.cleanup(); });
 
   const closures = async () => await sql<{ id: number; payload: Record<string, unknown> }[]>`
     SELECT id,payload FROM events
@@ -64,7 +55,9 @@ describe("report timeline question closed backfill", () => {
 
   // 백필 파일은 BEGIN/COMMIT을 직접 들고 있어 풀 연결이 아닌 연결 하나짜리 클라이언트로 psql처럼 실행한다.
   const runBackfill = async () => {
-    const single = postgres(url, { max: 1, onnotice: () => undefined });
+    const single = postgres(database.url, {
+      max: 1, onnotice: () => undefined, connection: { search_path: database.schema },
+    });
     try { await single.unsafe(backfillSql); } finally { await single.end({ timeout: 2 }); }
   };
 

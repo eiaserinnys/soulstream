@@ -41,6 +41,22 @@ describe('useChatRenderItems report timeline', () => {
       .toHaveLength(2);
   });
 
+  it('대화 구간 너머의 같은 카드 줄도 최신 상태와 제목으로 동기화한다', () => {
+    const rows = renderTimeline([
+      line('first', 'card-1', '이전 상태', 'review'),
+      ev('user', 'user_message', { text: '확인할게요' }),
+      line('latest', 'card-1', '최신 상태', 'done'),
+    ]);
+
+    expect(rows
+      .filter((item) => item.kind === 'event' && item.event.type === 'report_timeline')
+      .map((item) => item.kind === 'event' ? item.event.data : null))
+      .toEqual([
+        expect.objectContaining({ title: '최신 상태', status: 'done' }),
+        expect.objectContaining({ title: '최신 상태', status: 'done' }),
+      ]);
+  });
+
   it('보이지 않는 턴 사이 보고 줄과 대화 문단만 일정하게 남긴다', () => {
     const rows = renderTimeline([
       ev('paragraph', 'assistant_message', { text: '앞 문단' }),

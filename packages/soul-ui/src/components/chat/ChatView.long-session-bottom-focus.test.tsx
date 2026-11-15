@@ -1934,13 +1934,14 @@ describe("ChatView long-session initial bottom focus", () => {
       : item.type === "activity-group" ? item.messages : []);
     const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
     expect(reportMessages).toHaveLength(2);
+    // 앞선 대화 구간의 같은 카드 줄도 최신 카드 상태를 함께 비춘다.
     expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
-      "도구 뒤 상태",
+      "대화 뒤 상태",
       "대화 뒤 상태",
     ]);
     const renderedRows = container.querySelectorAll('[data-testid="report-timeline-row-rendered"]');
     expect(Array.from(renderedRows, (row) => row.textContent)).toEqual([
-      "도구 뒤 상태",
+      "대화 뒤 상태",
       "대화 뒤 상태",
     ]);
   });
@@ -2044,7 +2045,7 @@ describe("ChatView long-session initial bottom focus", () => {
     const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
     expect(reportMessages).toHaveLength(2);
     expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
-      "thinking 뒤 최신",
+      "assistant 글 뒤 새 행",
       "assistant 글 뒤 새 행",
     ]);
   });

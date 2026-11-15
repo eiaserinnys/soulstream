@@ -244,6 +244,7 @@ function ChatViewContent({
           || message.role === "intervention"
           || (message.role === "assistant" && message.treeNodeType !== "thinking"),
         withStatus: (message, status) => ({ ...message, reportTimeline: { ...message.reportTimeline!, status } }),
+        withLine: (message, reportTimeline) => ({ ...message, reportTimeline }),
       });
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],

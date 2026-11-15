@@ -9,7 +9,18 @@ export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
 export const REPORT_TIMELINE_EVENT_TYPE = "report_timeline";
 /** 카드 질문 줄이 답이나 철회로 닫혔을 때 남기는 이벤트 타입. 줄로 그리지 않는다. */
 export const REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE = "report_timeline_question_closed";
-export type ReportTimelineStatus = "review" | "blocked" | "question" | "done" | "cancelled" | "on_hold" | "report";
+export type ReportTimelineStatus =
+  | "todo"
+  | "queued"
+  | "running"
+  | "awaiting_verification"
+  | "review"
+  | "blocked"
+  | "question"
+  | "done"
+  | "cancelled"
+  | "on_hold"
+  | "report";
 export type ReportTimelineQuestionClosedStatus = "answered" | "withdrawn";
 export type ReportTimelineQuestionClosed = {
   question_id: string;
@@ -31,6 +42,10 @@ export type ReportTimelineLine = {
 export type ReportTimelineRowStatus = ReportTimelineStatus | ReportTimelineQuestionClosedStatus;
 export type ReportTimelineRowLine = Omit<ReportTimelineLine, "status"> & { status: ReportTimelineRowStatus };
 export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineRowStatus, string> = {
+  todo: "할 일",
+  queued: "대기",
+  running: "실행 중",
+  awaiting_verification: "검증 대기",
   review: "검수 대기",
   blocked: "막힘",
   question: "질문",
@@ -46,11 +61,15 @@ export function collapseReportTimeline<T>(items: readonly T[], access: {
   closuresOf: (item: T) => readonly ReportTimelineQuestionClosed[] | null;
   isConversation: (item: T) => boolean;
   withStatus: (item: T, status: ReportTimelineQuestionClosedStatus) => T;
+  /** 대화 구간 너머의 카드 현황 줄을 최신 줄로 동기화할 때 쓴다. 없으면 상태만 맞춘다. */
+  withLine?: (item: T, line: ReportTimelineRowLine) => T;
 }): T[] {
   const collapsed: T[] = [];
   const positions = new Map<string, number>();
   // 질문 줄이 놓인 자리. 대화 구간이 바뀌어도 비우지 않는다(닫힘이 대화 너머의 줄을 찾는다).
   const questionPositions = new Map<string, number[]>();
+  // 일반 카드 현황 줄이 놓인 자리. 대화 구간이 바뀌어도 비우지 않는다(최신 상태를 함께 비춘다).
+  const cardPositions = new Map<string, number[]>();
   for (const item of items) {
     const closures = access.closuresOf(item);
     if (closures !== null) {
@@ -67,22 +86,58 @@ export function collapseReportTimeline<T>(items: readonly T[], access: {
       collapsed.push(item);
       continue;
     }
-    const position = positions.get(line.line_key);
+    // 질문 줄은 질문 자리 키로 따로 세워, 뒤따르는 일반 카드 상태 줄이 질문 줄을 덮어쓰지 않게 한다.
+    const key = isQuestionRowLine(line) ? questionKey(line) : line.line_key;
+    const position = positions.get(key);
     const index = position === undefined ? collapsed.length : position;
     if (position === undefined) {
-      positions.set(line.line_key, index);
+      positions.set(key, index);
       collapsed.push(item);
     } else {
       collapsed[position] = item;
     }
-    if (line.status === "question") {
-      const key = questionKey(line);
-      const indices = questionPositions.get(key);
-      if (indices === undefined) questionPositions.set(key, [index]);
-      else if (!indices.includes(index)) indices.push(index);
+    if (line.status === "question") recordSlot(questionPositions, questionKey(line), index);
+    if (isCardStatusLine(line)) {
+      recordSlot(cardPositions, line.line_key, index);
+      syncCardStatusLines(collapsed, cardPositions.get(line.line_key)!, index, line, access);
     }
   }
   return collapsed;
+}
+/** 질문 줄인가. 닫힘으로 바뀐 줄도 질문 줄의 자리를 지킨다. */
+function isQuestionRowLine(line: ReportTimelineLine | ReportTimelineRowLine): boolean {
+  return line.question_id !== undefined || line.status === "question"
+    || line.status === "answered" || line.status === "withdrawn";
+}
+/** 카드 하나의 실제 상태를 그리는 일반 카드 현황 줄인가. */
+function isCardStatusLine(line: ReportTimelineLine | ReportTimelineRowLine): boolean {
+  return line.card_id !== null && line.status !== "report" && !isQuestionRowLine(line);
+}
+function recordSlot(positions: Map<string, number[]>, key: string, index: number): void {
+  const indices = positions.get(key);
+  if (indices === undefined) positions.set(key, [index]);
+  else if (!indices.includes(index)) indices.push(index);
+}
+/** 앞선 대화 구간의 같은 카드 줄들을 최신 줄의 상태·제목·상황으로 맞춘다. */
+function syncCardStatusLines<T>(
+  collapsed: T[],
+  indices: readonly number[],
+  latestIndex: number,
+  line: ReportTimelineRowLine,
+  access: {
+    withStatus: (item: T, status: ReportTimelineQuestionClosedStatus) => T;
+    withLine?: (item: T, line: ReportTimelineRowLine) => T;
+  },
+): void {
+  for (const index of indices) {
+    if (index === latestIndex) continue;
+    const current = collapsed[index];
+    if (current === undefined) continue;
+    // withLine이 없으면 줄을 다시 만들 수 없으니 상태만이라도 최신으로 맞춘다.
+    collapsed[index] = access.withLine
+      ? access.withLine(current, line)
+      : access.withStatus(current, line.status as ReportTimelineQuestionClosedStatus);
+  }
 }
 function questionKey(line: ReportTimelineLine | ReportTimelineRowLine): string {
   return line.question_id ? `id:${line.question_id}` : `legacy:${line.line_key}\n${line.detail}`;

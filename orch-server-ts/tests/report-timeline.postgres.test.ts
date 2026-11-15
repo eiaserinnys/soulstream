@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { waitForPostgres } from "./persistent-session-settings-world.js";
+import { openTimelinePostgresDatabase } from "./report-timeline-postgres-database.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
@@ -11,7 +9,7 @@ import { REPORT_TIMELINE_EVENT_TYPE, type ReportTimelineLine } from "../../packa
 
 describe("PAS report timeline on production PostgreSQL schema", () => {
   let sql: ReturnType<typeof postgres>;
-  let stop: () => void;
+  let database: Awaited<ReturnType<typeof openTimelinePostgresDatabase>>;
   let adapted: ReturnType<typeof createFolderContentSqlAdapter>;
   let dbPort: ConstructorParameters<typeof CardControlPlaneService>[1];
   const hub = { publish: vi.fn() };
@@ -29,15 +27,10 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
   });
 
   beforeAll(async () => {
-    const container = startPostgresTestContainer({ user: "pas_timeline_test", password: "pas_timeline_test", database: "pas_timeline_test_db" });
-    stop = container.stop;
-    const url = `postgres://pas_timeline_test:pas_timeline_test@127.0.0.1:${container.port}/pas_timeline_test_db`;
-    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
-    try {
-      await waitForPostgres(bootstrap);
-      await bootstrap.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
-    } finally { await bootstrap.end({ timeout: 2 }); }
-    sql = postgres(url, { max: 4, onnotice: () => undefined });
+    database = await openTimelinePostgresDatabase({
+      user: "pas_timeline_test", password: "pas_timeline_test", database: "pas_timeline_test_db",
+    });
+    sql = database.sql;
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES ('timeline-folder','타임라인')`;
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,agent_id,metadata) VALUES
@@ -50,7 +43,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     } };
   }, 90_000);
 
-  afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
+  afterAll(async () => { await database?.cleanup(); });
 
   const service = (append = appender) => new PersistentReportService(adapted, () => undefined, undefined, append);
   const cardService = (append = appender) => new CardControlPlaneService(
@@ -81,15 +74,37 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     return { cardId, sessionId, questionId };
   };
 
-  it("records major card transitions and leaves situation-only updates out", async () => {
+  it("records the creation line and every card status transition once", async () => {
+    const cards = cardService();
+    const { cardId } = await createConnectedCard("검수 카드");
+    expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
+      type: "report_timeline", line_key: `card:${cardId}`, status: "todo", title: "검수 카드",
+      detail: "", card_id: cardId,
+    }, searchable_text: "" }]);
+    const transitions = ["running", "queued", "running", "awaiting_verification"] as const;
+    for (const status of transitions) {
+      await cards.setCardStatus({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, status,
+        ...(status === "awaiting_verification"
+          ? { wakeAt: new Date(Date.now() + 3_600_000).toISOString(), waitingFor: "검증 결과" } : {}) });
+    }
+    await cards.setCardStatus({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, status: "review" });
+    expect((await timelineForCard(cardId)).map(row => row.payload.status)).toEqual([
+      "todo", "running", "queued", "running", "awaiting_verification", "review",
+    ]);
+  });
+
+  it("records situation detail on active statuses and leaves situation-only updates out", async () => {
     const cards = cardService();
     const { cardId, sessionId } = await createConnectedCard("검수 카드");
     await cards.updateCardNow({ actorKind: "agent", actorSessionId: sessionId, cardId, now: "현재 글", turn: "user", ask: "검수해 주세요" });
     await cards.setCardStatus({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, status: "review" });
-    expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
-      type: "report_timeline", line_key: `card:${cardId}`, status: "review", title: "검수 카드",
-      detail: "검수해 주세요", card_id: cardId,
-    }, searchable_text: "" }]);
+    expect(await timelineForCard(cardId)).toMatchObject([
+      { payload: { status: "todo", detail: "" } },
+      { payload: {
+        type: "report_timeline", line_key: `card:${cardId}`, status: "review", title: "검수 카드",
+        detail: "검수해 주세요", card_id: cardId,
+      }, searchable_text: "" },
+    ]);
     const before = await timelineForCard(cardId);
     await cards.updateCardNow({ actorKind: "agent", actorSessionId: sessionId, cardId, now: "새 상황", turn: "user", ask: "상황만 변경" });
     expect(await timelineForCard(cardId)).toEqual(before);
@@ -99,25 +114,27 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     const cards = cardService();
     const { cardId } = await createConnectedCard("완료 카드");
     await cards.setCardStatus({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, status: "done" });
-    expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
+    const rows = await timelineForCard(cardId);
+    expect(rows.at(-1)).toMatchObject({ payload: {
       type: "report_timeline", line_key: `card:${cardId}`, status: "done", title: "완료 카드", detail: "", card_id: cardId,
-    } }]);
+    } });
   });
 
   it("records new questions only and suppresses the blocked question transition", async () => {
     const cards = cardService();
     const reports = service();
     const { cardId, sessionId } = await createConnectedCard("질문 카드");
+    const created = await timelineForCard(cardId);
     await cards.askQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, text: "어떻게 할까요?", options: ["진행"] });
-    expect(await timelineForCard(cardId)).toEqual([]);
+    expect(await timelineForCard(cardId)).toEqual(created);
     const questionId = String((await cards.getCard(cardId))!.questions.at(-1)!.id);
     expect(await reports.placeQuestion(cardId, questionId)).toMatchObject({ placed: [sessionId], failed: [] });
-    expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
+    expect((await timelineForCard(cardId)).at(-1)).toMatchObject({ payload: {
       line_key: `card:${cardId}`, status: "question", title: "질문 카드", detail: "어떻게 할까요?", card_id: cardId, question_id: questionId,
-    } }]);
+    } });
     const before = await timelineForCard(cardId);
     await cards.answerQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, questionId, answer: "진행" });
-    expect(await timelineForCard(cardId)).toEqual(before);
+    expect((await timelineForCard(cardId)).slice(0, before.length)).toEqual(before);
   });
 
   it("records changed open PAS puts once and ignores answered entries", async () => {

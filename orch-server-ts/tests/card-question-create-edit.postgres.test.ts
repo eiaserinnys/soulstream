@@ -177,6 +177,8 @@ describe("card question creation and in-place edit", () => {
     const cardBefore = (await cards.getCard(cardId))!.card;
     const first = await reader.getCard(cardId, { include: ["questions_history"] }, null);
     asked.mockClear();
+    // 카드 생성도 이제 타임라인 줄을 남긴다. 이 시험은 질문 고침이 그 줄을 새로 만들지 않는지만 본다.
+    timeline.mockClear();
 
     const options = [
       { label: "진행", description: "바뀐 설명", recommended: true },

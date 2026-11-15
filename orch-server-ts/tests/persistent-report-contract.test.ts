@@ -29,9 +29,13 @@ describe("persistent report shared contract", () => {
     const other: Row = {};
 
     expect(collapseReportTimeline([a1, other, a2], access)).toEqual([a2, other]);
-    expect(collapseReportTimeline([a1, conversation(), a2], access)).toEqual([a1, conversation(), a2]);
+    // 대화 구간 너머의 같은 카드 줄도 최신 상태를 비춘다(withLine이 없으면 상태만).
+    expect(collapseReportTimeline([a1, conversation(), a2], access)).toEqual([
+      { line: line({ line_key: "A", status: "done" }) }, conversation(), a2,
+    ]);
     expect(collapseReportTimeline([a1, b1, a2], access)).toEqual([a2, b1]);
     expect(REPORT_TIMELINE_STATUS_LABEL).toEqual({
+      todo: "할 일", queued: "대기", running: "실행 중", awaiting_verification: "검증 대기",
       review: "검수 대기", blocked: "막힘", question: "질문", done: "완료",
       cancelled: "취소", on_hold: "보류", report: "보고", answered: "답함", withdrawn: "철회",
     });
@@ -66,6 +70,20 @@ describe("persistent report shared contract", () => {
     ]);
     expect(collapseReportTimeline([first, conversation(), second, { closures: [closed({ question_id: "q1" })] }], access))
       .toEqual([question({ question_id: "q1", status: "answered" }), conversation(), second]);
+  });
+  it("keeps question rows apart from later card status rows and syncs every earlier card row", () => {
+    const withLine = {
+      ...access,
+      withLine: (item: Row, next: ReportTimelineRowLine): Row => ({ ...item, line: next }),
+    };
+    const asked = question({ question_id: "q1", title: "질문 카드" });
+    const running = { line: line({ question_id: undefined, status: "running" as const, title: "실행 카드" }) };
+    expect(collapseReportTimeline([asked, running], withLine)).toEqual([asked, running]);
+
+    const first = { line: line({ status: "running" as const, title: "이전 상태", detail: "이전 상황" }) };
+    const latest = { line: line({ status: "done" as const, title: "최신 상태", detail: "" }) };
+    expect(collapseReportTimeline([first, conversation(), latest], withLine))
+      .toEqual([latest, conversation(), latest]);
   });
   it("keeps the link recognition regex aligned with the display contract", () => {
     const source = readFileSync(new URL("../../packages/wire-schema/src/persistent_report.ts", import.meta.url), "utf8");

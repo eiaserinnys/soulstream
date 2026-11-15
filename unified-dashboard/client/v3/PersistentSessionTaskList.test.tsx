@@ -343,6 +343,16 @@ describe("persistent session task list", () => {
     expect(container.querySelector('[data-task-status-group="running"] .v3-card-summary-number-reserve')?.textContent).toBe("#1024");
   });
 
+  it("keeps the newest card version when an older list response arrives late", () => {
+    const latest = { ...baseCard("versioned", "review"), version: 7 };
+    useCardStore.getState().putCards([latest]);
+    useCardStore.getState().putCards([{ ...baseCard("versioned", "running"), version: 3 }]);
+
+    expect(useCardStore.getState().byId.versioned).toMatchObject({ status: "review", version: 7 });
+    useCardStore.getState().putCards([{ ...latest, title: "같은 버전 새 제목" }]);
+    expect(useCardStore.getState().byId.versioned?.title).toBe("같은 버전 새 제목");
+  });
+
   it("offers a retry for membership errors and replaces the error with the refreshed list", async () => {
     const retry = vi.fn();
     membershipMock.mockReturnValue({cards:[],loading:true,error:"request failed",retry});

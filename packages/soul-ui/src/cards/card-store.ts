@@ -19,7 +19,19 @@ interface CardState {
 }
 export const useCardStore = create<CardState>((set,get) => ({
   byId: {}, details: {}, errors: {}, pendingItemConfirmations:{}, folderIds: {},
-  putCards(cards) { set(s=>({byId:{...s.byId,...Object.fromEntries(cards.map(c=>[c.id,c]))}})); },
+  // 늦게 도착한 오래된 목록이 이미 최신인 행을 과거 상태로 되돌리지 않게 버전을 본다.
+  putCards(cards) { set(s=>{
+    let byId=s.byId,details=s.details;
+    for(const card of cards){
+      const current=byId[card.id];
+      if(current!==undefined&&current.version>card.version)continue;
+      if(current!==card)byId={...byId,[card.id]:card};
+      const detail=details[card.id];
+      if(detail!==undefined&&detail.card.version<=card.version&&detail.card!==card)
+        details={...details,[card.id]:{...detail,card}};
+    }
+    return byId===s.byId&&details===s.details?s:{byId,details};
+  }); },
   async loadFolder(folderId) {
     const cards=await fetchCards(folderId); get().putCards(cards);
     set(s=>({folderIds:{...s.folderIds,[folderId]:cards.map(c=>c.id)}}));

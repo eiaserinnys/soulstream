@@ -89,6 +89,9 @@ export function useChatRenderItems({
       withStatus: (item, status) => item.kind === 'event'
         ? { ...item, event: { ...item.event, data: { ...item.event.data, status } } }
         : item,
+      withLine: (item, line) => item.kind === 'event'
+        ? { ...item, event: { ...item.event, data: { ...item.event.data, ...line } } }
+        : item,
     }),
     [baseRenderItems],
   );
