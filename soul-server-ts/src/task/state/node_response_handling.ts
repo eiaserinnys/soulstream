@@ -68,20 +68,37 @@ export function judgeNodeResponse(facts: NodeResponseFacts): NodeResponseVerdict
  * 캐시 없이 읽은 중앙 세션 줄 하나를 응답 사실로 옮긴다. 줄이 없으면 중앙 세션 없음이다.
  * 잇기 호출에는 우리 종료가 없으므로 그 줄에 끝남이 기록됐는지를 종료 투영으로 싣는다
  * (기록됨은 `different`, 끊김 중단처럼 기록 없음은 `absent`, 카드 #1266 U5c).
+ *
+ * 잇기 호출이 보낸 등록 번호(`sentRegistrationId`)와 줄의 실행 등록이 다르면, 그 줄은 다른
+ * 실행의 것이다. 이 거절은 낡은 등록의 것이므로 등록을 `different`로 정한다(카드 #1400).
+ * 줄의 등록 칸이 비어 있으면(중앙이 종료를 적용해 비운 경우) 아무것도 바꾸지 않는다.
  */
 export function centralSessionFactsOf(
   facts: NodeResponseFacts,
   row: unknown | null,
+  sentRegistrationId?: string,
 ): NodeResponseFacts {
   if (row === null) return { ...facts, centralSession: "absent" };
   if (facts.call !== "startup_recovery_adopt" && facts.call !== "attached_runner_adopt") {
     return { ...facts, centralSession: "present" };
   }
+  const rowRegistrationId = centralRegistrationId(row);
+  const registrationMoved = sentRegistrationId !== undefined
+    && rowRegistrationId !== undefined
+    && rowRegistrationId !== sentRegistrationId;
   return {
     ...facts,
     centralSession: "present",
+    ...(registrationMoved ? { registration: "different" as const } : {}),
     termination: centralEndRecorded(row) ? "different" : "absent",
   };
+}
+
+/** 중앙 세션 줄이 싣고 있는 실행 등록 번호다. 비어 있으면 undefined다. */
+function centralRegistrationId(row: unknown): string | undefined {
+  if (typeof row !== "object" || row === null) return undefined;
+  const value = (row as { execution_registration_id?: unknown }).execution_registration_id;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**

@@ -82,6 +82,10 @@ import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { classifyRunnerAdoptRejection } from "./state/node_adopt_rejection.js";
 import {
+  adoptionTargetsSameExecution,
+  type AdoptionAttempt,
+} from "./state/adoption_attempt.js";
+import {
   TaskLifecycleTransition,
   type TerminationCleanupPorts,
 } from "./task_lifecycle_transition.js";
@@ -1633,6 +1637,19 @@ export class TaskExecutor {
       // resend of the same event keeps its dedupe key.
       if (mode === "adopt") {
         const registrationId = runner.dispatcher.registrationId();
+        // 잇기 전이를 기다리는 동안 이 실행이 끝나거나 바뀔 수 있다. 그 사이 도착한 응답은
+        // 보낼 때의 실행에만 반영한다. 아래 settle은 이 값을 첫 await 전에 잡아 둔다.
+        const attempt: AdoptionAttempt = {
+          runner,
+          status: task.status,
+          executionCommandId: task.executionRegistration?.executionCommandId,
+          suspended: this.suspendedRecoveredExecutions.get(task),
+          sentRegistrationId: registrationId ?? undefined,
+          fenceRegistrationId: task.executionRegistration?.registrationId
+            ?? task.runnerRecoveryRegistrationId
+            ?? registrationId
+            ?? undefined,
+        };
         const responseContext: NodeResponseContext = {
           call: "startup_recovery_adopt",
           registrationId: registrationId ?? null,
@@ -1655,7 +1672,11 @@ export class TaskExecutor {
           // dead letter와 격리는 사유 없는 영구 거절이다. 응답으로 받아 같은 길로 가른다.
           const facts = nodeResponseFactsFromError(responseContext, error);
           if (facts && facts.route !== "no_response") {
-            const verdict = await this.settleAdoptRejection(task, judgeNodeResponse(facts));
+            const verdict = await this.settleAdoptRejection(
+              task,
+              judgeNodeResponse(facts),
+              attempt,
+            );
             const response = adoptResponseOfVerdict(verdict);
             const answered: NodeAdoptionApplication = {
               applied: false,
@@ -1677,7 +1698,7 @@ export class TaskExecutor {
           ? undefined
           : await this.settleAdoptRejection(task, judgeNodeResponse(
               nodeResponseFactsFromApplication(responseContext, application),
-            ));
+            ), attempt);
         const answered: NodeAdoptionApplication = adoptVerdict
           ? {
               applied: false,
@@ -1814,13 +1835,19 @@ export class TaskExecutor {
     }
     // 잇기 전이를 기다리는 동안 이 실행이 끝나거나 바뀔 수 있다(멈춘 실행의 치명 오류 종료 등).
     // 그 사이 도착한 응답은 보낼 때의 실행에만 반영한다.
-    const sentWith = {
-      status: task.status,
-      runner: task.runner,
-      execution: task.executionPromise,
-      suspended: this.suspendedRecoveredExecutions.get(task),
-    };
     const registrationId = task.runner.dispatcher.registrationId();
+    const attempt: AdoptionAttempt = {
+      runner: task.runner,
+      status: task.status,
+      executionCommandId: task.executionRegistration?.executionCommandId,
+      executionSlot: { expected: task.executionPromise },
+      suspended: this.suspendedRecoveredExecutions.get(task),
+      sentRegistrationId: registrationId ?? undefined,
+      fenceRegistrationId: task.executionRegistration?.registrationId
+        ?? task.runnerRecoveryRegistrationId
+        ?? registrationId
+        ?? undefined,
+    };
     const responseContext: NodeResponseContext = {
       call: "attached_runner_adopt",
       registrationId: registrationId ?? null,
@@ -1842,7 +1869,11 @@ export class TaskExecutor {
     } catch (error) {
       const facts = nodeResponseFactsFromError(responseContext, error);
       if (!facts || facts.route === "no_response") throw error;
-      const verdict = await this.settleAdoptRejection(task, judgeNodeResponse(facts));
+      const verdict = await this.settleAdoptRejection(
+        task,
+        judgeNodeResponse(facts),
+        attempt,
+      );
       const answered: NodeAdoptionApplication = {
         applied: false,
         response: adoptResponseOfVerdict(verdict),
@@ -1851,10 +1882,11 @@ export class TaskExecutor {
       return answered;
     }
     if (application.applied) {
-      const sameExecution = task.runner === sentWith.runner
-        && task.executionPromise === sentWith.execution
-        && this.suspendedRecoveredExecutions.get(task) === sentWith.suspended
-        && (!isActiveTaskStatus(sentWith.status) || isActiveTaskStatus(task.status));
+      const sameExecution = adoptionTargetsSameExecution(
+        task,
+        attempt,
+        this.suspendedRecoveredExecutions.get(task),
+      );
       if (!sameExecution) {
         this.logger.info(
           { sessionId: task.agentSessionId, status: task.status },
@@ -1869,6 +1901,7 @@ export class TaskExecutor {
     const rejectedVerdict = await this.settleAdoptRejection(
       task,
       judgeNodeResponse(nodeResponseFactsFromApplication(responseContext, application)),
+      attempt,
     );
     const response = adoptResponseOfVerdict(rejectedVerdict);
     // 사유로 가른 분류와 같으면 분류를 싣지 않는다. 낡은 등록처럼 사유만으로 가를 수
@@ -1899,8 +1932,27 @@ export class TaskExecutor {
   private async settleAdoptRejection(
     task: Task,
     verdict: NodeResponseVerdict,
+    attempt: AdoptionAttempt,
   ): Promise<NodeResponseVerdict> {
-    const settled = await this.lifecycleTransition.judgeWithCentralSession(task, verdict);
+    const settled = await this.lifecycleTransition.judgeWithCentralSession(
+      task,
+      verdict,
+      attempt.sentRegistrationId,
+    );
+    // 중앙 줄을 기다리는 사이 이 실행이 끝나고 자동 재개가 새 실행을 시작할 수 있다. 그 응답은
+    // 보낼 때의 실행에만 반영한다. 이 검사는 await 없이 이어져 `persistExecutorFinalState`까지
+    // 경계를 닫는다(그 뒤로는 await가 없다).
+    if (!adoptionTargetsSameExecution(
+      task,
+      attempt,
+      this.suspendedRecoveredExecutions.get(task),
+    )) {
+      this.logger.info(
+        { sessionId: task.agentSessionId, status: task.status },
+        "adoption rejection settled after the execution it was sent for ended; not marking the task",
+      );
+      return settled;
+    }
     if (
       (settled.decision.intents as readonly string[]).includes("mark_central_error")
       && settled.facts.centralSession !== "absent"
@@ -1913,10 +1965,8 @@ export class TaskExecutor {
         );
         task.completedAt = new Date();
         // 수화된 실행 등록이 없어도 거절된 그 러너 등록으로 종료를 지켜, 낡은 등록의 오류가
-        // 새 실행의 중앙 상태를 덮지 않게 한다(R5).
-        const adoptedRegistrationId = task.runnerRecoveryRegistrationId
-          ?? task.runner?.dispatcher.registrationId?.()
-          ?? undefined;
+        // 새 실행의 중앙 상태를 덮지 않게 한다(R5). 보낼 때 잡아 둔 등록으로 지킨다.
+        const adoptedRegistrationId = attempt.fenceRegistrationId;
         // 워크트리 점유로 끊김 중단 세션을 닫는 오류 종료는 세션의 끝남이라 완료를 알린다
         // (합의 모형 M:239-240, :357-365, :415-417, :310-313). 영구 거절과 격리의 오류 표시는 알리지 않는다.
         // 다음 훑기의 거둠이 부른 세션을 지우므로 여기서 알린다.

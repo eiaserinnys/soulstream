@@ -545,7 +545,9 @@ export class TaskLifecycleTransition {
   /**
    * `settleCompletion`이면 이 종료는 완료 통지 의무가 걸린다: 미결을 영속하고 호출자가
    * `notifyCompletionIfApplied`로 정산한다. 통지하지 않는 종료(오류 표시 등)는 미결을 만들지 않는다.
-   * `registrationId`는 task에 실행 등록이 없을 때 종료가 지킬 러너 등록이다(잇기 거절의 오류 종료).
+   * `registrationId`는 종료가 지킬 러너 등록이다. 있으면 task의 지금 실행 등록보다 우선한다.
+   * 잇기 거절의 오류 종료는 보낼 때 잡아 둔 등록을 넘겨, 거절을 기다리는 사이 시작된 새 실행의
+   * 등록으로 종료가 올라가지 않게 한다(잇기 거절의 오류 종료).
    */
   async persistExecutorFinalState(
     task: Task,
@@ -631,7 +633,7 @@ export class TaskLifecycleTransition {
       termination_reason: terminationReason,
       ...common,
     };
-    const registrationId = task.executionRegistration?.registrationId ?? options.registrationId;
+    const registrationId = options.registrationId ?? task.executionRegistration?.registrationId;
     const context: NodeResponseContext = {
       call: "termination",
       registrationId: registrationId ?? null,
@@ -787,16 +789,23 @@ export class TaskLifecycleTransition {
     }
   }
 
-  /** 중앙 세션 유무를 모르는 판정이면 확인해 다시 판정한다. 확인하지 못하면 그대로 둔다. */
+  /**
+   * 중앙 세션 유무를 모르는 판정이면 확인해 다시 판정한다. 확인하지 못하면 그대로 둔다.
+   * `sentRegistrationId`는 잇기 호출이 실제로 보낸 등록 번호다. 중앙 줄이 다른 등록의 실행을
+   * 싣고 있으면 그 거절은 낡은 등록의 것이 되어 중앙 오류 표시를 내지 않는다.
+   */
   async judgeWithCentralSession(
     task: Task,
     verdict: NodeResponseVerdict,
+    sentRegistrationId?: string,
   ): Promise<NodeResponseVerdict> {
     if (verdict.facts.centralSession !== "unknown") return verdict;
     const read = await this.readCentralSessionRow(task.agentSessionId);
     return read === undefined
       ? verdict
-      : judgeNodeResponse(centralSessionFactsOf(verdict.facts, read.row));
+      : judgeNodeResponse(
+        centralSessionFactsOf(verdict.facts, read.row, sentRegistrationId),
+      );
   }
 
   /** 로컬 소유를 정리한다. 정리 포트가 이어져 있으면 그것을, 없으면 기본 정리를 쓴다. */
