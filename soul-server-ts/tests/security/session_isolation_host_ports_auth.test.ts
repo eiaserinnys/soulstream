@@ -150,6 +150,24 @@ describe("session isolation host ports — auth preparation", () => {
     );
   });
 
+  it("codex-grant는 canonical 디렉터리의 auth.json.lock 일반 파일을 허용한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture);
+    touch(fixture.canonical, "auth.json.lock", "", 0o600);
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).resolves.toBeUndefined();
+  });
+
+  it("codex-grant는 canonical 디렉터리의 auth.json.lock이 일반 파일이 아니면 거절한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture);
+    mkdirSync(join(fixture.canonical, "auth.json.lock"));
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).rejects.toBeInstanceOf(
+      IsolationAuthUnavailableError,
+    );
+  });
+
   it("codex-grant는 확인되지 않은 writer 판을 거절한다", async () => {
     const fixture = await createCodexFixture();
     const { ports } = createCodexPorts(fixture, "0.166.0");
@@ -157,6 +175,20 @@ describe("session isolation host ports — auth preparation", () => {
     await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).rejects.toBeInstanceOf(
       IsolationAuthUnavailableError,
     );
+  });
+
+  it("codex-grant는 확인된 writer 판 0.168.0을 허용한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture, "0.168.0");
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).resolves.toBeUndefined();
+  });
+
+  it("codex-grant는 확인된 writer 판 0.169.0을 허용한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture, "0.169.0");
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).resolves.toBeUndefined();
   });
 
   it("codex-grant는 auth.json mode 0644를 거절한다", async () => {
