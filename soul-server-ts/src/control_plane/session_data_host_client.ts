@@ -18,7 +18,10 @@ import {
   PersistenceHostRequestError,
   PersistenceHostTransport,
 } from "./persistence_host_clients.js";
-import { requestHostOperationWithRetry } from "./persistence_host_transport.js";
+import {
+  requestHostOperationWithRetry,
+  type RestartWindowRetryPolicy,
+} from "./persistence_host_transport.js";
 import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
@@ -166,11 +169,23 @@ export function isSessionDataHostError(error: unknown): error is SessionDataHost
   return error instanceof SessionDataHostError;
 }
 
+/**
+ * Isolation policy reads must outlast an orchestrator restart: the deployment
+ * median is ~16s from SIGTERM to listening again (p90 39s, max 43s, card
+ * #1350). Delays widen per retry and the whole call stays inside 25s.
+ */
+const SECURITY_GATE_RESTART_WINDOW: RestartWindowRetryPolicy = {
+  totalBudgetMs: 25_000,
+  retryDelaysMs: [250, 1_000, 2_000, 4_000],
+};
+
 export class SessionDataHostClient implements SessionDataHost {
   private readonly transport: PersistenceHostTransport;
+  private readonly logger: HostClientConfig["logger"];
 
   constructor(config: HostClientConfig) {
     this.transport = new PersistenceHostTransport(config);
+    this.logger = config.logger;
   }
 
   getSession(sessionId: string): Promise<SessionRow | null> {
@@ -293,10 +308,26 @@ export class SessionDataHostClient implements SessionDataHost {
    * The isolation gate refuses the turn when this read fails, so a busy host
    * must cost latency, not the turn. The query itself answers in milliseconds;
    * at load ~20 the host queue alone took 2-5s and the turn-critical 1.5s x 2
-   * budget refused a trusted top-level session (card #1111).
+   * budget refused a trusted top-level session (card #1111). A restarting
+   * orchestrator is the other failure: refused connections and 502/503/504
+   * widen up to 25s, while timeouts keep the cheaper 3-attempt rule.
    */
   private securityGate<T>(operation: string, args: unknown[]): Promise<T> {
-    return this.request(operation, args, 5_000, 3, undefined, [250, 1_000]);
+    return this.request(operation, args, 5_000, 3, undefined, [250, 1_000], {
+      ...SECURITY_GATE_RESTART_WINDOW,
+      onRetry: ({ attempt, failure, elapsedMs, retryInMs }) => {
+        this.logger.warn(
+          { operation, attempt, failure, elapsedMs, retryInMs },
+          "isolation policy read retrying while the host restarts",
+        );
+      },
+      onRecovered: ({ attempt, elapsedMs }) => {
+        this.logger.info(
+          { operation, attempt, elapsedMs },
+          "isolation policy read recovered after a host restart",
+        );
+      },
+    });
   }
 
   private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {
@@ -311,6 +342,7 @@ export class SessionDataHostClient implements SessionDataHost {
     attempts: number,
     signal?: AbortSignal,
     retryDelaysMs: readonly number[] = [],
+    restartWindow?: RestartWindowRetryPolicy,
   ): Promise<T> {
     try {
       return await requestHostOperationWithRetry<T>(
@@ -318,7 +350,7 @@ export class SessionDataHostClient implements SessionDataHost {
         "session-data",
         operation,
         args,
-        { timeoutMs, attempts, signal, retryDelaysMs },
+        { timeoutMs, attempts, signal, retryDelaysMs, restartWindow },
       );
     } catch (lastError) {
       const retryable = lastError instanceof PersistenceHostRequestError && lastError.retryable;
