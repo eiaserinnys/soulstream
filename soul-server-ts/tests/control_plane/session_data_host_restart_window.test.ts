@@ -172,7 +172,42 @@ describe("isolation policy read across an orchestrator restart", () => {
     });
   });
 
-  it("refuses the session start at the 25s budget when the restart outlasts it", async () => {
+  it("keeps a session-start read through a restart longer than 25s", async () => {
+    vi.useFakeTimers();
+    const { logger, logs } = recordingLogger();
+    const startedAt = Date.now();
+    const fetchMock = vi.fn(async () => {
+      if (Date.now() - startedAt < 60_000) {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(
+            new Error("connect ECONNREFUSED 127.0.0.1:3105"),
+            { code: "ECONNREFUSED" },
+          ),
+        });
+      }
+      return jsonResponse(CHAIN);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = clientFor(logger);
+
+    const request = client.getSessionCallerChain("s1");
+    await driveUntilSettled(request, 90);
+
+    await expect(request).resolves.toEqual(CHAIN);
+    // Attempts at 0, 250, 1250, 3250, 7250, 11250, 15250, 19250, 23250ms,
+    // then every 4s; the one at 59250ms still sees the refusal and the host
+    // answers the attempt at 63250ms.
+    expect(fetchMock).toHaveBeenCalledTimes(19);
+    expect(retryLogs(logs).at(-1)?.fields).toMatchObject({
+      attempt: 18,
+      failure: "network-ECONNREFUSED",
+      elapsedMs: 59_250,
+      retryInMs: 4_000,
+    });
+    expect(recoveredLogs(logs)[0]?.fields).toMatchObject({ attempt: 19, elapsedMs: 63_250 });
+  });
+
+  it("refuses the session start at the 90s budget when the restart outlasts it", async () => {
     vi.useFakeTimers();
     const { logger, logs } = recordingLogger();
     const startedAt = Date.now();
@@ -188,7 +223,7 @@ describe("isolation policy read across an orchestrator restart", () => {
     const client = clientFor(logger);
 
     const decision = resolveExecutionSecurityDecision("s1", "claude-opus", policyPorts(client));
-    await driveUntilSettled(decision, 40);
+    await driveUntilSettled(decision, 100);
 
     const failure = await decision.catch((error: unknown) => error);
     expect(failure).toMatchObject({
@@ -196,17 +231,17 @@ describe("isolation policy read across an orchestrator restart", () => {
       code: ISOLATION_POLICY_UNAVAILABLE,
     });
     expect((failure as { cause?: unknown }).cause).toBeInstanceOf(SessionDataHostError);
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(26);
     // The last attempt starts inside the budget with its timeout reduced to
-    // the time that remains (1ms here), so the call ends at ~25s, not later.
-    expect(attemptTimes.at(-1)).toBe(24_999);
-    expect(attemptTimes.every(attemptAtMs => attemptAtMs < 25_000)).toBe(true);
+    // the time that remains (1ms here), so the call ends at ~90s, not later.
+    expect(attemptTimes.at(-1)).toBe(89_999);
+    expect(attemptTimes.every(attemptAtMs => attemptAtMs < 90_000)).toBe(true);
     const retries = retryLogs(logs);
     expect(retries.at(-1)?.fields).toMatchObject({
-      attempt: 9,
+      attempt: 25,
       failure: "http-502",
-      elapsedMs: 23_250,
-      retryInMs: 1_749,
+      elapsedMs: 87_250,
+      retryInMs: 2_749,
     });
   });
 
@@ -221,11 +256,11 @@ describe("isolation policy read across an orchestrator restart", () => {
     const client = clientFor(logger);
 
     const request = client.getSessionCallerChain("s1");
-    await driveUntilSettled(request, 10);
+    await driveUntilSettled(request, 30);
 
     await expect(request).rejects.toBeInstanceOf(SessionDataHostError);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([8_000, 8_000, 8_000]);
     const retries = retryLogs(logs);
     expect(retries.map(entry => entry.fields.failure)).toEqual(["timeout", "timeout"]);
     expect(retries.map(entry => entry.fields.retryInMs)).toEqual([250, 1_000]);
@@ -306,6 +341,6 @@ describe("isolation policy read across an orchestrator restart", () => {
     expect(interactive).toHaveBeenCalledTimes(1);
 
     expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs))
-      .toEqual([1_500, 1_500, 2_000, 2_000, 5_000]);
+      .toEqual([8_000, 8_000, 2_000, 2_000, 5_000]);
   });
 });

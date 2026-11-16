@@ -74,6 +74,7 @@ describe("WorktreeHostClient", () => {
 
   it("outlasts an orchestrator restart for the isolation inventory read", async () => {
     vi.useFakeTimers();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     const { logger: log, logs } = recordingLogger();
     const startedAt = Date.now();
     const fetchMock = vi.fn(async () => {
@@ -104,6 +105,9 @@ describe("WorktreeHostClient", () => {
     await expect(request).resolves.toEqual([{ id: "wt" }]);
     expect(settled).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(9);
+    // The restart window replaces the plain 5s attempt timeout with 8s.
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs))
+      .toEqual(Array(9).fill(8_000));
     const retries = logs.filter(
       entry => entry.level === "warn" && entry.message.includes("retrying"),
     );
