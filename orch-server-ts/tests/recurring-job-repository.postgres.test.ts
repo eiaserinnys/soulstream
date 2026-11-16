@@ -369,8 +369,9 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
     await expect(insertJob("recurring-empty-cron", "recurring", [], null, null)).rejects.toThrow();
     await expect(insertJob("once-with-trigger", "once", [], "2026-09-22T00:00:00.000Z", { type: "node_connected" }))
       .rejects.toThrow();
-    await expect(insertJob("valid-event", "event", [], null, { type: "node_connected" }))
-      .resolves.toBeDefined();
+    await expect(insertJob("valid-event", "event", [], null, {
+      type: "node_connected", nodeId: "node-a", settleSeconds: 180, cooldownSeconds: 3600, repeat: false,
+    })).resolves.toBeDefined();
 
     const eventRow = await repository.getJob("valid-event");
     await expect(repository.createScheduledRun(run({

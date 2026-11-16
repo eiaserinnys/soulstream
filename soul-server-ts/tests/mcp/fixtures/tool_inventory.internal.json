@@ -2134,7 +2134,7 @@
     "name": "create_page"
   },
   {
-    "description": "반복 또는 1회 에이전트 작업을 생성한다. 반복은 schedule_expressions(cron 배열), 1회는 run_at(오프셋 포함 ISO 8601, 예: 2026-09-29T09:00:00+09:00) 중 정확히 하나를 준다. 1회 작업은 실행으로 세션이 만들어진 것이 확인되면 작업과 이력이 삭제된다. idempotency_key는 재시도에도 같은 값을 쓴다.",
+    "description": "반복 또는 1회 에이전트 작업을 생성한다. 반복은 schedule_expressions(cron 배열), 1회는 run_at(오프셋 포함 ISO 8601, 예: 2026-09-29T09:00:00+09:00), event_trigger(트리거 노드가 붙으면 실행) 가운데 정확히 하나를 준다. 1회 작업과 repeat=false event 작업은 실행으로 세션이 만들어진 것이 확인되면 작업과 이력이 삭제된다. idempotency_key는 재시도에도 같은 값을 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2151,6 +2151,37 @@
         },
         "enabled": {
           "type": "boolean"
+        },
+        "event_trigger": {
+          "description": "노드 접속 시 깨어나는 조건. type은 node_connected만 지원한다.",
+          "properties": {
+            "cooldown_seconds": {
+              "maximum": 604800,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "node_id": {
+              "description": "트리거 노드. 생략하면 실행 노드(node_id)를 쓴다.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "repeat": {
+              "type": "boolean"
+            },
+            "settle_seconds": {
+              "maximum": 3600,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "node_connected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
         },
         "folder_id": {
           "minLength": 1,
@@ -9256,7 +9287,7 @@
     "name": "update_persistent_session_settings"
   },
   {
-    "description": "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로 바꾼다.",
+    "description": "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로, event 작업의 조건은 event_trigger로 통째로 바꾼다. 작업 종류를 바꾸는 수정은 거부한다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -9273,6 +9304,37 @@
         },
         "enabled": {
           "type": "boolean"
+        },
+        "event_trigger": {
+          "description": "노드 접속 시 깨어나는 조건. type은 node_connected만 지원한다.",
+          "properties": {
+            "cooldown_seconds": {
+              "maximum": 604800,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "node_id": {
+              "description": "트리거 노드. 생략하면 실행 노드(node_id)를 쓴다.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "repeat": {
+              "type": "boolean"
+            },
+            "settle_seconds": {
+              "maximum": 3600,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "node_connected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
         },
         "expected_version": {
           "exclusiveMinimum": 0,
