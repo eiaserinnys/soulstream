@@ -107,9 +107,10 @@ export class RunnerProcessEngineProxy implements EnginePort, SupportsToolBoundar
       [toolUseId],
     ) as ClaudeBackgroundTaskControlResult;
   }
-  async detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null> {
+  async detachedClaudeRuntimeActivity(): Promise<DetachedClaudeRuntimeActivity | null | { status: "not_supported" }> {
     const result = await this.dispatcher.invoke("detachedClaudeRuntimeActivity", []);
-    if (isUnavailableDetachedClaudeRuntimeActivity(result)) return null;
+    if (result === null) return null;
+    if (isUnavailableDetachedClaudeRuntimeActivity(result)) return { status: "not_supported" };
     if (!isDetachedClaudeRuntimeActivity(result)) {
       throw new Error("Runner child returned invalid detached Claude runtime activity");
     }

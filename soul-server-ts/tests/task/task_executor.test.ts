@@ -2624,15 +2624,18 @@ describe("TaskExecutor runner process boundary", () => {
     }
   });
 
-  it("adopts a terminal Claude runner as the SDK background owner without opening an execution", async () => {
+  it.each([
+    ["background work", 1, 0],
+    ["pending runtime signal", 0, 1],
+  ])("adopts a terminal Claude runner with %s without opening an execution", async (_label, backgroundTaskCount, pendingRuntimeSignalCount) => {
     const mocks = makeMocks();
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     const detachedClaudeRuntimeActivity = vi.fn(async () => ({
       foregroundPhase: "post_result_drain" as const,
       queryLifecycle: "open" as const,
-      backgroundTaskCount: 1,
+      backgroundTaskCount,
       pendingInputRequestCount: 0,
-      pendingRuntimeSignalCount: 0,
+      pendingRuntimeSignalCount,
     }));
     runner.engine = {
       ...makeFakeEngine([]),
@@ -2686,10 +2689,13 @@ describe("TaskExecutor runner process boundary", () => {
     expect(recovered.executionPromise).toBeUndefined();
   });
 
-  it("keeps a terminal Claude runner when detached activity is unsupported", async () => {
+  it.each([
+    ["no query", null],
+    ["unsupported", { status: "not_supported" }],
+  ])("releases a terminal Claude runner on recovery when activity is %s", async (_label, result) => {
     const mocks = makeMocks();
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
-    const detachedClaudeRuntimeActivity = vi.fn(async () => null);
+    const detachedClaudeRuntimeActivity = vi.fn(async () => result);
     runner.engine = {
       ...makeFakeEngine([]),
       backendId: "claude",
@@ -2725,13 +2731,13 @@ describe("TaskExecutor runner process boundary", () => {
 
     await expect(
       executor.retainRegisteredDetachedRunner(recovered, registration),
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
 
     expect(detachedClaudeRuntimeActivity).toHaveBeenCalledOnce();
-    expect(recovered.runner).toBe(runner);
-    expect(recovered.runnerRetainedForDetachedWork).toBe(true);
+    expect(recovered.runner).toBeUndefined();
+    expect(recovered.runnerRetainedForDetachedWork).toBeUndefined();
     expect(dispatcher.close).not.toHaveBeenCalled();
-    expect(dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(dispatcher.detachHost).toHaveBeenCalledOnce();
     expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
   });
 

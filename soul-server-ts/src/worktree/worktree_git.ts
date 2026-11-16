@@ -577,7 +577,7 @@ export class WorktreeGit {
     if (current !== input.expectedSha) {
       throw new WorktreeGitError("REF_REUSED", `${current ?? "missing"} != ${input.expectedSha}`);
     }
-    if (!await this.isCommitPreserved(repo, input.expectedSha, input.branch)) {
+    if (!await this.isCommitPreserved(input.repoId, repo, input.expectedSha, input.branch)) {
       throw new WorktreeGitError(
         "UNPRESERVED_COMMITS",
         `Branch "${input.branch}" has commits that are not preserved on the remote or another ref; refusing to delete it`,
@@ -927,7 +927,7 @@ export class WorktreeGit {
     }
   }
 
-  private async isCommitPreserved(repo: string, sha: string, branch: string): Promise<boolean> {
+  private async isCommitPreserved(repoId: string, repo: string, sha: string, branch: string): Promise<boolean> {
     const remote = await this.refSha(repo, `refs/remotes/origin/${branch}`);
     if (remote === sha) return true;
     try {
@@ -935,7 +935,7 @@ export class WorktreeGit {
       return true;
     } catch (error) {
       rethrowProcessTimeout(error);
-      return false;
+      return (await this.mergedPullRequestHeads(repoId, branch)).includes(sha);
     }
   }
 }

@@ -245,10 +245,17 @@ describe("RunnerProcessEngineProxy", () => {
   it.each([
     ["not_supported", { status: "not_supported" }],
     ["undefined", undefined],
-  ])("normalizes pre-contract detached runtime activity %s to null", async (_label, result) => {
+  ])("preserves unknown pre-contract detached runtime activity %s", async (_label, result) => {
     const dispatcher = {
       invoke: vi.fn().mockResolvedValue(result),
     };
+    const proxy = new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never);
+
+    await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toEqual({ status: "not_supported" });
+  });
+
+  it("reports a missing Claude query as null", async () => {
+    const dispatcher = { invoke: vi.fn().mockResolvedValue(null) };
     const proxy = new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never);
 
     await expect(proxy.detachedClaudeRuntimeActivity()).resolves.toBeNull();

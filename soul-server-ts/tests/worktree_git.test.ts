@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { samePath, WorktreeGit } from "../src/worktree/worktree_git.js";
 import { GitProcessError, runBoundedProcess } from "../src/worktree/worktree_process.js";
@@ -341,6 +341,78 @@ describe("WorktreeGit", () => {
     })).resolves.toBe("already_deleted");
     expect(git(repo, "rev-parse", "refs/heads/feature/delete-once")).not.toBe(expectedSha);
   });
+
+  it.each(["remote branch", "default ancestor"] as const)(
+    "does not query gh when the commit is already preserved by %s",
+    async (preservedBy) => {
+      const { projectsRoot, repo } = makeRepository();
+      const remote = join(projectsRoot, "remote.git");
+      mkdirSync(remote);
+      git(remote, "init", "--bare");
+      git(repo, "remote", "add", "origin", remote);
+      git(repo, "push", "-u", "origin", "main");
+      git(repo, "branch", "feature/preserved");
+      if (preservedBy === "remote branch") git(repo, "push", "origin", "feature/preserved");
+      git(repo, "remote", "set-head", "origin", "main");
+      const gh = vi.fn();
+      const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000,
+        processRunner: async (input) => input.command === "gh" ? gh() : runBoundedProcess(input),
+      });
+
+      await expect(worktrees.deleteBranch({
+        repoId: "demo", branch: "feature/preserved", expectedSha: git(repo, "rev-parse", "main"),
+        markerRef: "refs/soulstream/worktree-deletions/preserved",
+      })).resolves.toBe("deleted");
+      expect(gh).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["merged", "advanced", "gh failure", "no PR"] as const)(
+    "checks merged PR head before deleting an unpreserved branch: %s",
+    async (scenario) => {
+      const { projectsRoot, repo } = makeRepository();
+      const remote = join(projectsRoot, "remote.git");
+      mkdirSync(remote);
+      git(remote, "init", "--bare");
+      git(repo, "remote", "add", "origin", remote);
+      git(repo, "push", "-u", "origin", "main");
+      git(repo, "checkout", "-b", "feature/squashed");
+      writeFileSync(join(repo, "feature.txt"), "feature\n");
+      git(repo, "add", "feature.txt");
+      git(repo, "commit", "-m", "feature");
+      const prHead = git(repo, "rev-parse", "HEAD");
+      git(repo, "push", "origin", "feature/squashed");
+      if (scenario === "advanced") {
+        writeFileSync(join(repo, "feature.txt"), "additional local work\n");
+        git(repo, "commit", "-am", "local work");
+      }
+      const expectedSha = git(repo, "rev-parse", "HEAD");
+      git(repo, "checkout", "main");
+      git(repo, "merge", "--squash", prHead);
+      git(repo, "commit", "-m", "squash feature");
+      git(repo, "push", "origin", "main", ":feature/squashed");
+      git(repo, "remote", "set-head", "origin", "main");
+      const gh = vi.fn(async () => {
+        if (scenario === "gh failure") throw new Error("gh failed");
+        return { stdout: JSON.stringify(scenario === "no PR" ? [] : [{ headRefOid: prHead }]), stderr: "", exitCode: 0 };
+      });
+      const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000,
+        processRunner: async (input) => input.command === "gh" ? gh() : runBoundedProcess(input),
+      });
+      const deletion = worktrees.deleteBranch({
+        repoId: "demo", branch: "feature/squashed", expectedSha,
+        markerRef: "refs/soulstream/worktree-deletions/squashed",
+      });
+      if (scenario === "merged") {
+        await expect(deletion).resolves.toBe("deleted");
+        expect(git(repo, "branch", "--list", "feature/squashed")).toBe("");
+      } else {
+        await expect(deletion).rejects.toMatchObject({ code: "UNPRESERVED_COMMITS" });
+        expect(git(repo, "rev-parse", "refs/heads/feature/squashed")).toBe(expectedSha);
+      }
+      expect(gh).toHaveBeenCalledOnce();
+    },
+  );
 
   it("refuses a same-name branch replaced before the first deletion attempt", async () => {
     const { projectsRoot, repo } = makeRepository();
