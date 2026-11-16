@@ -4,6 +4,7 @@ import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type {
   IsolationHostPorts,
   IsolationPreparationInput,
+  LocalMcpEnvExport,
   MountBinding,
   PreparedIsolationPlan,
   SessionIsolationSpec,
@@ -160,11 +161,28 @@ function isLoopbackUrl(url: string): boolean {
   }
 }
 
+interface ApprovedLocalMcpResolution {
+  approved: { serverId: string; hostPort: number; sandboxPort: number }[];
+  /** 정책이 지목한 승인 서버의 값을 세션 env로 옮긴 것. 비밀은 여기에만 담긴다. */
+  environment: Record<string, string>;
+}
+
+/** 세션 MCP 설정 헤더에서 정책이 지목한 값을 읽는다. 헤더 이름은 대소문자를 가리지 않는다. */
+function localMcpHeaderValue(server: ResolvedMcpServer, header: string): string {
+  const target = header.toLowerCase();
+  for (const [name, value] of Object.entries(server.headers ?? {})) {
+    if (name.toLowerCase() === target && value.length > 0) return value;
+  }
+  throw new IsolationPreparationPolicyError(
+    `승인된 로컬 MCP의 ${header} 헤더 값이 없습니다`,
+  );
+}
+
 function resolveApprovedLocalMcp(
   input: IsolationPreparationInput,
   sanitizedServers: readonly ResolvedMcpServer[],
   nodeId: string,
-): { serverId: string; hostPort: number; sandboxPort: number }[] {
+): ApprovedLocalMcpResolution {
   const internalPort = portOf(input.actualInternalMcpUrl, "내부 MCP");
   const required: { serverId: string; hostPort: number; sandboxPort: number } = {
     serverId: input.policy.localMcp.requiredServerId,
@@ -175,8 +193,9 @@ function resolveApprovedLocalMcp(
   const optional = new Map(
     input.policy.localMcp.optional
       .filter((entry) => entry.nodeId === nodeId)
-      .map((entry) => [entry.serverId, entry.port] as const),
+      .map((entry) => [entry.serverId, entry] as const),
   );
+  const environment: Record<string, string> = {};
 
   for (const server of sanitizedServers) {
     const url = serverUrl(server);
@@ -187,15 +206,33 @@ function resolveApprovedLocalMcp(
       required.sandboxPort = sandboxPort;
       continue;
     }
-    const hostPort = name === null ? undefined : optional.get(name);
-    if (name === null || hostPort === undefined) {
+    const entry = name === null ? undefined : optional.get(name);
+    if (name === null || entry === undefined) {
       throw new IsolationPreparationPolicyError(
         `승인되지 않은 로컬 MCP 서버입니다: ${name ?? "(이름 없음)"}`,
       );
     }
-    approved.push({ serverId: name, hostPort, sandboxPort });
+    approved.push({ serverId: name, hostPort: entry.port, sandboxPort });
+    for (const exported of entry.envExports ?? []) {
+      if (Object.prototype.hasOwnProperty.call(environment, exported.name)) {
+        throw new IsolationPreparationPolicyError(
+          `로컬 MCP env 내보내기 이름이 중복됩니다: ${exported.name}`,
+        );
+      }
+      environment[exported.name] = exportedValue(server, url, exported);
+    }
   }
-  return approved;
+  return { approved, environment };
+}
+
+function exportedValue(
+  server: ResolvedMcpServer,
+  url: string,
+  exported: LocalMcpEnvExport,
+): string {
+  return exported.source === "origin"
+    ? new URL(url).origin
+    : localMcpHeaderValue(server, exported.header);
 }
 
 function resolveApprovedTestDatabase(
@@ -334,7 +371,7 @@ export async function prepareIsolationPlan(
 
   const nodeId = await ports.resolveNodeId();
   const sanitizedServers = await ports.sanitizeMcpServers(input.resolvedServers, input.policy);
-  const approvedLocalMcp = resolveApprovedLocalMcp(input, sanitizedServers, nodeId);
+  const localMcpApproval = resolveApprovedLocalMcp(input, sanitizedServers, nodeId);
   const approvedTestDatabase = resolveApprovedTestDatabase(input, nodeId);
 
   const workspaceReal = await requireDirectory(ports, input.workspaceDir, "workspace");
@@ -413,6 +450,8 @@ export async function prepareIsolationPlan(
     ...githubEnvironment,
     GH_CONFIG_DIR: ghConfigDirectory,
     AUTH_BEARER_TOKEN: restrictedCredential,
+    // 승인된 로컬 MCP의 REST 주소·키. 전달이 없는 세션에는 정책이 있어도 값이 없다.
+    ...localMcpApproval.environment,
   };
   if (approvedTestDatabase) {
     env.TEST_DATABASE_URL = approvedTestDatabase.url;
@@ -469,7 +508,7 @@ export async function prepareIsolationPlan(
     masks,
     heavyWorkLockBindings: locks.heavyWorkLockBindings,
     hostProcLocksBinding: locks.hostProcLocksBinding,
-    approvedLocalMcp,
+    approvedLocalMcp: localMcpApproval.approved,
     approvedTestDatabase: approvedTestDatabase?.approved ?? null,
   };
 

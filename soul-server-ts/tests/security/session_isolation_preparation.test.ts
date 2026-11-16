@@ -57,6 +57,7 @@ function makePolicy(
       isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
       writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
       additionalSensitiveRoots,
+      writableSensitiveRoots: [],
       readOnlyReexposedPaths: [],
     },
     testDatabases: [],
@@ -1242,6 +1243,101 @@ describe("prepareIsolationPlan", () => {
       prepareIsolationPlan(denied.input, denied.ports),
       ISOLATION_POLICY_UNAVAILABLE,
     );
+  });
+
+  it("exports the approved local MCP origin and header value into the session env", async () => {
+    const atomServer = {
+      type: "streamable_http" as const,
+      name: "atom",
+      url: "http://127.0.0.1:4200/mcp",
+      headers: { "x-api-key": "atom-session-key" },
+    };
+    const localMcp = {
+      requiredServerId: "soulstream" as const,
+      optional: [{
+        serverId: "atom",
+        nodeId: "node-a",
+        port: 4200,
+        envExports: [
+          { name: "ATOM_SERVER_URL", source: "origin" as const },
+          {
+            name: "ATOM_API_KEY",
+            source: "header" as const,
+            header: "x-api-key",
+          },
+        ],
+      }],
+    };
+    const fixture = await makeFixture({
+      sanitizeMcpServers: async () => [atomServer],
+      policy: (policy) => ({ ...policy, localMcp }),
+    });
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    // 전달된 loopback origin과 그 세션 MCP 설정의 헤더 값이 env로 간다.
+    expect(prepared.env.ATOM_SERVER_URL).toBe("http://127.0.0.1:4200");
+    expect(prepared.env.ATOM_API_KEY).toBe("atom-session-key");
+    expect(prepared.spec.approvedLocalMcp).toContainEqual({
+      serverId: "atom",
+      hostPort: 4200,
+      sandboxPort: 4200,
+    });
+
+    // 전달이 없는 세션에는 같은 정책이 있어도 값을 넣지 않는다.
+    const withoutForwarding = await makeFixture({
+      sanitizeMcpServers: async () => [],
+      policy: (policy) => ({ ...policy, localMcp }),
+    });
+    const plain = await prepareIsolationPlan(
+      withoutForwarding.input,
+      withoutForwarding.ports,
+    );
+    expect(plain.env).not.toHaveProperty("ATOM_SERVER_URL");
+    expect(plain.env).not.toHaveProperty("ATOM_API_KEY");
+
+    // 정책이 선언한 헤더가 MCP 설정에 없으면 반쪽 env를 만들지 않고 거절한다.
+    const missingHeader = await makeFixture({
+      sanitizeMcpServers: async () => [{
+        type: "streamable_http" as const,
+        name: "atom",
+        url: "http://127.0.0.1:4200/mcp",
+      }],
+      policy: (policy) => ({ ...policy, localMcp }),
+    });
+    await expectErrorCode(
+      prepareIsolationPlan(missingHeader.input, missingHeader.ports),
+      ISOLATION_POLICY_UNAVAILABLE,
+    );
+  });
+
+  it("keeps a writable sensitive root as a writable tmpfs mask and leaves the others read-only", async () => {
+    const fixture = await makeFixture();
+    const wrangler = join(fixture.home, ".config/.wrangler");
+    mkdirSync(wrangler, { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        additionalSensitiveRoots: [
+          ...fixture.input.policy.filesystem.additionalSensitiveRoots,
+          wrangler,
+        ],
+        writableSensitiveRoots: [wrangler],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    expect(prepared.spec.masks).toContainEqual({
+      path: wrangler,
+      kind: "directory",
+      writable: true,
+    });
+    // 쓰기 허용 목록에 없는 mask는 지금처럼 읽기 전용으로 남는다.
+    expect(
+      prepared.spec.masks.find((mask) => mask.path === fixture.sensitive)?.writable,
+    ).toBeUndefined();
   });
 
   it("rejects a cache directory that aliases the main store", async () => {

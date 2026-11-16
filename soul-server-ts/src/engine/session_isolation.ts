@@ -38,6 +38,7 @@ export const BWRAP_BASE_FLAGS: readonly string[] = Object.freeze([
  *    섞어서 낸다. 조상이 먼저 오고, 같은 경로면 tmpfs가 먼저다.
  * 3. file mask(`--ro-bind /dev/null`)
  * 4. directory mask의 `--remount-ro` — 모든 bind와 file mask 뒤에 건다.
+ *    정책이 쓰기 허용으로 표시한 mask(`writable`)는 빈 tmpfs 그대로 둔다.
  * 5. `/proc/locks` 읽기 전용 bind, 이어서 `--chdir`
  *
  * 순서가 곧 의미다. mask한 부모 아래에 다시 승인된 경로를 되살리는 bind가
@@ -88,6 +89,9 @@ export function buildBwrapFlags(
   // bind와 file mask가 모두 끝난 뒤에 건다. remount-ro는 그 경로에 지금 올라와 있는
   // tmpfs mount 하나에만 걸리고, 그 아래에 얹힌 bind는 그대로 남는다.
   for (const mask of directoryMasks) {
+    // 쓰기 허용 mask는 잠그지 않는다. 세션마다 새 빈 tmpfs라 호스트 내용은
+    // 여전히 가려지고, 도구는 자기 설정 폴더에 쓸 수 있다.
+    if (mask.writable === true) continue;
     flags.push("--remount-ro", mask.path);
   }
 

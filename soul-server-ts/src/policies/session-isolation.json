@@ -453,7 +453,18 @@
       {
         "serverId": "atom",
         "nodeId": "eiaserinnys",
-        "port": 4200
+        "port": 4200,
+        "envExports": [
+          {
+            "name": "ATOM_SERVER_URL",
+            "source": "origin"
+          },
+          {
+            "name": "ATOM_API_KEY",
+            "source": "header",
+            "header": "x-api-key"
+          }
+        ]
       },
       {
         "serverId": "serendipity",
@@ -582,6 +593,9 @@
       "/home/eias/haniel-root/workspace/writer-seosoyoung/.env.local",
       "/home/eias/haniel-root/workspace/writer-seosoyoung_codex/.env.local",
       "/home/eias/haniel-root/workspace/what-is-next-hit/.env"
+    ],
+    "writableSensitiveRoots": [
+      "/home/eias/.config/.wrangler"
     ],
     "readOnlyReexposedPaths": [
       "/home/eias/migration/netcup-core-bootstrap/production-staging/repo",

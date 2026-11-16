@@ -54,7 +54,21 @@ export interface MountBinding {
 export type IsolationMask = {
   path: string;
   kind: "file" | "directory";
+  /**
+   * 디렉터리 mask를 세션마다 새 빈 쓰기 가능 tmpfs로 둔다(기본은 읽기 전용).
+   * 호스트 내용은 그대로 가리고, 도구가 자기 설정을 그 경로에 쓸 수 있게 한다.
+   */
+  writable?: boolean;
 };
+
+/**
+ * 승인된 로컬 MCP 서버에서 restricted 자식 env로 내보낼 값.
+ * `origin`은 pasta가 전달한 loopback URL의 origin, `header`는 그 세션 MCP
+ * 설정에서 읽은 헤더 값이다. 이름과 값의 출처는 정책이 정한다.
+ */
+export type LocalMcpEnvExport =
+  | { name: string; source: "origin" }
+  | { name: string; source: "header"; header: string };
 
 /**
  * B2가 만드는 격리 실행 명세. 값에는 비밀을 담지 않으며, 환경변수는
@@ -119,7 +133,13 @@ export interface IsolationPolicy {
   tools: Record<string, IsolationToolPolicy>;
   localMcp: {
     requiredServerId: "soulstream";
-    optional: { serverId: string; nodeId: string; port: number }[];
+    optional: {
+      serverId: string;
+      nodeId: string;
+      port: number;
+      /** 승인된 loopback 서버에서 세션 env로 내보낼 값. 서버별로 정책이 정한다. */
+      envExports?: readonly LocalMcpEnvExport[];
+    }[];
   };
   filesystem: {
     sessionWorktreeRelativeRoot: ".projects/.isolated";
@@ -128,6 +148,8 @@ export interface IsolationPolicy {
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"];
     /** 노드별 실제 경로, 비밀 값 없음. */
     additionalSensitiveRoots: string[];
+    /** additionalSensitiveRoots 가운데 RO 대신 세션별 빈 쓰기 tmpfs로 둘 경로. */
+    writableSensitiveRoots: string[];
     /** 가린 루트 아래에서 읽기만 허용할 디렉터리. 노드별 실제 경로. */
     readOnlyReexposedPaths: string[];
   };
