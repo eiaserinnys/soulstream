@@ -444,7 +444,7 @@ describe("TaskManager.acknowledgeReview", () => {
       "acknowledged",
     );
 
-    expect(mocks.getSession).toHaveBeenCalledWith("sess-review-evicted");
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-review-evicted", { restartWindow: true });
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 
@@ -457,7 +457,7 @@ describe("TaskManager.acknowledgeReview", () => {
 
       await expect(tm.acknowledgeReview("sess-review-error")).resolves.toBe(outcome);
 
-      expect(mocks.getSession).toHaveBeenCalledWith("sess-review-error");
+      expect(mocks.getSession).toHaveBeenCalledWith("sess-review-error", { restartWindow: true });
       expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
     },
   );
@@ -893,7 +893,7 @@ describe("TaskManager.deliverToolApproval", () => {
       decision: "rejected",
       eventId: 99,
     });
-    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-approval");
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-approval", { restartWindow: true });
     const resumed = onResume.mock.calls[0]?.[0] as Task | undefined;
     expect(resumed).toBeDefined();
     expect(resumed).toMatchObject({
@@ -1417,7 +1417,7 @@ describe("TaskManager.deleteTask", () => {
 
     await expect(tm.deleteTask("evicted-delete")).resolves.toBe(true);
 
-    expect(mocks.getSession).toHaveBeenCalledWith("evicted-delete");
+    expect(mocks.getSession).toHaveBeenCalledWith("evicted-delete", { restartWindow: true });
     expect(mocks.deleteSession).toHaveBeenCalledWith("evicted-delete");
     expect(mocks.emitSessionDeleted).toHaveBeenCalledWith("evicted-delete");
     expect(tm.getTask("evicted-delete")).toBeUndefined();
@@ -2384,7 +2384,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     await expect(
       tm.addIntervention({ agentSessionId: "missing", text: "x", user: "u" }, vi.fn()),
     ).rejects.toThrow("Task not found: missing");
-    expect(mocks.getSession).toHaveBeenCalledWith("missing");
+    expect(mocks.getSession).toHaveBeenCalledWith("missing", { restartWindow: true });
   });
 
   it("DB row가 다른 노드 소유이면 owner mismatch를 Task not found와 구분해 보고", async () => {
@@ -2427,7 +2427,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       "Task owned by another node: caller-owned-elsewhere owner=owner-node current=reporting-node",
     );
 
-    expect(mocks.getSession).toHaveBeenCalledWith("caller-owned-elsewhere");
+    expect(mocks.getSession).toHaveBeenCalledWith("caller-owned-elsewhere", { restartWindow: true });
     expect(tm.getTask("caller-owned-elsewhere")).toBeUndefined();
     expect(mocks.appendMetadata).not.toHaveBeenCalled();
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
@@ -2524,7 +2524,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     );
 
     expect(result).toEqual({ autoResumed: true });
-    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-claude");
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-claude", { restartWindow: true });
     const memTask = tm.getTask("sess-evicted-claude");
     expect(memTask).toBeDefined();
     expect(memTask!.status).toBe("running");
