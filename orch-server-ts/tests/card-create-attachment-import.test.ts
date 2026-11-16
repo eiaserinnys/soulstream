@@ -218,6 +218,27 @@ describe("card create path attachment import against PostgreSQL", () => {
     expect(await cardRefs(created.operation.target_id)).toEqual([{ attachment_id: "user-owned" }]);
   });
 
+  it("lets a dashboard user create a card with their own upload alias", async () => {
+    await insertAsset("dashboard-owned", { ownerKind: "user_email", ownerKey: "owner@example.com" });
+    await alias("dashboard-owned", "media/dashboard.png");
+    const created = await cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "owner@example.com",
+      folderId, title: "첨부 카드", request: "요청", attachments: attachment("media/dashboard.png"), idempotencyKey: key() });
+    expect(await cardRefs(created.operation.target_id)).toMatchObject([{ attachment_id: "dashboard-owned" }]);
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+  });
+
+  it("rejects a dashboard user linking another user's upload alias", async () => {
+    await insertAsset("dashboard-foreign", { ownerKind: "user_email", ownerKey: "other@example.com" });
+    await alias("dashboard-foreign", "media/foreign-user.png");
+    await expect(cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "owner@example.com",
+      folderId, title: "첨부 카드", request: "요청", attachments: attachment("media/foreign-user.png"), idempotencyKey: key() }))
+      .rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_LINK_DENIED" });
+    expect(await h.sql`SELECT id FROM cards`).toEqual([]);
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+  });
+
   it.each(["alias", "materialized"])("rejects another session's %s before reading or creating a card", async (kind) => {
     const other = "foreign-session";
     const path = kind === "alias" ? "media/foreign.png" : `incoming/${other}/assets/foreign/shot.png`;

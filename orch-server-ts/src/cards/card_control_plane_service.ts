@@ -195,7 +195,8 @@ export class CardControlPlaneService {
       : params.actorKind==="user" && email.length>0 ? {kind:"user_email" as const,key:email} : null;
     if (owner===null) return null;
     const prepare=createCardAttachmentPreparer({...deps,findAsset:attachmentId=>this.findReusableAttachmentAsset(attachmentId),
-      authorizeReuse:(sessionId,attachmentId)=>requireCardAttachmentReuse(this.repoSql,sessionId,attachmentId)});
+      authorizeReuse:(sessionId,attachmentId)=>owner.kind==="agent_session"
+        ? requireCardAttachmentReuse(this.repoSql,sessionId,attachmentId) : Promise.resolve()});
     const refs:AttachmentRef[]=[];
     const skip:CardLegacyLocation[]=[];
     for (const attachment of attachments) {

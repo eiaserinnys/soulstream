@@ -73,6 +73,21 @@ function makeRegistration(layout: Layout, fetchImpl = fakeFetch()) {
 }
 
 describe("createProducedAttachmentRegistration", () => {
+  it.each([502, 503, 504])("disposes the HTTP %s response body before retrying", async (status) => {
+    const layout = await makeLayout();
+    await writeFile(join(layout.workspace, "a.txt"), "x");
+    const failure = new Response("unavailable", { status });
+    const success = fakeFetch();
+    let attempts = 0;
+    const fetchImpl = fakeFetch((url, init) => {
+      if (++attempts === 1) return failure;
+      expect(failure.bodyUsed).toBe(true);
+      return success(url, init);
+    });
+    const { registration } = makeRegistration(layout, fetchImpl);
+    await expect(registration.register({ local_path: "a.txt" }, executionFor(layout))).resolves.toMatchObject({ attachment_id: "att-1" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
   it("retries a 502 with the same key and returns the registered attachment", async () => {
     const layout = await makeLayout();
     await writeFile(join(layout.workspace, "a.txt"), "x");

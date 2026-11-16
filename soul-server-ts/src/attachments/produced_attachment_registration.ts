@@ -111,6 +111,7 @@ export function createProducedAttachmentRegistration(options: {
         }
       }
       if (response !== undefined && (![502, 503, 504].includes(response.status) || attempt === 2)) break;
+      await response?.body?.cancel().catch(() => undefined);
       try {
         await delay((attempt + 1) * 1000, undefined, { signal: requestSignal });
       } catch {
