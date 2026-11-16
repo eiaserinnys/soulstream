@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
+  Input,
   NewSessionFolderSelector,
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
@@ -234,9 +235,9 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         {error ? <SettingsAlert>{error}</SettingsAlert> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <SettingsField label="작업 이름"><input aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
-          {editor.schedule.mode !== "once" ? <SettingsField label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
-          <SettingsField label="오프라인 허용 초"><input aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
+          <SettingsField label="작업 이름"><Input className="min-w-0" aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
+          {editor.schedule.mode !== "once" ? <SettingsField label="시간대"><Input className="min-w-0" aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
+          <SettingsField label="오프라인 허용 초"><Input className="min-w-0" aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
         </div>
         {selected?.schedule_kind === "event"
           ? <div className="rounded border border-border p-3 text-sm" data-testid="recurring-event-condition">{recurringJobConditionText(selected)}</div>

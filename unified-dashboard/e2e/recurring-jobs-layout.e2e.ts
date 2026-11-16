@@ -14,21 +14,30 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
  *   - 각 컨트롤이 자기 칸(SettingsField label) 안에, 칸이 행 컨테이너 안에 있다(1px 허용)
  *   - 모달 본문에 가로 스크롤이 생기지 않는다
  *
+ * 여기에 더해 1회 실행 모드(시간대 칸이 빠지는 배치)와, 이름·시간대 칸에 초점이 간
+ * 상태의 초점 고리(자기 칸에서 얼마나 나가고 이웃 칸에 닿는가)를 같은 방식으로 잰다.
+ * 초점 고리는 프로젝트 입력 표면(span[data-slot=input-control])의 box-shadow로 그려진다.
+ *
  * 측정값은 RECURRING_LAYOUT_OUT_DIR(없으면 playwright outputDir)에 JSON으로,
  * 캡처는 같은 폴더에 PNG로 남긴다. 하나라도 어기면 테스트가 실패한다.
  */
 
 const KOREAN_LONG_NAME = "매주 월요일 아침에 지난주 회의록과 이번 주 일정을 정리해서 팀에 공유하는 자동 보고서 작업 ".repeat(3).trim();
 const ENGLISH_LONG_NAME = "recurring-job-name-without-any-spaces-for-layout-measurement-".repeat(3);
+const ONCE_LONG_NAME = "한 번만 실행하는 알림 작업 - ".repeat(6).trim();
 const NOW = "2026-11-16T10:00:00.000Z";
 const MODES = ["daily", "weekdays", "weekly", "monthly", "advanced"] as const;
 const WIDTHS = [1440, 1024, 768, 640, 390, 360];
+const ONCE_WIDTHS = [1440, 1024, 768, 390];
+const FOCUS_WIDTHS = [1440, 768, 390];
 const NAMES = { korean: KOREAN_LONG_NAME, english: ENGLISH_LONG_NAME } as const;
 
 type Mode = (typeof MODES)[number];
+type ScheduleMode = Mode | "once";
 type NameId = keyof typeof NAMES;
+type MeasurementNameId = NameId | "once";
 
-function recurringJob(jobId: string, name: string, expressions: string[]) {
+function recurringJob(jobId: string, name: string, expressions: string[], patch: Record<string, unknown> = {}) {
   return {
     job_id: jobId,
     name,
@@ -48,12 +57,18 @@ function recurringJob(jobId: string, name: string, expressions: string[]) {
     version: 3,
     created_at: NOW,
     updated_at: NOW,
+    ...patch,
   };
 }
 
 const JOBS = [
   recurringJob("job-korean", KOREAN_LONG_NAME, ["0 9 * * 1-5"]),
   recurringJob("job-english", ENGLISH_LONG_NAME, ["*/7 * * * *"]),
+  recurringJob("job-once", ONCE_LONG_NAME, [], {
+    schedule_kind: "once",
+    run_at: "2026-11-20T01:00:00.000Z",
+    next_run_at: "2026-11-20T01:00:00.000Z",
+  }),
 ];
 
 type RouteState = { failJobs: boolean };
@@ -85,20 +100,15 @@ type FieldRect = { labelText: string; controlLabel: string | null; label: Rect; 
 type Measurement = {
   width: number;
   angle: "new" | "edit";
-  nameId: NameId;
-  mode: Mode;
+  nameId: MeasurementNameId;
+  mode: ScheduleMode;
   row: Rect;
   fields: FieldRect[];
   scrollers: Array<{ name: string; scrollWidth: number; clientWidth: number }>;
   header: { title: Rect | null; actions: Rect | null };
 };
 
-function rectOf(element: Element): Rect {
-  const box = element.getBoundingClientRect();
-  return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom };
-}
-
-async function measure(page: Page, width: number, angle: "new" | "edit", nameId: NameId, mode: Mode): Promise<Measurement> {
+async function measure(page: Page, width: number, angle: "new" | "edit", nameId: MeasurementNameId, mode: ScheduleMode): Promise<Measurement> {
   const data = await page.evaluate(() => {
     const toRect = (element: Element) => {
       const box = element.getBoundingClientRect();
@@ -112,13 +122,15 @@ async function measure(page: Page, width: number, angle: "new" | "edit", nameId:
     if (!field) throw new Error("SettingsField label not found");
     const row = field.parentElement;
     if (!row) throw new Error("field row not found");
+    // 입력 칸의 사각형은 프로젝트 입력 표면(span[data-slot=input-control])이 있으면 그 표면을 잰다.
     const fields = [...row.children]
       .filter((child) => child.tagName === "LABEL")
       .map((label) => {
-        const control = label.querySelector("input, select, textarea");
+        const inner = label.querySelector("input, select, textarea");
+        const control = label.querySelector('[data-slot="input-control"]') ?? inner;
         return {
           labelText: (label.querySelector("span")?.textContent ?? "").trim(),
-          controlLabel: control?.getAttribute("aria-label") ?? null,
+          controlLabel: inner?.getAttribute("aria-label") ?? null,
           label: toRect(label),
           control: control ? toRect(control) : null,
         };
@@ -147,6 +159,109 @@ async function measure(page: Page, width: number, angle: "new" | "edit", nameId:
     };
   });
   return { width, angle, nameId, mode, ...data };
+}
+
+type FocusNeighbor = { labelText: string; cell: Rect; control: Rect | null; hits: boolean; separationPx: number };
+type FocusMeasurement = {
+  fieldLabel: string;
+  boxShadow: string;
+  surfaceSlot: string | null;
+  cell: Rect;
+  control: Rect;
+  ring: Rect;
+  ringThicknessPx: number;
+  ringBeyondCellPx: number;
+  ringHitsNeighbor: boolean;
+  neighbors: FocusNeighbor[];
+};
+
+/** 초점이 간 입력의 표면 box-shadow(프로젝트 초점 고리)가 자기 칸과 이웃 칸에 대해 어디까지 가는지 잰다. */
+async function measureFocus(page: Page): Promise<FocusMeasurement> {
+  return await page.evaluate(() => {
+    type Box = { x: number; y: number; width: number; height: number; right: number; bottom: number };
+    const toRect = (element: Element): Box => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom };
+    };
+    const intersection = (first: Box, second: Box) =>
+      Math.min(first.right, second.right) - Math.max(first.x, second.x) > 0.5
+      && Math.min(first.bottom, second.bottom) - Math.max(first.y, second.y) > 0.5;
+
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) throw new Error("초점이 간 요소가 없습니다");
+    const cellElement = active.closest("label");
+    if (!cellElement) throw new Error("초점이 간 입력의 칸(label)을 찾지 못했습니다");
+    const surface = cellElement.querySelector('[data-slot="input-control"]');
+    const ringed = surface ?? active;
+    const boxShadow = getComputedStyle(ringed).boxShadow;
+
+    // box-shadow는 색의 rgb(...) 안에도 쉼표가 있으므로 괄호 밖 쉼표에서만 층을 나눈다.
+    const layers: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (const character of boxShadow) {
+      if (character === "(") depth += 1;
+      if (character === ")") depth -= 1;
+      if (character === "," && depth === 0) {
+        layers.push(current.trim());
+        current = "";
+      } else current += character;
+    }
+    if (current.trim()) layers.push(current.trim());
+
+    const control = toRect(ringed);
+    let ring: Box = { ...control };
+    for (const layer of layers) {
+      if (!layer || layer.includes("inset")) continue;
+      const numbers = (layer.match(/-?\d*\.?\d+px/g) ?? []).map((value) => Number.parseFloat(value));
+      if (numbers.length < 2) continue;
+      const offsetX = numbers[0];
+      const offsetY = numbers[1];
+      const blur = numbers[2] ?? 0;
+      const spread = numbers[3] ?? 0;
+      const reach = spread + blur / 2;
+      ring = {
+        x: Math.min(ring.x, control.x + offsetX - reach),
+        y: Math.min(ring.y, control.y + offsetY - reach),
+        right: Math.max(ring.right, control.right + offsetX + reach),
+        bottom: Math.max(ring.bottom, control.bottom + offsetY + reach),
+        width: 0,
+        height: 0,
+      };
+    }
+    ring.width = ring.right - ring.x;
+    ring.height = ring.bottom - ring.y;
+
+    const row = cellElement.parentElement;
+    const neighbors: FocusNeighbor[] = row ? [...row.children]
+      .filter((child) => child !== cellElement && child.tagName === "LABEL")
+      .map((label) => {
+        const inner = label.querySelector("input, select, textarea");
+        const cell = toRect(label);
+        const neighborControl = inner ? toRect(inner) : null;
+        return {
+          labelText: (label.querySelector("span")?.textContent ?? "").trim(),
+          cell,
+          control: neighborControl,
+          hits: intersection(ring, cell) || (neighborControl ? intersection(ring, neighborControl) : false),
+          separationPx: Math.max(cell.x - ring.right, ring.x - cell.right, cell.y - ring.bottom, ring.y - cell.bottom),
+        };
+      }) : [];
+
+    const cell = toRect(cellElement);
+    return {
+      fieldLabel: (cellElement.querySelector("span")?.textContent ?? "").trim(),
+      boxShadow,
+      surfaceSlot: surface ? surface.getAttribute("data-slot") : null,
+      cell,
+      control,
+      ring,
+      ringThicknessPx: Math.max((ring.width - control.width) / 2, (ring.height - control.height) / 2),
+      ringBeyondCellPx: Math.max(0, cell.x - ring.x, ring.right - cell.right, cell.y - ring.y, ring.bottom - cell.bottom),
+      ringHitsNeighbor: neighbors.some((neighbor) => neighbor.hits),
+      neighbors,
+    };
+  });
 }
 
 function overlaps(first: Rect, second: Rect): boolean {
@@ -232,25 +347,33 @@ async function activeInfo(page: Page) {
   });
 }
 
+async function preparePage(page: Page, width: number) {
+  const outDir = process.env.RECURRING_LAYOUT_OUT_DIR
+    ? path.resolve(process.env.RECURRING_LAYOUT_OUT_DIR)
+    : test.info().outputPath(".");
+  mkdirSync(outDir, { recursive: true });
+  await page.setViewportSize({ width, height: 1000 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.addInitScript(() => { localStorage.setItem("ls.webglGlass", "0"); });
+  return {
+    outDir,
+    capture: async (name: string) => {
+      await page.screenshot({ path: path.join(outDir, `${name}.png`), animations: "disabled" });
+    },
+    write: (name: string, body: unknown) => {
+      writeFileSync(path.join(outDir, name), JSON.stringify(body, null, 2));
+    },
+  };
+}
+
 for (const width of WIDTHS) {
   test(`예약 작업 편집기 입력 칸 배치 ${width}`, async ({ page }) => {
     test.setTimeout(240_000);
-    const outDir = process.env.RECURRING_LAYOUT_OUT_DIR
-      ? path.resolve(process.env.RECURRING_LAYOUT_OUT_DIR)
-      : test.info().outputPath(".");
-    mkdirSync(outDir, { recursive: true });
-
-    await page.setViewportSize({ width, height: 1000 });
-    await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-    await page.addInitScript(() => { localStorage.setItem("ls.webglGlass", "0"); });
+    const { capture, write } = await preparePage(page, width);
     await installRoutes(page);
     const { tab } = await openRecurringTab(page);
 
     const violations: string[] = [];
-    const capture = async (name: string) => {
-      await page.screenshot({ path: path.join(outDir, `${name}.png`), animations: "disabled" });
-    };
-
     for (const angle of ["new", "edit"] as const) {
       for (const nameId of Object.keys(NAMES) as NameId[]) {
         if (angle === "new") {
@@ -266,10 +389,7 @@ for (const width of WIDTHS) {
           await settle(page);
           const measurement = await measure(page, width, angle, nameId, mode);
           const tag = `폭 ${width} / ${angle === "new" ? "새 작업" : "기존 작업 편집"} / ${mode} / ${nameId === "korean" ? "한글" : "영문"}`;
-          writeFileSync(
-            path.join(outDir, `measure-${width}-${angle}-${nameId}-${mode}.json`),
-            JSON.stringify({ tag, ...measurement }, null, 2),
-          );
+          write(`measure-${width}-${angle}-${nameId}-${mode}.json`, { tag, ...measurement });
           const found = violationsOf(measurement);
           if (mode === "weekdays") await capture(`shot-${width}-${angle}-${nameId}-${mode}`);
           if (found.length > 0) {
@@ -283,6 +403,84 @@ for (const width of WIDTHS) {
   });
 }
 
+for (const width of ONCE_WIDTHS) {
+  test(`예약 작업 편집기 1회 실행 모드 배치 ${width}`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const { capture, write } = await preparePage(page, width);
+    await installRoutes(page);
+    const { tab } = await openRecurringTab(page);
+
+    const violations: string[] = [];
+    const check = async (angle: "new" | "edit", tag: string) => {
+      await settle(page);
+      const measurement = await measure(page, width, angle, "once", "once");
+      write(`once-${width}-${angle}.json`, { tag, ...measurement });
+      await capture(`once-${width}-${angle}`);
+      const found = violationsOf(measurement);
+      if (found.length > 0) violations.push(`${tag}: ${found.join("; ")}`);
+    };
+
+    // 새 작업을 1회 모드로: 시간대 칸이 빠진 배치
+    await tab.getByRole("button", { name: "새 작업", exact: true }).click();
+    await tab.getByLabel("작업 이름").fill(ONCE_LONG_NAME);
+    await tab.getByLabel("반복 주기").selectOption("once");
+    await expect(tab.getByLabel("시간대")).toHaveCount(0);
+    await expect(tab.getByLabel("실행 일시")).toBeVisible();
+    await check("new", `폭 ${width} / 새 작업 / 1회`);
+
+    // 기존 1회 작업 편집: 시간대 칸이 없고 실행 일시 칸이 있다
+    await tab.getByRole("button").filter({ hasText: ONCE_LONG_NAME }).first().click();
+    await expect(tab.getByLabel("작업 이름")).toHaveValue(ONCE_LONG_NAME);
+    await expect(tab.getByLabel("시간대")).toHaveCount(0);
+    await expect(tab.getByLabel("실행 일시")).toBeVisible();
+    await check("edit", `폭 ${width} / 기존 1회 작업 편집`);
+
+    expect(violations, `1회 실행 모드 배치 위반\n${violations.join("\n")}`).toEqual([]);
+  });
+}
+
+for (const width of FOCUS_WIDTHS) {
+  test(`예약 작업 편집기 초점 고리 측정 ${width}`, async ({ page }) => {
+    test.setTimeout(180_000);
+    const { capture, write } = await preparePage(page, width);
+    await installRoutes(page);
+    const { tab } = await openRecurringTab(page);
+
+    await tab.getByRole("button", { name: "새 작업", exact: true }).click();
+    await tab.getByLabel("작업 이름").fill(NAMES.korean);
+    await tab.getByLabel("반복 주기").selectOption("weekdays");
+    await expect(tab.getByLabel("시간대")).toBeVisible();
+
+    // 표면의 box-shadow는 transition-shadow로 서서히 그려진다. 다 그려진 뒤에 잰다.
+    const settledFocus = async () => {
+      await expect.poll(async () => (await measureFocus(page)).ringThicknessPx, {
+        message: "프로젝트 초점 고리가 그려질 때까지 기다림",
+        timeout: 2_000,
+      }).toBeGreaterThanOrEqual(2);
+      return await measureFocus(page);
+    };
+
+    await tab.getByLabel("시간대").click();
+    await settle(page);
+    const timezone = await settledFocus();
+    write(`focus-${width}-timezone.json`, { tag: `폭 ${width} / 시간대 칸 초점`, ...timezone });
+    await capture(`focus-${width}-timezone`);
+
+    await tab.getByLabel("작업 이름").click();
+    await page.keyboard.press("Home");
+    await settle(page);
+    const name = await settledFocus();
+    write(`focus-${width}-name.json`, { tag: `폭 ${width} / 작업 이름 칸 초점`, ...name });
+    await capture(`focus-${width}-name`);
+
+    for (const [id, focus] of [["시간대", timezone], ["작업 이름", name]] as const) {
+      expect(focus.ringThicknessPx, `${id}: 프로젝트 초점 고리가 그려지지 않음 (box-shadow: ${focus.boxShadow})`).toBeGreaterThanOrEqual(2);
+      expect(focus.ringHitsNeighbor, `${id}: 초점 고리가 이웃 칸에 닿음 (${JSON.stringify(focus.neighbors)})`).toBe(false);
+      expect(focus.ringBeyondCellPx, `${id}: 초점 고리가 자기 칸에서 ${round(focus.ringBeyondCellPx)}px 넘음`).toBeLessThanOrEqual(4);
+    }
+  });
+}
+
 /**
  * ui-design 0절의 조작 항목(14~18) 가운데 이 화면에 해당하는 것을 같은 실행에서 잰다.
  * 판정은 JSON과 콘솔 출력으로 남기고, 배치 합격 기준(위 테스트)만 실패로 만든다.
@@ -290,13 +488,7 @@ for (const width of WIDTHS) {
  */
 test("예약 작업 편집기 조작 항목", async ({ page }) => {
   test.setTimeout(180_000);
-  const outDir = process.env.RECURRING_LAYOUT_OUT_DIR
-    ? path.resolve(process.env.RECURRING_LAYOUT_OUT_DIR)
-    : test.info().outputPath(".");
-  mkdirSync(outDir, { recursive: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await page.addInitScript(() => { localStorage.setItem("ls.webglGlass", "0"); });
+  const { capture, write } = await preparePage(page, 1440);
   const routeState = await installRoutes(page);
 
   const openedAt = Date.now();
@@ -321,7 +513,7 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   const errorAlert = tab.getByRole("alert");
   await expect(errorAlert).toBeVisible();
   const errorText = (await errorAlert.textContent())?.trim() ?? "";
-  await page.screenshot({ path: path.join(outDir, "interaction-error.png"), animations: "disabled" });
+  await capture("interaction-error");
   routeState.failJobs = false;
   await tab.getByTestId("recurring-jobs-refresh").click();
   await expect(tab.getByRole("button").filter({ hasText: NAMES.korean }).first()).toBeVisible();
@@ -359,7 +551,7 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
     closedFocus,
     focusRestoredToTrigger: focusRestored,
   };
-  writeFileSync(path.join(outDir, "interaction.json"), JSON.stringify(report, null, 2));
+  write("interaction.json", report);
   console.log(`조작 항목 측정: ${JSON.stringify(report)}`);
 
   expect(errorText).toContain("예약 작업을 불러오지 못했습니다");
