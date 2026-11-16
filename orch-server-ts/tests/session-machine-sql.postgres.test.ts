@@ -446,9 +446,12 @@ it('matches the event ingress stale registration rejection and current acceptanc
  )!;
  const mismatchRow=staleRow('stale');
  const matchRow=staleRow('matches');
- const stale=await repository.commitBatch('n1',batch(
- envelope('session-1','registration-stale',1,'a'.repeat(64)),
- ));
+ // 등록이 낡은 상태 사건은 결정표처럼 거절한다.
+ const staleStateEnvelope:EventIngressEnvelope={
+ ...envelope('session-1','registration-stale',1,'a'.repeat(64)),
+ session_effect:{kind:'running_transition',review_state:'acknowledged',updated_at:new Date().toISOString()},
+ };
+ const stale=await repository.commitBatch('n1',batch(staleStateEnvelope));
  expect(stale[0]?.outcome,'stale_registration mismatch').toBe(ingressOutcomeOf(mismatchRow));
  if(stale[0]?.outcome==='dead_lettered'){
  expect(stale[0].deadLetter.code).toBe(INGRESS_DEAD_LETTER_CODE_BY_REASON[mismatchRow.decision.reason]);
@@ -457,6 +460,16 @@ it('matches the event ingress stale registration rejection and current acceptanc
  await storedValue('session-1'),
  expectedValue(mismatchRow),
  'stale_registration mismatch',
+ );
+ // 세션 행을 바꾸지 않는 기록 사건은 등록이 낡아도 기록한다(카드 #1353).
+ const late=await repository.commitBatch('n1',batch(
+ envelope('session-1','registration-stale',4,'d'.repeat(64)),
+ ));
+ expect(late[0]?.outcome,'stale_registration record late event').toBe('committed');
+ expectSameState(
+ await storedValue('session-1'),
+ expectedValue(mismatchRow),
+ 'stale_registration record late event',
  );
  const current=await repository.commitBatch('n1',batch(
  envelope('session-1','registration-current',2,'b'.repeat(64)),
