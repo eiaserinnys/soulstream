@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   IsolationPolicy,
@@ -19,6 +19,11 @@ import {
   ISOLATION_POLICY_UNAVAILABLE,
   SESSION_ISOLATION_UNAVAILABLE,
 } from "../../src/runner/session_filesystem_errors.js";
+import {
+  clearEnvMaskScanCache,
+  ENV_MASK_SCAN_CACHE_TTL_MS,
+  type IsolationEnvMaskScan,
+} from "../../src/runner/session_filesystem_masks.js";
 import { prepareIsolationPlan } from "../../src/runner/session_filesystem_plan.js";
 import { isolationChildConfigFromPlan } from
   "../../src/runner/runner_process_isolation.js";
@@ -788,6 +793,103 @@ describe("prepareIsolationPlan", () => {
     ]) {
       expect(masked.has(path), path).toBe(false);
     }
+  });
+
+  it("reuses the recursive .env scan per root for five minutes and rescans after expiry", async () => {
+    clearEnvMaskScanCache();
+    vi.useFakeTimers();
+    try {
+      const fixture = await makeFixture();
+      const first = join(fixture.workspace, ".projects", "one");
+      const later = join(fixture.workspace, ".projects", "two");
+      touch(fixture.root, join(first, ".env"), "A=1", 0o600);
+
+      const scans: IsolationEnvMaskScan[] = [];
+      const lastScan = (): IsolationEnvMaskScan => {
+        const scan = scans[scans.length - 1];
+        if (!scan) throw new Error("탐색 로그가 없습니다");
+        return scan;
+      };
+      const prepare = () =>
+        prepareIsolationPlan(fixture.input, fixture.ports, {
+          logEnvMaskScan: (scan) => scans.push(scan),
+        });
+
+      const firstPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "miss" });
+      expect(lastScan().cacheMisses).toBeGreaterThan(0);
+      expect(firstPlan.spec.masks).toContainEqual({
+        path: join(first, ".env"),
+        kind: "file",
+      });
+
+      // 5분 안의 두 번째 준비는 디렉터리를 다시 읽지 않으므로, 그 사이 생긴
+      // 파일은 다시 훑기 전까지 목록에 없다.
+      touch(fixture.root, join(later, ".env"), "B=2", 0o600);
+      const secondPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "hit", cacheMisses: 0 });
+      expect(secondPlan.spec.masks).toEqual(firstPlan.spec.masks);
+      expect(
+        secondPlan.spec.masks.some((mask) => mask.path === join(later, ".env")),
+      ).toBe(false);
+
+      vi.setSystemTime(Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS + 1);
+      const thirdPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "miss" });
+      expect(thirdPlan.spec.masks).toContainEqual({
+        path: join(later, ".env"),
+        kind: "file",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies session-specific write paths to the cached scan list", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const firstSession = join(
+      fixture.workspace,
+      ".projects",
+      ".isolated",
+      "s1",
+      ".env",
+    );
+    const secondSession = join(
+      fixture.workspace,
+      ".projects",
+      ".isolated",
+      "s2",
+      ".env",
+    );
+    touch(fixture.root, firstSession, "A=1", 0o600);
+    touch(fixture.root, secondSession, "B=2", 0o600);
+
+    const scans: IsolationEnvMaskScan[] = [];
+    const lastScan = (): IsolationEnvMaskScan => {
+      const scan = scans[scans.length - 1];
+      if (!scan) throw new Error("탐색 로그가 없습니다");
+      return scan;
+    };
+    const prepare = async (sessionId: string) => {
+      fixture.input.decision = { ...fixture.input.decision, sessionId };
+      return prepareIsolationPlan(fixture.input, fixture.ports, {
+        logEnvMaskScan: (scan) => scans.push(scan),
+      });
+    };
+
+    const asFirst = await prepare("s1");
+    const firstMasks = new Set(asFirst.spec.masks.map((mask) => mask.path));
+    expect(lastScan()).toMatchObject({ cache: "miss" });
+    expect(firstMasks.has(secondSession)).toBe(true);
+    expect(firstMasks.has(firstSession)).toBe(false);
+
+    // 두 번째 세션은 캐시된 목록에서 첫 세션의 워크트리는 가리되 자기 것은 뺀다.
+    const asSecond = await prepare("s2");
+    const secondMasks = new Set(asSecond.spec.masks.map((mask) => mask.path));
+    expect(lastScan()).toMatchObject({ cache: "hit" });
+    expect(secondMasks.has(firstSession)).toBe(true);
+    expect(secondMasks.has(secondSession)).toBe(false);
   });
 
   it("drops masks covered by an ancestor directory mask unless a reopen bind lies between", async () => {
