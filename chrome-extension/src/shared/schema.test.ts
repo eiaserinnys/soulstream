@@ -49,7 +49,7 @@ describe("schema helpers", () => {
     );
   });
 
-  it("includes only explicitly configured session fields", () => {
+  it("includes configured session fields and the fixed browser caller identity", () => {
     const request = buildCreateSessionRequest({
       baseUrl: "https://soulstream.example.com",
       bearerToken: "",
@@ -65,6 +65,7 @@ describe("schema helpers", () => {
       prompt: "prompt",
       nodeId: "node-a",
       folderId: "folder-a",
+      caller_info: { source: "browser", display_name: "Chrome Extension" },
     });
   });
 });

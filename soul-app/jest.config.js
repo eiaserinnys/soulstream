@@ -5,6 +5,10 @@ process.env.NODE_ENV = 'test';
 
 module.exports = {
   preset: 'jest-expo',
+  // README and the GitHub app-validation job both run with --testTimeout=60000.
+  // Putting it in the config keeps local, agent, and CI runs on the same limit;
+  // the default 5s trips on the async settings-modal suite under worker contention.
+  testTimeout: 60000,
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   resolver: '<rootDir>/scripts/jest-chat-ui-resolver.cjs',
   // Shared workspace packages resolve their dependencies from the app install.
