@@ -13,6 +13,7 @@ import type {
   SessionEventSearchRow,
   SessionHistorySearchParams,
   SessionHistorySearchResult,
+  SessionReadOptions,
   SessionReadOrder,
   SessionResumeContext,
   SessionTurnExcerptResult,
@@ -125,8 +126,11 @@ export class SessionDB {
     return this.claudeBackgroundTaskHost;
   }
 
-  async getSession(sessionId: string): Promise<SessionRow | null> {
-    return await this.requireSessionDataHost().getSession(sessionId);
+  async getSession(
+    sessionId: string,
+    options?: SessionReadOptions,
+  ): Promise<SessionRow | null> {
+    return await this.requireSessionDataHost().getSession(sessionId, options);
   }
 
   async getSessionStory(sessionId: string): Promise<SessionStoryView> {

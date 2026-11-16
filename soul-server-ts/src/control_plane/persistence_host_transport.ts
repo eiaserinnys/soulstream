@@ -177,6 +177,18 @@ export interface RestartWindowRetryPolicy {
 }
 
 /**
+ * Schedule shared by the three central reads a session start cannot do
+ * without (card #1350): caller_chain, the evicted-session read, and the
+ * isolation worktree inventory. It covers an orchestrator restart (deploy
+ * median ~16s, p90 39s) without letting a busy host stall the start for more
+ * than 25s.
+ */
+export const SESSION_START_RESTART_WINDOW: RestartWindowRetryPolicy = {
+  totalBudgetMs: 25_000,
+  retryDelaysMs: [250, 1_000, 2_000, 4_000],
+};
+
+/**
  * Global setTimeout keeps the retry schedule drivable by fake timers in tests;
  * node:timers/promises bypasses them. Production behavior is the same.
  */

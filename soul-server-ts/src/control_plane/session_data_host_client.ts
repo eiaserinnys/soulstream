@@ -20,6 +20,9 @@ import {
 } from "./persistence_host_clients.js";
 import {
   requestHostOperationWithRetry,
+  SESSION_START_RESTART_WINDOW,
+  type RestartWindowRecoveryEvent,
+  type RestartWindowRetryEvent,
   type RestartWindowRetryPolicy,
 } from "./persistence_host_transport.js";
 import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
@@ -107,8 +110,18 @@ export interface SessionResumeContext {
   } | null;
 }
 
+/** Per-call switches for session reads. */
+export interface SessionReadOptions {
+  /**
+   * Apply the session-start restart-window schedule. Only reads whose failure
+   * refuses a session start pass this (card #1350); every other getSession
+   * keeps the turn-critical budget.
+   */
+  restartWindow?: boolean;
+}
+
 export interface SessionDataHost {
-  getSession(sessionId: string): Promise<SessionRow | null>;
+  getSession(sessionId: string, options?: SessionReadOptions): Promise<SessionRow | null>;
   listSessionsSummary(params: {
     search?: string | null;
     limit: number;
@@ -169,16 +182,6 @@ export function isSessionDataHostError(error: unknown): error is SessionDataHost
   return error instanceof SessionDataHostError;
 }
 
-/**
- * Isolation policy reads must outlast an orchestrator restart: the deployment
- * median is ~16s from SIGTERM to listening again (p90 39s, max 43s, card
- * #1350). Delays widen per retry and the whole call stays inside 25s.
- */
-const SECURITY_GATE_RESTART_WINDOW: RestartWindowRetryPolicy = {
-  totalBudgetMs: 25_000,
-  retryDelaysMs: [250, 1_000, 2_000, 4_000],
-};
-
 export class SessionDataHostClient implements SessionDataHost {
   private readonly transport: PersistenceHostTransport;
   private readonly logger: HostClientConfig["logger"];
@@ -188,7 +191,19 @@ export class SessionDataHostClient implements SessionDataHost {
     this.logger = config.logger;
   }
 
-  getSession(sessionId: string): Promise<SessionRow | null> {
+  /**
+   * Lazy task hydration reads the evicted session row while starting a
+   * session; task_manager wraps a failure into IsolationPolicyUnavailableError
+   * and refuses the start. That call site opts into the restart-window
+   * schedule; every other getSession keeps the turn-critical budget.
+   */
+  getSession(sessionId: string, options?: SessionReadOptions): Promise<SessionRow | null> {
+    if (options?.restartWindow === true) {
+      return this.restartWindowRead("evicted_session", "get", [sessionId], {
+        timeoutMs: 1_500,
+        attempts: 2,
+      });
+    }
     return this.turnCritical("get", [sessionId]);
   }
 
@@ -308,26 +323,56 @@ export class SessionDataHostClient implements SessionDataHost {
    * The isolation gate refuses the turn when this read fails, so a busy host
    * must cost latency, not the turn. The query itself answers in milliseconds;
    * at load ~20 the host queue alone took 2-5s and the turn-critical 1.5s x 2
-   * budget refused a trusted top-level session (card #1111). A restarting
-   * orchestrator is the other failure: refused connections and 502/503/504
-   * widen up to 25s, while timeouts keep the cheaper 3-attempt rule.
+   * budget refused a trusted top-level session (card #1111).
    */
   private securityGate<T>(operation: string, args: unknown[]): Promise<T> {
-    return this.request(operation, args, 5_000, 3, undefined, [250, 1_000], {
-      ...SECURITY_GATE_RESTART_WINDOW,
-      onRetry: ({ attempt, failure, elapsedMs, retryInMs }) => {
-        this.logger.warn(
-          { operation, attempt, failure, elapsedMs, retryInMs },
-          "isolation policy read retrying while the host restarts",
-        );
-      },
-      onRecovered: ({ attempt, elapsedMs }) => {
-        this.logger.info(
-          { operation, attempt, elapsedMs },
-          "isolation policy read recovered after a host restart",
-        );
-      },
+    return this.restartWindowRead("caller_chain", operation, args, {
+      timeoutMs: 5_000,
+      attempts: 3,
+      retryDelaysMs: [250, 1_000],
     });
+  }
+
+  /**
+   * A read a session start cannot do without (card #1350) outlasts an
+   * orchestrator restart: refused connections and 502/503/504 widen up to
+   * 25s, while timeouts keep the caller's plain attempt budget. `read` names
+   * the call site in both retry logs.
+   */
+  private restartWindowRead<T>(
+    read: string,
+    operation: string,
+    args: unknown[],
+    base: {
+      timeoutMs: number;
+      attempts: number;
+      retryDelaysMs?: readonly number[];
+    },
+  ): Promise<T> {
+    const restartWindow: RestartWindowRetryPolicy = {
+      ...SESSION_START_RESTART_WINDOW,
+      onRetry: (event: RestartWindowRetryEvent) => {
+        this.logger.warn(
+          { read, operation, ...event },
+          "session-start read retrying while the host restarts",
+        );
+      },
+      onRecovered: (event: RestartWindowRecoveryEvent) => {
+        this.logger.info(
+          { read, operation, ...event },
+          "session-start read recovered after a host restart",
+        );
+      },
+    };
+    return this.request<T>(
+      operation,
+      args,
+      base.timeoutMs,
+      base.attempts,
+      undefined,
+      base.retryDelaysMs ?? [],
+      restartWindow,
+    );
   }
 
   private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {

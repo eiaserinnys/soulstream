@@ -39,6 +39,16 @@ export interface WorktreeMutationActor {
   actorSessionId: string;
 }
 
+/** Per-call switches for worktree reads. */
+export interface WorktreeListOptions {
+  /**
+   * Apply the session-start restart-window schedule. Only the isolation
+   * inventory read passes this (card #1350); every other list caller keeps
+   * the plain 5s×3 retry.
+   */
+  restartWindow?: boolean;
+}
+
 export type WorktreeRemovalActor = WorktreeMutationActor | { sweeperNodeId: string };
 
 export interface WorktreeSweepCandidate extends WorktreeRecord {
@@ -53,7 +63,7 @@ export interface WorktreeHost {
     nodeId: string;
     repoId?: string;
     worktreeId?: string;
-  }): Promise<WorktreeRecord[]>;
+  }, options?: WorktreeListOptions): Promise<WorktreeRecord[]>;
   register(input: {
     actorSessionId: string;
     id: string;

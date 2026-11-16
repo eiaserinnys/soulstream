@@ -1547,6 +1547,19 @@ describe("WorktreeService.listSessionAttachments", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("asks the host inventory for the restart-window schedule", async () => {
+    const { service, host } = attachmentFixture([
+      record({ id: "wt-a", repoId: "repo-a", createdBySessionId: "session-a" }),
+    ]);
+
+    await service.listSessionAttachments({ actorSessionId: "session-a" });
+
+    expect(host.list).toHaveBeenCalledWith(
+      { actorSessionId: "session-a", nodeId: "node-a" },
+      { restartWindow: true },
+    );
+  });
+
   it("returns owned, attached, and task records with list-compatible fields", async () => {
     const { service, git } = attachmentFixture([
       record({ id: "wt-owned", createdBySessionId: "session-a" }),

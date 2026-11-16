@@ -208,7 +208,10 @@ export function createEvictedTaskLoader(input: {
   return async (sessionId) => {
     let row: SessionRow | null;
     try {
-      row = await input.db.getSession(sessionId);
+      // A failure here refuses the session start (task_manager wraps it into
+      // IsolationPolicyUnavailableError), so this read must outlast an
+      // orchestrator restart. Other getSession calls stay turn-critical.
+      row = await input.db.getSession(sessionId, { restartWindow: true });
     } catch (err) {
       input.logger.warn({ err, sessionId }, "loadEvictedTask: getSession failed");
       throw new TaskHydrationFailedError(sessionId, err);

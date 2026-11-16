@@ -127,6 +127,7 @@ describe("isolation policy read across an orchestrator restart", () => {
 
     const retries = retryLogs(logs);
     expect(retries.map(entry => entry.fields.attempt)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(retries.every(entry => entry.fields.read === "caller_chain")).toBe(true);
     expect(retries.map(entry => entry.fields.failure)).toEqual(Array(8).fill("http-502"));
     expect(retries.map(entry => entry.fields.retryInMs))
       .toEqual([250, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000, 4_000]);
@@ -134,7 +135,41 @@ describe("isolation policy read across an orchestrator restart", () => {
 
     const recovered = recoveredLogs(logs);
     expect(recovered).toHaveLength(1);
-    expect(recovered[0]?.fields).toMatchObject({ attempt: 9, elapsedMs: 23_250 });
+    expect(recovered[0]?.fields)
+      .toMatchObject({ read: "caller_chain", attempt: 9, elapsedMs: 23_250 });
+  });
+
+  it("keeps the evicted-session read when the host answers 502s for ~20s", async () => {
+    vi.useFakeTimers();
+    const { logger, logs } = recordingLogger();
+    const startedAt = Date.now();
+    const fetchMock = vi.fn(async () => {
+      if (Date.now() - startedAt < 20_000) {
+        return jsonResponse(
+          { detail: { error: { code: "ORCH_RESTARTING", message: "upstream connect error" } } },
+          502,
+        );
+      }
+      return jsonResponse({ session_id: "s1", status: "running" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = clientFor(logger);
+
+    const read = client.getSession("s1", { restartWindow: true });
+    await driveUntilSettled(read, 40);
+
+    await expect(read).resolves.toEqual({ session_id: "s1", status: "running" });
+    expect(fetchMock).toHaveBeenCalledTimes(9);
+    const retries = retryLogs(logs);
+    expect(retries.map(entry => entry.fields.read))
+      .toEqual(Array(8).fill("evicted_session"));
+    expect(retries.map(entry => entry.fields.retryInMs))
+      .toEqual([250, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000, 4_000]);
+    expect(recoveredLogs(logs)[0]?.fields).toMatchObject({
+      read: "evicted_session",
+      attempt: 9,
+      elapsedMs: 23_250,
+    });
   });
 
   it("refuses the session start at the 25s budget when the restart outlasts it", async () => {
