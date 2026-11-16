@@ -71,6 +71,12 @@ export function computeSessionSubagentRollups(
     const base = restarted ? null : previous;
     previous = current;
 
+    // Failed result events carry usage and model_usage but no model. Advance the
+    // cumulative base without emitting a rollup so their main usage is not counted
+    // as subagent consumption.
+    const mainModel = typeof turn.model === "string" ? normalizeModelName(turn.model) : undefined;
+    if (mainModel === undefined) continue;
+
     const buckets = new Map<string, ModelBucket>();
     for (const [rawKey, entry] of current) {
       const previousEntry = base?.get(rawKey);
@@ -94,8 +100,10 @@ export function computeSessionSubagentRollups(
       buckets.set(entry.model, bucket);
     }
 
-    const mainModel = typeof turn.model === "string" ? normalizeModelName(turn.model) : undefined;
-    const mainBucket = mainModel === undefined ? undefined : buckets.get(mainModel);
+    const mainBucket = buckets.get(mainModel);
+    const mainHasTokens =
+      (finiteNumber(turn.input_tokens) ?? 0) > 0 || (finiteNumber(turn.output_tokens) ?? 0) > 0;
+    if (mainBucket === undefined && mainHasTokens) continue;
     if (mainBucket) {
       mainBucket.input_tokens = clampToken(mainBucket.input_tokens - (finiteNumber(turn.input_tokens) ?? 0));
       mainBucket.cached_input_tokens = clampToken(

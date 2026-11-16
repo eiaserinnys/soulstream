@@ -493,6 +493,76 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
     });
   });
 
+  it("skips a failed result turn without a main model and does not carry its usage into the next turn", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-failed', '실패 턴 세션', 'node-k', 'agent-k', 'claude-preset', ${at("01:40:00.000")})`;
+    await put("s-failed", 1, "user_message", at("01:40:00.000"), { text: "turn one" });
+    await put("s-failed", 2, "result", at("01:40:01.000"), {
+      success: true,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 200,
+          outputTokens: 20,
+          costUSD: 0.2,
+        },
+      },
+    });
+    await put("s-failed", 3, "complete", at("01:40:02.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 100, output_tokens: 10 },
+      turn_cost_usd: 0.1,
+    });
+    await put("s-failed", 4, "result", at("01:40:03.000"), {
+      success: false,
+      usage: { input_tokens: 50, output_tokens: 5 },
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 260,
+          outputTokens: 26,
+          costUSD: 0.26,
+        },
+      },
+    });
+    await put("s-failed", 5, "result", at("01:41:00.000"), {
+      success: true,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 400,
+          outputTokens: 40,
+          costUSD: 0.4,
+        },
+      },
+    });
+    await put("s-failed", 6, "complete", at("01:41:01.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 100, output_tokens: 10 },
+      turn_cost_usd: 0.1,
+    });
+
+    const { rows } = await listTurnUsage({
+      sessionId: "s-failed",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(rows.map((row) => row.event_id)).toEqual([3, 4, 6]);
+    expect(rows[0]).toMatchObject({
+      subagent_input_tokens: 100,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.1,
+    });
+    expect(rows[1]).not.toHaveProperty("subagent_input_tokens");
+    expect(rows[1]).not.toHaveProperty("subagent_output_tokens");
+    expect(rows[1]).not.toHaveProperty("subagent_cost_usd");
+    expect(rows[2]).toMatchObject({
+      subagent_input_tokens: 40,
+      subagent_output_tokens: 4,
+      subagent_cost_usd: 0.04,
+    });
+  });
+
   it("reads model_usage from the paired success result when the complete payload has none", async () => {
     await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
       VALUES ('s-legacy', '과거 형식 세션', 'node-j', 'agent-j', 'claude-preset', ${at("01:30:00.000")})`;

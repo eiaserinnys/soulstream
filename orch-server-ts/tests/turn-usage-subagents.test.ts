@@ -282,6 +282,82 @@ describe("computeSessionSubagentRollups", () => {
     expect(rollups.get(3)).toMatchObject({ subagent_input_tokens: 100, subagent_output_tokens: 10 });
   });
 
+  it("skips a turn without a main model and keeps the failed turn out of the next diff", () => {
+    const rollups = computeSessionSubagentRollups([
+      turn({
+        event_id: 1,
+        input_tokens: 100,
+        output_tokens: 10,
+        cost_usd: 0.1,
+        model_usage: {
+          "claude-opus-5-5": {
+            inputTokens: 200,
+            outputTokens: 20,
+            costUSD: 0.2,
+          },
+        },
+      }),
+      turn({
+        event_id: 2,
+        model: null,
+        input_tokens: 50,
+        output_tokens: 5,
+        cost_usd: 0.05,
+        model_usage: {
+          "claude-opus-5-5": {
+            inputTokens: 260,
+            outputTokens: 26,
+            costUSD: 0.26,
+          },
+        },
+      }),
+      turn({
+        event_id: 3,
+        input_tokens: 100,
+        output_tokens: 10,
+        cost_usd: 0.1,
+        model_usage: {
+          "claude-opus-5-5": {
+            inputTokens: 400,
+            outputTokens: 40,
+            costUSD: 0.4,
+          },
+        },
+      }),
+    ]);
+
+    expect(rollups.get(1)).toMatchObject({
+      subagent_input_tokens: 100,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.1,
+    });
+    expect(rollups.has(2)).toBe(false);
+    expect(rollups.get(3)).toMatchObject({
+      subagent_input_tokens: 40,
+      subagent_output_tokens: 4,
+      subagent_cost_usd: 0.04,
+    });
+  });
+
+  it("skips a turn whose main model is missing from the cumulative snapshot when the turn used tokens", () => {
+    const rollups = computeSessionSubagentRollups([
+      turn({
+        event_id: 1,
+        model: "claude-sonnet-5-5",
+        input_tokens: 100,
+        output_tokens: 10,
+        model_usage: {
+          "claude-opus-5-5": {
+            inputTokens: 300,
+            outputTokens: 30,
+          },
+        },
+      }),
+    ]);
+
+    expect(rollups.size).toBe(0);
+  });
+
   it("returns no rollup when no turn carries a usable model_usage object", () => {
     const rollups = computeSessionSubagentRollups([
       turn({ event_id: 1 }),
