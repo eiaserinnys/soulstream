@@ -173,7 +173,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           workspaceDir: agent.workspace_dir,
           agentId: agent.id,
           apiKey: env.CODEX_API_KEY,
-          processEnv: codexProcessEnv,
+          processEnv: input.processEnv,
           codexPathOverride: codexCliPath?.path,
         },
         logger,
