@@ -212,12 +212,18 @@ async function resolveAllowedFile(
     realpathOrNull(execution.workspaceDir),
     realpathOrNull(execution.profileWorkspaceDir),
   ]);
+  const allowedRoots = [...new Set([workspace, profile, ownIncoming].filter((root): root is string => root !== null))];
   const inOwnIncoming = ownIncoming !== null && isPathUnderBase(ownIncoming, file);
   const denied =
     (incomingReal !== null && isPathUnderBase(incomingReal, file) && !inOwnIncoming) ||
-    ![workspace, profile, ownIncoming].some((root) => root !== null && isPathUnderBase(root, file));
+    !allowedRoots.some((root) => isPathUnderBase(root, file));
   if (denied) {
-    throw new ProducedAttachmentError("ATTACHMENT_PATH_DENIED", 403, "허용된 작업 폴더 밖의 파일은 첨부할 수 없습니다.");
+    const allowed = allowedRoots.length > 0 ? ` 이 실행에서 첨부할 수 있는 위치: ${allowedRoots.join(", ")}.` : "";
+    throw new ProducedAttachmentError(
+      "ATTACHMENT_PATH_DENIED",
+      403,
+      `허용된 작업 폴더 밖의 파일은 첨부할 수 없습니다.${allowed} 다른 곳의 파일은 이 안(워크트리면 git이 무시하는 .local/ 아래)으로 복사한 뒤 등록하세요.`,
+    );
   }
   return file;
 }

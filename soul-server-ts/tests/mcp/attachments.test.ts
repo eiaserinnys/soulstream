@@ -203,7 +203,7 @@ describe("register_attachment", () => {
     expect(errorText(unavailable)).toContain("ATTACHMENT_REGISTRATION_UNAVAILABLE");
 
     const register = vi.fn(async () => {
-      throw Object.assign(new Error("허용된 작업 폴더 밖의 파일은 첨부할 수 없습니다."), {
+      throw Object.assign(new Error("허용된 작업 폴더 밖의 파일은 첨부할 수 없습니다. 이 실행에서 첨부할 수 있는 위치: /workspace. 다른 곳의 파일은 이 안(워크트리면 git이 무시하는 .local/ 아래)으로 복사한 뒤 등록하세요."), {
         code: "ATTACHMENT_PATH_DENIED",
       });
     });
