@@ -276,6 +276,66 @@ describe("RecurringJobsTab lifecycle", () => {
     expect(listCount).toBeGreaterThanOrEqual(2);
   });
 
+  it("shows a node-connected condition, hides the schedule editor, and omits schedule fields on save", async () => {
+    let job: Record<string, any> | null = recurringJob({
+      schedule_kind: "event",
+      schedule_expressions: [],
+      event_trigger: {
+        type: "node_connected",
+        node_id: "node-b",
+        settle_seconds: 180,
+        cooldown_seconds: 3600,
+        repeat: false,
+      },
+      event_last_fired_at: null,
+      next_run_at: null,
+    });
+    let listCount = 0;
+    const requests: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal("crypto", { randomUUID: () => "event-id" });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined;
+      requests.push({ path, method, body });
+      if (path === "/api/recurring-jobs?include_archived=true") {
+        listCount += 1;
+        return json({ jobs: job ? [job] : [] });
+      }
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      if (path === "/api/recurring-jobs/job-1" && method === "PATCH") {
+        job = { ...job, ...body, version: Number(job?.version ?? 0) + 1 };
+        return json({ job });
+      }
+      if (path === "/api/recurring-jobs/job-1/run" && method === "POST") {
+        return json({ run: { run_id: "event-run", job_id: "job-1", trigger: "event", state: "running" } });
+      }
+      throw new Error(`unexpected request ${method} ${path}`);
+    }));
+
+    await renderTab();
+    await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
+    expect(document.body.textContent).toContain("node-b가 붙으면 · 1회");
+    flushSync(() => buttonContaining("음악 추천")?.click());
+    await waitFor(() => expect(button("변경 저장")).toBeDefined());
+    expect(document.body.querySelector('[data-testid="recurring-event-condition"]')?.textContent)
+      .toContain("node-b가 붙으면 · 1회");
+    expect(document.body.querySelector('[data-testid="recurring-schedule-editor"]')).toBeNull();
+    expect(button("다음 5회 보기")).toBeUndefined();
+
+    setInput("작업 이름", "이벤트 작업 수정");
+    clickButton("변경 저장");
+    await waitFor(() => expect(requests.some((request) =>
+      request.method === "PATCH" && request.body?.name === "이벤트 작업 수정")).toBe(true));
+    const patch = requests.find((request) => request.method === "PATCH");
+    expect(patch?.body).not.toHaveProperty("schedule_expressions");
+    expect(patch?.body).not.toHaveProperty("run_at");
+
+    const listsBeforeRun = listCount;
+    clickButton("지금 실행");
+    await waitFor(() => expect(listCount).toBeGreaterThan(listsBeforeRun));
+  });
+
   it("reloads the durable version after a save conflict without discarding the draft", async () => {
     const initial = recurringJob({ version: 4, name: "음악 추천" });
     const latest = recurringJob({ version: 5, name: "다른 사용자의 변경" });

@@ -4273,6 +4273,8 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     schedule_expressions        JSONB NOT NULL,
     schedule_kind               TEXT NOT NULL DEFAULT 'recurring',
     run_at                       TIMESTAMPTZ,
+    event_trigger                JSONB,
+    event_last_fired_at          TIMESTAMPTZ,
     timezone                    TEXT NOT NULL,
     node_id                     TEXT NOT NULL,
     agent_id                    TEXT NOT NULL,
@@ -4294,8 +4296,16 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     CONSTRAINT recurring_jobs_schedule_shape CHECK (
         jsonb_typeof(schedule_expressions) = 'array'
         AND (
-            (schedule_kind = 'recurring' AND jsonb_array_length(schedule_expressions) > 0 AND run_at IS NULL)
-            OR (schedule_kind = 'once' AND jsonb_array_length(schedule_expressions) = 0 AND run_at IS NOT NULL)
+            (schedule_kind = 'recurring'
+                AND jsonb_array_length(schedule_expressions) > 0
+                AND run_at IS NULL
+                AND event_trigger IS NULL)
+            OR (schedule_kind = 'once' AND jsonb_array_length(schedule_expressions) = 0 AND run_at IS NOT NULL AND event_trigger IS NULL)
+            OR (schedule_kind = 'event'
+                AND jsonb_array_length(schedule_expressions) = 0
+                AND run_at IS NULL
+                AND event_trigger IS NOT NULL
+                AND jsonb_typeof(event_trigger) = 'object')
         )
     ),
     CONSTRAINT recurring_jobs_timezone_nonempty CHECK (length(btrim(timezone)) > 0),
@@ -4335,10 +4345,11 @@ CREATE TABLE IF NOT EXISTS recurring_job_runs (
     started_at                  TIMESTAMPTZ,
     finished_at                 TIMESTAMPTZ,
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT recurring_job_runs_trigger CHECK (trigger IN ('scheduled', 'manual')),
+    CONSTRAINT recurring_job_runs_trigger CHECK (trigger IN ('scheduled', 'manual', 'event')),
     CONSTRAINT recurring_job_runs_scheduled_for CHECK (
         (trigger = 'scheduled' AND scheduled_for IS NOT NULL)
         OR (trigger = 'manual' AND scheduled_for IS NULL)
+        OR (trigger = 'event' AND scheduled_for IS NOT NULL)
     ),
     CONSTRAINT recurring_job_runs_manual_idempotency CHECK (
         trigger <> 'manual' OR manual_idempotency_key IS NOT NULL
@@ -4368,6 +4379,13 @@ CREATE INDEX IF NOT EXISTS idx_recurring_job_runs_job_created
     ON recurring_job_runs(job_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_recurring_job_runs_session
     ON recurring_job_runs(session_id);
+
+-- Orchestrator-owned connected episodes for node-connected recurring triggers.
+CREATE TABLE IF NOT EXISTS recurring_node_presence (
+    node_id             TEXT PRIMARY KEY,
+    episode_started_at  TIMESTAMPTZ NOT NULL,
+    last_seen_at        TIMESTAMPTZ NOT NULL
+);
 
 ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_created_session_id_fkey;
 ALTER TABLE folders ADD CONSTRAINT folders_created_session_id_fkey FOREIGN KEY (created_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { RecurringJobError, type RecurringJobActor, type RecurringJobCreateInput, type RecurringJobUpdateInput } from "./types.js";
+import { RecurringJobError, type RecurringJobActor, type RecurringJobCreateInput, type RecurringJobEventTriggerInput, type RecurringJobUpdateInput } from "./types.js";
 import { RecurringJobService } from "./service.js";
 
 export type RecurringJobRouteActorResolver = (
@@ -147,6 +147,9 @@ export function createInput(body: Record<string, unknown>): RecurringJobCreateIn
     ...(has(body, "runAt") || has(body, "run_at")
       ? { runAt: stringAlias(body, "runAt", "run_at") }
       : {}),
+    ...(has(body, "eventTrigger") || has(body, "event_trigger")
+      ? { eventTrigger: eventTriggerValue(body) }
+      : {}),
     nodeId: stringAlias(body, "nodeId", "node_id"),
     agentId: stringAlias(body, "agentId", "agent_id"),
     modelPreset: nullableStringAlias(body, "modelPreset", "model_preset"),
@@ -167,6 +170,9 @@ export function updateInput(body: Record<string, unknown>): RecurringJobUpdateIn
   if (has(body, "prompt")) result.prompt = stringValue(body, "prompt");
   if (has(body, "timezone")) result.timezone = stringValue(body, "timezone");
   if (has(body, "runAt") || has(body, "run_at")) result.runAt = stringAlias(body, "runAt", "run_at");
+  if (has(body, "eventTrigger") || has(body, "event_trigger")) {
+    result.eventTrigger = eventTriggerValue(body);
+  }
   if (has(body, "scheduleExpressions") || has(body, "schedule_expressions")) {
     result.scheduleExpressions = stringsValue(body, "scheduleExpressions", "schedule_expressions");
   }
@@ -199,6 +205,14 @@ export function serializeJob(job: import("./types.js").RecurringJob): Record<str
     schedule_expressions: job.scheduleExpressions,
     schedule: { timezone: job.timezone, schedule_expressions: job.scheduleExpressions },
     run_at: job.runAt,
+    event_trigger: !job.eventTrigger ? null : {
+      type: job.eventTrigger.type,
+      node_id: job.eventTrigger.nodeId,
+      settle_seconds: job.eventTrigger.settleSeconds,
+      cooldown_seconds: job.eventTrigger.cooldownSeconds,
+      repeat: job.eventTrigger.repeat,
+    },
+    event_last_fired_at: job.eventLastFiredAt,
     node_id: job.nodeId,
     agent_id: job.agentId,
     model_preset: job.modelPreset,
@@ -283,6 +297,26 @@ function stringsValue(body: Record<string, unknown>, camel: string, snakeKey: st
     throw new RecurringJobError("VALIDATION", `${snake(camel)} must be a string array`, 422);
   }
   return [...value] as string[];
+}
+function eventTriggerValue(body: Record<string, unknown>): RecurringJobEventTriggerInput {
+  const value = body.eventTrigger ?? body.event_trigger;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new RecurringJobError("VALIDATION", "event_trigger must be an object", 422);
+  }
+  const trigger = value as Record<string, unknown>;
+  const pick = (camel: string, snakeKey: string): unknown => trigger[camel] ?? trigger[snakeKey];
+  const type = pick("type", "type");
+  const nodeId = pick("nodeId", "node_id");
+  const settleSeconds = pick("settleSeconds", "settle_seconds");
+  const cooldownSeconds = pick("cooldownSeconds", "cooldown_seconds");
+  const repeat = pick("repeat", "repeat");
+  return {
+    ...(type === undefined ? {} : { type }),
+    ...(nodeId === undefined ? {} : { nodeId }),
+    ...(settleSeconds === undefined ? {} : { settleSeconds }),
+    ...(cooldownSeconds === undefined ? {} : { cooldownSeconds }),
+    ...(repeat === undefined ? {} : { repeat }),
+  };
 }
 
 function has(body: Record<string, unknown>, key: string): boolean { return Object.hasOwn(body, key); }

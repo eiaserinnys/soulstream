@@ -127,8 +127,8 @@ Recurring-job tools require a trusted Soulstream caller session with a verified 
 | `list_recurring_jobs(include_archived)` | List the caller's jobs |
 | `get_recurring_job(job_id)` | Read one job and its server-computed next execution |
 | `preview_recurring_schedule(timezone, schedule_expressions)` | Preview the next five occurrences |
-| `create_recurring_job(...)` | Create a recurring job with `schedule_expressions` or a one-time job with offset ISO 8601 `run_at`; one-time jobs and run history are deleted when session creation is confirmed |
-| `update_recurring_job(job_id, expected_version, ...)` | Change a recurring job or pause/resume it with CAS; change a one-time execution time with `run_at` |
+| `create_recurring_job(...)` | Create a recurring job with `schedule_expressions`, a one-time job with offset ISO 8601 `run_at`, or a node-connected event job with `event_trigger` (exactly one of the three); one-time jobs, `repeat: false` event jobs, and run history are deleted when session creation is confirmed |
+| `update_recurring_job(job_id, expected_version, ...)` | Change a recurring job or pause/resume it with CAS; change a one-time execution time with `run_at`; change an event job's condition with `event_trigger` (changing the kind is rejected) |
 | `run_recurring_job(job_id, idempotency_key)` | Request one manual run, including while paused |
 | `archive_recurring_job(job_id, expected_version)` | Archive a job without terminating an already running session |
 | `list_recurring_job_runs(job_id, limit)` | Read run history and its linked session IDs |

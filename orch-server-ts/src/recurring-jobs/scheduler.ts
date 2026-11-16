@@ -103,6 +103,11 @@ export class RecurringJobScheduler {
       }
       const activeRuns = await this.options.repository.listActiveRuns(this.activeLimit);
       for (const run of activeRuns) await this.reconcileActiveRun(run);
+      try {
+        await this.options.service.processEventTriggers(now);
+      } catch (error) {
+        this.report(error, "process event triggers");
+      }
       await this.flushQueuedReconciliations();
       await this.options.onTick?.();
     } catch (error) {

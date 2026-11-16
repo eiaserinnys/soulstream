@@ -648,6 +648,10 @@
     {
       "id": "160_event_search_deferred_stats_and_session_lock_levels.sql",
       "sha256": "46b62b470c285255b50bee357421d674ceb9028312ad75667781727f161aa3af"
+    },
+    {
+      "id": "161_recurring_jobs_event_trigger.sql",
+      "sha256": "26357c56b481c555f54751d11b7e89baf29db8c45406ff3487c587d07df476fe"
     }
   ]
 }

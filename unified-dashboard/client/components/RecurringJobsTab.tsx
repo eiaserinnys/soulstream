@@ -12,6 +12,7 @@ import {
   listRecurringJobRuns,
   listRecurringJobs,
   previewRecurringSchedule,
+  recurringJobConditionText,
   runRecurringJob,
   updateRecurringJob,
   type RecurringJob,
@@ -111,7 +112,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     setBusy(true);
     setError(null);
     try {
-      const write = writeFromEditor(editor);
+      const write = writeFromEditor(editor, selected?.schedule_kind);
       const saved = selected
         ? await api.updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
         : await api.createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
@@ -171,7 +172,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     try {
       const jobId = selected.job_id;
       const run = await api.runRecurringJob(jobId, `recurring-run:${crypto.randomUUID()}`);
-      if (selected.schedule_kind === "once") {
+      if (selected.schedule_kind === "once" || selected.schedule_kind === "event") {
         await refresh(jobId);
       } else {
         setRuns((current) => [run, ...current.filter((item) => item.run_id !== run.run_id)]);
@@ -237,7 +238,9 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           {editor.schedule.mode !== "once" ? <SettingsField label="시간대"><input aria-label="시간대" value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })} placeholder="Asia/Seoul" /></SettingsField> : null}
           <SettingsField label="오프라인 허용 초"><input aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
         </div>
-        <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />
+        {selected?.schedule_kind === "event"
+          ? <div className="rounded border border-border p-3 text-sm" data-testid="recurring-event-condition">{recurringJobConditionText(selected)}</div>
+          : <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
         <SettingsMultilineField label="작업 내용" value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
 
@@ -269,10 +272,10 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {editor.schedule.mode !== "once" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
+          {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
           <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
-        {editor.schedule.mode !== "once" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
+        {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
     </SettingsListDetailFrame>
@@ -280,7 +283,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 }
 
 function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: RecurringJob[]; selectedId: string | null; onSelect(job: RecurringJob): void }) {
-  return <SettingsListSection title={title} isEmpty={jobs.length === 0}>{jobs.map((job) => <SettingsListRow key={job.job_id} title={job.name} meta={job.archived_at ? "보관됨" : !job.enabled ? "일시정지" : job.schedule_kind === "once" ? `1회 · ${displayTime(job.next_run_at ?? job.run_at)}` : displayTime(job.next_run_at)} selected={selectedId === job.job_id} onSelect={() => onSelect(job)} />)}</SettingsListSection>;
+  return <SettingsListSection title={title} isEmpty={jobs.length === 0}>{jobs.map((job) => <SettingsListRow key={job.job_id} title={job.name} meta={jobMeta(job)} selected={selectedId === job.job_id} onSelect={() => onSelect(job)} />)}</SettingsListSection>;
 }
 
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
@@ -327,7 +330,15 @@ function editorFromJob(job: RecurringJob): Editor {
   };
 }
 
-function writeFromEditor(editor: Editor): RecurringJobWrite {
+function jobMeta(job: RecurringJob): string {
+  if (job.archived_at) return "보관됨";
+  if (!job.enabled) return "일시정지";
+  if (job.schedule_kind === "event") return recurringJobConditionText(job);
+  if (job.schedule_kind === "once") return `1회 · ${displayTime(job.next_run_at ?? job.run_at)}`;
+  return displayTime(job.next_run_at);
+}
+
+function writeFromEditor(editor: Editor, scheduleKind?: RecurringJob["schedule_kind"]): RecurringJobWrite {
   const lateRunWindowSeconds = Number(editor.lateRunWindowSeconds);
   if (!Number.isSafeInteger(lateRunWindowSeconds) || lateRunWindowSeconds < 1) throw new Error("오프라인 허용 초는 1 이상의 정수여야 합니다.");
   const common = {
@@ -343,6 +354,7 @@ function writeFromEditor(editor: Editor): RecurringJobWrite {
     late_run_window_seconds: lateRunWindowSeconds,
     enabled: editor.enabled,
   };
+  if (scheduleKind === "event") return common;
   if (editor.schedule.mode === "once") {
     const runAt = new Date(editor.schedule.runAtLocal);
     if (!editor.schedule.runAtLocal || !Number.isFinite(runAt.getTime())) throw new Error("실행 일시를 입력해야 합니다.");

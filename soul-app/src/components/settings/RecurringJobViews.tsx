@@ -39,6 +39,7 @@ import { RecurringSchedulePicker } from './RecurringSchedulePicker';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import {
   defaultRecurringSchedule,
+  recurringEventConditionText,
   recurringScheduleExpressions,
   recurringScheduleFromExpressions,
   type RecurringScheduleDraft,
@@ -101,7 +102,7 @@ export function RecurringJobsList({
       {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
-      {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? `다음 실행 ${formatTime(job.next_run_at)}` : '일시정지됨'} onPress={() => onEdit(job)} />)}
+      {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? jobDetail(job) : '일시정지됨'} onPress={() => onEdit(job)} />)}
     </View>
   );
 }
@@ -123,6 +124,8 @@ export function RecurringJobEditor({
   const previewRevision = useRef(0);
   useEffect(() => { ++identityRevision.current; return () => { ++identityRevision.current; ++previewRevision.current; }; }, [serverUrl, jobId]);
   const [job, setJob] = useState<RecurringJobDto | null>(null);
+  const scheduleKind = job?.schedule_kind ?? 'recurring';
+  const isRecurring = scheduleKind === 'recurring';
   const continuity = useOptionalLayoutContinuity();
   const draftMemoryKey = JSON.stringify(['recurring-job-editor-draft', jobId ?? 'new']);
   const [draft, setDraft] = useState<EditorDraft>(() => continuity?.getViewState<EditorDraft>(draftMemoryKey) ?? emptyDraft());
@@ -224,7 +227,7 @@ export function RecurringJobEditor({
     setSaving(true); setError(null);
     try {
       const submittedPrompt = promptDraft.value;
-      const write = writeFromDraft({ ...draft, prompt: submittedPrompt });
+      const write = writeFromDraft({ ...draft, prompt: submittedPrompt }, scheduleKind);
       const api = createApiClient(serverUrl);
       const saved = job
         ? (await api.updateRecurringJob(job.job_id, { ...write, expected_version: job.version })).job
@@ -302,11 +305,15 @@ export function RecurringJobEditor({
     </Group>
     <Group title="일정">
     <Input label="시간대" value={draft.timezone} onChangeText={(timezone) => update({ timezone })} />
-    <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
-    <View style={styles.actions}><Action label="다음 5회" disabled={previewLoading} onPress={() => void previewSchedule()}/></View>
-    {previewLoading ? <ActivityIndicator color={t.colors.accent}/> : null}
-    {previewError ? <Text accessibilityRole="alert" style={styles.error}>{previewError}</Text> : null}
-    {preview.length > 0 ? <View style={previewStyle}><Text style={styles.heading}>다음 5회</Text>{preview.map(time => <Text key={time} style={styles.help}>{formatTime(time, previewTimezone)}</Text>)}</View> : null}
+    {isRecurring ? <>
+      <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
+      <View style={styles.actions}><Action label="다음 5회" disabled={previewLoading} onPress={() => void previewSchedule()}/></View>
+      {previewLoading ? <ActivityIndicator color={t.colors.accent}/> : null}
+      {previewError ? <Text accessibilityRole="alert" style={styles.error}>{previewError}</Text> : null}
+      {preview.length > 0 ? <View style={previewStyle}><Text style={styles.heading}>다음 5회</Text>{preview.map(time => <Text key={time} style={styles.help}>{formatTime(time, previewTimezone)}</Text>)}</View> : null}
+    </> : scheduleKind === 'event'
+      ? <Text style={styles.help}>{recurringEventConditionText(job?.event_trigger, job?.node_id ?? draft.nodeId)}</Text>
+      : null}
     </Group>
     <Group title="실행 대상">
     {loadingTargets || loadingNodes ? <ActivityIndicator color={t.colors.accent}/> : null}
@@ -381,7 +388,12 @@ function sessionAction(run: RecurringJobRunDto): { label: string; canOpen: boole
 
 function emptyDraft(): EditorDraft { return { name: '', prompt: '', timezone: 'Asia/Seoul', schedule: defaultRecurringSchedule(), nodeId: '', agentId: '', modelPreset: null, folderId: '', lateRunWindowSeconds: '1800', enabled: true }; }
 function draftFromJob(job: RecurringJobDto): EditorDraft { return { name: job.name, prompt: job.prompt, timezone: job.timezone, schedule: recurringScheduleFromExpressions(job.schedule_expressions), nodeId: job.node_id, agentId: job.agent_id, modelPreset: job.model_preset, folderId: job.folder_id, lateRunWindowSeconds: String(job.late_run_window_seconds), enabled: job.enabled }; }
-function writeFromDraft(draft: EditorDraft): RecurringJobWrite { const late = Number(draft.lateRunWindowSeconds); if (!Number.isSafeInteger(late) || late < 1) throw new Error('오프라인 허용 초는 1 이상의 정수여야 합니다.'); return { name: draft.name.trim(), prompt: draft.prompt.trim(), timezone: draft.timezone.trim(), schedule_expressions: recurringScheduleExpressions(draft.schedule), node_id: draft.nodeId.trim(), agent_id: draft.agentId.trim(), model_preset: draft.modelPreset, folder_id: draft.folderId.trim(), late_run_window_seconds: late, enabled: draft.enabled }; }
+function writeFromDraft(draft: EditorDraft, scheduleKind: NonNullable<RecurringJobDto['schedule_kind']>): RecurringJobWrite { const late = Number(draft.lateRunWindowSeconds); if (!Number.isSafeInteger(late) || late < 1) throw new Error('오프라인 허용 초는 1 이상의 정수여야 합니다.'); return { name: draft.name.trim(), prompt: draft.prompt.trim(), timezone: draft.timezone.trim(), ...(scheduleKind === 'recurring' ? { schedule_expressions: recurringScheduleExpressions(draft.schedule) } : {}), node_id: draft.nodeId.trim(), agent_id: draft.agentId.trim(), model_preset: draft.modelPreset, folder_id: draft.folderId.trim(), late_run_window_seconds: late, enabled: draft.enabled }; }
+function jobDetail(job: RecurringJobDto): string {
+  if (job.schedule_kind === 'once') return `1회 · ${formatTime(job.run_at ?? job.next_run_at)}`;
+  if (job.schedule_kind === 'event') return recurringEventConditionText(job.event_trigger, job.node_id);
+  return `다음 실행 ${formatTime(job.next_run_at)}`;
+}
 function formatTime(value: string | null, timeZone?: string): string { return value ? new Date(value).toLocaleString(undefined, timeZone ? { timeZone } : undefined) : '없음'; }
 function idempotency(kind: string): string { return `recurring:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`; }
 function errorMessage(cause: unknown): string {

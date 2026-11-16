@@ -139,7 +139,7 @@ describe("central owned agents through REST and real MCP HTTP", () => {
     } finally { await app.close(); }
   });
   it("creates and updates a real SQL reservation over HTTP MCP with existing target and owner ACL", async () => {
-    for (const migration of ["094_recurring_jobs.sql", "106_recurring_jobs_once.sql"])
+    for (const migration of ["094_recurring_jobs.sql", "106_recurring_jobs_once.sql", "161_recurring_jobs_event_trigger.sql"])
       await h.sql.unsafe(await readFile(new URL(`../../packages/db-schema/sql/migrations/${migration}`, import.meta.url), "utf8"));
     await h.sql`ALTER TABLE recurring_jobs DROP COLUMN container_kind, DROP COLUMN container_id`;
     const resolver = { resolveSql: async () => h.liveSql, close: async () => {} };
