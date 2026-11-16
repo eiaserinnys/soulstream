@@ -99,11 +99,16 @@ interface FixtureOverrides {
   sanitizeMcpServers?: FakeHostPortsOptions["sanitizeMcpServers"];
   mainStorePath?: string | null;
   decisionTier?: "full" | "restricted";
+  /** 호스트 워크스페이스를 민감 루트(디렉터리 mask) 아래에 두는 배치. */
+  workspaceUnderSensitiveRoot?: boolean;
 }
 
 async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
   const root = await makeTempDir("b2-prep-");
-  const workspace = join(root, "workspace");
+  const sensitive = join(root, "prod-state");
+  const workspace = overrides.workspaceUnderSensitiveRoot
+    ? join(sensitive, "agent-workspaces", "utonium")
+    : join(root, "workspace");
   const home = join(root, "home");
   const stateDir = join(root, "state");
   const sessionDir = join(stateDir, "session-1");
@@ -114,7 +119,6 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
     home,
     ".local/share/soulstream/credentials/codex",
   );
-  const sensitive = join(root, "prod-state");
   const agentCommonFiles = join(sensitive, "agent-common-files");
 
   for (const dir of [
@@ -927,6 +931,117 @@ describe("prepareIsolationPlan", () => {
     ).toBe(false);
     // 재노출 bind가 사이에 있는 하위 디렉터리 가림은 효력이 있으므로 남긴다.
     expect(masked.has(join(fixture.sensitive, "logs", "private"))).toBe(true);
+  });
+
+  it("keeps .env file masks under a sensitive root when the workspace RO bind reopens it", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture({ workspaceUnderSensitiveRoot: true });
+    const deepEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".projects", "agent-project", "config", ".env"),
+      "SECRET=1",
+      0o600,
+    );
+    const worktreeEnv = touch(
+      fixture.root,
+      join(fixture.worktree, ".env"),
+      "A=1",
+      0o600,
+    );
+    const tmpEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".local", "tmp", "scratch", ".env"),
+      "A=1",
+      0o600,
+    );
+    const sessionEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".projects", ".isolated", "s1", ".env"),
+      "A=1",
+      0o600,
+    );
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    // 민감 루트 디렉터리 mask는 남고, 워크스페이스 RO bind가 그 아래를 다시 연다.
+    expect(masked.has(fixture.sensitive)).toBe(true);
+    expect(bindingOf(prepared.spec.bindings, fixture.workspace)).toEqual({
+      source: fixture.workspace,
+      destination: fixture.workspace,
+      writable: false,
+    });
+    // 다시 열린 워크스페이스 아래 `.env`는 파일 가림으로 남는다.
+    expect(masked.has(deepEnv)).toBe(true);
+    // 세션 쓰기 경로의 `.env`는 이 배치에서도 가리지 않는다.
+    expect(masked.has(worktreeEnv)).toBe(false);
+    expect(masked.has(tmpEnv)).toBe(false);
+    expect(masked.has(sessionEnv)).toBe(false);
+  });
+
+  it("keeps a mask under the Codex auth bind that reopens the credential root", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const privateDir = join(fixture.canonicalCodex, "private");
+    mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        additionalSensitiveRoots: [
+          ...fixture.input.policy.filesystem.additionalSensitiveRoots,
+          privateDir,
+        ],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    expect(
+      masked.has(join(fixture.home, ".local/share/soulstream/credentials")),
+    ).toBe(true);
+    expect(
+      bindingOf(prepared.spec.bindings, fixture.canonicalCodex),
+    ).toMatchObject({ writable: true });
+    // auth bind가 사이에서 다시 연 아래 가림은 빠지지 않는다.
+    expect(masked.has(privateDir)).toBe(true);
+  });
+
+  it("keeps scan cache entries apart when host workspaces carry different common exclusions", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const otherWorkspace = join(fixture.root, "other-workspace");
+    mkdirSync(otherWorkspace, { recursive: true, mode: 0o700 });
+    const sharedEnv = touch(
+      fixture.root,
+      join(fixture.agentCommonFiles, "deep", ".env"),
+      "A=1",
+      0o600,
+    );
+
+    const scans: IsolationEnvMaskScan[] = [];
+    const lastScan = (): IsolationEnvMaskScan => {
+      const scan = scans[scans.length - 1];
+      if (!scan) throw new Error("탐색 로그가 없습니다");
+      return scan;
+    };
+    const prepare = () =>
+      prepareIsolationPlan(fixture.input, fixture.ports, {
+        logEnvMaskScan: (scan) => scans.push(scan),
+      });
+
+    const first = await prepare();
+    expect(lastScan().cacheMisses).toBeGreaterThan(0);
+    expect(first.spec.masks).toContainEqual({ path: sharedEnv, kind: "file" });
+
+    // 호스트 워크스페이스가 달라 공통 제외 목록도 달라진다. 같은 뿌리
+    // (agentCommonFiles)를 훑어도 이전 캐시를 그대로 쓰면 안 된다.
+    fixture.input.hostWorkspaceRoot = otherWorkspace;
+    const second = await prepare();
+    expect(lastScan().cacheHits).toBe(0);
+    expect(lastScan().cacheMisses).toBeGreaterThan(0);
+    expect(second.spec.masks).toContainEqual({ path: sharedEnv, kind: "file" });
   });
 
   it("rejects a Gemini/Antigravity restricted start before producing a spec", async () => {

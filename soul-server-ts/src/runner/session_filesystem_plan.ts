@@ -22,6 +22,7 @@ import {
 import { prepareGitView } from "./session_filesystem_git.js";
 import { prepareHeavyWorkLocks } from "./session_filesystem_locks.js";
 import {
+  dropCoveredMasks,
   prepareIsolationMasks,
   type IsolationEnvMaskScan,
 } from "./session_filesystem_masks.js";
@@ -445,7 +446,13 @@ export async function prepareIsolationPlan(
     resolvConfPath,
     resolvConfDestination,
   });
-  const masks = maskPlan.masks;
+  // 겹친 가림 정리는 최종 bind 목록이 정해진 뒤에 한다. composeBindings의 bind
+  // (호스트 워크스페이스 RO, 워크트리, 캐시, sandbox, auth, git 등)와 heavy work
+  // lock bind가 디렉터리 mask 아래를 다시 열면 그 아래 가림은 효력이 있다.
+  const masks = dropCoveredMasks(maskPlan.masks, [
+    ...bindings,
+    ...locks.heavyWorkLockBindings,
+  ]);
 
   const spec: SessionIsolationSpec = {
     version: 1,

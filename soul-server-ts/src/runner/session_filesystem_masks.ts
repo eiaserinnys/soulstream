@@ -238,12 +238,14 @@ export async function scanEnvMaskRoots(
   commonExclusions: readonly string[] = [],
 ): Promise<EnvMaskScanResult> {
   const started = Date.now();
+  // 공통 제외가 다르면 탐색 결과도 달라진다. 열쇠에 정렬해 넣어 캐시가 갈리게 한다.
+  const commonExclusionKey = [...new Set(commonExclusions)].sort().join("\n");
   const rootScans: EnvMaskRootScanResult[] = [];
   let files = 0;
   let cacheHits = 0;
   let cacheMisses = 0;
   for (const root of roots) {
-    const key = `${ENV_MASK_SCAN_RULE_KEY}\n${root}`;
+    const key = `${ENV_MASK_SCAN_RULE_KEY}\ncommon=${commonExclusionKey}\n${root}`;
     const now = Date.now();
     const cached = envMaskScanCache.get(key);
     if (cached && cached.expiresAt > now) {
@@ -557,11 +559,6 @@ export async function prepareIsolationMasks(
     else files.set(mask.path, mask);
   }
 
-  // 10. 겹친 가림 정리. 디렉터리 mask 아래의 다른 가림은 그 사이에 다시 여는
-  // bind가 없으면 효력이 없다. 계획에서 빼서 빈 뼈대 디렉터리(/mnt/c/.../.azure)를
-  // 만들지 않는다.
-  dropCoveredMasks(directories, files, rebindings);
-
   return {
     masks: [...directories.values()].sort(byPath).concat([...files.values()].sort(byPath)),
     rebindings,
@@ -582,32 +579,33 @@ export async function prepareIsolationMasks(
 }
 
 /**
- * 상위 디렉터리 mask에 덮이는 가림을 뺀다. 단, 그 사이에 다시 여는 bind가 있으면
- * 그 아래 가림은 실제로 효력이 있으므로 남긴다.
+ * 상위 디렉터리 mask에 덮이는 가림을 뺀다. 최종 bind 목록(spec.bindings와
+ * heavyWorkLockBindings)을 받는다. 사이에 다시 여는 bind가 있으면 그 아래 가림은
+ * 효력이 있으므로 남기고, 같은 경로의 bind도 다시 여는 것으로 본다.
  */
-function dropCoveredMasks(
-  directories: Map<string, IsolationMask>,
-  files: Map<string, IsolationMask>,
-  rebindings: readonly MountBinding[],
-): void {
-  const ancestors = [...directories.keys()];
+export function dropCoveredMasks(
+  masks: readonly IsolationMask[],
+  bindings: readonly MountBinding[],
+): IsolationMask[] {
+  const ancestors = masks
+    .filter((mask) => mask.kind === "directory")
+    .map((mask) => mask.path);
   const reopenedBetween = (ancestor: string, path: string): boolean =>
-    rebindings.some((binding) =>
-      binding.destination !== ancestor
-      && isPathAtOrUnder(binding.destination, ancestor)
-      && isPathAtOrUnder(path, binding.destination),
+    bindings.some(
+      (binding) =>
+        isPathAtOrUnder(binding.destination, ancestor)
+        && isPathAtOrUnder(path, binding.destination),
     );
   const covered = (path: string, self: string | null): boolean =>
-    ancestors.some((ancestor) =>
-      ancestor !== self
-      && isPathAtOrUnder(path, ancestor)
-      && !reopenedBetween(ancestor, path),
+    ancestors.some(
+      (ancestor) =>
+        ancestor !== self
+        && isPathAtOrUnder(path, ancestor)
+        && !reopenedBetween(ancestor, path),
     );
-
-  for (const path of [...files.keys()]) {
-    if (covered(path, null)) files.delete(path);
-  }
-  for (const path of [...directories.keys()]) {
-    if (covered(path, path)) directories.delete(path);
-  }
+  return masks.filter((mask) =>
+    mask.kind === "directory"
+      ? !covered(mask.path, mask.path)
+      : !covered(mask.path, null),
+  );
 }
