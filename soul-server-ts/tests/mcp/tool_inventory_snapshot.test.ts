@@ -121,7 +121,7 @@ describe("advertised MCP tool inventory", () => {
     const resolveAttachment = internal.find(tool => tool.name === "resolve_attachment");
     expect(resolveAttachment).toMatchObject({
       name: "resolve_attachment",
-      description: "현재 세션에 연결된 첨부를 이 노드의 로컬 파일로 준비합니다.",
+      description: "현재 세션에 연결된 첨부(이 세션에 들어온 첨부, 소속 카드나 담당 카드의 항목 증거와 질문에 연결된 첨부)를 이 노드의 로컬 파일로 준비합니다. 연결 전 첨부는 ATTACHMENT_REF_REQUIRED로 거부됩니다.",
       inputSchema: {
         properties: { attachment_id: expect.any(Object) },
         required: ["attachment_id"],

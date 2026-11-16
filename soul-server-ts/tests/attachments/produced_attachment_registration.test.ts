@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { open, mkdir, symlink, truncate, writeFile } from "node:fs/promises";
+import { open, mkdir, realpath, symlink, truncate, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -265,6 +265,43 @@ describe("createProducedAttachmentRegistration", () => {
       code: "ATTACHMENT_PATH_DENIED",
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("names the allowed roots and the copy hint without printing the denied path", async () => {
+    const layout = await makeLayout();
+    const outside = join(layout.root, "outside.txt");
+    await writeFile(outside, "outside");
+    const { registration, fetchImpl } = makeRegistration(layout);
+
+    const error = await registration.register({ local_path: outside }, executionFor(layout)).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ code: "ATTACHMENT_PATH_DENIED", statusCode: 403 });
+    const message = (error as Error).message;
+    expect(message).toContain("허용된 작업 폴더 밖의 파일은 첨부할 수 없습니다.");
+    expect(message).toContain(await realpath(layout.workspace));
+    expect(message).toContain(await realpath(layout.profile));
+    expect(message).toContain(await realpath(layout.mine));
+    expect(message).toContain(
+      "다른 곳의 파일은 이 안(워크트리면 git이 무시하는 .local/ 아래)으로 복사한 뒤 등록하세요.",
+    );
+    expect(message).not.toContain("outside.txt");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("lists the workspace and profile once and omits a missing incoming root", async () => {
+    const layout = await makeLayout();
+    const outside = join(layout.root, "outside.txt");
+    await writeFile(outside, "outside");
+    const { registration } = makeRegistration(layout);
+
+    const error = await registration.register(
+      { local_path: outside },
+      executionFor(layout, { profileWorkspaceDir: layout.workspace, sessionId: "sess-absent" }),
+    ).catch((e: unknown) => e);
+
+    const message = (error as Error).message;
+    expect(message.split(await realpath(layout.workspace))).toHaveLength(2);
+    expect(message).not.toContain("sess-absent");
   });
 
   it("reports a missing file as not found", async () => {
