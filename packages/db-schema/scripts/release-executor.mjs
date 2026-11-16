@@ -168,7 +168,11 @@ async function preflight(context, options) {
       throw new Error("JOURNAL_IDENTITY_CONFLICT: migration plan differs");
     }
   }
-  return result(context, operation, path, journal.status, "preflight");
+  return result(context, operation, path, journal.status, "preflight", {
+    // Lets the supervisor skip writer quiescence and restarts when a deploy
+    // carries no migrations instead of inferring it from the journal contents.
+    pending_count: plan.pending.length,
+  });
 }
 
 function inheritedOperationJournal(context, existing) {
@@ -233,8 +237,12 @@ async function apply(context, options) {
   }
   const allowed = journal.status === "preflight_complete" || retryableNone;
   if (!allowed) throw new Error("JOURNAL_GATE_FAILED: release phases are incomplete");
+  // An upgrade whose journal carries no migrations has no schema work: it needs
+  // no writer quiescence evidence and must not open a database writer gate.
+  const migrationsToApply = (journal.planned_migrations ?? journal.pending_migrations ?? []).length;
+  const skippedMigrationRun = journal.operation === "upgrade" && migrationsToApply === 0;
   let evidence = null;
-  if (journal.operation === "upgrade") {
+  if (journal.operation === "upgrade" && !skippedMigrationRun) {
     evidence = await readHanielReleaseEvidence({
       env: context.env,
       journal,
@@ -255,7 +263,9 @@ async function apply(context, options) {
   context.env.HANIEL_DATABASE_JOURNAL_REVISION = String(journal.revision);
   const mode = journal.operation === "fresh_install" ? "fresh-install" : "apply";
   try {
-    await context.migrationRun(mode, { env: context.env, journalPath: path });
+    if (!skippedMigrationRun) {
+      await context.migrationRun(mode, { env: context.env, journalPath: path });
+    }
   } catch (error) {
     let failedPlan;
     let failedInventory;

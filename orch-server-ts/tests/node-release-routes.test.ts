@@ -12,6 +12,7 @@ const SERVICE_TOKEN = "service-token";
 const NODE_TOKEN = "node-token";
 const SOURCE_COMMIT = "a".repeat(40);
 const UNKNOWN_COMMIT = "b".repeat(40);
+const NEXT_COMMIT = "d".repeat(40);
 const RELEASE_BYTES = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x01, 0x02, 0x03]);
 const SHA256_HEX = "c".repeat(64);
 const CURRENT_PATH = "/api/node/releases/current";
@@ -27,7 +28,7 @@ const nodeCredentials: NodeCredentialResolver = {
 
 type HarnessOptions = {
   readonly releasesDir?: string | null;
-  readonly currentSourceCommit?: string;
+  readonly currentSourceCommit?: () => string | Promise<string>;
 };
 
 const apps: Array<{ close: () => Promise<void> }> = [];
@@ -54,7 +55,10 @@ async function writeRelease(releasesDir: string, sourceCommit: string): Promise<
   );
 }
 
-function harness(releasesDir: string | null, currentSourceCommit = SOURCE_COMMIT) {
+function harness(
+  releasesDir: string | null,
+  currentSourceCommit: () => string | Promise<string> = () => SOURCE_COMMIT,
+) {
   const app = Fastify({ logger: false });
   registerNodeReleaseRoutes(app, {
     authBearerToken: SERVICE_TOKEN,
@@ -93,6 +97,35 @@ describe("node release routes", () => {
     });
     expect(body.sha256).toMatch(/^sha256-[0-9a-f]{64}$/);
     expect(body.sha256).toBe(`sha256-${SHA256_HEX}`);
+  });
+
+  it("serves the newly deployed release when the source commit provider changes", async () => {
+    const releasesDir = await makeReleasesDir();
+    await writeRelease(releasesDir, SOURCE_COMMIT);
+    await writeRelease(releasesDir, NEXT_COMMIT);
+    let current = SOURCE_COMMIT;
+    const app = harness(releasesDir, () => current);
+
+    let response = await app.inject({
+      method: "GET",
+      url: CURRENT_PATH,
+      headers: nodeHeaders(),
+    });
+    expect(response.json()).toMatchObject({
+      source_commit: SOURCE_COMMIT,
+      download_path: `/api/node/releases/${SOURCE_COMMIT}`,
+    });
+
+    current = NEXT_COMMIT;
+    response = await app.inject({
+      method: "GET",
+      url: CURRENT_PATH,
+      headers: nodeHeaders(),
+    });
+    expect(response.json()).toMatchObject({
+      source_commit: NEXT_COMMIT,
+      download_path: `/api/node/releases/${NEXT_COMMIT}`,
+    });
   });
 
   it("returns NOT_READY when the serving commit has no release files", async () => {

@@ -201,6 +201,7 @@ describe("database release executor", () => {
       ok: true,
       operation: "upgrade",
       journal_path: databaseReleaseJournalPath(env),
+      pending_count: 1,
     });
     expect(journal).toMatchObject({
       schema_version: DATABASE_RELEASE_SCHEMA_VERSION,
@@ -216,6 +217,49 @@ describe("database release executor", () => {
       pending_migrations: [{ id: "061_contract.sql", checksum: "1".repeat(64) }],
     });
     expect(existsSync(`${report.journal_path}.tmp`)).toBe(false);
+  });
+
+  it("applies an upgrade with no pending migrations without quiescence evidence and verifies", async () => {
+    const directory = makeTempDirSync("soul-release-empty-upgrade-");
+    directories.push(directory);
+    const env = environment(directory);
+    const ledger = [{ ...migration("061_contract.sql", 61), release_id: env.HANIEL_RELEASE_ID }];
+    const preflightReport = await preflight(env, []);
+
+    expect(preflightReport).toMatchObject({ ok: true, pending_count: 0 });
+    expect(existsSync(join(directory, "quiescence.json"))).toBe(false);
+    expect(existsSync(env.HANIEL_DEPLOYMENT_JOURNAL)).toBe(false);
+
+    const migrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ ledger, pending: [] }),
+      migrationRun,
+    })).resolves.toMatchObject({ ok: true, operation: "upgrade", status: "applied" });
+    expect(migrationRun).not.toHaveBeenCalled();
+
+    await expect(runDatabaseRelease("verify", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ ledger, pending: [] }),
+    })).resolves.toMatchObject({ ok: true, operation: "upgrade", status: "verified" });
+  });
+
+  it("still requires quiescence evidence when the upgrade carries migrations", async () => {
+    const directory = makeTempDirSync("soul-release-pending-upgrade-");
+    directories.push(directory);
+    const env = environment(directory);
+    await preflight(env);
+    const migrationRun = vi.fn();
+
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ pending: [migration("061_contract.sql", 61)] }),
+      migrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(migrationRun).not.toHaveBeenCalled();
   });
 
   it("applies an empty fresh_install without backup machinery", async () => {

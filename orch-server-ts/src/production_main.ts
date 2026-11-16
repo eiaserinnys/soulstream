@@ -14,6 +14,42 @@ type ProcessErrorHandlerOptions = {
   readonly logger?: Pick<Console, "error">;
 };
 
+/**
+ * The supervisor stops a service with SIGTERM and force-kills it after its own
+ * timeout (30s on the server). The orchestrator must finish (or at least say
+ * where it got stuck) well before that, so operators can see the cause in the
+ * service log instead of guessing from a SIGKILL.
+ */
+export const SHUTDOWN_DEADLINE_MS = 10_000;
+
+type ShutdownDeadlineOptions = {
+  readonly currentStage: () => string;
+  readonly deadlineMs?: number;
+  readonly logger?: {
+    error(message: string, bindings: Record<string, unknown>): void;
+  };
+  readonly exit?: (code: number) => void;
+};
+
+/** Arms the unref'd safety net; the returned function clears it. */
+export function armShutdownDeadline(
+  options: ShutdownDeadlineOptions,
+): () => void {
+  const deadlineMs = options.deadlineMs ?? SHUTDOWN_DEADLINE_MS;
+  const logger = options.logger ?? console;
+  const exit = options.exit ?? ((code: number) => process.exit(code));
+  const timer = setTimeout(() => {
+    logger.error("orchestrator shutdown deadline exceeded; exiting", {
+      event: "orchestrator.shutdown_deadline",
+      stage: options.currentStage(),
+      deadline_ms: deadlineMs,
+    });
+    exit(1);
+  }, deadlineMs);
+  timer.unref();
+  return () => clearTimeout(timer);
+}
+
 export function installProductionProcessErrorHandlers(
   options: ProcessErrorHandlerOptions = {},
 ): () => void {
@@ -55,9 +91,16 @@ export async function runProductionMain(): Promise<void> {
     logger: { error: (bindings, message) => console.error(message, bindings) },
   });
   modelCatalog.start();
+  let shutdownStage = "shutdown_notice";
   let server: Awaited<ReturnType<typeof createProductionOrchestrator>>;
   try {
-    server = await createProductionOrchestrator({ config, modelCatalog });
+    server = await createProductionOrchestrator({
+      config,
+      modelCatalog,
+      onShutdownStage: (step) => {
+        shutdownStage = step;
+      },
+    });
   } catch (error) {
     modelCatalog.close();
     throw error;
@@ -67,12 +110,16 @@ export async function runProductionMain(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.info(`Received ${signal}; shutting down orchestrator`);
+    const clearShutdownDeadline = armShutdownDeadline({
+      currentStage: () => shutdownStage,
+    });
     try {
       await server.close();
     } catch (error) {
       console.error("Orchestrator shutdown failed", error);
       process.exitCode = 1;
     } finally {
+      clearShutdownDeadline();
       modelCatalog.close();
     }
   };
