@@ -32,6 +32,7 @@ ALTER TABLE recurring_jobs
             OR (schedule_kind = 'event'
                 AND jsonb_array_length(schedule_expressions) = 0
                 AND run_at IS NULL
+                AND event_trigger IS NOT NULL
                 AND jsonb_typeof(event_trigger) = 'object')
         )
     );
