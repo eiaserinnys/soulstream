@@ -1,6 +1,7 @@
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import type {
   ChildSessionCheckEvent,
+  ChildSessionCheckExistingDelivery,
   ChildSessionCheckStore,
   ChildSessionCheckTarget,
   ChildSessionCheckToolStart,
@@ -14,12 +15,19 @@ export type {
   ChildSessionCheckToolStart,
 } from "./child_session_check_repository.js";
 
-/** 유효 응답 뒤 이만큼 조용하면 확인을 보낸다. 설정 옵션은 두지 않는다. */
+/** 유효 응답 뒤 이만큼 조용하면 첫 확인을 보낸다. 설정 옵션은 두지 않는다. */
 export const CHILD_SESSION_CHECK_THRESHOLD_MS = 300_000;
+/** 첫 확인을 보낸 같은 하위 세션의 두 번째 확인은 이만큼 더 기다린다. */
+export const CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS = 900_000;
+/** 세 번째부터 같은 하위 세션의 확인 간격. */
+export const CHILD_SESSION_CHECK_REPEAT_THRESHOLD_MS = 1_200_000;
+/** 봉인이나 무거운 검증 명령이 도는 첫 확인은 이만큼 기다린다. */
+export const CHILD_SESSION_LONG_COMMAND_THRESHOLD_MS = 900_000;
 export const CHILD_SESSION_CHECK_MAX_PER_CHECK = 10;
 export const CHILD_SESSION_CHECK_SOURCE = "child_session_check";
 
 const LIVE_TEXT_EVENT_TYPES = new Set(["text_start", "text_delta", "text_end"]);
+const LONG_RUNNING_COMMAND_PATTERN = /(?:^|[\s/"'])seal\.py\b|(?:^|[\s/"'])heavy_verify\.py\b/;
 const COMMAND_PREVIEW_CHARS = 120;
 const ERROR_SUMMARY_CHARS = 120;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -58,9 +66,10 @@ type Candidate = {
 };
 
 /**
- * 진행 중인 하위 세션이 유효 응답 없이 5분을 넘겼는지 60초 주기로 확인하고,
- * 담당 세션에 한 번씩 알린다. 실시간 text 이벤트는 DB에 없으므로 노드 이벤트 sink에서
- * 세션별 마지막 수신 시각과 종류만 메모리에 모아 판정에 쓴다.
+ * 진행 중인 하위 세션이 유효 응답 없이 기준 시간을 넘겼는지 60초 주기로 확인하고,
+ * 담당 세션에 알린다. 같은 하위 세션의 확인 간격은 5분, 15분, 이후 20분으로 늘리고,
+ * 봉인이나 무거운 검증 명령이 도는 첫 확인은 15분까지 기다린다. 실시간 text 이벤트는 DB에
+ * 없으므로 노드 이벤트 sink에서 세션별 마지막 수신 시각과 종류만 메모리에 모아 판정에 쓴다.
  */
 export class ChildSessionCheckService {
   private readonly live = new Map<string, LiveRecord>();
@@ -101,10 +110,19 @@ export class ChildSessionCheckService {
     let attempts = 0;
     for (const candidate of candidates) {
       if (attempts >= CHILD_SESSION_CHECK_MAX_PER_CHECK) return;
-      if (await this.alreadyRegistered(candidate)) continue;
+      const existing = await this.priorDeliveries(candidate);
+      if (existing === null) continue;
+      const toolStarts = await this.options.store.openToolStarts(candidate.target.childSessionId);
+      const thresholdMs = thresholdForSilence(existing.length, toolStarts);
+      const latestPriorAtMs = existing.reduce(
+        (max, delivery) => Math.max(max, delivery.createdAtMs),
+        0,
+      );
+      if (nowMs - candidate.lastValidAtMs <= thresholdMs) continue;
+      if (existing.length > 0 && nowMs - latestPriorAtMs <= thresholdMs) continue;
       attempts += 1;
       try {
-        const text = await this.buildMessage(candidate, nowMs);
+        const text = await this.buildMessage(candidate, nowMs, toolStarts, thresholdMs);
         await this.options.deliver({
           callerSessionId: candidate.target.callerSessionId,
           childSessionId: candidate.target.childSessionId,
@@ -132,14 +150,20 @@ export class ChildSessionCheckService {
     };
   }
 
-  /** 이미 보낸 전달이면 등록하지 않는다. 재시작으로 실시간 기록을 잃어 token이 바뀌어도 중복이 없다. */
-  private async alreadyRegistered(candidate: Candidate): Promise<boolean> {
-    if (await this.options.store.deliveryExists(deliveryIdFor(candidate))) return true;
+  /**
+   * 이미 보낸 전달이거나 같은 하위 세션의 전달이 있으면 null. 재시작으로 실시간 기록을 잃어
+   * token이 바뀌어도 중복이 없다. 반환한 전달 목록은 같은 하위 세션의 백오프 단계 판정에 쓴다.
+   */
+  private async priorDeliveries(
+    candidate: Candidate,
+  ): Promise<readonly ChildSessionCheckExistingDelivery[] | null> {
+    if (await this.options.store.deliveryExists(deliveryIdFor(candidate))) return null;
     const existing = await this.options.store.findCheckDeliveries({
       childSessionId: candidate.target.childSessionId,
       callerSessionId: candidate.target.callerSessionId,
     });
-    return existing.some((delivery) => delivery.createdAtMs > candidate.lastValidAtMs);
+    if (existing.some((delivery) => delivery.createdAtMs > candidate.lastValidAtMs)) return null;
+    return existing;
   }
 
   private pruneLive(targets: readonly ChildSessionCheckTarget[]): void {
@@ -149,11 +173,15 @@ export class ChildSessionCheckService {
     }
   }
 
-  private async buildMessage(candidate: Candidate, nowMs: number): Promise<string> {
+  private async buildMessage(
+    candidate: Candidate,
+    nowMs: number,
+    toolStarts: readonly ChildSessionCheckToolStart[],
+    thresholdMs: number,
+  ): Promise<string> {
     const sessionId = candidate.target.childSessionId;
-    const [latestEvent, toolStarts, lastError] = await Promise.all([
+    const [latestEvent, lastError] = await Promise.all([
       this.options.store.latestEvent(sessionId),
-      this.options.store.openToolStarts(sessionId),
       this.options.store.lastError(sessionId),
     ]);
     return renderMessage({
@@ -162,11 +190,34 @@ export class ChildSessionCheckService {
       latestEvent,
       toolStarts,
       lastError,
+      thresholdMs,
       nodeState: candidate.target.nodeId === null
         ? undefined
         : this.options.nodeState?.(candidate.target.nodeId),
     });
   }
+}
+
+/**
+ * 하위 세션에서 이미 보낸 확인 수에 따른 필요 무응답 시간.
+ * 첫 확인만 5분이고, 봉인이나 무거운 검증 명령이 도는 중이면 15분으로 늦춘다.
+ */
+function thresholdForSilence(
+  priorCount: number,
+  toolStarts: readonly ChildSessionCheckToolStart[],
+): number {
+  if (priorCount === 1) return CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS;
+  if (priorCount >= 2) return CHILD_SESSION_CHECK_REPEAT_THRESHOLD_MS;
+  const primary = toolStarts.filter((tool) => !tool.answered)[0];
+  if (
+    primary !== undefined
+    && primary.toolUseId !== null
+    && primary.command !== null
+    && LONG_RUNNING_COMMAND_PATTERN.test(primary.command)
+  ) {
+    return CHILD_SESSION_LONG_COMMAND_THRESHOLD_MS;
+  }
+  return CHILD_SESSION_CHECK_THRESHOLD_MS;
 }
 
 function deliveryIdFor(candidate: Candidate): string {
@@ -184,6 +235,7 @@ type RenderInput = {
   readonly latestEvent: ChildSessionCheckEvent | null;
   readonly toolStarts: readonly ChildSessionCheckToolStart[];
   readonly lastError: ChildSessionCheckEvent | null;
+  readonly thresholdMs: number;
   readonly nodeState: ChildSessionCheckNodeState | undefined;
 };
 
@@ -198,7 +250,7 @@ function renderMessage(input: RenderInput): string {
   const tool = toolStateLines(input.toolStarts);
   return [
     "[하위 세션 확인]",
-    "하위 세션에서 5분 이상 유효한 응답이 없습니다. 오래 걸리는 작업을 진행 중인지 확인하세요.",
+    `하위 세션에서 ${Math.round(input.thresholdMs / 60_000)}분 이상 유효한 응답이 없습니다. 오래 걸리는 작업을 진행 중인지 확인하세요.`,
     "",
     `세션: ${target.displayName ?? "이름 없음"}`,
     `세션 ID: ${target.childSessionId}`,

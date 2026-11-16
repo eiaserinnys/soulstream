@@ -2800,7 +2800,7 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
     globalThis.fetch = originalFetch;
   });
 
-  function makeScopeFixture(contextScope?: "full" | "minimal") {
+  function makeScopeFixture(contextScope?: "full" | "minimal", agentId?: string) {
     const folderSettings = {
       folderPrompt: "legacy folder prompt",
       atomContextNode: { nodeId: FOLDER_ATOM, depth: 2 },
@@ -2827,6 +2827,7 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
     });
     const agent: AgentProfile = {
       ...codexAgent,
+      ...(agentId ? { id: agentId } : {}),
       ...(contextScope ? { context_scope: contextScope } : {}),
       atom_contexts: [{ node_id: AGENT_ATOM, depth: 2, titles_only: false }],
     };
@@ -2975,6 +2976,27 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
     const keys = fullContext.contextItems.map((item) => item.key);
     for (const key of FIVE_BLOCKS) expect(keys).not.toContain(key);
     expect(keys).toContain("assigned_cards");
+  });
+
+  it("selaphiel keeps page and folder atom context but drops workspace lists on first and follow-up turns", async () => {
+    const { agent, builder, task, resolve, listRunningSessionsSummary } =
+      makeScopeFixture(undefined, "selaphiel");
+    expect(agent.context_scope).toBeUndefined();
+
+    const ctx = await builder.build(task, agent);
+    const keys = ctx.combinedContextItems.map((item) => item.key);
+    expect(keys).toContain("page_context");
+    expect(keys).toContain("atom_context");
+    expect(keys).not.toContain("board_workspace");
+    expect(keys).not.toContain("running_sessions");
+    expect(keys).not.toContain("cogito_context");
+    expect(resolve).toHaveBeenCalled();
+    expect(fetchedUrls.some((url) => url.includes(FOLDER_ATOM))).toBe(true);
+
+    listRunningSessionsSummary.mockClear();
+    const followup = await builder.buildFollowupContext(task, agent);
+    expect(followup.contextItems.map((item) => item.key)).not.toContain("running_sessions");
+    expect(listRunningSessionsSummary).not.toHaveBeenCalled();
   });
 });
 

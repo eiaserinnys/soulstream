@@ -57,6 +57,13 @@ describe("durable card status reminders", () => {
     await receipt("root", rootStatus, 60000, reason);
     return id;
   }
+  async function runtimeTaskEvent(
+    sessionId: string, id: number, eventType: string,
+    payload: Record<string, unknown>, atMs = now,
+  ) {
+    await h.sql`INSERT INTO events(session_id,id,event_type,payload,created_at)
+      VALUES (${sessionId},${id},${eventType},${h.sql.json(payload as never)}::jsonb,${new Date(atMs)})`;
+  }
   async function deliveredComment(cardId: string, body: string, idempotencyKey: string) {
     const comment = await cards.addComment({ ...human, cardId, body, idempotencyKey });
     const id = String(comment.id);
@@ -185,6 +192,41 @@ describe("durable card status reminders", () => {
     if (kind === "archived") await cards.patchCard({ ...human, cardId: id, archived: true });
     await dispatcher.sessionEnded("root"); await tick(); expect(messages).not.toHaveBeenCalled(); await unchanged(id, "running");
   });
+  it("keeps stalled out while a runtime background task is open and sends after it completes", async () => {
+    const id = await seed();
+    await runtimeTaskEvent("root", 500, "claude_runtime_task_started", { task_id: "task-1" });
+    await runtimeTaskEvent("root", 501, "session_ended", { termination_reason: "completed_ok" });
+    await tick();
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "running");
+
+    await runtimeTaskEvent("root", 502, "claude_runtime_task_completed", { task_id: "task-1", subject: "작업" });
+    await tick();
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다.`);
+    await unchanged(id, "running");
+  });
+  it("keeps stalled out while a child session's runtime background task is open", async () => {
+    const id = await seed("running", "completed");
+    await runtimeTaskEvent("child", 500, "claude_runtime_task_started", { task_id: "task-child" });
+    await tick();
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "running");
+
+    await runtimeTaskEvent("child", 501, "claude_runtime_task_notification", { task_id: "task-child", status: "completed" });
+    await tick();
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls[0]![1]).toContain("모두 멈췄습니다");
+    await unchanged(id, "running");
+  });
+  it("ignores runtime background tasks older than the retention ceiling", async () => {
+    const id = await seed();
+    await runtimeTaskEvent("root", 500, "claude_runtime_task_started", { task_id: "task-old" }, now - 61 * 60000);
+    await tick();
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls[0]![1]).toContain("모두 멈췄습니다");
+    await unchanged(id, "running");
+  });
   it("holds an unregistered child completion for five minutes, then treats it as lost", async () => {
     const id = await seed("running", "completed"); await receipt("child");
     await tick(); expect(messages).not.toHaveBeenCalled();
@@ -260,6 +302,24 @@ describe("durable card status reminders", () => {
     expect(ownerSilentCalls()[0]![3]!.deliveryId).toBe(`card-reminder:${id}:owner_silent:${turnEnd}:root`);
     now += 60000; await dispatcher.tick(); await dispatcher.drain();
     expect(ownerSilentCalls()).toHaveLength(1);
+    await unchanged(id, "running");
+  });
+  it("keeps the owner-silent wake out while a runtime background task is open and sends after its notification", async () => {
+    const id = await seed();
+    await tick();
+    await consume();
+    const sentBefore = messages.mock.calls.length;
+    await runtimeTaskEvent("root", 500, "claude_runtime_task_started", { task_id: "task-1" });
+    const turnEnd = await receipt("root", "completed", 0);
+    await dispatcher.sessionEnded("root");
+    now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(0);
+    expect(messages.mock.calls.length).toBe(sentBefore);
+
+    await runtimeTaskEvent("root", 501, "claude_runtime_task_notification", { task_id: "task-1", status: "completed" });
+    now += 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(1);
+    expect(ownerSilentCalls()[0]![3]!.deliveryId).toBe(`card-reminder:${id}:owner_silent:${turnEnd}:root`);
     await unchanged(id, "running");
   });
   it("blocks the card without report and sends the board notice when the woken owner stays silent", async () => {

@@ -9,18 +9,9 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { type AtomContextSpec } from "./atom_context.js";
-import {
-  extractPageContextTruncation,
-  mergeContextManifests,
-} from "./compiler/index.js";
-import {
-  fetchCogitoContextItem,
-  type CogitoContextConfig,
-} from "./cogito_context.js";
-import {
-  resolvePasNodeResourcesContextItem,
-  type NodeResourcesContextConfig,
-} from "./node_resources_context.js";
+import { extractPageContextTruncation, mergeContextManifests } from "./compiler/index.js";
+import { fetchCogitoContextItem, type CogitoContextConfig } from "./cogito_context.js";
+import { resolvePasNodeResourcesContextItem, type NodeResourcesContextConfig } from "./node_resources_context.js";
 import type { ContextItem } from "./prompt_assembler.js";
 import {
   buildCallerInfoUpdateContextItem,
@@ -36,6 +27,7 @@ import {
   extractFolderProjectPageIds,
   isMinimalContextScope,
   normalizeSettings,
+  omitsWorkspaceContextLists,
   prioritizeAtomContextSpecs,
   resolveContextFilterContext,
   resolveProfileRuntimeSettings,
@@ -152,7 +144,7 @@ export class ExecutionContextBuilder {
     }
 
     let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
-    if (!isMinimalContextScope(agent)) {
+    if (!omitsWorkspaceContextLists(agent)) {
       const running = await resolveFollowupRunningSessionsContext(
         this.db, this.logger, task.agentSessionId, task.lastInjectedRunningSessions,
       );
@@ -276,6 +268,7 @@ export class ExecutionContextBuilder {
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
     const minimal = isMinimalContextScope(agent);
+    const omitWorkspaceLists = omitsWorkspaceContextLists(agent);
     const pageContext: PageContextResolution = minimal
       ? { kind: "no-page-anchor" }
       : await this.pageContextResolver.resolve(task, agent, this.cfg.atom, {
@@ -303,15 +296,10 @@ export class ExecutionContextBuilder {
       compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
       compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
       compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
-      minimal
+      omitWorkspaceLists
         ? null
-        : fetchBoardWorkspaceContextItem(
-            this.db,
-            this.logger,
-            folder.folderId,
-            resumeContext.folderSessions,
-          ),
-      minimal
+        : fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId, resumeContext.folderSessions),
+      omitWorkspaceLists
         ? null
         : resolveFullRunningSessionsContext(
             this.db, this.logger, task.agentSessionId, resumeContext.runningSessions,
@@ -335,7 +323,7 @@ export class ExecutionContextBuilder {
           resumeContext.predecessor,
         );
     const [cogitoContextItem, nodeResourcesItem] = await Promise.all([
-      minimal ? Promise.resolve(null) : this._fetchCogitoContext(),
+      omitWorkspaceLists ? Promise.resolve(null) : this._fetchCogitoContext(),
       resolvePasNodeResourcesContextItem(
         this.db, this.cfg.nodeResources, task, resumeContext.session ?? null, this.logger,
       ),
