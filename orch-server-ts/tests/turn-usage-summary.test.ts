@@ -125,6 +125,92 @@ describe("summarizeTurnUsage", () => {
     expect(result.top_sessions.find((session) => session.session_id === "old")).not.toHaveProperty("first_call_input_tokens");
   });
 
+  it("adds subagent totals, model groups, and total_cost_usd while ordering top sessions by combined cost", () => {
+    const rows = [
+      row({
+        session_id: "s-sub", display_name: "하위 세션", agent_id: "agent-a", node_id: "node-a",
+        model: "claude-opus-5-5", turns: 2, input_tokens: 1300, cached_input_tokens: 250,
+        output_tokens: 150, cost_usd: 1.25,
+        subagent_input_tokens: 2400, subagent_cached_input_tokens: 200,
+        subagent_cache_write_tokens: 0, subagent_output_tokens: 130, subagent_cost_usd: 1.125,
+        subagent_models: [
+          { model: "claude-opus-5-5", input_tokens: 1500, cached_input_tokens: 200, cache_write_tokens: 0, output_tokens: 60, cost_usd: 0.5 },
+          { model: "claude-sonnet-5-5", input_tokens: 800, cached_input_tokens: 0, cache_write_tokens: 0, output_tokens: 60, cost_usd: 0.5 },
+          { model: "claude-haiku-5-5", input_tokens: 100, cached_input_tokens: 0, cache_write_tokens: 0, output_tokens: 10, cost_usd: 0.125 },
+        ],
+      }),
+      row({
+        session_id: "s-main", display_name: "주 세션", agent_id: "agent-b", node_id: "node-b",
+        model: "claude-sonnet-5-5", turns: 1, input_tokens: 500, output_tokens: 20, cost_usd: 0.5,
+      }),
+    ];
+
+    const result = summarizeTurnUsage(rows, SINCE, UNTIL);
+
+    expect(result.totals).toMatchObject({
+      sessions: 2,
+      new_sessions: 2,
+      cost_usd: 1.75,
+      subagent_input_tokens: 2400,
+      subagent_cached_input_tokens: 200,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 130,
+      subagent_cost_usd: 1.125,
+      total_cost_usd: 2.875,
+    });
+    expect(result.subagents_by_agent_model).toEqual([
+      {
+        agent_id: "agent-a",
+        model: "claude-opus-5-5",
+        sessions: 1,
+        input_tokens: 1500,
+        cached_input_tokens: 200,
+        cache_write_tokens: 0,
+        output_tokens: 60,
+        cost_usd: 0.5,
+      },
+      {
+        agent_id: "agent-a",
+        model: "claude-sonnet-5-5",
+        sessions: 1,
+        input_tokens: 800,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 60,
+        cost_usd: 0.5,
+      },
+      {
+        agent_id: "agent-a",
+        model: "claude-haiku-5-5",
+        sessions: 1,
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 10,
+        cost_usd: 0.125,
+      },
+    ]);
+    expect(result.top_sessions.map((session) => session.session_id)).toEqual(["s-sub", "s-main"]);
+    expect(result.top_sessions[0]).toMatchObject({
+      session_id: "s-sub",
+      subagent_input_tokens: 2400,
+      subagent_output_tokens: 130,
+      subagent_cost_usd: 1.125,
+      total_cost_usd: 2.375,
+    });
+    expect(result.top_sessions[1]).not.toHaveProperty("subagent_cost_usd");
+    expect(result.top_sessions[1]).not.toHaveProperty("total_cost_usd");
+  });
+
+  it("omits subagent fields when no session carries subagent usage", () => {
+    const result = summarizeTurnUsage([row({ session_id: "plain", cost_usd: 0.5 })], SINCE, UNTIL);
+
+    expect(result.totals).not.toHaveProperty("subagent_cost_usd");
+    expect(result.totals).not.toHaveProperty("total_cost_usd");
+    expect(result).not.toHaveProperty("subagents_by_agent_model");
+    expect(result.top_sessions[0]).not.toHaveProperty("subagent_cost_usd");
+  });
+
   it("omits undefined measures while retaining a real zero and handles even medians", () => {
     const result = summarizeTurnUsage([
       row({ session_id: "a", agent_id: "agent", model: "model", input_tokens: 0, cost_usd: 0, injection_chars: 10 }),

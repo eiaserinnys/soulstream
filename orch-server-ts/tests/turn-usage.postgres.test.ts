@@ -236,6 +236,374 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
     });
   });
 
+  it("diffs cumulative model_usage into per-turn subagent tokens and prefers the complete payload over a stale result", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-sub', '하위 에이전트 세션', 'node-g', 'agent-g', 'claude-preset', ${at("01:50:00.000")})`;
+    await put("s-sub", 1, "user_message", at("01:50:00.000"), { text: "turn one" });
+    await put("s-sub", 2, "complete", at("01:50:01.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 800, cache_read_input_tokens: 200, output_tokens: 100 },
+      turn_cost_usd: 1.0,
+      model_usage: {
+        "claude-opus-5-5[1m]": {
+          inputTokens: 2000,
+          cacheReadInputTokens: 400,
+          cacheCreationInputTokens: 0,
+          outputTokens: 160,
+          costUSD: 1.5,
+          canonicalModel: "claude-opus-5-5",
+        },
+        "claude-sonnet-5-5": {
+          inputTokens: 500,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 40,
+          costUSD: 0.25,
+        },
+      },
+    });
+    await put("s-sub", 3, "user_message", at("01:51:00.000"), { text: "turn two" });
+    await put("s-sub", 4, "result", at("01:51:01.000"), {
+      success: true,
+      model_usage: {
+        "claude-sonnet-5-5": { inputTokens: 9999, outputTokens: 9999, costUSD: 9 },
+      },
+    });
+    await put("s-sub", 5, "complete", at("01:51:02.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 250, cache_read_input_tokens: 50, output_tokens: 50 },
+      turn_cost_usd: 0.25,
+      model_usage: {
+        "claude-opus-5-5[1m]": {
+          inputTokens: 2400,
+          cacheReadInputTokens: 450,
+          cacheCreationInputTokens: 0,
+          outputTokens: 190,
+          costUSD: 1.75,
+          canonicalModel: "claude-opus-5-5",
+        },
+        "claude-sonnet-5-5": {
+          inputTokens: 800,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 60,
+          costUSD: 0.5,
+        },
+        "claude-haiku-5-5": {
+          inputTokens: 100,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 10,
+          costUSD: 0.125,
+        },
+      },
+    });
+
+    const { rows } = await listTurnUsage({
+      sessionId: "s-sub",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(rows.map((row) => row.event_id)).toEqual([2, 5]);
+    expect(rows[0]).toMatchObject({
+      subagent_input_tokens: 1900,
+      subagent_cached_input_tokens: 200,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 100,
+      subagent_cost_usd: 0.75,
+    });
+    expect(rows[0]?.subagent_models).toEqual([
+      {
+        model: "claude-opus-5-5",
+        input_tokens: 1400,
+        cached_input_tokens: 200,
+        cache_write_tokens: 0,
+        output_tokens: 60,
+        cost_usd: 0.5,
+      },
+      {
+        model: "claude-sonnet-5-5",
+        input_tokens: 500,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 40,
+        cost_usd: 0.25,
+      },
+    ]);
+    expect(rows[1]).toMatchObject({
+      subagent_input_tokens: 550,
+      subagent_cached_input_tokens: 0,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 30,
+      subagent_cost_usd: 0.375,
+    });
+    expect(rows[1]?.subagent_models).toEqual([
+      {
+        model: "claude-sonnet-5-5",
+        input_tokens: 300,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 20,
+        cost_usd: 0.25,
+      },
+      {
+        model: "claude-haiku-5-5",
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 10,
+        cost_usd: 0.125,
+      },
+      {
+        model: "claude-opus-5-5",
+        input_tokens: 150,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 0,
+        cost_usd: 0,
+      },
+    ]);
+  });
+
+  it("anchors the since boundary on the latest usage turn before the period", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-anchor', '기준점 세션', 'node-h', 'agent-h', 'claude-preset', ${at("00:30:00.000")})`;
+    await put("s-anchor", 1, "user_message", at("00:30:00.000"), { text: "before period" });
+    await put("s-anchor", 2, "complete", at("00:30:01.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 900, cache_read_input_tokens: 100, output_tokens: 100 },
+      turn_cost_usd: 0.9,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 1000,
+          cacheReadInputTokens: 100,
+          cacheCreationInputTokens: 0,
+          outputTokens: 100,
+          costUSD: 1.0,
+        },
+      },
+    });
+    await put("s-anchor", 3, "user_message", at("01:00:30.000"), { text: "inside period" });
+    await put("s-anchor", 4, "complete", at("01:00:31.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 350, cache_read_input_tokens: 50, output_tokens: 40 },
+      turn_cost_usd: 0.125,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 1600,
+          cacheReadInputTokens: 150,
+          cacheCreationInputTokens: 0,
+          outputTokens: 150,
+          costUSD: 1.25,
+        },
+      },
+    });
+
+    const { rows } = await listTurnUsage({
+      sessionId: "s-anchor",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(rows.map((row) => row.event_id)).toEqual([4]);
+    expect(rows[0]).toMatchObject({
+      subagent_input_tokens: 250,
+      subagent_cached_input_tokens: 0,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.125,
+    });
+    expect(rows[0]?.subagent_models).toEqual([
+      {
+        model: "claude-opus-5-5",
+        input_tokens: 250,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 10,
+        cost_usd: 0.125,
+      },
+    ]);
+
+    const summary = await summarizeTurnUsage({ since: SINCE, until: UNTIL });
+    const anchorRow = summary.find((row) => row.session_id === "s-anchor");
+    expect(anchorRow).toMatchObject({
+      subagent_input_tokens: 250,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.125,
+    });
+  });
+
+  it("resets the diff base when the CLI process restarts and cumulative usage drops", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-restart', '재시작 세션', 'node-i', 'agent-i', 'claude-preset', ${at("01:10:00.000")})`;
+    await put("s-restart", 1, "user_message", at("01:10:00.000"), { text: "first process" });
+    await put("s-restart", 2, "complete", at("01:10:01.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 800, output_tokens: 90 },
+      turn_cost_usd: 0.9,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 800,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 100,
+          costUSD: 1.0,
+        },
+      },
+    });
+    await put("s-restart", 3, "user_message", at("01:20:00.000"), { text: "second process" });
+    await put("s-restart", 4, "complete", at("01:20:01.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 250, output_tokens: 15 },
+      turn_cost_usd: 0.25,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 300,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 20,
+          costUSD: 0.3,
+        },
+      },
+    });
+
+    const { rows } = await listTurnUsage({
+      sessionId: "s-restart",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(rows.map((row) => row.event_id)).toEqual([2, 4]);
+    expect(rows[0]).toMatchObject({
+      subagent_input_tokens: 0,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.1,
+    });
+    expect(rows[1]).toMatchObject({
+      subagent_input_tokens: 50,
+      subagent_output_tokens: 5,
+      subagent_cost_usd: 0.05,
+    });
+  });
+
+  it("reads model_usage from the paired success result when the complete payload has none", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-legacy', '과거 형식 세션', 'node-j', 'agent-j', 'claude-preset', ${at("01:30:00.000")})`;
+    await put("s-legacy", 1, "user_message", at("01:30:00.000"), { text: "turn one" });
+    await put("s-legacy", 2, "result", at("01:30:01.000"), {
+      success: true,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 2000,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 160,
+          costUSD: 1.5,
+        },
+      },
+    });
+    await put("s-legacy", 3, "complete", at("01:30:02.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 1000, output_tokens: 100 },
+      turn_cost_usd: 1.0,
+    });
+    await put("s-legacy", 4, "user_message", at("01:31:00.000"), { text: "turn two" });
+    await put("s-legacy", 5, "result", at("01:31:01.000"), {
+      success: true,
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 2600,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 220,
+          costUSD: 1.75,
+        },
+      },
+    });
+    await put("s-legacy", 6, "complete", at("01:31:02.000"), {
+      model: "claude-opus-5-5",
+      usage: { input_tokens: 250, cache_read_input_tokens: 50, output_tokens: 50 },
+      turn_cost_usd: 0.125,
+    });
+
+    const { rows } = await listTurnUsage({
+      sessionId: "s-legacy",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(rows.map((row) => row.event_id)).toEqual([3, 6]);
+    expect(rows[0]).toMatchObject({
+      subagent_input_tokens: 1000,
+      subagent_output_tokens: 60,
+      subagent_cost_usd: 0.5,
+    });
+    expect(rows[1]).toMatchObject({
+      subagent_input_tokens: 300,
+      subagent_output_tokens: 10,
+      subagent_cost_usd: 0.125,
+    });
+  });
+
+  it("sums subagent usage per session in the summary without counting anchor turns", async () => {
+    const rows = await summarizeTurnUsage({ since: SINCE, until: UNTIL });
+
+    const subRow = rows.find((row) => row.session_id === "s-sub");
+    expect(subRow).toMatchObject({
+      subagent_input_tokens: 2450,
+      subagent_cached_input_tokens: 200,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 130,
+      subagent_cost_usd: 1.125,
+    });
+    expect(subRow?.subagent_models).toEqual([
+      {
+        model: "claude-opus-5-5",
+        input_tokens: 1550,
+        cached_input_tokens: 200,
+        cache_write_tokens: 0,
+        output_tokens: 60,
+        cost_usd: 0.5,
+      },
+      {
+        model: "claude-sonnet-5-5",
+        input_tokens: 800,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 60,
+        cost_usd: 0.5,
+      },
+      {
+        model: "claude-haiku-5-5",
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 10,
+        cost_usd: 0.125,
+      },
+    ]);
+    expect(rows.find((row) => row.session_id === "s-legacy")).toMatchObject({
+      subagent_input_tokens: 1300,
+      subagent_output_tokens: 70,
+      subagent_cost_usd: 0.625,
+    });
+    expect(rows.find((row) => row.session_id === "s-restart")).toMatchObject({
+      subagent_input_tokens: 50,
+      subagent_output_tokens: 15,
+      subagent_cost_usd: 0.15,
+    });
+    expect(rows.find((row) => row.session_id === "s-cl")?.subagent_input_tokens).toBeUndefined();
+  });
+
   it("omits Claude input totals when usage contains no numeric input fields", async () => {
     await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
       VALUES ('s-missing-input', '입력 없음', 'node-f', 'agent-f', 'claude-preset', ${at("01:40:00.000")})`;

@@ -113,6 +113,73 @@ describe("list_turn_usage MCP response", () => {
     });
   });
 
+  it("serializes subagent usage fields on turns that carry them", async () => {
+    const listTurnUsage = vi.fn(async () => ({
+      total: 1,
+      rows: [
+        {
+          session_id: "s1",
+          event_id: 11,
+          at: new Date("2026-10-05T01:30:00.000Z"),
+          kind: "complete",
+          model: "claude-opus-5-5",
+          input_tokens: 1300,
+          cached_input_tokens: 250,
+          output_tokens: 150,
+          cost_usd: 1.25,
+          subagent_input_tokens: 2400,
+          subagent_cached_input_tokens: 200,
+          subagent_cache_write_tokens: 0,
+          subagent_output_tokens: 130,
+          subagent_cost_usd: 1.125,
+          subagent_models: [
+            {
+              model: "claude-sonnet-5-5",
+              input_tokens: 800,
+              cached_input_tokens: 0,
+              cache_write_tokens: 0,
+              output_tokens: 60,
+              cost_usd: 0.5,
+            },
+          ],
+          name: null,
+          agent_id: null,
+          node_id: null,
+          model_preset: null,
+          session_created_at: null,
+        },
+      ],
+    }));
+    const result = await executeMcpTool(options({ listTurnUsage }), "list_turn_usage" as never, {
+      session_id: "s1",
+    }, context) as CallToolResult;
+
+    expect(result.structuredContent).toMatchObject({
+      turns: [
+        {
+          session_id: "s1",
+          event_id: 11,
+          kind: "complete",
+          subagent_input_tokens: 2400,
+          subagent_cached_input_tokens: 200,
+          subagent_cache_write_tokens: 0,
+          subagent_output_tokens: 130,
+          subagent_cost_usd: 1.125,
+          subagent_models: [
+            {
+              model: "claude-sonnet-5-5",
+              input_tokens: 800,
+              cached_input_tokens: 0,
+              cache_write_tokens: 0,
+              output_tokens: 60,
+              cost_usd: 0.5,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("allows a full-session query without since and rejects an unbounded period query", async () => {
     const listTurnUsage = vi.fn(async () => ({ rows: [], total: 0 }));
     const opts = options({ listTurnUsage });
@@ -205,5 +272,94 @@ describe("summarize_turn_usage MCP response", () => {
     expect(invalid.isError).toBe(true);
     expect(JSON.stringify(invalid.content)).toContain("31일");
     expect(summarizeTurnUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes subagent totals, model groups, and combined costs", async () => {
+    const summarizeTurnUsage = vi.fn(async () => [{
+      session_id: "session-1",
+      turns: 2,
+      turns_without_usage: 0,
+      input_tokens: 1300,
+      cached_input_tokens: 250,
+      output_tokens: 150,
+      cost_usd: 1.25,
+      model: "claude-opus-5-5",
+      first_call_input_tokens: 10,
+      display_name: "세션 1",
+      agent_id: "agent-1",
+      node_id: "node-1",
+      created_at: new Date("2026-10-05T01:00:00.000Z"),
+      injection_chars: 150,
+      subagent_input_tokens: 2400,
+      subagent_cached_input_tokens: 200,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 130,
+      subagent_cost_usd: 1.125,
+      subagent_models: [
+        {
+          model: "claude-opus-5-5",
+          input_tokens: 1500,
+          cached_input_tokens: 200,
+          cache_write_tokens: 0,
+          output_tokens: 60,
+          cost_usd: 0.5,
+        },
+        {
+          model: "claude-sonnet-5-5",
+          input_tokens: 800,
+          cached_input_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 60,
+          cost_usd: 0.5,
+        },
+      ],
+    }]);
+    const opts = options({ summarizeTurnUsage });
+    const result = await executeMcpTool(opts, "summarize_turn_usage" as never, {
+      since: "2026-10-05T10:00:00+09:00",
+      until: "2026-10-05T11:00:00+09:00",
+    }, context) as CallToolResult;
+
+    expect(result.structuredContent).toMatchObject({
+      totals: {
+        sessions: 1,
+        cost_usd: 1.25,
+        subagent_input_tokens: 2400,
+        subagent_cached_input_tokens: 200,
+        subagent_cache_write_tokens: 0,
+        subagent_output_tokens: 130,
+        subagent_cost_usd: 1.125,
+        total_cost_usd: 2.375,
+      },
+      subagents_by_agent_model: [
+        {
+          agent_id: "agent-1",
+          model: "claude-opus-5-5",
+          sessions: 1,
+          input_tokens: 1500,
+          cached_input_tokens: 200,
+          cache_write_tokens: 0,
+          output_tokens: 60,
+          cost_usd: 0.5,
+        },
+        {
+          agent_id: "agent-1",
+          model: "claude-sonnet-5-5",
+          sessions: 1,
+          input_tokens: 800,
+          cached_input_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 60,
+          cost_usd: 0.5,
+        },
+      ],
+      top_sessions: [{
+        session_id: "session-1",
+        subagent_input_tokens: 2400,
+        subagent_output_tokens: 130,
+        subagent_cost_usd: 1.125,
+        total_cost_usd: 2.375,
+      }],
+    });
   });
 });

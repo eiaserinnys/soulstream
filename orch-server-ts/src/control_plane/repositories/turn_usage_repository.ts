@@ -1,4 +1,10 @@
 import type { SqlClient } from "../control_plane_types.js";
+import { readSubagentUsage, subagentRollupFields } from "./turn_usage_subagent_reader.js";
+import { normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
+import {
+  aggregateSubagentRollups,
+  type TurnSubagentModelUsage,
+} from "./turn_usage_subagents.js";
 
 export interface TurnUsageQuery {
   sessionId?: string;
@@ -34,6 +40,12 @@ export interface TurnUsageRow {
   node_id?: string;
   model_preset?: string;
   session_created_at?: Date;
+  subagent_input_tokens?: number;
+  subagent_cached_input_tokens?: number;
+  subagent_cache_write_tokens?: number;
+  subagent_output_tokens?: number;
+  subagent_cost_usd?: number;
+  subagent_models?: TurnSubagentModelUsage[];
 }
 
 export interface TurnUsageSessionRow {
@@ -52,6 +64,12 @@ export interface TurnUsageSessionRow {
   node_id?: string | null;
   created_at?: Date | string;
   injection_chars?: number;
+  subagent_input_tokens?: number;
+  subagent_cached_input_tokens?: number;
+  subagent_cache_write_tokens?: number;
+  subagent_output_tokens?: number;
+  subagent_cost_usd?: number;
+  subagent_models?: TurnSubagentModelUsage[];
 }
 
 type TurnUsageScope = {
@@ -73,6 +91,12 @@ type TurnUsageListSqlRow = Omit<TurnUsageRow,
   | "injection_chars"
   | "tool_calls"
   | "session_created_at"
+  | "subagent_input_tokens"
+  | "subagent_cached_input_tokens"
+  | "subagent_cache_write_tokens"
+  | "subagent_output_tokens"
+  | "subagent_cost_usd"
+  | "subagent_models"
 > & {
   event_id: string | number;
   at: Date;
@@ -99,6 +123,12 @@ type TurnUsageSummarySqlRow = Omit<TurnUsageSessionRow,
   | "cost_usd"
   | "first_call_input_tokens"
   | "injection_chars"
+  | "subagent_input_tokens"
+  | "subagent_cached_input_tokens"
+  | "subagent_cache_write_tokens"
+  | "subagent_output_tokens"
+  | "subagent_cost_usd"
+  | "subagent_models"
 > & {
   turns: string | number;
   turns_without_usage: string | number;
@@ -197,30 +227,38 @@ export async function listTurnUsage(
     total = asNumber(counts[0]?.total) ?? 0;
   }
 
+  const rows: TurnUsageRow[] = rawRows.map((row) => ({
+    session_id: row.session_id,
+    event_id: Number(row.event_id),
+    at: row.at,
+    kind: row.kind,
+    ...optionalString("model", row.model),
+    ...optionalNumber("input_tokens", row.input_tokens),
+    ...optionalNumber("cached_input_tokens", row.cached_input_tokens),
+    ...optionalNumber("cache_write_tokens", row.cache_write_tokens),
+    ...optionalNumber("output_tokens", row.output_tokens),
+    ...optionalNumber("cost_usd", row.cost_usd),
+    ...optionalNumber("first_call_input_tokens", row.first_call_input_tokens),
+    ...optionalNumber("first_call_cached_tokens", row.first_call_cached_tokens),
+    ...optionalNumber("injection_chars", row.injection_chars),
+    ...optionalString("ended", row.ended),
+    ...optionalNumber("tool_calls", row.tool_calls),
+    ...optionalString("name", row.name),
+    ...optionalString("agent_id", row.agent_id),
+    ...optionalString("node_id", row.node_id),
+    ...optionalString("model_preset", row.model_preset),
+    ...(row.session_created_at ? { session_created_at: row.session_created_at } : {}),
+  }));
+  const subagentUsage = await readSubagentUsage(sql, rows.map((row) => row.session_id), {
+    since: query.since,
+    until: query.until,
+  });
   return {
     total,
-    rows: rawRows.map((row) => ({
-      session_id: row.session_id,
-      event_id: Number(row.event_id),
-      at: row.at,
-      kind: row.kind,
-      ...optionalString("model", row.model),
-      ...optionalNumber("input_tokens", row.input_tokens),
-      ...optionalNumber("cached_input_tokens", row.cached_input_tokens),
-      ...optionalNumber("cache_write_tokens", row.cache_write_tokens),
-      ...optionalNumber("output_tokens", row.output_tokens),
-      ...optionalNumber("cost_usd", row.cost_usd),
-      ...optionalNumber("first_call_input_tokens", row.first_call_input_tokens),
-      ...optionalNumber("first_call_cached_tokens", row.first_call_cached_tokens),
-      ...optionalNumber("injection_chars", row.injection_chars),
-      ...optionalString("ended", row.ended),
-      ...optionalNumber("tool_calls", row.tool_calls),
-      ...optionalString("name", row.name),
-      ...optionalString("agent_id", row.agent_id),
-      ...optionalString("node_id", row.node_id),
-      ...optionalString("model_preset", row.model_preset),
-      ...(row.session_created_at ? { session_created_at: row.session_created_at } : {}),
-    })),
+    rows: rows.map((row) => {
+      const rollup = subagentUsage.get(row.session_id)?.rollups.get(row.event_id);
+      return rollup ? { ...row, ...subagentRollupFields(rollup) } : row;
+    }),
   };
 }
 
@@ -283,7 +321,7 @@ export async function summarizeTurnUsage(
     ORDER BY grouped.session_id
   `;
 
-  return rows.map((row) => ({
+  const mapped: TurnUsageSessionRow[] = rows.map((row) => ({
     session_id: row.session_id,
     turns: asNumber(row.turns) ?? 0,
     turns_without_usage: asNumber(row.turns_without_usage) ?? 0,
@@ -300,6 +338,20 @@ export async function summarizeTurnUsage(
     ...(row.created_at ? { created_at: row.created_at } : {}),
     ...optionalNumber("injection_chars", row.injection_chars),
   }));
+  const subagentUsage = await readSubagentUsage(sql, mapped.map((row) => row.session_id), {
+    since: query.since,
+    until: query.until,
+  });
+  return mapped.map((row) => {
+    const sessionUsage = subagentUsage.get(row.session_id);
+    if (!sessionUsage) return row;
+    const rollup = aggregateSubagentRollups(
+      [...sessionUsage.rollups]
+        .filter(([eventId]) => !sessionUsage.anchorEventIds.has(eventId))
+        .map(([, value]) => value),
+    );
+    return rollup ? { ...row, ...subagentRollupFields(rollup) } : row;
+  });
 }
 
 function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
@@ -402,34 +454,6 @@ function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
       FROM no_usage
     )
   `;
-}
-
-function normalizedInputTokens(sql: SqlClient) {
-  const codexValue = numberField(sql, "usage", "input_tokens");
-  const claudeFields = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"];
-  const hasInvalidValue = claudeFields.map((field) =>
-    sql`(usage ? ${field} AND jsonb_typeof(usage->${field}) <> 'number')`
-  );
-  const hasNumericValue = claudeFields.map((field) =>
-    sql`jsonb_typeof(usage->${field}) = 'number'`
-  );
-  const fieldValues = claudeFields.map((field) =>
-    sql`coalesce(${numberField(sql, "usage", field)}, 0)`
-  );
-  return sql`
-    CASE WHEN usage ? 'cached_input_tokens' THEN ${codexValue}
-      WHEN ${hasInvalidValue[0]} OR ${hasInvalidValue[1]} OR ${hasInvalidValue[2]} THEN NULL
-      WHEN ${hasNumericValue[0]} OR ${hasNumericValue[1]} OR ${hasNumericValue[2]}
-        THEN ${fieldValues[0]} + ${fieldValues[1]} + ${fieldValues[2]}
-      ELSE NULL
-    END
-  `;
-}
-
-function numberField(sql: SqlClient, object: "usage" | "first_call", field: string) {
-  const source = object === "usage" ? sql`usage` : sql`first_call`;
-  return sql`CASE WHEN jsonb_typeof(${source}->${field}) = 'number'
-    THEN (${source}->>${field})::numeric END`;
 }
 
 function asNumber(value: string | number | null | undefined): number | undefined {

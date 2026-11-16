@@ -1,11 +1,25 @@
 import type { TurnUsageSessionRow } from "../control_plane/repositories/turn_usage_repository.js";
+import type { TurnSubagentModelUsage } from "../control_plane/repositories/turn_usage_subagents.js";
 
 type SumKey =
   | "input_tokens"
   | "cached_input_tokens"
   | "cache_write_tokens"
   | "output_tokens"
-  | "cost_usd";
+  | "cost_usd"
+  | "subagent_input_tokens"
+  | "subagent_cached_input_tokens"
+  | "subagent_cache_write_tokens"
+  | "subagent_output_tokens"
+  | "subagent_cost_usd";
+
+const SUBAGENT_KEYS = [
+  "subagent_input_tokens",
+  "subagent_cached_input_tokens",
+  "subagent_cache_write_tokens",
+  "subagent_output_tokens",
+  "subagent_cost_usd",
+] as const;
 
 type GroupedUsage = {
   agent_id?: string;
@@ -38,6 +52,32 @@ type TopSession = {
   cost_usd?: number;
   injection_chars?: number;
   first_call_input_tokens?: number;
+  subagent_input_tokens?: number;
+  subagent_output_tokens?: number;
+  subagent_cost_usd?: number;
+  total_cost_usd?: number;
+};
+
+type SubagentModelGroup = {
+  agent_id?: string;
+  model: string;
+  sessions: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  cost_usd?: number;
+};
+
+type SubagentGroupAccumulator = {
+  agent_id?: string;
+  model: string;
+  sessions: Set<string>;
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  cost_usd?: number;
 };
 
 export function summarizeTurnUsage(
@@ -53,12 +93,19 @@ export function summarizeTurnUsage(
     return Number.isFinite(createdMs) && createdMs >= sinceMs && createdMs < untilMs;
   };
   const newRows = rows.filter(isNew);
+  const subagentRows = rows.filter(hasSubagentUsage);
+  const mainCost = sumMeasures(rows, ["cost_usd"]).cost_usd ?? 0;
+  const subagentCost = sumMeasures(subagentRows, ["subagent_cost_usd"]).subagent_cost_usd ?? 0;
   const totals = {
     sessions: rows.length,
     new_sessions: newRows.length,
     turns: rows.reduce((sum, row) => sum + row.turns, 0),
     turns_without_usage: rows.reduce((sum, row) => sum + row.turns_without_usage, 0),
     ...sumMeasures(rows, ["input_tokens", "cached_input_tokens", "cache_write_tokens", "output_tokens", "cost_usd"]),
+    ...(subagentRows.length > 0 ? {
+      ...sumMeasures(subagentRows, SUBAGENT_KEYS),
+      total_cost_usd: roundCost(mainCost + subagentCost),
+    } : {}),
   };
 
   const grouped = new Map<string, TurnUsageSessionRow[]>();
@@ -89,7 +136,7 @@ export function summarizeTurnUsage(
   }).sort((a, b) => (b.cost_usd ?? 0) - (a.cost_usd ?? 0));
 
   const top_sessions: TopSession[] = [...rows]
-    .sort((a, b) => (b.cost_usd ?? 0) - (a.cost_usd ?? 0) || a.session_id.localeCompare(b.session_id))
+    .sort((a, b) => combinedCost(b) - combinedCost(a) || a.session_id.localeCompare(b.session_id))
     .slice(0, 20)
     .map((row) => ({
       session_id: row.session_id,
@@ -104,9 +151,75 @@ export function summarizeTurnUsage(
       ...(isNew(row) && isNumber(row.first_call_input_tokens)
         ? { first_call_input_tokens: row.first_call_input_tokens }
         : {}),
+      ...(hasSubagentUsage(row) ? {
+        ...sumMeasures([row], ["subagent_input_tokens", "subagent_output_tokens", "subagent_cost_usd"]),
+        total_cost_usd: roundCost((row.cost_usd ?? 0) + (row.subagent_cost_usd ?? 0)),
+      } : {}),
     }));
 
-  return { totals, by_agent_model, top_sessions };
+  const subagents_by_agent_model = subagentModelGroups(rows);
+
+  return {
+    totals,
+    by_agent_model,
+    top_sessions,
+    ...(subagents_by_agent_model.length > 0 ? { subagents_by_agent_model } : {}),
+  };
+}
+
+function combinedCost(row: TurnUsageSessionRow): number {
+  return (row.cost_usd ?? 0) + (row.subagent_cost_usd ?? 0);
+}
+
+function hasSubagentUsage(row: TurnUsageSessionRow): boolean {
+  if ((row.subagent_models?.length ?? 0) > 0) return true;
+  return SUBAGENT_KEYS.some((key) => isNumber(row[key]));
+}
+
+function subagentModelGroups(rows: readonly TurnUsageSessionRow[]): SubagentModelGroup[] {
+  const groups = new Map<string, SubagentGroupAccumulator>();
+  for (const row of rows) {
+    for (const model of row.subagent_models ?? []) {
+      const key = JSON.stringify([row.agent_id ?? null, model.model]);
+      const group = groups.get(key) ?? {
+        ...(row.agent_id ? { agent_id: row.agent_id } : {}),
+        model: model.model,
+        sessions: new Set<string>(),
+        input_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        output_tokens: 0,
+      };
+      group.sessions.add(row.session_id);
+      addModelUsage(group, model);
+      groups.set(key, group);
+    }
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...(group.agent_id ? { agent_id: group.agent_id } : {}),
+      model: group.model,
+      sessions: group.sessions.size,
+      input_tokens: group.input_tokens,
+      cached_input_tokens: group.cached_input_tokens,
+      cache_write_tokens: group.cache_write_tokens,
+      output_tokens: group.output_tokens,
+      ...(group.cost_usd === undefined ? {} : { cost_usd: roundCost(group.cost_usd) }),
+    }))
+    .sort((a, b) =>
+      (b.cost_usd ?? 0) - (a.cost_usd ?? 0) ||
+      a.model.localeCompare(b.model) ||
+      (a.agent_id ?? "").localeCompare(b.agent_id ?? ""));
+}
+
+function addModelUsage(group: SubagentGroupAccumulator, model: TurnSubagentModelUsage): void {
+  group.input_tokens += model.input_tokens;
+  group.cached_input_tokens += model.cached_input_tokens;
+  group.cache_write_tokens += model.cache_write_tokens;
+  group.output_tokens += model.output_tokens;
+  if (model.cost_usd !== undefined) {
+    group.cost_usd = (group.cost_usd ?? 0) + model.cost_usd;
+  }
 }
 
 function sumMeasures<K extends SumKey>(rows: readonly TurnUsageSessionRow[], keys: readonly K[]) {
@@ -115,7 +228,7 @@ function sumMeasures<K extends SumKey>(rows: readonly TurnUsageSessionRow[], key
     const present = rows.flatMap((row) => isNumber(row[key]) ? [row[key] as number] : []);
     if (present.length === 0) continue;
     const sum = present.reduce((total, value) => total + value, 0);
-    result[key] = key === "cost_usd" ? roundCost(sum) : sum;
+    result[key] = key === "cost_usd" || key === "subagent_cost_usd" ? roundCost(sum) : sum;
   }
   return result;
 }
