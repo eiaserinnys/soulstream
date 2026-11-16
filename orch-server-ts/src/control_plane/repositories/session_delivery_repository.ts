@@ -34,6 +34,15 @@ import {
   type RegisterSessionDeliveryRequest,
 } from "./session_delivery_relation_repository.js";
 
+/**
+ * claim의 15초는 짧은 구간(claim 직후 beginDispatch)을 덮는 값이다. 발송 중
+ * (dispatching)에는 러너 해제 대기, execution drain, 중앙 running 전이 대기처럼
+ * 정상 상황에서도 15초를 넘길 수 있는 구간이 있어, 그동안 만료 sweep이 진행 중인
+ * 발송을 pending으로 되돌리면 뒤따르는 markQueued가 토큰 CAS를 잃는다. 발송
+ * 단계의 시한은 이 값으로 따로 잡는다.
+ */
+const DEFAULT_DISPATCH_LEASE_MS = 120_000;
+
 export class SessionDeliveryRepository {
   readonly notifications: SessionDeliveryNotificationRepository;
   readonly recovery: SessionDeliveryRecoveryRepository;
@@ -136,10 +145,16 @@ export class SessionDeliveryRepository {
   async beginDispatch(
     deliveryId: string,
     attemptToken?: string,
+    dispatchLeaseMs = DEFAULT_DISPATCH_LEASE_MS,
   ): Promise<SessionDeliveryRow | null> {
     const rows = await this.sql<SessionDeliveryRow[]>`
       UPDATE session_deliveries AS delivery
-      SET state = 'dispatching', dispatching_at = NOW(), updated_at = NOW()
+      SET
+        state = 'dispatching',
+        dispatching_at = NOW(),
+        attempt_expires_at = NOW()
+          + (${dispatchLeaseMs}::double precision * INTERVAL '1 millisecond'),
+        updated_at = NOW()
       WHERE delivery.delivery_id = ${deliveryId}
         AND delivery.state = 'claimed'
         AND (${attemptToken ?? null}::text IS NULL OR delivery.attempt_token = ${attemptToken ?? null})

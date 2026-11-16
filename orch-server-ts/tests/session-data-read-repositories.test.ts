@@ -1,3 +1,5 @@
+import { getEventListeners } from "node:events";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
@@ -358,6 +360,60 @@ describe("session-data read repositories", () => {
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(connection.discard).toHaveBeenCalled();
     expect(connection.close).not.toHaveBeenCalled();
+  });
+
+  it("cancels only the shared-pool event read query on request abort", async () => {
+    let rejectPending!: (error: Error) => void;
+    let resolveDispatched!: () => void;
+    const dispatched = new Promise<void>((resolve) => { resolveDispatched = resolve; });
+    const cancelError = Object.assign(
+      new Error("canceling statement due to user request"),
+      { code: "57014" },
+    );
+    const canceller = vi.fn(() => rejectPending(cancelError));
+    const pending = new Promise<readonly Record<string, unknown>[]>(
+      (_resolve, reject) => { rejectPending = reject; },
+    ) as Promise<readonly Record<string, unknown>[]> & {
+      cancel: () => void;
+      canceller: (query: unknown) => void;
+    };
+    pending.cancel = vi.fn();
+    pending.canceller = canceller;
+    const sql = vi.fn(() => {
+      resolveDispatched();
+      return pending;
+    }) as unknown as SqlClient;
+    const repository = new EventReadRepository(sql);
+    const controller = new AbortController();
+    const result = repository.readEvents(
+      "s1", 0, 10, undefined, undefined, undefined, undefined, controller.signal,
+    );
+    await dispatched;
+    controller.abort(new Error("caller disconnected"));
+
+    // 취소로 난 57014가 아니라 신호의 이유(취소 오류)로 끝난다.
+    await expect(result).rejects.toThrow("caller disconnected");
+    expect(canceller).toHaveBeenCalledTimes(1);
+    expect(sql).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the abort listener after a normal read and skips an already aborted query", async () => {
+    const { sql } = createSql(() => []);
+    const repository = new EventReadRepository(sql);
+    const controller = new AbortController();
+
+    await repository.readEvents(
+      "s1", 0, 10, undefined, undefined, undefined, undefined, controller.signal,
+    );
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+
+    const abortedSql = vi.fn() as unknown as SqlClient;
+    const abortedRepository = new EventReadRepository(abortedSql);
+    const abortedController = new AbortController();
+    abortedController.abort(new Error("already gone"));
+    await expect(abortedRepository.countEvents("s1", abortedController.signal))
+      .rejects.toThrow("already gone");
+    expect(abortedSql).not.toHaveBeenCalled();
   });
 });
 

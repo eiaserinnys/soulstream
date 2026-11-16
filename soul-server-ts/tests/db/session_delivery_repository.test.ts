@@ -162,8 +162,16 @@ describe("SessionDeliveryRepository", () => {
   });
 
   it("marks payload/relation identity conflicts uncertain instead of dispatching", async () => {
-    const conflicting = deliveryRow({ payload_hash: "other-hash" });
-    const uncertain = deliveryRow({ payload_hash: "other-hash", state: "uncertain" });
+    // 해시만 다른 재전송은 이제 같은 전달이다. 충돌은 본문이 실제로 다를 때다.
+    const conflicting = deliveryRow({
+      payload_hash: "other-hash",
+      payload: { text: "different" },
+    });
+    const uncertain = deliveryRow({
+      payload_hash: "other-hash",
+      payload: { text: "different" },
+      state: "uncertain",
+    });
     const { sql, calls } = createMockSql([[], [conflicting], [uncertain]]);
 
     const result = await new SessionDeliveryRepository(sql).register(registration);
@@ -175,6 +183,7 @@ describe("SessionDeliveryRepository", () => {
   it("preserves a superseded audit row when a conflicting retry arrives", async () => {
     const superseded = deliveryRow({
       payload_hash: "other-hash",
+      payload: { text: "different" },
       state: "superseded",
       superseded_terminal_revision: "42",
     });
@@ -254,6 +263,8 @@ describe("SessionDeliveryRepository", () => {
 
       const result = await new SessionDeliveryRepository(sql).register({
         ...registration,
+        payloadHash: "hash-new",
+        payload: { text: "new text" },
         reviveDeadLetter: true,
       });
 

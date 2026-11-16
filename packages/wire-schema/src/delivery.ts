@@ -70,6 +70,32 @@ export function hashDeliveryPayload(value: Record<string, unknown>): string {
     .digest("hex");
 }
 
+/**
+ * 같은 delivery_id로 다시 온 본문이 호출 시점에 파생되는
+ * `caller_info.agent_node`만 다른지 본다. 그 값은 요청 순간 노드 등록부에서
+ * 조회되므로(재시작 직후 ""였다가 노드가 붙으면 노드 id) 같은 전달의 재전송이
+ * 해시 충돌로 보이지 않아야 한다. 저장된 payload와 들어온 payload를
+ * canonicalize로 정규화한 뒤 이 필드 하나만 뺀 결과를 비교한다.
+ */
+export function deliveryPayloadsMatchIgnoringCallerAgentNode(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  return JSON.stringify(canonicalize(withoutCallerAgentNode(left)))
+    === JSON.stringify(canonicalize(withoutCallerAgentNode(right)));
+}
+
+function withoutCallerAgentNode(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const callerInfo = payload.caller_info;
+  if (!callerInfo || typeof callerInfo !== "object" || Array.isArray(callerInfo)) {
+    return payload;
+  }
+  const { agent_node: _agentNode, ...rest } = callerInfo as Record<string, unknown>;
+  return { ...payload, caller_info: rest };
+}
+
 function arrayOrNull(
   value: ReadonlyArray<string> | null | undefined,
 ): string[] | null {

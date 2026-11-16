@@ -5,6 +5,8 @@ import type {
   SessionDeliveryRow,
   SqlClient,
 } from "../control_plane_types.js";
+import { deliveryPayloadsMatchIgnoringCallerAgentNode } from
+  "@soulstream/wire-schema/delivery";
 import { asPostgresJsonValue } from "../repository_helpers.js";
 import { appendSessionDeliveryAttempt } from
   "./session_delivery_attempt_repository.js";
@@ -232,9 +234,15 @@ async function resolveRegistrationConflict(
   const conflict =
     existing.delivery_id !== params.deliveryId
     || existing.relation_key !== params.relationKey
-    || existing.payload_hash !== params.payloadHash
     || existing.intent !== params.intent
-    || existing.completion_id !== (params.completionId ?? null);
+    || existing.completion_id !== (params.completionId ?? null)
+    // 해시가 달라도 caller_info.agent_node만 다르면 같은 전달의 재전송이다.
+    // 그 값은 요청 순간 노드 등록부 조회 결과라 같은 요청이 다른 값을 갖는다.
+    || (existing.payload_hash !== params.payloadHash
+      && !deliveryPayloadsMatchIgnoringCallerAgentNode(
+        existing.payload,
+        params.payload,
+      ));
   if (!conflict) {
     return { row: existing, inserted: false, conflict: false };
   }

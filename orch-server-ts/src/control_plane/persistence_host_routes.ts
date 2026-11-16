@@ -187,22 +187,26 @@ function registerDomain(
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "retry delay must be a duration or absolute instant"));
       }
-      const isSearchOperation = domain === "session-data"
-        && ["event_search", "event_session_id_search", "digest_search", "history_search"]
-          .includes(request.params.operation);
-      const searchAbortController = isSearchOperation ? new AbortController() : undefined;
-      const onRequestAborted = () => searchAbortController?.abort();
+      const isCancellableOperation = domain === "session-data"
+        && [
+          "event_search", "event_session_id_search", "digest_search", "history_search",
+          // 노드가 5초에 HTTP를 끊어도 공유 풀 질의가 statement_timeout(30초)까지
+          // 남지 않도록 조회도 같은 신호로 취소한다.
+          "event_read_page", "event_count",
+        ].includes(request.params.operation);
+      const abortController = isCancellableOperation ? new AbortController() : undefined;
+      const onRequestAborted = () => abortController?.abort();
       const onResponseClosed = () => {
-        if (!reply.raw.writableFinished) searchAbortController?.abort();
+        if (!reply.raw.writableFinished) abortController?.abort();
       };
-      if (searchAbortController) {
+      if (abortController) {
         request.raw.once("aborted", onRequestAborted);
         reply.raw.once("close", onResponseClosed);
       }
       try {
         const repositories = await options.repositoryProvider();
-        const invokeArgs = searchAbortController
-          ? [...args, searchAbortController.signal]
+        const invokeArgs = abortController
+          ? withAbortSignal(request.params.operation, args, abortController.signal)
           : args;
         const result = await invoke(repositories, target, invokeArgs);
         return sendTimed(request, reply, timing, 200, () =>
@@ -221,7 +225,7 @@ function registerDomain(
             error instanceof Error ? error.message : "Persistence host operation failed",
           ));
       } finally {
-        if (searchAbortController) {
+        if (abortController) {
           request.raw.removeListener("aborted", onRequestAborted);
           reply.raw.removeListener("close", onResponseClosed);
         }
@@ -302,6 +306,22 @@ function readArgs(value: unknown, operation: string): unknown[] | null {
       : OPAQUE_ARGUMENT_KEYS;
     return camelCase(child, undefined, opaqueKeys);
   });
+}
+
+/**
+ * 저장소 메서드의 마지막 signal 자리에 중단 신호를 붙인다. event_read_page는
+ * 노드가 선택 인자를 생략해 보내므로(예: [sessionId, afterId, limit, eventTypes])
+ * 빠진 자리를 null로 채워 신호가 마지막 자리에 오게 한다.
+ */
+function withAbortSignal(
+  operation: string,
+  args: unknown[],
+  signal: AbortSignal,
+): unknown[] {
+  if (operation !== "event_read_page") return [...args, signal];
+  const padded = [...args];
+  while (padded.length < 7) padded.push(null);
+  return [...padded, signal];
 }
 
 function normalizeRetryDelay(operation: string, args: unknown[]): unknown[] | null {
