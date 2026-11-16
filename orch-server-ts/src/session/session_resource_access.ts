@@ -60,6 +60,17 @@ export type SessionResourceAccessProvider = {
   ) => Promise<void>;
 };
 
+/**
+ * The session folder check the session HTTP route handlers need. Route options
+ * accept this narrow surface so production can wrap the provider with a
+ * service-bearer bypass without changing the provider used elsewhere.
+ */
+export type SessionRequestAccessGuard = {
+  readonly requireSessionAccess: (
+    input: SessionResourceSessionAccessInput,
+  ) => Promise<void>;
+};
+
 export type CreateSessionResourceAccessProviderOptions = {
   readonly accessProvider: SessionAccessPolicyProvider;
   readonly repository: SessionResourceAccessRepository;
@@ -130,7 +141,7 @@ export function createSessionResourceAccessProvider(
  * calls it as the service caller.
  */
 export async function requireRequestSessionAccess(
-  accessProvider: SessionResourceAccessProvider | undefined,
+  accessProvider: SessionRequestAccessGuard | undefined,
   request: FastifyRequest,
   reply: FastifyReply,
   sessionId: string,

@@ -19,13 +19,13 @@ import {
 } from "./session_background_schedule_payloads.js";
 import {
   requireRequestSessionAccess,
-  type SessionResourceAccessProvider,
+  type SessionRequestAccessGuard,
 } from "./session_resource_access.js";
 
 export type SessionBackgroundScheduleRouteOptions =
   SessionBackgroundScheduleCommandDispatchOptions & {
     /** Session folder ACL for the HTTP handlers only. */
-    accessProvider?: SessionResourceAccessProvider;
+    accessProvider?: SessionRequestAccessGuard;
   };
 
 export const sessionBackgroundScheduleRouteAuthRequirements = {

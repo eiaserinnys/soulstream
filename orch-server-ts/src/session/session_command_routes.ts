@@ -29,7 +29,7 @@ import {
 } from "./session_command_router.js";
 import {
   requireRequestSessionAccess,
-  type SessionResourceAccessProvider,
+  type SessionRequestAccessGuard,
 } from "./session_resource_access.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import {
@@ -64,7 +64,7 @@ export type SessionCommandRouteOptions = {
   environment?: string;
   nodeCredentials: NodeCredentialResolver | null;
   /** Session folder ACL for the HTTP handlers only (not `POST /api/sessions`). */
-  accessProvider?: SessionResourceAccessProvider;
+  accessProvider?: SessionRequestAccessGuard;
 };
 
 export const sessionCommandRouteAuthRequirements = {

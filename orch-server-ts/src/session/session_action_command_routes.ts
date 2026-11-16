@@ -41,7 +41,7 @@ import {
 import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
 import {
   requireRequestSessionAccess,
-  type SessionResourceAccessProvider,
+  type SessionRequestAccessGuard,
 } from "./session_resource_access.js";
 
 export type SessionActionCallerInfoResolver = (
@@ -85,7 +85,7 @@ export type SessionActionCommandRouteOptions =
       Promise<{ handled: boolean; failure?: { status: number; body: unknown } } | undefined>;
     onHumanSessionInput?: (targetSessionId: string) => Promise<void>;
     /** Session folder ACL for the HTTP handlers only (not the shared MCP body). */
-    accessProvider?: SessionResourceAccessProvider;
+    accessProvider?: SessionRequestAccessGuard;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
