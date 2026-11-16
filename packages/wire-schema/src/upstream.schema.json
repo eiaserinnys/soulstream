@@ -2837,7 +2837,10 @@
       "description": "SSE: 세션 메타.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "session" } }
+      "properties": {
+        "type": { "const": "session" },
+        "resume_lost_from": { "type": "string", "minLength": 1, "description": "Requested backend session ID that could not be resumed." }
+      }
     },
     "SSEEventInterventionSent": {
       "type": "object",
