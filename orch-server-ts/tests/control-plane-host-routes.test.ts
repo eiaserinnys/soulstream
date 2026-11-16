@@ -14,6 +14,8 @@ import type { PersistenceHostRepositories } from "../src/control_plane/persisten
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionDeliveryNotificationRepository } from
   "../src/control_plane/repositories/session_delivery_notification_repository.js";
+import { ClaudeBackgroundExecutionOwnerConflictError } from
+  "../src/control_plane/repositories/claude_background_task_generation_repository.js";
 
 const token = "service-token";
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -511,6 +513,56 @@ describe("control-plane host routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([]);
     expect(activeForSession).toHaveBeenCalledWith("node-1", "session-1", 1_000);
+  });
+
+  it("answers a Claude background execution owner conflict with 409 and its domain code", async () => {
+    const conflict = new ClaudeBackgroundExecutionOwnerConflictError(
+      "Claude background execution owner conflict: generation-1 stored=registration-a/command-a requested=registration-b/command-b",
+    );
+    const terminalizeGeneration = vi.fn(async () => { throw conflict; });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
+      authBearerToken: token,
+      repositoryProvider: async () => ({
+        claudeBackgroundTasks: { terminalizeGeneration },
+      }) as unknown as PersistenceHostRepositories,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/claude-runtime/host/terminalize_background_generation",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        args: [{
+          source_node: "node-1",
+          session_id: "session-1",
+          sdk_session_id: "sdk-session-1",
+          task_id: "task-1",
+          initiating_tool_use_id: "toolu-1",
+          generation_key: "generation-1",
+          relation_key: "relation-1",
+          completion_id: "completion-1",
+          runner_registration_id: "registration-b",
+          execution_command_id: "command-b",
+          status: "completed",
+          close_reason: "sdk_completed",
+          terminal_revision: "1",
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      detail: {
+        error: {
+          code: "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT",
+          message: conflict.message,
+        },
+      },
+    });
+    expect(terminalizeGeneration).toHaveBeenCalledOnce();
   });
 
   it("routes canonical generation resolution with all four lookup dimensions", async () => {

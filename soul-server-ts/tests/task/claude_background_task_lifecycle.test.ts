@@ -9,8 +9,10 @@ import { readClaudeBackgroundDeliveryMetadata } from
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
 import { ClaudeBackgroundGenerationHostClient } from
   "../../src/control_plane/claude_background_generation_host_client.js";
-import { PersistenceHostTransport } from
-  "../../src/control_plane/persistence_host_transport.js";
+import {
+  PersistenceHostRequestError,
+  PersistenceHostTransport,
+} from "../../src/control_plane/persistence_host_transport.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 
@@ -156,6 +158,89 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     }));
   });
 
+  it("leaves the turn live when terminalize is rejected by an execution owner conflict", async () => {
+    const conflict = new PersistenceHostRequestError(
+      "claude-runtime",
+      "terminalize_background_generation",
+      "claude-runtime host terminalize_background_generation failed: Claude background execution owner conflict: generation-background-agent stored=registration-a/command-a requested=registration-b/command-b",
+      409,
+      { code: "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT" },
+    );
+    const terminalizeGeneration = vi.fn().mockRejectedValue(conflict);
+    const error = vi.fn();
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration: vi.fn(), terminalizeGeneration } as never,
+      sourceNode: "node-test",
+      logger: { warn: vi.fn(), error },
+      now: () => new Date("2026-07-27T00:00:00.000Z"),
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_notification",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      status: "completed",
+      summary: "detached work done",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event, "runner:observe:terminal", {
+      registrationId: "registration-b",
+      executionCommandId: "command-b",
+    })).resolves.toBe(false);
+
+    expect(terminalizeGeneration).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]?.[1]).toBe(
+      "Claude background generation terminalize rejected by owner conflict; leaving the turn live",
+    );
+    expect(error.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "caller-session",
+      runnerRegistrationId: "registration-b",
+      executionCommandId: "command-b",
+      initiatingToolUseId: "toolu-background-agent",
+      taskId: "background-agent",
+    });
+    expect((error.mock.calls[0]?.[0] as { err?: unknown }).err).toBe(conflict);
+    expect(readClaudeBackgroundDeliveryMetadata(event)).toBeUndefined();
+  });
+
+  it.each([
+    ["a 500 host failure", new PersistenceHostRequestError(
+      "claude-runtime", "terminalize_background_generation", "host failed", 500,
+    )],
+    ["a 409 with another code", new PersistenceHostRequestError(
+      "claude-runtime", "terminalize_background_generation", "other conflict", 409,
+      { code: "OTHER_CODE" },
+    )],
+  ])("still throws %s from the terminal path", async (_label, failure) => {
+    const terminalizeGeneration = vi.fn().mockRejectedValue(failure);
+    const error = vi.fn();
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration: vi.fn(), terminalizeGeneration } as never,
+      sourceNode: "node-test",
+      logger: { warn: vi.fn(), error },
+      now: () => new Date("2026-07-27T00:00:00.000Z"),
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_notification",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      status: "completed",
+      summary: "detached work done",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event, "runner:observe:terminal", {
+      registrationId: "registration-b",
+      executionCommandId: "command-b",
+    })).rejects.toBe(failure);
+
+    expect(terminalizeGeneration).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("logs one failed observation and leaves the turn live", async () => {
     const observeGeneration = vi.fn()
       .mockRejectedValue(new Error("502 Bad Gateway"));
@@ -163,7 +248,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: { observeGeneration } as never,
       sourceNode: "node-test",
-      logger: { warn },
+      logger: { warn, error: vi.fn() },
     });
     const event: ClaudeClientEvent = {
       type: "claude_runtime_task_progress",
@@ -187,7 +272,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: { observeGeneration } as never,
       sourceNode: "node-test",
-      logger: { warn },
+      logger: { warn, error: vi.fn() },
     });
     const event: ClaudeClientEvent = {
       type: "claude_runtime_task_progress",
@@ -229,7 +314,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       }),
     );
     const transportLogger = { warn: vi.fn(), info: vi.fn() };
-    const lifecycleLogger = { warn: vi.fn() };
+    const lifecycleLogger = { warn: vi.fn(), error: vi.fn() };
     const hostClient = new ClaudeBackgroundGenerationHostClient(
       new PersistenceHostTransport({
         orch: { baseUrl: "http://orch.test", headers: {} },

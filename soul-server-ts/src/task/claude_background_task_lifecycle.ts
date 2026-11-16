@@ -18,6 +18,8 @@ import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
+import { PersistenceHostRequestError } from
+  "../control_plane/persistence_host_transport.js";
 import type { ExecutionRegistration } from "./execution_registration.js";
 
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
@@ -30,10 +32,13 @@ import {
 } from "./claude_runtime_task_followup_prompt.js";
 import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from "./claude_runtime_task_followup.js";
 
+/** Wire code the central host route returns for a rejected execution owner. */
+const EXECUTION_OWNER_CONFLICT_CODE = "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT";
+
 interface ClaudeBackgroundTaskLifecycleDeps {
   repository: ClaudeRuntimeHostClient;
   sourceNode: string;
-  logger?: Pick<Logger, "warn">;
+  logger?: Pick<Logger, "warn" | "error">;
   now?: () => Date;
 }
 
@@ -129,29 +134,54 @@ export class ClaudeBackgroundTaskLifecycle {
       error: parsed.error,
       createdAt: observedAt,
     });
-    const result = await this.deps.repository.terminalizeGeneration({
-      ...(idempotencyKey ? { idempotencyKey } : {}),
-      sourceNode: this.deps.sourceNode,
-      sessionId,
-      taskId: parsed.taskId,
-      sdkSessionId: parsed.sdkSessionId,
-      initiatingToolUseId,
-      ...identity,
-      ...(execution
-        ? {
-          runnerRegistrationId: execution.registrationId,
-          executionCommandId: execution.executionCommandId,
-        }
-        : {}),
-      status: parsed.terminalStatus,
-      closeReason: parsed.closeReason ?? `sdk_${parsed.terminalStatus}`,
-      terminalRevision,
-      description: parsed.description,
-      summary: parsed.summary,
-      outputFile: parsed.outputFile,
-      observedAt,
-      delivery,
-    });
+    let result: Awaited<ReturnType<ClaudeRuntimeHostClient["terminalizeGeneration"]>>;
+    try {
+      result = await this.deps.repository.terminalizeGeneration({
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+        sourceNode: this.deps.sourceNode,
+        sessionId,
+        taskId: parsed.taskId,
+        sdkSessionId: parsed.sdkSessionId,
+        initiatingToolUseId,
+        ...identity,
+        ...(execution
+          ? {
+            runnerRegistrationId: execution.registrationId,
+            executionCommandId: execution.executionCommandId,
+          }
+          : {}),
+        status: parsed.terminalStatus,
+        closeReason: parsed.closeReason ?? `sdk_${parsed.terminalStatus}`,
+        terminalRevision,
+        description: parsed.description,
+        summary: parsed.summary,
+        outputFile: parsed.outputFile,
+        observedAt,
+        delivery,
+      });
+    } catch (err) {
+      if (!isExecutionOwnerConflict(err)) throw err;
+      // The row stays non-terminal either way; refusing the terminal write must
+      // not take the session down with it. Restart recovery terminalizes it.
+      this.deps.logger?.error(
+        {
+          err,
+          sessionId,
+          taskId: parsed.taskId,
+          sdkSessionId: parsed.sdkSessionId,
+          initiatingToolUseId,
+          generationKey: identity.generationKey,
+          ...(execution
+            ? {
+              runnerRegistrationId: execution.registrationId,
+              executionCommandId: execution.executionCommandId,
+            }
+            : {}),
+        },
+        "Claude background generation terminalize rejected by owner conflict; leaving the turn live",
+      );
+      return false;
+    }
     if (!result.accepted) return false;
     attachClaudeBackgroundDeliveryMetadata(
       event,
@@ -394,6 +424,12 @@ function deliveryMetadata(
     storedPayload: row.payload,
     storedPayloadHash: row.payload_hash,
   };
+}
+
+function isExecutionOwnerConflict(error: unknown): boolean {
+  return error instanceof PersistenceHostRequestError
+    && error.status === 409
+    && error.code === EXECUTION_OWNER_CONFLICT_CODE;
 }
 
 function asTerminalStatus(value: unknown): ClaudeBackgroundTerminalStatus | undefined {
