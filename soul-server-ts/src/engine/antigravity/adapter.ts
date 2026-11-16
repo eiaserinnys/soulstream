@@ -113,6 +113,7 @@ export class AntigravityEngineAdapter implements EnginePort {
       Boolean(params.resumeSessionId),
       antigravityGatewayServerName(this.options.agentId),
       this.options.getModelCatalog,
+      params.resumeSessionId,
     );
     let agentSelection: { name: string } | undefined;
     let removeDefinitions: (() => Promise<void>) | undefined;

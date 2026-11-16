@@ -84,6 +84,7 @@ export class AntigravityEventMapper {
     private readonly resuming = false,
     private readonly gatewayServerName?: string,
     private readonly getModelCatalog?: () => ModelCatalogConfig,
+    private readonly resumeSessionId?: string,
   ) {}
 
   accept(raw: AntigravityEvent): SSEEventPayload[] {
@@ -91,7 +92,9 @@ export class AntigravityEventMapper {
     if (raw.event === "init" && raw.conversation_id !== undefined) {
       this.nativeSessionId = raw.conversation_id;
       this.model = raw.init?.model;
-      return [{ type: "session", session_id: raw.conversation_id, ...(this.model ? { model: this.model } : {}), timestamp }];
+      return [{ type: "session", session_id: raw.conversation_id,
+        ...(this.resumeSessionId && this.resumeSessionId !== raw.conversation_id ? { resume_lost_from: this.resumeSessionId } : {}),
+        ...(this.model ? { model: this.model } : {}), timestamp }];
     }
     if (raw.event === "result") { this.result = raw.result; return []; }
     const step = raw.step_update;

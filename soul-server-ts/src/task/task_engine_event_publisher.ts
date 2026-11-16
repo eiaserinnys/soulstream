@@ -247,7 +247,15 @@ export class TaskEngineEventPublisher {
       };
     }
 
-    if (task.codexThreadId) return undefined;
+    if (task.codexThreadId) {
+      const previousId = task.codexThreadId;
+      if (event.type === "session" && event.resume_lost_from === previousId && sid !== previousId) {
+        task.codexThreadId = sid;
+        this.deps.logger.warn({ sessionId: task.agentSessionId }, "Backend conversation could not be resumed; continuing in a new conversation without its previous context");
+        return { kind: "rotate_backend_session_id", expected_backend_session_id: previousId, backend_session_id: sid };
+      }
+      return undefined;
+    }
 
     task.codexThreadId = sid;
     return { kind: "set_backend_session_id", backend_session_id: sid };
