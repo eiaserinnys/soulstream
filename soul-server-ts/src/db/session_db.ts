@@ -13,6 +13,7 @@ import type {
   SessionEventSearchRow,
   SessionHistorySearchParams,
   SessionHistorySearchResult,
+  SessionReadOptions,
   SessionReadOrder,
   SessionResumeContext,
   SessionTurnExcerptResult,
@@ -125,8 +126,16 @@ export class SessionDB {
     return this.claudeBackgroundTaskHost;
   }
 
-  async getSession(sessionId: string): Promise<SessionRow | null> {
-    return await this.requireSessionDataHost().getSession(sessionId);
+  async getSession(
+    sessionId: string,
+    options?: SessionReadOptions,
+  ): Promise<SessionRow | null> {
+    // Keep forwarding a single argument unless the caller opted in, so every
+    // other getSession path reaches the host exactly as before (card #1350).
+    const host = this.requireSessionDataHost();
+    return options === undefined
+      ? await host.getSession(sessionId)
+      : await host.getSession(sessionId, options);
   }
 
   async getSessionStory(sessionId: string): Promise<SessionStoryView> {

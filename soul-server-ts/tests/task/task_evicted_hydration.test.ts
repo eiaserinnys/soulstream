@@ -1,8 +1,11 @@
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionRow } from "../../src/db/session_db.js";
-import { hydrateEvictedTaskFromSessionRow } from "../../src/task/task_evicted_hydration.js";
+import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
+import {
+  createEvictedTaskLoader,
+  hydrateEvictedTaskFromSessionRow,
+} from "../../src/task/task_evicted_hydration.js";
 
 function makeLogger() {
   return { warn: vi.fn() } as unknown as Logger;
@@ -550,5 +553,21 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.claudeBackendRolloverAttempts).toBe(1);
     expect(task?.claudeBackendRolloverCycleFrom).toBe("thread-1");
     expect(task?.pendingClaudeBackendRolloverFrom).toBeUndefined();
+  });
+});
+
+describe("createEvictedTaskLoader", () => {
+  it("reads the evicted session with the restart-window schedule", async () => {
+    const getSession = vi.fn(async () => makeRow());
+    const loader = createEvictedTaskLoader({
+      db: { getSession } as unknown as SessionDB,
+      logger: makeLogger(),
+      nodeId: "node-1",
+    });
+
+    const task = await loader("sess-hydrated");
+
+    expect(getSession).toHaveBeenCalledWith("sess-hydrated", { restartWindow: true });
+    expect(task?.hydratedFromDb).toBe(true);
   });
 });

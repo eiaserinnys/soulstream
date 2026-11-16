@@ -18,7 +18,13 @@ import {
   PersistenceHostRequestError,
   PersistenceHostTransport,
 } from "./persistence_host_clients.js";
-import { requestHostOperationWithRetry } from "./persistence_host_transport.js";
+import {
+  requestHostOperationWithRetry,
+  SESSION_START_RESTART_WINDOW,
+  type RestartWindowRecoveryEvent,
+  type RestartWindowRetryEvent,
+  type RestartWindowRetryPolicy,
+} from "./persistence_host_transport.js";
 import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
@@ -104,8 +110,18 @@ export interface SessionResumeContext {
   } | null;
 }
 
+/** Per-call switches for session reads. */
+export interface SessionReadOptions {
+  /**
+   * Apply the session-start restart-window schedule. Only reads whose failure
+   * refuses a session start pass this (card #1350); every other getSession
+   * keeps the turn-critical budget.
+   */
+  restartWindow?: boolean;
+}
+
 export interface SessionDataHost {
-  getSession(sessionId: string): Promise<SessionRow | null>;
+  getSession(sessionId: string, options?: SessionReadOptions): Promise<SessionRow | null>;
   listSessionsSummary(params: {
     search?: string | null;
     limit: number;
@@ -168,12 +184,26 @@ export function isSessionDataHostError(error: unknown): error is SessionDataHost
 
 export class SessionDataHostClient implements SessionDataHost {
   private readonly transport: PersistenceHostTransport;
+  private readonly logger: HostClientConfig["logger"];
 
   constructor(config: HostClientConfig) {
     this.transport = new PersistenceHostTransport(config);
+    this.logger = config.logger;
   }
 
-  getSession(sessionId: string): Promise<SessionRow | null> {
+  /**
+   * Lazy task hydration reads the evicted session row while starting a
+   * session; task_manager wraps a failure into IsolationPolicyUnavailableError
+   * and refuses the start. That call site opts into the restart-window
+   * schedule; every other getSession keeps the turn-critical budget.
+   */
+  getSession(sessionId: string, options?: SessionReadOptions): Promise<SessionRow | null> {
+    if (options?.restartWindow === true) {
+      return this.restartWindowRead("evicted_session", "get", [sessionId], {
+        timeoutMs: 1_500,
+        attempts: 2,
+      });
+    }
     return this.turnCritical("get", [sessionId]);
   }
 
@@ -296,7 +326,53 @@ export class SessionDataHostClient implements SessionDataHost {
    * budget refused a trusted top-level session (card #1111).
    */
   private securityGate<T>(operation: string, args: unknown[]): Promise<T> {
-    return this.request(operation, args, 5_000, 3, undefined, [250, 1_000]);
+    return this.restartWindowRead("caller_chain", operation, args, {
+      timeoutMs: 5_000,
+      attempts: 3,
+      retryDelaysMs: [250, 1_000],
+    });
+  }
+
+  /**
+   * A read a session start cannot do without (card #1350) outlasts an
+   * orchestrator restart: refused connections and 502/503/504 widen up to
+   * 25s, while timeouts keep the caller's plain attempt budget. `read` names
+   * the call site in both retry logs.
+   */
+  private restartWindowRead<T>(
+    read: string,
+    operation: string,
+    args: unknown[],
+    base: {
+      timeoutMs: number;
+      attempts: number;
+      retryDelaysMs?: readonly number[];
+    },
+  ): Promise<T> {
+    const restartWindow: RestartWindowRetryPolicy = {
+      ...SESSION_START_RESTART_WINDOW,
+      onRetry: (event: RestartWindowRetryEvent) => {
+        this.logger.warn(
+          { read, operation, ...event },
+          "session-start read retrying while the host restarts",
+        );
+      },
+      onRecovered: (event: RestartWindowRecoveryEvent) => {
+        this.logger.info(
+          { read, operation, ...event },
+          "session-start read recovered after a host restart",
+        );
+      },
+    };
+    return this.request<T>(
+      operation,
+      args,
+      base.timeoutMs,
+      base.attempts,
+      undefined,
+      base.retryDelaysMs ?? [],
+      restartWindow,
+    );
   }
 
   private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {
@@ -311,6 +387,7 @@ export class SessionDataHostClient implements SessionDataHost {
     attempts: number,
     signal?: AbortSignal,
     retryDelaysMs: readonly number[] = [],
+    restartWindow?: RestartWindowRetryPolicy,
   ): Promise<T> {
     try {
       return await requestHostOperationWithRetry<T>(
@@ -318,7 +395,7 @@ export class SessionDataHostClient implements SessionDataHost {
         "session-data",
         operation,
         args,
-        { timeoutMs, attempts, signal, retryDelaysMs },
+        { timeoutMs, attempts, signal, retryDelaysMs, restartWindow },
       );
     } catch (lastError) {
       const retryable = lastError instanceof PersistenceHostRequestError && lastError.retryable;

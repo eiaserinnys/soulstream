@@ -236,10 +236,13 @@ export class WorktreeService implements WorktreeExecutionResolver {
     actorSessionId: string;
     taskWorktreeId?: string;
   }): Promise<Array<Record<string, unknown>>> {
+    // The isolation gate refuses the session start when this read fails
+    // (SessionIsolationUnavailableError), so it outlasts an orchestrator
+    // restart. The MCP/general `list` path above keeps the plain retry.
     const records = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
-    });
+    }, { restartWindow: true });
     const related = records.filter((record) =>
       (!record.ownerFolderId && record.createdBySessionId === input.actorSessionId)
       || record.activeSessionId === input.actorSessionId

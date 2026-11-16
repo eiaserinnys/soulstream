@@ -985,7 +985,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         delivered: true,
       },
     ]);
-    expect(getSession).toHaveBeenCalledWith(sessionId);
+    expect(getSession).toHaveBeenCalledWith(sessionId, { restartWindow: true });
     expect(updateSession).not.toHaveBeenCalled();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       sessionId,
