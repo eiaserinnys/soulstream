@@ -115,6 +115,24 @@ it("opens a question document attachment in the shared viewer and blocks navigat
   await vi.waitFor(() => expect(viewer?.textContent).toContain("정리 작업 모음"));
 });
 
+it.each([
+  ["Ctrl", { ctrlKey: true }],
+  ["Command", { metaKey: true }],
+])("keeps the browser default for %s clicks on an attachment link", async (_name, modifier) => {
+  vi.stubGlobal("fetch", vi.fn(async () => rangeResponse(documentText)));
+  await act(() => root.render(<CardQuestionBody view={view([documentAttachment])} portraitUrl={null} />));
+
+  const link = container.querySelector<HTMLAnchorElement>('[data-evidence-type="link"] a')!;
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...modifier });
+  await act(async () => {
+    link.dispatchEvent(click);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  expect(click.defaultPrevented).toBe(false);
+  expect(document.body.querySelector(".chat-image-viewer-popup")).toBeNull();
+});
+
 it("keeps question links without attachment metadata as new-tab links", async () => {
   const external: CardQuestionAttachment = { type: "link", label: "바깥 안내", url: "https://example.test/guide" };
   await act(() => root.render(<CardQuestionBody view={view([external])} portraitUrl={null} />));

@@ -25,9 +25,9 @@ describe('ChatUiMessage', () => {
   let root: Root;
   let host: HTMLDivElement;
   afterEach(() => { if (root) act(() => root.unmount()); host?.remove(); fail.render = false; vi.restoreAllMocks(); });
-  async function mount(ui: unknown = envelope) {
+  async function mount(ui: unknown = envelope, content = '저장된 글') {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
-    await act(async () => root.render(<ChatUiControllerProvider sessionId="session-a"><ChatUiMessage ui={ui} content="저장된 글" /></ChatUiControllerProvider>));
+    await act(async () => root.render(<ChatUiControllerProvider sessionId="session-a"><ChatUiMessage ui={ui} content={content} /></ChatUiControllerProvider>));
   }
   const click = async (label: string) => {
     const button = Array.from(host.querySelectorAll('button')).find(b => b.textContent === label || b.querySelector('span')?.textContent === label)!;
@@ -62,6 +62,18 @@ describe('ChatUiMessage', () => {
   it.each([{ ...envelope, document: {} }, { ...envelope, document: undefined }, null])('uses saved content for an unreadable document %j', async ui => {
     await mount(ui);
     expect(host.textContent).toBe('화면을 표시하지 못했어. 저장된 글로 보여줄게.저장된 글');
+  });
+  it('keeps the heading margin when the fallback body follows the meta line', async () => {
+    await mount({ ...envelope, document: {} }, '# 제목\n\n본문입니다.');
+    const fallback = host.querySelector('.chat-ui-fallback')!;
+    const meta = fallback.querySelector('.chat-ui-meta')!;
+    const heading = fallback.querySelector('h1')!;
+    // 카드 #1342: 메타 줄이 먼저 서므로 제목은 첫 자식이 아니다. first:mt-0이
+    // 아니라 main과 같은 mt-3(12px)가 적용된다.
+    expect(fallback.firstElementChild).toBe(meta);
+    expect(heading.matches(':first-child')).toBe(false);
+    expect(heading.classList.contains('mt-3')).toBe(true);
+    expect(heading.hasAttribute('data-markdown-block')).toBe(true);
   });
   it('isolates render errors, keeps default text after changing fields, and recovers for a new publication', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});

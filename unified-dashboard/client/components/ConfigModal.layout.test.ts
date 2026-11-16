@@ -320,7 +320,7 @@ describe("ConfigModal layout", () => {
       expect(target).toBeTruthy();
       flushSync(() => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     };
-    click("Close");
+    click("닫기");
     await settleConfigModal();
     expect(mounted.onOpenChange).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("저장하지 않은 변경이 있습니다");

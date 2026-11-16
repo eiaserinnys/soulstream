@@ -203,7 +203,7 @@ describe("ChatMessageItem presentation", () => {
     expect(dialog.textContent).toContain("1/2");
     expect(dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')?.getAttribute('aria-disabled')).toBe('true');
 
-    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="닫기"]')!.click());
 
     expect(document.activeElement).toBe(trigger);
     expect(body.scrollTop).toBe(73);
@@ -507,7 +507,7 @@ describe("ChatMessageItem presentation", () => {
     await act(async () => trigger.click());
     let dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
     expect(dialog.textContent).toContain("101.png");
-    await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="닫기"]')!.click());
     expect(document.activeElement).toBe(trigger);
     expect(document.body.querySelector('[data-slot="dialog-popup"]')).toBeNull();
   });

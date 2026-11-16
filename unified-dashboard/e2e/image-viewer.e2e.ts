@@ -68,7 +68,7 @@ async function metrics(popup: Locator) {
       inlineInset:el.clientWidth-image.getBoundingClientRect().width,
       edges:[...el.querySelectorAll("figcaption,[data-slot=dialog-header],[data-slot=dialog-footer]")].map(node=>({rect:rect(node),scroll:node.scrollHeight,client:node.clientHeight})),
       border:parseFloat(style.borderLeftWidth)+parseFloat(style.borderRightWidth),
-      close:rect(el.querySelector('[aria-label="Close"]')!),
+      close:rect(el.querySelector('[aria-label="닫기"]')!),
       insets:[imageRect.left-popupRect.left,imageRect.top-popupRect.top,popupRect.right-imageRect.right,popupRect.bottom-imageRect.bottom],
       textStart,alignment:textStart===null?null:imageRect.left-textStart,framePadding,
       caption:caption ? rect(caption) : null,
@@ -303,7 +303,7 @@ test(`repair close contrast ${viewer} ${theme}`,async({page})=>{
     const rgb=(x:number,y:number)=>[...context.getImageData(Math.round(x),Math.round(y),1,1).data].slice(0,3);
     const luminance=(rgb:number[])=>rgb.map(v=>{const c=v/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;})
       .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
-    const icon=document.querySelector('[aria-label="Close"] svg')!.getBoundingClientRect();
+    const icon=document.querySelector('[aria-label="닫기"] svg')!.getBoundingClientRect();
     const pixels:number[][]=[];
     for(let x=Math.ceil(icon.left+3);x<icon.right-3;x++) for(let y=Math.ceil(icon.top+3);y<icon.bottom-3;y++) pixels.push(rgb(x,y));
     pixels.sort((a,b)=>luminance(a)-luminance(b));

@@ -103,7 +103,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           )}
         </div>)}
         {msg.isStreaming ? (
-          <div data-slot="chat-body" className={cn("text-base text-foreground whitespace-pre-wrap", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "leading-snug break-words")}>
+          <div data-slot="chat-body" className={cn("text-base text-foreground whitespace-pre-wrap", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "leading-snug [word-break:keep-all] [overflow-wrap:anywhere]")}>
             {displayContent}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
           </div>

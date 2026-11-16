@@ -34,6 +34,23 @@ const renderMarkdownContent = (
 ): string =>
   renderToStaticMarkup(createElement(MarkdownContent, { content: markdown, ...props }));
 
+describe("MarkdownContent — common wrapping marker", () => {
+  test("marks the top-level blocks instead of wrapping them", () => {
+    const html = renderMarkdownContent("한글 본문입니다.");
+    expect(html).toContain('data-markdown-block="true"');
+    // 블록을 감싸는 요소를 만들지 않아 first:/last: 여백 판정이 main과 같다.
+    expect(html).not.toContain("display:contents");
+  });
+
+  test("applies the shared wrapping rule to the gallery part the component does not render", () => {
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\[data-markdown-block\]\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\[data-markdown-block\]\s*:is\(th, td\)\s*\{[^}]*overflow-wrap:\s*break-word;/s);
+    expect(css).toMatch(/\.chat-image-run\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+  });
+});
+
 describe("MarkdownContent — remark-breaks plugin", () => {
   test("mixed checklist text and inline code stay in one inline flow", () => {
     const html = renderMarkdownContent('- [ ] 폴더 `folders.checklist_enabled` 제거 후 **기존 상태**를 유지합니다.\n- [x] `create_card` 요청 확인');
