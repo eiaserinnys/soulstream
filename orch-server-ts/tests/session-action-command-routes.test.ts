@@ -7,6 +7,7 @@ import {
   SessionRouteSessionOwnerMissingError,
   SessionRouteSessionOwnerStaleError,
   createApp,
+  createLiveAuthenticatedUserResolvers,
   createSessionReviewAcknowledgeFallback,
   loadContractFixtures,
   parseOrchServerConfig,
@@ -172,6 +173,24 @@ describe("session action command HTTP route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(onHumanSessionInput).toHaveBeenCalledOnce();
     expect(onHumanSessionInput).toHaveBeenCalledWith("sess-contract");
+    await app.close();
+  });
+
+  it("does not treat a service bearer intervention as human input", async () => {
+    const onHumanSessionInput = vi.fn(async () => undefined);
+    const { resolveCallerInfo } = createLiveAuthenticatedUserResolvers({
+      jwt: { issueToken: vi.fn(async () => ""), verifyToken: vi.fn(async () => null) },
+      isServiceBearer: async request => request.headers.authorization === "Bearer test-token",
+    });
+    const { app, sent } = createActionHarness({ onHumanSessionInput, resolveCallerInfo });
+    const response = await app.inject({
+      method: "POST", url: "/api/sessions/sess-contract/intervene",
+      headers: { authorization: "Bearer test-token", "user-agent": "python-httpx" },
+      payload: { text: "[하니엘 점검 필요]" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(sent[0]?.caller_info).toMatchObject({ source: "system" });
+    expect(onHumanSessionInput).not.toHaveBeenCalled();
     await app.close();
   });
 

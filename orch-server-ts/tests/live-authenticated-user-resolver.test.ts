@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import { SERVICE_CALLER } from "../src/auth/service_caller.js";
 
 import {
   createLiveAuthenticatedUserResolvers,
@@ -162,6 +163,25 @@ describe("live authenticated user resolver", () => {
       supplied,
       "ignored-node",
     )).resolves.toEqual(supplied);
+  });
+
+  it("attributes service bearer and internal calls without caller_info to the system", async () => {
+    const resolvers = createLiveAuthenticatedUserResolvers({
+      jwt: createJwtHelper({}),
+      isServiceBearer: async request => request.headers.authorization === "Bearer service-token",
+    });
+    const expected = {
+      source: "system", agent_node: "node-a", display_name: "Soulstream",
+      user_id: null, avatar_url: "/api/system/portraits/system",
+    };
+    const request = requestWithHeaders({ authorization: "Bearer service-token", "user-agent": "python-httpx" });
+    await expect(resolvers.resolveCallerInfo(request, undefined, "node-a")).resolves.toEqual(expected);
+    await expect(resolvers.resolveCallerInfo(SERVICE_CALLER, undefined, "node-a")).resolves.toEqual(expected);
+    const supplied = { source: "agent", display_name: "Agent" };
+    await expect(resolvers.resolveCallerInfo(request, supplied, "node-a")).resolves.toEqual(supplied);
+    await expect(resolvers.resolveCallerInfo(SERVICE_CALLER, supplied, "node-a")).resolves.toEqual(supplied);
+    await expect(resolvers.resolveCallerInfo(requestWithHeaders({}), undefined, "node-a"))
+      .resolves.toMatchObject({ source: "browser" });
   });
 
   it("builds browser caller_info from HTTP metadata and a named JWT", async () => {

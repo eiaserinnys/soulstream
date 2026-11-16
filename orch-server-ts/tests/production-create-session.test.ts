@@ -83,7 +83,13 @@ describe("production create-session route", () => {
         prompt: "hello from dashboard",
         profile: "roselin_codex",
         folderId: "folder-a",
-        caller_info: { source: "browser" },
+        caller_info: {
+          source: "system",
+          agent_node: "",
+          display_name: "Soulstream",
+          user_id: null,
+          avatar_url: "/api/system/portraits/system",
+        },
       });
       expect(result.command).not.toHaveProperty("agentId");
       expect(result.response.statusCode).toBe(201);

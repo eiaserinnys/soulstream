@@ -140,7 +140,7 @@ export interface IsolationPolicy {
   };
 }
 
-/** 관측 도구 정책(§5). `include_logs`일 때만 `service`가 필요하다. */
+/** 관측 도구 정책(§5). `service`는 결과를 필터하며 로그를 요청할 때 필수다. */
 export interface ObservationOptions {
   service?: string;
   include_logs?: boolean;

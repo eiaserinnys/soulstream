@@ -128,7 +128,7 @@ export function createLiveAuthenticatedUserResolvers(
       if (isServiceCaller(request)) return null;
       return (await resolveOAuthAccess(request))?.email ?? null;
     },
-    async resolveCallerInfo(request, bodyCallerInfo, _systemNodeId) {
+    async resolveCallerInfo(request, bodyCallerInfo, systemNodeId) {
       const authenticated = isServiceCaller(request) ? null : await resolveAuthenticatedUser(request);
       if (authenticated !== null && !isServiceCaller(request)) {
         // Credential carrier is the server-owned provenance boundary. Browser
@@ -161,6 +161,15 @@ export function createLiveAuthenticatedUserResolvers(
       if (bodyCallerInfo !== null && bodyCallerInfo !== undefined &&
         Object.keys(bodyCallerInfo).length > 0) {
         return bodyCallerInfo;
+      }
+      if (isServiceCaller(request) || await options.isServiceBearer?.(request)) {
+        return {
+          source: "system",
+          agent_node: systemNodeId,
+          display_name: "Soulstream",
+          user_id: null,
+          avatar_url: "/api/system/portraits/system",
+        };
       }
       const callerInfo: Record<string, unknown> = {
         source: "browser",
