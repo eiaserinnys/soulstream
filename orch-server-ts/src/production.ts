@@ -11,7 +11,7 @@ import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
 import type { McpHostOptions } from "./mcp/types.js";
-import {OrchestratorLifecycle,readDashboardBuildId} from "./runtime/orchestrator_lifecycle.js";
+import {DashboardBuildInfo,OrchestratorLifecycle} from "./runtime/orchestrator_lifecycle.js";
 import { serviceTokenAccessWithoutEmail } from "./runtime/live_dashboard_access_provider.js";
 import type { SqlClient } from "./control_plane/control_plane_types.js";
 // 500줄 예외: 프로덕션 composition root의 단일 조립 순서를 한 파일에서 검증한다.
@@ -161,9 +161,15 @@ export type ProductionApplication = {
   readonly beginShutdown?: () => Promise<void>;
 };
 
+export type ShutdownStageReporter = (step: string) => void;
+
 export type ProductionApplicationFactory = (
   config: OrchServerEnvironmentConfig,
-  context: { readonly warn: (message: string) => void },
+  context: {
+    readonly warn: (message: string) => void;
+    /** Names the shutdown step about to start, for the entrypoint's deadline log. */
+    readonly onShutdownStage?: ShutdownStageReporter;
+  },
 ) => Promise<ProductionApplication>;
 
 export type LiveProductionApplicationOverrides = {
@@ -177,6 +183,7 @@ export type CreateProductionOrchestratorOptions = {
   readonly modelCatalog: ModelCatalogSource;
   readonly applicationFactory?: ProductionApplicationFactory;
   readonly warn?: (message: string) => void;
+  readonly onShutdownStage?: ShutdownStageReporter;
 };
 
 export type ProductionOrchestrator = {
@@ -214,10 +221,12 @@ export async function createProductionOrchestrator(
   }
   const application = await (
     options.applicationFactory === undefined
-      ? (config: OrchServerEnvironmentConfig, context: { readonly warn: (message: string) => void }) =>
-        createLiveProductionApplication(config, context, { modelCatalog: options.modelCatalog })
+      ? (config: OrchServerEnvironmentConfig, context: {
+          readonly warn: (message: string) => void;
+          readonly onShutdownStage?: ShutdownStageReporter;
+        }) => createLiveProductionApplication(config, context, { modelCatalog: options.modelCatalog })
       : options.applicationFactory
-  )(options.config, { warn });
+  )(options.config, { warn, onShutdownStage: options.onShutdownStage });
   if (options.warn === undefined) {
     warningSink = (message) => application.app.log.warn(message);
     for (const message of startupWarnings) warningSink(message);
@@ -250,7 +259,7 @@ export async function createProductionOrchestrator(
     async close() {
       if (closed) return;
       closed = true;
-      await closeApplication(application);
+      await closeApplication(application, options.onShutdownStage);
     },
   };
 }
@@ -260,10 +269,13 @@ const SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS = 10_000;
 
 export async function createLiveProductionApplication(
   config: OrchServerEnvironmentConfig,
-  context: { readonly warn: (message: string) => void },
+  context: {
+    readonly warn: (message: string) => void;
+    readonly onShutdownStage?: ShutdownStageReporter;
+  },
   overrides: LiveProductionApplicationOverrides,
 ): Promise<ProductionApplication> {
-  const buildId=await readDashboardBuildId(config.dashboard_dir,config.environment);
+  const buildInfo=await DashboardBuildInfo.open(config.dashboard_dir,config.environment);
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
@@ -817,7 +829,7 @@ export async function createLiveProductionApplication(
   const externalEvents = config.mcp_external_events_state_file ? await ExternalEventsService.open({
     path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
   }) : undefined;
-  const lifecycle=new OrchestratorLifecycle(buildId,runtimeServices.sessionBroadcaster);
+  const lifecycle=new OrchestratorLifecycle(buildInfo,runtimeServices.sessionBroadcaster);
   const productionSql = await sqlResolver.resolveSql() as unknown as SqlClient;
   const app = createApp({
     oauthRoutes: {
@@ -866,7 +878,7 @@ export async function createLiveProductionApplication(
       environment: config.environment,
       nodeCredentials: nodeCredentialStore,
       releasesDir: config.portable_node_releases_dir,
-      currentSourceCommit: buildId,
+      currentSourceCommit: () => buildInfo.currentBuildId(),
     },
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1061,18 +1073,37 @@ export async function createLiveProductionApplication(
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
+      const runShutdownStep = async (
+        step: string,
+        action: () => Promise<void> | void,
+      ): Promise<void> => {
+        context.onShutdownStage?.(step);
+        const startedAt = Date.now();
+        try {
+          await action();
+        } finally {
+          app.log.info(
+            {
+              event: "orchestrator.shutdown_step",
+              step,
+              elapsed_ms: Math.max(0, Date.now() - startedAt),
+            },
+            "orchestrator shutdown step",
+          );
+        }
+      };
       if (documentIndexWarmupTimer !== undefined) {
         clearTimeout(documentIndexWarmupTimer);
         documentIndexWarmupTimer = undefined;
       }
-      await maintenanceService.stop();
-      await sessionReconciliation.close();
-      await recurringJobScheduler?.stop();
-      await usageSummaryService.stop();
-      await cardDispatchRuntime.dispatcher.drain();
-      await turnSummaryPipeline?.drain();
-      await pushNotifier.close();
-      await dbCatalogRepository.close();
+      await runShutdownStep("maintenance_stop", () => maintenanceService.stop());
+      await runShutdownStep("session_reconciliation_close", () => sessionReconciliation.close());
+      await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
+      await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
+      await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
+      await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
+      await runShutdownStep("push_notifier_close", () => pushNotifier.close());
+      await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
     },
   };
 }
@@ -1485,16 +1516,38 @@ export function buildProductionRouteOptions(
   };
 }
 
-async function closeApplication(application: ProductionApplication): Promise<void> {
-  await application.beginShutdown?.();
+async function closeApplication(
+  application: ProductionApplication,
+  onShutdownStage?: ShutdownStageReporter,
+): Promise<void> {
+  const runShutdownStep = async (
+    step: string,
+    action: () => Promise<void> | void,
+  ): Promise<void> => {
+    onShutdownStage?.(step);
+    const startedAt = Date.now();
+    try {
+      await action();
+    } finally {
+      application.app.log.info(
+        {
+          event: "orchestrator.shutdown_step",
+          step,
+          elapsed_ms: Math.max(0, Date.now() - startedAt),
+        },
+        "orchestrator shutdown step",
+      );
+    }
+  };
+  await runShutdownStep("shutdown_notice", () => application.beginShutdown?.());
   let appCloseError: unknown;
   try {
-    await application.app.close();
+    await runShutdownStep("app_close", () => application.app.close());
   } catch (error) {
     appCloseError = error;
   }
   try {
-    await application.closeResources();
+    await runShutdownStep("resources_close", () => application.closeResources());
   } catch (resourceError) {
     if (appCloseError !== undefined) {
       throw new AggregateError(

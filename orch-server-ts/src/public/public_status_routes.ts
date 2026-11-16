@@ -43,7 +43,23 @@ export type PublicStatusRouteOptions = {
   startTimeSeconds?: number;
   nowSeconds?: () => number;
   healthVersion?: string;
-  lifecycle?: {snapshot(): {healthy:boolean;ready:boolean;draining:boolean;instance_id:string;build_id:string}};
+  lifecycle?: {
+    snapshot(): {
+      healthy: boolean;
+      ready: boolean;
+      draining: boolean;
+      instance_id: string;
+      build_id: string;
+      process_build_id: string;
+    } | Promise<{
+      healthy: boolean;
+      ready: boolean;
+      draining: boolean;
+      instance_id: string;
+      build_id: string;
+      process_build_id: string;
+    }>;
+  };
 };
 
 export const publicStatusRouteAuthRequirements = {
@@ -68,7 +84,7 @@ export function registerPublicStatusRoutes(
     return {
       status: "ok",
       version: healthVersion,
-      ...options.lifecycle?.snapshot(),
+      ...(await options.lifecycle?.snapshot()),
       uptime_seconds: Math.max(0, Math.trunc(nowSeconds() - startTimeSeconds)),
       ...(databaseSchema === undefined ? {} : { database_schema: databaseSchema }),
     };
@@ -91,9 +107,10 @@ export function registerPublicStatusRoutes(
 
   app.get("/api/status", async () => {
     const config = await options.configProvider.getConfig();
+    const lifecycle = await options.lifecycle?.snapshot();
     return {
-      is_draining: options.lifecycle?.snapshot().draining ?? false,
-      healthy: options.lifecycle?.snapshot().healthy ?? true,
+      is_draining: lifecycle?.draining ?? false,
+      healthy: lifecycle?.healthy ?? true,
       atom_enabled: config.atomEnabled,
     };
   });

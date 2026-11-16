@@ -16,8 +16,12 @@ export type NodeReleaseRouteOptions = {
    * `<source_commit>/node.tar.gz.sha256`. `null` disables release delivery.
    */
   readonly releasesDir: string | null;
-  /** Commit this orchestrator serves; the health build_id has the same source. */
-  readonly currentSourceCommit: string;
+  /**
+   * Commit of the deployed node release; the health build_id has the same
+   * source. A function re-reads it so builds that do not restart the
+   * orchestrator still deliver the new release.
+   */
+  readonly currentSourceCommit: () => string | Promise<string>;
 };
 
 export const nodeReleaseRouteAuthRequirements = {
@@ -64,7 +68,7 @@ export function registerNodeReleaseRoutes(
         return disabled(reply);
       }
 
-      const sourceCommit = options.currentSourceCommit;
+      const sourceCommit = await options.currentSourceCommit();
       const releaseDir = join(releasesDir, sourceCommit);
       let size: number;
       let sha256Hex: string;

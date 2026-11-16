@@ -125,6 +125,16 @@ async function probe(context) {
   return await probeDatabaseOperation(context, databaseReleaseSuccess);
 }
 
+/**
+ * The schema work this release will do: planned SQL migrations (bootstrap and
+ * pending) plus required subphases. Preflight reports it and apply skips the
+ * quiescence evidence only when it is zero, so the two conditions stay one rule.
+ */
+function plannedSchemaWorkCount(journal) {
+  return (journal.planned_migrations ?? []).length
+    + (journal.required_subphases ?? []).length;
+}
+
 async function preflight(context, options) {
   const path = databaseReleaseJournalPath(context.env);
   let existing = null;
@@ -168,7 +178,11 @@ async function preflight(context, options) {
       throw new Error("JOURNAL_IDENTITY_CONFLICT: migration plan differs");
     }
   }
-  return result(context, operation, path, journal.status, "preflight");
+  return result(context, operation, path, journal.status, "preflight", {
+    // Lets Haniel skip writer quiescence and restarts exactly when apply will
+    // skip the evidence: no planned migrations and no required subphases.
+    pending_count: plannedSchemaWorkCount(journal),
+  });
 }
 
 function inheritedOperationJournal(context, existing) {
@@ -233,8 +247,14 @@ async function apply(context, options) {
   }
   const allowed = journal.status === "preflight_complete" || retryableNone;
   if (!allowed) throw new Error("JOURNAL_GATE_FAILED: release phases are incomplete");
+  // An upgrade with no planned migrations and no required subphases has no
+  // schema work: it needs no writer quiescence evidence and must not open a
+  // database writer gate. This is the same rule preflight reports as
+  // pending_count === 0.
+  const skippedMigrationRun =
+    journal.operation === "upgrade" && plannedSchemaWorkCount(journal) === 0;
   let evidence = null;
-  if (journal.operation === "upgrade") {
+  if (journal.operation === "upgrade" && !skippedMigrationRun) {
     evidence = await readHanielReleaseEvidence({
       env: context.env,
       journal,
@@ -255,7 +275,9 @@ async function apply(context, options) {
   context.env.HANIEL_DATABASE_JOURNAL_REVISION = String(journal.revision);
   const mode = journal.operation === "fresh_install" ? "fresh-install" : "apply";
   try {
-    await context.migrationRun(mode, { env: context.env, journalPath: path });
+    if (!skippedMigrationRun) {
+      await context.migrationRun(mode, { env: context.env, journalPath: path });
+    }
   } catch (error) {
     let failedPlan;
     let failedInventory;

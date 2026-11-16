@@ -204,7 +204,7 @@ function createAllOptInRouteApp() {
       environment: "test",
       nodeCredentials: null,
       releasesDir: null,
-      currentSourceCommit: "dev",
+      currentSourceCommit: () => "dev",
     },
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {

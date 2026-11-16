@@ -66,12 +66,16 @@ function environment(directory: string, operation = "upgrade") {
     HANIEL_TARGET_HEAD: "2".repeat(40),
   };
 }
-function plan({ ledger = [], pending = [] as Array<Record<string, unknown>> } = {}) {
+function plan({
+  ledger = [],
+  pending = [] as Array<Record<string, unknown>>,
+  bootstrap = [] as Array<Record<string, unknown>>,
+} = {}) {
   return {
     state: ledger.length > 0 ? "current" : "legacy_pre_041",
     ledger,
     migrations: pending,
-    bootstrap: [],
+    bootstrap,
     pending,
   };
 }
@@ -91,13 +95,15 @@ function emptyInventory() {
 function populatedInventory() {
   return { ...emptyInventory(), relation_count: 1 };
 }
-async function preflight(env: ReturnType<typeof environment>, pending = [
-  migration("061_contract.sql", 61),
-]) {
+async function preflight(
+  env: ReturnType<typeof environment>,
+  pending = [migration("061_contract.sql", 61)],
+  bootstrap: Array<Record<string, unknown>> = [],
+) {
   return await executeDatabaseReleasePhase("preflight", {
     env,
     inventoryRead: async () => populatedInventory(),
-    planRead: async () => plan({ pending }),
+    planRead: async () => plan({ pending, bootstrap }),
   });
 }
 
@@ -189,7 +195,7 @@ describe("database release executor", () => {
     expect(existsSync(databaseReleaseJournalPath(env))).toBe(false);
   });
 
-  it("writes an identity-bound atomic journal during preflight", async () => {
+  it("writes an identity-bound atomic journal during preflight and requires quiescence evidence to apply it", async () => {
     const directory = makeTempDirSync("soul-release-journal-");
     directories.push(directory);
     const env = environment(directory);
@@ -201,6 +207,7 @@ describe("database release executor", () => {
       ok: true,
       operation: "upgrade",
       journal_path: databaseReleaseJournalPath(env),
+      pending_count: 1,
     });
     expect(journal).toMatchObject({
       schema_version: DATABASE_RELEASE_SCHEMA_VERSION,
@@ -216,9 +223,54 @@ describe("database release executor", () => {
       pending_migrations: [{ id: "061_contract.sql", checksum: "1".repeat(64) }],
     });
     expect(existsSync(`${report.journal_path}.tmp`)).toBe(false);
+
+    // The journal carries one migration, so apply still demands evidence.
+    const migrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ pending: [migration("061_contract.sql", 61)] }),
+      migrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(migrationRun).not.toHaveBeenCalled();
+
+    // A bootstrap-only plan also has schema work: planned_migrations includes
+    // bootstrap entries, so pending_count and the evidence rule agree.
+    const bootstrapDirectory = makeTempDirSync("soul-release-bootstrap-");
+    directories.push(bootstrapDirectory);
+    const bootstrapEnv = environment(bootstrapDirectory);
+    const bootstrapEntry = migration("000_bootstrap.sql", 0);
+    const bootstrapReport = await preflight(bootstrapEnv, [], [bootstrapEntry]);
+    expect(bootstrapReport).toMatchObject({ ok: true, pending_count: 1 });
+    const bootstrapMigrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env: bootstrapEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ bootstrap: [bootstrapEntry] }),
+      migrationRun: bootstrapMigrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(bootstrapMigrationRun).not.toHaveBeenCalled();
+
+    // Required subphases are schema work too, even without SQL migrations.
+    const subphaseDirectory = makeTempDirSync("soul-release-subphase-");
+    directories.push(subphaseDirectory);
+    const subphaseEnv = {
+      ...environment(subphaseDirectory),
+      HANIEL_DATABASE_REQUIRED_SUBPHASES: '["seed"]',
+    };
+    const subphaseReport = await preflight(subphaseEnv, []);
+    expect(subphaseReport).toMatchObject({ ok: true, pending_count: 1 });
+    const subphaseMigrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env: subphaseEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan(),
+      migrationRun: subphaseMigrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(subphaseMigrationRun).not.toHaveBeenCalled();
   });
 
-  it("applies an empty fresh_install without backup machinery", async () => {
+  it("applies empty fresh_install and upgrade releases without backup machinery", async () => {
     const directory = makeTempDirSync("soul-release-fresh-");
     directories.push(directory);
     const env = environment(directory, "fresh_install");
@@ -241,6 +293,30 @@ describe("database release executor", () => {
     });
 
     expect(migrationRun).toHaveBeenCalledTimes(1);
+
+    // An upgrade journal with no migrations is also an empty release: apply
+    // skips quiescence evidence and the migration run, and verify passes.
+    const upgradeDirectory = makeTempDirSync("soul-release-empty-upgrade-");
+    directories.push(upgradeDirectory);
+    const upgradeEnv = environment(upgradeDirectory);
+    const upgradeLedger = [{ ...migration("061_contract.sql", 61), release_id: upgradeEnv.HANIEL_RELEASE_ID }];
+    const upgradePreflight = await preflight(upgradeEnv, []);
+    expect(upgradePreflight).toMatchObject({ ok: true, pending_count: 0 });
+    expect(existsSync(join(upgradeDirectory, "quiescence.json"))).toBe(false);
+    expect(existsSync(upgradeEnv.HANIEL_DEPLOYMENT_JOURNAL)).toBe(false);
+    const upgradeMigrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env: upgradeEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ ledger: upgradeLedger, pending: [] }),
+      migrationRun: upgradeMigrationRun,
+    })).resolves.toMatchObject({ ok: true, operation: "upgrade", status: "applied" });
+    expect(upgradeMigrationRun).not.toHaveBeenCalled();
+    await expect(runDatabaseRelease("verify", {
+      env: upgradeEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ ledger: upgradeLedger, pending: [] }),
+    })).resolves.toMatchObject({ ok: true, operation: "upgrade", status: "verified" });
   });
 
   it("applies the destructive 085b plan to fresh and migrated databases without a backup gate", async () => {
