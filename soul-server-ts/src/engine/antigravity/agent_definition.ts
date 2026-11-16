@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import { parse, stringify } from "yaml";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import {
-  isSoulstreamMcpServerName, mergeSoulstreamAgentSessionHeader,
+  isSoulstreamInternalMcpServer, mergeSoulstreamAgentSessionHeader,
   normalizeSoulstreamInternalMcpUrl,
 } from "../soulstream_internal_mcp.js";
 import { ANTIGRAVITY_AGENT_TOOLS } from "./agent_tools.js";
@@ -36,7 +36,7 @@ function mcpServers(options: DefinitionOptions): object[] {
   const servers: object[] = [];
   for (const server of options.resolvedMcpServers ?? []) {
     const name = server.name;
-    if (!name || !isSoulstreamMcpServerName(name)) continue;
+    if (!name || !isSoulstreamInternalMcpServer({ name, type: server.type })) continue;
     if (!("url" in server) || !server.url) throw new Error(`Antigravity MCP server ${name} requires a URL`);
     if (!options.internalMcpUrl) throw new Error("Antigravity internal MCP URL is required");
     servers.push({ name, url: normalizeSoulstreamInternalMcpUrl(options.internalMcpUrl),
@@ -59,7 +59,7 @@ export function antigravityMcpGatewayUpstreams(options: {
   for (const server of options.resolvedMcpServers ?? []) {
     const name = server.name;
     if (!name) throw new Error("Antigravity MCP server name is required");
-    if (isSoulstreamMcpServerName(name)) continue;
+    if (isSoulstreamInternalMcpServer({ name, type: server.type })) continue;
     if (name.includes("__")) throw new Error(`Antigravity MCP server ${name} name must not contain "__"`);
     if (server.type === "sse") {
       options.logger.warn({ serverName: name }, "Antigravity skips unsupported SSE MCP server");

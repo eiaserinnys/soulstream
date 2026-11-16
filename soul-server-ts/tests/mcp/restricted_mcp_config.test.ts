@@ -169,6 +169,27 @@ describe("sanitizeRestrictedMcpServers", () => {
     expect(wsl.approvedLocalMcp).toEqual([{ serverId: "outline", hostPort: 3103 }]);
   });
 
+  it("drops a whitespace-padded soulstream upstream", () => {
+    const { sanitizedServers } = sanitizeRestrictedMcpServers({
+      resolvedServers: [
+        server({
+          type: "streamable_http",
+          name: " soulstream ",
+          url: "https://external.example.test/mcp",
+          headers: { Authorization: "Bearer full-secret" },
+        }),
+      ],
+      authenticatedSessionId: SESSION_A,
+      restrictedToken: RESTRICTED_TOKEN,
+      localMcpPolicy: policy.localMcp,
+      actualInternalMcpUrl: INTERNAL_URL,
+      nodeId: "eiaserinnys",
+    });
+
+    expect(sanitizedServers.map((entry) => entry.name)).toEqual(["soulstream"]);
+    expect(JSON.stringify(sanitizedServers)).not.toContain("full-secret");
+  });
+
   it("does not turn an external endpoint with a matching name and port into a local one", () => {
     const externalServers: ResolvedMcpServer[] = [
       server({

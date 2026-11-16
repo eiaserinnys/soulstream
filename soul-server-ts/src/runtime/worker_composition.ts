@@ -267,7 +267,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     antigravityCliPath,
     antigravityProcessEnv: process.env,
     codexProcessEnv: process.env,
-    buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
+    buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env), hostAuthBearerToken: process.env.AUTH_BEARER_TOKEN,
     claudeSessionStore,
     ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
     mcpConfigService,

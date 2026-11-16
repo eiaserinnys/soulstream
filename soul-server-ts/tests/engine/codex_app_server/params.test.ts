@@ -275,6 +275,34 @@ describe("Codex app-server parameter builders", () => {
     ).toThrow(/requires an agentSessionId/);
   });
 
+  it("routes a whitespace-padded soulstream server through the internal listener", () => {
+    const config = buildThreadStartParams(
+      { prompt: "start", agentSessionId: "agent-session-1" },
+      "/work",
+      [{
+        type: "streamable_http",
+        name: " soulstream ",
+        url: "http://127.0.0.1:3105/mcp",
+        headers: { Authorization: "Bearer secret" },
+      }],
+      "http://127.0.0.1:3106/mcp/internal",
+    ).config;
+
+    expect(config).toEqual({
+      mcp_servers: {
+        soulstream: {
+          url: "http://127.0.0.1:3106/mcp/internal",
+          http_headers: {
+            Authorization: "Bearer secret",
+            "x-soulstream-agent-session-id": "agent-session-1",
+          },
+          enabled: true,
+        },
+      },
+      ...SUPPRESSED_CODEX_APPS,
+    });
+  });
+
   it("keeps an explicit empty MCP config when every resolved server uses SSE", () => {
     const sseOnlyServers = [
       {

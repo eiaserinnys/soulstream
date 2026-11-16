@@ -419,7 +419,7 @@ describe("TaskExecutor.startNewExecution", () => {
     await task.executionPromise;
 
     expect(factory).toHaveBeenCalledTimes(1);
-    expect(factory.mock.calls[0]).toEqual([agent]);
+    expect(factory.mock.calls[0]).toEqual([agent, undefined, task.agentSessionId]);
   });
 
   it("uses the preset backend while retaining the persisted resolved model", async () => {
@@ -460,7 +460,7 @@ describe("TaskExecutor.startNewExecution", () => {
     executor.startNewExecution(task, agent);
     await task.executionPromise;
 
-    expect(factory).toHaveBeenCalledWith(agent, "claude");
+    expect(factory).toHaveBeenCalledWith(agent, "claude", task.agentSessionId);
     expect(task.model).toBe("persisted-kimi-model");
   });
 
@@ -507,7 +507,7 @@ describe("TaskExecutor.startNewExecution", () => {
     executor.startNewExecution(task, fallbackAgent);
     await task.executionPromise;
 
-    expect(factory.mock.calls[0]).toEqual([fallbackAgent]);
+    expect(factory.mock.calls[0]).toEqual([fallbackAgent, undefined, task.agentSessionId]);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "sess-1",

@@ -208,6 +208,27 @@ describe("withFullSessionCredential", () => {
     expect(replaced[1]!.headers).toEqual({ Authorization: `Bearer ${credential}` });
   });
 
+  it("treats whitespace-padded soulstream names as internal", () => {
+    const servers: ResolvedMcpServer[] = [
+      {
+        name: " soulstream ",
+        type: "streamable_http",
+        url: "http://127.0.0.1:3105/mcp",
+        headers: { authorization: `Bearer ${HOST_TOKEN}` },
+      },
+    ];
+    const credential = fullSessionCredential(SESSION, HOST_TOKEN)!;
+    const result = withFullSessionCredential(
+      { sessionId: SESSION, resolvedMcpServers: servers },
+      { hostBearerToken: HOST_TOKEN },
+    );
+    const replaced = result.resolvedMcpServers!;
+
+    expect(replaced[0]).not.toBe(servers[0]);
+    if (replaced[0]!.type !== "streamable_http") return;
+    expect(replaced[0]!.headers).toEqual({ Authorization: `Bearer ${credential}` });
+  });
+
   it("does not touch MCP servers when there are none", () => {
     const result = withFullSessionCredential(
       { sessionId: SESSION, childProcessEnv: {} },

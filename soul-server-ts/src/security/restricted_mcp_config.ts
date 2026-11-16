@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
 
+import { isSoulstreamInternalMcpServer } from "../engine/soulstream_internal_mcp.js";
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type { IsolationPolicy } from "./session_isolation_contract.js";
 
@@ -23,8 +24,7 @@ const MANAGEMENT_UPSTREAM_NAMES = new Set([
   "cloistermont",
 ]);
 
-/** registry의 Soulstream upstream ID. 인증은 어떤 이름으로도 자식에게 넘기지 않는다. */
-const SOULSTREAM_UPSTREAM_NAMES = new Set(["soulstream", "soulstream-cogito"]);
+/** Soulstream upstream의 registry 포트. 인증은 어떤 이름으로도 자식에게 넘기지 않는다. */
 const SOULSTREAM_REGISTRY_PORT = 3105;
 
 export interface ApprovedLocalMcp {
@@ -55,7 +55,7 @@ export function sanitizeRestrictedMcpServers(
 
   for (const server of input.resolvedServers) {
     const name = serverName(server);
-    if (isSoulstreamUpstream(server, name)) continue;
+    if (isSoulstreamUpstream(server)) continue;
     if (name !== undefined && MANAGEMENT_UPSTREAM_NAMES.has(name)) continue;
 
     if (server.type === "stdio") {
@@ -126,8 +126,8 @@ function findApproval(
     && entry.nodeId === input.nodeId);
 }
 
-function isSoulstreamUpstream(server: ResolvedMcpServer, name: string | undefined): boolean {
-  if (name !== undefined && SOULSTREAM_UPSTREAM_NAMES.has(name)) return true;
+function isSoulstreamUpstream(server: ResolvedMcpServer): boolean {
+  if (isSoulstreamInternalMcpServer(server)) return true;
   if (server.type === "stdio") return false;
   const endpoint = parseEndpoint(server.url);
   return endpoint !== undefined

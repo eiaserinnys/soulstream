@@ -13,8 +13,9 @@ import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
-import type { McpConfigService } from "../mcp_config_service.js";
+import type { McpConfigService, ResolvedMcpServer } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
+import { withFullSessionCredential } from "../runner/full_session_credential.js";
 import type { EngineFactory } from "../task/task_executor.js";
 import type { ModelCatalogConfig } from "../model_catalog.js";
 
@@ -42,6 +43,11 @@ export interface CreateEngineFactoryParams {
   antigravityProcessEnv: NodeJS.ProcessEnv;
   codexProcessEnv: NodeJS.ProcessEnv;
   buildClaudeProcessEnv(): Record<string, string | undefined>;
+  /**
+   * 호스트 `AUTH_BEARER_TOKEN`. in-process full 세션의 엔진 env와 soulstream
+   * 내부 MCP 자격을 그 세션의 ssf1로 바꿀 때 쓴다. 비면 변환하지 않는다.
+   */
+  hostAuthBearerToken?: string;
   claudeSessionStore: SessionStore;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
@@ -64,18 +70,47 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     claudeAccountTurnPort,
     mcpConfigService,
     getModelCatalog,
+    hostAuthBearerToken,
   } = params;
 
-  return (agent, backendOverride) => {
+  return (agent, backendOverride, agentSessionId) => {
     const backend = backendOverride ?? agent.backend;
+    /**
+     * in-process 경로는 restricted 판정에서 내려오지 않으므로 여기서 만드는
+     * 엔진은 모두 full 세션이다. 러너 경로와 같은 변환 함수로 엔진에 넘기는
+     * child env와 soulstream 내부 대상 MCP `Authorization`을 그 세션의 ssf1로
+     * 바꾼다.
+     */
+    const credentialedInput = (
+      processEnv: NodeJS.ProcessEnv,
+      servers: ResolvedMcpServer[] | undefined,
+    ): { processEnv: NodeJS.ProcessEnv; servers: ResolvedMcpServer[] | undefined } => {
+      if (!agentSessionId) return { processEnv, servers };
+      const transformed = withFullSessionCredential(
+        {
+          sessionId: agentSessionId,
+          childProcessEnv: processEnv,
+          ...(servers !== undefined ? { resolvedMcpServers: servers } : {}),
+        },
+        { hostBearerToken: hostAuthBearerToken },
+      );
+      return {
+        processEnv: transformed.childProcessEnv ?? processEnv,
+        servers: transformed.resolvedMcpServers ?? servers,
+      };
+    };
     if (backend === "antigravity") {
+      const input = credentialedInput(
+        antigravityProcessEnv,
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+      );
       return new AntigravityEngineAdapter({
         workspaceDir: agent.workspace_dir,
         agentId: agent.id,
         stateDirectory: env.SOUL_RUNNER_STATE_DIR,
         executablePath: antigravityCliPath?.path,
-        processEnv: antigravityProcessEnv,
-        resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+        processEnv: input.processEnv,
+        resolvedMcpServers: input.servers,
         internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
         ...(agent.allowed_tools ? { allowedTools: agent.allowed_tools } : {}),
         ...(agent.disallowed_tools ? { disallowedTools: agent.disallowed_tools } : {}),
@@ -85,19 +120,26 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
       }, logger);
     }
     if (backend === "opencode") {
+      const input = credentialedInput(
+        process.env,
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+      );
       return new OpenCodeEngineAdapter({
         workspaceDir: agent.workspace_dir,
         agentId: agent.id,
         stateDirectory: env.SOUL_RUNNER_STATE_DIR,
         executablePath: env.OPENCODE_CLI_PATH,
-        processEnv: process.env,
-        resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+        processEnv: input.processEnv,
+        resolvedMcpServers: input.servers,
         internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
       }, logger);
     }
     if (backend === "codex") {
-      const resolvedMcpServers =
-        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
+      const input = credentialedInput(
+        codexProcessEnv,
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+      );
+      const resolvedMcpServers = input.servers;
       if (env.CODEX_ADAPTER_MODE === "app-server") {
         return new CodexAppServerEngineAdapter(
           {
@@ -105,7 +147,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
             agentId: agent.id,
             apiKey: env.CODEX_API_KEY,
             codexPathOverride: codexCliPath?.path,
-            processEnv: codexProcessEnv,
+            processEnv: input.processEnv,
             requestTimeoutMs: env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS,
             startupRequestTimeoutMs: env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
             codexDetachedResultRetentionMs: env.CODEX_DETACHED_RESULT_RETENTION_MS,
@@ -131,20 +173,23 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           workspaceDir: agent.workspace_dir,
           agentId: agent.id,
           apiKey: env.CODEX_API_KEY,
-          processEnv: codexProcessEnv,
+          processEnv: input.processEnv,
           codexPathOverride: codexCliPath?.path,
         },
         logger,
       );
     }
     if (backend === "claude") {
-      const resolvedMcpServers =
-        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;
+      const input = credentialedInput(
+        buildClaudeProcessEnv(),
+        mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+      );
+      const resolvedMcpServers = input.servers;
       return new ClaudeEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,
           agentId: agent.id,
-          processEnv: buildClaudeProcessEnv(),
+          processEnv: input.processEnv,
           sessionStore: claudeSessionStore,
           // V2 uses the shared transcript as its cross-node receiver receipt.
           sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED || env.CLAUDE_ACCOUNT_POOL_ENABLED

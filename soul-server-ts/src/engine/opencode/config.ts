@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import {
-  isSoulstreamMcpServerName,
+  isSoulstreamInternalMcpServer,
   mergeSoulstreamAgentSessionHeader,
   normalizeSoulstreamInternalMcpUrl,
 } from "../soulstream_internal_mcp.js";
@@ -91,7 +91,10 @@ function openCodeMcpServers(options: PrepareOpenCodeSessionOptions): Record<stri
       continue;
     }
     if (!server.url) throw new Error(`OpenCode MCP server ${name} requires a URL`);
-    const internal = isSoulstreamMcpServerName(name);
+    const internal = isSoulstreamInternalMcpServer({
+      name,
+      type: server.type,
+    });
     if (internal && !options.internalMcpUrl) {
       throw new Error("OpenCode internal MCP URL is required");
     }
