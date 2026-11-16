@@ -11,8 +11,8 @@ import type { SessionDeliveryRow, SqlClient } from "../src/control_plane/control
 import { SessionDeliveryRepository } from
   "../src/control_plane/repositories/session_delivery_repository.js";
 
-describe("session delivery dispatch lease", () => {
-  it("extends the attempt expiry to the dispatch lease when dispatching", async () => {
+describe("session delivery dispatching attempt expiry", () => {
+  it("extends the attempt expiry to the configured dispatching window", async () => {
     const { sql, calls } = createSql(() => [deliveryRow()]);
     const repository = new SessionDeliveryRepository(sql);
 
@@ -30,7 +30,7 @@ describe("session delivery dispatch lease", () => {
     expect(call.text).toContain("delivery.attempt_expires_at > NOW()");
   });
 
-  it("accepts a custom dispatch lease like the claim TTL", async () => {
+  it("accepts a custom dispatching window like the claim TTL", async () => {
     const { sql, calls } = createSql(() => [deliveryRow()]);
     const repository = new SessionDeliveryRepository(sql);
 

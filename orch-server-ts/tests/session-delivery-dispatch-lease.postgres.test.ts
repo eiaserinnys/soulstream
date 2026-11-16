@@ -13,7 +13,7 @@ import {
   type FullSchemaPostgresHarness,
 } from "./board_yjs_postgres_harness.js";
 
-describe("dispatch lease over PostgreSQL", () => {
+describe("dispatching attempt expiry over PostgreSQL", () => {
   let harness: FullSchemaPostgresHarness;
   let repository: SessionDeliveryRepository;
 
@@ -92,7 +92,7 @@ describe("dispatch lease over PostgreSQL", () => {
     });
   });
 
-  it("honors a custom dispatch lease", async () => {
+  it("honors a custom dispatching window", async () => {
     await insertPendingDelivery();
     await repository.claim("delivery-1", "token-1");
     await repository.beginDispatch("delivery-1", "token-1", 5_000);
