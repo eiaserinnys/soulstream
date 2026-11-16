@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -123,6 +123,57 @@ describe("RunnerReleaseGarbageCollector", () => {
     expect(subject.materializer.checkReadyMarker).toHaveBeenCalledWith(
       expect.objectContaining({ releaseId: "release-a" }),
     );
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
+  });
+
+  it("removes an unregistered release older than the retention window", async () => {
+    const subject = await makeSubject([], false);
+    const release = subject.pool.describe("release-a");
+    const past = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await utimes(release.releaseRoot, past, past);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: ["release-a"],
+      retained: [],
+    });
+    expect(subject.materializer.verify).toHaveBeenCalledOnce();
+    expect(subject.materializer.remove).toHaveBeenCalledOnce();
+  });
+
+  it("retains an unregistered release inside the retention window", async () => {
+    const subject = await makeSubject([], false);
+    const release = subject.pool.describe("release-a");
+    const recent = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    await utimes(release.releaseRoot, recent, recent);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
+    });
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
+  });
+
+  it("keeps registration-based judgment for an old release that still has registrations", async () => {
+    const subject = await makeSubject([registration()], true);
+    const release = subject.pool.describe("release-a");
+    const past = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await utimes(release.releaseRoot, past, past);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "final_ack_pending" }],
+    });
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("retains an unregistered release when its age cannot be read", async () => {
+    const subject = await makeSubject([], false);
+    vi.spyOn(subject.pool, "releasePublishedAtMs").mockResolvedValueOnce(null);
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
+    });
     expect(subject.materializer.verify).not.toHaveBeenCalled();
   });
 

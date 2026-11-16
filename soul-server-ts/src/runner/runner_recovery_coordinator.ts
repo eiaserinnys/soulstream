@@ -75,6 +75,12 @@ import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js
 import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 
+/**
+ * 릴리스 GC 스윕의 최소 시작 간격. 세션이 끝날 때마다 스윕이 돌아 공유 storage
+ * worker를 붐비지 않게 한다. 릴리스 GC는 즉시성이 필요 없다.
+ */
+const DEFAULT_RELEASE_GC_MIN_INTERVAL_MS = 10 * 60 * 1000;
+
 /** 중앙 확인이 기억하는 직전 잇기 응답과 다음 판정 시각이다. */
 interface CentralCheckRetry {
   response: RunnerAdoptResponse;
@@ -108,6 +114,7 @@ export class RunnerRecoveryCoordinator {
   private readonly centralRetry = new Map<string, CentralCheckRetry>();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
+  private releaseGarbageCollectionStartedAtMs: number | undefined;
   private releaseGarbageCollectionInFlight = false;
   private readonly recoveryLogger: RunnerRecoveryLogger;
   private readonly hydrationPhase: RunnerRecoveryHydrationPhase;
@@ -118,7 +125,10 @@ export class RunnerRecoveryCoordinator {
   private observationSequence = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
-  constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
+  constructor(
+    private readonly options: RunnerRecoveryCoordinatorOptions,
+    private readonly releaseGarbageCollectionMinIntervalMs = DEFAULT_RELEASE_GC_MIN_INTERVAL_MS,
+  ) {
     // 완료 정산 미결 포트는 등록 은퇴 길이 쓴다. 거둠 경로도 같은 문을 지난다.
     this.registrationControl = new RunnerRegistrationControl(
       options.spawner,
@@ -367,15 +377,23 @@ export class RunnerRecoveryCoordinator {
       });
       const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
       const releaseGarbageCollector = this.options.releaseGarbageCollector;
+      const releaseGcNowMs = (this.options.now ?? Date.now)();
+      const releaseGcDue = this.releaseGarbageCollectionStartedAtMs === undefined
+        || releaseGcNowMs - this.releaseGarbageCollectionStartedAtMs
+          >= this.releaseGarbageCollectionMinIntervalMs;
       if (
         releaseGarbageCollector
         && !this.releaseGarbageCollectionInFlight
         && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
+        && releaseGcDue
       ) {
         // The sweep runs behind the scan and one at a time. The fingerprint is
         // claimed when it starts, so a failed sweep does not repeat for the
-        // same candidates on every following scan.
+        // same candidates on every following scan. While the minimum interval
+        // holds the fingerprint is left unclaimed, so the next scan after the
+        // interval re-evaluates the candidates.
         this.releaseGarbageCollectionFingerprint = releaseFingerprint;
+        this.releaseGarbageCollectionStartedAtMs = releaseGcNowMs;
         this.releaseGarbageCollectionInFlight = true;
         const releaseObservation = this.createObservation("runner.recovery.releaseGc");
         void (async () => {

@@ -312,6 +312,20 @@ describe("runner recovery storage worker boundary", () => {
     await rm(database.databasePath, { force: true });
     await expect(recoverRunnerDirectoryIdentity(directory, undefined, storage))
       .resolves.toBeNull();
+    // 없는 DB는 더 열지 않는다.
+    expect(readSqliteIdentity).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null without asking the storage worker when runner.sqlite is absent", async () => {
+    const directory = await temporaryDirectory("missing-identity-db");
+    const factory = countingFactory("real");
+    const storage = openStorage(factory.workerFactory);
+    const readSqliteIdentity = vi.spyOn(storage, "readSqliteIdentity");
+
+    await expect(recoverRunnerDirectoryIdentity(directory, undefined, storage))
+      .resolves.toBeNull();
+    expect(readSqliteIdentity).not.toHaveBeenCalled();
+    expect(factory.created).toBe(0);
   });
 
   it("re-emits lifecycle summary rename notices from the real worker", async () => {

@@ -2602,7 +2602,13 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     current.databaseMtimeMs = 1;
     const releaseGarbageCollector = { collect: vi.fn(async () => ({ removed: [], retained: [] })) };
-    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
+    const subject = makeSubject(
+      [current],
+      Date.now(),
+      [],
+      { releaseGarbageCollector },
+      0,
+    );
 
     await subject.coordinator.scanOnce();
     await subject.coordinator.scanOnce();
@@ -2620,11 +2626,40 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
     expect(releaseGarbageCollector.collect).toHaveBeenCalledTimes(3);
   });
 
+  it("skips release GC sweeps inside the minimum interval and resumes after it", async () => {
+    let now = Date.parse("2026-08-11T00:00:00.000Z");
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.databaseMtimeMs = 1;
+    const releaseGarbageCollector = { collect: vi.fn(async () => ({ removed: [], retained: [] })) };
+    const subject = makeSubject([current], Date.now(), [], {
+      releaseGarbageCollector,
+      now: () => now,
+    });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce());
+
+    current.databaseMtimeMs = 2;
+    now += 9 * 60 * 1_000;
+    await subject.coordinator.scanOnce();
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+
+    now += 2 * 60 * 1_000;
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(releaseGarbageCollector.collect).toHaveBeenCalledTimes(2));
+  });
+
   it("does not run durable release inspection for database churn on an active runner", async () => {
     const current = registration({ pidAlive: true, lifecycleState: "running" });
     current.databaseMtimeMs = 1;
     const releaseGarbageCollector = { collect: vi.fn(async () => ({ removed: [], retained: [] })) };
-    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
+    const subject = makeSubject(
+      [current],
+      Date.now(),
+      [],
+      { releaseGarbageCollector },
+      0,
+    );
 
     await subject.coordinator.scanOnce();
     current.databaseMtimeMs = 2;
@@ -3538,6 +3573,7 @@ function makeSubject(
   overrides: Omit<Partial<RunnerRecoveryCoordinatorOptions>, "taskExecutor"> & {
     taskExecutor?: Partial<RunnerRecoveryCoordinatorOptions["taskExecutor"]>;
   } = {},
+  releaseGcMinIntervalMs?: number,
 ) {
   const tasks = new Map<string, Task>();
   for (const item of registrations) {
@@ -3595,7 +3631,7 @@ function makeSubject(
     },
   };
   return {
-    coordinator: new RunnerRecoveryCoordinator(options),
+    coordinator: new RunnerRecoveryCoordinator(options, releaseGcMinIntervalMs),
     task: tasks.get("session-a") ?? fallbackTask,
     hydrateRunnerRecoveryTask,
     recoverRegisteredRunner,
