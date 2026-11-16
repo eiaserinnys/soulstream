@@ -223,6 +223,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.initializationError = error instanceof Error ? error : new Error(String(error));
       throw error;
     });
+    // 보유 판정이 일찍 끝나면 아무도 await하지 않은 채 detachHost()가 불린다.
+    // 그때 처리기 없는 거절이 unhandledRejection 로그로 새지 않게 한 번 처리됨으로
+    // 표시한다. this.ready는 거절 상태 그대로라 이후 await하는 쪽은 같은 오류를 받는다.
+    void this.ready.catch(() => undefined);
   }
 
   hasLostRunner(): boolean {

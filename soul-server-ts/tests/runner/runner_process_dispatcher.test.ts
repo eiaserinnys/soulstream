@@ -23,6 +23,8 @@ import {
 } from "../../src/runner/runner_adoption_failure_recovery.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import { RunnerNotAliveError } from
+  "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { IsolationPreparationPolicyError } from
   "../../src/runner/session_filesystem_errors.js";
@@ -659,6 +661,42 @@ describe("RunnerProcessDispatcher", () => {
       .rejects.toBe(failure);
 
     expect(dispatcher.initializationFailed()).toBe(true);
+  });
+
+  it("does not emit an unhandled rejection when a failed initialization is detached unawaited", async () => {
+    const failure = new RunnerNotAliveError("session-a");
+    const stateDirectory = await temporaryDirectory();
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandledRejection);
+    try {
+      const dispatcher = new RunnerProcessDispatcher({
+        spawn: spawnInput(stateDirectory),
+        runnerProcess: Promise.reject(failure),
+        pumpMux: new EventOutboxPumpMux(new EventOutboxPump(
+          emptyStore("node-stream"),
+          vi.fn(),
+        )),
+        logger: pino({ level: "silent" }),
+        handleHostCall: async () => null,
+      });
+
+      // The offline replay retention decision finishes before anything awaits
+      // `ready`, so the host is detached while initialization is still settling.
+      await dispatcher.detachHost();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(unhandledRejections).toEqual([]);
+      expect(dispatcher.initializationFailed()).toBe(true);
+      await expect(dispatcher.dispatch(
+        invokeCommandFrame("invoke:test", "capability-a", []),
+      )).rejects.toBe(failure);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
   });
 
   it("rejects a running recovery when its exact registration is retired", async () => {
