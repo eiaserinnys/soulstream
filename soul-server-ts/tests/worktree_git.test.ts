@@ -157,7 +157,7 @@ describe("WorktreeGit", () => {
       .toEqual(expect.arrayContaining(["base", "managed"]));
   });
 
-  it("reports ignored output separately and never treats a real node_modules directory as managed", async () => {
+  it("keeps ignored output separate and clean when only ignored files exist", async () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
@@ -177,6 +177,26 @@ describe("WorktreeGit", () => {
       "dist/",
       "node_modules/",
     ]));
+    expect(dirty).toMatchObject({ clean: true, tracked: [], untracked: [] });
+  });
+
+  it("treats an untracked file as dirty even when ignored files are also present", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/untracked-dirty",
+      mode: "new",
+      worktreeId: "worktree-untracked-dirty",
+    });
+    mkdirSync(join(created.path, "node_modules"));
+    writeFileSync(join(created.path, "node_modules", "local.txt"), "local");
+    writeFileSync(join(created.path, "notes.txt"), "draft");
+
+    const dirty = await worktrees.inspectDirty(created.path, []);
+
+    expect(dirty.untracked).toEqual(["notes.txt"]);
     expect(dirty.clean).toBe(false);
   });
 

@@ -7,6 +7,11 @@ import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, type WorktreeListEntry } from "./worktree_git.js";
+import {
+  decodeWorktreeListCursor,
+  encodeWorktreeListCursor,
+  type WorktreeListCursorQuery,
+} from "./worktree_list_cursor.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
 import { removeWorktreeLocked } from "./worktree_removal.js";
 import { sweepWorktrees } from "./worktree_sweep.js";
@@ -51,6 +56,33 @@ interface ResolvedCreateWorktreeInput extends CreateWorktreeInput {
   requireSetup: boolean;
 }
 
+export interface ListWorktreesInput {
+  actorSessionId: string;
+  repoId?: string;
+  worktreeId?: string;
+  /** true면 dbState가 removed인 기록도 목록에 넣는다. 기본은 뺀다. */
+  includeRemoved?: boolean;
+  /** 한 쪽 크기(1~50, 기본 20). */
+  limit?: number;
+  /** 앞 쪽이 돌려준 nextCursor. 같은 질의에서만 쓸 수 있다. */
+  cursor?: string;
+}
+
+export interface WorktreeListPage {
+  worktrees: Array<Record<string, unknown>>;
+  nextCursor: string | null;
+  total: number;
+}
+
+const DEFAULT_WORKTREE_LIST_LIMIT = 20;
+const MAX_WORKTREE_LIST_LIMIT = 50;
+
+interface PendingListEntry {
+  item: Record<string, unknown>;
+  dirtyPath?: string;
+  managedPaths?: string[];
+}
+
 export class WorktreeService implements WorktreeExecutionResolver {
   constructor(private readonly options: {
     nodeId: string;
@@ -62,11 +94,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
     listActiveWorkspaceDirs: () => string[];
   }) {}
 
-  async list(input: {
-    actorSessionId: string;
-    repoId?: string;
-    worktreeId?: string;
-  }): Promise<Array<Record<string, unknown>>> {
+  async list(input: ListWorktreesInput): Promise<WorktreeListPage> {
     return await this.options.git.withOperationDeadline(
       async () => await this.listWithinDeadline(input),
     );
@@ -77,11 +105,22 @@ export class WorktreeService implements WorktreeExecutionResolver {
     return this.options.git.listRepositoryIds();
   }
 
-  private async listWithinDeadline(input: {
-    actorSessionId: string;
-    repoId?: string;
-    worktreeId?: string;
-  }): Promise<Array<Record<string, unknown>>> {
+  private async listWithinDeadline(input: ListWorktreesInput): Promise<WorktreeListPage> {
+    const limit = input.limit ?? DEFAULT_WORKTREE_LIST_LIMIT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_WORKTREE_LIST_LIMIT) {
+      throw new WorktreeServiceError(
+        "INVALID_REQUEST",
+        `limit must be an integer between 1 and ${MAX_WORKTREE_LIST_LIMIT}`,
+      );
+    }
+    const includeRemoved = input.includeRemoved === true;
+    const cursorQuery: WorktreeListCursorQuery = {
+      repoId: input.repoId ?? null,
+      includeRemoved,
+    };
+    const offset = input.cursor === undefined
+      ? 0
+      : cursorOffsetFor(input.cursor, cursorQuery);
     const repositories = input.repoId
       ? [input.repoId]
       : this.options.git.listRepositoryIds();
@@ -93,68 +132,90 @@ export class WorktreeService implements WorktreeExecutionResolver {
     });
     const byPath = new Map(records.map((record) => [record.canonicalPath, record]));
     const observedAt = new Date().toISOString();
-    const result: Array<Record<string, unknown>> = [];
+    const entries: PendingListEntry[] = [];
     const discoveredRecordIds = new Set<string>();
     for (const repoId of repositories) {
       for (const discovered of await this.options.git.list(repoId)) {
         const record = byPath.get(discovered.path);
         if (input.worktreeId && record?.id !== input.worktreeId) continue;
         if (record) discoveredRecordIds.add(record.id);
-        const dirty = discovered.kind === "external" || discovered.kind === "missing"
-            ? null
-            : await this.options.git.inspectDirty(
-              discovered.path,
-              record?.managedPaths.map((managed) => managed.path) ?? [],
-            );
-        result.push({
-          worktreeId: record?.id ?? null,
-          nodeId: this.options.nodeId,
-          repoId,
-          path: discovered.path,
-          branch: discovered.branch ?? null,
-          head: discovered.head,
-          discoveryKind: discoveryKindFor(discovered.kind),
-          dirty,
-          dbState: record?.state ?? null,
-          ownerKind: record ? (record.ownerFolderId ? "folder" : "session") : null,
-          ownerId: record?.ownerFolderId ?? record?.createdBySessionId ?? null,
-          mutableByCaller: record?.mutableByCaller ?? false,
-          adoptionAllowed: discovered.kind === "unmanaged" && discovered.lockedReason === undefined,
-          lockReason: discovered.lockedReason ?? null,
-          activeSessionId: record?.activeSessionId ?? null,
-          setupMode: record?.setupMode ?? null,
-          setupRequired: record?.setupRequired ?? null,
-          setupStatus: record?.setupStatus ?? null,
-          remoteStatus: "unknown",
-          observedAt,
+        const inspectDirty = discovered.kind !== "external" && discovered.kind !== "missing";
+        entries.push({
+          item: {
+            worktreeId: record?.id ?? null,
+            nodeId: this.options.nodeId,
+            repoId,
+            path: discovered.path,
+            branch: discovered.branch ?? null,
+            head: discovered.head,
+            discoveryKind: discoveryKindFor(discovered.kind),
+            dirty: null,
+            dbState: record?.state ?? null,
+            ownerKind: record ? (record.ownerFolderId ? "folder" : "session") : null,
+            ownerId: record?.ownerFolderId ?? record?.createdBySessionId ?? null,
+            mutableByCaller: record?.mutableByCaller ?? false,
+            adoptionAllowed: discovered.kind === "unmanaged" && discovered.lockedReason === undefined,
+            lockReason: discovered.lockedReason ?? null,
+            activeSessionId: record?.activeSessionId ?? null,
+            setupMode: record?.setupMode ?? null,
+            setupRequired: record?.setupRequired ?? null,
+            setupStatus: record?.setupStatus ?? null,
+            remoteStatus: "unknown",
+            observedAt,
+          },
+          ...(inspectDirty
+            ? {
+              dirtyPath: discovered.path,
+              managedPaths: record?.managedPaths.map((managed) => managed.path) ?? [],
+            }
+            : {}),
         });
       }
     }
     for (const record of records) {
       if (discoveredRecordIds.has(record.id)) continue;
-      result.push({
-        worktreeId: record.id,
-        nodeId: record.nodeId,
-        repoId: record.repoId,
-        path: record.canonicalPath,
-        branch: record.branch,
-        head: record.createdFromSha,
-        discoveryKind: "managed_missing",
-        dirty: null,
-        dbState: record.state,
-        ownerKind: record.ownerFolderId ? "folder" : "session",
-        ownerId: record.ownerFolderId ?? record.createdBySessionId,
-        mutableByCaller: record.mutableByCaller ?? false,
-        adoptionAllowed: false,
-        activeSessionId: record.activeSessionId ?? null,
-        setupMode: record.setupMode,
-        setupRequired: record.setupRequired,
-        setupStatus: record.setupStatus,
-        remoteStatus: "unknown",
-        observedAt,
+      entries.push({
+        item: {
+          worktreeId: record.id,
+          nodeId: record.nodeId,
+          repoId: record.repoId,
+          path: record.canonicalPath,
+          branch: record.branch,
+          head: record.createdFromSha,
+          discoveryKind: "managed_missing",
+          dirty: null,
+          dbState: record.state,
+          ownerKind: record.ownerFolderId ? "folder" : "session",
+          ownerId: record.ownerFolderId ?? record.createdBySessionId,
+          mutableByCaller: record.mutableByCaller ?? false,
+          adoptionAllowed: false,
+          activeSessionId: record.activeSessionId ?? null,
+          setupMode: record.setupMode,
+          setupRequired: record.setupRequired,
+          setupStatus: record.setupStatus,
+          remoteStatus: "unknown",
+          observedAt,
+        },
       });
     }
-    return result;
+    // worktree_id를 준 조회는 그 한 건을 dbState와 무관하게 돌려준다.
+    const visible = entries.filter((entry) =>
+      includeRemoved || input.worktreeId !== undefined || entry.item.dbState !== "removed");
+    const page = visible.slice(offset, offset + limit);
+    for (const entry of page) {
+      if (entry.dirtyPath === undefined) continue;
+      entry.item.dirty = await this.options.git.inspectDirty(
+        entry.dirtyPath,
+        entry.managedPaths ?? [],
+      );
+    }
+    return {
+      worktrees: page.map((entry) => entry.item),
+      nextCursor: offset + limit < visible.length
+        ? encodeWorktreeListCursor({ offset: offset + limit, ...cursorQuery })
+        : null,
+      total: visible.length,
+    };
   }
 
   /**
@@ -421,9 +482,8 @@ export class WorktreeService implements WorktreeExecutionResolver {
       nodeId: this.options.nodeId,
       worktreeId: input.worktreeId,
     });
-    if (!initialRecord || !initialRecord.removableByCaller) {
-      throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
-    }
+    if (!initialRecord) throw worktreeNotFoundError(input.worktreeId, this.options.nodeId);
+    if (!initialRecord.removableByCaller) throw worktreeNotOwnedError(input.worktreeId);
     if (initialRecord.state === "removed") {
       return { worktreeId: initialRecord.id, removed: true, reused: true };
     }
@@ -449,11 +509,10 @@ export class WorktreeService implements WorktreeExecutionResolver {
       nodeId: this.options.nodeId,
       worktreeId: input.worktreeId,
     });
-    if (!initialRecord || !initialRecord.removableByCaller) {
-      throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
-    }
+    if (!initialRecord) throw worktreeNotFoundError(input.worktreeId, this.options.nodeId);
+    if (!initialRecord.removableByCaller) throw worktreeNotOwnedError(input.worktreeId);
     if (initialRecord.state !== "removed") {
-      throw new WorktreeServiceError("WORKTREE_NOT_REMOVED", input.worktreeId);
+      throw worktreeNotRemovedError(input.worktreeId);
     }
     if (initialRecord.branchDeletedAt) return { worktreeId: initialRecord.id, deleted: true, reused: true };
     const commonDirectory = await this.options.git.commonDirectory(initialRecord.repoId);
@@ -463,11 +522,10 @@ export class WorktreeService implements WorktreeExecutionResolver {
         nodeId: this.options.nodeId,
         worktreeId: input.worktreeId,
       });
-      if (!record || !record.removableByCaller) {
-        throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
-      }
+      if (!record) throw worktreeNotFoundError(input.worktreeId, this.options.nodeId);
+      if (!record.removableByCaller) throw worktreeNotOwnedError(input.worktreeId);
       if (record.state !== "removed") {
-        throw new WorktreeServiceError("WORKTREE_NOT_REMOVED", input.worktreeId);
+        throw worktreeNotRemovedError(input.worktreeId);
       }
       if (record.branchDeletedAt) {
         return { worktreeId: record.id, deleted: true, reused: true };
@@ -479,7 +537,11 @@ export class WorktreeService implements WorktreeExecutionResolver {
           await this.options.host.finishBranchDelete(input);
           return { worktreeId: record.id, deleted: true, reused: true };
         }
-        throw new WorktreeServiceError("BRANCH_NOT_FOUND", record.branch);
+        throw new WorktreeServiceError(
+          "BRANCH_NOT_FOUND",
+          `Branch "${record.branch}" was not found in repository "${record.repoId}"`,
+          { branch: record.branch },
+        );
       }
       const markerRef = record.branchDeleteMarkerRef
         ?? `refs/soulstream/worktree-deletions/${record.id}`;
@@ -528,7 +590,11 @@ export class WorktreeService implements WorktreeExecutionResolver {
       const activePath = realpathSync(active);
       if (containsPath(activePath, projectsRoot)) continue;
       if (overlaps(path, activePath)) {
-        throw new WorktreeServiceError("WORKTREE_IN_USE", path);
+        throw new WorktreeServiceError(
+          "WORKTREE_IN_USE",
+          `Worktree "${path}" overlaps the working directory of a running session. A session cannot remove the worktree it is running in; call from another session or retry after that session ends.`,
+          { path, activeWorkspaceDir: activePath },
+        );
       }
     }
   }
@@ -594,6 +660,41 @@ function validateCreateInput(input: ResolvedCreateWorktreeInput): void {
   if (input.mode === "adopt" && (!input.adoptPath || !input.expectedHead)) {
     throw new WorktreeServiceError("INVALID_REQUEST", "adopt_path and expected_head are required");
   }
+}
+
+function cursorOffsetFor(cursor: string, query: WorktreeListCursorQuery): number {
+  const decoded = decodeWorktreeListCursor(cursor);
+  if (decoded.repoId !== query.repoId || decoded.includeRemoved !== query.includeRemoved) {
+    throw new WorktreeServiceError(
+      "WORKTREE_CURSOR_INVALID",
+      "The cursor belongs to a different list_worktrees query; restart from the first page",
+    );
+  }
+  return decoded.offset;
+}
+
+function worktreeNotFoundError(worktreeId: string, nodeId: string): WorktreeServiceError {
+  return new WorktreeServiceError(
+    "WORKTREE_NOT_FOUND",
+    `No worktree with ID "${worktreeId}" exists on node "${nodeId}". Pass the full worktree ID returned by list_worktrees; short IDs and prefixes are not matched.`,
+    { worktreeId, nodeId },
+  );
+}
+
+function worktreeNotOwnedError(worktreeId: string): WorktreeServiceError {
+  return new WorktreeServiceError(
+    "WORKTREE_NOT_OWNED",
+    `Worktree "${worktreeId}" is not owned by or handed over to the calling session`,
+    { worktreeId },
+  );
+}
+
+function worktreeNotRemovedError(worktreeId: string): WorktreeServiceError {
+  return new WorktreeServiceError(
+    "WORKTREE_NOT_REMOVED",
+    `Worktree "${worktreeId}" has not been removed yet; run remove_worktree before deleting its branch`,
+    { worktreeId },
+  );
 }
 
 function throwIfRequiredSetupFailed(record: WorktreeRecord, warnings: string[]): void {

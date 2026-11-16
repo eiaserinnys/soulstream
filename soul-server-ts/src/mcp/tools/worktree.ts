@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { jsonResult, errorResult } from "../result.js";
+import { jsonResult } from "../result.js";
 import { getCurrentMcpPrincipal } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireMcpMutationActor } from "./caller_session.js";
@@ -13,22 +13,27 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
   server.registerTool(
     "list_worktrees",
     {
-      description: "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다.",
+      description: "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다. 기본은 제거된(removed) 기록을 빼고 20건씩 돌려주며 nextCursor로 다음 쪽을 잇는다. total은 거른 뒤 전체 건수다. repo_id로 한 리포만 보고, worktree_id로 한 건(제거된 기록 포함)을 보며 전체 ID가 필요하다. include_removed=true면 제거된 기록도 넣는다.",
       inputSchema: {
         repo_id: z.string().min(1).optional(),
         worktree_id: z.string().min(1).optional(),
+        include_removed: z.boolean().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+        cursor: z.string().min(1).optional(),
         caller_session_id: z.string().min(1).optional(),
       },
     },
-    async ({ repo_id, worktree_id, caller_session_id }) => {
+    async ({ repo_id, worktree_id, include_removed, limit, cursor, caller_session_id }) => {
       try {
         const actor = requireAgentActor(caller_session_id, "list_worktrees");
-        const worktrees = await route(runtime, "list", {
+        return jsonResult(await route(runtime, "list", {
           actorSessionId: actor,
           ...(repo_id ? { repoId: repo_id } : {}),
           ...(worktree_id ? { worktreeId: worktree_id } : {}),
-        });
-        return jsonResult({ worktrees });
+          ...(include_removed !== undefined ? { includeRemoved: include_removed } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+        }));
       } catch (error) {
         return worktreeError(error);
       }
@@ -76,7 +81,7 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
   server.registerTool(
     "remove_worktree",
     {
-      description: "소유한 clean worktree의 작업 디렉터리만 제거한다. branch와 파일은 강제 삭제하지 않는다.",
+      description: "소유한 clean worktree의 작업 디렉터리만 제거한다. branch와 파일은 강제 삭제하지 않는다. worktree_id는 list_worktrees가 돌려준 전체 ID다(짧은 ID나 앞부분은 받지 않는다).",
       annotations: { destructiveHint: true },
       inputSchema: {
         worktree_id: z.string().min(1),
@@ -99,7 +104,7 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
   server.registerTool(
     "delete_worktree_branch",
     {
-      description: "제거된 worktree의 보존이 입증된 local branch만 expected-SHA transaction으로 삭제한다.",
+      description: "제거된 worktree의 보존이 입증된 local branch만 expected-SHA transaction으로 삭제한다. worktree_id는 list_worktrees가 돌려준 전체 ID다(짧은 ID나 앞부분은 받지 않는다).",
       annotations: { destructiveHint: true },
       inputSchema: {
         worktree_id: z.string().min(1),
@@ -143,17 +148,31 @@ async function route(
 }
 
 function worktreeError(error: unknown) {
-  if (error instanceof WorktreeServiceError) {
-    return errorResult(error.message, {
-      code: error.code,
-      ...(error.details ? { details: error.details } : {}),
-    });
-  }
   const candidate = error as { code?: unknown; details?: unknown };
-  return errorResult(error instanceof Error ? error.message : String(error), {
-    code: typeof candidate?.code === "string" ? candidate.code : "WORKTREE_FAILED",
-    ...(candidate?.details && typeof candidate.details === "object" && !Array.isArray(candidate.details)
-      ? { details: candidate.details as Record<string, unknown> }
-      : {}),
-  });
+  const code = error instanceof WorktreeServiceError
+    ? error.code
+    : typeof candidate?.code === "string"
+      ? candidate.code
+      : "WORKTREE_FAILED";
+  const message = error instanceof Error ? error.message : String(error);
+  const details = error instanceof WorktreeServiceError
+    ? error.details
+    : candidate?.details && typeof candidate.details === "object" && !Array.isArray(candidate.details)
+      ? candidate.details as Record<string, unknown>
+      : undefined;
+  // 에이전트 런타임은 content 글만 모델에 보여 준다. code와 details도 여기에 싣는다.
+  return {
+    isError: true,
+    content: [{
+      type: "text" as const,
+      text: details === undefined
+        ? `${code}: ${message}`
+        : `${code}: ${message}\ndetails: ${JSON.stringify(details)}`,
+    }],
+    structuredContent: {
+      error: message,
+      code,
+      ...(details ? { details } : {}),
+    },
+  };
 }
