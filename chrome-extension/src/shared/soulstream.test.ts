@@ -48,6 +48,7 @@ describe("soulstream request helpers", () => {
         nodeId: "node-a",
         profile: "roselin_codex",
         reasoningEffort: "xhigh",
+        caller_info: { source: "browser", display_name: "Chrome Extension" },
       }),
     });
   });

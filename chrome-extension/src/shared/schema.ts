@@ -148,6 +148,11 @@ export interface CreateSessionRequest {
   folderId?: string;
   profile?: string;
   reasoningEffort?: ReasoningEffort;
+  // The service-token path makes the orchestrator report `system` when the
+  // body carries no caller identity, which drops the session from daily page
+  // enrollment. A cookie-authenticated browser request overrides this value
+  // with `browser` anyway, so it is safe to always send.
+  caller_info?: { source: "browser"; display_name: string };
 }
 
 export interface CreateSessionResponse {
@@ -219,5 +224,6 @@ export function buildCreateSessionRequest(config: ExtensionConfig, prompt: strin
   if (config.folderId) request.folderId = config.folderId;
   if (config.profile) request.profile = config.profile;
   if (config.reasoningEffort) request.reasoningEffort = config.reasoningEffort;
+  request.caller_info = { source: "browser", display_name: "Chrome Extension" };
   return request;
 }

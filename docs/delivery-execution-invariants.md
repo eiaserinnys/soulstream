@@ -1,5 +1,9 @@
 # Delivery와 실행 턴의 불변식
 
+## 문서 지위
+
+이 문서는 재설계 목표이며 현재 구현의 보장이 아니다. 현재 동작의 정본은 [전달 원장 상태 전이](pathmaps/delivery-ledger.md)와 `orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.ts`다. 재시도 예산(16회 또는 24시간)을 소진한 delivery는 현재 `uncertain`/`dead_letter`로 종결되고 자동 경로는 그 행을 다시 잡지 않으며, 출구는 보낸 쪽이 같은 `relation_key`로 재등록해 `reviveDeadLetter`로 되살리는 하나다. 아래 불변식이 서술하는 회수 가능성은 현재 구현이 아니라 재설계가 만족해야 할 계약이다.
+
 기준 커밋은 `9a0cb300`이다. 이 문서는 A(유실), B(중복), C(순서 역전), D(접수 성공의 거짓 실패)를 네 개의 독립 패치로 다루지 않는다. 공통 원인은 delivery가 대상 세션만 알 뿐, 그 메시지를 받기로 한 **구체적인 실행 턴**과 연결되지 않는다는 점이다.
 
 이 문서는 구현안을 정하지 않는다. 다음 재설계가 만족해야 하는 관찰 가능한 계약과, 현재 구조가 그 계약을 증명할 수 없는 위치만 고정한다.

@@ -1,5 +1,7 @@
 # 전달 원장 상태 전이
 
+> 문서 지위: [Delivery와 실행 턴의 불변식](../delivery-execution-invariants.md)은 재설계 목표 계약이며 현재 구현의 보장이 아니다. 현재 동작의 정본은 이 문서와 아래 writer들이다.
+
 R3 코드 대조 커밋 SHA: `e15bfa04bbb304f4138930a8e022f4d70ccffd4e`
 
 R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
