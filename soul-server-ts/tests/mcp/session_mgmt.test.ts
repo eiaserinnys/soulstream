@@ -275,7 +275,9 @@ describe("node-local worktree tools", () => {
     const capture = await createOrchCapture(500, () => ({ body: { error: "unexpected remote call" } }));
     try {
       const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
-      const localResult = method === "list" ? [{ worktreeId: "local-worktree" }] : { worktreeId: "local-worktree" };
+      const localResult = method === "list"
+        ? { worktrees: [{ worktreeId: "local-worktree" }], nextCursor: null, total: 1 }
+        : { worktreeId: "local-worktree" };
       const execute = vi.fn(async () => localResult);
       runtime.worktreeService = { [method]: execute } as unknown as McpRuntime["worktreeService"];
       const client = await createClient(runtime);
@@ -284,7 +286,7 @@ describe("node-local worktree tools", () => {
         arguments: { ...args, node_id: "node-remote", caller_session_id: "caller-sess-1" },
       });
       expect(result.isError).not.toBe(true);
-      expect(result.structuredContent).toEqual(method === "list" ? { worktrees: localResult } : localResult);
+      expect(result.structuredContent).toEqual(localResult);
       expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actorSessionId: "caller-sess-1" }));
       expect(capture.requests).toEqual([]);
     } finally {

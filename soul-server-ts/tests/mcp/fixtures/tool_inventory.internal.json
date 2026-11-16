@@ -2424,7 +2424,7 @@
     "annotations": {
       "destructiveHint": true
     },
-    "description": "제거된 worktree의 보존이 입증된 local branch만 expected-SHA transaction으로 삭제한다.",
+    "description": "제거된 worktree의 보존이 입증된 local branch만 expected-SHA transaction으로 삭제한다. worktree_id는 list_worktrees가 돌려준 전체 ID다(짧은 ID나 앞부분은 받지 않는다).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -4102,7 +4102,7 @@
     "name": "list_user_messages"
   },
   {
-    "description": "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다.",
+    "description": "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다. 기본은 제거된(removed) 기록을 빼고 20건씩 돌려주며 nextCursor로 다음 쪽을 잇는다. total은 거른 뒤 전체 건수다. repo_id로 한 리포만 보고, worktree_id로 한 건(제거된 기록 포함)을 보며 전체 ID가 필요하다. include_removed=true면 제거된 기록도 넣는다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -4112,6 +4112,18 @@
         "caller_session_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "cursor": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include_removed": {
+          "type": "boolean"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
         },
         "repo_id": {
           "minLength": 1,
@@ -6463,7 +6475,7 @@
     "annotations": {
       "destructiveHint": true
     },
-    "description": "소유한 clean worktree의 작업 디렉터리만 제거한다. branch와 파일은 강제 삭제하지 않는다.",
+    "description": "소유한 clean worktree의 작업 디렉터리만 제거한다. branch와 파일은 강제 삭제하지 않는다. worktree_id는 list_worktrees가 돌려준 전체 ID다(짧은 ID나 앞부분은 받지 않는다).",
     "execution": {
       "taskSupport": "forbidden"
     },

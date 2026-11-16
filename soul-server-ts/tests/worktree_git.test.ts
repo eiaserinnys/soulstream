@@ -157,7 +157,7 @@ describe("WorktreeGit", () => {
       .toEqual(expect.arrayContaining(["base", "managed"]));
   });
 
-  it("reports ignored output separately and never treats a real node_modules directory as managed", async () => {
+  it("keeps ignored output separate and clean when only ignored files exist", async () => {
     const { projectsRoot } = makeRepository();
     const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
     const created = await worktrees.create({
@@ -177,6 +177,26 @@ describe("WorktreeGit", () => {
       "dist/",
       "node_modules/",
     ]));
+    expect(dirty).toMatchObject({ clean: true, tracked: [], untracked: [] });
+  });
+
+  it("treats an untracked file as dirty even when ignored files are also present", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner",
+      repoId: "demo",
+      branch: "feature/untracked-dirty",
+      mode: "new",
+      worktreeId: "worktree-untracked-dirty",
+    });
+    mkdirSync(join(created.path, "node_modules"));
+    writeFileSync(join(created.path, "node_modules", "local.txt"), "local");
+    writeFileSync(join(created.path, "notes.txt"), "draft");
+
+    const dirty = await worktrees.inspectDirty(created.path, []);
+
+    expect(dirty.untracked).toEqual(["notes.txt"]);
     expect(dirty.clean).toBe(false);
   });
 
@@ -435,26 +455,29 @@ describe("WorktreeGit", () => {
 
   it("shares one deadline across sequential Git child processes", async () => {
     const { projectsRoot } = makeRepository();
-    const calls: string[][] = [];
+    const calls: Array<{ name: string; signal: AbortSignal | undefined }> = [];
     const worktrees = new WorktreeGit({
       projectsRoot,
       timeoutMs: 300,
       processRunner: async (input) => {
-        calls.push(input.args);
-        if (input.args[0] === "remote" || input.args[0] === "fetch") {
-          await runBoundedProcess({
-            command: process.execPath,
-            args: ["-e", "setTimeout(()=>{},180)"],
-            cwd: input.cwd,
-            timeoutMs: input.timeoutMs,
-            signal: input.signal,
-          });
+        const name = input.args[0]!;
+        calls.push({ name, signal: input.signal });
+        if (name === "check-ref-format") return { stdout: "", stderr: "", exitCode: 0 };
+        if (name === "remote") {
+          return { stdout: "git@example.invalid:demo.git\n", stderr: "", exitCode: 0 };
         }
-        return {
-          stdout: input.args[0] === "remote" ? "git@example.invalid:demo.git\n" : "",
-          stderr: "",
-          exitCode: 0,
-        };
+        if (name === "fetch") {
+          // 실제 대기 시간에 기대지 않고, 첫 아이 전에 걸린 기한 signal 하나가 이후 아이를
+          // 끊는지 본다. 아이마다 새 한도를 받으면 signal이 다르고 이 대기는 끝나지 않는다.
+          const signal = input.signal!;
+          if (!signal.aborted) {
+            await new Promise<void>((resolve) => {
+              signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+          }
+          throw new GitProcessError("PROCESS_TIMEOUT", "git timed out", true);
+        }
+        throw new Error(`unexpected git command: ${name}`);
       },
     });
 
@@ -464,12 +487,15 @@ describe("WorktreeGit", () => {
       branch: "feature/shared-deadline",
       mode: "new",
       worktreeId: "worktree-shared-deadline",
-    }))).rejects.toMatchObject({ code: "PROCESS_TIMEOUT", terminationConfirmed: true });
-    expect(calls.map((args) => args[0])).toEqual([
+    }))).rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    expect(calls.map((call) => call.name)).toEqual([
       "check-ref-format",
       "remote",
       "fetch",
     ]);
+    // 순차 git 아이 모두 같은 기한 signal을 받았고, 그 하나가 끊겼다.
+    expect(calls.every((call) => call.signal === calls[0]!.signal)).toBe(true);
+    expect(calls[0]!.signal?.aborted).toBe(true);
   });
 
   it("uses the extended child timeout only for worktree add", async () => {

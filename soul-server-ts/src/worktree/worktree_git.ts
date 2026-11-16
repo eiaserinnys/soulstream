@@ -566,7 +566,10 @@ export class WorktreeGit {
       await this.git(repo, ["fetch", "--prune", "origin"]);
     } catch (error) {
       rethrowProcessTimeout(error);
-      throw new WorktreeGitError("REMOTE_FETCH_FAILED", input.repoId);
+      throw new WorktreeGitError(
+        "REMOTE_FETCH_FAILED",
+        `Failed to fetch from origin for repository "${input.repoId}"; branch deletion needs a fresh remote view`,
+      );
     }
     const markerSha = await this.refSha(repo, input.markerRef);
     if (markerSha === input.expectedSha) return "already_deleted";
@@ -575,12 +578,20 @@ export class WorktreeGit {
       throw new WorktreeGitError("REF_REUSED", `${current ?? "missing"} != ${input.expectedSha}`);
     }
     if (!await this.isCommitPreserved(repo, input.expectedSha, input.branch)) {
-      throw new WorktreeGitError("UNPRESERVED_COMMITS", input.branch);
+      throw new WorktreeGitError(
+        "UNPRESERVED_COMMITS",
+        `Branch "${input.branch}" has commits that are not preserved on the remote or another ref; refusing to delete it`,
+      );
     }
     const checkedOut = (await this.list(input.repoId)).some(
       (entry) => entry.branch === input.branch,
     );
-    if (checkedOut) throw new WorktreeGitError("BRANCH_CHECKED_OUT", input.branch);
+    if (checkedOut) {
+      throw new WorktreeGitError(
+        "BRANCH_CHECKED_OUT",
+        `Branch "${input.branch}" is checked out in a worktree; remove that worktree before deleting the branch`,
+      );
+    }
     const script = [
       "start",
       `create ${input.markerRef} ${input.expectedSha}`,
@@ -683,9 +694,8 @@ export class WorktreeGit {
     const unmanagedUntracked = untracked.filter((entry) => !isManagedEntry(entry, managedPaths));
     const unmanagedIgnored = ignored.filter((entry) => !isManagedEntry(entry, managedPaths));
     return {
-      clean: unmanagedTracked.length === 0
-        && unmanagedUntracked.length === 0
-        && unmanagedIgnored.length === 0,
+      // 무시된 파일(node_modules, target, dist 등)은 제거 쪽 판단과 맞춰 clean을 바꾸지 않는다.
+      clean: unmanagedTracked.length === 0 && unmanagedUntracked.length === 0,
       tracked: unmanagedTracked,
       untracked: unmanagedUntracked,
       ignored: unmanagedIgnored,

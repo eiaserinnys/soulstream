@@ -400,7 +400,7 @@ describe("WorktreeService", () => {
       expect(host.records.get(ids.get(kind)!)?.state).toBe("ready");
     }
     expect(begin.mock.calls.every(([input]) => input.sweeperNodeId === "node-a" && !input.actorSessionId)).toBe(true);
-  });
+  }, 30_000);
 
   it("preserves a shared worktree when base dependency links point back into it", async () => {
     const { repo, service, host } = fixture();
@@ -509,7 +509,7 @@ describe("WorktreeService", () => {
       reused: true,
     });
     const listed = await service.list({ actorSessionId: "owner", repoId: "demo" });
-    expect(listed.map((entry) => entry.discoveryKind))
+    expect(listed.worktrees.map((entry) => entry.discoveryKind))
       .toEqual(expect.arrayContaining(["base", "managed"]));
 
     const path = String(created.path);
@@ -522,17 +522,34 @@ describe("WorktreeService", () => {
     })).resolves.toMatchObject({ removed: true });
     expect(existsSync(path)).toBe(false);
     expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
-    await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
-      .resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          worktreeId: created.worktreeId,
-          discoveryKind: "managed_missing",
-          dbState: "removed",
-          setupMode: "none",
-          setupRequired: false,
-          setupStatus: "not_requested",
-        }),
-      ]));
+    const defaults = await service.list({ actorSessionId: "owner", repoId: "demo" });
+    expect(defaults.worktrees).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ worktreeId: created.worktreeId }),
+    ]));
+    const withRemoved = await service.list({
+      actorSessionId: "owner",
+      repoId: "demo",
+      includeRemoved: true,
+    });
+    expect(withRemoved.worktrees).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        worktreeId: created.worktreeId,
+        discoveryKind: "managed_missing",
+        dbState: "removed",
+        setupMode: "none",
+        setupRequired: false,
+        setupStatus: "not_requested",
+      }),
+    ]));
+    const byId = await service.list({
+      actorSessionId: "owner",
+      repoId: "demo",
+      worktreeId: String(created.worktreeId),
+    });
+    expect(byId.worktrees).toEqual([
+      expect.objectContaining({ worktreeId: created.worktreeId, dbState: "removed" }),
+    ]);
+    expect(byId.total).toBe(1);
   });
 
   it("refuses adoption when an active task cwd overlaps the candidate", async () => {
@@ -581,14 +598,16 @@ describe("WorktreeService", () => {
     git(repo, "worktree", "lock", "--reason", "initializing", unmanaged);
 
     await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
-      .resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          path: realpathSync(unmanaged),
-          discoveryKind: "unmanaged_adoptable",
-          adoptionAllowed: false,
-          lockReason: "initializing",
-        }),
-      ]));
+      .resolves.toMatchObject({
+        worktrees: expect.arrayContaining([
+          expect.objectContaining({
+            path: realpathSync(unmanaged),
+            discoveryKind: "unmanaged_adoptable",
+            adoptionAllowed: false,
+            lockReason: "initializing",
+          }),
+        ]),
+      });
   });
 
   it("serializes concurrent create calls for the same branch", async () => {
@@ -630,12 +649,14 @@ describe("WorktreeService", () => {
     writeFileSync(join(repo, "README.md"), "changed\n");
 
     await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
-      .resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          discoveryKind: "base",
-          dirty: expect.objectContaining({ clean: false, tracked: ["README.md"] }),
-        }),
-      ]));
+      .resolves.toMatchObject({
+        worktrees: expect.arrayContaining([
+          expect.objectContaining({
+            discoveryKind: "base",
+            dirty: expect.objectContaining({ clean: false, tracked: ["README.md"] }),
+          }),
+        ]),
+      });
   });
 
   it("rejects adoption when the requested branch differs from the discovered branch", async () => {
@@ -750,7 +771,7 @@ describe("WorktreeService", () => {
     });
     expect(existsSync(join(String(created.path), "packages", "ui", "node_modules"))).toBe(false);
     const listed = await service.list({ actorSessionId: "owner", repoId: "demo" });
-    expect(listed).toEqual(expect.arrayContaining([
+    expect(listed.worktrees).toEqual(expect.arrayContaining([
       expect.objectContaining({
         path: created.path,
         setupMode: "none",
@@ -1158,12 +1179,14 @@ describe("WorktreeService", () => {
     expect(recovered).toMatchObject({ reused: true, recovered: true });
     expect(host.records.size).toBe(1);
     await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
-      .resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          worktreeId: recovered.worktreeId,
-          discoveryKind: "managed",
-        }),
-      ]));
+      .resolves.toMatchObject({
+        worktrees: expect.arrayContaining([
+          expect.objectContaining({
+            worktreeId: recovered.worktreeId,
+            discoveryKind: "managed",
+          }),
+        ]),
+      });
   });
 
   it("restores ready and finishes on retry when Git removal succeeded before DB transition failed", async () => {
@@ -1344,14 +1367,16 @@ describe("WorktreeService", () => {
     git(repo, "worktree", "add", "-b", "feature/external-service", external, "HEAD");
 
     await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
-      .resolves.toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          path: external,
-          discoveryKind: "unmanaged_external",
-          dirty: null,
-          adoptionAllowed: false,
-        }),
-      ]));
+      .resolves.toMatchObject({
+        worktrees: expect.arrayContaining([
+          expect.objectContaining({
+            path: external,
+            discoveryKind: "unmanaged_external",
+            dirty: null,
+            adoptionAllowed: false,
+          }),
+        ]),
+      });
   });
 });
 

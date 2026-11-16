@@ -46,7 +46,7 @@ Major MCP tool groups include:
 
 When `WORKTREE_MCP_ENABLED=true` and `WORKTREE_PROJECTS_ROOT` is configured on a worker, agents can isolate repository edits in dedicated git worktrees rather than mutating shared base checkouts:
 
-- `list_worktrees`: list active worktrees tracked by the control plane.
+- `list_worktrees`: list active worktrees tracked by the control plane. Removed records are excluded by default and the result is paged 20 at a time with `nextCursor` and a post-filter `total`; pass `repo_id` for one repository, `worktree_id` for one entry (removed records included), `include_removed=true` to include removed records, and `limit` (1–50) with `cursor` for other page sizes.
 - `create_worktree`: create a branch and checkout under `.projects/{repo}--{branch-slug}` and bind worktree ownership to the session.
 - `remove_worktree`: remove a worktree checkout after changes are merged.
 - `delete_worktree_branch`: clean up the local branch after worktree removal.
