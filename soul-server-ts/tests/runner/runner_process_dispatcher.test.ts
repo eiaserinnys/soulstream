@@ -1688,6 +1688,54 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
+  it("fails recovery with the restart-window error when the registered runner never started an execution", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    const statusCommandIds: string[] = [];
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      if (frame.kind === "execution_status") {
+        statusCommandIds.push(frame.commandId);
+        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: { executionCommandId: null },
+        }));
+        return;
+      }
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const spawned = await spawnedProcessForTest(paths);
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawned,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
+    });
+
+    await expect(collect(dispatcher.recoverFrames())).rejects.toMatchObject({
+      name: "RunnerExecutionNotStartedError",
+      code: "execution_not_started",
+      message: "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
+    });
+    expect(statusCommandIds).toHaveLength(1);
+    expect(dispatcher.hasActiveExecution()).toBe(false);
+
+    await dispatcher.close();
+    await endpoint.close();
+  });
+
   it("reconnects the same registered runner after a request deadline and replays its active stream once", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

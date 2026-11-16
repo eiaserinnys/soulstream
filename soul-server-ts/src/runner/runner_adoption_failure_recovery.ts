@@ -9,6 +9,10 @@ import {
   type RunnerRegistration,
 } from "./runner_process_registry.js";
 import {
+  RUNNER_EXECUTION_NOT_STARTED,
+  RUNNER_EXECUTION_NOT_STARTED_MESSAGE,
+} from "./runner_process_dispatcher.js";
+import {
   prepareRecoveredTask,
 } from "./runner_recovery_task.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
@@ -94,7 +98,7 @@ export class RunnerAdoptionFailureRecovery {
     registration: RunnerRegistration,
     task: Task,
     error: { code: string; message: string },
-    disposition: "reap_dead" | "socket_unavailable",
+    disposition: "reap_dead" | "socket_unavailable" | "execution_not_started",
     afterProcessStopped?: () => Promise<void>,
   ): Promise<void> {
     if (registration.pidAlive) {
@@ -237,6 +241,27 @@ export class RunnerAdoptionFailureRecovery {
             message: "runner socket disappeared while the registered process remained alive",
           },
           "socket_unavailable",
+          releaseStoppedRecoveryHandles,
+        );
+        return;
+      }
+      if (
+        disposition === "adopt_running"
+        && verifiedDisposition === "adopt_running"
+        && errorChainHasCode(error, RUNNER_EXECUTION_NOT_STARTED)
+      ) {
+        this.deps.logger.info(
+          { ...recoveryLogContext(registration, error, verifiedDisposition), pid: hydrated.pid },
+          "identity-verified runner that never started its execution will be terminalized",
+        );
+        await this.terminalize(
+          hydrated,
+          task,
+          {
+            code: RUNNER_EXECUTION_NOT_STARTED,
+            message: RUNNER_EXECUTION_NOT_STARTED_MESSAGE,
+          },
+          "execution_not_started",
           releaseStoppedRecoveryHandles,
         );
         return;

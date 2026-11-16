@@ -5,6 +5,8 @@ import {
   RunnerAdoptionFailureRecovery,
   type RunnerAdoptionFailureRecoveryDeps,
 } from "../../src/runner/runner_adoption_failure_recovery.js";
+import { RunnerExecutionNotStartedError } from
+  "../../src/runner/runner_process_dispatcher.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 
@@ -86,6 +88,62 @@ describe("RunnerAdoptionFailureRecovery", () => {
     await scheduleAndWait(subject.recovery, prebootstrap, task(), {
       disposition: "adopt_prebootstrap",
       error: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+  });
+
+  it("terminalizes an identity-verified running registration whose execution never started", async () => {
+    const subject = makeSubject();
+    const running = registration();
+    const currentTask = task();
+    await scheduleAndWait(subject.recovery, running, currentTask, {
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).toHaveBeenCalledWith(running);
+    expect(subject.deps.markReaped).toHaveBeenCalledWith(
+      expect.objectContaining({ pid: running.pid, pidAlive: false }),
+      new Date(NOW_MS).toISOString(),
+      {
+        code: "execution_not_started",
+        message: "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
+      },
+    );
+    expect(subject.deps.invalidateRegistration).toHaveBeenCalled();
+    expect(subject.deps.recoverOffline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pidAlive: false,
+        lifecycle: expect.objectContaining({
+          execution_state: "reaped",
+          terminal_error: {
+            code: "execution_not_started",
+            message: "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
+          },
+        }),
+      }),
+      currentTask,
+    );
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(false);
+  });
+
+  it("keeps deferring the restart-window error for an identity-unverified registration", async () => {
+    const subject = makeSubject();
+    const provisional = registration({ lifecycleState: null });
+    await scheduleAndWait(subject.recovery, provisional, task(), {
+      disposition: "adopt_running",
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+  });
+
+  it("keeps deferring an identity-verified running registration on an unrelated adoption error", async () => {
+    const subject = makeSubject();
+    await scheduleAndWait(subject.recovery, registration(), task(), {
+      error: new Error("adoption failed"),
     });
     expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
     expect(subject.deps.markFailure).not.toHaveBeenCalled();
