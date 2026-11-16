@@ -5,6 +5,8 @@ import type { EnginePort } from "../../src/engine/protocol.js";
 import type { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
+import { RunnerNotAliveError } from
+  "../../src/runner/runner_process_runtime_factory.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import { listActiveTaskWorkspaceDirs } from "../../src/runtime/task_active_workspace_dirs.js";
@@ -169,6 +171,42 @@ describe("TaskExecutorFinalizer.finalize", () => {
       }
     },
   );
+
+  it("does not retain a Claude runner whose probe found no live runner", async () => {
+    const close = vi.fn(async () => undefined);
+    const activity = vi.fn(async () => {
+      throw new RunnerNotAliveError("sess-1");
+    });
+    const engine = {
+      ...makeEngine(vi.fn(async () => undefined)),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: activity,
+    } as EnginePort;
+    const dispatcher = {
+      close,
+      hasLostRunner: vi.fn(() => false),
+    };
+    const task = makeTask({
+      runner: createTaskRunnerRuntime(engine, dispatcher as never),
+    });
+    const finalizer = makeFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(activity).toHaveBeenCalledOnce();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+  });
 
   it("retains a process Codex runner for detached running or terminal-result work", async () => {
     const close = vi.fn(async () => undefined);

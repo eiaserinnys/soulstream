@@ -642,6 +642,25 @@ describe("RunnerProcessDispatcher", () => {
     expect(terminate).not.toHaveBeenCalled();
   });
 
+  it("reports a failed initialization synchronously so a retained runner can be dropped", async () => {
+    const failure = new Error("spawn input failed");
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: Promise.reject(failure),
+      runnerProcess: null,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(
+        emptyStore("node-stream"),
+        vi.fn(),
+      )),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    await expect((dispatcher as unknown as { ready: Promise<void> }).ready)
+      .rejects.toBe(failure);
+
+    expect(dispatcher.initializationFailed()).toBe(true);
+  });
+
   it("rejects a running recovery when its exact registration is retired", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");

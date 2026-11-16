@@ -2726,6 +2726,49 @@ describe("TaskExecutor runner process boundary", () => {
     }
   });
 
+  it("replaces a retained runner whose dispatcher failed to initialize", async () => {
+    const mocks = makeMocks();
+    const replacement = makeRunnerProcessRuntime([
+      { type: "complete", result: "fresh runner", timestamp: 1 } as SSEEventPayload,
+    ]);
+    const processFactory = vi.fn(() => replacement.runner) as unknown as
+      RunnerProcessRuntimeFactory;
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const staleDispatcher = {
+      close: vi.fn(async () => undefined),
+      initializationFailed: vi.fn(() => true),
+    };
+    const staleRunner = {
+      engine: makeFakeEngine([]),
+      dispatcher: staleDispatcher as never,
+      eventPersistence: "runner",
+    } as unknown as TaskRunnerRuntime;
+    const task = makeTask();
+    task.runner = staleRunner;
+    task.runnerRetainedForDetachedWork = true;
+
+    executor.startNewExecution(task, agent);
+    await task.executionPromise;
+
+    expect(staleDispatcher.close).toHaveBeenCalledOnce();
+    expect(processFactory).toHaveBeenCalledOnce();
+    expect(task.status).toBe("completed");
+    expect(task.runner).toBeUndefined();
+  });
+
   it.each([
     ["background work", 1, 0],
     ["pending runtime signal", 0, 1],

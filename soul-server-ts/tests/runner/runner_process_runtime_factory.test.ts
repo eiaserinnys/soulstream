@@ -9,6 +9,7 @@ import { readClaudeBackgroundProvenance } from
 import {
   applyRunnerHostCall,
   createRunnerProcessRuntimeFactory,
+  RunnerNotAliveError,
 } from
   "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerChildConfig } from
@@ -194,49 +195,9 @@ describe("createRunnerProcessRuntimeFactory", () => {
   });
 
   it("passes the existing registration to recovery adoption without spawning", async () => {
-    const config: RunnerChildConfig = parseRunnerChildConfig({
-      schemaVersion: 1,
-      sessionId: "session-adopt",
-      backend: "codex",
-      agent: {
-        id: "agent-adopt",
-        name: "Adopt Agent",
-        backend: "codex",
-        workspace_dir: "/workspace/adopt",
-      },
-      paths: {
-        sessionDirectory: "/runner/session-adopt",
-        databasePath: "/runner/session-adopt/runner.sqlite",
-        socketPath: "/runner/session-adopt/runner.sock",
-        pidPath: "/runner/session-adopt/runner.pid",
-        lockPath: "/runner/session-adopt/runner.lock",
-        configPath: "/runner/session-adopt/runner-config.json",
-        logPath: "/runner/session-adopt/runner.log",
-      },
-      codeSha: "sha-adopt",
-      snapshotPath: "/release/sha-adopt/soul-server-ts",
-      codexAdapterMode: "sdk",
-      codexAppServerRequestTimeoutMs: 45_000,
-      codexAppServerStartupTimeoutMs: 600_000,
-      claudeRuntimeV2Enabled: true,
-      claudeRuntimeIdleTtlMs: 300_000,
-      claudeRuntimeMaxEntries: 16,
-      claudeRuntimeTurnTimeoutMs: 1_800_000,
-      internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
-      codexHome: "/home/test/.codex",
-      rolloutRoot: "/home/test/.codex/sessions",
-    });
+    const registration = adoptionRegistration();
+    const { config } = registration;
     expect(config.codexDetachedResultRetentionMs).toBe(1_800_000);
-    const registration: RunnerRegistration = {
-      config,
-      pid: 6101,
-      pidAlive: true,
-      registeredAtMs: 1,
-      bootstrap: null,
-      lifecycle: null,
-      registrationId: "registration-adopt",
-      pidStartIdentity: "start-6101",
-    };
     const adopt = vi.fn(async () => ({
       pid: 6101,
       registrationId: "registration-adopt",
@@ -300,7 +261,92 @@ describe("createRunnerProcessRuntimeFactory", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  it("reports an adoption whose registered runner is gone as RunnerNotAliveError", async () => {
+    const registration = adoptionRegistration();
+    const factory = createRunnerProcessRuntimeFactory({
+      env: runnerEnv(),
+      logger: pino({ level: "silent" }),
+      pumpMux: {} as never,
+      sessionStore: {} as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      releasePool: {
+        resolveCurrentRelease: vi.fn(),
+        describe: vi.fn(() => ({
+          releaseId: "sha-adopt",
+          releaseRoot: "/release/sha-adopt",
+          runnerModuleRoot: "/release/sha-adopt/soul-server-ts",
+        })),
+        ensureRelease: vi.fn(async () => undefined),
+      },
+      buildChildProcessEnv: () => ({}),
+      spawner: { adopt: vi.fn(async () => null), spawn: vi.fn() },
+    });
+    const task = {
+      agentSessionId: "session-adopt",
+      prompt: "resume",
+      status: "pending",
+    } as Task;
+    const runtime = factory.recover!(task, registration, {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    }, "adopt");
+
+    const failure = await runtime.dispatcher.prepareSession("session-adopt")
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RunnerNotAliveError);
+    expect(failure).toMatchObject({
+      name: "RunnerNotAliveError",
+      message: "registered runner is not alive: session-adopt",
+    });
+  });
+
 });
+
+function adoptionRegistration(): RunnerRegistration {
+  const config: RunnerChildConfig = parseRunnerChildConfig({
+    schemaVersion: 1,
+    sessionId: "session-adopt",
+    backend: "codex",
+    agent: {
+      id: "agent-adopt",
+      name: "Adopt Agent",
+      backend: "codex",
+      workspace_dir: "/workspace/adopt",
+    },
+    paths: {
+      sessionDirectory: "/runner/session-adopt",
+      databasePath: "/runner/session-adopt/runner.sqlite",
+      socketPath: "/runner/session-adopt/runner.sock",
+      pidPath: "/runner/session-adopt/runner.pid",
+      lockPath: "/runner/session-adopt/runner.lock",
+      configPath: "/runner/session-adopt/runner-config.json",
+      logPath: "/runner/session-adopt/runner.log",
+    },
+    codeSha: "sha-adopt",
+    snapshotPath: "/release/sha-adopt/soul-server-ts",
+    codexAdapterMode: "sdk",
+    codexAppServerRequestTimeoutMs: 45_000,
+    codexAppServerStartupTimeoutMs: 600_000,
+    claudeRuntimeV2Enabled: true,
+    claudeRuntimeIdleTtlMs: 300_000,
+    claudeRuntimeMaxEntries: 16,
+    claudeRuntimeTurnTimeoutMs: 1_800_000,
+    internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
+    codexHome: "/home/test/.codex",
+    rolloutRoot: "/home/test/.codex/sessions",
+  });
+  return {
+    config,
+    pid: 6101,
+    pidAlive: true,
+    registeredAtMs: 1,
+    bootstrap: null,
+    lifecycle: null,
+    registrationId: "registration-adopt",
+    pidStartIdentity: "start-6101",
+  };
+}
 
 function runnerEnv() {
   return {

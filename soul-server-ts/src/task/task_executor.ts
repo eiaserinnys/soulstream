@@ -1026,6 +1026,8 @@ export class TaskExecutor {
     if (reusableRunner && (
       reusableRunner.engine.backendId !== backend
       || !runnerIsolationAllowsReuse(reusableRunner.isolation, desiredIsolation)
+      // 초기화에 실패한 러너는 살아 있지 않다. 후보를 버리고 새로 만든다.
+      || dispatcherInitializationFailed(reusableRunner.dispatcher)
     )) {
       await reusableRunner.dispatcher.close();
       releaseTaskRunner(task, reusableRunner);
@@ -3287,6 +3289,19 @@ function clearRejectedTerminalMark(task: Task, registrationId: string): void {
   if (task.rejectedTerminationRegistrationId === registrationId) {
     task.rejectedTerminationRegistrationId = undefined;
   }
+}
+
+/**
+ * 이 보유 러너가 다시 쓸 수 없는 상태인지. 러너 프로세스 디스패처의 초기화는
+ * 생성자에서 한 번뿐이라 거절된 뒤에는 어떤 명령도 받지 못한다. 그런 러너를
+ * 재사용하면 다음 재개가 같은 거절을 다시 받는다(카드 #1380). 프로세스 러너가
+ * 아닌 디스패처에는 이 메서드가 없다.
+ */
+function dispatcherInitializationFailed(
+  dispatcher: TaskRunnerRuntime["dispatcher"],
+): boolean {
+  return (dispatcher as { initializationFailed?(): boolean })
+    .initializationFailed?.() === true;
 }
 
 function keepaliveResultFor(
