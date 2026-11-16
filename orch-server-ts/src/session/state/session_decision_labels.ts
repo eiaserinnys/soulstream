@@ -16,7 +16,7 @@ export const SESSION_COMMAND_LABELS: Record<SessionDecisionCommand, string> = {
   node_disconnect_cleanup: "노드 끊김을 정리한다",
   startup_reconcile_missing: "시작 정리에서 사라진 세션을 멈춘다",
   startup_reconcile_restore: "시작 정리에서 살아 있는 세션을 되살린다",
-  stale_registration: "옛 실행 등록 사건을 막는다",
+  stale_registration: "옛 실행 등록 사건을 가른다",
   session_update_status: "범용 갱신으로 상태를 쓴다",
   acknowledge_review: "검수를 확인한다",
   delete: "세션을 지운다",
@@ -39,7 +39,7 @@ export const SESSION_COMMAND_RULES: Record<SessionDecisionCommand, string> = {
   startup_reconcile_restore:
     "끊김 종료가 리비전 없이 기록된 줄을 노드가 실행 중이라고 보고하고 워크트리가 준비됐을 때만 running으로 되살린다. 종료 칸을 지우고 검수 칸을 not_required로 둔다.",
   stale_registration:
-    "세션 줄이 없으면 예외를 던진다. 사건의 실행 등록 id가 세션의 현재 등록과 다르면 사건을 적용하지 않고 dead-letter로 보낸다. 저장 상태는 바꾸지 않는다.",
+    "세션 줄이 없으면 예외를 던진다. 사건의 실행 등록 id가 세션의 현재 등록과 다르면, 세션 상태를 바꾸지 않는 효과(효과 없음, last_message)는 사건을 기록하고 받으며, 나머지 효과는 적용하지 않고 dead-letter로 보낸다. 어느 갈래든 저장 상태는 바꾸지 않는다.",
   session_update_status:
     "session_update의 허용 열에 status가 있어 상태를 그대로 쓴다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 상태(completed, error, interrupted) 줄에 running을 쓰려 하면 줄을 바꾸지 않고 끝난다. 종료 세션을 되살리는 길은 종료 재개를 기록하는 함수들뿐이다.",
   acknowledge_review:
@@ -94,6 +94,8 @@ export const SESSION_REASON_LABELS: Record<string, string> = {
   startup_interrupted: "시작 정리에서 사라진 세션을 중단 종료로 기록했다",
   startup_restored: "시작 정리에서 세션을 실행 중으로 되살렸다",
   registration_current: "실행 등록이 현재와 같아 사건을 받는다",
+  registration_stale_recorded:
+    "옛 등록이지만 상태를 바꾸지 않는 기록 사건이라 받는다",
   status_written: "범용 갱신으로 상태를 썼다",
   review_acknowledged: "검수를 확인했다",
   deleted: "세션 줄을 지웠다",
@@ -163,6 +165,11 @@ export const SESSION_FACT_LABELS: Record<
     not_provided: "사건에 없음",
     matches: "현재와 같음",
     stale: "현재와 다름",
+  },
+  effect: {
+    none: "효과 없음",
+    last_message: "마지막 메시지",
+    state_changing: "세션 상태 변경",
   },
   reviewRequired: { true: "검수 필요", false: "검수 불필요" },
   path: {

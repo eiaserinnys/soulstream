@@ -392,7 +392,7 @@ it('matches startup reconciliation for restored sessions',async()=>{
 
 const STREAM_ID='018f47b7-c6de-7d64-9c8d-0b62cbbb2e10';
 
-/** 결정표 행의 판정이 사건 입구 결과로 옮겨지는 길: apply는 반영, reject는 dead-letter. */
+/** 결정표 행의 판정이 사건 입구 결과로 옮겨지는 길: apply는 받아서 기록, reject는 dead-letter. */
 function ingressOutcomeOf(row:SessionDecisionRow):'committed'|'dead_lettered'{
  expect(['apply','reject'],rowLabel(row)).toContain(row.decision.kind);
  return row.decision.kind==='apply'?'committed':'dead_lettered';
@@ -437,15 +437,20 @@ it('matches the event ingress stale registration rejection and current acceptanc
  events,
  };
  }
- const staleRow=(registration:'stale'|'matches')=>rows.find(candidate=>
+ const staleRow=(
+  registration:'stale'|'matches',
+  effect:'none'|'last_message'|'state_changing',
+ )=>rows.find(candidate=>
  candidate.command.type==='stale_registration'
  && candidate.state.status==='running'
  && candidate.state.termination==='none'
  && candidate.state.review==='acknowledged'
  && candidate.facts.registration===registration
+ && candidate.facts.effect===effect
  )!;
- const mismatchRow=staleRow('stale');
- const matchRow=staleRow('matches');
+ const mismatchRow=staleRow('stale','state_changing');
+ const recordRow=staleRow('stale','none');
+ const matchRow=staleRow('matches','none');
  // 등록이 낡은 상태 사건은 결정표처럼 거절한다.
  const staleStateEnvelope:EventIngressEnvelope={
  ...envelope('session-1','registration-stale',1,'a'.repeat(64)),
@@ -465,10 +470,12 @@ it('matches the event ingress stale registration rejection and current acceptanc
  const late=await repository.commitBatch('n1',batch(
  envelope('session-1','registration-stale',4,'d'.repeat(64)),
  ));
- expect(late[0]?.outcome,'stale_registration record late event').toBe('committed');
+ expect(recordRow.decision.kind,'stale_registration record late event row').toBe('apply');
+ expect(recordRow.decision.reason,'stale_registration record late event row').toBe('registration_stale_recorded');
+ expect(late[0]?.outcome,'stale_registration record late event').toBe(ingressOutcomeOf(recordRow));
  expectSameState(
  await storedValue('session-1'),
- expectedValue(mismatchRow),
+ expectedValue(recordRow),
  'stale_registration record late event',
  );
  const current=await repository.commitBatch('n1',batch(

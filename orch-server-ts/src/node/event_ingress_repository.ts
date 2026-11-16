@@ -33,6 +33,7 @@ import {
 } from "./event_session_gate.js";
 import {
   EVENT_SESSION_REJECTION_REASONS,
+  recordsDespiteStaleRegistration,
   type EventSessionRejectionReason,
 } from "./event_ingress_contract.js";
 
@@ -402,27 +403,6 @@ export class EventIngressRepository {
       ...(feedLastEventId === undefined ? {} : { feedLastEventId }),
     };
   }
-}
-
-/**
- * 등록 번호가 낡아도 세션 기록으로 남기는 사건의 명시 목록.
- *
- * session_effect가 없는 일반 기록 사건(답, 도구, 훅, 턴 끝 후보)과 last_message만
- * 해당한다. last_message의 늦은 도착은 SQL 함수 session_apply_last_chat_message의
- * (created_at, event_id) 순서 보호가 정리하므로 따로 건너뛰지 않는다.
- *
- * 그 밖의 효과(execution_registration, execution_acquire, running_transition,
- * terminal_transition, set_backend_session_id, rotate_backend_session_id,
- * append_metadata)는 낡은 등록이 새 실행의 중앙 상태를 덮지 않도록 지금처럼
- * 거절한다(설계 R5). gatedSessionCommand()로 넓히면 세션 행 효과까지 풀린다.
- */
-const RECORDABLE_STALE_EFFECT_KINDS: ReadonlySet<EventSessionEffect["kind"]> =
-  new Set(["last_message"]);
-
-function recordsDespiteStaleRegistration(
-  effect: EventSessionEffect | null,
-): boolean {
-  return effect === null || RECORDABLE_STALE_EFFECT_KINDS.has(effect.kind);
 }
 
 async function lockSession(

@@ -6,6 +6,9 @@
  * 쓰기만 하는 값(다음 검수 상태, 종료 목표 상태)은 명령이 나르는 값이라
  * 사실 목록에서 빼고 표의 조건 일관성에만 쓴다.
  */
+import { RECORDABLE_STALE_EFFECT_KINDS } from
+  "../../node/event_ingress_contract.js";
+
 const flag = [false, true] as const;
 
 export const SESSION_RESUME_VALUES = [
@@ -34,6 +37,17 @@ export const SESSION_REGISTRATION_VALUES = [
   "not_provided",
   "matches",
   "stale",
+] as const;
+
+/**
+ * 낡은 등록 판정이 효과 종류로 가르는 값. session_effect가 없으면 none,
+ * 세션 상태를 바꾸지 않는 효과는 사건 수신 울타리와 같은 명시 목록 그대로,
+ * 나머지 효과는 state_changing이다.
+ */
+export const SESSION_STALE_EFFECT_VALUES = [
+  "none",
+  ...RECORDABLE_STALE_EFFECT_KINDS,
+  "state_changing",
 ] as const;
 
 export const SESSION_DELETE_PATHS = [
@@ -97,7 +111,10 @@ export const SESSION_FACT_VALUES = {
   node_disconnect_cleanup: { nodeOwns: flag },
   startup_reconcile_missing: { targetMatches: flag, inRunningList: flag },
   startup_reconcile_restore: { inRunningList: flag, worktreeReady: flag },
-  stale_registration: { registration: SESSION_REGISTRATION_VALUES },
+  stale_registration: {
+    registration: SESSION_REGISTRATION_VALUES,
+    effect: SESSION_STALE_EFFECT_VALUES,
+  },
   session_update_status: {},
   acknowledge_review: { reviewRequired: flag },
   delete: { path: SESSION_DELETE_PATHS },

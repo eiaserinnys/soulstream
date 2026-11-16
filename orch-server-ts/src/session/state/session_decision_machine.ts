@@ -1,4 +1,4 @@
-import { and, setup } from "xstate";
+import { and, not, setup } from "xstate";
 
 import {
   SESSION_COMMANDS,
@@ -115,6 +115,12 @@ function orderedGuards(command: SessionDecisionCommand) {
 }
 
 const verdict: Record<string, any[]> = {};
+/** 낡은 등록이어도 상태를 바꾸지 않는 효과는 사건을 기록하고 받는다(카드 #1353). */
+sessionDecisionGuards["apply.stale_registration.recorded"] = and([
+  sessionApplied("stale_registration"),
+  fact("registration", "stale"),
+  not(fact("effect", "state_changing")),
+]);
 sessionDecisionGuards["apply.execution_registration.terminal_resume"] = and([
   sessionApplied("execution_registration"),
   ({ event }: { event: SessionDecisionEvent }) =>
@@ -137,6 +143,16 @@ for (const command of SESSION_COMMANDS) {
     ...orderedGuards(command).map(({ kind, entry }) =>
       decision(command, kind, entry.reason, entry.guard),
     ),
+    ...(command === "stale_registration"
+      ? [
+        decision(
+          command,
+          "apply",
+          "registration_stale_recorded",
+          "apply.stale_registration.recorded",
+        ),
+      ]
+      : []),
     ...(command === "execution_registration"
       || command === "running_transition"
       ? [
