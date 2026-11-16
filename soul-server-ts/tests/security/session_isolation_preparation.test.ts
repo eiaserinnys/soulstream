@@ -27,6 +27,7 @@ import {
 import { prepareIsolationPlan } from "../../src/runner/session_filesystem_plan.js";
 import { isolationChildConfigFromPlan } from
   "../../src/runner/runner_process_isolation.js";
+import { applyNodeIsolationPolicy } from "../../src/security/session_isolation_runtime.js";
 import { makeTempDir } from "../helpers/temp_dir.js";
 import {
   createFakeHostPorts,
@@ -1309,6 +1310,52 @@ describe("prepareIsolationPlan", () => {
       prepareIsolationPlan(missingHeader.input, missingHeader.ports),
       ISOLATION_POLICY_UNAVAILABLE,
     );
+  });
+
+  it("keeps the file policy env exports when node settings list the same local MCP server", async () => {
+    const atomServer = {
+      type: "streamable_http" as const,
+      name: "atom",
+      url: "http://127.0.0.1:4200/mcp",
+      headers: { "x-api-key": "atom-session-key" },
+    };
+    const localMcp = {
+      requiredServerId: "soulstream" as const,
+      optional: [{
+        serverId: "atom",
+        nodeId: "node-a",
+        port: 4200,
+        envExports: [
+          { name: "ATOM_SERVER_URL", source: "origin" as const },
+          {
+            name: "ATOM_API_KEY",
+            source: "header" as const,
+            header: "x-api-key",
+          },
+        ],
+      }],
+    };
+    const fixture = await makeFixture({
+      sanitizeMcpServers: async () => [atomServer],
+      policy: (policy) => ({ ...policy, localMcp }),
+    });
+    // 러너 환경 설정(SESSION_ISOLATION_LOCAL_MCP)이 같은 서버를 다시 나열하는
+    // 운영 경로. 병합이 중복을 만들면 뒤 항목이 envExports를 지운다.
+    fixture.input.policy = applyNodeIsolationPolicy(
+      fixture.input.policy,
+      { localMcp: [{ serverId: "atom", port: 4200 }], testDatabase: null },
+      "node-a",
+    );
+
+    const atomEntries = fixture.input.policy.localMcp.optional.filter(
+      (entry) => entry.serverId === "atom",
+    );
+    expect(atomEntries).toHaveLength(1);
+    expect(atomEntries[0]?.envExports).toHaveLength(2);
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    expect(prepared.env.ATOM_SERVER_URL).toBe("http://127.0.0.1:4200");
+    expect(prepared.env.ATOM_API_KEY).toBe("atom-session-key");
   });
 
   it("keeps a writable sensitive root as a writable tmpfs mask and leaves the others read-only", async () => {

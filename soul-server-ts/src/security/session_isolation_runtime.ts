@@ -203,20 +203,31 @@ export function applyNodeIsolationPolicy(
   settings: Pick<SessionIsolationSettings, "localMcp" | "testDatabase">,
   nodeId: string,
 ): IsolationPolicy {
-  const extraServers = settings.localMcp.map((entry) => ({
-    serverId: entry.serverId,
-    nodeId,
-    port: entry.port,
-  }));
   const extraDatabases = settings.testDatabase
     ? [{ nodeId, ...settings.testDatabase }]
     : [];
-  if (extraServers.length === 0 && extraDatabases.length === 0) return base;
+  if (settings.localMcp.length === 0 && extraDatabases.length === 0) return base;
+  // 같은 serverId·nodeId가 파일 정책에 이미 있으면 중복을 만들지 않고 그 항목에
+  // 합친다. envExports처럼 파일 정책에만 있는 필드를 노드 설정이 지우지 않게 한다.
+  // 포트는 지금처럼 노드 설정이 이긴다.
+  const optional = [...base.localMcp.optional];
+  for (const configured of settings.localMcp) {
+    const index = optional.findIndex(
+      (candidate) => candidate.serverId === configured.serverId
+        && candidate.nodeId === nodeId,
+    );
+    const existing = index >= 0 ? optional[index] : undefined;
+    const merged = existing === undefined
+      ? { serverId: configured.serverId, nodeId, port: configured.port }
+      : { ...existing, port: configured.port };
+    if (index >= 0) optional[index] = merged;
+    else optional.push(merged);
+  }
   return {
     ...base,
     localMcp: {
       ...base.localMcp,
-      optional: [...base.localMcp.optional, ...extraServers],
+      optional,
     },
     testDatabases: [...base.testDatabases, ...extraDatabases],
   };
