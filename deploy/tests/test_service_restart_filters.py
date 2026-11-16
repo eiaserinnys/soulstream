@@ -112,9 +112,14 @@ class ServiceRestartFiltersTest(unittest.TestCase):
             "soulstream-orch-server": ["soul-app/src/api/actionFailure.ts", "docs/guide/deployment.md", "unified-dashboard/client/App.tsx"],
             "soulstream-soul-server-ts": ["orch-server-ts/src/production_main.ts"],
         }
+        common = [
+            "chrome-extension/public/manifest.json",
+            "soul-app/component-review/review.css",
+            "soul-app/modules/soul-app-search-commands/expo-module.config.json",
+        ]
         for service, paths in examples.items():
             patterns = self.manifest.service_restart_filters[service].ignore_paths
-            for path in paths:
+            for path in paths + common:
                 with self.subTest(service=service, path=path):
                     self.assertIn(path, self.files)
                     self.assertTrue(paths_all_ignored([path], patterns))
