@@ -307,6 +307,21 @@ export function createRunnerProcessRuntimeFactory(
   return factory;
 }
 
+/**
+ * The runner registered for this session no longer holds a live process.
+ *
+ * A typed error lets the retention probe tell "the runner is gone" apart from
+ * a transient probe failure: a dead runner must not be retained for background
+ * work, while an unreadable answer still falls back to the fail-open retention
+ * policy (card #1380).
+ */
+export class RunnerNotAliveError extends Error {
+  constructor(sessionId: string) {
+    super(`registered runner is not alive: ${sessionId}`);
+    this.name = "RunnerNotAliveError";
+  }
+}
+
 async function adoptRegisteredRunner(
   spawner: Pick<RunnerProcessSpawner, "adopt">,
   registration: RunnerRegistration,
@@ -314,7 +329,7 @@ async function adoptRegisteredRunner(
 ): Promise<SpawnedRunnerProcess> {
   const adopted = await spawner.adopt(registration);
   if (!adopted) {
-    throw new Error(`registered runner is not alive: ${registration.config.sessionId}`);
+    throw new RunnerNotAliveError(registration.config.sessionId);
   }
   if (registration.config.claudeAccountPool?.enabled) {
     const accountState = await withRunnerRecoveryStorage(

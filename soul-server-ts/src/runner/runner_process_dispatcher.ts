@@ -171,6 +171,7 @@ export class RunnerExecutionNotStartedError extends Error {
 export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private droppedFrameCount = 0;
   private readonly ready: Promise<void>;
+  private initializationError: Error | undefined;
   private spawnInput!: SpawnRunnerProcessInput;
   private connection: RunnerIpcConnection | undefined;
   private socketPath: string | undefined;
@@ -216,11 +217,26 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.reconnectPolicy = validateReconnectPolicy(
       options.reconnectPolicy ?? DEFAULT_RECONNECT_POLICY,
     );
-    this.ready = this.initialize();
+    // 초기화는 생성자에서 한 번뿐이라 한 번 거절되면 영구히 거절 상태다. 나중에
+    // 다시 await하지 않고도 그 상태를 읽을 수 있게 같은 거절을 붙잡아 둔다.
+    this.ready = this.initialize().catch((error: unknown) => {
+      this.initializationError = error instanceof Error ? error : new Error(String(error));
+      throw error;
+    });
   }
 
   hasLostRunner(): boolean {
     return this.runnerLost;
+  }
+
+  /**
+   * Synchronous read of whether construction-time initialization settled as a
+   * failure. A dispatcher in that state can never serve a command, so a runner
+   * retained with it must be thrown away instead of reused on the next turn
+   * (card #1380).
+   */
+  initializationFailed(): boolean {
+    return this.initializationError !== undefined;
   }
 
   async dispatch(

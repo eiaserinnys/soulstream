@@ -16,6 +16,7 @@ import {
   completeTaskRunnerReleaseClaim,
   releaseTaskRunner,
 } from "./task_runner_release.js";
+import { RunnerNotAliveError } from "../runner/runner_process_runtime_factory.js";
 import { countPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 import {
   buildRetentionCapExceededSentence,
@@ -293,6 +294,16 @@ export class TaskExecutorFinalizer {
       return activity.backgroundTaskCount > 0 ||
         (activity.pendingRuntimeSignalCount ?? 0) > 0;
     } catch (err) {
+      if (err instanceof RunnerNotAliveError) {
+        // 러너 프로세스가 스스로 끝난 뒤의 probe 실패는 보유할 대상이 없다는 뜻이다.
+        // 보유하면 다음 재개가 이 죽은 러너를 다시 쓰고 같은 거절을 또 받는다.
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          recovery ? "detached Claude runtime activity has no live runner during recovery" :
+            "detached Claude runtime activity has no live runner; not retaining runner owner",
+        );
+        return false;
+      }
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         recovery ? "detached Claude runtime activity failed during recovery" :
