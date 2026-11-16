@@ -23,9 +23,10 @@ afterEach(() => {
 });
 
 interface Fixture {
+  root: string;
   projectsRoot: string;
   repo: string;
-  activeDir: string;
+  activeDirs: string[];
   host: StubWorktreeHost;
   service: WorktreeService;
 }
@@ -35,9 +36,8 @@ function fixture(): Fixture {
   roots.push(root);
   const projectsRoot = join(root, "projects");
   const repo = join(projectsRoot, "demo");
-  const activeDir = join(root, "active-session");
+  const activeDirs: string[] = [];
   mkdirSync(repo, { recursive: true });
-  mkdirSync(activeDir);
   execFileSync("git", ["init", "-b", "main"], { cwd: repo });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo });
   execFileSync("git", ["config", "user.name", "Test"], { cwd: repo });
@@ -52,9 +52,9 @@ function fixture(): Fixture {
     createTimeoutMs: 20_000,
     lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 5_000 }),
     host,
-    listActiveWorkspaceDirs: () => [activeDir],
+    listActiveWorkspaceDirs: () => activeDirs,
   });
-  return { projectsRoot, repo, activeDir, host, service };
+  return { root, projectsRoot, repo, activeDirs, host, service };
 }
 
 class StubWorktreeHost implements WorktreeHost {
@@ -188,8 +188,12 @@ describe("worktree MCP tool error content", () => {
   });
 
   it("explains the overlapping active workspace in the content text", async () => {
-    const { service, host, activeDir } = fixture();
-    host.records.push(worktreeRecord({ canonicalPath: activeDir }));
+    const { service, host, root, activeDirs } = fixture();
+    const worktreePath = join(root, "worktree-under-test");
+    const nestedActive = join(worktreePath, "nested-session");
+    mkdirSync(nestedActive, { recursive: true });
+    activeDirs.push(nestedActive);
+    host.records.push(worktreeRecord({ canonicalPath: worktreePath }));
 
     const result = await callTool(service, "remove_worktree", {
       worktree_id: "worktree-1",
@@ -199,7 +203,8 @@ describe("worktree MCP tool error content", () => {
     expect(result.isError).toBe(true);
     const text = contentText(result);
     expect(text).toContain("WORKTREE_IN_USE");
-    expect(text).toContain(activeDir);
+    // 활성 작업 폴더는 worktree 경로와 달라야 details에서 빠지는 회귀를 잡는다.
+    expect(text).toContain(nestedActive);
     expect(text).toContain("details: ");
   });
 
