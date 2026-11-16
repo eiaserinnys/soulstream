@@ -1341,6 +1341,7 @@ export function buildProductionRouteOptions(
     productionAuth: {
       resolveTokenAccess: providers.authRoutes.resolveTokenAccess,
       resolveOAuthAccess: providers.authenticatedUserResolvers.resolveOAuthAccess,
+      nodeCredentials,
     },
     adminUsersRoutes: providers.adminUsersRoutes,
     atomRoutes: providers.atomRoutes,
@@ -1468,6 +1469,7 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      accessProvider: sessionAccessProvider,
       ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
       onHumanSessionInput: async targetSessionId => {
         if (!cardServiceProvider) return;
@@ -1512,8 +1514,10 @@ export function buildProductionRouteOptions(
       deliveryRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).deliveries,
     },
-    sessionBackgroundScheduleRoutes:
-      providers.runtime.sessionBackgroundScheduleRoutes,
+    sessionBackgroundScheduleRoutes: {
+      ...providers.runtime.sessionBackgroundScheduleRoutes,
+      accessProvider: sessionAccessProvider,
+    },
     ...(scheduleRepositoryProvider === undefined
       ? {}
       : {
@@ -1529,7 +1533,10 @@ export function buildProductionRouteOptions(
       reports: { remove: async (sessionId,key) => (await persistenceRepositoryProvider()).persistentReports!.remove(sessionId,key) },
       requireSessionAccess: sessionAccessProvider.requireSessionAccess,
     },
-    sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
+    sessionCommandRoutes: {
+      ...providers.runtime.sessionCommandRoutes,
+      accessProvider: sessionAccessProvider,
+    },
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,
     sseReplayRoutes: providers.runtime.sseReplayRoutes,

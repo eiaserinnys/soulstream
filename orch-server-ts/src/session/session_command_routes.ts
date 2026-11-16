@@ -27,6 +27,10 @@ import {
   SessionCommandRouter,
   type SessionOwnerNodeIdLookup,
 } from "./session_command_router.js";
+import {
+  requireRequestSessionAccess,
+  type SessionResourceAccessProvider,
+} from "./session_resource_access.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import {
   SessionCreateLifecycleError,
@@ -59,6 +63,8 @@ export type SessionCommandRouteOptions = {
   worktreeAuthBearerToken?: string;
   environment?: string;
   nodeCredentials: NodeCredentialResolver | null;
+  /** Session folder ACL for the HTTP handlers only (not `POST /api/sessions`). */
+  accessProvider?: SessionResourceAccessProvider;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -133,6 +139,13 @@ export function registerSessionCommandRoutes(
   app.post<{
     Params: { session_id: string };
   }>("/api/sessions/:session_id/respond", async (request, reply) => {
+    const denied = await requireRequestSessionAccess(
+      options.accessProvider,
+      request,
+      reply,
+      request.params.session_id,
+    );
+    if (denied) return reply;
     const body = parseObjectBody(request.body);
     if (body === undefined) {
       return badRequest(reply, "Request body must be a JSON object");
