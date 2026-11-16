@@ -10,7 +10,7 @@
  *   이동 궤적 없이 하단 고정.
  * - prepend는 `firstItemIndex -= N`: 기본 행은 store count, 원고형 행은 투영 후 증가량.
  * - 과거 로드는 startReached/viewport geometry/수동 재시도가 하나의 controller를 사용.
- * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 Virtuoso 행 key로 찾는다.
+ * - focusEventId 하이라이트는 `itemsRendered` 콜백과 렌더 뒤 도착한 요청의 effect에서 Virtuoso 행 key로 찾는다.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
  *
  * Follow mode: 새 메시지 도착 시 자동 스크롤 follow/unfollow 토글.
@@ -522,6 +522,51 @@ function ChatViewContent({
     if (frame !== null) window.cancelAnimationFrame(frame);
     focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
   }, [activeSessionKey, focusEventRequestId]);
+  // 포커스 고리는 Virtuoso 렌더 콜백과, 행이 이미 렌더된 뒤 늦게 도착한 요청의 effect가 함께 쓴다.
+  // 대상 행이 아직 DOM에 없으면 스크롤 재시도를 걸고, 붙인 고리는 2초 뒤 지운다.
+  const applyFocusRing = useCallback(() => {
+    if (focusEventId == null) return;
+    const targetIndex = findFocusIndex(timelineItems, focusEventId);
+    if (targetIndex < 0) return;
+    const targetKey = messageOrGroupKey(timelineItems[targetIndex]);
+    const targetRow = Array.from(
+      scrollerRef.current?.querySelectorAll<HTMLElement>("[data-chat-item-key]") ?? [],
+    ).find((row) => row.dataset.chatItemKey === targetKey);
+    const el = targetRow?.querySelector<HTMLElement>("[data-tree-node-id]") ?? null;
+    if (!el) {
+      retryFocusScroll();
+      return;
+    }
+    const requestId = focusEventRequestId;
+    // Virtuoso가 행 DOM을 다시 만들면 붙였던 클래스가 새 행에 남지 않는다.
+    // 같은 요청의 고리가 살아 있는 행에 없으면 그 행에 다시 붙인다.
+    if (handledFocusRef.current === requestId && el.classList.contains("chat-focus-ring")) return;
+    handledFocusRef.current = requestId;
+    focusRingOwnersRef.current.set(el, requestId);
+    el.classList.add("chat-focus-ring");
+    window.setTimeout(() => {
+      if (focusRingOwnersRef.current.get(el) === requestId) {
+        el.classList.remove("chat-focus-ring");
+        focusRingOwnersRef.current.delete(el);
+      }
+      const currentFocus = chatStore.getState();
+      if (
+        currentFocus.focusEventId === focusEventId
+        && currentFocus.focusEventSessionId === activeSessionKey
+        && currentFocus.focusEventRequestId === requestId
+      ) {
+        setFocusEventId(null);
+      }
+    }, 2000);
+  }, [
+    activeSessionKey,
+    chatStore,
+    focusEventId,
+    focusEventRequestId,
+    retryFocusScroll,
+    setFocusEventId,
+    timelineItems,
+  ]);
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled && transcriptFallback == null, isManuscript);
   requestOlderRef.current = history.requestOlder;
   useEffect(() => {
@@ -733,6 +778,11 @@ function ChatViewContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancelPendingRetention, focusEventId, focusEventRequestId, treeVersion, timelineItems]);
 
+  // 포커스 요청이 Virtuoso 렌더 콜백보다 늦게 도착해도(행이 이미 렌더된 뒤) 고리를 붙인다.
+  useEffect(() => {
+    applyFocusRing();
+  }, [applyFocusRing, focusEventId, focusEventRequestId, timelineItems]);
+
   const scrollToBottom = useCallback(() => {
     clearOlderHistoryIntent();
     isFollowingRef.current = true;
@@ -935,38 +985,7 @@ function ChatViewContent({
           // 다음 실제 render range에서 재확인한다. 사용자 위쪽 입력은 ref를 먼저
           // 끄므로 과거 탐색 중인 viewport와 경쟁하지 않는다.
           maintainBottomIfFollowing();
-          if (focusEventId == null) return;
-          // 새 요청은 같은 이벤트 ID를 다시 선택해도 처리한다.
-          if (handledFocusRef.current === focusEventRequestId) return;
-          const targetIndex = findFocusIndex(timelineItems, focusEventId);
-          if (targetIndex < 0) return;
-          const targetKey = messageOrGroupKey(timelineItems[targetIndex]);
-          const targetRow = Array.from(
-            scrollerRef.current?.querySelectorAll<HTMLElement>("[data-chat-item-key]") ?? [],
-          ).find((row) => row.dataset.chatItemKey === targetKey);
-          const el = targetRow?.querySelector<HTMLElement>("[data-tree-node-id]") ?? null;
-          if (!el) {
-            retryFocusScroll();
-            return;
-          }
-          handledFocusRef.current = focusEventRequestId;
-          const requestId = focusEventRequestId;
-          focusRingOwnersRef.current.set(el, requestId);
-          el.classList.add("chat-focus-ring");
-          window.setTimeout(() => {
-            if (focusRingOwnersRef.current.get(el) === requestId) {
-              el.classList.remove("chat-focus-ring");
-              focusRingOwnersRef.current.delete(el);
-            }
-            const currentFocus = chatStore.getState();
-            if (
-              currentFocus.focusEventId === focusEventId
-              && currentFocus.focusEventSessionId === activeSessionKey
-              && currentFocus.focusEventRequestId === requestId
-            ) {
-              setFocusEventId(null);
-            }
-          }, 2000);
+          applyFocusRing();
         }}
           className={presentation === "manuscript" ? "-mx-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
         />

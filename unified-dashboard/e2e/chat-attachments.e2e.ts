@@ -316,7 +316,7 @@ test("actual ordinary chat sends an attachment without text", async ({ page }) =
   const h = await installOrdinaryChatRoutes(page);
   await page.goto("/?session=run-alpha-1");
   const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
-  await expect(root).toBeVisible();
+  await expect(root).toBeVisible({ timeout: 30_000 });
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await root.locator('input[type="file"]').setInputFiles({

@@ -254,8 +254,11 @@ for (const fallback of ["unsupported", "invalid"] as const) {
 
 test("ordinary chat stays unchanged around editing and has no empty accessories", async ({ page }) => {
   const h = await installChatUiRoutes(page, { ui: false });
+  // 이 시험은 ui:false라 .chat-ui가 없어 openChatUi를 쓸 수 없다. 채팅 루트를
+  // 개발 서버 첫 변환 시간까지 기다린다(카드 #1460).
   await page.goto(`/?session=${chatUiSession}`);
   const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
+  await expect(root).toBeVisible({ timeout: 30_000 });
   await expect(root.getByText("기존 일반 답 8", { exact: false })).toBeVisible();
   await expect(root.locator('[data-slot="chat-input-accessories"]')).toHaveCount(0);
   await capture(page, "ordinary-before");

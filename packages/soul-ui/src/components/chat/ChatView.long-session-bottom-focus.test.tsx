@@ -1649,15 +1649,16 @@ describe("ChatView long-session initial bottom focus", () => {
 
   it("이전 검색 이벤트의 highlight timeout은 새 검색 focus를 지우지 않는다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
-    useDashboardStore.getState().setFocusEventId(42, "sess-long");
-    ({ container, root } = await renderChatView());
-    const previousTarget = container.querySelector<HTMLElement>(
-      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
-    );
-    if (!previousTarget) throw new Error("검색 대상 chat row가 없습니다.");
-
-    vi.useFakeTimers();
+    // 고리 timer는 이제 render 직후 effect에서 걸리므로 fake timer를 render 전에 켠다.
+    // shouldAdvanceTime은 flushPassiveEffects의 setTimeout(0)이 실제 시간으로 풀리게 한다.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
+      useDashboardStore.getState().setFocusEventId(42, "sess-long");
+      ({ container, root } = await renderChatView());
+      const previousTarget = container.querySelector<HTMLElement>(
+        '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+      );
+      if (!previousTarget) throw new Error("검색 대상 chat row가 없습니다.");
       const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
       if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
       flushSync(() => itemsRendered());
@@ -1674,6 +1675,50 @@ describe("ChatView long-session initial bottom focus", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("렌더 뒤 늦게 온 포커스 요청에도 고리가 붙는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    ({ container, root } = await renderChatView());
+    const target = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+    );
+    if (!target) throw new Error("검색 대상 chat row가 없습니다.");
+    expect(target.classList.contains("chat-focus-ring")).toBe(false);
+
+    // 행이 이미 렌더된 뒤에는 itemsRendered 콜백이 다시 오지 않는다.
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(42, "sess-long");
+    });
+    await flushPassiveEffects();
+
+    expect(target.classList.contains("chat-focus-ring")).toBe(true);
+  });
+
+  it("Virtuoso가 행 DOM을 다시 만들어도 살아 있는 행에 고리가 다시 붙는다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    ({ container, root } = await renderChatView());
+    const rowSelector = '[data-chat-item-key="user-msg-42"]';
+    const target = container.querySelector<HTMLElement>(`${rowSelector} [data-tree-node-id]`);
+    if (!target) throw new Error("검색 대상 chat row가 없습니다.");
+
+    flushSync(() => useDashboardStore.getState().setFocusEventId(42, "sess-long"));
+    await flushPassiveEffects();
+    expect(target.classList.contains("chat-focus-ring")).toBe(true);
+
+    // Virtuoso가 같은 항목의 행 DOM을 새로 만든 상황.
+    const row = container.querySelector<HTMLElement>(rowSelector);
+    if (!row) throw new Error("검색 대상 chat row가 없습니다.");
+    const replacement = row.cloneNode(true) as HTMLElement;
+    replacement.querySelector<HTMLElement>("[data-tree-node-id]")?.classList.remove("chat-focus-ring");
+    row.replaceWith(replacement);
+
+    const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
+    if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");
+    flushSync(() => itemsRendered());
+
+    const live = container.querySelector<HTMLElement>(`${rowSelector} [data-tree-node-id]`);
+    expect(live?.classList.contains("chat-focus-ring")).toBe(true);
   });
 
   it("같은 이벤트 재선택은 이전 highlight timer가 focus와 ring을 지우지 않는다", async () => {
@@ -1850,10 +1895,6 @@ describe("ChatView long-session initial bottom focus", () => {
   it("DOM 행을 찾지 못한 포커스 요청은 재시도가 끝나면 해제한다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
     ({ container, root } = await renderChatView());
-    flushSync(() => {
-      useDashboardStore.getState().setFocusEventId(42, "sess-long");
-    });
-    await flushPassiveEffects();
 
     const targetRow = container.querySelector<HTMLElement>(
       '[data-chat-item-key="user-msg-42"]',
@@ -1875,6 +1916,12 @@ describe("ChatView long-session initial bottom focus", () => {
         flushSync(() => frames.forEach((callback) => callback(0)));
       }
     };
+
+    // 행이 없는 상태에서 포커스 요청이 도착한다(렌더 콜백과 effect 모두 찾지 못한다).
+    flushSync(() => {
+      useDashboardStore.getState().setFocusEventId(42, "sess-long");
+    });
+    await flushPassiveEffects();
 
     const itemsRendered = virtuosoMock.props?.itemsRendered as (() => void) | undefined;
     if (!itemsRendered) throw new Error("Virtuoso itemsRendered callback이 없습니다.");

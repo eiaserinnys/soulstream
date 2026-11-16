@@ -250,6 +250,12 @@ test("opens the exact session and event after auth, follows a clicked search res
 
     releaseAuth();
 
+    // 포커스 고리는 2초만 남고, 세션 패널이 그려지기 전에 붙는 회차도 있다. 고리 클래스가
+    // 붙는 순간을 config의 expect 대기(15초) 안에서 기다린다(카드 #1460).
+    const focusRingAppeared = expect(
+      page.locator('[data-tree-node-id$="-42"].chat-focus-ring'),
+    ).toHaveCount(1, { timeout: 15_000 });
+
     await expect.poll(() => targetedSessionRequests.some((query) => (
       new URLSearchParams(query).get("session_id") === sessionId
     ))).toBe(true);
@@ -258,7 +264,7 @@ test("opens the exact session and event after auth, follows a clicked search res
       return `${url.pathname}${url.search}${url.hash}`;
     }).toBe("/?keep=1#return");
     await expect(page.locator(".v3-chat-pane:visible")).toContainText("시각 QA 순회");
-    await expect(page.locator('[data-tree-node-id$="-42"].chat-focus-ring')).toBeVisible();
+    await focusRingAppeared;
     await expect(page.locator(".v3-chat-pane:visible")).toContainText(
       `히스토리 ${sessionId} #42`,
     );

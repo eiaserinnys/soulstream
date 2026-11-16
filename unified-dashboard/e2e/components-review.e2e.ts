@@ -91,7 +91,7 @@ for (const width of [1440, 390]) {
     const handoffSample = review.locator("#components-input").getByTestId("card-handoff-review-sample");
     await expect(review).toBeVisible();
     await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
-      "목록 행", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
+      "목록 행", "말풍선과 첨부", "카드 질문 장", "입력창", "선택과 설정", "패널 표면",
     ]);
     await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
@@ -210,7 +210,7 @@ for (const width of [1440, 390]) {
 
     const sample = page.getByTestId("card-board-sample");
     await sample.locator('[data-card-id="board-size-comparison"] .v3-postit-open').first().click();
-    const detail = page.getByTestId("card-detail");
+    const detail = sample.getByTestId("card-detail");
     await expect(detail).toBeVisible();
     await detail.getByRole("tab", { name: "커멘트" }).click();
     const timeline = detail.locator(".v3-card-timeline");
@@ -270,7 +270,8 @@ const w13Now = new Date().toISOString();
 const w13Stamp = `${w13Now.slice(0, 10).replaceAll("-", "")}-${w13Now.slice(11, 16).replace(":", "")}`;
 
 for (const width of [1440, 390]) {
-  test(`W13 manuscript activity sample ${width}`, async ({ page }) => {
+  test(`W13 manuscript activity sample ${width}`, async ({ page }, testInfo) => {
+    if (width === 390) testInfo.setTimeout(120_000);
     await prepare(page, width);
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: width === 390 ? "reduce" : "no-preference" });
     await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",

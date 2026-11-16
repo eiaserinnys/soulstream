@@ -20,6 +20,7 @@ node_modules/
 
 # Local data
 .env.soul-server-ts
+.vite-cache/
 
 # Test
 .pytest_cache/
