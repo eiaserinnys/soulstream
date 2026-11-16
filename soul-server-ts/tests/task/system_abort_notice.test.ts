@@ -91,6 +91,28 @@ describe("buildSystemAbortNoticeItem", () => {
 
 describe("appendSystemAbortNotice", () => {
   it.each([
+    "EventAcknowledgementTimeoutError: event outbox source_seq 42 was not acknowledged within 300000ms",
+    "Error: initial input preparation failed",
+  ])("includes the outer failure detail once in the next input: %s", async (detail) => {
+    const task = makeTask({
+      status: "error",
+      terminationReason: "error_aborted",
+      terminationDetail: detail,
+      terminalEventId: 3114,
+    });
+    const first: InterventionMessage = { text: "첫 입력", user: "system" };
+    const second: InterventionMessage = { text: "두 번째 입력", user: "system" };
+    await appendSystemAbortNotice(task, first, { logger: silentLogger });
+    await appendSystemAbortNotice(task, second, { logger: silentLogger });
+    expect(noticeItems(first)).toEqual([
+      expect.objectContaining({
+        content: expect.objectContaining({ termination_reason: "error_aborted", termination_detail: detail }),
+      }),
+    ]);
+    expect(noticeItems(second)).toHaveLength(0);
+  });
+
+  it.each([
     { label: "error_aborted", reason: "error_aborted", detail: "runner process exited before execution completed", expected: true },
     { label: "limit_hit", reason: "limit_hit", detail: "Claude usage limit reached", expected: true },
     { label: "killed/startup_reconciliation", reason: "killed", detail: "startup_reconciliation", expected: true },

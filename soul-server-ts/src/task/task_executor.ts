@@ -1165,14 +1165,15 @@ export class TaskExecutor {
         await activation?.reject(error);
         if (isTerminalTaskStatus(task.status)) return;
       }
-      if (preparationFailure?.interventions !== undefined) {
-        this.clearPrematureUnknownTermination(task);
-      }
+      await task.interruptRequest?.catch(() => false);
+      if (task.terminationEventRecorded && task.terminationReason === "killed") return;
+      this.clearPrematureUnknownTermination(task);
       // A deterministic preparation failure keeps its original code in the
       // terminal detail; the raw Error message alone drops it.
       await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
         task,
         preparationFailure?.detail ?? error,
+        preparationFailure?.detail ?? (error instanceof Error ? error.toString() : String(error)),
       );
       if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       await this._finalize(task);
@@ -1256,7 +1257,7 @@ export class TaskExecutor {
   }
 
   /**
-   * A thrown input preparation failure unwinds through `_consumeEventStream`'s
+   * An outer execution failure can unwind through `_consumeEventStream`'s
    * finally, where the still-running task is stamped with the placeholder
    * reason "unknown". `recordTerminationHint` then refuses to record the real
    * aborted reason. Clearing the placeholder lets the recovery below stamp it.
@@ -1565,14 +1566,15 @@ export class TaskExecutor {
             await activation?.reject(err);
             if (isTerminalTaskStatus(task.status)) return;
           }
+          await task.interruptRequest?.catch(() => false);
+          if (task.terminationEventRecorded && task.terminationReason === "killed") return;
           // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
           const preparationFailure = executionPreparationFailure(err);
-          if (preparationFailure?.interventions !== undefined) {
-            this.clearPrematureUnknownTermination(task);
-          }
+          this.clearPrematureUnknownTermination(task);
           await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
             task,
             preparationFailure?.detail ?? err,
+            preparationFailure?.detail ?? (err instanceof Error ? err.toString() : String(err)),
           );
           if (task.terminationEventRecorded !== true) task.completedAt = new Date();
           await this._finalize(task);
@@ -2120,6 +2122,7 @@ export class TaskExecutor {
     runner: TaskRunnerRuntime,
     agent: AgentProfile,
   ): Promise<void> {
+    const activeOnEntry = isActiveTaskStatus(task.status);
     await persistUnavailablePresetFailure(task, this.persistence);
     if (task.activeGenerationRollover) {
       if (!this.sessionMutations) {
@@ -2127,11 +2130,11 @@ export class TaskExecutor {
       }
       await commitGenerationStart(task, this.persistence, this.sessionMutations, this.resolveModelPriceVersion(task));
     }
-    // 세대 넘김 창(넘김 기록부터 첫 턴까지) 안에서 멈춤이나 삭제가 왔으면 넘김 시작을 알리지
-    // 않고 첫 턴도 보내지 않는다. 꺼낸 지시는 줄에 되돌려 다음 시작이 받게 한다. 넘김은
-    // 적용 중으로 남아 다음 실행이 잇는다(카드 #1266 U5b, 약속 13과 15).
+    // 첫 턴 준비 중 멈춤이나 삭제가 왔으면 첫 턴을 보내지 않는다. 세대 넘김은
+    // 이미 멈춘 채 진입한 경우에도 시작을 알리지 않고 다음 실행이 잇는다.
     const stoppedInGenerationWindow = (): boolean =>
-      task.activeGenerationRollover !== undefined && !isActiveTaskStatus(task.status);
+      (activeOnEntry || task.activeGenerationRollover !== undefined)
+      && !isActiveTaskStatus(task.status);
     const initialTurnInput = stoppedInGenerationWindow()
       ? undefined
       : await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
@@ -2162,6 +2165,11 @@ export class TaskExecutor {
         // 멈춤이 종료를 올리는 중이면 그 마무리를 기다린다. 먼저 마무리하면 종료가 두 번 오른다.
         await task.interruptRequest?.catch(() => false);
       }
+    } catch (error) {
+      // Let an in-flight user stop record its reason before finalization can
+      // stamp the still-running task with an unknown placeholder.
+      await task.interruptRequest?.catch(() => false);
+      throw error;
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         if (task.terminationEventRecorded !== true) task.completedAt = new Date();

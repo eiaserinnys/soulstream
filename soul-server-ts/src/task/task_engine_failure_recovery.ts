@@ -50,14 +50,21 @@ export class TaskEngineFailureRecovery {
     return "stop_on_error";
   }
 
-  async recoverFromOuterExecutionFailure(task: Task, err: unknown): Promise<void> {
+  async recoverFromOuterExecutionFailure(
+    task: Task,
+    err: unknown,
+    terminationDetail?: string,
+  ): Promise<void> {
     const message = this.errorMessage(err);
     this.deps.logger.error(
       { err, sessionId: task.agentSessionId },
       "Task execution threw outside event stream",
     );
 
-    this.recordError(task, message, { overwriteNonRunning: true });
+    this.recordError(task, message, {
+      overwriteNonRunning: true,
+      terminationDetail,
+    });
   }
 
   recoverFromSynthesizedFailure(task: Task, message: string): void {
@@ -71,11 +78,11 @@ export class TaskEngineFailureRecovery {
   private recordError(
     task: Task,
     message: string,
-    options: { overwriteNonRunning: boolean },
+    options: { overwriteNonRunning: boolean; terminationDetail?: string },
   ): void {
     if (!options.overwriteNonRunning && task.status !== "running") return;
 
-    recordTerminationHint(task, "error_aborted", message);
+    recordTerminationHint(task, "error_aborted", options.terminationDetail ?? message);
     task.status = "error";
     task.error = message;
     task.result = undefined;
