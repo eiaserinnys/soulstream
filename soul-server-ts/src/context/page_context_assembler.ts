@@ -117,33 +117,44 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
         },
         total: this.budgets.totalChars,
       },
-      entries: selected.map((candidate) => ({
-        id: candidateBudgetId(candidate),
-        category: candidate.category,
-        content: candidate.category === "guidance"
-          ? candidate.text
-          : candidate.category === "atom_ref"
-            ? candidate.compiledText ?? null
-            : null,
-        ...(candidate.category === "atom_ref" && candidate.compiledText
-          ? {
-              fallback: formatAtomContext(
-                renderRootDrilldownAnchor(candidate.nodeId, candidate.nodeId),
-              ),
-              fallbackAnchorCount: 1,
-            }
-          : {}),
-        baseAnchorCount: candidate.category === "atom_ref"
-          ? candidate.sourceManifest?.anchor_count ?? 0
-          : 0,
-        priority: candidate.category === "atom_ref"
-          ? candidate.priority ?? -candidate.distance
-          : -candidate.distance,
-        neverTruncate: candidate.category === "atom_ref"
-          ? candidate.neverTruncate ?? false
-          : false,
-        countTowardTotal: candidate.category !== "session_defaults",
-      })),
+      entries: selected.map((candidate) => {
+        const anchorReplacesBody = candidate.category === "atom_ref"
+          && !candidate.compiledText
+          && candidate.sourceManifest?.status === "error";
+        const atomAnchor = candidate.category === "atom_ref"
+          ? formatAtomContext(renderRootDrilldownAnchor(candidate.nodeId, candidate.nodeId))
+          : undefined;
+        const atomContent = candidate.category === "atom_ref"
+          ? candidate.compiledText ?? (anchorReplacesBody ? atomAnchor : undefined)
+          : undefined;
+        return {
+          id: candidateBudgetId(candidate),
+          category: candidate.category,
+          content: candidate.category === "guidance"
+            ? candidate.text
+            : candidate.category === "atom_ref"
+              ? atomContent ?? null
+              : null,
+          ...(candidate.category === "atom_ref" && atomContent
+            ? {
+                fallback: atomAnchor,
+                fallbackAnchorCount: 1,
+              }
+            : {}),
+          baseAnchorCount: candidate.category === "atom_ref"
+            ? anchorReplacesBody
+              ? 1
+              : candidate.sourceManifest?.anchor_count ?? 0
+            : 0,
+          priority: candidate.category === "atom_ref"
+            ? candidate.priority ?? -candidate.distance
+            : -candidate.distance,
+          neverTruncate: candidate.category === "atom_ref"
+            ? candidate.neverTruncate ?? false
+            : false,
+          countTowardTotal: candidate.category !== "session_defaults",
+        };
+      }),
     });
     const budgetedById = new Map(budget.entries.map((entry) => [entry.id, entry]));
     const rendered: Array<Record<string, unknown> & { candidate: PageContextCandidate }> = [];

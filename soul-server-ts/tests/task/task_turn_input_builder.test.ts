@@ -497,7 +497,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("system instructions");
   });
 
-  it("rejects an applying generation when its context manifest has an error source", async () => {
+  it("continues an applying generation when its context manifest has an error source", async () => {
     const task = makeTask({
       codexThreadId: "native-old",
       modelPresetBackend: "claude",
@@ -530,7 +530,7 @@ describe("TaskTurnInputBuilder", () => {
       imageAttachmentPaths: ["/tmp/cache/generation.png"],
     });
     const waitForAttachmentRefs = vi.fn().mockResolvedValue(undefined);
-    const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
+    const { builder, contextBuilder, initialMessagePublisher, logger } = makeSubject({
       prepareAttachmentInput,
       waitForAttachmentRefs,
     });
@@ -541,14 +541,24 @@ describe("TaskTurnInputBuilder", () => {
       contextManifest: manifest,
     });
 
-    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
-      .rejects.toThrow("Atom context compilation failed: generation-node-error");
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
+    expect(input.generationRollover).toBe(true);
     expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
     expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
     expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
-    expect(prepareAttachmentInput).not.toHaveBeenCalled();
-    expect(waitForAttachmentRefs).not.toHaveBeenCalled();
+    expect(prepareAttachmentInput).toHaveBeenCalledTimes(1);
+    expect(waitForAttachmentRefs).toHaveBeenCalledTimes(1);
+    expect(manifest.sources.find((source) => source.node_id === "generation-node-error")?.status)
+      .toBe("error");
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: task.agentSessionId,
+        nodeIds: ["generation-node-error"],
+      }),
+      expect.stringContaining("Atom context compilation failed"),
+    );
   });
 
   it.each([claudeAgent, codexAgent])("carries the built checkpoint instructions into the prepared %s generation input", async (agent) => {
@@ -682,8 +692,11 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.activeGenerationRollover?.fromBackendSessionId).toBe("native-old");
   });
 
-  it("rejects a first turn when any context source errors, even if another source is ok", async () => {
-    const task = makeTask({ attachmentPaths: ["/tmp/incoming/sess/a.jpg"] });
+  it("keeps the first turn when any context source errors, even if another source is ok", async () => {
+    const task = makeTask({
+      attachmentIds: ["sess-asset"],
+      attachmentPaths: ["/tmp/incoming/sess/a.jpg"],
+    });
     const manifest = makeContextManifest([
       { nodeId: "node-error", status: "error" },
       { nodeId: "node-ok", status: "ok" },
@@ -694,18 +707,27 @@ describe("TaskTurnInputBuilder", () => {
       attachmentPaths: ["/tmp/cache/a.jpg"],
       imageAttachmentPaths: ["/tmp/cache/a.jpg"],
     });
-    const { builder, initialMessagePublisher } = makeSubject({
+    const { builder, initialMessagePublisher, logger } = makeSubject({
       contextBuilder: { build: vi.fn().mockResolvedValue(context) },
       prepareAttachmentInput,
     });
 
-    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
-      .rejects.toThrow("Atom context compilation failed: node-error");
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
-    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
-    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
-    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
-    expect(prepareAttachmentInput).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, context);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).not.toHaveBeenCalled();
+    expect(prepareAttachmentInput).toHaveBeenCalledTimes(1);
+    expect(input.prompt).toContain("사용자 요청");
+    expect(manifest.sources.find((source) => source.node_id === "node-error")?.status)
+      .toBe("error");
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: task.agentSessionId,
+        nodeIds: ["node-error"],
+      }),
+      expect.stringContaining("Atom context compilation failed"),
+    );
   });
 
   it("keeps ok, filtered, and empty context sources eligible for a first turn", async () => {

@@ -414,6 +414,57 @@ describe("WorktreeGit", () => {
     },
   );
 
+  it("deletes a branch whose commit an update-branch merge head contains", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    const remote = join(projectsRoot, "remote.git");
+    mkdirSync(remote);
+    git(remote, "init", "--bare");
+    git(repo, "remote", "add", "origin", remote);
+    git(repo, "push", "-u", "origin", "main");
+    git(repo, "checkout", "-b", "feature/updated");
+    writeFileSync(join(repo, "feature.txt"), "feature\n");
+    git(repo, "add", "feature.txt");
+    git(repo, "commit", "-m", "feature");
+    const expectedSha = git(repo, "rev-parse", "HEAD");
+    git(repo, "push", "origin", "feature/updated");
+    git(repo, "checkout", "main");
+    writeFileSync(join(repo, "base.txt"), "base moved\n");
+    git(repo, "add", "base.txt");
+    git(repo, "commit", "-m", "base moved");
+    git(repo, "push", "origin", "main");
+
+    // Simulate GitHub update-branch and a later squash merge in a second clone:
+    // the PR head becomes a merge of the branch commit and main, then the remote
+    // branch disappears while the local branch stays on the original commit.
+    const updater = join(projectsRoot, "updater");
+    execFileSync("git", ["clone", remote, updater], { encoding: "utf8" });
+    git(updater, "config", "user.email", "test@example.com");
+    git(updater, "config", "user.name", "Test");
+    git(updater, "checkout", "-B", "feature/updated", "origin/feature/updated");
+    git(updater, "merge", "--no-ff", "origin/main", "-m", "Update branch");
+    const prHead = git(updater, "rev-parse", "HEAD");
+    git(updater, "push", "origin", "HEAD:refs/pull/1/head");
+    git(repo, "push", "origin", ":feature/updated");
+    git(repo, "remote", "set-head", "origin", "main");
+    git(remote, "config", "uploadpack.allowAnySHA1InWant", "true");
+    expect(() => git(repo, "rev-parse", "--verify", `${prHead}^{commit}`)).toThrow();
+
+    const gh = vi.fn(async () => ({
+      stdout: JSON.stringify([{ headRefOid: prHead }]), stderr: "", exitCode: 0,
+    }));
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000,
+      processRunner: async (input) => input.command === "gh" ? gh() : runBoundedProcess(input),
+    });
+
+    await expect(worktrees.deleteBranch({
+      repoId: "demo", branch: "feature/updated", expectedSha,
+      markerRef: "refs/soulstream/worktree-deletions/updated",
+    })).resolves.toBe("deleted");
+
+    expect(git(repo, "branch", "--list", "feature/updated")).toBe("");
+    expect(git(repo, "rev-parse", "--verify", `${prHead}^{commit}`)).toBe(prHead);
+  });
+
   it("refuses a same-name branch replaced before the first deletion attempt", async () => {
     const { projectsRoot, repo } = makeRepository();
     const remote = join(projectsRoot, "replacement-remote.git");

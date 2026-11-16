@@ -430,7 +430,7 @@ describe("AncestorPageContextResolver", () => {
     expect(content.metadata.deduplicated).toBe(1);
   });
 
-  it("gracefully skips a failed atom compile while retaining other page context", async () => {
+  it("keeps a failed atom compile as its root anchor while retaining other page context", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response("unavailable", { status: 503 }),
     );
@@ -453,10 +453,16 @@ describe("AncestorPageContextResolver", () => {
     const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
     expect(content.items).toEqual([
       expect.objectContaining({ block_id: "guidance", text: "kept" }),
+      expect.objectContaining({
+        block_id: "atom",
+        node_id: "node-down",
+        markdown: expect.stringContaining('compile_subtree(node_id="node-down")'),
+        anchor_count: 1,
+      }),
     ]);
     expect(content.metadata.truncation.categories.atom_ref).toMatchObject({
-      used: 0,
-      omitted: 1,
+      used: expect.any(Number),
+      omitted: 0,
     });
   });
 

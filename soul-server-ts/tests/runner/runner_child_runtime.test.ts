@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import pino from "pino";
+import pino, { type Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
@@ -453,6 +453,19 @@ describe("RunnerChildRuntime backend session rotation", () => {
     }
   });
 
+  it("leaves the resume-lost warning to the parent event publisher", async () => {
+    const warn = vi.fn();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() } as unknown as Logger;
+    const { runtime } = await createRotationRuntime("backend-session-old", [], "antigravity", logger);
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    child.activeCommandId = "lost-resume-silent";
+    try {
+      await child.forwardRunnerFrame(engineEventFrame({ type: "session", session_id: "backend-session-fresh", resume_lost_from: "backend-session-old" }), { frames: [], bytes: 0 });
+      expect(warn).not.toHaveBeenCalled();
+      expect((await child.outbox.readBootstrap())?.payload.backend_session_id).toBe("backend-session-fresh");
+    } finally { await runtime.shutdown(); }
+  });
+
   it("rotates a lost resume and retains its marker in the durable event", async () => {
     const { runtime, sessionId } = await createRotationRuntime("backend-session-old", [], "antigravity");
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
@@ -594,6 +607,7 @@ async function createRotationRuntime(
   backendSessionId: string | null,
   events: SSEEventPayload[] = [],
   backend: RunnerChildConfig["backend"] = "codex",
+  logger: Logger = pino({ level: "silent" }),
 ): Promise<{
   runtime: RunnerChildRuntime;
   sessionId: string;
@@ -636,7 +650,7 @@ async function createRotationRuntime(
     codexHome: null,
     rolloutRoot: null,
   };
-  const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
+  const runtime = new RunnerChildRuntime(config, logger, {
     createEngine: () => ({ ...rotationEngine(config.backend, stateDirectory),
       async *execute() { yield* events; },
     }),
