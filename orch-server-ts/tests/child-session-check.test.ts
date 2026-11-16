@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { NodeRegistryEvent } from "../src/node/registry_types.js";
 import {
   CHILD_SESSION_CHECK_MAX_PER_CHECK,
+  CHILD_SESSION_CHECK_REPEAT_THRESHOLD_MS,
+  CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS,
   CHILD_SESSION_CHECK_THRESHOLD_MS,
+  CHILD_SESSION_LONG_COMMAND_THRESHOLD_MS,
   ChildSessionCheckService,
 } from "../src/session/child_session_check_service.js";
 import type {
@@ -177,7 +180,7 @@ describe("ChildSessionCheckService", () => {
     expect(h.delivered).toHaveLength(1);
   });
 
-  it("sends one new check after a valid response is followed by another five quiet minutes", async () => {
+  it("waits fifteen minutes for the second check of the same silent span", async () => {
     const h = harness();
     await h.service.checkOnce();
     expect(h.delivered).toHaveLength(1);
@@ -192,10 +195,97 @@ describe("ChildSessionCheckService", () => {
     await h.service.checkOnce();
     expect(h.delivered).toHaveLength(1);
 
-    h.advanceTo(answeredAt + CHILD_SESSION_CHECK_THRESHOLD_MS + 1);
+    h.advanceTo(answeredAt + CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(1);
+
+    h.advanceTo(answeredAt + CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS + 1);
     await h.service.checkOnce();
     expect(h.delivered).toHaveLength(2);
     expect(h.delivered[1]!.deliveryId).toBe("child-check:child-1:caller-1:event:20");
+    expect(h.delivered[1]!.text).toContain("하위 세션에서 15분 이상 유효한 응답이 없습니다.");
+  });
+
+  it("waits twenty minutes for the third and later checks of the same silent span", async () => {
+    const h = harness();
+    await h.service.checkOnce();
+
+    const firstAnswer = NOW + 1000;
+    h.store.setTargets([target({
+      lastValidEventId: 20,
+      lastValidEventType: "assistant_message",
+      lastValidEventAtMs: firstAnswer,
+    })]);
+    h.advanceTo(firstAnswer + CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS + 1);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(2);
+
+    const secondAnswer = firstAnswer + CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS + 1001;
+    h.store.setTargets([target({
+      lastValidEventId: 21,
+      lastValidEventType: "assistant_message",
+      lastValidEventAtMs: secondAnswer,
+    })]);
+    h.advanceTo(secondAnswer + CHILD_SESSION_CHECK_SECOND_THRESHOLD_MS);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(2);
+
+    h.advanceTo(secondAnswer + CHILD_SESSION_CHECK_REPEAT_THRESHOLD_MS);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(2);
+
+    h.advanceTo(secondAnswer + CHILD_SESSION_CHECK_REPEAT_THRESHOLD_MS + 1);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(3);
+    expect(h.delivered[2]!.deliveryId).toBe("child-check:child-1:caller-1:event:21");
+    expect(h.delivered[2]!.text).toContain("하위 세션에서 20분 이상 유효한 응답이 없습니다.");
+  });
+
+  it.each([
+    ["python3 /opt/skills/seal/scripts/seal.py review spec.yaml"],
+    ["python3 $AGENT_COMMON_FILES_DIR/skills/heavy-work-verify/scripts/heavy_verify.py --timeout 300 -- pnpm test"],
+  ])("waits fifteen minutes for the first check while a long command runs: %s", async (command) => {
+    const lastValidAt = Date.parse("2026-11-10T20:00:00+09:00");
+    const h = harness({ toolStarts: { "child-1": [toolStart({ command })] } });
+
+    h.advanceTo(lastValidAt + 9 * 60_000);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(0);
+
+    h.advanceTo(lastValidAt + CHILD_SESSION_LONG_COMMAND_THRESHOLD_MS);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(0);
+
+    h.advanceTo(lastValidAt + CHILD_SESSION_LONG_COMMAND_THRESHOLD_MS + 1);
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(1);
+    expect(h.delivered[0]!.text).toContain("하위 세션에서 15분 이상 유효한 응답이 없습니다.");
+  });
+
+  it("does not spend the per-round limit on candidates waiting for their backoff", async () => {
+    const waiting = Array.from({ length: CHILD_SESSION_CHECK_MAX_PER_CHECK }, (_, index) => target({
+      childSessionId: `waiting-${String(index).padStart(2, "0")}`,
+      lastValidEventAtMs: NOW - 10 * 60_000,
+      lastValidEventId: 200 + index,
+    }));
+    const due = target({
+      childSessionId: "due-1",
+      lastValidEventAtMs: NOW - 6 * 60_000,
+      lastValidEventId: 300,
+    });
+    const h = harness({ targets: [...waiting, due] });
+    for (const candidate of waiting) {
+      h.deliveries.push({
+        deliveryId: `child-check:${candidate.childSessionId}:caller-1:event:1`,
+        childSessionId: candidate.childSessionId,
+        callerSessionId: "caller-1",
+        createdAtMs: NOW - 20 * 60_000,
+      });
+    }
+
+    await h.service.checkOnce();
+    expect(h.delivered).toHaveLength(1);
+    expect(h.delivered[0]!.childSessionId).toBe("due-1");
   });
 
   it("still checks when only ordinary progress and hook events keep arriving", async () => {

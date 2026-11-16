@@ -9,6 +9,8 @@ export const MAX_REMINDERS_PER_TICK = 2;
 /** 담당이 턴을 마친 뒤 이만큼 조용하면 한 번 깨운다. 상태 세대가 아니라 턴 종료마다 센다. */
 export const OWNER_SILENT_CEILING_MS = 30 * 60 * 1000;
 export const OWNER_SILENT_BLOCKED_DETAIL = "담당이 턴을 마친 채 30분이 지나 깨웠지만, 그 뒤 30분 동안 움직임이 없음";
+/** 이보다 오래된 백그라운드 작업 시작 이벤트는 잔여 작업으로 보지 않는다. */
+export const BACKGROUND_TASK_RETENTION_CEILING_MS = 60 * 60 * 1000;
 
 export type CardReminderFacts = {
   cardId: string;
@@ -23,6 +25,7 @@ export type CardReminderFacts = {
   rootTerminationEventId: number | null;
   activeDescendants: boolean;
   activeTree: boolean;
+  activeBackgroundTasks?: boolean;
   pendingDeliveries: boolean;
   unhandledCommentId: string | null;
   unregisteredCompletions: boolean;
@@ -50,7 +53,7 @@ export function buildCardStatusReminder(facts: CardReminderFacts, rootEnded: boo
     kind = "not_running";
     text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${cardStatusLabels[facts.cardStatus]}'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`;
   } else {
-    if (facts.activeTree || facts.pendingDeliveries || facts.unregisteredCompletions || !facts.rootEndedAfterStatus) return null;
+    if (facts.activeTree || Boolean(facts.activeBackgroundTasks) || facts.pendingDeliveries || facts.unregisteredCompletions || !facts.rootEndedAfterStatus) return null;
     kind = "stalled";
     text = `[카드 상태 확인] 카드 ${facts.cardId}는 진행 중인데 담당 세션과 맡긴 작업 세션이 모두 멈췄습니다.`;
   }
@@ -77,7 +80,7 @@ export function isOwnerSilentResponseTurn(facts: CardReminderFacts): boolean {
 /** 카드가 실행 중인데 담당이 턴을 마친 채 조용한가. 기존 stalled 게이트에 실행 예약과 턴 종료 시각을 더 본다. */
 function ownerSilentTarget(facts: CardReminderFacts, now: number): boolean {
   return isRunningStatus(facts.cardStatus)
-    && !facts.activeTree
+    && !(facts.activeTree || Boolean(facts.activeBackgroundTasks))
     && !facts.pendingDeliveries
     && !facts.unregisteredCompletions
     && facts.rootEndedAfterStatus

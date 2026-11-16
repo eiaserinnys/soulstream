@@ -1,6 +1,6 @@
 import { claimableCardSessions } from "./card_assignee.js";
 import type { CardRow, SqlClient } from "./control_plane/card_types.js";
-import { PENDING_DELIVERY_FAILURE_CEILING_MS, COMPLETION_REGISTRATION_FAILURE_CEILING_MS, type CardReminderFacts } from "./card_status_reminder.js";
+import { BACKGROUND_TASK_RETENTION_CEILING_MS, PENDING_DELIVERY_FAILURE_CEILING_MS, COMPLETION_REGISTRATION_FAILURE_CEILING_MS, type CardReminderFacts } from "./card_status_reminder.js";
 
 /** Reads only existing canonical card, session, ingress and delivery records. */
 export async function readCardReminderFacts(sql: SqlClient, now: number, endedRootId?: string): Promise<CardReminderFacts[]> {
@@ -31,6 +31,20 @@ export async function readCardReminderFacts(sql: SqlClient, now: number, endedRo
           WHERE s.session_id<>r.session_id AND s.status IN ('initializing','running')) AS "activeDescendants",
         EXISTS(SELECT 1 FROM tree t JOIN sessions s USING(session_id)
           WHERE s.status IN ('initializing','running')) AS "activeTree",
+        EXISTS(SELECT 1 FROM events bg JOIN tree t ON t.session_id=bg.session_id
+          WHERE bg.event_type IN ('claude_runtime_task_started','claude_runtime_task_created')
+            AND bg.created_at>${new Date(now - BACKGROUND_TASK_RETENTION_CEILING_MS)}
+            AND COALESCE(bg.payload->>'task_id','')<>''
+            AND NOT EXISTS(SELECT 1 FROM events done
+              WHERE done.session_id=bg.session_id AND done.id>bg.id AND (
+                (done.event_type IN ('claude_runtime_task_completed','claude_runtime_task_notification')
+                  AND done.payload->>'task_id'=bg.payload->>'task_id')
+                OR (done.event_type='claude_runtime_task_updated'
+                  AND done.payload->>'task_id'=bg.payload->>'task_id'
+                  AND done.payload->'patch'->>'status' IN ('completed','failed','stopped','killed','deleted'))
+                OR (done.event_type='session_ended'
+                  AND COALESCE(done.payload->>'termination_reason','') NOT IN ('','completed','completed_ok'))
+              ))) AS "activeBackgroundTasks",
         EXISTS(SELECT 1 FROM session_deliveries d JOIN tree t ON t.session_id=d.target_session_id
           WHERE d.aggregate_state='pending' AND d.created_at>${new Date(now - PENDING_DELIVERY_FAILURE_CEILING_MS)}) AS "pendingDeliveries",
         (SELECT CASE WHEN latest_comment.delivered_at IS NOT NULL AND NOT EXISTS(

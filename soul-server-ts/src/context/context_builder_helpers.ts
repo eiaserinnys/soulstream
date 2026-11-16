@@ -89,6 +89,14 @@ export function isMinimalContextScope(agent: AgentProfile): boolean {
   return agent.context_scope === "minimal";
 }
 
+/**
+ * 워크스페이스 목록성 블록(board_workspace, running_sessions, cogito_context)을 넣지 않는가.
+ * selaphiel은 폴더 디자인 가이드와 프로젝트 페이지 문맥은 받지만 실행 목록은 받지 않는다.
+ */
+export function omitsWorkspaceContextLists(agent: AgentProfile): boolean {
+  return isMinimalContextScope(agent) || agent.id === "selaphiel";
+}
+
 export function composeEffectiveSystemPrompt(args: {
   agentAtomMarkdown: string | null;
   folderPrompt?: string;
