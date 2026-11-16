@@ -2,7 +2,7 @@ import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type { EngineExecuteParams } from "../protocol.js";
 import {
-  isSoulstreamMcpServerName,
+  isSoulstreamInternalMcpServer,
   mergeSoulstreamAgentSessionHeader,
   normalizeSoulstreamInternalMcpUrl,
 } from "../soulstream_internal_mcp.js";
@@ -201,7 +201,10 @@ function buildCodexMcpConfig(
       continue;
     }
 
-    const soulstreamOwned = isSoulstreamMcpServerName(name);
+    const soulstreamOwned = isSoulstreamInternalMcpServer({
+      name,
+      type: server.type,
+    });
     if (soulstreamOwned && !internalMcpUrl) {
       throw new Error(
         "Soulstream internal HTTP MCP server requires a node-local internalMcpUrl",

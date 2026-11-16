@@ -14,6 +14,7 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 import {
+  isSoulstreamInternalMcpServer,
   isSoulstreamMcpServerName,
   mergeSoulstreamAgentSessionHeader,
   normalizeSoulstreamInternalMcpUrl,
@@ -40,9 +41,22 @@ export function buildMcpOptions(
       mcpServers,
       options.agentSessionId,
       options.internalMcpUrl,
+      strictMcpConfig ? undefined : { bearerToken: sessionBearerToken(options.env) },
     ),
     ...(strictMcpConfig ? { strictMcpConfig: true } : {}),
   };
+}
+
+/**
+ * 작업 공간 MCP 파일의 soulstream 내부 대상 항목에 넣을 세션 자격 증명.
+ * 엔진에 넘어온 env의 `AUTH_BEARER_TOKEN`을 그대로 쓴다. full 세션이면 이
+ * 값이 이미 ssf1이다.
+ */
+function sessionBearerToken(
+  env: Record<string, string> | undefined,
+): string | undefined {
+  const token = env?.AUTH_BEARER_TOKEN?.trim();
+  return token ? token : undefined;
 }
 
 function toClaudeMcpServers(
@@ -131,50 +145,81 @@ function prepareSoulstreamInternalMcpServers(
   servers: Record<string, McpServerConfig>,
   agentSessionId: string | undefined,
   internalMcpUrl: string | undefined,
+  fileCredential: { bearerToken: string | undefined } | undefined,
 ): Record<string, McpServerConfig> {
   const callerSessionId = agentSessionId?.trim();
 
   const patched: Record<string, McpServerConfig> = {};
   for (const [name, config] of Object.entries(servers)) {
-    patched[name] = shouldPrepareSoulstreamInternalServer(name)
-      ? prepareSoulstreamInternalMcpServer(config, callerSessionId, internalMcpUrl)
-      : config;
+    patched[name] = prepareSoulstreamInternalMcpServer(
+      name,
+      config,
+      callerSessionId,
+      internalMcpUrl,
+      fileCredential,
+    );
   }
   return patched;
 }
 
-function shouldPrepareSoulstreamInternalServer(serverName: string): boolean {
-  return isSoulstreamMcpServerName(serverName);
-}
-
 function prepareSoulstreamInternalMcpServer(
+  name: string,
   config: McpServerConfig,
   agentSessionId: string | undefined,
   internalMcpUrl: string | undefined,
+  fileCredential: { bearerToken: string | undefined } | undefined,
 ): McpServerConfig {
   const record = asRecord(config);
   const type = asString(record?.type);
-  if (type !== "sse" && type !== "streamable_http" && type !== "http") {
-    return config;
+  if (isSoulstreamInternalMcpServer({ name, type: type ?? "" })) {
+    if (!internalMcpUrl) {
+      throw new Error(
+        "Soulstream internal HTTP MCP server requires a node-local internalMcpUrl",
+      );
+    }
+    const mergedHeaders = agentSessionId
+      ? mergeSoulstreamAgentSessionHeader(record?.headers, agentSessionId)
+      : record?.headers;
+    const headers = fileCredential === undefined
+      ? mergedHeaders
+      : withSessionAuthorization(mergedHeaders, fileCredential.bearerToken);
+    return {
+      ...record,
+      url: normalizeSoulstreamInternalMcpUrl(internalMcpUrl),
+      ...(headers !== undefined ? { headers } : {}),
+    } as McpServerConfig;
   }
-  if (type !== "sse" && !internalMcpUrl) {
-    throw new Error(
-      "Soulstream internal HTTP MCP server requires a node-local internalMcpUrl",
-    );
+  if (type === "sse" && isSoulstreamMcpServerName(name) && agentSessionId) {
+    return {
+      ...record,
+      headers: mergeSoulstreamAgentSessionHeader(
+        record?.headers,
+        agentSessionId,
+      ),
+    } as McpServerConfig;
   }
+  return config;
+}
 
-  return {
-    ...record,
-    ...(type === "sse"
-      ? {}
-      : { url: normalizeSoulstreamInternalMcpUrl(internalMcpUrl!) }),
-    ...(agentSessionId
-      ? {
-          headers: mergeSoulstreamAgentSessionHeader(
-            record?.headers,
-            agentSessionId,
-          ),
-        }
-      : {}),
-  } as McpServerConfig;
+/**
+ * 파일에 적힌 authorization 헤더(대소문자 무관)를 지우고 세션 토큰을 넣는다.
+ * 토큰이 없으면 헤더를 지우기만 한다.
+ */
+function withSessionAuthorization(
+  headers: unknown,
+  bearerToken: string | undefined,
+): Record<string, string> | undefined {
+  const replaced: Record<string, string> = {};
+  if (isRecord(headers)) {
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.toLowerCase() === "authorization") continue;
+      if (typeof value === "string") replaced[key] = value;
+    }
+  }
+  if (bearerToken) replaced.Authorization = `Bearer ${bearerToken}`;
+  return Object.keys(replaced).length > 0 ? replaced : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

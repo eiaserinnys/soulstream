@@ -191,10 +191,14 @@ import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
-/** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
+/**
+ * AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당.
+ * 세 번째 인자는 in-process full 세션의 자격 증명(ssf1) 대상 세션 ID다.
+ */
 export type EngineFactory = (
   agent: AgentProfile,
   backendOverride?: BackendId,
+  agentSessionId?: string,
 ) => EnginePort;
 
 export interface RunnerProcessRuntimeFactory {
@@ -1043,8 +1047,8 @@ export class TaskExecutor {
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
       : createInProcessTaskRunnerRuntime(
           task.modelPresetBackend
-            ? this.engineFactory(agent, backend)
-            : this.engineFactory(agent),
+            ? this.engineFactory(agent, backend, task.agentSessionId)
+            : this.engineFactory(agent, undefined, task.agentSessionId),
         ));
     if (reusableRunner) releaseTaskRunner(task, reusableRunner);
     if (!runner.isolation && desiredIsolation.tier === "restricted") {

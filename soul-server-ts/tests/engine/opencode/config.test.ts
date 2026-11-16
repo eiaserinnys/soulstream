@@ -217,4 +217,42 @@ describe("OpenCode session configuration", () => {
     expect(config.mcp).not.toHaveProperty("serendipity");
     expect(config).not.toHaveProperty("tools");
   });
+
+  it("keeps soulstream SSE entries unchanged and rewrites whitespace-padded names", async () => {
+    const root = makeTempDirSync("opencode-sse-");
+    const prepared = await prepareOpenCodeSession({
+      workspaceDir: join(root, "workspace"),
+      model: "opencode/deepseek-v4.1-flash-free",
+      sessionDirectory: join(root, "session"),
+      agentSessionId: "session-sse-479",
+      useMcp: true,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp",
+      resolvedMcpServers: [
+        { type: "sse", name: "soulstream", url: "https://external.example.test/sse", headers: { authorization: "Bearer sse-secret" } },
+        { type: "streamable_http", name: " soulstream ", url: "https://obsolete.example/mcp", headers: { Authorization: "fixture-secret" } },
+      ],
+      processEnv: {},
+    });
+    const config = JSON.parse(readFileSync(prepared.configPath, "utf8")) as {
+      mcp?: Record<string, unknown>;
+    };
+
+    expect(config.mcp).toEqual({
+      soulstream: {
+        type: "remote",
+        url: "https://external.example.test/sse",
+        headers: { authorization: "Bearer sse-secret" },
+        oauth: false,
+      },
+      " soulstream ": {
+        type: "remote",
+        url: "http://127.0.0.1:4206/mcp/internal",
+        headers: {
+          Authorization: "fixture-secret",
+          "x-soulstream-agent-session-id": "session-sse-479",
+        },
+        oauth: false,
+      },
+    });
+  });
 });

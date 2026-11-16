@@ -80,6 +80,22 @@ describe("Antigravity gateway definition", () => {
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ version: 1, servers: upstreams.slice(1) });
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });
+  it("never rewrites soulstream SSE entries and matches whitespace-padded names", async () => {
+    const sseServers = [
+      { name: "soulstream", type: "sse" as const, url: "https://external.example.test/sse", headers: { authorization: "Bearer sse-secret" } },
+      { name: " soulstream ", type: "streamable_http" as const, url: "http://obsolete.invalid/mcp", headers: { Authorization: "fixture-secret" } },
+    ];
+    const definition = await writeAntigravityAgentDefinition({ ...base, resolvedMcpServers: sseServers, internalMcpUrl: "http://127.0.0.1:4206/mcp" });
+    const parsed = frontmatter(join(definition.directory, `${definition.name}.md`));
+    expect(parsed.mcpServers).toEqual([
+      { name: " soulstream ", url: "http://127.0.0.1:4206/mcp/internal", headers: { Authorization: "fixture-secret", "x-soulstream-agent-session-id": "session-test" } },
+      { name: "profile-test-agent", ...launch, env: { SOULSTREAM_ANTIGRAVITY_MCP_GATEWAY_CONFIG: base.gatewayConfigPath } },
+    ]);
+    logger.warn.mockClear();
+    expect(antigravityMcpGatewayUpstreams({ resolvedMcpServers: sseServers, logger })).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith({ serverName: "soulstream" }, expect.any(String));
+    await definition.remove();
+  });
   it("rejects invalid external configuration with the existing messages", () => {
     const invalid = [
       [{ type: "stdio", command: "node" }, "name is required"],

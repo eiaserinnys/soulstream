@@ -4,7 +4,7 @@ import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import {
-  isSoulstreamMcpServerName,
+  isSoulstreamInternalMcpServer,
   normalizeSoulstreamInternalMcpUrl,
 } from "./soulstream_internal_mcp.js";
 
@@ -30,9 +30,9 @@ export function internalSoulstreamMcpUrl(
   if (servers === undefined || internalMcpUrl === undefined) return undefined;
   const expected = normalizeSoulstreamInternalMcpUrl(internalMcpUrl);
   for (const [name, config] of Object.entries(servers)) {
-    if (!isSoulstreamMcpServerName(name)) continue;
     const record = config as { type?: unknown; url?: unknown };
-    if (record.type !== "http") continue;
+    if (typeof record.type !== "string") continue;
+    if (!isSoulstreamInternalMcpServer({ name, type: record.type })) continue;
     if (record.url !== expected) continue;
     return expected;
   }

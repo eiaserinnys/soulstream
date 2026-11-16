@@ -2267,6 +2267,141 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
+  it("replaces workspace soulstream HTTP authorization with the session token", async () => {
+    const workspaceDir = makeTempDirSync("claude-mcp-json-ssf1-");
+    const sessionToken = "ssf1.session-token.signature";
+    try {
+      writeFileSync(
+        join(workspaceDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            soulstream: {
+              type: "http",
+              url: "http://localhost:3105/mcp",
+              headers: {
+                authorization: "Bearer host-service-token",
+                "X-Keep": "kept",
+                "x-soulstream-agent-session-id": "stale-session",
+              },
+            },
+            " soulstream-cogito ": {
+              type: "streamable_http",
+              url: "http://localhost:3105/cogito",
+              headers: { Authorization: "Bearer host-service-token" },
+            },
+            atom: {
+              type: "http",
+              url: "http://localhost:4200/mcp",
+              headers: { authorization: "Bearer atom-secret" },
+            },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: { AUTH_BEARER_TOKEN: sessionToken },
+        agentSessionId: "parent-sess-1",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
+      }, new AbortController().signal));
+
+      const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
+        type: string;
+        url?: string;
+        headers?: Record<string, string>;
+      }>;
+      expect(mcpServers.soulstream?.url).toBe(
+        "http://127.0.0.1:3106/mcp/internal",
+      );
+      expect(mcpServers.soulstream?.headers).toEqual({
+        "X-Keep": "kept",
+        Authorization: `Bearer ${sessionToken}`,
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(mcpServers[" soulstream-cogito "]?.url).toBe(
+        "http://127.0.0.1:3106/mcp/internal",
+      );
+      expect(mcpServers[" soulstream-cogito "]?.headers).toEqual({
+        Authorization: `Bearer ${sessionToken}`,
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(mcpServers.atom).toEqual({
+        type: "http",
+        url: "http://localhost:4200/mcp",
+        headers: { authorization: "Bearer atom-secret" },
+      });
+      expect(JSON.stringify(mcpServers)).not.toContain("host-service-token");
+      expect(mcpServers.soulstream?.headers).not.toHaveProperty("authorization");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("drops workspace soulstream HTTP authorization when the session has no token", async () => {
+    const workspaceDir = makeTempDirSync("claude-mcp-json-no-token-");
+    try {
+      writeFileSync(
+        join(workspaceDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            soulstream: {
+              type: "http",
+              url: "http://localhost:3105/mcp",
+              headers: {
+                authorization: "Bearer host-service-token",
+                "X-Keep": "kept",
+              },
+            },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: {},
+        agentSessionId: "parent-sess-1",
+        internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
+      }, new AbortController().signal));
+
+      const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
+        headers?: Record<string, string>;
+      }>;
+      expect(mcpServers.soulstream?.headers).toEqual({
+        "X-Keep": "kept",
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(JSON.stringify(mcpServers)).not.toContain("host-service-token");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("maps SDK task_progress and hook_progress system messages to progress events", async () => {
     const client = new ClaudeSdkClient(
       {
