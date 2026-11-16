@@ -1,6 +1,5 @@
 import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
 import type {
-  Options as ClaudeSdkOptions,
   Query as ClaudeSdkQuery,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -27,7 +26,8 @@ import {
   createEventQueue,
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
-import { ClaudeSdkEventMapper, type ModelCatalogGetter } from "./claude_sdk_event_mapper.js";
+import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
+import type { ClaudeSdkClientConfig, ClaudeSdkQueryFn } from "./claude_sdk_client_config.js";
 import { buildClaudeSdkOptions, claudeIsolationWiring } from "./claude_sdk_options.js";
 import {
   claudePersistentQueryIdentity,
@@ -42,6 +42,7 @@ import {
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
 import { ClaudeSdkRuntimeControls } from "./claude_sdk_runtime_controls.js";
+import { internalSoulstreamMcpUrl, waitForInternalMcpListener } from "./internal_mcp_readiness.js";
 import {
   DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS,
   DEFAULT_INPUT_REQUEST_TIMEOUT_MS,
@@ -58,33 +59,11 @@ import type {
 } from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
-export type ClaudeSdkQueryParams = {
-  prompt: string | AsyncIterable<SDKUserMessage>;
-  options?: ClaudeSdkOptions;
-};
-
-export type ClaudeSdkQueryFn = (params: ClaudeSdkQueryParams) => ClaudeSdkQuery;
-export interface ClaudeSdkClientConfig {
-  query?: ClaudeSdkQueryFn;
-  inputRequestTimeoutMs?: number;
-  /**
-   * Result 메시지 도착 후 prompt_suggestion 1메시지를 기다리는 best-effort drain timeout.
-   * 기본 2초 — Python `PROMPT_SUGGESTION_DRAIN_TIMEOUT` 정합. 테스트에서 가속용으로만 override.
-   */
-  postResultDrainMs?: number;
-  /**
-   * Result 이후 Claude runtime task/session이 idle로 settle되길 기다리는 안전 상한.
-   * ScheduleWakeup 같은 장기 실행을 허용하되 프로세스가 영원히 붙잡히지는 않게 한다.
-   */
-  runtimeDrainMaxMs?: number;
-  resolveClaudeExecutablePath?: () => string | undefined;
-  detachedEventSink?: ClaudeDetachedEventSink;
-  runtimeEventSink?: ClaudeRuntimeEventSink;
-  /** Maximum gap between user-visible foreground activity frames. */
-  persistentTurnInactivityTimeoutMs?: number;
-  runtimeFollowupNoOutputTimeoutMs?: number;
-  getModelCatalog?: ModelCatalogGetter; // Read once per terminal result message.
-}
+export type {
+  ClaudeSdkClientConfig,
+  ClaudeSdkQueryFn,
+  ClaudeSdkQueryParams,
+} from "./claude_sdk_client_config.js";
 export class ClaudeSdkClient implements ClaudeClient {
   private readonly queryFn: ClaudeSdkQueryFn;
   private readonly logger: Logger;
@@ -101,6 +80,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly persistentTurnInactivityTimeoutMs: number;
   private readonly runtimeFollowupNoOutputTimeoutMs: number;
+  private readonly internalMcpReadyTimeoutMs?: number;
+  private readonly internalMcpReadyIntervalMs?: number;
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeQueryPump: Promise<void> | null = null;
   private activeInput: EventQueue<SDKUserMessage> | null = null;
@@ -173,6 +154,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.persistentTurnInactivityTimeoutMs =
       config.persistentTurnInactivityTimeoutMs ?? 1_200_000;
     this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs ?? 30_000;
+    this.internalMcpReadyTimeoutMs = config.internalMcpReadyTimeoutMs;
+    this.internalMcpReadyIntervalMs = config.internalMcpReadyIntervalMs;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -330,6 +313,21 @@ export class ClaudeSdkClient implements ClaudeClient {
           : {}),
         ...isolationWiring.options(abortController),
       });
+      // 배포로 노드 내부 MCP 리스너가 닫힌 창에 턴이 시작되면 CLI가 soulstream
+      // 서버 없이 그 턴을 끝낸다. Query를 만들기 전에 리스너가 연결을 받을
+      // 때까지 기다린다(열려 있으면 첫 시도에서 바로 통과).
+      const internalMcpTarget = internalSoulstreamMcpUrl(
+        queryOptions.mcpServers,
+        persistentOptions.internalMcpUrl,
+      );
+      if (internalMcpTarget !== undefined) {
+        await waitForInternalMcpListener(internalMcpTarget, this.logger, {
+          timeoutMs: this.internalMcpReadyTimeoutMs,
+          intervalMs: this.internalMcpReadyIntervalMs,
+        }, signal);
+        // 대기 중에 닫히면 아래에서 만든 세션과 CLI를 아무도 닫지 않는다.
+        if (this.isClosed || (options.trackChildExit && signal.aborted)) return;
+      }
       let createdSession!: ClaudeSdkPersistentSession;
       createdSession = new ClaudeSdkPersistentSession({
         createQuery: (input) => {
