@@ -83,6 +83,12 @@ const userBubbleAnchor = createAnchorComponent(userBubbleAnchorClass);
 // main과 같다.
 const markdownBlock = { "data-markdown-block": "true" } as const;
 
+// 카드 #1461: 가로로 넘치는 표는 스크롤 상자가 되어 키보드 Tab으로 들어간다.
+// 브라우저 기본 초점 고리 대신 soul-ui 스크롤 상자(ui/scroll-area.tsx)와 같은
+// 공용 초점 토큰을 쓴다. fullsize와 compact가 같은 문자열을 쓰도록 한곳에 둔다.
+const tableScrollFocusClass =
+  "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
+
 const components: Components = {
   // 블록 요소
   p: ({ children }) => <p {...markdownBlock} className="mb-2 last:mb-0">{children}</p>,
@@ -190,7 +196,7 @@ const components: Components = {
   // 다크모드 가독성: 컨테이너 bg-card(거의 검정) + 보더, 헤더 bg-input(8% white)로 강조,
   // td/th에 text-foreground 명시하여 부모 컨텍스트 무관하게 다크/라이트 모두 또렷.
   table: ({ children }) => (
-    <div {...markdownBlock} className="overflow-auto my-2 rounded border border-border bg-card">
+    <div {...markdownBlock} className={cn("overflow-auto my-2 rounded border border-border bg-card", tableScrollFocusClass)}>
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
@@ -250,7 +256,7 @@ const compactComponents: Components = {
   // 테이블 (compact): 다크모드 토큰을 fullsize와 동일하게 적용 + 패딩만 컴팩트.
   // 누락 시 ReactMarkdown 기본 HTML 렌더 → 다크모드에서 흰 배경 노출.
   table: ({ children }) => (
-    <div {...markdownBlock} className="overflow-auto my-1 rounded border border-border bg-card">
+    <div {...markdownBlock} className={cn("overflow-auto my-1 rounded border border-border bg-card", tableScrollFocusClass)}>
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
