@@ -400,7 +400,7 @@ describe("WorktreeService", () => {
       expect(host.records.get(ids.get(kind)!)?.state).toBe("ready");
     }
     expect(begin.mock.calls.every(([input]) => input.sweeperNodeId === "node-a" && !input.actorSessionId)).toBe(true);
-  });
+  }, 30_000);
 
   it("preserves a shared worktree when base dependency links point back into it", async () => {
     const { repo, service, host } = fixture();

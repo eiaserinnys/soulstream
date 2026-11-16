@@ -461,10 +461,11 @@ describe("WorktreeGit", () => {
       timeoutMs: 300,
       processRunner: async (input) => {
         calls.push(input.args);
-        if (input.args[0] === "remote" || input.args[0] === "fetch") {
+        // 앞선 아이의 지연에 기대지 않고 fetch가 확실히 시작된 뒤 공유 기한에 걸리게 한다.
+        if (input.args[0] === "fetch") {
           await runBoundedProcess({
             command: process.execPath,
-            args: ["-e", "setTimeout(()=>{},180)"],
+            args: ["-e", "setTimeout(()=>{},5000)"],
             cwd: input.cwd,
             timeoutMs: input.timeoutMs,
             signal: input.signal,
