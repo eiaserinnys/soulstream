@@ -1,6 +1,5 @@
 import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
-import WebSocket from "ws";
 
 const registeredApps = new WeakSet<FastifyInstance>();
 
@@ -23,7 +22,7 @@ export function registerWebsocketPlugin(app: FastifyInstance): void {
       for (const client of clients) client.close();
       const graceTimer = setTimeout(() => {
         for (const client of server.clients) {
-          if (client.readyState === WebSocket.CLOSED) continue;
+          if (client.readyState === client.CLOSED) continue;
           client.terminate();
           terminated += 1;
         }
