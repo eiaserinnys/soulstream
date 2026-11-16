@@ -5,6 +5,18 @@
  * subtract the main session's own usage for the turn.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  findModelRow,
+  parseModelCatalogYaml,
+  type ModelCatalogConfig,
+} from "@soulstream/model-catalog";
+import { modelCatalogPathForRepository } from "@soulstream/model-catalog/file-loader";
+import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
+
 export interface TurnSubagentModelUsage {
   model: string;
   input_tokens: number;
@@ -56,9 +68,36 @@ interface ModelBucket {
 
 const COST_EPSILON = 0.000005;
 const TOKEN_EPSILON = 1e-6;
+/** Ancestor levels searched from this module for the repository catalogue. */
+const MAX_CATALOG_ANCESTOR_STEPS = 8;
+
+/** `null` means the catalogue was searched for and not found. */
+let defaultModelCatalog: ModelCatalogConfig | null | undefined;
+
+/**
+ * The repository catalogue, resolved from this module's location so it works
+ * both from `src/` (tests, tsx) and from the bundled `dist/` entries.
+ */
+function loadDefaultModelCatalog(): ModelCatalogConfig | undefined {
+  if (defaultModelCatalog !== undefined) return defaultModelCatalog ?? undefined;
+  let directory = path.dirname(fileURLToPath(import.meta.url));
+  for (let step = 0; step <= MAX_CATALOG_ANCESTOR_STEPS; step += 1) {
+    const candidate = modelCatalogPathForRepository(directory);
+    if (fs.existsSync(candidate)) {
+      defaultModelCatalog = parseModelCatalogYaml(fs.readFileSync(candidate, "utf8"));
+      return defaultModelCatalog;
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  defaultModelCatalog = null;
+  return undefined;
+}
 
 export function computeSessionSubagentRollups(
   turns: readonly TurnSubagentUsageTurn[],
+  catalog: ModelCatalogConfig | undefined = loadDefaultModelCatalog(),
 ): Map<number, TurnSubagentRollup> {
   const rollups = new Map<number, TurnSubagentRollup>();
   let previous: ModelUsageSnapshot | null = null;
@@ -118,12 +157,12 @@ export function computeSessionSubagentRollups(
         mainBucket.cost_usd = difference <= COST_EPSILON ? 0 : roundCost(difference);
       }
     }
+    if (catalog !== undefined) {
+      for (const bucket of buckets.values()) repriceFromCatalog(catalog, bucket);
+    }
 
     const models = [...buckets.values()]
-      .filter((bucket) =>
-        bucket.input_tokens > 0 ||
-        bucket.output_tokens > 0 ||
-        (bucket.cost_usd ?? 0) > COST_EPSILON)
+      .filter(hasTokens)
       .sort((a, b) => (b.cost_usd ?? 0) - (a.cost_usd ?? 0) || a.model.localeCompare(b.model))
       .map((bucket) => ({
         model: bucket.model,
@@ -208,6 +247,37 @@ export function aggregateSubagentRollups(
         ...(bucket.cost_usd === undefined ? {} : { cost_usd: roundCost(bucket.cost_usd) }),
       })),
   };
+}
+
+/**
+ * Claude Code prices a non-Claude endpoint with Claude rates, so the CLI cost of
+ * a bucket driven through that endpoint carries the difference against the main
+ * turn's catalogue price. Re-price the bucket from the catalogue when its row
+ * names another provider; an unpriced row keeps its tokens and drops the cost.
+ */
+function repriceFromCatalog(catalog: ModelCatalogConfig, bucket: ModelBucket): void {
+  if (!hasTokens(bucket)) return;
+  const provider = findModelRow(catalog, bucket.model)?.provider;
+  if (provider === undefined || provider === "claude") return;
+  const priced = priceInferenceUsage(catalog, {
+    provider,
+    model: bucket.model,
+    input_total: bucket.input_tokens,
+    cache_read: bucket.cached_input_tokens,
+    cache_write_5m: 0,
+    cache_write_1h: 0,
+    cache_write_unknown: provider === "deepseek" ? 0 : bucket.cache_write_tokens,
+    output_total: bucket.output_tokens,
+  });
+  if (priced.pricing_complete && priced.known_cost_usd !== null) {
+    bucket.cost_usd = roundCost(priced.known_cost_usd);
+  } else {
+    delete bucket.cost_usd;
+  }
+}
+
+function hasTokens(bucket: ModelBucket): boolean {
+  return bucket.input_tokens > 0 || bucket.output_tokens > 0;
 }
 
 export function normalizeModelName(model: string): string {

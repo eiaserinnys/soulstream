@@ -1,9 +1,50 @@
 import { describe, expect, it } from "vitest";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import {
   aggregateSubagentRollups,
   computeSessionSubagentRollups,
   type TurnSubagentUsageTurn,
 } from "../src/control_plane/repositories/turn_usage_subagents.js";
+
+const DEEPSEEK_RATES = {
+  input: 0.3,
+  cache_read: 0.006,
+  cache_write_5m: null,
+  cache_write_1h: null,
+  output: 1.2,
+};
+const CLAUDE_RATES = {
+  input: 5,
+  cache_read: 0.5,
+  cache_write_5m: 6.25,
+  cache_write_1h: 10,
+  output: 25,
+};
+
+function catalogWith(models: ModelCatalogConfig["models"]): ModelCatalogConfig {
+  return {
+    schema_version: 1,
+    groups: [],
+    presets: [],
+    models,
+    price_snapshot: {
+      price_version: "test-v1",
+      as_of: "2026-10-19",
+      checked_at: "2026-10-19",
+      currency: "USD",
+      unit: "per_1m_tokens",
+      model_mapping_version: "test-v1",
+      refreshed_model_rows: {},
+      sources: {},
+      assumptions: [],
+    },
+    persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+  };
+}
+
+const DEEPSEEK_CATALOG = catalogWith([
+  { provider: "deepseek", model: "deepseek-flash", aliases: ["deepseek-v4.1-flash"], rates: DEEPSEEK_RATES },
+]);
 
 function turn(overrides: Partial<TurnSubagentUsageTurn> & { event_id: number }): TurnSubagentUsageTurn {
   return {
@@ -366,6 +407,136 @@ describe("computeSessionSubagentRollups", () => {
     ]);
 
     expect(rollups.size).toBe(0);
+  });
+
+  it("drops a zero-token bucket whose only residue is the CLI's Claude-rate pricing of a non-Claude main turn", () => {
+    const rollups = computeSessionSubagentRollups(
+      [
+        turn({
+          event_id: 1,
+          model: "deepseek-v4.1-flash",
+          input_tokens: 1_000_000,
+          output_tokens: 50_000,
+          cost_usd: 0.8,
+          model_usage: {
+            "deepseek-v4.1-flash": {
+              inputTokens: 1_000_000,
+              outputTokens: 50_000,
+              costUSD: 50,
+            },
+          },
+        }),
+      ],
+      DEEPSEEK_CATALOG,
+    );
+
+    expect(rollups.size).toBe(0);
+  });
+
+  it("reprices a non-Claude subagent bucket from the repository catalogue instead of the CLI cost residue", () => {
+    const rollups = computeSessionSubagentRollups([
+      turn({
+        event_id: 1,
+        model: "deepseek-v4.1-flash",
+        input_tokens: 1_000_000,
+        output_tokens: 50_000,
+        cost_usd: 0.35,
+        model_usage: {
+          "deepseek-v4.1-flash": {
+            inputTokens: 2_000_000,
+            outputTokens: 100_000,
+            costUSD: 50,
+          },
+        },
+      }),
+    ]);
+
+    expect(rollups.get(1)).toEqual({
+      subagent_input_tokens: 1_000_000,
+      subagent_cached_input_tokens: 0,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 50_000,
+      subagent_cost_usd: 0.36,
+      subagent_models: [
+        {
+          model: "deepseek-v4.1-flash",
+          input_tokens: 1_000_000,
+          cached_input_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 50_000,
+          cost_usd: 0.36,
+        },
+      ],
+    });
+  });
+
+  it("keeps tokens but omits cost for a non-Claude model the catalogue lists without rates", () => {
+    const catalog = catalogWith([
+      { provider: "claude", model: "claude-opus-5-5", aliases: [], rates: CLAUDE_RATES },
+      { provider: "kimi", model: "kimi-for-coding/k3", aliases: [], rates: null },
+    ]);
+
+    const rollups = computeSessionSubagentRollups(
+      [
+        turn({
+          event_id: 1,
+          model: "claude-opus-5-5",
+          input_tokens: 500,
+          output_tokens: 50,
+          cost_usd: 0.5,
+          model_usage: {
+            "claude-opus-5-5": { inputTokens: 500, outputTokens: 50, costUSD: 0.5 },
+            "kimi-for-coding/k3": { inputTokens: 10_000, outputTokens: 1_000, costUSD: 5 },
+          },
+        }),
+      ],
+      catalog,
+    );
+
+    expect(rollups.get(1)).toEqual({
+      subagent_input_tokens: 10_000,
+      subagent_cached_input_tokens: 0,
+      subagent_cache_write_tokens: 0,
+      subagent_output_tokens: 1_000,
+      subagent_models: [
+        {
+          model: "kimi-for-coding/k3",
+          input_tokens: 10_000,
+          cached_input_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 1_000,
+        },
+      ],
+    });
+  });
+
+  it("keeps the CLI cost for a bucket whose model the catalogue does not know", () => {
+    const catalog = catalogWith([
+      { provider: "claude", model: "claude-opus-5-5", aliases: [], rates: CLAUDE_RATES },
+    ]);
+
+    const rollups = computeSessionSubagentRollups(
+      [
+        turn({
+          event_id: 1,
+          model: "claude-opus-5-5",
+          input_tokens: 500,
+          output_tokens: 50,
+          cost_usd: 0.5,
+          model_usage: {
+            "claude-opus-5-5": { inputTokens: 500, outputTokens: 50, costUSD: 0.5 },
+            "qwen3.8-27b": { inputTokens: 10_000, outputTokens: 1_000, costUSD: 5 },
+          },
+        }),
+      ],
+      catalog,
+    );
+
+    expect(rollups.get(1)).toMatchObject({
+      subagent_input_tokens: 10_000,
+      subagent_output_tokens: 1_000,
+      subagent_cost_usd: 5,
+    });
   });
 });
 
