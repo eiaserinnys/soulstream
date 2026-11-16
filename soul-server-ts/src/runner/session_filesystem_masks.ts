@@ -8,11 +8,29 @@ import type {
 } from "../security/session_isolation_contract.js";
 import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
 
+export interface IsolationEnvMaskScan {
+  /** 실제로 훑은 뿌리 수(중복·하위 뿌리 정리 뒤). */
+  roots: number;
+  /** 이름을 확인한 파일·심볼릭 링크 수. */
+  files: number;
+  /** 새로 계획에 넣은 가림 수(이미 있던 경로와 중복은 세지 않는다). */
+  masked: number;
+  /** 뿌리 탐색 결과를 캐시에서 되쓴 횟수. */
+  cacheHits: number;
+  /** 뿌리를 실제로 다시 훑은 횟수. */
+  cacheMisses: number;
+  /** 한 뿌리라도 다시 훑었으면 `miss`, 전부 캐시면 `hit`, 섞이면 `mixed`. */
+  cache: "hit" | "miss" | "mixed";
+  elapsedMs: number;
+}
+
 export interface IsolationMaskPlan {
   /** 디렉터리 mask를 먼저, 민감 파일 mask를 마지막에 둔다. */
   masks: IsolationMask[];
   /** mask한 부모 아래에서 RO로 다시 여는 경로. */
   rebindings: MountBinding[];
+  /** 재귀 `.env` 탐색 통계. 로그로만 쓴다. */
+  envScan: IsolationEnvMaskScan;
 }
 
 export interface PrepareIsolationMasksArgs {
@@ -22,9 +40,256 @@ export interface PrepareIsolationMasksArgs {
   extraMasks: readonly IsolationMask[];
 }
 
+/** 재귀 탐색에서 내려가지 않는 디렉터리 이름. */
+const ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES = new Set([
+  "node_modules",
+  ".git",
+  ".pnpm-store",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".cache",
+  "target",
+  ".next",
+]);
+
+/** 뿌리(깊이 0)에서 내려가는 최대 깊이. 그보다 깊은 항목은 보지 않는다. */
+const ENV_MASK_SCAN_MAX_DEPTH = 8;
+
+/** 예시·틀 파일은 가리지 않는다. */
+const ENV_MASK_SCAN_EXCLUDED_SUFFIXES = [".example", ".sample", ".template"] as const;
+
+/**
+ * `.env`, `.env.<무엇>`, `<무엇>.env` 이름이면 가림 대상이다.
+ * `.env.example`처럼 예시·틀 접미사로 끝나는 이름은 뺀다.
+ */
+export function isEnvMaskTargetName(name: string): boolean {
+  const candidate = name === ".env"
+    || name.startsWith(".env.")
+    || name.endsWith(".env");
+  if (!candidate) return false;
+  return !ENV_MASK_SCAN_EXCLUDED_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/** 동시에 여는 디렉터리 수. 11만 개 규모에서도 파일 핸들을 말리지 않게 한다. */
+export const ENV_MASK_SCAN_CONCURRENCY = 16;
+
+/** 뿌리별 탐색 결과를 다시 쓰는 시간. 지나면 다시 훑는다. */
+export const ENV_MASK_SCAN_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** 캐시한 탐색 결과가 유효한 탐색 규칙인지 가르는 지문. */
+const ENV_MASK_SCAN_RULE_KEY = [
+  `depth=${ENV_MASK_SCAN_MAX_DEPTH}`,
+  `skip=${[...ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES].sort().join(",")}`,
+  `exclude=${[...ENV_MASK_SCAN_EXCLUDED_SUFFIXES].sort().join(",")}`,
+].join("|");
+
+/** 훑는 데 필요한 호스트 포트만. 시험과 측정이 가짜·실제 포트를 그대로 넘긴다. */
+export type EnvMaskScanPorts = Pick<
+  IsolationHostPorts,
+  "listDirectory" | "lstatPath" | "resolveRealPath"
+>;
+
+export interface ScannedEnvMaskEntry {
+  /** 탐색에서 만난 원래 경로. 세션별 쓰기 경로 판정에 함께 쓴다. */
+  source: string;
+  /** bwrap에 놓을 가림 경로. 심볼릭 링크는 실경로다. */
+  path: string;
+  kind: "file" | "directory";
+}
+
+export interface EnvMaskRootScanResult {
+  entries: ScannedEnvMaskEntry[];
+  /** 이름을 확인한 파일·심볼릭 링크 수. */
+  files: number;
+}
+
+export interface EnvMaskScanResult {
+  rootScans: EnvMaskRootScanResult[];
+  files: number;
+  cacheHits: number;
+  cacheMisses: number;
+  elapsedMs: number;
+}
+
+interface CachedEnvMaskRootScan {
+  expiresAt: number;
+  entries: readonly ScannedEnvMaskEntry[];
+  files: number;
+}
+
+/**
+ * 노드 프로세스 안에서 뿌리별 탐색 결과를 나눠 쓴다. 캐시에는 세션 공통 제외만
+ * 반영되고, 세션마다 다른 쓰기 경로는 `prepareIsolationMasks`가 매번 건다.
+ */
+const envMaskScanCache = new Map<string, CachedEnvMaskRootScan>();
+
+/** 시험과 측정에서 캐시 상태를 초기화할 때만 쓴다. */
+export function clearEnvMaskScanCache(): void {
+  envMaskScanCache.clear();
+}
+
+/** `path`가 `root`와 같거나 그 아래인지 구성 요소 경계로 판정한다. */
+function isPathAtOrUnder(path: string, root: string): boolean {
+  if (path === root) return true;
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return path.startsWith(prefix);
+}
+
+/**
+ * 뿌리 하나를 병렬로 훑어 `.env` 후보를 모은다. 깊이·건너뛸 이름·대상 이름
+ * 판정은 `ENV_MASK_SCAN_RULE_KEY`에 들어 있어 규칙이 바뀌면 캐시가 갈린다.
+ */
+async function scanEnvMaskRoot(
+  root: string,
+  ports: EnvMaskScanPorts,
+  commonExclusions: readonly string[],
+): Promise<EnvMaskRootScanResult> {
+  const entries: ScannedEnvMaskEntry[] = [];
+  let files = 0;
+  const pending: { path: string; depth: number }[] = [{ path: root, depth: 0 }];
+  const excluded = (path: string): boolean =>
+    commonExclusions.some((candidate) => isPathAtOrUnder(path, candidate));
+
+  const readDirectory = async (current: {
+    path: string;
+    depth: number;
+  }): Promise<void> => {
+    if (current.depth >= ENV_MASK_SCAN_MAX_DEPTH) return;
+    let entriesInDirectory: Awaited<
+      ReturnType<EnvMaskScanPorts["listDirectory"]>
+    >;
+    try {
+      entriesInDirectory = await ports.listDirectory(current.path);
+    } catch {
+      // 호스트가 읽지 못하는 디렉터리는 상자 안에서도 읽을 수 없다.
+      return;
+    }
+    for (const entry of entriesInDirectory) {
+      const path = join(current.path, entry.name);
+      if (excluded(path)) continue;
+      if (entry.kind === "directory") {
+        if (ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES.has(entry.name)) continue;
+        pending.push({ path, depth: current.depth + 1 });
+        continue;
+      }
+      if (entry.kind !== "file" && entry.kind !== "symlink") continue;
+      files += 1;
+      if (!isEnvMaskTargetName(entry.name)) continue;
+      if (entry.kind === "file") {
+        entries.push({ source: path, path, kind: "file" });
+        continue;
+      }
+      // 끊긴 링크는 읽을 내용이 없으므로 세션 시작을 막지 않고 건너뛴다.
+      let real: string;
+      try {
+        real = await ports.resolveRealPath(path);
+      } catch {
+        continue;
+      }
+      // 링크가 세션 쓰기 경로를 가리키면 그 안의 파일을 덮지 않는다.
+      if (excluded(real)) continue;
+      const realFact = await ports.lstatPath(real);
+      if (!realFact) continue;
+      entries.push({
+        source: path,
+        path: real,
+        kind: realFact.kind === "directory" ? "directory" : "file",
+      });
+    }
+  };
+
+  // 큐는 앞에서만 읽고 뒤에만 붙인다. 작업자는 큐에 이미 있는 항목만 가져가고,
+  // 새 하위 디렉터리는 끝난 작업자의 pump가 집어 간다.
+  let cursor = 0;
+  let active = 0;
+  let finish!: () => void;
+  const done = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const pump = (): void => {
+    while (active < ENV_MASK_SCAN_CONCURRENCY && cursor < pending.length) {
+      const current = pending[cursor];
+      if (!current) break;
+      cursor += 1;
+      active += 1;
+      void readDirectory(current).finally(() => {
+        active -= 1;
+        if (cursor >= pending.length && active === 0) {
+          finish();
+          return;
+        }
+        pump();
+      });
+    }
+  };
+  pump();
+  await done;
+  return { entries, files };
+}
+
+/**
+ * 뿌리별로 캐시를 확인해 탐색한다. 캐시는 뿌리 실경로와 탐색 규칙이 같을 때만
+ * 재사용하고, 세션 공통 제외는 탐색 자체에서 건너뛴다.
+ */
+export async function scanEnvMaskRoots(
+  roots: readonly string[],
+  ports: EnvMaskScanPorts,
+  commonExclusions: readonly string[] = [],
+): Promise<EnvMaskScanResult> {
+  const started = Date.now();
+  // 공통 제외가 다르면 탐색 결과도 달라진다. 열쇠에 정렬해 넣어 캐시가 갈리게 한다.
+  const commonExclusionKey = [...new Set(commonExclusions)].sort().join("\n");
+  const rootScans: EnvMaskRootScanResult[] = [];
+  let files = 0;
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  for (const root of roots) {
+    const key = `${ENV_MASK_SCAN_RULE_KEY}\ncommon=${commonExclusionKey}\n${root}`;
+    const now = Date.now();
+    const cached = envMaskScanCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      cacheHits += 1;
+      rootScans.push({ entries: [...cached.entries], files: cached.files });
+      files += cached.files;
+      continue;
+    }
+    cacheMisses += 1;
+    const scanned = await scanEnvMaskRoot(root, ports, commonExclusions);
+    envMaskScanCache.set(key, {
+      // 적중해도 만료를 늘리지 않는다. 훑은 시점에서 5분이다.
+      expiresAt: Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS,
+      entries: scanned.entries,
+      files: scanned.files,
+    });
+    rootScans.push(scanned);
+    files += scanned.files;
+  }
+  return {
+    rootScans,
+    files,
+    cacheHits,
+    cacheMisses,
+    elapsedMs: Date.now() - started,
+  };
+}
+
 function byPath(left: IsolationMask, right: IsolationMask): number {
   if (left.path === right.path) return 0;
   return left.path < right.path ? -1 : 1;
+}
+
+/** 같은 경로를 겹쳐 훑지 않도록 상위 뿌리만 남긴다. */
+function dedupeRoots(roots: Iterable<string>): string[] {
+  const sorted = [...new Set(roots)].sort((left, right) =>
+    left.length - right.length || (left < right ? -1 : left > right ? 1 : 0),
+  );
+  const kept: string[] = [];
+  for (const root of sorted) {
+    if (kept.some((candidate) => isPathAtOrUnder(root, candidate))) continue;
+    kept.push(root);
+  }
+  return kept;
 }
 
 /**
@@ -105,7 +370,7 @@ export async function prepareIsolationMasks(
   const rebindReadOnly = async (
     path: string,
     requireDirectory: boolean,
-  ): Promise<void> => {
+  ): Promise<string | null> => {
     const fact = await ports.lstatPath(path);
     if (!fact || fact.kind !== "directory") {
       if (requireDirectory) {
@@ -113,10 +378,11 @@ export async function prepareIsolationMasks(
           `재노출 대상 디렉터리를 찾을 수 없습니다: ${path}`,
         );
       }
-      return;
+      return null;
     }
     const source = await ports.resolveRealPath(path);
     rebindings.push({ source, destination: path, writable: false });
+    return source;
   };
 
   // 1. 홈의 원본 인증·에이전트 상태. canonical Codex 인증 디렉터리는 제외한다.
@@ -175,15 +441,21 @@ export async function prepareIsolationMasks(
   // 보이지 않게 늘 가리고, 이 세션 폴더만 plan이 RO로 다시 연다.
   await addMask(input.incomingRoot, false);
 
+  // 재귀 `.env` 탐색에 쓸 RO 재노출 뿌리. mask 아래에서 다시 여는 경로는
+  // 그 아래 `.env`도 다시 보이므로 함께 훑는다.
+  const readOnlyRoots: string[] = [];
+
   // 7. masked prod-state 아래 승인된 공통 skill/script 디렉터리만 RO 재노출.
   const agentCommonFiles = await ports.resolveAgentCommonFilesDirectory();
   if (agentCommonFiles) {
-    await rebindReadOnly(agentCommonFiles, false);
+    const real = await rebindReadOnly(agentCommonFiles, false);
+    if (real) readOnlyRoots.push(real);
   }
 
   // 7b. 가린 루트 아래에서 읽기만 허용할 디렉터리. 없으면 건너뛴다.
   for (const path of input.policy.filesystem.readOnlyReexposedPaths) {
-    await rebindReadOnly(path, false);
+    const real = await rebindReadOnly(path, false);
+    if (real) readOnlyRoots.push(real);
   }
 
   // 8. WSL은 /mnt와 /run/WSL이 필수다. 없으면 restricted를 시작하지 않는다.
@@ -192,18 +464,95 @@ export async function prepareIsolationMasks(
     await addMask("/run/WSL", true);
   }
 
-  // 9. 서비스 env 파일. dotenv가 읽는 디렉터리의 최상위에서 `.env`로 시작하는
-  // file/symlink만 가린다. 수동 편집이 만드는 `.before-*` 백업도 함께 걸리고,
-  // 하위 디렉터리로는 내려가지 않는다. symlink는 실경로를 가린다.
+  // 9. `.env` 재귀 가림. 상자에 RO로 다시 여는 경로(호스트 워크스페이스 루트,
+  // readOnlyReexposedPaths, 공통 파일 디렉터리, 서비스 env 디렉터리) 아래를
+  // 훑는다. 세션이 쓸 수 있게 연 경로 아래는 자기 작업물이므로 뺀다.
+  const directoryReal = async (path: string): Promise<string | null> => {
+    try {
+      const fact = await ports.lstatPath(path);
+      if (!fact || fact.kind !== "directory") return null;
+      return await ports.resolveRealPath(path);
+    } catch {
+      return null;
+    }
+  };
+
+  const hostWorkspaceReal = await directoryReal(input.hostWorkspaceRoot);
+  const hostRoot = hostWorkspaceReal ?? input.hostWorkspaceRoot;
+
+  const scanRoots: string[] = [];
+  const addScanRoot = (path: string | null | undefined): void => {
+    if (path) scanRoots.push(path);
+  };
+  for (const root of readOnlyRoots) addScanRoot(root);
+  addScanRoot(hostWorkspaceReal);
   const serviceEnvironmentDirectory = await ports.resolveServiceEnvironmentDirectory();
-  if (serviceEnvironmentDirectory) {
-    const entries = await ports.listDirectory(serviceEnvironmentDirectory);
-    for (const entry of entries) {
-      if (!entry.name.startsWith(".env")) continue;
-      if (entry.kind !== "file" && entry.kind !== "symlink") continue;
-      await addMask(join(serviceEnvironmentDirectory, entry.name), false);
+  const serviceEnvironmentReal = serviceEnvironmentDirectory
+    ? await directoryReal(serviceEnvironmentDirectory)
+    : null;
+  addScanRoot(serviceEnvironmentReal);
+
+  const resolveExclusions = async (
+    paths: readonly string[],
+  ): Promise<string[]> => {
+    const resolved = new Set<string>();
+    for (const path of paths) {
+      resolved.add(path);
+      try {
+        resolved.add(await ports.resolveRealPath(path));
+      } catch {
+        // 아직 없는 쓰기 경로(예: 이번 턴에 만들 .local/tmp)는 원래 경로로 충분하다.
+      }
+    }
+    return [...resolved];
+  };
+  // 모든 세션에 같은 제외. 캐시된 탐색 결과에도 같게 적용되므로 탐색 자체에서 뺀다.
+  const commonExclusions = await resolveExclusions([
+    join(hostRoot, ".local/tmp"),
+    join(hostRoot, ".local/artifacts"),
+    join(input.homeDirectory, input.policy.filesystem.isolatedCacheRelativeRoot),
+  ]);
+  // 세션마다 다른 쓰기 경로. 캐시를 나눠 써도 결과가 캐시 없이 훑은 것과 같도록
+  // 탐색 결과에 매번 건다.
+  const sessionExclusions = await resolveExclusions([
+    join(
+      hostRoot,
+      input.policy.filesystem.sessionWorktreeRelativeRoot,
+      input.decision.sessionId,
+    ),
+    join(input.sessionDirectory, "sandbox"),
+    // scratch가 호스트 워크스페이스 루트 자체면 그 루트는 RO bind라 탐색 뿌리로
+    // 남긴다. 그 아래 워크트리는 이미 별도로 뺀다.
+    ...(isPathAtOrUnder(hostRoot, input.scratchWorkspaceDir)
+      ? []
+      : [input.scratchWorkspaceDir]),
+    ...input.ownedWorktrees.map((attachment) => attachment.canonicalPath),
+    ...input.attachedWorktrees.map((attachment) => attachment.canonicalPath),
+  ]);
+
+  const roots = dedupeRoots(scanRoots)
+    .filter((root) =>
+      !commonExclusions.some((candidate) => isPathAtOrUnder(root, candidate)),
+    );
+  const scan = await scanEnvMaskRoots(roots, ports, commonExclusions);
+  const scannedFiles = scan.files;
+  let maskedCount = 0;
+  for (const rootScan of scan.rootScans) {
+    for (const entry of rootScan.entries) {
+      if (
+        sessionExclusions.some((candidate) =>
+          isPathAtOrUnder(entry.source, candidate)
+          || isPathAtOrUnder(entry.path, candidate),
+        )
+      ) {
+        continue;
+      }
+      const before = directories.size + files.size;
+      addEntry(entry.path, entry.kind);
+      if (directories.size + files.size > before) maskedCount += 1;
     }
   }
+  const elapsedMs = scan.elapsedMs;
 
   for (const mask of args.extraMasks) {
     if (mask.kind === "directory") directories.set(mask.path, mask);
@@ -213,5 +562,50 @@ export async function prepareIsolationMasks(
   return {
     masks: [...directories.values()].sort(byPath).concat([...files.values()].sort(byPath)),
     rebindings,
+    envScan: {
+      roots: roots.length,
+      files: scannedFiles,
+      masked: maskedCount,
+      cacheHits: scan.cacheHits,
+      cacheMisses: scan.cacheMisses,
+      cache: scan.cacheMisses > 0 && scan.cacheHits > 0
+        ? "mixed"
+        : scan.cacheMisses > 0
+          ? "miss"
+          : "hit",
+      elapsedMs,
+    },
   };
+}
+
+/**
+ * 상위 디렉터리 mask에 덮이는 가림을 뺀다. 최종 bind 목록(spec.bindings와
+ * heavyWorkLockBindings)을 받는다. 사이에 다시 여는 bind가 있으면 그 아래 가림은
+ * 효력이 있으므로 남기고, 같은 경로의 bind도 다시 여는 것으로 본다.
+ */
+export function dropCoveredMasks(
+  masks: readonly IsolationMask[],
+  bindings: readonly MountBinding[],
+): IsolationMask[] {
+  const ancestors = masks
+    .filter((mask) => mask.kind === "directory")
+    .map((mask) => mask.path);
+  const reopenedBetween = (ancestor: string, path: string): boolean =>
+    bindings.some(
+      (binding) =>
+        isPathAtOrUnder(binding.destination, ancestor)
+        && isPathAtOrUnder(path, binding.destination),
+    );
+  const covered = (path: string, self: string | null): boolean =>
+    ancestors.some(
+      (ancestor) =>
+        ancestor !== self
+        && isPathAtOrUnder(path, ancestor)
+        && !reopenedBetween(ancestor, path),
+    );
+  return masks.filter((mask) =>
+    mask.kind === "directory"
+      ? !covered(mask.path, mask.path)
+      : !covered(mask.path, null),
+  );
 }

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import type { Env } from "../config.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import { createLogger } from "../logger.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { SessionIsolationUnavailableError } from "../runner/session_filesystem_errors.js";
@@ -83,10 +84,15 @@ function createRunnerIsolationHost(
   deps: SessionIsolationCompositionDeps,
   runtime: SessionIsolationRuntime,
 ): RunnerIsolationHost {
+  // 재귀 `.env` 탐색 비용은 격리 준비에서만 쓰는 로그라 별도 인스턴스를 둔다.
+  const scanLogger = createLogger(deps.env.LOG_LEVEL);
   return {
-    prepare: async (request) => await prepareRunnerIsolation(deps, runtime, request),
+    prepare: async (request) =>
+      await prepareRunnerIsolation(deps, runtime, request, scanLogger),
   };
 }
+
+type EnvMaskScanLogger = Pick<ReturnType<typeof createLogger>, "info">;
 
 /**
  * restricted 턴 하나의 러너 준비. B2(`prepareIsolationPlan`)는 이 턴에 한 번만
@@ -96,6 +102,7 @@ async function prepareRunnerIsolation(
   deps: SessionIsolationCompositionDeps,
   runtime: SessionIsolationRuntime,
   request: RunnerIsolationPreparationRequest,
+  scanLogger: EnvMaskScanLogger,
 ): Promise<PreparedRunnerIsolation> {
   const { env } = deps;
   const decision = request.task.executionSecurity;
@@ -176,7 +183,9 @@ async function prepareRunnerIsolation(
       : {}),
     scratchWorkspaceDir: request.agent.workspace_dir,
   };
-  const plan = await prepareIsolationPlan(input, ports);
+  const plan = await prepareIsolationPlan(input, ports, {
+    logEnvMaskScan: (scan) => scanLogger.info({ ...scan }, "restricted .env mask scan"),
+  });
   if (backend === "codex" && codexExecutable) {
     assertCodexExecutableOutsideMasks(
       codexExecutable,

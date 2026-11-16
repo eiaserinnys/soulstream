@@ -12,6 +12,9 @@ function baseEnv(): Record<string, string> {
   return {
     PATH: "/usr/bin:/bin",
     HOME: "/home/eias",
+    LANG: "ko_KR.UTF-8",
+    LC_ALL: "ko_KR.UTF-8",
+    TZ: "Asia/Seoul",
     SCRATCH_WORKSPACE_DIR: "/home/eias/workspace/.local",
     MCP_INTERNAL_PORT: "3115",
     MCP_PATH: "/mcp/internal",
@@ -26,6 +29,18 @@ function baseEnv(): Record<string, string> {
     RUSTC_WORKSPACE_WRAPPER: "/usr/local/bin/sccache",
     SCCACHE_DIR: "/home/eias/.cache/sccache",
     WSL_INTEROP: "/run/WSL/8_interop",
+    ATOM_API_KEY: "atom-key",
+    KIMI_API_KEY: "kimi-key",
+    SERENDIPITY_API_KEY: "serendipity-key",
+    CLAUDE_CODE_MESSAGING_TOKEN: "messaging-token",
+    CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: "1",
+    XDG_CACHE_HOME: "/home/eias/.cache",
+    npm_config_cache: "/home/eias/.npm",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "user.name",
+    GIT_CONFIG_VALUE_0: "Soulstream",
+    ANTHROPIC_BASE_URL: "https://api.example.test",
+    OPENAI_API_KEY: "openai-key",
   };
 }
 
@@ -43,7 +58,7 @@ function build(
 }
 
 describe("buildRestrictedSessionEnv", () => {
-  it("removes host management credentials and keeps the allowed session values", () => {
+  it("keeps only the allowed host keys and the allowed session values", () => {
     const env = build({
       additions: {
         TEST_DATABASE_URL: "postgres://tester@127.0.0.1:15432/soulstream_test",
@@ -52,21 +67,47 @@ describe("buildRestrictedSessionEnv", () => {
     });
 
     expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env.HOME).toBe("/home/eias");
+    expect(env.LC_ALL).toBe("ko_KR.UTF-8");
+    expect(env.TZ).toBe("Asia/Seoul");
     expect(env.SCRATCH_WORKSPACE_DIR).toBe("/home/eias/workspace/.local");
-    expect(env.MCP_INTERNAL_PORT).toBe("3115");
-    expect(env.MCP_PATH).toBe("/mcp/internal");
+    expect(env.XDG_CACHE_HOME).toBe("/home/eias/.cache");
+    expect(env.npm_config_cache).toBe("/home/eias/.npm");
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://api.example.test");
+    expect(env.OPENAI_API_KEY).toBe("openai-key");
+    expect(env.CLAUDE_CODE_EXPERIMENTAL_CODE_MODE).toBe("1");
     expect(env.AUTH_BEARER_TOKEN).toBe("ssr1.s1.signature");
     expect(env.TEST_DATABASE_URL).toBe(
       "postgres://tester@127.0.0.1:15432/soulstream_test",
     );
     expect(env.GH_TOKEN).toBe("gh-token");
 
+    // 호스트 서비스 설정과 임의 API 키는 상자 안 base로 넘어가지 않는다.
+    for (const key of [
+      "MCP_INTERNAL_PORT",
+      "MCP_PATH",
+      "ATOM_API_KEY",
+      "KIMI_API_KEY",
+      "SERENDIPITY_API_KEY",
+      "CLAUDE_CODE_MESSAGING_TOKEN",
+      "WSL_INTEROP",
+    ]) {
+      expect(env).not.toHaveProperty(key);
+    }
     for (const key of RESTRICTED_ENV_REMOVED_KEYS) {
       if (key === "AUTH_BEARER_TOKEN" || key === "TEST_DATABASE_URL") continue;
       expect(env).not.toHaveProperty(key);
     }
     expect(env).not.toHaveProperty("SCCACHE_DIR");
-    expect(env.WSL_INTEROP).toBe("/run/WSL/8_interop");
+  });
+
+  it("admits a session-specific key referenced by its model preset", () => {
+    const env = build({ sessionKeys: ["KIMI_API_KEY"] });
+
+    // 그 세션의 preset이 ${KIMI_API_KEY}를 참조할 때만 넘어간다.
+    expect(env.KIMI_API_KEY).toBe("kimi-key");
+    expect(env).not.toHaveProperty("ATOM_API_KEY");
+    expect(build()).not.toHaveProperty("KIMI_API_KEY");
   });
 
   it("removes forbidden keys introduced by additions and keeps the approved test DB and isolated sccache directory", () => {
@@ -103,7 +144,7 @@ describe("buildRestrictedSessionEnv", () => {
     expect(withoutApproval).not.toHaveProperty("SCCACHE_DIR");
   });
 
-  it("removes WSL_INTEROP only inside WSL", () => {
+  it("does not carry WSL_INTEROP even inside WSL", () => {
     expect(build({ wsl: true })).not.toHaveProperty("WSL_INTEROP");
   });
 
@@ -111,7 +152,7 @@ describe("buildRestrictedSessionEnv", () => {
     let thrown: unknown;
     try {
       build({
-        baseEnv: { ...baseEnv(), UNRELATED_TOKEN: FULL_SECRET },
+        baseEnv: { ...baseEnv(), OPENAI_API_KEY: FULL_SECRET },
       });
     } catch (error) {
       thrown = error;

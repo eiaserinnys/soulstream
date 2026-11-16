@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   IsolationPolicy,
@@ -19,6 +19,11 @@ import {
   ISOLATION_POLICY_UNAVAILABLE,
   SESSION_ISOLATION_UNAVAILABLE,
 } from "../../src/runner/session_filesystem_errors.js";
+import {
+  clearEnvMaskScanCache,
+  ENV_MASK_SCAN_CACHE_TTL_MS,
+  type IsolationEnvMaskScan,
+} from "../../src/runner/session_filesystem_masks.js";
 import { prepareIsolationPlan } from "../../src/runner/session_filesystem_plan.js";
 import { isolationChildConfigFromPlan } from
   "../../src/runner/runner_process_isolation.js";
@@ -94,11 +99,16 @@ interface FixtureOverrides {
   sanitizeMcpServers?: FakeHostPortsOptions["sanitizeMcpServers"];
   mainStorePath?: string | null;
   decisionTier?: "full" | "restricted";
+  /** 호스트 워크스페이스를 민감 루트(디렉터리 mask) 아래에 두는 배치. */
+  workspaceUnderSensitiveRoot?: boolean;
 }
 
 async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
   const root = await makeTempDir("b2-prep-");
-  const workspace = join(root, "workspace");
+  const sensitive = join(root, "prod-state");
+  const workspace = overrides.workspaceUnderSensitiveRoot
+    ? join(sensitive, "agent-workspaces", "utonium")
+    : join(root, "workspace");
   const home = join(root, "home");
   const stateDir = join(root, "state");
   const sessionDir = join(stateDir, "session-1");
@@ -109,7 +119,6 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
     home,
     ".local/share/soulstream/credentials/codex",
   );
-  const sensitive = join(root, "prod-state");
   const agentCommonFiles = join(sensitive, "agent-common-files");
 
   for (const dir of [
@@ -695,7 +704,7 @@ describe("prepareIsolationPlan", () => {
     }
   });
 
-  it("masks service env files and backups at the dotenv directory top level", async () => {
+  it("masks service env files and backups under the dotenv directory recursively", async () => {
     const fixture = await makeFixture();
     const serviceDir = join(fixture.root, "service-env");
     touch(fixture.root, "service-env/.env.soul-server-ts", "A=1", 0o600);
@@ -725,10 +734,314 @@ describe("prepareIsolationPlan", () => {
     expect(
       masks.some((mask) => mask.path === join(serviceDir, "package.json")),
     ).toBe(false);
-    // 하위 디렉터리로는 내려가지 않는다.
+    // 하위 디렉터리도 훑는다.
     expect(
       masks.some((mask) => mask.path === join(serviceDir, "sub/.env.nested")),
+    ).toBe(true);
+  });
+
+  it("masks .env files recursively under read-only re-exposed paths and the workspace bind", async () => {
+    const fixture = await makeFixture();
+    const deep = join(fixture.workspace, ".projects", "BlockNote", "playground");
+    const reexposed = join(fixture.sensitive, "logs");
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [reexposed],
+      },
+    };
+
+    const maskedTargets = [
+      join(deep, ".env"),
+      join(deep, ".env.local"),
+      join(deep, "x.env"),
+      join(reexposed, "config", ".env"),
+    ];
+    for (const path of maskedTargets) {
+      touch(fixture.root, path, "SECRET=1", 0o600);
+    }
+    // 예시·틀 파일은 그대로 둔다.
+    touch(fixture.root, join(deep, ".env.example"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".env.local.sample"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".env.template"), "A=1", 0o600);
+    // 탐색하지 않는 가지.
+    touch(fixture.root, join(deep, "node_modules", "pkg", ".env"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".git", ".env"), "A=1", 0o600);
+    // 세션이 쓸 수 있게 연 경로.
+    const writePaths = [
+      join(fixture.worktree, ".env"),
+      join(fixture.workspace, ".local", "tmp", "s1", ".env"),
+      join(fixture.workspace, ".local", "artifacts", "notes", ".env"),
+      join(fixture.sessionDir, "sandbox", ".env"),
+      join(fixture.workspace, ".projects", ".isolated", "s1", ".env"),
+      join(fixture.home, ".local/share/soulstream/isolated-cache", "cargo", ".env"),
+    ];
+    for (const path of writePaths) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    for (const path of maskedTargets) {
+      expect(masked.has(path), path).toBe(true);
+    }
+    for (const path of [
+      join(deep, ".env.example"),
+      join(deep, ".env.local.sample"),
+      join(deep, ".env.template"),
+      join(deep, "node_modules", "pkg", ".env"),
+      join(deep, ".git", ".env"),
+      ...writePaths,
+    ]) {
+      expect(masked.has(path), path).toBe(false);
+    }
+  });
+
+  it("reuses the recursive .env scan per root for five minutes and rescans after expiry", async () => {
+    clearEnvMaskScanCache();
+    vi.useFakeTimers();
+    try {
+      const fixture = await makeFixture();
+      const first = join(fixture.workspace, ".projects", "one");
+      const later = join(fixture.workspace, ".projects", "two");
+      touch(fixture.root, join(first, ".env"), "A=1", 0o600);
+
+      const scans: IsolationEnvMaskScan[] = [];
+      const lastScan = (): IsolationEnvMaskScan => {
+        const scan = scans[scans.length - 1];
+        if (!scan) throw new Error("탐색 로그가 없습니다");
+        return scan;
+      };
+      const prepare = () =>
+        prepareIsolationPlan(fixture.input, fixture.ports, {
+          logEnvMaskScan: (scan) => scans.push(scan),
+        });
+
+      const firstPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "miss" });
+      expect(lastScan().cacheMisses).toBeGreaterThan(0);
+      expect(firstPlan.spec.masks).toContainEqual({
+        path: join(first, ".env"),
+        kind: "file",
+      });
+
+      // 5분 안의 두 번째 준비는 디렉터리를 다시 읽지 않으므로, 그 사이 생긴
+      // 파일은 다시 훑기 전까지 목록에 없다.
+      touch(fixture.root, join(later, ".env"), "B=2", 0o600);
+      const secondPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "hit", cacheMisses: 0 });
+      expect(secondPlan.spec.masks).toEqual(firstPlan.spec.masks);
+      expect(
+        secondPlan.spec.masks.some((mask) => mask.path === join(later, ".env")),
+      ).toBe(false);
+
+      vi.setSystemTime(Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS + 1);
+      const thirdPlan = await prepare();
+      expect(lastScan()).toMatchObject({ cache: "miss" });
+      expect(thirdPlan.spec.masks).toContainEqual({
+        path: join(later, ".env"),
+        kind: "file",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies session-specific write paths to the cached scan list", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const firstSession = join(
+      fixture.workspace,
+      ".projects",
+      ".isolated",
+      "s1",
+      ".env",
+    );
+    const secondSession = join(
+      fixture.workspace,
+      ".projects",
+      ".isolated",
+      "s2",
+      ".env",
+    );
+    touch(fixture.root, firstSession, "A=1", 0o600);
+    touch(fixture.root, secondSession, "B=2", 0o600);
+
+    const scans: IsolationEnvMaskScan[] = [];
+    const lastScan = (): IsolationEnvMaskScan => {
+      const scan = scans[scans.length - 1];
+      if (!scan) throw new Error("탐색 로그가 없습니다");
+      return scan;
+    };
+    const prepare = async (sessionId: string) => {
+      fixture.input.decision = { ...fixture.input.decision, sessionId };
+      return prepareIsolationPlan(fixture.input, fixture.ports, {
+        logEnvMaskScan: (scan) => scans.push(scan),
+      });
+    };
+
+    const asFirst = await prepare("s1");
+    const firstMasks = new Set(asFirst.spec.masks.map((mask) => mask.path));
+    expect(lastScan()).toMatchObject({ cache: "miss" });
+    expect(firstMasks.has(secondSession)).toBe(true);
+    expect(firstMasks.has(firstSession)).toBe(false);
+
+    // 두 번째 세션은 캐시된 목록에서 첫 세션의 워크트리는 가리되 자기 것은 뺀다.
+    const asSecond = await prepare("s2");
+    const secondMasks = new Set(asSecond.spec.masks.map((mask) => mask.path));
+    expect(lastScan()).toMatchObject({ cache: "hit" });
+    expect(secondMasks.has(firstSession)).toBe(true);
+    expect(secondMasks.has(secondSession)).toBe(false);
+  });
+
+  it("drops masks covered by an ancestor directory mask unless a reopen bind lies between", async () => {
+    const fixture = await makeFixture({
+      wsl: true,
+      sensitiveRoots: ({ sensitive }) => [
+        sensitive,
+        "/mnt/c/Users/eias/.azure",
+        join(sensitive, "logs", "private"),
+      ],
+      systemFacts: {
+        "/mnt": { kind: "directory" },
+        "/run/WSL": { kind: "directory" },
+        "/mnt/c/Users/eias/.azure": { kind: "directory" },
+      },
+    });
+    const logs = join(fixture.sensitive, "logs");
+    mkdirSync(join(logs, "private"), { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [logs],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    expect(masked.has("/mnt")).toBe(true);
+    // /mnt 아래 하위 가림은 다시 여는 bind가 없으므로 계획에서 뺀다.
+    expect(masked.has("/mnt/c/Users/eias/.azure")).toBe(false);
+    expect(
+      [...masked].some((path) => path.startsWith("/mnt/")),
     ).toBe(false);
+    // 재노출 bind가 사이에 있는 하위 디렉터리 가림은 효력이 있으므로 남긴다.
+    expect(masked.has(join(fixture.sensitive, "logs", "private"))).toBe(true);
+  });
+
+  it("keeps .env file masks under a sensitive root when the workspace RO bind reopens it", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture({ workspaceUnderSensitiveRoot: true });
+    const deepEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".projects", "agent-project", "config", ".env"),
+      "SECRET=1",
+      0o600,
+    );
+    const worktreeEnv = touch(
+      fixture.root,
+      join(fixture.worktree, ".env"),
+      "A=1",
+      0o600,
+    );
+    const tmpEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".local", "tmp", "scratch", ".env"),
+      "A=1",
+      0o600,
+    );
+    const sessionEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".projects", ".isolated", "s1", ".env"),
+      "A=1",
+      0o600,
+    );
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    // 민감 루트 디렉터리 mask는 남고, 워크스페이스 RO bind가 그 아래를 다시 연다.
+    expect(masked.has(fixture.sensitive)).toBe(true);
+    expect(bindingOf(prepared.spec.bindings, fixture.workspace)).toEqual({
+      source: fixture.workspace,
+      destination: fixture.workspace,
+      writable: false,
+    });
+    // 다시 열린 워크스페이스 아래 `.env`는 파일 가림으로 남는다.
+    expect(masked.has(deepEnv)).toBe(true);
+    // 세션 쓰기 경로의 `.env`는 이 배치에서도 가리지 않는다.
+    expect(masked.has(worktreeEnv)).toBe(false);
+    expect(masked.has(tmpEnv)).toBe(false);
+    expect(masked.has(sessionEnv)).toBe(false);
+  });
+
+  it("keeps a mask under the Codex auth bind that reopens the credential root", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const privateDir = join(fixture.canonicalCodex, "private");
+    mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        additionalSensitiveRoots: [
+          ...fixture.input.policy.filesystem.additionalSensitiveRoots,
+          privateDir,
+        ],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    expect(
+      masked.has(join(fixture.home, ".local/share/soulstream/credentials")),
+    ).toBe(true);
+    expect(
+      bindingOf(prepared.spec.bindings, fixture.canonicalCodex),
+    ).toMatchObject({ writable: true });
+    // auth bind가 사이에서 다시 연 아래 가림은 빠지지 않는다.
+    expect(masked.has(privateDir)).toBe(true);
+  });
+
+  it("keeps scan cache entries apart when host workspaces carry different common exclusions", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const otherWorkspace = join(fixture.root, "other-workspace");
+    mkdirSync(otherWorkspace, { recursive: true, mode: 0o700 });
+    const sharedEnv = touch(
+      fixture.root,
+      join(fixture.agentCommonFiles, "deep", ".env"),
+      "A=1",
+      0o600,
+    );
+
+    const scans: IsolationEnvMaskScan[] = [];
+    const lastScan = (): IsolationEnvMaskScan => {
+      const scan = scans[scans.length - 1];
+      if (!scan) throw new Error("탐색 로그가 없습니다");
+      return scan;
+    };
+    const prepare = () =>
+      prepareIsolationPlan(fixture.input, fixture.ports, {
+        logEnvMaskScan: (scan) => scans.push(scan),
+      });
+
+    const first = await prepare();
+    expect(lastScan().cacheMisses).toBeGreaterThan(0);
+    expect(first.spec.masks).toContainEqual({ path: sharedEnv, kind: "file" });
+
+    // 호스트 워크스페이스가 달라 공통 제외 목록도 달라진다. 같은 뿌리
+    // (agentCommonFiles)를 훑어도 이전 캐시를 그대로 쓰면 안 된다.
+    fixture.input.hostWorkspaceRoot = otherWorkspace;
+    const second = await prepare();
+    expect(lastScan().cacheHits).toBe(0);
+    expect(lastScan().cacheMisses).toBeGreaterThan(0);
+    expect(second.spec.masks).toContainEqual({ path: sharedEnv, kind: "file" });
   });
 
   it("rejects a Gemini/Antigravity restricted start before producing a spec", async () => {

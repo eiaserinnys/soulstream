@@ -269,6 +269,35 @@ describe("runner process factory restricted wiring", () => {
     expect(JSON.stringify(childProcessEnv)).not.toContain(HOST_BEARER);
   });
 
+  it("carries only the session preset reference key into the restricted child env", async () => {
+    const prepared = makePrepared();
+    const task = makeTask({
+      modelPresetBackend: "claude",
+      modelPresetEnv: { ANTHROPIC_API_KEY: "${KIMI_API_KEY}" },
+    });
+    const { runtime, spawn } = makeFactory({
+      task,
+      isolationHost: { prepare: vi.fn(async () => prepared) },
+      childProcessEnv: {
+        PATH: "/usr/bin",
+        KIMI_API_KEY: "kimi-key",
+        ATOM_API_KEY: "atom-key",
+        CLAUDE_CODE_MESSAGING_TOKEN: "messaging-token",
+      },
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-restricted"))
+      .rejects.toThrow("captured isolation spawn input");
+
+    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+    const childProcessEnv = input.childProcessEnv as Record<string, string | undefined>;
+    // preset이 ${KIMI_API_KEY}를 참조하는 그 세션에서만 풀린다.
+    expect(childProcessEnv.KIMI_API_KEY).toBe("kimi-key");
+    expect(childProcessEnv.PATH).toBe("/usr/bin");
+    expect(childProcessEnv.ATOM_API_KEY).toBeUndefined();
+    expect(childProcessEnv.CLAUDE_CODE_MESSAGING_TOKEN).toBeUndefined();
+  });
+
   it("keeps the account pool for a restricted Claude OAuth turn", async () => {
     const prepared = makePrepared();
     prepared.plan.spec = { ...prepared.plan.spec, authKind: "claude-oauth-token" };

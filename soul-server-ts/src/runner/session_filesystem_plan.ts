@@ -6,7 +6,6 @@ import type {
   IsolationPreparationInput,
   MountBinding,
   PreparedIsolationPlan,
-  PrepareIsolationPlan,
   SessionIsolationSpec,
   WorktreeAttachment,
 } from "../security/session_isolation_contract.js";
@@ -22,7 +21,11 @@ import {
 } from "./session_filesystem_errors.js";
 import { prepareGitView } from "./session_filesystem_git.js";
 import { prepareHeavyWorkLocks } from "./session_filesystem_locks.js";
-import { prepareIsolationMasks } from "./session_filesystem_masks.js";
+import {
+  dropCoveredMasks,
+  prepareIsolationMasks,
+  type IsolationEnvMaskScan,
+} from "./session_filesystem_masks.js";
 import {
   requireAbsolute,
   validateIsolationPreparationInput,
@@ -313,11 +316,20 @@ function composeBindings(args: {
   return bindings;
 }
 
+export interface PrepareIsolationPlanOptions {
+  /** 재귀 `.env` 탐색 비용을 호출부 로거로 남긴다. */
+  logEnvMaskScan?: (scan: IsolationEnvMaskScan) => void;
+}
+
 /**
  * B2: restricted 턴을 시작하기 전에 호스트가 준비할 파일·환경·인증 계획을 만든다.
  * 부수효과는 주입된 포트로만 일으키며, 비밀값은 env에만 담는다.
  */
-export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) => {
+export async function prepareIsolationPlan(
+  input: IsolationPreparationInput,
+  ports: IsolationHostPorts,
+  options: PrepareIsolationPlanOptions = {},
+): Promise<PreparedIsolationPlan> {
   validateIsolationPreparationInput(input);
 
   const nodeId = await ports.resolveNodeId();
@@ -362,6 +374,7 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     wsl,
     extraMasks: auth.masks,
   });
+  options.logEnvMaskScan?.(maskPlan.envScan);
   const cache = await prepareIsolatedCache({ input, ports });
 
   const worktrees = await collectWorktreePaths(input, ports, hostWorkspaceReal);
@@ -433,7 +446,13 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     resolvConfPath,
     resolvConfDestination,
   });
-  const masks = maskPlan.masks;
+  // 겹친 가림 정리는 최종 bind 목록이 정해진 뒤에 한다. composeBindings의 bind
+  // (호스트 워크스페이스 RO, 워크트리, 캐시, sandbox, auth, git 등)와 heavy work
+  // lock bind가 디렉터리 mask 아래를 다시 열면 그 아래 가림은 효력이 있다.
+  const masks = dropCoveredMasks(maskPlan.masks, [
+    ...bindings,
+    ...locks.heavyWorkLockBindings,
+  ]);
 
   const spec: SessionIsolationSpec = {
     version: 1,
@@ -473,4 +492,4 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     contextNotice,
   };
   return prepared;
-};
+}
