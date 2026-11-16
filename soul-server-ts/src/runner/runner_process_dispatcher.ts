@@ -149,6 +149,25 @@ export class RunnerOrphanedSpawnError extends Error {
   }
 }
 
+/**
+ * A registered runner reported that it never accepted an execution command.
+ * That is the node-restart window: the registration was written, the node went
+ * down before the execute frame arrived, and the runner has nothing to recover.
+ * The message is shown to the user as the session termination detail.
+ */
+export const RUNNER_EXECUTION_NOT_STARTED = "execution_not_started" as const;
+export const RUNNER_EXECUTION_NOT_STARTED_MESSAGE =
+  "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.";
+
+export class RunnerExecutionNotStartedError extends Error {
+  readonly code = RUNNER_EXECUTION_NOT_STARTED;
+
+  constructor() {
+    super(RUNNER_EXECUTION_NOT_STARTED_MESSAGE);
+    this.name = "RunnerExecutionNotStartedError";
+  }
+}
+
 export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private droppedFrameCount = 0;
   private readonly ready: Promise<void>;
@@ -1555,13 +1574,10 @@ function assertCommandAccepted(frame: RunnerCommandResultFrame): RunnerCommandRe
 }
 
 function readActiveExecutionCommandId(frame: RunnerCommandResultFrame): string {
-  if (
-    frame.result.status === "ok"
-    && isRecord(frame.result.data)
-    && typeof frame.result.data.executionCommandId === "string"
-    && frame.result.data.executionCommandId.length > 0
-  ) {
-    return frame.result.data.executionCommandId;
+  if (frame.result.status === "ok" && isRecord(frame.result.data)) {
+    const commandId = frame.result.data.executionCommandId;
+    if (typeof commandId === "string" && commandId.length > 0) return commandId;
+    if (commandId === null) throw new RunnerExecutionNotStartedError();
   }
   throw new Error("registered runner has no active execution command");
 }

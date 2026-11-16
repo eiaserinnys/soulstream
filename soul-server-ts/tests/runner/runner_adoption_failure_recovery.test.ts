@@ -5,6 +5,8 @@ import {
   RunnerAdoptionFailureRecovery,
   type RunnerAdoptionFailureRecoveryDeps,
 } from "../../src/runner/runner_adoption_failure_recovery.js";
+import { RunnerExecutionNotStartedError } from
+  "../../src/runner/runner_process_dispatcher.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 
@@ -86,6 +88,67 @@ describe("RunnerAdoptionFailureRecovery", () => {
     await scheduleAndWait(subject.recovery, prebootstrap, task(), {
       disposition: "adopt_prebootstrap",
       error: Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+  });
+
+  it("terminalizes an identity-verified prebootstrap registration that never started its execution", async () => {
+    const subject = makeSubject();
+    const provisional = registration({ lifecycleState: null });
+    const currentTask = task();
+    await scheduleAndWait(subject.recovery, provisional, currentTask, {
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).toHaveBeenCalledWith(provisional);
+    expect(subject.deps.invalidateRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({ pid: provisional.pid, pidAlive: false }),
+    );
+    expect(subject.deps.markFailure).toHaveBeenCalledWith(
+      currentTask,
+      "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
+    );
+    expect(subject.deps.markReaped).not.toHaveBeenCalled();
+    expect(subject.deps.recoverOffline).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(false);
+  });
+
+  it("keeps deferring the restart-window error when the registration identity cannot be verified", async () => {
+    const verificationError = new Error("runner registration identity unreadable");
+    const subject = makeSubject({
+      hydrateRegistration: vi.fn(async () => { throw verificationError; }),
+    });
+    const provisional = registration({ lifecycleState: null });
+    await scheduleAndWait(subject.recovery, provisional, task(), {
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.invalidateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+    expect(subject.deps.onFailure).toHaveBeenCalledWith(
+      provisional,
+      "adopt_prebootstrap",
+      verificationError,
+    );
+  });
+
+  it("keeps deferring the restart-window error when the runner pid is gone", async () => {
+    const subject = makeSubject();
+    const lost = registration({ lifecycleState: null, pidAlive: false });
+    await scheduleAndWait(subject.recovery, lost, task(), {
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+  });
+
+  it("keeps deferring an identity-verified running registration on the restart-window error", async () => {
+    const subject = makeSubject();
+    await scheduleAndWait(subject.recovery, registration(), task(), {
+      error: new RunnerExecutionNotStartedError(),
     });
     expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
     expect(subject.deps.markFailure).not.toHaveBeenCalled();
