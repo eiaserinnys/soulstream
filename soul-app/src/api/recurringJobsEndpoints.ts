@@ -1,10 +1,23 @@
 import type { ApiRequestContext } from './clientCore';
 
+export interface RecurringJobEventTriggerDto {
+  type: 'node_connected';
+  node_id: string;
+  settle_seconds: number;
+  cooldown_seconds: number;
+  repeat: boolean;
+}
+
 export interface RecurringJobDto {
   job_id: string;
   name: string;
   prompt: string;
   timezone: string;
+  /** Older payloads carry no discriminator; treat a missing value as recurring. */
+  schedule_kind?: 'recurring' | 'once' | 'event';
+  run_at?: string | null;
+  event_trigger?: RecurringJobEventTriggerDto | null;
+  event_last_fired_at?: string | null;
   schedule_expressions: string[];
   node_id: string;
   agent_id: string;
@@ -22,7 +35,7 @@ export interface RecurringJobDto {
 export interface RecurringJobRunDto {
   run_id: string;
   job_id: string;
-  trigger: 'scheduled' | 'manual';
+  trigger: 'scheduled' | 'manual' | 'event';
   scheduled_for: string | null;
   session_id: string;
   state: string;
@@ -39,7 +52,8 @@ export interface RecurringJobWrite {
   name: string;
   prompt: string;
   timezone: string;
-  schedule_expressions: string[];
+  schedule_expressions?: string[];
+  run_at?: string;
   node_id: string;
   agent_id: string;
   model_preset: string | null;

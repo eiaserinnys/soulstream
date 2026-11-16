@@ -9,11 +9,13 @@ describe("RecurringJobScheduler", () => {
     const reconcileSession = vi.fn(async () => null);
     const dispatchRun = vi.fn(async () => null);
     const reserveAndDispatchDueJob = vi.fn(async () => null);
+    const processEventTriggers = vi.fn(async () => []);
     const scheduler = new RecurringJobScheduler({
       service: {
         reconcileSession,
         dispatchRun,
         reserveAndDispatchDueJob,
+        processEventTriggers,
       } as unknown as RecurringJobService,
       repository: repository(),
     });
@@ -38,6 +40,25 @@ describe("RecurringJobScheduler", () => {
     expect(dispatchRun).not.toHaveBeenCalled();
     expect(reserveAndDispatchDueJob).not.toHaveBeenCalled();
   });
+
+  it("asks the service to fire node-connected event jobs on each tick", async () => {
+    const processEventTriggers = vi.fn(async () => []);
+    const scheduler = new RecurringJobScheduler({
+      service: {
+        reconcileSession: async () => null,
+        dispatchRun: async () => null,
+        reserveAndDispatchDueJob: async () => null,
+        processEventTriggers,
+      } as unknown as RecurringJobService,
+      repository: repository(),
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+    });
+
+    await scheduler.start();
+    await scheduler.stop();
+
+    expect(processEventTriggers).toHaveBeenCalledTimes(1);
+  });
 });
 
 function repository(): RecurringJobRepository {
@@ -56,6 +77,10 @@ function repository(): RecurringJobRepository {
     findActiveRun: async () => null,
     createManualRun: async () => { throw new Error("unused"); },
     listDueJobs: async () => [],
+    listEventJobs: async () => [],
+    getNodePresence: async () => null,
+    upsertNodePresence: async (presence) => presence,
+    reserveEventRun: async () => null,
     listActiveRuns: async () => [],
     getJob: async () => null,
     getRun: async () => null,

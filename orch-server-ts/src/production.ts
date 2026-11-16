@@ -777,6 +777,7 @@ export async function createLiveProductionApplication(
     }),
     launcher: {
       isNodeConnected: (nodeId) => registry.getConnectedNode(nodeId) !== undefined,
+      nodeConnectedAtMs: (nodeId) => registry.getConnectedNode(nodeId)?.connectedAtMs,
       createRecurringSession: async ({ job, run }) => await createRecurringSession({
         router: runtimeServices.sessionRouter,
         bridge: runtimeServices.sessionBridge,

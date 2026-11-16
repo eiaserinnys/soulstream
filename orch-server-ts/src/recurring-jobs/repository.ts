@@ -4,15 +4,29 @@ import {
 } from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 
+import {
+  cancelAutomaticPendingRunsWith,
+  cancelPendingRunsOnArchiveWith,
+  createManualRunWithCollisionRecord,
+  createRunWithCollisionLookup,
+  insertRun,
+  ReservationCollision,
+} from "./repository_runs.js";
+import {
+  jobFromRow,
+  presenceFromRow,
+  requiredRow,
+  runFromRow,
+  type Row,
+} from "./repository_rows.js";
 import type {
   RecurringJob,
   RecurringJobConflict,
   RecurringJobRepository,
   RecurringJobRun,
+  RecurringNodePresence,
   RecurringRunCreation,
 } from "./types.js";
-
-type Row = Record<string, unknown>;
 
 export class SqlRecurringJobRepository implements RecurringJobRepository {
   private readonly sqlResolver: FolderContentSqlResolver;
@@ -73,13 +87,15 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     const rows = await sql<Row[]>`
       INSERT INTO recurring_jobs (
         job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
-        schedule_kind, run_at, timezone, node_id, agent_id, model_preset,
+        schedule_kind, run_at, event_trigger, event_last_fired_at, timezone, node_id, agent_id, model_preset,
         folder_id, enabled, archived_at, late_run_window_seconds, next_run_at,
         version, created_idempotency_key, created_by, updated_by, created_at, updated_at
       ) VALUES (
         ${input.jobId}, ${input.ownerEmail}, ${sql.json(input.executionCaller)},
         ${input.name}, ${input.prompt}, ${sql.json(input.scheduleExpressions)},
-        ${input.scheduleKind}, ${input.runAt}, ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
+        ${input.scheduleKind}, ${input.runAt},
+        ${input.eventTrigger == null ? null : sql.json(input.eventTrigger)}, ${input.eventLastFiredAt ?? null},
+        ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
         ${input.folderId}, ${input.enabled},
         ${input.archivedAt}, ${input.lateRunWindowSeconds}, ${input.nextRunAt},
         ${input.version}, ${input.createdIdempotencyKey}, ${input.createdBy}, ${input.updatedBy},
@@ -113,6 +129,8 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
           name = ${input.name}, prompt = ${input.prompt},
           schedule_expressions = ${sql.json(input.scheduleExpressions)},
           run_at = ${input.runAt},
+          event_trigger = ${input.eventTrigger == null ? null : sql.json(input.eventTrigger)},
+          event_last_fired_at = ${input.eventLastFiredAt ?? null},
           timezone = ${input.timezone}, node_id = ${input.nodeId}, agent_id = ${input.agentId},
           model_preset = ${input.modelPreset}, folder_id = ${input.folderId}, enabled = ${input.enabled},
           late_run_window_seconds = ${input.lateRunWindowSeconds}, next_run_at = ${input.nextRunAt},
@@ -196,6 +214,37 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     return rows.map(jobFromRow);
   }
 
+  async listEventJobs(limit: number): Promise<RecurringJob[]> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      SELECT * FROM recurring_jobs
+      WHERE archived_at IS NULL AND enabled = TRUE AND schedule_kind = 'event'
+      ORDER BY created_at LIMIT ${limit}
+    `;
+    return rows.map(jobFromRow);
+  }
+
+  async getNodePresence(nodeId: string): Promise<RecurringNodePresence | null> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      SELECT * FROM recurring_node_presence WHERE node_id = ${nodeId} LIMIT 1
+    `;
+    return rows[0] ? presenceFromRow(rows[0]) : null;
+  }
+
+  async upsertNodePresence(presence: RecurringNodePresence): Promise<RecurringNodePresence> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      INSERT INTO recurring_node_presence (node_id, episode_started_at, last_seen_at)
+      VALUES (${presence.nodeId}, ${presence.episodeStartedAt}, ${presence.lastSeenAt})
+      ON CONFLICT (node_id) DO UPDATE
+      SET episode_started_at = EXCLUDED.episode_started_at,
+          last_seen_at = EXCLUDED.last_seen_at
+      RETURNING *
+    `;
+    return presenceFromRow(requiredRow(rows, "upsert recurring node presence"));
+  }
+
   async listActiveRuns(limit: number): Promise<RecurringJobRun[]> {
     const sql = await this.resolveSql();
     const rows = await sql<Row[]>`
@@ -215,10 +264,28 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
   async deleteOnceJob(jobId: string): Promise<boolean> {
     const sql = await this.resolveSql();
     return await sql.begin(async (transaction) => {
-      const jobs = await transaction<Row[]>`SELECT job_id FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' FOR UPDATE`;
+      const jobs = await transaction<Row[]>`
+        SELECT job_id FROM recurring_jobs
+        WHERE job_id = ${jobId}
+          AND (
+            schedule_kind = 'once'
+            OR (schedule_kind = 'event'
+              AND COALESCE((event_trigger ->> 'repeat')::boolean, FALSE) = FALSE)
+          )
+        FOR UPDATE
+      `;
       if (!jobs[0]) return false;
       await transaction<Row[]>`DELETE FROM recurring_job_runs WHERE job_id = ${jobId}`;
-      const deleted = await transaction<Row[]>`DELETE FROM recurring_jobs WHERE job_id = ${jobId} AND schedule_kind = 'once' RETURNING job_id`;
+      const deleted = await transaction<Row[]>`
+        DELETE FROM recurring_jobs
+        WHERE job_id = ${jobId}
+          AND (
+            schedule_kind = 'once'
+            OR (schedule_kind = 'event'
+              AND COALESCE((event_trigger ->> 'repeat')::boolean, FALSE) = FALSE)
+          )
+        RETURNING job_id
+      `;
       return deleted.length > 0;
     });
   }
@@ -304,6 +371,32 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     }
   }
 
+  async reserveEventRun(input: {
+    readonly job: RecurringJob;
+    readonly run: RecurringJobRun;
+    readonly now: Date;
+  }): Promise<RecurringRunCreation | null> {
+    const sql = await this.resolveSql();
+    try {
+      return await sql.begin(async (transaction) => {
+        const jobs = await transaction<Row[]>`
+          UPDATE recurring_jobs
+          SET event_last_fired_at = ${input.now}, version = version + 1, updated_at = ${input.now}
+          WHERE job_id = ${input.job.jobId} AND version = ${input.job.version}
+            AND archived_at IS NULL AND enabled = TRUE AND schedule_kind = 'event'
+          RETURNING *
+        `;
+        if (!jobs[0]) return null;
+        const created = await insertRun(transaction, input.run);
+        if (created) return { run: created, created: true };
+        throw new ReservationCollision();
+      });
+    } catch (error) {
+      if (error instanceof ReservationCollision) return null;
+      throw error;
+    }
+  }
+
   async cancelAutomaticPendingRuns(
     jobId: string,
     reason: { code: string; message: string },
@@ -350,166 +443,3 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     return rows[0] ? { code: "VERSION_CONFLICT", job: jobFromRow(rows[0]) } : null;
   }
 }
-
-async function createRunWithCollisionLookup(
-  sql: FolderContentQuerySql,
-  input: RecurringJobRun,
-): Promise<RecurringRunCreation> {
-  const created = await insertRun(sql, input);
-  if (created) return { run: created, created: true };
-  const rows = await sql<Row[]>`
-    SELECT * FROM recurring_job_runs WHERE job_id = ${input.jobId}
-      AND (
-        (trigger = 'scheduled' AND ${input.trigger} = 'scheduled'
-          AND scheduled_for IS NOT DISTINCT FROM ${input.scheduledFor})
-        OR (trigger = 'manual' AND manual_idempotency_key IS NOT DISTINCT FROM ${input.manualIdempotencyKey})
-        OR state IN ('queued', 'waiting_for_node', 'dispatching', 'awaiting_session', 'running')
-      )
-    ORDER BY created_at DESC LIMIT 1
-  `;
-  return { run: runFromRow(requiredRow(rows, "find recurring run collision")), created: false };
-}
-
-async function createManualRunWithCollisionRecord(
-  sql: FolderContentQuerySql,
-  input: RecurringJobRun,
-): Promise<RecurringRunCreation> {
-  const created = await insertRun(sql, input);
-  if (created) return { run: created, created: true };
-
-  const repeated = await findManualRunByIdempotency(sql, input.jobId, input.manualIdempotencyKey);
-  if (repeated) return { run: repeated, created: false };
-
-  // The first insert lost only the active-run partial unique index. Persist a
-  // terminal row for this idempotency key so a retry cannot become a new run
-  // after the other active run finishes.
-  const overlap = await insertRun(sql, {
-    ...input,
-    state: "skipped_overlap",
-    reasonCode: "OVERLAP_ACTIVE_RUN",
-    reasonMessage: "Another active recurring run was reserved while this manual request was being created; no second session was created.",
-    finishedAt: input.updatedAt,
-  });
-  if (overlap) return { run: overlap, created: true };
-
-  const concurrent = await findManualRunByIdempotency(sql, input.jobId, input.manualIdempotencyKey);
-  if (concurrent) return { run: concurrent, created: false };
-  throw new Error(`manual recurring run collision was not recoverable: ${input.jobId}`);
-}
-
-async function findManualRunByIdempotency(
-  sql: FolderContentQuerySql,
-  jobId: string,
-  idempotencyKey: string | null,
-): Promise<RecurringJobRun | null> {
-  const rows = await sql<Row[]>`
-    SELECT * FROM recurring_job_runs
-    WHERE job_id = ${jobId} AND trigger = 'manual' AND manual_idempotency_key = ${idempotencyKey}
-    LIMIT 1
-  `;
-  return rows[0] ? runFromRow(rows[0]) : null;
-}
-
-async function insertRun(
-  sql: FolderContentQuerySql,
-  input: RecurringJobRun,
-): Promise<RecurringJobRun | null> {
-  const rows = await sql<Row[]>`
-    INSERT INTO recurring_job_runs (
-      run_id, job_id, trigger, scheduled_for, manual_idempotency_key, session_id,
-      job_snapshot, state, reason_code, reason_message, created_at, started_at, finished_at, updated_at
-    ) VALUES (
-      ${input.runId}, ${input.jobId}, ${input.trigger}, ${input.scheduledFor},
-      ${input.manualIdempotencyKey}, ${input.sessionId}, ${sql.json(input.jobSnapshot)},
-      ${input.state}, ${input.reasonCode}, ${input.reasonMessage}, ${input.createdAt},
-      ${input.startedAt}, ${input.finishedAt}, ${input.updatedAt}
-    ) ON CONFLICT DO NOTHING RETURNING *
-  `;
-  return rows[0] ? runFromRow(rows[0]) : null;
-}
-
-async function cancelAutomaticPendingRunsWith(
-  sql: FolderContentQuerySql,
-  jobId: string,
-  reason: { code: string; message: string },
-  now: Date,
-): Promise<void> {
-  await sql<Row[]>`
-    UPDATE recurring_job_runs
-    SET state = 'cancelled', reason_code = ${reason.code}, reason_message = ${reason.message},
-        finished_at = ${now}, updated_at = ${now}
-    WHERE job_id = ${jobId} AND trigger = 'scheduled'
-      AND state IN ('queued', 'waiting_for_node')
-  `;
-}
-
-async function cancelPendingRunsOnArchiveWith(
-  sql: FolderContentQuerySql,
-  jobId: string,
-  reason: { code: string; message: string },
-  now: Date,
-): Promise<void> {
-  await sql<Row[]>`
-    UPDATE recurring_job_runs
-    SET state = 'cancelled', reason_code = ${reason.code}, reason_message = ${reason.message},
-        finished_at = ${now}, updated_at = ${now}
-    WHERE job_id = ${jobId}
-      AND state IN ('queued', 'waiting_for_node')
-  `;
-}
-
-function jobFromRow(row: Row): RecurringJob {
-  return {
-    jobId: stringValue(row.job_id),
-    ownerEmail: stringValue(row.owner_email),
-    executionCaller: objectValue(row.execution_caller),
-    name: stringValue(row.name),
-    prompt: stringValue(row.prompt),
-    scheduleExpressions: stringArray(row.schedule_expressions),
-    scheduleKind: row.schedule_kind === "once" ? "once" : "recurring",
-    runAt: timestampOrNull(row.run_at),
-    timezone: stringValue(row.timezone),
-    nodeId: stringValue(row.node_id),
-    agentId: stringValue(row.agent_id),
-    modelPreset: nullableString(row.model_preset),
-    folderId: stringValue(row.folder_id),
-    enabled: Boolean(row.enabled),
-    archivedAt: timestampOrNull(row.archived_at),
-    lateRunWindowSeconds: positiveInteger(row.late_run_window_seconds),
-    nextRunAt: timestampOrNull(row.next_run_at),
-    version: positiveInteger(row.version),
-    createdIdempotencyKey: stringValue(row.created_idempotency_key),
-    createdBy: stringValue(row.created_by),
-    updatedBy: stringValue(row.updated_by),
-    createdAt: timestamp(row.created_at),
-    updatedAt: timestamp(row.updated_at),
-  };
-}
-
-function runFromRow(row: Row): RecurringJobRun {
-  return {
-    runId: stringValue(row.run_id), jobId: stringValue(row.job_id),
-    trigger: row.trigger === "manual" ? "manual" : "scheduled",
-    scheduledFor: timestampOrNull(row.scheduled_for),
-    manualIdempotencyKey: nullableString(row.manual_idempotency_key),
-    sessionId: stringValue(row.session_id), jobSnapshot: objectValue(row.job_snapshot),
-    state: stringValue(row.state) as RecurringJobRun["state"],
-    reasonCode: nullableString(row.reason_code), reasonMessage: nullableString(row.reason_message),
-    createdAt: timestamp(row.created_at), startedAt: timestampOrNull(row.started_at),
-    finishedAt: timestampOrNull(row.finished_at), updatedAt: timestamp(row.updated_at),
-  };
-}
-
-function requiredRow(rows: readonly Row[], operation: string): Row {
-  if (!rows[0]) throw new Error(`${operation} did not return a row`);
-  return rows[0];
-}
-function stringValue(value: unknown): string { if (typeof value !== "string") throw new Error("invalid recurring job row"); return value; }
-function nullableString(value: unknown): string | null { return value === null || value === undefined ? null : stringValue(value); }
-function objectValue(value: unknown): Record<string, unknown> { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid recurring job JSON"); return value as Record<string, unknown>; }
-function stringArray(value: unknown): string[] { if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error("invalid recurring schedule array"); return [...value] as string[]; }
-function positiveInteger(value: unknown): number { const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error("invalid recurring integer"); return parsed; }
-function timestamp(value: unknown): string { const date = value instanceof Date ? value : new Date(String(value)); if (!Number.isFinite(date.getTime())) throw new Error("invalid recurring timestamp"); return date.toISOString(); }
-function timestampOrNull(value: unknown): string | null { return value === null || value === undefined ? null : timestamp(value); }
-
-class ReservationCollision extends Error {}

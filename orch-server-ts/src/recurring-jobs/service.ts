@@ -40,6 +40,7 @@ import {
 } from "./dispatch_guards.js";
 import { jobForRun } from "./run_snapshot.js";
 import { makeRecurringRun, saveRecurringRun } from "./run_lifecycle.js";
+import { isSingleRunJob, processNodeConnectedTriggers } from "./event_trigger.js";
 
 export type RecurringJobServiceOptions = {
   readonly repository: RecurringJobRepository;
@@ -113,6 +114,7 @@ export class RecurringJobService {
       ownerEmail: actor.ownerEmail,
       executionCaller: { ...actor.callerInfo },
       ...jobFields,
+      eventLastFiredAt: null,
       nextRunAt: enabled ? normalized.runAt ?? firstRun?.toISOString() ?? null : null,
       enabled,
       archivedAt: null,
@@ -361,7 +363,7 @@ export class RecurringJobService {
         code: "AWAITING_SESSION_CONFIRMATION",
         message: "The create_session request may have reached the node. Soulstream will only recheck this fixed session ID.",
       } : null);
-      shouldDeleteOnceJob = job.scheduleKind === "once" && launched.state === "running";
+      shouldDeleteOnceJob = isSingleRunJob(frozenJob) && launched.state === "running";
     } catch (error) {
       if (isUncertainLaunchFailure(error)) {
         return await saveRecurringRun(this.options.repository, dispatching, "awaiting_session", this.now(), {
@@ -407,8 +409,19 @@ export class RecurringJobService {
       ? await saveRecurringRun(this.options.repository, run, session.status, now, null)
       : await saveRecurringRun(this.options.repository, run, "running", now, null);
     const job = await this.options.repository.getJob(run.jobId);
-    if (job?.scheduleKind === "once") await this.options.repository.deleteOnceJob(job.jobId);
+    if (job && isSingleRunJob(job)) await this.options.repository.deleteOnceJob(job.jobId);
     return saved;
+  }
+
+  /** Fires enabled node-connected event jobs whose conditions hold this tick. */
+  async processEventTriggers(now: Date = this.now()): Promise<RecurringJobRun[]> {
+    return await processNodeConnectedTriggers({
+      repository: this.options.repository,
+      ...(this.options.launcher ? { launcher: this.options.launcher } : {}),
+      now,
+      newId: this.newId,
+      dispatch: async (job, run) => await this.dispatchRun(job, run),
+    });
   }
 
   private async mergeUpdate(
@@ -420,6 +433,9 @@ export class RecurringJobService {
     if (current.scheduleKind === "once") {
       if (input.scheduleExpressions !== undefined) {
         throw validation("schedule_expressions cannot be changed for a once job");
+      }
+      if (input.eventTrigger !== undefined) {
+        throw validation("event_trigger cannot be changed for a once job");
       }
       const enabled = input.enabled ?? current.enabled;
       const runAt = input.runAt === undefined ? current.runAt! : requiredText(input.runAt, "run_at");

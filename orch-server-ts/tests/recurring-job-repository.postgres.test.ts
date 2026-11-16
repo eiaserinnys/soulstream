@@ -10,6 +10,10 @@ import {
   type PagePostgresHarness,
 } from "./page/page_postgres_harness.js";
 
+type JsonLiteral = null | string | number | boolean | readonly JsonLiteral[] | {
+  readonly [key: string]: JsonLiteral;
+};
+
 describe("SqlRecurringJobRepository PostgreSQL integration", () => {
   let harness: PagePostgresHarness;
   let repository: SqlRecurringJobRepository;
@@ -53,6 +57,11 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       "utf8",
     );
     await harness.sql.unsafe(contextBundleMigration);
+    const eventTriggerMigration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/161_recurring_jobs_event_trigger.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(eventTriggerMigration);
     const migratedProfile = await harness.sql<{
       atom_contexts: unknown[];
       context_bundles: unknown[];
@@ -75,7 +84,7 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
 
   beforeEach(async () => {
     await harness.sql`
-      TRUNCATE recurring_job_runs, recurring_jobs RESTART IDENTITY CASCADE
+      TRUNCATE recurring_job_runs, recurring_jobs, recurring_node_presence RESTART IDENTITY CASCADE
     `;
   });
 
@@ -215,6 +224,169 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       runAt: null,
     });
     expect(await repository.listRuns(recurring.jobId, 10)).toHaveLength(1);
+  });
+
+  it("persists event jobs, their firing stamp, event runs, and node presence", async () => {
+    const eventJob = job({
+      jobId: "event-job",
+      createdIdempotencyKey: "create-event",
+      scheduleKind: "event",
+      scheduleExpressions: [],
+      runAt: null,
+      nextRunAt: null,
+      eventTrigger: {
+        type: "node_connected",
+        nodeId: "node-b",
+        settleSeconds: 180,
+        cooldownSeconds: 3600,
+        repeat: true,
+      },
+    });
+    await repository.createJob(eventJob);
+    const stored = await repository.getJob(eventJob.jobId);
+    expect(stored).toMatchObject({
+      scheduleKind: "event",
+      scheduleExpressions: [],
+      runAt: null,
+      nextRunAt: null,
+      eventTrigger: eventJob.eventTrigger,
+      eventLastFiredAt: null,
+    });
+    expect((await repository.listEventJobs(10)).map((candidate) => candidate.jobId)).toEqual(["event-job"]);
+    expect(await repository.listDueJobs(new Date("2030-01-01T00:00:00.000Z"), 10)).toEqual([]);
+
+    const now = new Date("2026-09-21T00:00:00.000Z");
+    const reserved = await repository.reserveEventRun({
+      job: stored!,
+      run: run({
+        runId: "event-run",
+        jobId: eventJob.jobId,
+        trigger: "event",
+        scheduledFor: now.toISOString(),
+        manualIdempotencyKey: null,
+      }),
+      now,
+    });
+    expect(reserved).toMatchObject({
+      created: true,
+      run: { runId: "event-run", trigger: "event", scheduledFor: now.toISOString() },
+    });
+    expect(await repository.getJob(eventJob.jobId)).toMatchObject({
+      eventLastFiredAt: now.toISOString(),
+      version: 2,
+    });
+    expect(await repository.reserveEventRun({
+      job: stored!,
+      run: run({
+        runId: "event-run-stale",
+        jobId: eventJob.jobId,
+        trigger: "event",
+        scheduledFor: now.toISOString(),
+        manualIdempotencyKey: null,
+      }),
+      now,
+    })).toBeNull();
+
+    const presence = await repository.upsertNodePresence({
+      nodeId: "node-b",
+      episodeStartedAt: now.toISOString(),
+      lastSeenAt: now.toISOString(),
+    });
+    expect(await repository.getNodePresence("node-b")).toEqual(presence);
+    const later = new Date(now.getTime() + 60_000);
+    expect(await repository.upsertNodePresence({
+      nodeId: "node-b",
+      episodeStartedAt: presence.episodeStartedAt,
+      lastSeenAt: later.toISOString(),
+    })).toEqual({
+      nodeId: "node-b",
+      episodeStartedAt: now.toISOString(),
+      lastSeenAt: later.toISOString(),
+    });
+    expect(await repository.getNodePresence("node-absent")).toBeNull();
+  });
+
+  it("hard-deletes repeat=false event jobs but keeps repeating ones", async () => {
+    const single = job({
+      jobId: "event-single",
+      createdIdempotencyKey: "create-event-single",
+      scheduleKind: "event",
+      scheduleExpressions: [],
+      runAt: null,
+      nextRunAt: null,
+      eventTrigger: {
+        type: "node_connected",
+        nodeId: "node-a",
+        settleSeconds: 0,
+        cooldownSeconds: 0,
+        repeat: false,
+      },
+    });
+    const repeating = job({
+      ...single,
+      jobId: "event-repeating",
+      createdIdempotencyKey: "create-event-repeating",
+      eventTrigger: { ...single.eventTrigger!, repeat: true },
+    });
+    await repository.createJob(single);
+    await repository.createJob(repeating);
+
+    expect(await repository.deleteOnceJob(single.jobId)).toBe(true);
+    expect(await repository.getJob(single.jobId)).toBeNull();
+    expect(await repository.deleteOnceJob(repeating.jobId)).toBe(false);
+    expect(await repository.getJob(repeating.jobId)).toMatchObject({ scheduleKind: "event" });
+  });
+
+  it("rejects event rows and event runs whose trigger shape is invalid", async () => {
+    const insertJob = async (
+      jobId: string,
+      scheduleKind: "recurring" | "once" | "event",
+      scheduleExpressions: readonly string[],
+      runAt: string | null,
+      eventTrigger: unknown,
+    ) => await harness.sql`
+      INSERT INTO recurring_jobs (
+        job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
+        schedule_kind, run_at, event_trigger, timezone, node_id, agent_id, model_preset,
+        folder_id, enabled, archived_at, late_run_window_seconds, next_run_at,
+        version, created_idempotency_key, created_by, updated_by, created_at, updated_at
+      ) VALUES (
+        ${jobId}, 'owner@example.com', ${harness.sql.json({ source: "agent" })},
+        'shape job', 'shape prompt', ${harness.sql.json(scheduleExpressions)},
+        ${scheduleKind}, ${runAt},
+        ${eventTrigger == null ? null : harness.sql.json(eventTrigger as JsonLiteral)},
+        'Asia/Seoul', 'node-a', 'roselin', null, 'folder-a', TRUE, null, 1800, null,
+        1, ${`${jobId}-key`}, 'owner@example.com', 'owner@example.com',
+        '2026-09-20T00:00:00.000Z', '2026-09-20T00:00:00.000Z'
+      )
+    `;
+
+    await expect(insertJob("event-with-cron", "event", ["0 9 * * *"], null, { type: "node_connected" }))
+      .rejects.toThrow();
+    await expect(insertJob("event-with-run-at", "event", [], "2026-09-22T00:00:00.000Z", { type: "node_connected" }))
+      .rejects.toThrow();
+    await expect(insertJob("event-without-trigger", "event", [], null, null)).rejects.toThrow();
+    await expect(insertJob("recurring-empty-cron", "recurring", [], null, null)).rejects.toThrow();
+    await expect(insertJob("once-with-trigger", "once", [], "2026-09-22T00:00:00.000Z", { type: "node_connected" }))
+      .rejects.toThrow();
+    await expect(insertJob("valid-event", "event", [], null, { type: "node_connected" }))
+      .resolves.toBeDefined();
+
+    const eventRow = await repository.getJob("valid-event");
+    await expect(repository.createScheduledRun(run({
+      runId: "event-run-without-instant",
+      jobId: eventRow!.jobId,
+      trigger: "event",
+      scheduledFor: null,
+      manualIdempotencyKey: null,
+    }))).rejects.toThrow();
+    await expect(repository.createScheduledRun(run({
+      runId: "event-run-with-instant",
+      jobId: eventRow!.jobId,
+      trigger: "event",
+      scheduledFor: "2026-09-21T00:00:00.000Z",
+      manualIdempotencyKey: null,
+    }))).resolves.toMatchObject({ created: true, run: { trigger: "event" } });
   });
 
   it("uses row-version CAS to reserve only one scheduled occurrence", async () => {
@@ -375,6 +547,8 @@ function job(overrides: Partial<RecurringJob> = {}): RecurringJob {
     scheduleExpressions: ["0 9 * * 1-5"],
     scheduleKind: "recurring",
     runAt: null,
+    eventTrigger: null,
+    eventLastFiredAt: null,
     timezone: "Asia/Seoul",
     nodeId: "node-a",
     agentId: "roselin",

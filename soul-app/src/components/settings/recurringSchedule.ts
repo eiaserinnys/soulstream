@@ -18,6 +18,14 @@ export function defaultRecurringSchedule(): RecurringScheduleDraft {
   };
 }
 
+export function recurringEventConditionText(
+  eventTrigger: { node_id: string; repeat: boolean } | null | undefined,
+  executionNodeId: string,
+): string {
+  const nodeId = eventTrigger?.node_id ?? executionNodeId;
+  return `${nodeId}가 붙으면 · ${eventTrigger?.repeat ? '매번' : '1회'}`;
+}
+
 export function recurringScheduleFromExpressions(
   expressions: readonly string[],
 ): RecurringScheduleDraft {

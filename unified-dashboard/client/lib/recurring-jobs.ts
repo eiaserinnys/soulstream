@@ -1,12 +1,23 @@
 import { HttpResponseError } from "./http-response-error";
 
+export type RecurringJobEventTrigger = {
+  type: "node_connected";
+  node_id: string;
+  settle_seconds: number;
+  cooldown_seconds: number;
+  repeat: boolean;
+};
+
 export type RecurringJob = {
   job_id: string;
   name: string;
   prompt: string;
   timezone: string;
-  schedule_kind: "recurring" | "once";
+  schedule_kind: "recurring" | "once" | "event";
   run_at: string | null;
+  /** Absent from older payloads; the server always sends it now. */
+  event_trigger?: RecurringJobEventTrigger | null;
+  event_last_fired_at?: string | null;
   schedule_expressions: string[];
   node_id: string;
   agent_id: string;
@@ -21,10 +32,17 @@ export type RecurringJob = {
   updated_at: string;
 };
 
+export function recurringJobConditionText(
+  job: Pick<RecurringJob, "node_id" | "event_trigger">,
+): string {
+  const nodeId = job.event_trigger?.node_id ?? job.node_id;
+  return `${nodeId}가 붙으면 · ${job.event_trigger?.repeat ? "매번" : "1회"}`;
+}
+
 export type RecurringJobRun = {
   run_id: string;
   job_id: string;
-  trigger: "scheduled" | "manual";
+  trigger: "scheduled" | "manual" | "event";
   scheduled_for: string | null;
   session_id: string;
   state: string;

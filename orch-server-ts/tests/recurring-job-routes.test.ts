@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp, parseOrchServerConfig } from "../src/index.js";
 import { RecurringJobService } from "../src/recurring-jobs/service.js";
-import type { RecurringJob, RecurringJobActor, RecurringJobRepository } from "../src/recurring-jobs/types.js";
+import type {
+  RecurringJob,
+  RecurringJobActor,
+  RecurringJobRepository,
+  RecurringNodePresence,
+} from "../src/recurring-jobs/types.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -126,6 +131,95 @@ describe("recurring job routes", () => {
       expect(service.create.mock.calls[1]?.[1]).not.toHaveProperty("scheduleExpressions");
       expect(service.update).toHaveBeenCalledWith(agentActor, onceJob.jobId, expect.objectContaining({
         runAt: updatedRunAt,
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("parses nested event triggers through both HTTP boundaries and serializes them", async () => {
+    const service = fakeService();
+    const eventJob = {
+      ...job(),
+      scheduleKind: "event" as const,
+      scheduleExpressions: [] as string[],
+      runAt: null,
+      nextRunAt: null,
+      eventTrigger: {
+        type: "node_connected" as const,
+        nodeId: "node-b",
+        settleSeconds: 180,
+        cooldownSeconds: 3600,
+        repeat: false,
+      },
+      eventLastFiredAt: "2026-09-21T00:00:00.000Z",
+    };
+    service.create.mockResolvedValue(eventJob);
+    service.update.mockResolvedValue(eventJob);
+    const app = createApp({
+      config,
+      recurringJobRoutes: { service, resolveActor: async () => browserActor },
+      recurringJobHostRoutes: { service, authBearerToken: "service-token", nodeCredentials: null },
+    });
+    const { schedule_expressions: _scheduleExpressions, ...base } = createBody("event-http");
+    try {
+      const http = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs",
+        payload: { ...base, event_trigger: { type: "node_connected", node_id: "node-b" } },
+      });
+      const host = await app.inject({
+        method: "POST",
+        url: "/api/recurring-jobs/host/create",
+        headers: { authorization: "Bearer service-token" },
+        payload: {
+          ...base,
+          idempotency_key: "event-host",
+          event_trigger: { type: "node_connected", settle_seconds: 60, cooldown_seconds: 600, repeat: true },
+          actor: agentActor,
+        },
+      });
+      const update = await app.inject({
+        method: "PATCH",
+        url: `/api/recurring-jobs/${eventJob.jobId}`,
+        payload: {
+          expected_version: 1,
+          event_trigger: { type: "node_connected", settle_seconds: 0, repeat: true },
+        },
+      });
+
+      expect(http.statusCode).toBe(201);
+      expect(host.statusCode).toBe(200);
+      expect(update.statusCode).toBe(200);
+      expect(http.json()).toMatchObject({
+        job: {
+          schedule_kind: "event",
+          schedule_expressions: [],
+          run_at: null,
+          event_trigger: {
+            type: "node_connected",
+            node_id: "node-b",
+            settle_seconds: 180,
+            cooldown_seconds: 3600,
+            repeat: false,
+          },
+          event_last_fired_at: "2026-09-21T00:00:00.000Z",
+        },
+      });
+      expect(service.create.mock.calls[0]?.[1]).toMatchObject({
+        eventTrigger: { type: "node_connected", nodeId: "node-b" },
+      });
+      expect(service.create.mock.calls[0]?.[1]).not.toHaveProperty("scheduleExpressions");
+      expect(service.create.mock.calls[1]?.[1]).toMatchObject({
+        eventTrigger: {
+          type: "node_connected",
+          settleSeconds: 60,
+          cooldownSeconds: 600,
+          repeat: true,
+        },
+      });
+      expect(service.update).toHaveBeenCalledWith(browserActor, eventJob.jobId, expect.objectContaining({
+        eventTrigger: { type: "node_connected", settleSeconds: 0, repeat: true },
       }));
     } finally {
       await app.close();
@@ -297,6 +391,10 @@ function failingRepository() {
     findActiveRun: async () => null,
     createManualRun: async () => { throw new Error("unused"); },
     listDueJobs: async () => [],
+    listEventJobs: async () => [],
+    getNodePresence: async () => null,
+    upsertNodePresence: async (presence: RecurringNodePresence) => presence,
+    reserveEventRun: async () => null,
     listActiveRuns: async () => [],
     getJob: async () => null,
     getRun: async () => null,
@@ -330,7 +428,7 @@ function job(): RecurringJob {
   return {
     jobId: "job-1", ownerEmail: "owner@example.com", executionCaller: {},
     name: "music recommendation", prompt: "recommend music", timezone: "Asia/Seoul",
-    scheduleKind: "recurring", runAt: null,
+    scheduleKind: "recurring", runAt: null, eventTrigger: null, eventLastFiredAt: null,
     scheduleExpressions: ["0 9,12 * * 1-5"], nodeId: "node-a", agentId: "roselin",
     modelPreset: null,  folderId: "folder-a",
     enabled: true, archivedAt: null, lateRunWindowSeconds: 1800, nextRunAt: "2026-09-22T00:00:00.000Z",

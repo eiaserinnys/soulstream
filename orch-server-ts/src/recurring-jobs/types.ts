@@ -1,5 +1,28 @@
-export type RecurringJobRunTrigger = "scheduled" | "manual";
-export type RecurringJobScheduleKind = "recurring" | "once";
+export type RecurringJobRunTrigger = "scheduled" | "manual" | "event";
+export type RecurringJobScheduleKind = "recurring" | "once" | "event";
+
+export type RecurringJobEventTrigger = {
+  readonly type: "node_connected";
+  readonly nodeId: string;
+  readonly settleSeconds: number;
+  readonly cooldownSeconds: number;
+  readonly repeat: boolean;
+};
+
+/** Boundary shape: every field except type is optional and filled by the server. */
+export type RecurringJobEventTriggerInput = {
+  readonly type?: unknown;
+  readonly nodeId?: unknown;
+  readonly settleSeconds?: unknown;
+  readonly cooldownSeconds?: unknown;
+  readonly repeat?: unknown;
+};
+
+export type RecurringNodePresence = {
+  readonly nodeId: string;
+  readonly episodeStartedAt: string;
+  readonly lastSeenAt: string;
+};
 
 export type RecurringJobRunState =
   | "queued"
@@ -31,6 +54,9 @@ export type RecurringJob = {
   readonly scheduleKind: RecurringJobScheduleKind;
   readonly scheduleExpressions: readonly string[];
   readonly runAt: string | null;
+  /** Rows written before the event columns existed read as null. */
+  readonly eventTrigger?: RecurringJobEventTrigger | null;
+  readonly eventLastFiredAt?: string | null;
   readonly timezone: string;
   readonly nodeId: string;
   readonly agentId: string;
@@ -73,6 +99,7 @@ export type RecurringJobCreateInput = {
   readonly timezone: string;
   readonly scheduleExpressions?: readonly string[];
   readonly runAt?: string;
+  readonly eventTrigger?: RecurringJobEventTriggerInput;
   readonly nodeId: string;
   readonly agentId: string;
   readonly modelPreset: string | null;
@@ -89,6 +116,7 @@ export type RecurringJobUpdateInput = {
   readonly timezone?: string;
   readonly scheduleExpressions?: readonly string[];
   readonly runAt?: string;
+  readonly eventTrigger?: RecurringJobEventTriggerInput;
   readonly nodeId?: string;
   readonly agentId?: string;
   readonly modelPreset?: string | null;
@@ -141,6 +169,19 @@ export interface RecurringJobRepository {
   findActiveRun(jobId: string): Promise<RecurringJobRun | null>;
   createManualRun(input: RecurringJobRun): Promise<RecurringRunCreation>;
   listDueJobs(now: Date, limit: number): Promise<RecurringJob[]>;
+  /** Enabled, non-archived event jobs; they never appear in listDueJobs. */
+  listEventJobs(limit: number): Promise<RecurringJob[]>;
+  getNodePresence(nodeId: string): Promise<RecurringNodePresence | null>;
+  upsertNodePresence(presence: RecurringNodePresence): Promise<RecurringNodePresence>;
+  /**
+   * One transaction: version CAS that stamps event_last_fired_at, then the
+   * event run insert. Null means this tick lost the race and fired nothing.
+   */
+  reserveEventRun(input: {
+    readonly job: RecurringJob;
+    readonly run: RecurringJobRun;
+    readonly now: Date;
+  }): Promise<RecurringRunCreation | null>;
   listActiveRuns(limit: number): Promise<RecurringJobRun[]>;
   getJob(jobId: string): Promise<RecurringJob | null>;
   getRun(runId: string): Promise<RecurringJobRun | null>;
@@ -184,6 +225,8 @@ export type RecurringSessionLaunchResult = {
 
 export type RecurringSessionLauncher = {
   readonly isNodeConnected: (nodeId: string) => boolean;
+  /** Registry connect instant; settle time is measured from this value. */
+  readonly nodeConnectedAtMs?: (nodeId: string) => number | undefined;
   readonly createRecurringSession: (input: RecurringSessionLaunch) => Promise<RecurringSessionLaunchResult>;
   readonly findDurableSession: (sessionId: string) => Promise<{
     readonly status: "initializing" | "running" | "completed" | "error" | "interrupted";

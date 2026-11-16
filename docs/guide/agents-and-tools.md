@@ -66,7 +66,7 @@ Soulstream provides two document surfaces inside folders:
 Trusted sessions with a verified owner email, as well as the web dashboard (`RecurringJobsTab`) and mobile app (`RecurringJobsScreen`), can manage scheduled agent executions:
 
 - Tools: `list_recurring_jobs`, `get_recurring_job`, `preview_recurring_schedule`, `create_recurring_job`, `update_recurring_job`, `run_recurring_job`, `archive_recurring_job`, and `list_recurring_job_runs`.
-- Supports recurring cron expressions (`schedule_expressions` with timezone) and one-time scheduled runs (`run_at` in ISO 8601 format with offset).
+- Supports recurring cron expressions (`schedule_expressions` with timezone), one-time scheduled runs (`run_at` in ISO 8601 format with offset), and node-connected event runs (`event_trigger` with `type: "node_connected"`, optional `node_id`, `settle_seconds`, `cooldown_seconds`, `repeat`).
 - Updates use compare-and-swap (`expected_version`) validation. See [`docs/recurring-jobs-deployment.md`](../recurring-jobs-deployment.md).
 
 ## Custom views

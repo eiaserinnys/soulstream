@@ -1,4 +1,5 @@
 import { compileRecurringSchedule, nextRecurringOccurrences } from "./cron.js";
+import { normalizeEventTrigger } from "./event_trigger.js";
 import {
   compileSchedule,
   normalizedModelPreset,
@@ -12,6 +13,7 @@ import type {
   RecurringJob,
   RecurringJobActor,
   RecurringJobCreateInput,
+  RecurringJobEventTrigger,
   RecurringJobUpdateInput,
 } from "./types.js";
 
@@ -28,6 +30,7 @@ export type NormalizedRecurringJobCreate = {
   scheduleKind: RecurringJob["scheduleKind"];
   scheduleExpressions: readonly string[];
   runAt: string | null;
+  eventTrigger: RecurringJobEventTrigger | null;
   timezone: string;
   nodeId: string;
   agentId: string;
@@ -45,26 +48,32 @@ export async function normalizeRecurringJobCreate(
 ): Promise<NormalizedRecurringJobCreate> {
   const hasScheduleExpressions = input.scheduleExpressions !== undefined;
   const hasRunAt = input.runAt !== undefined;
-  if (hasScheduleExpressions === hasRunAt) {
-    throw validation("provide exactly one of schedule_expressions or run_at");
+  const hasEventTrigger = input.eventTrigger !== undefined;
+  if ([hasScheduleExpressions, hasRunAt, hasEventTrigger].filter(Boolean).length !== 1) {
+    throw validation("provide exactly one of schedule_expressions, run_at, or event_trigger");
   }
   const now = getNow();
-  const schedule = hasRunAt ? null : compileSchedule({
+  const nodeId = requiredText(input.nodeId, "node_id");
+  const schedule = hasScheduleExpressions ? compileSchedule({
     timezone: input.timezone,
     scheduleExpressions: input.scheduleExpressions!,
-  });
+  }) : null;
   const runAt = hasRunAt ? requiredText(input.runAt!, "run_at") : null;
   if (runAt !== null && parseRunAt(runAt).getTime() <= now.getTime()) {
     throw validation("run_at must be in the future");
   }
+  const eventTrigger = hasEventTrigger
+    ? normalizeEventTrigger(input.eventTrigger!, nodeId)
+    : null;
   const normalized = {
     name: requiredText(input.name, "name"),
     prompt: requiredText(input.prompt, "prompt"),
-    scheduleKind: hasRunAt ? "once" as const : "recurring" as const,
+    scheduleKind: hasRunAt ? "once" as const : hasEventTrigger ? "event" as const : "recurring" as const,
     scheduleExpressions: schedule?.scheduleExpressions ?? [],
     runAt,
+    eventTrigger,
     timezone: schedule?.timezone ?? onceTimezone(requiredText(input.timezone, "timezone")),
-    nodeId: requiredText(input.nodeId, "node_id"),
+    nodeId,
     agentId: requiredText(input.agentId, "agent_id"),
     modelPreset: normalizedModelPreset(input.modelPreset),
 
@@ -83,7 +92,11 @@ export async function mergeRecurringJobUpdate(
   now: Date,
   validateTarget?: ValidateRecurringJobTarget,
 ): Promise<RecurringJob> {
+  if (current.scheduleKind === "event") {
+    return await mergeEventJobUpdate(actor, current, input, now, validateTarget);
+  }
   if (input.runAt !== undefined) throw validation("run_at cannot be changed for a recurring job");
+  if (input.eventTrigger !== undefined) throw validation("event_trigger cannot be changed for a recurring job");
   const scheduleExpressions = input.scheduleExpressions ?? current.scheduleExpressions;
   const timezone = input.timezone ?? current.timezone;
   const schedule = compileSchedule({ timezone, scheduleExpressions });
@@ -118,6 +131,58 @@ export async function mergeRecurringJobUpdate(
     ),
     enabled,
     nextRunAt,
+    updatedAt: now.toISOString(),
+  } satisfies RecurringJob;
+  await validateTarget?.({
+    actor,
+    target: candidate,
+    requireAvailableTarget: candidate.nodeId !== current.nodeId ||
+      candidate.agentId !== current.agentId ||
+      candidate.modelPreset !== current.modelPreset,
+    purpose: "settings",
+  });
+  return candidate;
+}
+
+async function mergeEventJobUpdate(
+  actor: RecurringJobActor,
+  current: RecurringJob,
+  input: RecurringJobUpdateInput,
+  now: Date,
+  validateTarget?: ValidateRecurringJobTarget,
+): Promise<RecurringJob> {
+  if (input.scheduleExpressions !== undefined) {
+    throw validation("schedule_expressions cannot be changed for an event job");
+  }
+  if (input.runAt !== undefined) throw validation("run_at cannot be changed for an event job");
+  const nodeId = input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id");
+  const eventTrigger = input.eventTrigger === undefined
+    ? current.eventTrigger ?? null
+    : normalizeEventTrigger(input.eventTrigger, nodeId);
+  if (eventTrigger === null) throw new Error(`event job ${current.jobId} has no event_trigger`);
+  const candidate = {
+    ...current,
+    name: input.name === undefined ? current.name : requiredText(input.name, "name"),
+    prompt: input.prompt === undefined ? current.prompt : requiredText(input.prompt, "prompt"),
+    timezone: input.timezone === undefined
+      ? current.timezone
+      : onceTimezone(requiredText(input.timezone, "timezone")),
+    scheduleKind: "event" as const,
+    scheduleExpressions: [],
+    runAt: null,
+    eventTrigger,
+    nodeId,
+    agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
+    modelPreset: input.modelPreset === undefined
+      ? current.modelPreset
+      : normalizedModelPreset(input.modelPreset),
+
+    folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
+    lateRunWindowSeconds: positiveLateRunWindowSeconds(
+      input.lateRunWindowSeconds === undefined ? current.lateRunWindowSeconds : input.lateRunWindowSeconds,
+    ),
+    enabled: input.enabled ?? current.enabled,
+    nextRunAt: null,
     updatedAt: now.toISOString(),
   } satisfies RecurringJob;
   await validateTarget?.({

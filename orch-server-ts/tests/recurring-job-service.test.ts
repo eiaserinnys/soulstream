@@ -8,6 +8,7 @@ import type {
   RecurringJobActor,
   RecurringJobRepository,
   RecurringJobRun,
+  RecurringNodePresence,
 } from "../src/recurring-jobs/types.js";
 
 const actor: RecurringJobActor = {
@@ -764,6 +765,220 @@ describe("RecurringJobService", () => {
       purpose: "settings",
     });
   });
+
+  it("fires a node-connected event job only after its settle time and deletes a single-run job", async () => {
+    const repository = memoryRepository();
+    let now = new Date("2026-09-21T00:00:00.000Z");
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => now,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        nodeConnectedAtMs: () => Date.parse("2026-09-21T00:00:00.000Z"),
+        createRecurringSession,
+        findDurableSession: async () => null,
+      },
+    });
+    const job = await service.create(actor, eventInput());
+    expect(job).toMatchObject({
+      scheduleKind: "event",
+      nextRunAt: null,
+      eventLastFiredAt: null,
+      eventTrigger: {
+        type: "node_connected",
+        nodeId: "node-b",
+        settleSeconds: 180,
+        cooldownSeconds: 3600,
+        repeat: false,
+      },
+    });
+
+    now = new Date("2026-09-21T00:02:59.000Z");
+    expect(await service.processEventTriggers()).toEqual([]);
+    expect(createRecurringSession).not.toHaveBeenCalled();
+
+    now = new Date("2026-09-21T00:03:00.000Z");
+    const fired = await service.processEventTriggers();
+    expect(fired).toHaveLength(1);
+    expect(fired[0]).toMatchObject({ trigger: "event", state: "running", scheduledFor: now.toISOString() });
+    expect(createRecurringSession).toHaveBeenCalledTimes(1);
+    expect(repository.jobs.has(job.jobId)).toBe(false);
+    expect(repository.runs.size).toBe(0);
+    expect(await service.processEventTriggers()).toEqual([]);
+  });
+
+  it("fires once per connected episode for a repeating event job", async () => {
+    const repository = memoryRepository();
+    const connectedAt = Date.parse("2026-09-20T23:00:00.000Z");
+    const now = new Date("2026-09-21T00:00:00.000Z");
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => now,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        nodeConnectedAtMs: () => connectedAt,
+        createRecurringSession,
+        findDurableSession: async () => ({ status: "completed" as const }),
+      },
+    });
+    const job = await service.create(actor, eventInput({
+      eventTrigger: { type: "node_connected", nodeId: "node-b", repeat: true },
+    }));
+
+    const first = await service.processEventTriggers();
+    expect(first).toHaveLength(1);
+    await service.reconcileSession(first[0]!.sessionId);
+    expect(repository.jobs.get(job.jobId)?.eventLastFiredAt).toBe(now.toISOString());
+    expect(repository.presence.get("node-b")).toMatchObject({
+      episodeStartedAt: new Date(connectedAt).toISOString(),
+      lastSeenAt: now.toISOString(),
+    });
+
+    expect(await service.processEventTriggers()).toEqual([]);
+    expect(createRecurringSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps one presence episode across short reconnects and refires only after the gap and cooldown", async () => {
+    const repository = memoryRepository();
+    let now = new Date("2026-09-21T00:00:00.000Z");
+    let connectedAt = new Date("2026-09-20T23:59:00.000Z");
+    const createRecurringSession = vi.fn(async () => ({
+      state: "running" as const,
+      resolvedModelPreset: null,
+    }));
+    const service = new RecurringJobService({
+      repository,
+      now: () => now,
+      newId: sequentialIds(),
+      launcher: {
+        isNodeConnected: () => true,
+        nodeConnectedAtMs: () => connectedAt.getTime(),
+        createRecurringSession,
+        findDurableSession: async () => ({ status: "completed" as const }),
+      },
+    });
+    await service.create(actor, eventInput({
+      eventTrigger: {
+        type: "node_connected",
+        nodeId: "node-b",
+        settleSeconds: 0,
+        cooldownSeconds: 3600,
+        repeat: true,
+      },
+    }));
+    const first = await service.processEventTriggers();
+    expect(first).toHaveLength(1);
+    await service.reconcileSession(first[0]!.sessionId);
+    const firedAtMs = now.getTime();
+    const firstEpisode = repository.presence.get("node-b")?.episodeStartedAt;
+
+    // An orchestrator restart 60 seconds later reports a fresh connection instant
+    // while the node never went away: the same episode must not fire again.
+    connectedAt = new Date(firedAtMs + 60_000);
+    now = new Date(firedAtMs + 60_000);
+    expect(await service.processEventTriggers()).toEqual([]);
+    expect(repository.presence.get("node-b")?.episodeStartedAt).toBe(firstEpisode);
+
+    // A 700-second gap starts a new episode, but the cooldown has not elapsed.
+    connectedAt = new Date(firedAtMs + 760_000);
+    now = new Date(firedAtMs + 760_000);
+    expect(await service.processEventTriggers()).toEqual([]);
+    expect(repository.presence.get("node-b")?.episodeStartedAt)
+      .toBe(new Date(firedAtMs + 760_000).toISOString());
+
+    // The new episode is eligible once the cooldown has fully elapsed.
+    now = new Date(firedAtMs + 3_600_000);
+    const second = await service.processEventTriggers();
+    expect(second).toHaveLength(1);
+    expect(createRecurringSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts exactly one trigger source and rejects kind-changing updates", async () => {
+    const service = new RecurringJobService({
+      repository: memoryRepository(),
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+    });
+
+    const { scheduleExpressions: _scheduleExpressions, ...withoutSchedule } = createInput();
+    await expect(service.create(actor, {
+      ...withoutSchedule,
+      eventTrigger: { type: "node_connected" },
+      idempotencyKey: "bare-event",
+    })).resolves.toMatchObject({
+      scheduleKind: "event",
+      eventTrigger: {
+        nodeId: "node-a",
+        settleSeconds: 180,
+        cooldownSeconds: 3600,
+        repeat: false,
+      },
+    });
+    await expect(service.create(actor, {
+      ...createInput(),
+      eventTrigger: { type: "node_connected" },
+      idempotencyKey: "two-sources",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.create(actor, {
+      ...onceInput(),
+      eventTrigger: { type: "node_connected" },
+      idempotencyKey: "once-and-event",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.create(actor, {
+      ...withoutSchedule,
+      idempotencyKey: "no-source",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.create(actor, {
+      ...withoutSchedule,
+      eventTrigger: { type: "card_switched" },
+      idempotencyKey: "unknown-event",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+
+    const recurring = await service.create(actor, { ...createInput(), idempotencyKey: "recurring-kind" });
+    const event = await service.create(actor, { ...eventInput(), idempotencyKey: "event-kind" });
+    const once = await service.create(actor, { ...onceInput(), idempotencyKey: "once-kind" });
+    await expect(service.update(actor, event.jobId, {
+      expectedVersion: event.version,
+      scheduleExpressions: ["0 9 * * *"],
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.update(actor, event.jobId, {
+      expectedVersion: event.version,
+      runAt: "2026-09-22T09:00:00Z",
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.update(actor, recurring.jobId, {
+      expectedVersion: recurring.version,
+      eventTrigger: { type: "node_connected" },
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.update(actor, once.jobId, {
+      expectedVersion: once.version,
+      eventTrigger: { type: "node_connected" },
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+    await expect(service.update(actor, event.jobId, {
+      expectedVersion: event.version,
+      eventTrigger: { type: "node_connected", settleSeconds: 3601 },
+    })).rejects.toMatchObject({ code: "VALIDATION", statusCode: 422 });
+
+    const updated = await service.update(actor, event.jobId, {
+      expectedVersion: event.version,
+      eventTrigger: { type: "node_connected", settleSeconds: 0, cooldownSeconds: 0, repeat: true },
+    });
+    expect(updated.eventTrigger).toMatchObject({
+      nodeId: "node-a",
+      settleSeconds: 0,
+      cooldownSeconds: 0,
+      repeat: true,
+    });
+  });
 });
 
 function createInput() {
@@ -786,6 +1001,21 @@ function onceInput(patch: Record<string, unknown> = {}) {
   return { ...base, runAt: "2026-09-22T09:00:00+09:00", ...patch };
 }
 
+function eventInput(patch: Record<string, unknown> = {}) {
+  const { scheduleExpressions: _scheduleExpressions, ...base } = createInput();
+  return {
+    ...base,
+    eventTrigger: {
+      type: "node_connected",
+      nodeId: "node-b",
+      settleSeconds: 180,
+      cooldownSeconds: 3600,
+      repeat: false,
+    },
+    ...patch,
+  };
+}
+
 function sequentialIds(): () => string {
   let index = 0;
   return () => `id-${++index}`;
@@ -794,12 +1024,15 @@ function sequentialIds(): () => string {
 function memoryRepository(): RecurringJobRepository & {
   jobs: Map<string, RecurringJob>;
   runs: Map<string, RecurringJobRun>;
+  presence: Map<string, RecurringNodePresence>;
 } {
   const jobs = new Map<string, RecurringJob>();
   const runs = new Map<string, RecurringJobRun>();
+  const presence = new Map<string, RecurringNodePresence>();
   return {
     jobs,
     runs,
+    presence,
     async findJobForOwner(jobId, ownerEmail, includeArchived = false) {
       const job = jobs.get(jobId);
       return job?.ownerEmail === ownerEmail && (includeArchived || job.archivedAt === null)
@@ -821,7 +1054,10 @@ function memoryRepository(): RecurringJobRepository & {
         job.ownerEmail === ownerEmail && job.createdIdempotencyKey === key) ?? null;
     },
     async deleteOnceJob(jobId) {
-      if (jobs.get(jobId)?.scheduleKind !== "once") return false;
+      const job = jobs.get(jobId);
+      const singleRun = job?.scheduleKind === "once" ||
+        (job?.scheduleKind === "event" && job.eventTrigger != null && !job.eventTrigger.repeat);
+      if (!job || !singleRun) return false;
       for (const [runId, run] of runs) if (run.jobId === jobId) runs.delete(runId);
       jobs.delete(jobId);
       return true;
@@ -876,6 +1112,19 @@ function memoryRepository(): RecurringJobRepository & {
       return { run, created: true };
     },
     async listDueJobs() { return []; },
+    async listEventJobs(limit) {
+      return [...jobs.values()].filter((job) =>
+        job.scheduleKind === "event" && job.enabled && job.archivedAt === null).slice(0, limit);
+    },
+    async getNodePresence(nodeId) { return presence.get(nodeId) ?? null; },
+    async upsertNodePresence(next) { presence.set(next.nodeId, next); return next; },
+    async reserveEventRun({ job, run, now }) {
+      const current = jobs.get(job.jobId);
+      if (!current || current.version !== job.version || !current.enabled || current.archivedAt) return null;
+      jobs.set(job.jobId, { ...current, eventLastFiredAt: now.toISOString(), version: current.version + 1 });
+      runs.set(run.runId, run);
+      return { run, created: true };
+    },
     async listActiveRuns() { return [...runs.values()].filter((run) => [
       "queued", "waiting_for_node", "dispatching", "awaiting_session", "running",
     ].includes(run.state)); },

@@ -100,6 +100,52 @@ describe("recurring-job MCP tools", () => {
       run_at: "2026-09-30T09:00:00+09:00",
     });
   });
+  it("forwards node-connected event triggers without a cron array or run_at", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({ job: { job_id: "job-event" } }))
+      .mockResolvedValueOnce(response({ job: { job_id: "job-event", version: 2 } }));
+    vi.stubGlobal("fetch", fetch);
+    const { call, registered } = register();
+    const createTool = registered.get("create_recurring_job")!;
+    const updateTool = registered.get("update_recurring_job")!;
+    const { schedule_expressions: _scheduleExpressions, ...base } = createInput();
+    const eventTrigger = {
+      type: "node_connected",
+      node_id: "node-b",
+      settle_seconds: 0,
+      cooldown_seconds: 60,
+      repeat: true,
+    };
+
+    expect(createTool.config.description).toContain("event_trigger");
+    expect(createTool.config.inputSchema.event_trigger.isOptional()).toBe(true);
+    expect(updateTool.config.description).toContain("event_trigger");
+    expect(updateTool.config.inputSchema.event_trigger.isOptional()).toBe(true);
+
+    await withMcpRequestContext(
+      { callerSessionId: "caller-session" },
+      async () => await call("create_recurring_job", { ...base, event_trigger: eventTrigger }),
+    );
+    await withMcpRequestContext(
+      { callerSessionId: "caller-session" },
+      async () => await call("update_recurring_job", {
+        job_id: "job-event",
+        expected_version: 1,
+        event_trigger: { type: "node_connected", settle_seconds: 30 },
+      }),
+    );
+
+    const createBody = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(createBody.args).toMatchObject({ event_trigger: eventTrigger });
+    expect(createBody.args).not.toHaveProperty("schedule_expressions");
+    expect(createBody.args).not.toHaveProperty("run_at");
+    const updateBody = JSON.parse(String(fetch.mock.calls[1]?.[1]?.body));
+    expect(updateBody.args).toMatchObject({
+      job_id: "job-event",
+      event_trigger: { type: "node_connected", settle_seconds: 30 },
+    });
+  });
+
   it("forwards an evicted session identity for central recovery without requiring memory email", async () => {
     const fetch = vi.fn().mockResolvedValue(response({ jobs: [] })); vi.stubGlobal("fetch", fetch);
     const { call } = register();
