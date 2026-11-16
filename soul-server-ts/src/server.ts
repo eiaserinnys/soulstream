@@ -5,6 +5,10 @@ import type { McpRuntime } from "./mcp/runtime.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
 import {
+  registerNotificationDlqRoutes,
+  type NotificationDlqRouteConfig,
+} from "./notification_dlq/routes.js";
+import {
   registerCogitoSearchRoute,
   type CogitoSearchRouteConfig,
 } from "./cogito/search_route.js";
@@ -55,6 +59,11 @@ export interface ServerParams {
   markdownDocument?: MarkdownDocumentHttpRouteConfig;
   /** Authenticated dry-run surface for agent profile context instrumentation. */
   contextPreview?: ContextPreviewRouteConfig;
+  /**
+   * 노드 로컬 notification DLQ 라우트. 내부 MCP 리스너에 붙는다
+   * (`params.mcp`가 있을 때만). 세션 안 CLI가 orch 대신 로컬 서버를 부른다.
+   */
+  notificationDlq?: Pick<NotificationDlqRouteConfig, "notifications">;
 }
 
 export interface InternalMcpServerParams {
@@ -112,6 +121,13 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       statelessTransport: true,
       ...(params.mcp.restricted ? { restricted: params.mcp.restricted } : {}),
     });
+    if (params.notificationDlq) {
+      registerNotificationDlqRoutes(internalMcpServer, {
+        basePath: internalMcpPath(params.mcp.path),
+        auth: params.mcp.auth,
+        notifications: params.notificationDlq.notifications,
+      });
+    }
     fastify.internalMcpServer = internalMcpServer;
     fastify.closeMcp = async () => {
       await Promise.all([

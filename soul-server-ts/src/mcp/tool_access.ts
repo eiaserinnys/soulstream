@@ -19,10 +19,19 @@ const CONFIG_MUTATION_TOOL_NAMES = new Set([
 ]);
 const REGISTERED_TOOL_NAMES_BY_RUNTIME = new WeakMap<McpRuntime, Set<string>>();
 
-/** restricted 요청이 쓰는 도구 정책. full 요청에는 넘기지 않는다. */
+/**
+ * MCP 서버 생성 시점의 도구 거름.
+ *
+ * - restricted 요청은 격리 정책(policy)으로 거른다.
+ * - 세션 ID가 있는 요청(ssf1/ssr1)은 그 세션 프로필의 `disallowedTools`도 함께 거른다.
+ * - 세션 ID 없는 서비스 토큰 요청은 거름이 없다.
+ */
 export interface McpToolAccess {
-  principal: Extract<McpPrincipal, { tier: "restricted" }>;
-  policy: IsolationPolicy;
+  principal: McpPrincipal;
+  /** restricted principal의 격리 도구 정책. full principal에는 없다. */
+  policy?: IsolationPolicy;
+  /** 세션 프로필이 금지한 소울스트림 도구의 맨 이름. */
+  disallowedTools?: ReadonlySet<string>;
 }
 
 export function createInventoryMcpServer(
@@ -30,20 +39,41 @@ export function createInventoryMcpServer(
   runtime: McpRuntime,
   access?: McpToolAccess,
 ): McpServer {
+  const restrictedAccess = restrictedPolicyAccess(access);
   return new Proxy(server, { get(target, prop, receiver) {
     if (prop !== "registerTool") return Reflect.get(target, prop, receiver);
     return (name: string, config: unknown, handler: (...args: unknown[]) => unknown) => {
       const destructive = isDestructiveMcpTool(name, config);
       const registeredConfig = destructive ? withDestructiveHint(config) : config;
-      const restricted = access ? restrictedToolHandler(access, runtime, name, config, handler) : handler;
+      const restricted = restrictedAccess
+        ? restrictedToolHandler(restrictedAccess, runtime, name, config, handler)
+        : handler;
       const registered = target.registerTool(name, registeredConfig as never, translateCardReferences(runtime, config, restricted, destructive) as never);
       recordRegisteredTool(runtime, name);
-      if (access && !isAllowedForRestricted(access.policy, name)) {
+      if (access && !isToolAllowed(access, name)) {
         registered.disable();
       }
       return registered;
     };
   } }) as McpServer;
+}
+
+type RestrictedPolicyAccess = McpToolAccess & {
+  principal: Extract<McpPrincipal, { tier: "restricted" }>;
+  policy: IsolationPolicy;
+};
+
+/** restricted principal과 정책이 함께 있을 때만 handler 앞에 정책 거름을 세운다. */
+function restrictedPolicyAccess(access: McpToolAccess | undefined): RestrictedPolicyAccess | undefined {
+  if (!access || access.principal.tier !== "restricted" || !access.policy) return undefined;
+  return { ...access, principal: access.principal, policy: access.policy };
+}
+
+/** 세션 프로필 금지 도구와 restricted 정책을 모두 통과해야 도구가 남는다. */
+function isToolAllowed(access: McpToolAccess, toolName: string): boolean {
+  if (access.disallowedTools?.has(toolName)) return false;
+  if (access.policy) return isAllowedForRestricted(access.policy, toolName);
+  return true;
 }
 
 /**
@@ -55,7 +85,7 @@ export function createInventoryMcpServer(
  * - caller_session_id를 선언한 도구는 인증된 restricted 세션으로 강제한다.
  */
 function restrictedToolHandler(
-  access: McpToolAccess,
+  access: RestrictedPolicyAccess,
   runtime: McpRuntime,
   name: string,
   config: unknown,

@@ -37,6 +37,10 @@ import {
 } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
+import {
+  disallowedSoulstreamTools,
+  findSessionAgentProfile,
+} from "./session_profile_tools.js";
 import type { McpToolAccess } from "./tool_access.js";
 import type { McpPrincipal } from "../security/session_isolation_contract.js";
 
@@ -193,7 +197,7 @@ async function dispatchStatelessPost(
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      const server = buildMcpServer(runtime, toolAccess(resolution));
+      const server = buildMcpServer(runtime, await toolAccess(runtime, resolution));
       const entry: StatelessEntry = { transport, server };
       active.add(entry);
       let closed = false;
@@ -272,7 +276,7 @@ async function dispatchPost(
     await withMcpRequestContext(
       requestContext(resolution.principal, req),
       async () => {
-        const server = buildMcpServer(runtime, toolAccess(resolution));
+        const server = buildMcpServer(runtime, await toolAccess(runtime, resolution));
         await server.connect(transport);
         await transport.handleRequest(req.raw, reply.raw, body);
       },
@@ -351,12 +355,40 @@ function requestContext(principal: McpPrincipal, req: FastifyRequest): McpReques
   );
 }
 
-function toolAccess(resolution: AuthenticatedResolution): McpToolAccess | undefined {
-  if (resolution.principal.tier !== "restricted") return undefined;
-  if (!resolution.policy) {
+/**
+ * 서버 쪽 도구 거름. 세션 ID가 있는 principal(ssf1/ssr1)은 그 세션 에이전트
+ * 프로필의 금지 도구를 restricted 정책과 같은 방식으로 끈다. 서비스 토큰처럼
+ * 세션 ID가 없는 요청은 지금처럼 전체 도구다. 프로필을 못 찾으면 거르지 않고
+ * 세션 ID만 남기는 warn을 낸다.
+ */
+async function toolAccess(
+  runtime: McpRuntime,
+  resolution: AuthenticatedResolution,
+): Promise<McpToolAccess | undefined> {
+  const principal = resolution.principal;
+  const policy = principal.tier === "restricted" ? resolution.policy : undefined;
+  if (principal.tier === "restricted" && !policy) {
     throw new Error("restricted principal without isolation policy");
   }
-  return { principal: resolution.principal, policy: resolution.policy };
+  const sessionId = principal.sessionId;
+  if (!sessionId) {
+    return policy ? { principal, policy } : undefined;
+  }
+
+  const profile = await findSessionAgentProfile(runtime, sessionId);
+  const disallowedTools = profile ? disallowedSoulstreamTools(profile) : undefined;
+  if (!disallowedTools) {
+    runtime.logger.warn(
+      { sessionId },
+      "MCP session has no agent profile; server-side tool filtering skipped",
+    );
+  }
+  if (!policy && (!disallowedTools || disallowedTools.size === 0)) return undefined;
+  return {
+    principal,
+    ...(policy ? { policy } : {}),
+    ...(disallowedTools && disallowedTools.size > 0 ? { disallowedTools } : {}),
+  };
 }
 
 function samePrincipal(left: McpPrincipal, right: McpPrincipal): boolean {

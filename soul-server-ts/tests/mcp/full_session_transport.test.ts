@@ -2,10 +2,12 @@
  * full 세션 자격 증명의 MCP 전송 계층 수용.
  *
  * ssf1은 restricted 설정 없이도 full principal로 initialize·tools/list를
- * 통과하고, 서비스 토큰과 같은 도구 범위를 본다. 변조·타 인증 키 토큰은 401이다.
+ * 통과한다. 세션 프로필에 금지 도구가 없으면 서비스 토큰과 같은 도구 범위를
+ * 본다. 변조·타 인증 키 토큰은 401이다.
  */
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { AgentProfile } from "../../src/agent_registry.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { createFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
@@ -23,15 +25,27 @@ function silentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
+const SESSION_PROFILE: AgentProfile = {
+  id: "full-session-transport-test",
+  name: "Full session test",
+  backend: "claude",
+  workspace_dir: "/tmp/full-session-ws",
+};
+
 function makeRuntime(): McpRuntime {
   return {
     nodeId: "test-node",
     agentsConfigPath: "/tmp/agents.yaml",
     db: new SessionDB(),
-    taskManager: { listTasks: () => [], getTask: () => undefined },
+    taskManager: {
+      listTasks: () => [],
+      getTask: (sessionId: string) => sessionId === SESSION_A
+        ? { agentSessionId: sessionId, agentProfileSnapshot: SESSION_PROFILE }
+        : undefined,
+    },
     taskExecutor: {},
     onResume: () => undefined,
-    agentRegistry: { listAgents: () => [] },
+    agentRegistry: { listAgents: () => [], get: () => undefined },
     catalogService: {},
     logger: silentLogger(),
   } as unknown as McpRuntime;
@@ -127,7 +141,7 @@ async function payloadOf(response: Response): Promise<Record<string, any>> {
 }
 
 describe("full session credential over MCP transport", () => {
-  it("accepts ssf1 as a full principal with the same tool surface as the service token", async () => {
+  it("accepts ssf1 with the same tool surface as the service token when its profile disallows no tools", async () => {
     const { baseUrl } = await startServer();
     const serviceSession = await initialize(baseUrl, `Bearer ${KEY}`);
     const serviceTools = (await payloadOf(
