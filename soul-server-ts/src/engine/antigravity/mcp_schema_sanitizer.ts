@@ -1,6 +1,9 @@
 type SchemaObject = Record<string, unknown>;
 
 const schemaMapKeywords = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] as const;
+const booleanSchemaKeywords = new Set<string>([
+  "additionalProperties", "additionalItems", "unevaluatedProperties", "unevaluatedItems",
+]);
 const singleSchemaKeywords = [
   "items", "additionalProperties", "additionalItems", "contains", "propertyNames", "not", "if", "then", "else",
   "unevaluatedProperties", "unevaluatedItems", "contentSchema",
@@ -29,21 +32,25 @@ export function sanitizeAntigravityInputSchema(schema: unknown): unknown {
     const value = schema[keyword];
     if (!isObject(value)) continue;
     sanitized[keyword] = Object.fromEntries(
-      Object.entries(value).map(([name, child]) => [name, sanitizeAntigravityInputSchema(child)]),
+      Object.entries(value).map(([name, child]) => [name, sanitizeSubschema(child)]),
     );
   }
 
   for (const keyword of singleSchemaKeywords) {
     if (!Object.hasOwn(schema, keyword)) continue;
     const value = schema[keyword];
-    sanitized[keyword] = keyword === "items" && Array.isArray(value)
-      ? value.map(sanitizeAntigravityInputSchema)
-      : sanitizeAntigravityInputSchema(value);
+    if (booleanSchemaKeywords.has(keyword)) {
+      sanitized[keyword] = sanitizeAntigravityInputSchema(value);
+    } else if (keyword === "items" && Array.isArray(value)) {
+      sanitized[keyword] = value.map(sanitizeSubschema);
+    } else {
+      sanitized[keyword] = sanitizeSubschema(value);
+    }
   }
 
   for (const keyword of schemaArrayKeywords) {
     const value = schema[keyword];
-    if (Array.isArray(value)) sanitized[keyword] = value.map(sanitizeAntigravityInputSchema);
+    if (Array.isArray(value)) sanitized[keyword] = value.map(sanitizeSubschema);
   }
 
   const dependencies = schema.dependencies;
@@ -51,11 +58,17 @@ export function sanitizeAntigravityInputSchema(schema: unknown): unknown {
     const sanitizedDependencies: SchemaObject = { ...dependencies };
     for (const [name, dependency] of Object.entries(dependencies)) {
       if (isPlainObject(dependency)) sanitizedDependencies[name] = sanitizeAntigravityInputSchema(dependency);
+      else if (dependency === true) sanitizedDependencies[name] = {};
     }
     sanitized.dependencies = sanitizedDependencies;
   }
 
   return sanitized;
+}
+
+/** Boolean true is a valid subschema in JSON Schema, but strict MCP tool schemas only accept objects there. */
+function sanitizeSubschema(value: unknown): unknown {
+  return value === true ? {} : sanitizeAntigravityInputSchema(value);
 }
 
 function isObject(value: unknown): value is SchemaObject {

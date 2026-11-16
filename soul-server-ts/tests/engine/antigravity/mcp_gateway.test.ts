@@ -46,7 +46,11 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from ${JSON.stringify(s
 const name = process.argv[2];
 const server = new Server({name, version:"1"}, {capabilities:{tools:{}}});
 server.setRequestHandler(ListToolsRequestSchema, async ({params}) => {
-  if (name === "alpha" && !params?.cursor) return { tools: [{name:"x", inputSchema:{type:"object",properties:{value:{type:"string",enum:["","ok"]}}}, annotations:{readOnlyHint:true}}], nextCursor:"next" };
+  if (name === "alpha" && !params?.cursor) return { tools: [
+    {name:"x", inputSchema:{type:"object",properties:{value:{type:"string",enum:["","ok"]}}}, annotations:{readOnlyHint:true}},
+    {name:"boolean_arg", inputSchema:{type:"object",properties:{args:true}}},
+    {name:"broken_schema", inputSchema:"not-an-object"},
+  ], nextCursor:"next" };
   if (name === "alpha") return {tools:[{name:"second",inputSchema:{type:"object"}}]};
   return {tools:[{name:"y",inputSchema:{type:"object"}}]};
 });
@@ -67,18 +71,21 @@ await server.connect(new StdioServerTransport());
     try {
       await client.connect(transport);
       const tools = (await client.listTools()).tools;
-      expect(tools.map(tool=>tool.name)).toEqual(["alpha__x","alpha__second","beta__y"]);
+      expect(tools.map(tool=>tool.name)).toEqual(["alpha__x","alpha__boolean_arg","alpha__second","beta__y"]);
       const x = tools[0]!;
       expect(x.annotations).toEqual({readOnlyHint:true});
       expect(x.inputSchema.properties?.value).not.toHaveProperty("enum");
       expect(x.inputSchema.properties?.value).toHaveProperty("description");
+      expect(tools[1]!.inputSchema.properties?.args).toEqual({});
       for (const [server,tool] of [["alpha","x"],["beta","y"]]) {
         const result = await client.callTool({name:`${server}__${tool}`,arguments:{value:"ok"}});
         expect(result).toMatchObject({content:[{type:"text",text:JSON.stringify({server,tool,args:{value:"ok"},leaked:false})}],structuredContent:{server}});
       }
       await expect(client.callTool({name:"missing__x"})).rejects.toMatchObject({code:ErrorCode.InvalidParams});
       expect(stderr.join("")).toContain("Antigravity MCP gateway upstream broken unavailable");
+      expect(stderr.join("")).toContain("Antigravity MCP gateway upstream alpha tool broken_schema skipped");
       expect(stderr.join("")).not.toContain("missing-secret");
+      expect(stderr.join("")).not.toContain("not-an-object");
     } finally {
       await client.close();
       await rm(directory,{recursive:true,force:true});

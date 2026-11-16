@@ -94,6 +94,63 @@ describe("sanitizeAntigravityInputSchema", () => {
     expect(sanitized.default).toEqual(schema.default);
     expect(sanitized.examples).toEqual(schema.examples);
     expect(sanitized.const).toEqual(schema.const);
-    expect((sanitized.items as unknown[])[1]).toBe(true);
+    expect((sanitized.items as unknown[])[1]).toEqual({});
+  });
+
+  it("turns boolean true subschemas into empty schemas but leaves boolean keyword values alone", () => {
+    const schema = {
+      type: "object",
+      properties: { args: true, nested: { items: [true, { type: "string" }, false] } },
+      patternProperties: { "^x": true },
+      $defs: { definition: true },
+      definitions: { legacy: true },
+      dependentSchemas: { trigger: true },
+      items: [true],
+      contains: true,
+      propertyNames: true,
+      not: true,
+      if: true,
+      then: true,
+      else: true,
+      contentSchema: true,
+      anyOf: [true],
+      oneOf: [true],
+      allOf: [true],
+      prefixItems: [true],
+      dependencies: { schemaDependency: true },
+      additionalProperties: true,
+      additionalItems: true,
+      unevaluatedProperties: true,
+      unevaluatedItems: true,
+      default: true,
+      examples: [true],
+    };
+
+    const sanitized = sanitizeAntigravityInputSchema(schema) as Record<string, unknown>;
+    const properties = sanitized.properties as Record<string, unknown>;
+    expect(properties.args).toEqual({});
+    expect((properties.nested as Record<string, unknown>).items).toEqual([{}, { type: "string" }, false]);
+    for (const [name, value] of Object.entries({
+      patternProperties: (sanitized.patternProperties as Record<string, unknown>)["^x"],
+      $defs: (sanitized.$defs as Record<string, unknown>).definition,
+      definitions: (sanitized.definitions as Record<string, unknown>).legacy,
+      dependentSchemas: (sanitized.dependentSchemas as Record<string, unknown>).trigger,
+      dependencies: (sanitized.dependencies as Record<string, unknown>).schemaDependency,
+      contains: sanitized.contains,
+      propertyNames: sanitized.propertyNames,
+      not: sanitized.not,
+      if: sanitized.if,
+      then: sanitized.then,
+      else: sanitized.else,
+      contentSchema: sanitized.contentSchema,
+    })) expect([name, value]).toEqual([name, {}]);
+    for (const keyword of ["items", "anyOf", "oneOf", "allOf", "prefixItems"] as const) {
+      expect(sanitized[keyword]).toEqual([{}]);
+    }
+    for (const keyword of ["additionalProperties", "additionalItems", "unevaluatedProperties", "unevaluatedItems"] as const) {
+      expect(sanitized[keyword]).toBe(true);
+    }
+    expect(sanitized.default).toBe(true);
+    expect(sanitized.examples).toEqual([true]);
   });
 });

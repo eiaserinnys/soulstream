@@ -1,10 +1,16 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, type Tool } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, PaginatedResultSchema, ToolSchema, type Tool,
+} from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import { createUpstreamTransport, parseAntigravityMcpUpstream, type AntigravityMcpProxyConfig, type ProxyIo } from "./mcp_schema_proxy.js";
 import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV } from "./mcp_schema_proxy_launch.js";
 import { sanitizeAntigravityInputSchema } from "./mcp_schema_sanitizer.js";
+
+/** Accepts raw tool entries so one non-conforming tool cannot fail the whole upstream listing. */
+const LooseListToolsResultSchema = PaginatedResultSchema.extend({ tools: z.array(z.unknown()) });
 
 export type AntigravityMcpGatewayUpstream = { name: string; upstream: AntigravityMcpProxyConfig };
 
@@ -45,6 +51,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Log only an error's kind, never its message: messages can embed credentials or paths. */
+function errorKind(error: unknown): string {
+  if (isObject(error) && typeof error.code === "string" && error.code.length > 0) return error.code;
+  if (error instanceof Error && error.name.length > 0) return error.name;
+  return "unknown";
+}
+
 /** Presents a single tools-only MCP server backed by this turn's external servers. */
 export async function runAntigravityMcpGateway(upstreams: AntigravityMcpGatewayUpstream[], io: ProxyIo): Promise<void> {
   const server = new Server({ name: "antigravity-mcp-gateway", version: "1" }, { capabilities: { tools: {} } });
@@ -61,15 +74,27 @@ export async function runAntigravityMcpGateway(upstreams: AntigravityMcpGatewayU
       const listed: Tool[] = [];
       let cursor: string | undefined;
       do {
-        const page = await client.listTools(cursor ? { cursor } : undefined);
-        listed.push(...page.tools);
+        const page = await client.request(
+          { method: "tools/list", params: cursor ? { cursor } : undefined },
+          LooseListToolsResultSchema,
+        );
+        for (const rawTool of page.tools) {
+          const toolName = isObject(rawTool) && typeof rawTool.name === "string" ? rawTool.name : undefined;
+          const tool = isObject(rawTool)
+            ? { ...rawTool, inputSchema: sanitizeAntigravityInputSchema(rawTool.inputSchema) }
+            : rawTool;
+          if (toolName === undefined || !ToolSchema.safeParse(tool).success) {
+            process.stderr.write(`Antigravity MCP gateway upstream ${name} tool ${toolName ?? "unknown"} skipped\n`);
+            continue;
+          }
+          listed.push({ ...(tool as Tool), name: antigravityGatewayToolName(name, toolName) });
+        }
         cursor = page.nextCursor;
       } while (cursor);
       connected.set(name, client);
-      return listed.map(tool => ({ ...tool, name: antigravityGatewayToolName(name, tool.name),
-        inputSchema: sanitizeAntigravityInputSchema(tool.inputSchema) as Tool["inputSchema"] }));
-    } catch {
-      process.stderr.write(`Antigravity MCP gateway upstream ${name} unavailable\n`);
+      return listed;
+    } catch (error) {
+      process.stderr.write(`Antigravity MCP gateway upstream ${name} unavailable (${errorKind(error)})\n`);
       await client.close().catch(() => undefined);
       return [];
     }
