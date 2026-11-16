@@ -10,9 +10,11 @@ import { createFullSessionMcpToken } from "../security/restricted_mcp_auth.js";
  *
  * - `AUTH_BEARER_TOKEN`과 호스트 서비스 토큰과 같은 값을 담은 다른 env 키
  *   (예: `PORTABLE_LOCAL_MCP_AUTHORIZATION`)를 ssf1로 바꾼다.
- * - soulstream 계열 HTTP MCP 서버의 `Authorization`을 ssf1로 바꾼다. 러너 설정
- *   파일·Claude `--mcp-config`·Codex `http_headers`·antigravity 정의가 모두
- *   이 값을 읽는다.
+ * - 최종 대상이 soul-server 내부 MCP인 soulstream 계열 HTTP 서버의
+ *   `Authorization`을 ssf1로 바꾼다. 러너 설정 파일·Claude `--mcp-config`·
+ *   Codex `http_headers`·antigravity 정의가 모두 이 값을 읽는다. 이름이
+ *   soulstream 계열이어도 내부 주소로 다시 쓰이지 않고 URL이 그대로 남는
+ *   항목(예: `sse`)은 다른 곳을 가리키므로 헤더를 바꾸지 않는다.
  *
  * 호스트 서비스 토큰이 비어 있으면(개발 환경) 아무것도 바꾸지 않는다. 값은
  * 반환값·오류 메시지·로그에 남기지 않는다.
@@ -96,9 +98,7 @@ function replaceSoulstreamAuthorization(
   credential: string,
 ): ResolvedMcpServer[] {
   return servers.map((server) => {
-    if (server.type === "stdio") return server;
-    const name = typeof server.name === "string" ? server.name : undefined;
-    if (name === undefined || !isSoulstreamMcpServerName(name)) return server;
+    if (!targetsSoulstreamInternalMcp(server)) return server;
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(server.headers ?? {})) {
       if (key.toLowerCase() === "authorization") continue;
@@ -107,4 +107,19 @@ function replaceSoulstreamAuthorization(
     headers.Authorization = `Bearer ${credential}`;
     return { ...server, headers };
   });
+}
+
+/**
+ * 최종 대상이 soul-server 내부 MCP인 항목만 고른다.
+ *
+ * 백엔드가 URL을 노드 내부 주소로 다시 쓰는 것은 soulstream 계열 이름의
+ * `streamable_http` 서버다(Claude `prepareSoulstreamInternalMcpServer`, Codex
+ * `buildCodexMcpConfig`, antigravity 정의). `sse` 항목은 Claude가 URL을 그대로
+ * 두고 Codex는 아예 보내지 않으므로, 다른 곳을 가리킬 수 있는 그 항목의
+ * 헤더는 바꾸지 않는다. `stdio`에는 헤더가 없다.
+ */
+function targetsSoulstreamInternalMcp(server: ResolvedMcpServer): boolean {
+  if (server.type !== "streamable_http") return false;
+  const name = typeof server.name === "string" ? server.name : undefined;
+  return name !== undefined && isSoulstreamMcpServerName(name);
 }

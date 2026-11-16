@@ -155,9 +155,11 @@ describe("full session credential over MCP transport", () => {
     expect(rejected.status).toBe(401);
   });
 
-  it("refuses ssf1 when MCP_REQUIRE_AUTH is false", async () => {
+  it("accepts ssf1 when MCP_REQUIRE_AUTH is false", async () => {
     const { baseUrl } = await startServer({ requireAuth: false });
-    const res = await postMcp(baseUrl, `Bearer ${TOKEN_FULL}`, initializeBody);
-    expect(res.status).toBe(401);
+    const sessionId = await initialize(baseUrl, `Bearer ${TOKEN_FULL}`);
+    const payload = await payloadOf(await listTools(baseUrl, `Bearer ${TOKEN_FULL}`, sessionId));
+    expect(Array.isArray(payload.result?.tools)).toBe(true);
+    expect(payload.result?.tools.length).toBeGreaterThan(0);
   });
 });

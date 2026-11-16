@@ -158,14 +158,35 @@ describe("resolveMcpPrincipal for full session credentials", () => {
     expect(borrowed).toMatchObject({ ok: false, status: 401 });
   });
 
-  it("refuses ssf1 when auth is disabled or the server key is missing", async () => {
+  it("accepts ssf1 when auth is disabled, attaching the session only on a valid signature", async () => {
     const token = createFullSessionMcpToken(SESSION_A, KEY);
     const disabled = await resolveMcpPrincipal(
       authConfig({ requireAuth: false }),
       { host: "localhost", authorization: `Bearer ${token}` },
     );
-    expect(disabled).toMatchObject({ ok: false, status: 401 });
+    expect(disabled).toEqual({
+      ok: true,
+      principal: { tier: "full", sessionId: SESSION_A },
+    });
 
+    // 키가 없어도 인증을 요구하지 않는 설정에서는 다른 값과 똑같이 통과한다.
+    const unconfigured = await resolveMcpPrincipal(
+      authConfig({ requireAuth: false, bearerToken: "" }),
+      { host: "localhost", authorization: `Bearer ${token}` },
+    );
+    expect(unconfigured).toEqual({ ok: true, principal: { tier: "full" } });
+
+    // 서명이 맞지 않으면 세션 ID만 붙이지 않고 full로 통과한다.
+    const foreignKey = createFullSessionMcpToken(SESSION_A, "another-key");
+    const unchecked = await resolveMcpPrincipal(
+      authConfig({ requireAuth: false }),
+      { host: "localhost", authorization: `Bearer ${foreignKey}` },
+    );
+    expect(unchecked).toEqual({ ok: true, principal: { tier: "full" } });
+  });
+
+  it("returns 500 for ssf1 when auth is required but the server key is missing", async () => {
+    const token = createFullSessionMcpToken(SESSION_A, KEY);
     const unconfigured = await resolveMcpPrincipal(
       authConfig({ bearerToken: "" }),
       { host: "localhost", authorization: `Bearer ${token}` },

@@ -2,8 +2,9 @@
  * full 세션 러너 spawn 입력의 자격 증명 치환.
  *
  * 자식 env와 soulstream 계열 MCP 헤더에서 서비스 토큰 값을 세션 토큰으로
- * 바꾸고, 그 밖의 값은 건드리지 않는다. 호스트 토큰이 비면 아무것도 바꾸지
- * 않는다(개발 환경).
+ * 바꾸고, 그 밖의 값은 건드리지 않는다. 이름이 soulstream 계열이어도 내부
+ * 주소로 다시 쓰이지 않는 항목(예: sse)의 헤더는 그대로 둔다. 호스트 토큰이
+ * 비면 아무것도 바꾸지 않는다(개발 환경).
  */
 import { describe, expect, it } from "vitest";
 
@@ -175,6 +176,36 @@ describe("withFullSessionCredential", () => {
 
     expect(replaced[2]).toEqual(servers[2]);
     expect(replaced[3]).toEqual(servers[3]);
+  });
+
+  it("keeps soulstream-named servers whose URL is not rewritten to the internal MCP", () => {
+    // sse는 Claude가 URL을 그대로 두고 Codex는 아예 보내지 않는다. 다른 곳을
+    // 가리킬 수 있으므로 이름만 보고 헤더를 바꾸지 않는다.
+    const servers: ResolvedMcpServer[] = [
+      {
+        name: "soulstream",
+        type: "sse",
+        url: "https://external.example.test/sse",
+        headers: { Authorization: `Bearer ${HOST_TOKEN}`, "x-test": "표식" },
+      },
+      {
+        name: "soulstream-cogito",
+        type: "streamable_http",
+        url: "http://127.0.0.1:3105/mcp/cogito",
+        headers: { Authorization: `Bearer ${HOST_TOKEN}` },
+      },
+    ];
+    const credential = fullSessionCredential(SESSION, HOST_TOKEN)!;
+    const result = withFullSessionCredential(
+      { sessionId: SESSION, resolvedMcpServers: servers },
+      { hostBearerToken: HOST_TOKEN },
+    );
+    const replaced = result.resolvedMcpServers!;
+
+    expect(replaced[0]).toBe(servers[0]);
+    expect(replaced[1]).not.toBe(servers[1]);
+    if (replaced[1]!.type !== "streamable_http") return;
+    expect(replaced[1]!.headers).toEqual({ Authorization: `Bearer ${credential}` });
   });
 
   it("does not touch MCP servers when there are none", () => {
