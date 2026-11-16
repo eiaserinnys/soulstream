@@ -370,7 +370,6 @@ export class RunnerChildRuntime {
     } | undefined;
     const bootstrap = await this.outbox.readBootstrap();
     const resumeLostFrom = event.type === "session" ? event.resume_lost_from : undefined;
-    let lostResumeRotated = false;
     if (
       this.pendingBackendSessionRolloverFrom
       && effect?.kind === "set_backend_session_id"
@@ -388,7 +387,6 @@ export class RunnerChildRuntime {
       if (resumeLostFrom === previousId && effect.backend_session_id !== previousId) {
         backendSessionRotation = { expectedBackendSessionId: previousId, backendSessionId: effect.backend_session_id };
         effect = backendSessionRotationEffect(previousId, effect.backend_session_id);
-        lostResumeRotated = true;
       } else {
         effect = undefined;
       }
@@ -424,9 +422,6 @@ export class RunnerChildRuntime {
       effect,
       backendSessionRotation,
     );
-    if (lostResumeRotated) {
-      this.logger.warn({ sessionId: this.config.sessionId }, "Backend conversation could not be resumed; continuing in a new conversation without its previous context");
-    }
     if (backendSessionRotation) this.pendingBackendSessionRolloverFrom = undefined;
   }
 

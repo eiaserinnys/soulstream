@@ -148,7 +148,7 @@ export class TaskTurnInputBuilder {
         const context = inputUuid
           ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
           : await contextBuilder.buildGenerationContext(task, agent);
-        await this.requireInitialContextSources(task, context);
+        this.observeInitialContextSources(task, context);
         if (context.contextManifest) {
           await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
         }
@@ -172,7 +172,7 @@ export class TaskTurnInputBuilder {
       ? buildDeliveryInputUuid(task.executionRegistration.executionCommandId)
       : undefined;
     const ctx = await this.buildContext(task, agent, inputUuid);
-    await this.requireInitialContextSources(task, ctx);
+    this.observeInitialContextSources(task, ctx);
     if (inputUuid) {
       await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx, inputUuid);
     } else {
@@ -417,19 +417,25 @@ export class TaskTurnInputBuilder {
     }
   }
 
-  private async requireInitialContextSources(
+  // A failed atom source keeps its `error` manifest status and is rendered as a
+  // root drill-down anchor; the first user message must still persist so the
+  // instruction survives the turn.
+  private observeInitialContextSources(
     task: Task,
     context: PreparedContext | undefined,
-  ): Promise<void> {
+  ): void {
     const manifest = context?.contextManifest;
     if (!manifest) return;
 
     const failedSources = manifest.sources.filter((source) => source.status === "error");
     if (failedSources.length === 0) return;
 
-    await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, manifest);
-    throw new Error(
-      `Atom context compilation failed: ${failedSources.map((source) => source.node_id).join(", ")}`,
+    this.deps.logger.warn(
+      {
+        sessionId: task.agentSessionId,
+        nodeIds: failedSources.map((source) => source.node_id),
+      },
+      "Atom context compilation failed for initial context sources; continuing with root drill-down anchors",
     );
   }
 

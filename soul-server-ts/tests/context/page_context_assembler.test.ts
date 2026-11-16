@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ContextManifestSource } from "../../src/context/compiler/index.js";
 import {
   DEFAULT_PAGE_CONTEXT_BUDGETS,
   DefaultPageContextAssembler,
@@ -121,6 +122,58 @@ describe("DefaultPageContextAssembler", () => {
       limit: 8,
       used: 8,
     });
+  });
+
+  it("replaces a failed atom source body with its root anchor and keeps the error in the manifest", () => {
+    const manifest: ContextManifestSource = {
+      id: "page:page-1:atom",
+      label: "page atom_ref: n1",
+      instance: "atom",
+      node_id: "n1",
+      mode: "full",
+      depth: 3,
+      titles_only: false,
+      include_ids: true,
+      priority: 0,
+      never_truncate: false,
+      chars: 0,
+      token_estimate: 0,
+      status: "error",
+      truncated: false,
+      anchor_count: 0,
+    };
+    const assembly = new DefaultPageContextAssembler().assembleDetailed(
+      { pageId: "page-1", blockId: "anchor" },
+      {
+        candidates: [{
+          category: "atom_ref",
+          semanticKey: "atom_ref:atom:n1",
+          pageId: "page-1",
+          blockId: "atom",
+          positionKey: "a",
+          distance: 1,
+          instance: "atom",
+          nodeId: "n1",
+          depth: 3,
+          titlesOnly: false,
+          sourceManifest: manifest,
+        }],
+        visitedPages: 1,
+        failures: [],
+        truncated: false,
+      },
+    );
+    const content = assembly.contextItem.content as Record<string, any>;
+
+    expect(content.items).toEqual([
+      expect.objectContaining({
+        markdown: expect.stringContaining('compile_subtree(node_id="n1")'),
+        anchor_count: 1,
+      }),
+    ]);
+    expect(assembly.contextManifest.sources).toEqual([
+      expect.objectContaining({ node_id: "n1", status: "error" }),
+    ]);
   });
 
   it("replaces budget-cut atom markdown with a reachable root anchor", () => {

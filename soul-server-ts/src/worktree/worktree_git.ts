@@ -928,14 +928,35 @@ export class WorktreeGit {
   }
 
   private async isCommitPreserved(repoId: string, repo: string, sha: string, branch: string): Promise<boolean> {
-    const remote = await this.refSha(repo, `refs/remotes/origin/${branch}`);
+    const remoteRef = `refs/remotes/origin/${branch}`;
+    const remote = await this.refSha(repo, remoteRef);
     if (remote === sha) return true;
+    if (await this.isAncestorOfRef(repo, sha, "refs/remotes/origin/HEAD")) return true;
+    if (remote !== null && await this.isAncestorOfRef(repo, sha, remoteRef)) return true;
+    for (const head of await this.mergedPullRequestHeads(repoId, branch)) {
+      if (await this.refSha(repo, head) === null && !await this.fetchCommit(repo, head)) continue;
+      if (await this.isAncestorOfRef(repo, sha, head)) return true;
+    }
+    return false;
+  }
+
+  private async isAncestorOfRef(repo: string, sha: string, ref: string): Promise<boolean> {
     try {
-      await this.git(repo, ["merge-base", "--is-ancestor", sha, "refs/remotes/origin/HEAD"]);
+      await this.git(repo, ["merge-base", "--is-ancestor", sha, ref]);
       return true;
     } catch (error) {
       rethrowProcessTimeout(error);
-      return (await this.mergedPullRequestHeads(repoId, branch)).includes(sha);
+      return false;
+    }
+  }
+
+  private async fetchCommit(repo: string, sha: string): Promise<boolean> {
+    try {
+      await this.git(repo, ["fetch", "origin", sha]);
+      return true;
+    } catch (error) {
+      rethrowProcessTimeout(error);
+      return false;
     }
   }
 }
