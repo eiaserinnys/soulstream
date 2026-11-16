@@ -33,6 +33,7 @@ import {
 } from "./event_session_gate.js";
 import {
   EVENT_SESSION_REJECTION_REASONS,
+  recordsDespiteStaleRegistration,
   type EventSessionRejectionReason,
 } from "./event_ingress_contract.js";
 
@@ -259,13 +260,19 @@ export class EventIngressRepository {
     const gatedCommand = gatedSessionCommand(envelope.session_effect);
     const ownerMismatch = gatedCommand !== null
       && !sessionOwnerMatches(sessionRow, nodeId);
-    if (!ownerMismatch
-      && envelope.registration_id !== undefined
+    const registrationMismatch = envelope.registration_id !== undefined
       && (
         envelope.registration_id === null
         || sessionRow.execution_registration_id === null
         || envelope.registration_id !== sessionRow.execution_registration_id
-      )) {
+      );
+    const staleRegistration = !ownerMismatch && registrationMismatch;
+    const registrationMismatchEvidence = {
+      eventRegistrationId: envelope.registration_id ?? null,
+      sessionExecutionRegistrationId: sessionRow.execution_registration_id,
+    };
+    if (staleRegistration
+      && !recordsDespiteStaleRegistration(envelope.session_effect)) {
       return {
         outcome: "dead_lettered",
         envelope,
@@ -275,6 +282,7 @@ export class EventIngressRepository {
           rejectedAt: new Date().toISOString(),
           path: "registration_id",
         },
+        registrationMismatch: registrationMismatchEvidence,
       };
     }
 
@@ -389,6 +397,7 @@ export class EventIngressRepository {
       envelope,
       eventId,
       duplicateReceipt: semanticReceipt !== undefined,
+      ...(staleRegistration ? { registrationMismatch: registrationMismatchEvidence } : {}),
       ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
       ...(feedProjectionApplication ? { feedProjectionApplication } : {}),
       ...(feedLastEventId === undefined ? {} : { feedLastEventId }),

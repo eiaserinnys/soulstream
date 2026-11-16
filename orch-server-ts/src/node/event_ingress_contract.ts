@@ -55,6 +55,28 @@ export type EventSessionEffect =
       replace_existing_type?: string;
     };
 
+/**
+ * 등록 번호가 낡아도 세션 기록으로 남기는 사건의 명시 목록.
+ *
+ * session_effect가 없는 일반 기록 사건(답, 도구, 훅, 턴 끝 후보)과 last_message만
+ * 해당한다. last_message의 늦은 도착은 SQL 함수 session_apply_last_chat_message의
+ * (created_at, event_id) 순서 보호가 정리하므로 따로 건너뛰지 않는다.
+ *
+ * 그 밖의 효과(execution_registration, execution_acquire, running_transition,
+ * terminal_transition, set_backend_session_id, rotate_backend_session_id,
+ * append_metadata)는 낡은 등록이 새 실행의 중앙 상태를 덮지 않도록 거절한다(설계 R5).
+ * gatedSessionCommand()로 넓히면 세션 행 효과까지 풀린다. 세션 결정 기계의
+ * stale_registration 사실 값도 이 목록에서 만든다.
+ */
+export const RECORDABLE_STALE_EFFECT_KINDS = ["last_message"] as const;
+
+export function recordsDespiteStaleRegistration(
+  effect: EventSessionEffect | null,
+): boolean {
+  return effect === null
+    || (RECORDABLE_STALE_EFFECT_KINDS as readonly string[]).includes(effect.kind);
+}
+
 export type EventIngressEnvelope = {
   stream_id: string;
   source_seq: number;
@@ -163,11 +185,22 @@ export type EventSessionEffectApplicationWire = {
   rejection_reason?: EventSessionRejectionReason;
 };
 
+/**
+ * 사건의 등록 번호와 세션의 지금 execution_registration_id가 달랐던 수신의
+ * 진단 정보. 기록 여부와 무관하게 운영 로그가 사건과 세션의 번호를 함께 남길 때 쓴다.
+ */
+export type EventIngressRegistrationMismatch = {
+  eventRegistrationId: string | null;
+  sessionExecutionRegistrationId: string | null;
+};
+
 export type CommittedIngressEvent = {
   outcome?: "committed";
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
+  /** 낡은 등록 번호로 들어왔지만 기록한 사건의 진단 정보. */
+  registrationMismatch?: EventIngressRegistrationMismatch;
   sessionEffectApplication?: EventSessionEffectApplication;
   feedProjectionApplication?: import("./event_feed_projection_applier.js").EventFeedProjectionApplication;
   /** Durable raw-coordinate watermark for actual public-feed changes only. */
@@ -183,6 +216,8 @@ export type DeadLetteredIngressEvent = {
     rejectedAt: string;
     path: string;
   };
+  /** 등록 번호 불일치로 거절한 수신의 진단 정보. */
+  registrationMismatch?: EventIngressRegistrationMismatch;
 };
 
 export type EventIngressResult = CommittedIngressEvent | DeadLetteredIngressEvent;

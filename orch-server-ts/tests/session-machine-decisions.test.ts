@@ -40,7 +40,7 @@ const tableStates: readonly SessionStateValue[] = [
 
 it('fills every cell of the decision table with a verdict',()=>{
  const rows=sessionDecisionTable();
- expect(rows).toHaveLength(544);
+ expect(rows).toHaveLength(598);
  const counts=Object.fromEntries(SESSION_COMMANDS.map(command=>[command,0]));
  for(const row of rows){
  expect(['apply','noop','reject']).toContain(row.decision.kind);
@@ -55,7 +55,7 @@ it('fills every cell of the decision table with a verdict',()=>{
  node_disconnect_cleanup:18,
  startup_reconcile_missing:26,
  startup_reconcile_restore:36,
- stale_registration:27,
+ stale_registration:81,
  session_update_status:9,
  acknowledge_review:14,
  delete:45,

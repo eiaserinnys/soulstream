@@ -36,6 +36,45 @@ const GATE_ROW = {
   execution_command_id: null,
 };
 
+/** 등록 번호가 달라도 기록하는 사건 가운데 세션 행 효과를 가진 하나. */
+const LAST_MESSAGE_EFFECT = {
+  kind: "last_message" as const,
+  last_message: {
+    type: "assistant_message",
+    preview: "done",
+    timestamp: "2026-08-06T00:00:00.000Z",
+  },
+  updated_at: "2026-08-06T00:00:00.000Z",
+};
+
+/** 등록 번호가 다르면 지금처럼 거절하는 상태 사건. */
+const TERMINAL_EFFECT = {
+  kind: "terminal_transition" as const,
+  status: "completed",
+  termination_reason: "completed_ok",
+  termination_detail: null,
+  review_state: "not_required",
+  updated_at: "2026-08-06T00:00:00.000Z",
+};
+
+const STALE_IDENTITIES = [
+  {
+    identityLabel: "differs from the session",
+    envelopeRegistrationId: "registration-stale",
+    currentRegistrationId: "registration-current",
+  },
+  {
+    identityLabel: "is explicitly null",
+    envelopeRegistrationId: null,
+    currentRegistrationId: "registration-current",
+  },
+  {
+    identityLabel: "has no sessions-row counterpart",
+    envelopeRegistrationId: "registration-stale",
+    currentRegistrationId: null,
+  },
+] as const;
+
 describe("EventIngressRepository", () => {
   it("commits event append, typed effect, and receipt in one transaction", async () => {
     const order: string[] = [];
@@ -452,20 +491,53 @@ describe("EventIngressRepository", () => {
     ]);
   });
 
-  it.each([
-    { label: "does not match", envelopeRegistrationId: "registration-stale", currentRegistrationId: "registration-current" },
-    { label: "is explicitly null", envelopeRegistrationId: null, currentRegistrationId: "registration-current" },
-    { label: "has no sessions-row counterpart", envelopeRegistrationId: "registration-stale", currentRegistrationId: null },
-  ])("dead-letters when the envelope registration identity $label", async ({
-    envelopeRegistrationId,
-    currentRegistrationId,
-  }) => {
+  it.each(STALE_IDENTITIES)(
+    "dead-letters a state event when the envelope registration identity $identityLabel",
+    async ({ envelopeRegistrationId, currentRegistrationId }) => {
+      const statements: string[] = [];
+      const sql = fakeSql(async (text) => {
+        statements.push(text);
+        if (text.includes("FROM event_ingress_receipts")) return [];
+        if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
+          return [{ ...GATE_ROW, execution_registration_id: currentRegistrationId }];
+        }
+        throw new Error(`stale registration must not reach another statement: ${text}`);
+      });
+      const repository = new EventIngressRepository(
+        { resolveSql: async () => sql },
+        undefined,
+        undefined,
+        { modelCatalog: catalog },
+      );
+
+      await expect(repository.commitBatch("node-a", batch({
+        registration_id: envelopeRegistrationId,
+        semantic_dedupe_key: null,
+        session_effect: TERMINAL_EFFECT,
+      }))).resolves.toMatchObject([{
+        outcome: "dead_lettered",
+        deadLetter: {
+          code: "STALE_REGISTRATION",
+          path: "registration_id",
+        },
+        registrationMismatch: {
+          eventRegistrationId: envelopeRegistrationId,
+          sessionExecutionRegistrationId: currentRegistrationId,
+        },
+      }]);
+      expect(statements.some((text) => text.includes("SELECT event_append"))).toBe(false);
+    },
+  );
+
+  it("dead-letters a stale set_backend_session_id state event", async () => {
+    const statements: string[] = [];
     const sql = fakeSql(async (text) => {
+      statements.push(text);
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
-        return [{ execution_registration_id: currentRegistrationId }];
+        return [{ ...GATE_ROW, execution_registration_id: "registration-current" }];
       }
-      throw new Error(`stale registration must not reach another statement: ${text}`);
+      throw new Error(`stale state event must not reach another statement: ${text}`);
     });
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
@@ -475,16 +547,76 @@ describe("EventIngressRepository", () => {
     );
 
     await expect(repository.commitBatch("node-a", batch({
-      registration_id: envelopeRegistrationId,
+      registration_id: "registration-stale",
       semantic_dedupe_key: null,
+      session_effect: {
+        kind: "set_backend_session_id",
+        backend_session_id: "backend-1",
+      },
     }))).resolves.toMatchObject([{
       outcome: "dead_lettered",
-      deadLetter: {
-        code: "STALE_REGISTRATION",
-        path: "registration_id",
-      },
+      deadLetter: { code: "STALE_REGISTRATION" },
     }]);
+    expect(statements.some((text) => text.includes("SELECT event_append"))).toBe(false);
   });
+
+  // 설계 R5는 낡은 등록이 새 실행의 중앙 상태를 덮지 않는다고 정한다. 세션 행을
+  // 바꾸지 않는 기록 사건(효과 없음, last_message)은 그 위험이 없으므로 늦게 닿아도
+  // 기록한다. session_apply_last_chat_message의 (created_at, event_id) 순서 보호가
+  // last_message의 늦은 도착을 정리한다.
+  it.each([
+    { effectLabel: "an effect-less", sessionEffect: null },
+    { effectLabel: "a last_message", sessionEffect: LAST_MESSAGE_EFFECT },
+  ].flatMap((effectCase) => STALE_IDENTITIES.map((identity) => ({
+    ...effectCase,
+    ...identity,
+  }))))(
+    "records $effectLabel event whose registration identity $identityLabel",
+    async ({ sessionEffect, envelopeRegistrationId, currentRegistrationId }) => {
+      const statements: string[] = [];
+      const sql = fakeSql(async (text) => {
+        statements.push(text);
+        if (text.includes("FROM event_ingress_receipts")) return [];
+        if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
+          return [{ ...GATE_ROW, execution_registration_id: currentRegistrationId }];
+        }
+        if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+        if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+        throw new Error(`unexpected SQL: ${text}`);
+      });
+      const effect = vi.fn(async () => ({ applied: true, canonicalSession: null }));
+      const repository = new EventIngressRepository(
+        { resolveSql: async () => sql },
+        sessionEffect === null ? undefined : effect,
+        undefined,
+        { modelCatalog: catalog },
+      );
+
+      await expect(repository.commitBatch("node-a", batch({
+        registration_id: envelopeRegistrationId,
+        semantic_dedupe_key: null,
+        session_effect: sessionEffect,
+      }))).resolves.toMatchObject([{
+        outcome: "committed",
+        eventId: 41,
+        duplicateReceipt: false,
+        registrationMismatch: {
+          eventRegistrationId: envelopeRegistrationId,
+          sessionExecutionRegistrationId: currentRegistrationId,
+        },
+      }]);
+      expect(statements.some((text) => text.includes("INSERT INTO event_ingress_receipts")))
+        .toBe(true);
+      if (sessionEffect === null) {
+        expect(effect).not.toHaveBeenCalled();
+      } else {
+        expect(effect).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ effect: LAST_MESSAGE_EFFECT }),
+        );
+      }
+    },
+  );
 
   it("replays the exact canonical effect application from a durable transport receipt", async () => {
     const canonicalSession = {

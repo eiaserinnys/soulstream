@@ -247,7 +247,8 @@ describe("retrying failure record after a successful commit", () => {
 
   it("keeps the retrying record when the outcome is not a commit (STALE_REGISTRATION)", async () => {
     const store = new FileEventIngressDeadLetterStore(directory);
-    const stale = envelope({ session_effect: null, event_type: "assistant_message", registration_id: "reg-x" });
+    // 세션 행 효과(set_backend_session_id)는 낡은 등록이면 지금처럼 거절된다.
+    const stale = envelope({ event_type: "assistant_message", registration_id: "reg-x" });
     await store.recordFailure({ nodeId: "node-a", envelope: stale, failure, threshold: 3 });
 
     const results = await repositoryWith(store, committingSql([])).commitBatch(

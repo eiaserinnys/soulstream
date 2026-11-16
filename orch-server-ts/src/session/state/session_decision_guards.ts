@@ -179,11 +179,13 @@ noop(
 );
 
 reject("stale_registration", "missing", "session_missing", inside("s_none"));
+// 세션 상태를 바꾸지 않는 기록 사건은 낡은 등록이어도 받는다(카드 #1353).
+// 그 밖의 효과만 등록 불일치로 거절한다.
 reject(
   "stale_registration",
   "mismatch",
   "registration_mismatch",
-  fact("registration", "stale"),
+  and([fact("registration", "stale"), fact("effect", "state_changing")]),
 );
 
 noop("session_update_status", "missing", "session_missing", inside("s_none"));

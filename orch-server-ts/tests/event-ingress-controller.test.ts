@@ -344,6 +344,100 @@ describe("NodeEventIngressController", () => {
     );
   });
 
+  it("names the identity of a rejected stale-registration state event", async () => {
+    const envelope = {
+      ...batch(1).events[0]!,
+      event_type: "metadata",
+      registration_id: "registration-stale",
+      session_effect: {
+        kind: "terminal_transition" as const,
+        status: "completed",
+        termination_reason: "completed_ok",
+        termination_detail: null,
+        review_state: "not_required",
+        updated_at: "2026-08-06T00:00:00.000Z",
+      },
+    };
+    const logWarn = vi.fn();
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          outcome: "dead_lettered" as const,
+          envelope,
+          deadLetter: {
+            code: "STALE_REGISTRATION" as const,
+            reason: "event registration identity is not current",
+            rejectedAt: "2026-08-13T00:00:00.000Z",
+            path: "registration_id",
+          },
+          registrationMismatch: {
+            eventRegistrationId: "registration-stale",
+            sessionExecutionRegistrationId: null,
+          },
+        }]),
+      },
+      send: vi.fn(),
+      close: vi.fn(),
+      logWarn,
+    });
+
+    controller.enqueue(batch(1) as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(logWarn).toHaveBeenCalledWith({
+      code: "STALE_REGISTRATION",
+      nodeId: "node-a",
+      streamId: STREAM_ID,
+      sourceSeq: 1,
+      sessionId: "session-a",
+      path: "registration_id",
+      eventType: "metadata",
+      registrationId: "registration-stale",
+      sessionExecutionRegistrationId: null,
+      sessionEffectKind: "terminal_transition",
+    }, "Event ingress rejected stale-registration state event (not recorded)");
+  });
+
+  it("logs a late event recorded from a previous registration at info level", async () => {
+    const envelope = {
+      ...batch(1).events[0]!,
+      registration_id: "registration-stale",
+    };
+    const logInfo = vi.fn();
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          outcome: "committed" as const,
+          envelope,
+          eventId: 41,
+          duplicateReceipt: false,
+          registrationMismatch: {
+            eventRegistrationId: "registration-stale",
+            sessionExecutionRegistrationId: "registration-current",
+          },
+        }]),
+      },
+      send: vi.fn(),
+      close: vi.fn(),
+      logInfo,
+    });
+
+    controller.enqueue(batch(1) as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(logInfo).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      streamId: STREAM_ID,
+      sourceSeq: 1,
+      sessionId: "session-a",
+      eventType: "assistant_message",
+      eventId: 41,
+      registrationId: "registration-stale",
+      sessionExecutionRegistrationId: "registration-current",
+      sessionEffectKind: null,
+    }, "Event ingress recorded late event from previous registration");
+  });
+
   it("reports a transient repository failure once and leaves the resend to the node", async () => {
     const value = batch(1);
     const commitBatch = vi.fn().mockRejectedValue(
