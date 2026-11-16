@@ -137,8 +137,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   });
   const sessionMutations = new SessionMutationHostClient(orchHostClientDeps);
   const claudeRuntimeHost = new ClaudeRuntimeHostClient(orchHostClientDeps);
+  const sessionDeliveryHost = new SessionDeliveryHostClient(orchHostClientDeps);
   db.configurePersistenceHosts({
-    deliveries: new SessionDeliveryHostClient(orchHostClientDeps),
+    deliveries: sessionDeliveryHost,
     claudeRuntime: claudeRuntimeHost,
     sessionPageBindings: new SessionPageBindingHostClient(orchHostClientDeps),
     sessionData: new SessionDataHostClient(orchHostClientDeps),
@@ -401,13 +402,17 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(nodeServicesObservation ? { nodeServicesObservation } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
+  const mcpServerOptions = buildMcpServerOptions(env, mcpRuntime);
   const server = await buildServer({
     host: env.HOST,
     port: env.PORT,
     nodeId: env.SOULSTREAM_NODE_ID,
     logger,
     releaseActivationState: params.releaseActivationState,
-    mcp: buildMcpServerOptions(env, mcpRuntime),
+    mcp: mcpServerOptions,
+    ...(mcpServerOptions
+      ? { notificationDlq: { notifications: sessionDeliveryHost.notifications } }
+      : {}),
     cogito: { runtime: mcpRuntime },
     llm: llmExecutor
       ? {

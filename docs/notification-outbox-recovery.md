@@ -17,4 +17,8 @@ npm --prefix soul-server-ts run notification-outbox:requeue -- \
   --delivery-id <delivery-id> --confirm-requeue
 ```
 
-Both commands require `SOULSTREAM_UPSTREAM_URL` and `AUTH_BEARER_TOKEN`. Requeue only accepts a row currently in `dead_letter`; it resets the retry count, error, attempt token, and deadline, then makes the row immediately claimable. It does not alter session ownership.
+Both commands call the node-local soul-server instead of the orchestrator. The address is the same internal MCP listener isolated sessions already use: `MCP_INTERNAL_PORT` (default `PORT + 1`) under `MCP_PATH` (default `/mcp`), so the server serves them at `GET <MCP_PATH>/internal/notification-dlq/dead-letters?limit=<n>` and `POST <MCP_PATH>/internal/notification-dlq/requeue` with `{"deliveryId": "<id>"}`.
+
+`AUTH_BEARER_TOKEN` must be the shared service token or a full-session token (`ssf1`); restricted session tokens (`ssr1`) receive 403, so the commands do not work inside an isolated restricted session. The server calls the orchestrator with its own service credential.
+
+Requeue only accepts a row currently in `dead_letter`; it resets the retry count, error, attempt token, and deadline, then makes the row immediately claimable. It does not alter session ownership.
