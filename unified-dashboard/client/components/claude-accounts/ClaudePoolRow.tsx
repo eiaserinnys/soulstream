@@ -14,6 +14,7 @@ import {
 } from "../../lib/claude-auth-api";
 import { ClaudeAccountRow } from "./ClaudeAccountRow";
 import { ClaudeAuthLoginSheet } from "./ClaudeAuthLoginSheet";
+import { planPriorityMove } from "./priority-order";
 import "./claude-account-pool.css";
 
 type Props = {
@@ -174,32 +175,28 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
   }, [list, nodeId, queryClient, queryKey, request]);
 
   const moveAccount = useCallback(async (account: ClaudeAccount, index: number, direction: -1 | 1) => {
-    const destination = index + direction;
-    const neighbor = accounts[destination];
-    if (!neighbor) return;
-    const targetPriority = neighbor.priority ?? destination + 1;
-    const sourcePriority = account.priority ?? index + 1;
+    const plan = planPriorityMove(accounts, index, direction);
+    if (!plan) return;
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
-    const next = {
-      ...previous,
-      accounts: previous.accounts.map((item) => item.id === account.id
-        ? { ...item, priority: targetPriority }
-        : item.id === neighbor.id ? { ...item, priority: sourcePriority } : item),
-    };
-    queryClient.setQueryData(queryKey, next);
+    queryClient.setQueryData(queryKey, { ...previous, accounts: plan.accounts });
     setBusyAccountId(account.id);
     setActionError(null);
     setNotice(null);
     try {
-      await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, neighbor.id), {
-        method: "PATCH",
-        body: { priority: sourcePriority },
-      });
-      const returned = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, account.id), {
-        method: "PATCH",
-        body: { priority: targetPriority },
-      });
-      queryClient.setQueryData(queryKey, returned);
+      // 저장 순서(서버 목록 순서)대로 보낸다. 중간 응답이 마지막 상태를 덮지 않도록 마지막 응답만 화면에 쓴다.
+      const storedPositions = new Map(previous.accounts.map((item, position) => [item.id, position]));
+      const patches = [...plan.patches].sort((left, right) => (
+        (storedPositions.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (storedPositions.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      ));
+      let latest: ClaudeAccountList | null = null;
+      for (const patch of patches) {
+        latest = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, patch.id), {
+          method: "PATCH",
+          body: { priority: patch.priority },
+        });
+      }
+      if (latest) queryClient.setQueryData(queryKey, latest);
     } catch (error) {
       try {
         await reloadAccounts();
