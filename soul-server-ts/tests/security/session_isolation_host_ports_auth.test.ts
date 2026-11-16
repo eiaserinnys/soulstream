@@ -36,6 +36,7 @@ const policy: IsolationPolicy = {
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: [],
+    writableSensitiveRoots: [],
     readOnlyReexposedPaths: [],
   },
   testDatabases: [],

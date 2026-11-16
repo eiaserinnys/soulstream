@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { SessionIsolationSpecSchema } from "../../src/runner/runner_isolation_config.js";
 import type {
   IsolationHostPorts,
   IsolationLaunchInput,
@@ -38,6 +39,7 @@ const policy: IsolationPolicy = {
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: ["/home/eias/.ssh"],
+    writableSensitiveRoots: [],
     readOnlyReexposedPaths: [],
   },
   testDatabases: [{ nodeId: "node-a", hostPort: 5432, sandboxPort: 15432 }],
@@ -164,6 +166,24 @@ describe("session isolation contract", () => {
     expect(prepared.env).toHaveProperty("TEST_DATABASE_URL");
     expect(JSON.stringify(prepared.spec)).not.toContain("postgres://");
     expect(observationOptions().lines).toBe(50);
+  });
+
+  it("keeps the writable mask flag through the runner child config schema", () => {
+    const wrangler = "/home/eias/.config/.wrangler";
+    const rclone = "/home/eias/.config/rclone";
+    const parsed = SessionIsolationSpecSchema.parse({
+      ...spec,
+      masks: [
+        { path: wrangler, kind: "directory", writable: true },
+        { path: rclone, kind: "directory" },
+      ],
+    });
+
+    // 자식 설정 직렬화 경계에서 이 flag가 지워지면 bwrap이 다시 RO로 잠근다.
+    expect(parsed.masks).toEqual([
+      { path: wrangler, kind: "directory", writable: true },
+      { path: rclone, kind: "directory" },
+    ]);
   });
 
   it("compiles fake B1 launch and command wrapping without real signals", async () => {

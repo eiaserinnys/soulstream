@@ -81,6 +81,27 @@ describe("session isolation policy canonical file", () => {
     expect(policy.tools["delete_central_agent_profile"]).toEqual({ category: "deny" });
   });
 
+  it("approves the atom REST env export and a writable wrangler mask root", () => {
+    const policy = parseIsolationPolicy(rawPolicy);
+
+    // 상자 안 공통 스크립트는 이 두 이름으로 승인된 loopback REST를 쓴다.
+    expect(
+      policy.localMcp.optional.find(
+        (entry) => entry.serverId === "atom" && entry.nodeId === "eiaserinnys",
+      )?.envExports,
+    ).toEqual([
+      { name: "ATOM_SERVER_URL", source: "origin" },
+      { name: "ATOM_API_KEY", source: "header", header: "x-api-key" },
+    ]);
+    // wrangler 설정 폴더는 빈 쓰기 가능 tmpfs로 두고 호스트 내용은 계속 가린다.
+    expect(policy.filesystem.writableSensitiveRoots).toEqual([
+      "/home/eias/.config/.wrangler",
+    ]);
+    expect(policy.filesystem.additionalSensitiveRoots).toContain(
+      "/home/eias/.config/.wrangler",
+    );
+  });
+
   it("keeps digest stable across key order and changes it when a classification changes", () => {
     const policy = parseIsolationPolicy(rawPolicy);
     const digest = computeIsolationPolicyDigest(policy);
@@ -140,6 +161,16 @@ describe("isolation policy validation", () => {
     ["wrong worktree root literal", (policy: Record<string, unknown>) => {
       const filesystem = policy.filesystem as Record<string, unknown>;
       filesystem.sessionWorktreeRelativeRoot = ".projects";
+    }],
+    ["writable root outside the sensitive roots", (policy: Record<string, unknown>) => {
+      const filesystem = policy.filesystem as Record<string, unknown>;
+      filesystem.writableSensitiveRoots = ["/home/eias/.config/not-sensitive"];
+    }],
+    ["unknown local MCP env export source", (policy: Record<string, unknown>) => {
+      const localMcp = policy.localMcp as Record<string, unknown>;
+      (localMcp.optional as Record<string, unknown>[])[0].envExports = [
+        { name: "ATOM_SERVER_URL", source: "file" },
+      ];
     }],
   ])("rejects %s", (_label, mutate) => {
     const broken = clonePolicy();

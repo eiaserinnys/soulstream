@@ -256,6 +256,22 @@ describe("wrapSessionCommand", () => {
     ]);
   });
 
+  it("leaves a writable directory mask as a writable tmpfs and keeps other masks read-only", () => {
+    const writableRoot = "/home/eias/.config/.wrangler";
+    const readOnlyRoot = "/home/eias/.config/rclone";
+    const args = buildBwrapFlags(isolationSpec({
+      masks: [
+        { path: writableRoot, kind: "directory", writable: true },
+        { path: readOnlyRoot, kind: "directory" },
+      ],
+    }));
+
+    expect(indexOfPair(args, "--tmpfs", writableRoot)).toBeGreaterThan(-1);
+    expect(indexOfPair(args, "--remount-ro", writableRoot)).toBe(-1);
+    // 쓰기 허용 목록에 없는 mask는 지금처럼 읽기 전용으로 잠근다.
+    expect(indexOfPair(args, "--remount-ro", readOnlyRoot)).toBeGreaterThan(-1);
+  });
+
   it("changes into the workspace directory before the separator", () => {
     const args = wrapSessionCommand(original, isolationSpec()).args;
     const chdir = args.indexOf("--chdir");

@@ -305,11 +305,29 @@ export async function prepareIsolationMasks(
   const files = new Map<string, IsolationMask>();
   const rebindings: MountBinding[] = [];
 
-  const addEntry = (path: string, kind: IsolationMask["kind"]): void => {
-    (kind === "directory" ? directories : files).set(path, { path, kind });
+  const addEntry = (
+    path: string,
+    kind: IsolationMask["kind"],
+    writable = false,
+  ): void => {
+    const entries = kind === "directory" ? directories : files;
+    const existing = entries.get(path);
+    if (existing) {
+      // 같은 경로가 쓰기 허용으로 한 번이라도 올라오면 그 뜻을 잃지 않는다.
+      if (writable && kind === "directory") existing.writable = true;
+      return;
+    }
+    entries.set(
+      path,
+      writable && kind === "directory" ? { path, kind, writable: true } : { path, kind },
+    );
   };
 
-  const addMask = async (path: string, required: boolean): Promise<void> => {
+  const addMask = async (
+    path: string,
+    required: boolean,
+    writable = false,
+  ): Promise<void> => {
     if (!isAbsolute(path)) {
       throw new SessionIsolationUnavailableError(
         `mask 경로가 절대 경로가 아닙니다: ${path}`,
@@ -344,11 +362,15 @@ export async function prepareIsolationMasks(
           `mask symlink의 실경로가 없습니다: ${path}`,
         );
       }
-      addEntry(real, realFact.kind === "directory" ? "directory" : "file");
+      addEntry(
+        real,
+        realFact.kind === "directory" ? "directory" : "file",
+        writable,
+      );
       return;
     }
 
-    addEntry(path, fact.kind === "directory" ? "directory" : "file");
+    addEntry(path, fact.kind === "directory" ? "directory" : "file", writable);
     let real: string;
     try {
       real = await ports.resolveRealPath(path);
@@ -364,7 +386,7 @@ export async function prepareIsolationMasks(
         `mask 대상의 실경로가 없습니다: ${path}`,
       );
     }
-    addEntry(real, realFact.kind === "directory" ? "directory" : "file");
+    addEntry(real, realFact.kind === "directory" ? "directory" : "file", writable);
   };
 
   const rebindReadOnly = async (
@@ -432,9 +454,13 @@ export async function prepareIsolationMasks(
   }
   await addMask(stateRoot, true);
 
-  // 6. 노드별 민감 루트.
+  // 6. 노드별 민감 루트. 정책이 쓰기 허용으로 지목한 루트만 세션별 빈
+  // 쓰기 tmpfs로 두고, 나머지는 지금처럼 읽기 전용으로 잠근다.
+  const writableSensitiveRoots = new Set(
+    input.policy.filesystem.writableSensitiveRoots,
+  );
   for (const root of input.policy.filesystem.additionalSensitiveRoots) {
-    await addMask(root, false);
+    await addMask(root, false, writableSensitiveRoots.has(root));
   }
 
   // 6b. 노드 incoming 루트. 정책 mask가 덮지 않는 배치에서도 다른 세션의 첨부가

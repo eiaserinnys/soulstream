@@ -189,6 +189,19 @@ describe("buildRestrictedSessionEnv", () => {
     expect(env.GIT_CONFIG_VALUE_3).toBe("false");
   });
 
+  it("keeps the approved local MCP address and key that the plan added", () => {
+    const env = build({
+      additions: {
+        ATOM_SERVER_URL: "http://127.0.0.1:4200",
+        ATOM_API_KEY: "atom-session-key",
+      },
+    });
+
+    // 승인된 로컬 MCP에서 온 값은 제거 목록에 걸리지 않고 상자 env에 남는다.
+    expect(env.ATOM_SERVER_URL).toBe("http://127.0.0.1:4200");
+    expect(env.ATOM_API_KEY).toBe("atom-session-key");
+  });
+
   it("does not mutate the caller environment", () => {
     const base = baseEnv();
     buildRestrictedSessionEnv({

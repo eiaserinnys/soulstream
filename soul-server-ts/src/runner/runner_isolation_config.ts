@@ -18,6 +18,8 @@ const MountBindingSchema = z.object({
 const IsolationMaskSchema = z.object({
   path: z.string().min(1),
   kind: z.enum(["file", "directory"]),
+  /** 세션별 빈 쓰기 tmpfs로 둘 디렉터리 mask. 없으면 읽기 전용이다. */
+  writable: z.boolean().optional(),
 });
 
 export const SessionIsolationSpecSchema = z.object({

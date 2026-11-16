@@ -33,12 +33,25 @@ const toolPolicySchema = z.discriminatedUnion("category", [
   z.object({ category: z.literal("inherit"), guard: z.literal("create-local-session") }).strict(),
 ]);
 
+const localMcpEnvExportSchema = z.discriminatedUnion("source", [
+  z.object({
+    name: z.string().min(1),
+    source: z.literal("origin"),
+  }).strict(),
+  z.object({
+    name: z.string().min(1),
+    source: z.literal("header"),
+    header: z.string().min(1),
+  }).strict(),
+]);
+
 const localMcpSchema = z.object({
   requiredServerId: z.literal("soulstream"),
   optional: z.array(z.object({
     serverId: z.string().min(1),
     nodeId: z.string().min(1),
     port: z.number().int().min(1).max(65535),
+    envExports: z.array(localMcpEnvExportSchema).default([]),
   }).strict()),
 }).strict();
 
@@ -51,8 +64,19 @@ const filesystemSchema = z.object({
     z.literal(".local/artifacts"),
   ]),
   additionalSensitiveRoots: z.array(z.string().min(1)),
+  writableSensitiveRoots: z.array(z.string().min(1)),
   readOnlyReexposedPaths: z.array(z.string().min(1)),
-}).strict();
+}).strict().superRefine((filesystem, ctx) => {
+  // 없는 경로를 쓰기 허용으로 적으면 조용히 무시되지 않게 정책 로드에서 거절한다.
+  for (const root of filesystem.writableSensitiveRoots) {
+    if (filesystem.additionalSensitiveRoots.includes(root)) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["writableSensitiveRoots"],
+      message: `쓰기 허용 민감 루트가 민감 루트 목록에 없습니다: ${root}`,
+    });
+  }
+});
 
 const networkSchema = z.object({
   mode: z.literal("pasta-nft"),
