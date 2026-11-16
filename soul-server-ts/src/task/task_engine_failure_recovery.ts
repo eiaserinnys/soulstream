@@ -57,7 +57,10 @@ export class TaskEngineFailureRecovery {
       "Task execution threw outside event stream",
     );
 
-    this.recordError(task, message, { overwriteNonRunning: true });
+    this.recordError(task, message, {
+      overwriteNonRunning: true,
+      terminationDetail: err instanceof Error ? err.toString() : message,
+    });
   }
 
   recoverFromSynthesizedFailure(task: Task, message: string): void {
@@ -71,11 +74,11 @@ export class TaskEngineFailureRecovery {
   private recordError(
     task: Task,
     message: string,
-    options: { overwriteNonRunning: boolean },
+    options: { overwriteNonRunning: boolean; terminationDetail?: string },
   ): void {
     if (!options.overwriteNonRunning && task.status !== "running") return;
 
-    recordTerminationHint(task, "error_aborted", message);
+    recordTerminationHint(task, "error_aborted", options.terminationDetail ?? message);
     task.status = "error";
     task.error = message;
     task.result = undefined;

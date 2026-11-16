@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createExecutionActivation, type Task } from "../../src/task/task_models.js";
+import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import {
   cellAgent,
   deferred,
@@ -155,6 +156,51 @@ function prompts(runner: ReturnType<typeof fakeRunner>): string[] {
 }
 
 describe("세대 넘김 창의 경계 시험 (카드 #1266 U5b)", () => {
+  it("보통 시작의 입력 준비 중 멈추면 첫 턴을 보내지 않고 한 번 닫힌다", async () => {
+    const held = deferred();
+    const prepared = deferred();
+    const original = TaskTurnInputBuilder.prototype.prepareInitialTurnInput;
+    const prepare = vi.spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
+      .mockImplementationOnce(async function (task, agent) {
+        const input = await original.call(this, task, agent);
+        prepared.resolve();
+        await held.promise;
+        return input;
+      });
+    const runner = fakeRunner();
+    const world = makeWorld(sessionRow(), { runner, contextBuilder: contextBuilder() });
+    const task = await hydrate(world);
+    task.status = "initializing";
+    const started = world.executor.startNewExecution(task, cellAgent, createExecutionActivation());
+    void Promise.resolve(started).catch(() => undefined);
+    try {
+      await prepared.promise;
+      expect(task.status).toBe("running");
+      const stopped = track(stopTask(world));
+      await flush();
+      held.resolve();
+      await flush();
+
+      expect(stopped.value).toBe(true);
+      expectOneTerminal(world, "killed");
+      expect(runner.dispatcher.executeFrames).not.toHaveBeenCalled();
+    } finally {
+      held.resolve();
+      prepare.mockRestore();
+    }
+  });
+
+  it("비활성 상태로 진입한 기존 러너 경로는 첫 턴을 보낸다", async () => {
+    const runner = fakeRunner();
+    const world = makeWorld(sessionRow(), { runner });
+    const task = await hydrate(world);
+    task.status = "interrupted";
+
+    await world.executor.startExecutionWithRunner(task, cellAgent, runner.runner);
+
+    expect(runner.dispatcher.executeFrames).toHaveBeenCalledOnce();
+  });
+
   it("세대 넘김 창 안에서 멈춤이 오면 첫 턴을 보내지 않고 멈춤 하나로 닫힌다", async () => {
     for (const point of WINDOW_POINTS) {
       const { world, task, runner, finish } = await startInGenerationWindow(point);

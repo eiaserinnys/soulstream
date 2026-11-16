@@ -49,9 +49,11 @@ import {
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
 import {
+  EventAcknowledgementTimeoutError,
   isValidEventAppendAck,
   type EventAppendAck,
 } from "../../src/upstream/event_outbox_pump_protocol.js";
+import { appendSystemAbortNotice, SYSTEM_ABORT_NOTICE_KEY } from "../../src/task/system_abort_notice.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
@@ -166,6 +168,67 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startNewExecution", () => {
+  it.each(["after complete", "before first turn"] as const)(
+    "%s ACK timeout records the error and adds one notice to the next input",
+    async (point) => {
+      const mocks = makeMocks();
+      const error = new EventAcknowledgementTimeoutError(42, 300000);
+      const detail = error.toString();
+      const engine = makeFakeEngine([{ type: "complete", result: "done", timestamp: 1 } as SSEEventPayload]);
+      const execute = vi.spyOn(engine, "execute");
+      const builder = point === "before first turn"
+        ? { build: vi.fn(async () => { throw error; }) }
+        : undefined;
+      if (point === "after complete") mocks.waitForSessionAck.mockRejectedValueOnce(error);
+      const executor = new TaskExecutor(
+        () => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+        builder as never,
+      );
+      const task = makeTask();
+
+      await executor.startNewExecution(task, agent);
+
+      expect(execute).toHaveBeenCalledTimes(point === "after complete" ? 1 : 0);
+      expect(task.status).toBe("error");
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+        task.agentSessionId,
+        expect.objectContaining({ type: "session_ended", termination_reason: "error_aborted", termination_detail: detail }),
+        expect.objectContaining({ termination_reason: "error_aborted", termination_detail: detail }),
+        expect.any(String),
+      );
+      const first: InterventionMessage = { text: "이어서", user: "system" };
+      const second: InterventionMessage = { text: "다음 입력", user: "system" };
+      await appendSystemAbortNotice(task, first, { logger: silentLogger });
+      await appendSystemAbortNotice(task, second, { logger: silentLogger });
+      expect(first.context?.filter((item) => item.key === SYSTEM_ABORT_NOTICE_KEY)).toEqual([
+        expect.objectContaining({ content: expect.objectContaining({ termination_reason: "error_aborted", termination_detail: detail }) }),
+      ]);
+      expect(second.context).toBeUndefined();
+    },
+  );
+
+  it("records an ACK timeout after complete on the attached runner path", async () => {
+    const mocks = makeMocks();
+    const error = new EventAcknowledgementTimeoutError(43, 300000);
+    const { runner, dispatcher } = makeRunnerProcessRuntime([
+      { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload,
+    ]);
+    dispatcher.waitForSessionAck.mockRejectedValueOnce(error);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+    );
+    const task = makeTask();
+
+    await executor.startExecutionWithRunner(task, agent, runner);
+
+    expect(dispatcher.executeFrames).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ termination_reason: "error_aborted", termination_detail: error.toString() }),
+      expect.objectContaining({ termination_reason: "error_aborted", termination_detail: error.toString() }),
+    );
+  });
+
   it.each([
     ["cache keepalive", true, "previous answer"],
     ["same text without marker", false, "ok"],
@@ -2433,7 +2496,7 @@ describe("TaskExecutor.startNewExecution", () => {
         kind: "terminal_transition",
         status: "error",
         termination_reason: "error_aborted",
-        termination_detail: "prepare boom",
+        termination_detail: "Error: prepare boom",
       }),
       expect.stringMatching(/^in-process:/),
     );
@@ -6255,7 +6318,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
           kind: "terminal_transition",
           status: "error",
           termination_reason: "error_aborted",
-          termination_detail: "atom HTTP timeout",
+          termination_detail: "Error: atom HTTP timeout",
         }),
         expect.stringMatching(/^in-process:/),
       );
