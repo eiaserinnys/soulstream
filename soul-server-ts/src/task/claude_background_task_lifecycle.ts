@@ -37,8 +37,6 @@ interface ClaudeBackgroundTaskLifecycleDeps {
   now?: () => Date;
 }
 
-const OBSERVE_RETRY_DELAYS_MS = [100, 250, 500] as const;
-
 /** Persists SDK background lifecycle before the event is exposed to callers. */
 export class ClaudeBackgroundTaskLifecycle {
   private readonly now: () => Date;
@@ -100,28 +98,15 @@ export class ClaudeBackgroundTaskLifecycle {
         observedAt,
       };
       let row: ClaudeBackgroundTaskGenerationRow;
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          row = await this.deps.repository.observeGeneration(observation);
-          break;
-        } catch (err) {
-          const delayMs = isRetryablePersistenceFailure(err)
-            ? OBSERVE_RETRY_DELAYS_MS[attempt]
-            : undefined;
-          if (delayMs === undefined) {
-            this.deps.logger?.warn(
-              {
-                err,
-                sessionId,
-                taskId: parsed.taskId,
-                attempts: attempt + 1,
-              },
-              "Claude background runtime observation was not persisted; continuing the turn",
-            );
-            return true;
-          }
-          await wait(delayMs);
-        }
+      try {
+        row = await this.deps.repository.observeGeneration(observation);
+      } catch (err) {
+        // Retries live in the host client; one failed observation must not end the turn.
+        this.deps.logger?.warn(
+          { err, sessionId, taskId: parsed.taskId },
+          "Claude background runtime observation was not persisted; continuing the turn",
+        );
+        return true;
       }
       return row.status === "pending" || row.status === "running";
     }
@@ -428,15 +413,4 @@ function revision(value: unknown): string | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? String(value)
     : asString(value);
-}
-
-function isRetryablePersistenceFailure(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "retryable" in error
-    && error.retryable === true;
-}
-
-function wait(delayMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
