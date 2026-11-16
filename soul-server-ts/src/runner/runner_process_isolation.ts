@@ -89,11 +89,36 @@ export function fullManagementSecrets(
   return secrets;
 }
 
+const MODEL_PRESET_ENV_REFERENCE = /^\$\{([^}\s]+)\}$/;
+
+/**
+ * 이 세션 env가 참조하는 이름. 모델 preset(또는 preset이 없으면 프로필 env)의
+ * `${VAR}`은 호스트 프로세스가 풀고, 에이전트 프로필 provider의 `api_key_env`는
+ * 러너 자식 안에서 읽힌다. 둘 다 그 세션의 restricted 자식 base에 있어야 한다.
+ */
+export function restrictedSessionEnvKeys(
+  task: Pick<Task, "modelPresetBackend" | "modelPresetEnv">,
+  agent: Pick<AgentProfile, "env" | "agents_sdk">,
+): string[] {
+  const keys = new Set<string>();
+  const presetEnv = task.modelPresetBackend !== undefined
+    ? task.modelPresetEnv
+    : agent.env;
+  for (const value of Object.values(presetEnv ?? {})) {
+    const reference = MODEL_PRESET_ENV_REFERENCE.exec(value);
+    if (reference?.[1] !== undefined) keys.add(reference[1]);
+  }
+  const providerKey = agent.agents_sdk?.provider?.api_key_env;
+  if (providerKey !== undefined) keys.add(providerKey);
+  return [...keys].sort();
+}
+
 /** restricted 러너 자식 프로세스 환경. host full 관리 자격은 여기서 끝난다. */
 export function buildRestrictedRunnerChildEnv(input: {
   baseEnv: Readonly<Record<string, string | undefined>>;
   plan: PreparedIsolationPlan;
   wsl: boolean;
+  sessionKeys?: readonly string[];
 }): NodeJS.ProcessEnv {
   const restrictedCredential = input.plan.env.AUTH_BEARER_TOKEN;
   if (!restrictedCredential) {
@@ -103,6 +128,7 @@ export function buildRestrictedRunnerChildEnv(input: {
   }
   return buildRestrictedSessionEnv({
     baseEnv: input.baseEnv,
+    sessionKeys: input.sessionKeys ?? [],
     additions: input.plan.env,
     restrictedCredential,
     fullSecrets: fullManagementSecrets(input.baseEnv),
@@ -173,6 +199,7 @@ export async function applyRestrictedRunnerIsolation(
       baseEnv: base.childProcessEnv ?? {},
       plan: prepared.plan,
       wsl: prepared.wsl,
+      sessionKeys: restrictedSessionEnvKeys(context.task, context.agent),
     }),
     isolation: isolationChildConfigFromPlan({
       plan: prepared.plan,

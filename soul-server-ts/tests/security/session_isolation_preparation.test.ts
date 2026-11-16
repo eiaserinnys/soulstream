@@ -695,7 +695,7 @@ describe("prepareIsolationPlan", () => {
     }
   });
 
-  it("masks service env files and backups at the dotenv directory top level", async () => {
+  it("masks service env files and backups under the dotenv directory recursively", async () => {
     const fixture = await makeFixture();
     const serviceDir = join(fixture.root, "service-env");
     touch(fixture.root, "service-env/.env.soul-server-ts", "A=1", 0o600);
@@ -725,10 +725,106 @@ describe("prepareIsolationPlan", () => {
     expect(
       masks.some((mask) => mask.path === join(serviceDir, "package.json")),
     ).toBe(false);
-    // 하위 디렉터리로는 내려가지 않는다.
+    // 하위 디렉터리도 훑는다.
     expect(
       masks.some((mask) => mask.path === join(serviceDir, "sub/.env.nested")),
+    ).toBe(true);
+  });
+
+  it("masks .env files recursively under read-only re-exposed paths and the workspace bind", async () => {
+    const fixture = await makeFixture();
+    const deep = join(fixture.workspace, ".projects", "BlockNote", "playground");
+    const reexposed = join(fixture.sensitive, "logs");
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [reexposed],
+      },
+    };
+
+    const maskedTargets = [
+      join(deep, ".env"),
+      join(deep, ".env.local"),
+      join(deep, "x.env"),
+      join(reexposed, "config", ".env"),
+    ];
+    for (const path of maskedTargets) {
+      touch(fixture.root, path, "SECRET=1", 0o600);
+    }
+    // 예시·틀 파일은 그대로 둔다.
+    touch(fixture.root, join(deep, ".env.example"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".env.local.sample"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".env.template"), "A=1", 0o600);
+    // 탐색하지 않는 가지.
+    touch(fixture.root, join(deep, "node_modules", "pkg", ".env"), "A=1", 0o600);
+    touch(fixture.root, join(deep, ".git", ".env"), "A=1", 0o600);
+    // 세션이 쓸 수 있게 연 경로.
+    const writePaths = [
+      join(fixture.worktree, ".env"),
+      join(fixture.workspace, ".local", "tmp", "s1", ".env"),
+      join(fixture.workspace, ".local", "artifacts", "notes", ".env"),
+      join(fixture.sessionDir, "sandbox", ".env"),
+      join(fixture.workspace, ".projects", ".isolated", "s1", ".env"),
+      join(fixture.home, ".local/share/soulstream/isolated-cache", "cargo", ".env"),
+    ];
+    for (const path of writePaths) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    for (const path of maskedTargets) {
+      expect(masked.has(path), path).toBe(true);
+    }
+    for (const path of [
+      join(deep, ".env.example"),
+      join(deep, ".env.local.sample"),
+      join(deep, ".env.template"),
+      join(deep, "node_modules", "pkg", ".env"),
+      join(deep, ".git", ".env"),
+      ...writePaths,
+    ]) {
+      expect(masked.has(path), path).toBe(false);
+    }
+  });
+
+  it("drops masks covered by an ancestor directory mask unless a reopen bind lies between", async () => {
+    const fixture = await makeFixture({
+      wsl: true,
+      sensitiveRoots: ({ sensitive }) => [
+        sensitive,
+        "/mnt/c/Users/eias/.azure",
+        join(sensitive, "logs", "private"),
+      ],
+      systemFacts: {
+        "/mnt": { kind: "directory" },
+        "/run/WSL": { kind: "directory" },
+        "/mnt/c/Users/eias/.azure": { kind: "directory" },
+      },
+    });
+    const logs = join(fixture.sensitive, "logs");
+    mkdirSync(join(logs, "private"), { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [logs],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    expect(masked.has("/mnt")).toBe(true);
+    // /mnt 아래 하위 가림은 다시 여는 bind가 없으므로 계획에서 뺀다.
+    expect(masked.has("/mnt/c/Users/eias/.azure")).toBe(false);
+    expect(
+      [...masked].some((path) => path.startsWith("/mnt/")),
     ).toBe(false);
+    // 재노출 bind가 사이에 있는 하위 디렉터리 가림은 효력이 있으므로 남긴다.
+    expect(masked.has(join(fixture.sensitive, "logs", "private"))).toBe(true);
   });
 
   it("rejects a Gemini/Antigravity restricted start before producing a spec", async () => {

@@ -6,7 +6,6 @@ import type {
   IsolationPreparationInput,
   MountBinding,
   PreparedIsolationPlan,
-  PrepareIsolationPlan,
   SessionIsolationSpec,
   WorktreeAttachment,
 } from "../security/session_isolation_contract.js";
@@ -22,7 +21,10 @@ import {
 } from "./session_filesystem_errors.js";
 import { prepareGitView } from "./session_filesystem_git.js";
 import { prepareHeavyWorkLocks } from "./session_filesystem_locks.js";
-import { prepareIsolationMasks } from "./session_filesystem_masks.js";
+import {
+  prepareIsolationMasks,
+  type IsolationEnvMaskScan,
+} from "./session_filesystem_masks.js";
 import {
   requireAbsolute,
   validateIsolationPreparationInput,
@@ -313,11 +315,20 @@ function composeBindings(args: {
   return bindings;
 }
 
+export interface PrepareIsolationPlanOptions {
+  /** 재귀 `.env` 탐색 비용을 호출부 로거로 남긴다. */
+  logEnvMaskScan?: (scan: IsolationEnvMaskScan) => void;
+}
+
 /**
  * B2: restricted 턴을 시작하기 전에 호스트가 준비할 파일·환경·인증 계획을 만든다.
  * 부수효과는 주입된 포트로만 일으키며, 비밀값은 env에만 담는다.
  */
-export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) => {
+export async function prepareIsolationPlan(
+  input: IsolationPreparationInput,
+  ports: IsolationHostPorts,
+  options: PrepareIsolationPlanOptions = {},
+): Promise<PreparedIsolationPlan> {
   validateIsolationPreparationInput(input);
 
   const nodeId = await ports.resolveNodeId();
@@ -362,6 +373,7 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     wsl,
     extraMasks: auth.masks,
   });
+  options.logEnvMaskScan?.(maskPlan.envScan);
   const cache = await prepareIsolatedCache({ input, ports });
 
   const worktrees = await collectWorktreePaths(input, ports, hostWorkspaceReal);
@@ -473,4 +485,4 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     contextNotice,
   };
   return prepared;
-};
+}
