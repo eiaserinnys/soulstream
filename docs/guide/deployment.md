@@ -11,6 +11,8 @@ The repository defines explicit release contracts so worker rollouts can never m
 - **Standalone manifest ([`deploy/release-manifest-standalone.json`](../../deploy/release-manifest-standalone.json) and [`deploy/database-release-standalone.json`](../../deploy/database-release-standalone.json))**: provides an explicit release contract for single-host standalone deployments.
 - **Haniel worker configuration templates**: [`install/haniel-soul-server-ts.example.yaml`](../../install/haniel-soul-server-ts.example.yaml) serves as the worker-node integration reference, and [`install/haniel-worker.yaml.template`](../../install/haniel-worker.yaml.template) is rendered by the Windows worker installer ([`install/install.ps1`](../../install/install.ps1)).
 
+The central manifest's `service_restart_filters` lets Haniel keep a service running when every changed path matches that service's `ignore_paths` and migration preflight reports `pending_count` of zero. A dependent service still restarts when its `after` dependency restarts; the build hook always runs. Patterns use Python `fnmatchcase`, where `*` also matches `/`. List only paths unrelated to the service's build and runtime, and keep package manifests, the service's dependencies, root `plugins/` and `patches/`, deployment files, pnpm lock and workspace files, and root build scripts outside the filters. `deploy/tests/test_service_restart_filters.py` checks those boundaries against the current workspace dependency graph and real repository files.
+
 ## Database migrations through the release path
 
 Normal service starts (`pnpm --dir orch-server-ts start` and `node soul-server-ts/dist/main.js`) never execute DDL or apply pending migrations.
