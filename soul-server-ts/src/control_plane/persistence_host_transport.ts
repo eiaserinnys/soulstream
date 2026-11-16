@@ -170,6 +170,13 @@ export interface RestartWindowRecoveryEvent {
 export interface RestartWindowRetryPolicy {
   /** Whole-call budget counted from the first attempt. */
   totalBudgetMs: number;
+  /**
+   * Timeout of every attempt under this policy. A slow host must cost latency,
+   * not the session start, so it replaces the caller's plain timeout. The retry
+   * loop still reduces it to the time left in the budget before the last
+   * attempt.
+   */
+  attemptTimeoutMs?: number;
   /** Delays before restart-window retries; the last value repeats. */
   retryDelaysMs: readonly number[];
   onRetry?: (event: RestartWindowRetryEvent) => void;
@@ -179,12 +186,14 @@ export interface RestartWindowRetryPolicy {
 /**
  * Schedule shared by the three central reads a session start cannot do
  * without (card #1350): caller_chain, the evicted-session read, and the
- * isolation worktree inventory. It covers an orchestrator restart (deploy
- * median ~16s, p90 39s) without letting a busy host stall the start for more
- * than 25s.
+ * isolation worktree inventory. A restart between SIGTERM and listening took a
+ * median ~16s and p90 ~52s in the 48h sample of card #1380, so each attempt
+ * gets 8s and the whole call may take 90s; a five-minute central outage (338s)
+ * still fails the start.
  */
 export const SESSION_START_RESTART_WINDOW: RestartWindowRetryPolicy = {
-  totalBudgetMs: 25_000,
+  totalBudgetMs: 90_000,
+  attemptTimeoutMs: 8_000,
   retryDelaysMs: [250, 1_000, 2_000, 4_000],
 };
 
@@ -218,7 +227,8 @@ export async function requestHostOperationWithRetry<T>(
   let attempt = 0;
   let transientFailures = 0;
   let restartFailures = 0;
-  let attemptTimeoutMs = options.timeoutMs;
+  const attemptBudgetMs = restartWindow?.attemptTimeoutMs ?? options.timeoutMs;
+  let attemptTimeoutMs = attemptBudgetMs;
   for (;;) {
     attempt += 1;
     try {
@@ -255,7 +265,7 @@ export async function requestHostOperationWithRetry<T>(
         if (delayMs > 0) await sleep(delayMs);
         const remainingAfterDelayMs = restartDeadlineMs - Date.now();
         if (remainingAfterDelayMs <= 0) break;
-        attemptTimeoutMs = Math.min(options.timeoutMs, remainingAfterDelayMs);
+        attemptTimeoutMs = Math.min(attemptBudgetMs, remainingAfterDelayMs);
         continue;
       }
       transientFailures += 1;
@@ -268,7 +278,7 @@ export async function requestHostOperationWithRetry<T>(
         retryInMs: delayMs,
       });
       if (delayMs > 0) await sleep(delayMs);
-      attemptTimeoutMs = options.timeoutMs;
+      attemptTimeoutMs = attemptBudgetMs;
     }
   }
   throw lastError;

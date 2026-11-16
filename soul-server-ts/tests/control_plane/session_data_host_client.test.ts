@@ -11,6 +11,7 @@ const logger = pino({ level: "silent" });
 
 describe("SessionDataHostClient", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -270,7 +271,7 @@ describe("SessionDataHostClient", () => {
     expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000]);
   });
 
-  it("gives the isolation lineage read three 5000ms attempts with backoff", async () => {
+  it("gives the isolation lineage read three 8000ms attempts with backoff", async () => {
     // At load ~20 the host queue alone took 2-5s; 1.5s x 2 refused trusted turns.
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     const fetchMock = vi.fn()
@@ -287,8 +288,58 @@ describe("SessionDataHostClient", () => {
     await expect(client.getSessionCallerChain("s1")).resolves.toEqual({ root: null, ancestors: [] });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([8_000, 8_000, 8_000]);
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_200);
+  });
+
+  it("retries a turn-critical read once after 500ms when the host stalls", async () => {
+    vi.useFakeTimers();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const startedAt = Date.now();
+    const attemptTimes: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      attemptTimes.push(Date.now() - startedAt);
+      if (attemptTimes.length === 1) {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }
+      return new Response(JSON.stringify({ session_id: "s1", status: "running" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    const request = client.getSession("s1");
+    await vi.advanceTimersByTimeAsync(500);
+
+    await expect(request).resolves.toMatchObject({ session_id: "s1", status: "running" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(attemptTimes).toEqual([0, 500]);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([8_000, 8_000]);
+  });
+
+  it("fails a turn-critical read after two 8s attempts when the host never answers", async () => {
+    vi.useFakeTimers();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.fn(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    const failure = client.getSession("s1").catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(600);
+
+    await expect(failure).resolves.toBeInstanceOf(SessionDataHostError);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([8_000, 8_000]);
   });
 
   it("does not retry a lineage read the host rejects as invalid", async () => {

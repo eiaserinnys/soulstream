@@ -315,8 +315,14 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.request(operation, args, 2_000, 2);
   }
 
+  /**
+   * Reads on the turn path. The host queue can stall for several seconds
+   * (p99.9 ~10s, max ~29s in the 48h sample of card #1380), so a 1.5s attempt
+   * turned a busy host into a failed read. Each attempt gets 8s and the second
+   * starts 500ms after the first fails; a stall longer than that still fails.
+   */
   private turnCritical<T>(operation: string, args: unknown[]): Promise<T> {
-    return this.request(operation, args, 1_500, 2);
+    return this.request(operation, args, 8_000, 2, undefined, [500]);
   }
 
   /**
@@ -336,8 +342,8 @@ export class SessionDataHostClient implements SessionDataHost {
   /**
    * A read a session start cannot do without (card #1350) outlasts an
    * orchestrator restart: refused connections and 502/503/504 widen up to
-   * 25s, while timeouts keep the caller's plain attempt budget. `read` names
-   * the call site in both retry logs.
+   * 90s, while timeouts keep the caller's attempt count. Each attempt gets the
+   * policy's 8s. `read` names the call site in both retry logs.
    */
   private restartWindowRead<T>(
     read: string,
