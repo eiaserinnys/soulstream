@@ -11,13 +11,7 @@ import { createPersistentJevObserver } from "../context/persistent_jev_observer.
 import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
 import { HostPageContextRepository } from "../context/page_context_repository.js";
 import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
-import {
-  ClaudeRuntimeHostClient,
-  SessionDeliveryHostClient,
-  SessionMutationHostClient,
-  SessionPageBindingHostClient,
-} from "../control_plane/persistence_host_clients.js";
-import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
+import { SessionMutationHostClient } from "../control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
@@ -52,6 +46,7 @@ import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.
 import { createEngineFactory } from "./engine_factory.js";
 import { backgroundLifecycleObserver, composeRunnerOrphanReaper, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 import { composeSessionIsolation } from "./session_isolation_composition.js"; import { composeCompletionSettlement } from "./completion_settlement_composition.js";
+import { configureWorkerPersistenceHosts } from "./persistence_host_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter, createBroadcasterSend } from "./worker_upstream_composition.js";
@@ -136,14 +131,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     logger,
   });
   const sessionMutations = new SessionMutationHostClient(orchHostClientDeps);
-  const claudeRuntimeHost = new ClaudeRuntimeHostClient(orchHostClientDeps);
-  const sessionDeliveryHost = new SessionDeliveryHostClient(orchHostClientDeps);
-  db.configurePersistenceHosts({
-    deliveries: sessionDeliveryHost,
-    claudeRuntime: claudeRuntimeHost,
-    sessionPageBindings: new SessionPageBindingHostClient(orchHostClientDeps),
-    sessionData: new SessionDataHostClient(orchHostClientDeps),
-  });
+  const sessionDeliveryHost = configureWorkerPersistenceHosts(db, orchHostClientDeps);
   const boardYjsAuth = {
     authBearerToken: env.AUTH_BEARER_TOKEN,
     environment: env.ENVIRONMENT,
@@ -402,17 +390,14 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(nodeServicesObservation ? { nodeServicesObservation } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
-  const mcpServerOptions = buildMcpServerOptions(env, mcpRuntime);
   const server = await buildServer({
     host: env.HOST,
     port: env.PORT,
     nodeId: env.SOULSTREAM_NODE_ID,
     logger,
     releaseActivationState: params.releaseActivationState,
-    mcp: mcpServerOptions,
-    ...(mcpServerOptions
-      ? { notificationDlq: { notifications: sessionDeliveryHost.notifications } }
-      : {}),
+    mcp: buildMcpServerOptions(env, mcpRuntime),
+    notificationDlq: { notifications: sessionDeliveryHost.notifications },
     cogito: { runtime: mcpRuntime },
     llm: llmExecutor
       ? {
