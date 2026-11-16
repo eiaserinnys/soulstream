@@ -66,12 +66,16 @@ function environment(directory: string, operation = "upgrade") {
     HANIEL_TARGET_HEAD: "2".repeat(40),
   };
 }
-function plan({ ledger = [], pending = [] as Array<Record<string, unknown>> } = {}) {
+function plan({
+  ledger = [],
+  pending = [] as Array<Record<string, unknown>>,
+  bootstrap = [] as Array<Record<string, unknown>>,
+} = {}) {
   return {
     state: ledger.length > 0 ? "current" : "legacy_pre_041",
     ledger,
     migrations: pending,
-    bootstrap: [],
+    bootstrap,
     pending,
   };
 }
@@ -91,13 +95,15 @@ function emptyInventory() {
 function populatedInventory() {
   return { ...emptyInventory(), relation_count: 1 };
 }
-async function preflight(env: ReturnType<typeof environment>, pending = [
-  migration("061_contract.sql", 61),
-]) {
+async function preflight(
+  env: ReturnType<typeof environment>,
+  pending = [migration("061_contract.sql", 61)],
+  bootstrap: Array<Record<string, unknown>> = [],
+) {
   return await executeDatabaseReleasePhase("preflight", {
     env,
     inventoryRead: async () => populatedInventory(),
-    planRead: async () => plan({ pending }),
+    planRead: async () => plan({ pending, bootstrap }),
   });
 }
 
@@ -227,6 +233,41 @@ describe("database release executor", () => {
       migrationRun,
     })).rejects.toThrow("QUIESCENCE_REQUIRED");
     expect(migrationRun).not.toHaveBeenCalled();
+
+    // A bootstrap-only plan also has schema work: planned_migrations includes
+    // bootstrap entries, so pending_count and the evidence rule agree.
+    const bootstrapDirectory = makeTempDirSync("soul-release-bootstrap-");
+    directories.push(bootstrapDirectory);
+    const bootstrapEnv = environment(bootstrapDirectory);
+    const bootstrapEntry = migration("000_bootstrap.sql", 0);
+    const bootstrapReport = await preflight(bootstrapEnv, [], [bootstrapEntry]);
+    expect(bootstrapReport).toMatchObject({ ok: true, pending_count: 1 });
+    const bootstrapMigrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env: bootstrapEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ bootstrap: [bootstrapEntry] }),
+      migrationRun: bootstrapMigrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(bootstrapMigrationRun).not.toHaveBeenCalled();
+
+    // Required subphases are schema work too, even without SQL migrations.
+    const subphaseDirectory = makeTempDirSync("soul-release-subphase-");
+    directories.push(subphaseDirectory);
+    const subphaseEnv = {
+      ...environment(subphaseDirectory),
+      HANIEL_DATABASE_REQUIRED_SUBPHASES: '["seed"]',
+    };
+    const subphaseReport = await preflight(subphaseEnv, []);
+    expect(subphaseReport).toMatchObject({ ok: true, pending_count: 1 });
+    const subphaseMigrationRun = vi.fn();
+    await expect(runDatabaseRelease("apply", {
+      env: subphaseEnv,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan(),
+      migrationRun: subphaseMigrationRun,
+    })).rejects.toThrow("QUIESCENCE_REQUIRED");
+    expect(subphaseMigrationRun).not.toHaveBeenCalled();
   });
 
   it("applies empty fresh_install and upgrade releases without backup machinery", async () => {

@@ -88,15 +88,10 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
   }
   const sql = postgres(url, { max: 1, idle_timeout: 1 });
   try {
-    // Each harness file creates and drops its own page_* or board_yjs_seed_*
-    // schema; a shared external test database runs files concurrently, so those
-    // self-owned schemas are not pollution. Any other table still fails.
     const rows = await sql<readonly { count: number }[]>`
       SELECT COUNT(*)::int AS count
       FROM information_schema.tables
       WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-        AND table_schema NOT LIKE 'page\\_%'
-        AND table_schema NOT LIKE 'board\\_yjs\\_seed\\_%'
     `;
     if ((rows[0]?.count ?? 0) > 0) {
       throw new Error("TEST_DATABASE_URL must point at an empty test database");
