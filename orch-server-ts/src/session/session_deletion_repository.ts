@@ -9,17 +9,38 @@ import type {
   SessionDeletionRepositoryPort,
 } from "./session_deletion_service.js";
 
+export type SessionDeletionCardUpdate = {
+  readonly cardId: string;
+  readonly folderId: string;
+};
+
+export type SessionDeletionRepositoryOptions = {
+  /**
+   * 트랜잭션이 커밋된 뒤 영향받은 카드마다 부른다. 커밋 전에 부르면 롤백과
+   * 어긋나므로 트랜잭션 안에서는 부르지 않는다.
+   */
+  readonly onCardsUpdated?: (
+    update: SessionDeletionCardUpdate,
+  ) => void | Promise<void>;
+};
+
 export class SessionDeletionRepository implements SessionDeletionRepositoryPort {
   private readonly sqlResolver: FolderContentSqlResolver;
+  private readonly options: SessionDeletionRepositoryOptions;
 
-  constructor(resolver: LiveDbSqlResolver) {
+  constructor(
+    resolver: LiveDbSqlResolver,
+    options: SessionDeletionRepositoryOptions = {},
+  ) {
     this.sqlResolver = new FolderContentSqlResolver(resolver);
+    this.options = options;
   }
 
   async deleteSession(
     input: Parameters<SessionDeletionRepositoryPort["deleteSession"]>[0],
   ): Promise<void> {
     const sql = await this.sqlResolver.resolveSql();
+    const updatedCards: SessionDeletionCardUpdate[] = [];
     await sql.begin(async (transaction) => {
       const cards = await transaction<CardRow[]>`
         SELECT * FROM cards WHERE limit_resume_session_id = ${input.sessionId} FOR UPDATE
@@ -40,8 +61,10 @@ export class SessionDeletionRepository implements SessionDeletionRepositoryPort 
           operationType: "update_card", actorKind: "system", actorEventId: null,
           payload: { limit_resume_session_id: null, limit_resume_at: null, now, deleted_session_id: input.sessionId },
         });
+        updatedCards.push({ cardId: card.id, folderId: card.folder_id });
       }
       await transaction`SELECT session_delete(${input.sessionId})`;
     });
+    for (const update of updatedCards) await this.options.onCardsUpdated?.(update);
   }
 }

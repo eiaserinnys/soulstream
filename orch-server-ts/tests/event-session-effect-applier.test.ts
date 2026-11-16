@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { applyEventSessionEffect } from "../src/node/event_session_effect_applier.js";
 import type { EventIngressQuerySql } from "../src/node/event_ingress_repository.js";
 import type { EventIngressEnvelope, EventSessionEffect } from "../src/node/event_ingress_types.js";
+
+const noopWarn = () => undefined;
 
 describe("applyEventSessionEffect", () => {
   it.each([
@@ -43,6 +45,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(sessionEffect),
       effect: sessionEffect,
+      warn: noopWarn,
     });
 
     // set_backend_session_id는 저장된 값을 먼저 읽고(잠금 없는 SELECT) 함수를 부른다.
@@ -61,6 +64,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(registration),
       effect: registration,
+      warn: noopWarn,
     })).resolves.toMatchObject({
       applied: true,
       canonicalExecutionRegistration: {
@@ -86,6 +90,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: invalidEnvelope,
       effect: lastMessage,
+      warn: noopWarn,
     })).resolves.toEqual({
       applied: false,
       canonicalSession: null,
@@ -110,6 +115,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(lastMessage),
       effect: lastMessage,
+      warn: noopWarn,
     })).resolves.toEqual({
       applied: false,
       canonicalSession: null,
@@ -136,6 +142,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 43,
       envelope: envelope(running),
       effect: running,
+      warn: noopWarn,
     });
 
     expect(statements).toHaveLength(2);
@@ -156,6 +163,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(legacyAcquire),
       effect: legacyAcquire,
+      warn: noopWarn,
     })).resolves.toMatchObject({
       canonicalExecutionRegistration: {
         registration_id: "registration-1",
@@ -187,11 +195,44 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(registration),
       effect: registration,
+      warn: noopWarn,
     })).resolves.toMatchObject({
       applied: false,
       canonicalExecutionRegistration: null,
       canonicalSession: { status: "completed", termination_event_id: 40 },
     });
+  });
+
+  it("reports a stored/incoming backend session id mismatch through the injected warn sink", async () => {
+    const statements: string[] = [];
+    const warn = vi.fn();
+    const sql = Object.assign(async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      return statement.includes("FROM sessions")
+        ? [{ claude_session_id: "thread-stored" }]
+        : [];
+    }, { json: (value: unknown) => value }) as unknown as EventIngressQuerySql;
+    const mismatch = effect("set_backend_session_id");
+
+    await expect(applyEventSessionEffect(sql, {
+      nodeId: "node-a",
+      eventId: 41,
+      envelope: envelope(mismatch),
+      effect: mismatch,
+      warn,
+    })).resolves.toEqual({ applied: false, canonicalSession: null });
+
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain("SELECT claude_session_id FROM sessions");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith({
+      cause_code: "BACKEND_SESSION_ID_MISMATCH_SKIPPED",
+      session_id: "session-a",
+      stored_claude_session_id: "thread-stored",
+      incoming_claude_session_id: "thread-1",
+      event_id: 41,
+    }, "backend session id mismatch skipped");
   });
 
   it("passes the terminal event id and clears canonical registration", async () => {
@@ -207,6 +248,7 @@ describe("applyEventSessionEffect", () => {
       eventId: 41,
       envelope: envelope(terminal),
       effect: terminal,
+      warn: noopWarn,
     })).resolves.toMatchObject({ canonicalExecutionRegistration: null });
     expect(values[0]).toContain(41);
   });

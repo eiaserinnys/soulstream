@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SERVICE_CALLER } from "../src/auth/service_caller.js";
 import type { AttachmentReadRepository, AttachmentReadService } from "../src/attachments/attachment_read_service.js";
 import { createLiveAttachmentInputAdmission } from "../src/attachments/live_attachment_input_admission.js";
+import { recurringSessionCreateInput } from "../src/production.js";
 import { createRecurringSession } from "../src/session/recurring_session_creation.js";
 import {
   createLiveOrchestratorProviderBundle,
@@ -155,6 +156,37 @@ describe("live attachment input admission wiring", () => {
     }, { ...input(), attachmentIds: [asset.id] })).rejects.toMatchObject({
       code: "ATTACHMENT_INPUT_UNAVAILABLE",
       statusCode: 503,
+    });
+  });
+
+  it("marks a launched recurring session with scheduler provenance and preserves its source", async () => {
+    const routed = { node: { nodeId: "node-a" }, command: { requestId: "r1" }, modelPresetId: null };
+    const createSession = vi.fn((_payload: unknown) => routed);
+    const job = {
+      jobId: "job-1",
+      prompt: "run",
+      nodeId: "node-a",
+      agentId: "agent-a",
+      modelPreset: null,
+      folderId: "folder-a",
+      executionCaller: { source: "browser", email: "owner@example.test", user_id: "owner-user" },
+    };
+    const run = { runId: "run-1", sessionId: input().sessionId };
+
+    await createRecurringSession({
+      router: { createSession, waitForCreatedSession: async () => true } as never,
+      bridge: { sendPendingCommand: async () => ({ type: "session_created", agentSessionId: run.sessionId }) } as never,
+    }, recurringSessionCreateInput(job, run));
+
+    expect(createSession.mock.calls[0]![0]).toMatchObject({
+      caller_info: {
+        source: "browser",
+        email: "owner@example.test",
+        user_id: "owner-user",
+        scheduled_by: "recurring_job",
+        recurring_job_id: "job-1",
+        recurring_run_id: "run-1",
+      },
     });
   });
 
