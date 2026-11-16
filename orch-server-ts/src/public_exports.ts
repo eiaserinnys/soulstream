@@ -102,6 +102,7 @@ export * from "./runtime/live_session_conversation_context.js";
 export * from "./runtime/live_session_serialization.js";
 export * from "./runtime/live_timeline_serialization.js";
 export * from "./runtime/live_system_config_route_provider.js";
+export * from "./runtime/node_credential_route_allowlist.js";
 export * from "./runtime/node_session_event_dispatcher.js";
 export * from "./runtime/orchestrator_maintenance_service.js";
 export * from "./runtime/orchestrator_memory_stats.js";

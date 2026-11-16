@@ -1,11 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { AuthTokenResolver } from "../auth/auth_routes.js";
+import { extractBearerToken } from "../auth/service_bearer.js";
 import { normalizeRouteKey } from "../contract/route_coverage.js";
 import { routeCoverageOwners } from "../contract/route_coverage_matrix.js";
 import { classifyRouteFamily, isLowRiskRouteEntry } from "../contract/route_registry.js";
 import { isDashboardFallbackRequest } from "../dashboard/dashboard_serving.js";
+import type { NodeCredentialResolver, NodePrincipal } from "../node_credentials/types.js";
 import { oauthScopeForRoute, requireOAuthScope, type OAuthResourceAccess } from "../oauth/oauth_access.js";
+import { isNodeCredentialRouteAllowed } from "./node_credential_route_allowlist.js";
 import { requestLogPath } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
@@ -13,6 +16,12 @@ export type ProductionAuthGuardOptions = {
   readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   /** This dedicated route authenticates its own credential and Host. */
   readonly externalMcpPath?: string;
+  /**
+   * Node pairing credentials. Their principal decides whether the route is on
+   * the portable-node allowlist; `null` is explicit outside production
+   * composition.
+   */
+  readonly nodeCredentials?: NodeCredentialResolver | null;
 };
 
 export type ProductionRouteAuthIdentity = {
@@ -42,6 +51,22 @@ export function registerProductionAuthGuard(
       isLowRiskRouteEntry({ family: classifyRouteFamily(routeUrl) })
     ) {
       return;
+    }
+    // A node pairing credential is narrower than the shared service token. This
+    // runs before the auth matrix short-circuit so routes that authenticate
+    // inline (card orchestration, MCP host, attachments, host transports) are
+    // covered too.
+    const nodePrincipal = resolveNodeCredentialPrincipal(request, options);
+    if (
+      nodePrincipal !== null &&
+      !isNodeCredentialRouteAllowed(requestRouteIdentity(request))
+    ) {
+      request.log.warn({
+        method: request.method,
+        route: routeUrl,
+        nodeId: nodePrincipal.node_id,
+      }, "node credential route denied");
+      return reply.code(403).send({ code: "NODE_CREDENTIAL_ROUTE_DENIED" });
     }
     const authRequired = resolveProductionRouteAuthRequirement(
       requestRouteIdentity(request),
@@ -102,6 +127,17 @@ function requestRouteIdentity(
     routeUrl: request.routeOptions.url,
     websocket: singleHeader(request.headers.upgrade)?.toLowerCase() === "websocket",
   };
+}
+
+function resolveNodeCredentialPrincipal(
+  request: FastifyRequest,
+  options: ProductionAuthGuardOptions,
+): NodePrincipal | null {
+  if (options.nodeCredentials === undefined || options.nodeCredentials === null) {
+    return null;
+  }
+  const token = extractBearerToken(request.headers.authorization);
+  return token === undefined ? null : options.nodeCredentials.resolve(token);
 }
 
 function buildRouteAuthRequirementIndex(): ReadonlyMap<string, boolean> {

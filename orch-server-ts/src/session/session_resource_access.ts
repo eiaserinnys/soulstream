@@ -1,5 +1,5 @@
 import type { ServiceCaller } from "../auth/service_caller.js";
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 import {
   isBoardFolderAllowed,
@@ -57,6 +57,17 @@ export type SessionResourceAccessProvider = {
   ) => Promise<void>;
   readonly requireFolderAccess: (
     input: SessionResourceFolderAccessInput,
+  ) => Promise<void>;
+};
+
+/**
+ * The session folder check the session HTTP route handlers need. Route options
+ * accept this narrow surface so production can wrap the provider with a
+ * service-bearer bypass without changing the provider used elsewhere.
+ */
+export type SessionRequestAccessGuard = {
+  readonly requireSessionAccess: (
+    input: SessionResourceSessionAccessInput,
   ) => Promise<void>;
 };
 
@@ -118,6 +129,37 @@ export function createSessionResourceAccessProvider(
       requireAllowedFolder(access, folders, input.folderId);
     },
   };
+}
+
+/**
+ * Runs the session folder ACL at an HTTP handler entry. Returns true when the
+ * denial response was sent and the caller must return `reply`; false lets the
+ * handler continue. The result is a boolean, not the reply, because Fastify's
+ * Reply is a thenable and `await` on it would resolve to undefined.
+ *
+ * Route handlers use this; the shared intervention body does not, because MCP
+ * calls it as the service caller.
+ */
+export async function requireRequestSessionAccess(
+  accessProvider: SessionRequestAccessGuard | undefined,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  sessionId: string,
+): Promise<boolean> {
+  if (accessProvider === undefined) return false;
+  try {
+    await accessProvider.requireSessionAccess({ request, sessionId });
+  } catch (error) {
+    if (!(error instanceof SessionResourceAccessError)) throw error;
+    reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+    return true;
+  }
+  return false;
 }
 
 export function firstAllowedSessionFolderId(

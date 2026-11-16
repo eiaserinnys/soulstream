@@ -21,12 +21,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { SERVICE_CALLER, type ServiceCaller } from "./auth/service_caller.js";
+import { SERVICE_CALLER, isServiceCaller, type ServiceCaller } from "./auth/service_caller.js";
 
 import { createApp, type CreateAppOptions } from "./app.js";
 import { FlatFolderContentHost } from "./board/flat_folder_content_host.js";
 import { MarkdownDocumentService } from "./board/markdown_document_service.js";
 import { SessionFolderMoveRepository } from "./session/session_folder_move_repository.js";
+import type { SessionRequestAccessGuard } from "./session/session_resource_access.js";
 import { SessionFolderMoveService } from "./session/session_folder_move_service.js";
 import { broadcastCatalogDelta } from "./runtime/catalog_delta_broadcaster.js";
 import { PageRepository } from "./page/page_repository.js";
@@ -1285,6 +1286,25 @@ export function buildProductionRouteOptions(
   if (sessionAccessProvider === undefined) {
     throw new Error("session access provider is required for persistent session settings routes");
   }
+  // Session HTTP routes run the folder ACL for user identities only. A shared
+  // service token or node credential is a service caller even when the body
+  // carries a user email (task completion notifications do this), and the
+  // dashboard access provider would otherwise resolve that email to a user ACL.
+  const sessionRequestAccess: SessionRequestAccessGuard = {
+    async requireSessionAccess(input) {
+      if (isServiceCaller(input.request)) return;
+      const service = verifyServiceBearerAuthorization(
+        input.request.headers.authorization,
+        {
+          configuredToken: config.authBearerToken,
+          environment: config.environment,
+          nodeCredentials,
+        },
+      );
+      if (service.ok && !service.developmentBypass) return;
+      await sessionAccessProvider.requireSessionAccess(input);
+    },
+  };
   const persistentSessionSettingsService = new PersistentSessionSettingsService({
     reads: async () => (await persistenceRepositoryProvider()).sessionReads,
     access: sessionAccessProvider,
@@ -1341,6 +1361,7 @@ export function buildProductionRouteOptions(
     productionAuth: {
       resolveTokenAccess: providers.authRoutes.resolveTokenAccess,
       resolveOAuthAccess: providers.authenticatedUserResolvers.resolveOAuthAccess,
+      nodeCredentials,
     },
     adminUsersRoutes: providers.adminUsersRoutes,
     atomRoutes: providers.atomRoutes,
@@ -1468,6 +1489,7 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      accessProvider: sessionRequestAccess,
       ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
       onHumanSessionInput: async targetSessionId => {
         if (!cardServiceProvider) return;
@@ -1512,8 +1534,10 @@ export function buildProductionRouteOptions(
       deliveryRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).deliveries,
     },
-    sessionBackgroundScheduleRoutes:
-      providers.runtime.sessionBackgroundScheduleRoutes,
+    sessionBackgroundScheduleRoutes: {
+      ...providers.runtime.sessionBackgroundScheduleRoutes,
+      accessProvider: sessionRequestAccess,
+    },
     ...(scheduleRepositoryProvider === undefined
       ? {}
       : {
@@ -1529,7 +1553,10 @@ export function buildProductionRouteOptions(
       reports: { remove: async (sessionId,key) => (await persistenceRepositoryProvider()).persistentReports!.remove(sessionId,key) },
       requireSessionAccess: sessionAccessProvider.requireSessionAccess,
     },
-    sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
+    sessionCommandRoutes: {
+      ...providers.runtime.sessionCommandRoutes,
+      accessProvider: sessionRequestAccess,
+    },
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,
     sseReplayRoutes: providers.runtime.sseReplayRoutes,

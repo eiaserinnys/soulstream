@@ -39,6 +39,10 @@ import {
   type SessionParams,
 } from "./session_action_command_payloads.js";
 import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
+import {
+  requireRequestSessionAccess,
+  type SessionRequestAccessGuard,
+} from "./session_resource_access.js";
 
 export type SessionActionCallerInfoResolver = (
   request: FastifyRequest | ServiceCaller,
@@ -80,6 +84,8 @@ export type SessionActionCommandRouteOptions =
     acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined, request: FastifyRequest | ServiceCaller) =>
       Promise<{ handled: boolean; failure?: { status: number; body: unknown } } | undefined>;
     onHumanSessionInput?: (targetSessionId: string) => Promise<void>;
+    /** Session folder ACL for the HTTP handlers only (not the shared MCP body). */
+    accessProvider?: SessionRequestAccessGuard;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -102,7 +108,15 @@ export function registerSessionActionCommandRoutes(
     "/api/sessions/:session_id/intervene",
     { bodyLimit: MESSAGE_BODY_LIMIT },
     async (request, reply) => {
-      const result = await executeSessionIntervention(options, request, sessionParams(request).session_id, request.body);
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
+      const result = await executeSessionIntervention(options, request, sessionId, request.body);
       return reply.code(result.status).send(result.body);
     },
   );
@@ -110,9 +124,17 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/review/acknowledge",
     async (request, reply) => {
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
       const payload: AcknowledgeSessionReviewNodeCommandPayload = {
         type: "acknowledge_session_review",
-        agentSessionId: sessionParams(request).session_id,
+        agentSessionId: sessionId,
       };
       return sendReviewAcknowledgeCommand(reply, options, payload);
     },
@@ -120,15 +142,33 @@ export function registerSessionActionCommandRoutes(
 
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/message",
-    async (request, reply) => deprecatedSessionMessage(reply, sessionParams(request).session_id),
+    async (request, reply) => {
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
+      return deprecatedSessionMessage(reply, sessionId);
+    },
   );
 
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/interrupt",
     async (request, reply) => {
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
       const payload: InterruptNodeCommandPayload = {
         type: "interrupt_session",
-        agentSessionId: sessionParams(request).session_id,
+        agentSessionId: sessionId,
       };
       return sendActionCommand(reply, options, payload, sendInterruptAckError);
     },
@@ -137,6 +177,13 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: ApprovalParams }>(
     "/api/sessions/:session_id/tool-approvals/:approval_id/approve",
     async (request, reply) => {
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionParams(request).session_id,
+      );
+      if (denied) return reply;
       const payload = toolApprovalPayload(
         approvalParams(request),
         request.body,
@@ -150,6 +197,13 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: ApprovalParams }>(
     "/api/sessions/:session_id/tool-approvals/:approval_id/reject",
     async (request, reply) => {
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionParams(request).session_id,
+      );
+      if (denied) return reply;
       const payload = toolApprovalPayload(
         approvalParams(request),
         request.body,
@@ -163,12 +217,20 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/realtime/call",
     async (request, reply) => {
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
         return badRequest(reply, "Request body must be a JSON object");
       }
 
-      const payload = realtimeCreateCallPayload(sessionParams(request).session_id, body);
+      const payload = realtimeCreateCallPayload(sessionId, body);
       if (!payload.ok) return badRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
@@ -178,12 +240,20 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/realtime/events",
     async (request, reply) => {
+      const sessionId = sessionParams(request).session_id;
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionId,
+      );
+      if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
         return badRequest(reply, "Request body must be a JSON object");
       }
 
-      const payload = realtimeEventPayload(sessionParams(request).session_id, body);
+      const payload = realtimeEventPayload(sessionId, body);
       if (!payload.ok) return badRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
@@ -193,6 +263,13 @@ export function registerSessionActionCommandRoutes(
   app.post<{ Params: ApprovalParams }>(
     "/api/sessions/:session_id/realtime/tool-approvals/:approval_id/resolve",
     async (request, reply) => {
+      const denied = await requireRequestSessionAccess(
+        options.accessProvider,
+        request,
+        reply,
+        sessionParams(request).session_id,
+      );
+      if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
         return badRequest(reply, "Request body must be a JSON object");
