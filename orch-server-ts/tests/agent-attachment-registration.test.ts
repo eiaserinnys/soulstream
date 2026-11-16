@@ -80,6 +80,19 @@ function input(overrides: Partial<{ producer: typeof producer; targetScope: { ty
 }
 
 describe("agent attachment registration", () => {
+  it("returns the same ID for a repeated key scoped to the producer session", async () => {
+    const { sql } = makeSql({ sessions: [sessionRow], cards: [{ id: "card-1", assignee_session_id: "session-1" }] });
+    const { commit } = makeCommit();
+    const register = createAgentAttachmentRegistration({ sql, commit, readAsset: async (id) => makeAsset({ id }) });
+    const first = await register({ ...input(), idempotencyKey: "retry-key" });
+    const second = await register({ ...input(), idempotencyKey: "retry-key" });
+    const other = await register({ ...input(), idempotencyKey: "another-key" });
+    const otherSession = await register({ ...input({ targetScope: null, producer: { ...producer, sessionId: "session-2" } }), idempotencyKey: "retry-key" });
+    expect(first.attachment_id).toBe(second.attachment_id);
+    expect(first.attachment_id).not.toBe(other.attachment_id);
+    expect(first.attachment_id).not.toBe(otherSession.attachment_id);
+    expect(first.attachment_id).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
   it("registers the producer-owned asset and returns the shared descriptor", async () => {
     const { sql } = makeSql({ sessions: [sessionRow], cards: [{ id: "card-1", assignee_session_id: "session-1" }] });
     const { commit, putSmall } = makeCommit();

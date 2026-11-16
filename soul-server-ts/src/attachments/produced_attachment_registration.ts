@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import * as path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 
@@ -84,25 +85,41 @@ export function createProducedAttachmentRegistration(options: {
     });
     if (input.target_scope) query.set("card_id", input.target_scope.id);
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([timeout, signal]) : timeout;
+    const idempotencyKey = randomUUID();
 
-    let response: Response;
-    try {
-      response = await options.fetch(`${options.orch.baseUrl}${REGISTER_PATH}?${query}`, {
-        method: "POST",
-        headers: {
-          ...options.orch.headers,
-          "content-type": "application/octet-stream",
-          "x-soulstream-agent-session-id": execution.sessionId,
-          "x-soulstream-node-id": execution.nodeId,
-          "x-soulstream-output-command-id": execution.outputCommandId,
-        },
-        body: bytes,
-        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
-      });
-    } catch {
-      throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 등록 서비스에 연결하지 못했습니다.");
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = undefined;
+      try {
+        response = await options.fetch(`${options.orch.baseUrl}${REGISTER_PATH}?${query}`, {
+          method: "POST",
+          headers: {
+            ...options.orch.headers,
+            "content-type": "application/octet-stream",
+            "x-soulstream-agent-session-id": execution.sessionId,
+            "x-soulstream-node-id": execution.nodeId,
+            "x-soulstream-output-command-id": execution.outputCommandId,
+            "x-soulstream-idempotency-key": idempotencyKey,
+          },
+          body: bytes,
+          signal: requestSignal,
+        });
+      } catch {
+        if (requestSignal.aborted || attempt === 2) {
+          throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 등록 서비스에 연결하지 못했습니다.");
+        }
+      }
+      if (response !== undefined && (![502, 503, 504].includes(response.status) || attempt === 2)) break;
+      await response?.body?.cancel().catch(() => undefined);
+      try {
+        await delay((attempt + 1) * 1000, undefined, { signal: requestSignal });
+      } catch {
+        throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 등록 서비스에 연결하지 못했습니다.");
+      }
     }
 
+    if (response === undefined) throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 등록 서비스에 연결하지 못했습니다.");
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const failure = (payload ?? {}) as { code?: unknown; detail?: unknown };

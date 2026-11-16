@@ -120,6 +120,7 @@ describe("card create path attachment import against PostgreSQL", () => {
     readonly ownerKind?: string;
     readonly ownerKey?: string;
     readonly scope?: { readonly type: string; readonly id: string } | null;
+    readonly sourceSessionId?: string;
   } = {}): Promise<void> {
     const ownerKey = options.ownerKey ?? SESSION;
     await h.sql`INSERT INTO file_assets (
@@ -130,7 +131,7 @@ describe("card create path attachment import against PostgreSQL", () => {
       ${id}, ${`private/${id}`}, 'attachment', 'https://r2.example.test', 'private-attachments',
       ${options.ownerKind ?? "agent_session"}, ${ownerKey},
       ${options.scope === undefined || options.scope === null ? null : h.sql.json(options.scope)}::jsonb,
-      ${ownerKey}, ${`${id}.png`}, 'image/png', ${BYTES.byteLength}, 'committed'
+      ${options.sourceSessionId ?? ownerKey}, ${`${id}.png`}, 'image/png', ${BYTES.byteLength}, 'committed'
     )`;
   }
 
@@ -209,11 +210,60 @@ describe("card create path attachment import against PostgreSQL", () => {
   });
 
   it("reuses an existing user asset alias without reading the node or denying the agent", async () => {
-    await insertAsset("user-owned", { ownerKind: "user_email", ownerKey: "owner@example.com", scope: null });
+    await insertAsset("user-owned", { ownerKind: "user_email", ownerKey: "owner@example.com", scope: null, sourceSessionId: SESSION });
     await alias("user-owned", "media/owned.png");
     const created = await createCard(attachment("media/owned.png"));
     expect(reads).toEqual([]);
     expect(uploads).toHaveLength(0);
     expect(await cardRefs(created.operation.target_id)).toEqual([{ attachment_id: "user-owned" }]);
+  });
+
+  it("lets a dashboard user create a card with their own upload alias", async () => {
+    await insertAsset("dashboard-owned", { ownerKind: "user_email", ownerKey: "owner@example.com" });
+    await alias("dashboard-owned", "media/dashboard.png");
+    const created = await cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "owner@example.com",
+      folderId, title: "첨부 카드", request: "요청", attachments: attachment("media/dashboard.png"), idempotencyKey: key() });
+    expect(await cardRefs(created.operation.target_id)).toMatchObject([{ attachment_id: "dashboard-owned" }]);
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+  });
+
+  it("rejects a dashboard user linking another user's upload alias", async () => {
+    await insertAsset("dashboard-foreign", { ownerKind: "user_email", ownerKey: "other@example.com" });
+    await alias("dashboard-foreign", "media/foreign-user.png");
+    await expect(cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "owner@example.com",
+      folderId, title: "첨부 카드", request: "요청", attachments: attachment("media/foreign-user.png"), idempotencyKey: key() }))
+      .rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_LINK_DENIED" });
+    expect(await h.sql`SELECT id FROM cards`).toEqual([]);
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+  });
+
+  it.each(["alias", "materialized"])("rejects another session's %s before reading or creating a card", async (kind) => {
+    const other = "foreign-session";
+    const path = kind === "alias" ? "media/foreign.png" : `incoming/${other}/assets/foreign/shot.png`;
+    await insertAsset("foreign", { ownerKey: other, scope: { type: "session", id: other } });
+    if (kind === "alias") await alias("foreign", path);
+    await expect(createCard(attachment(path))).rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_CARD_SCOPE_DENIED" });
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+    expect(await h.sql`SELECT id FROM cards`).toEqual([]);
+  });
+
+  it("accepts another session's asset when both sessions belong to the same card", async () => {
+    const existing = await createCard([]);
+    const cardId = existing.operation.target_id;
+    const other = "sharing-session";
+    await h.sql`UPDATE sessions SET card_id=${cardId} WHERE session_id=${SESSION}`;
+    await h.sql`INSERT INTO sessions(session_id,folder_id,status,agent_id,node_id,model_preset,card_id)
+      VALUES (${other},${folderId},'running','roselin','eiaserinnys','codex-6-luna',${cardId})`;
+    await insertAsset("shared", { ownerKey: other, scope: { type: "session", id: other } });
+    await alias("shared", "media/shared.png");
+    const created = await createCard(attachment("media/shared.png"));
+    expect(await cardRefs(created.operation.target_id)).toEqual([{ attachment_id: "shared" }]);
+    expect(reads).toEqual([]);
+    expect(uploads).toEqual([]);
+    await h.sql`DELETE FROM sessions WHERE session_id=${other}`;
+    await h.sql`UPDATE sessions SET card_id=NULL WHERE session_id=${SESSION}`;
   });
 });
