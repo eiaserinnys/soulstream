@@ -7,10 +7,15 @@ import type { AgentProfile } from "../../src/agent_registry.js";
 import { composeSessionIsolation } from
   "../../src/runtime/session_isolation_composition.js";
 import type { Env } from "../../src/config.js";
-import { createRunnerProcessRuntimeFactory } from
-  "../../src/runner/runner_process_runtime_factory.js";
+import {
+  createRunnerProcessRuntimeFactory,
+  spawnInputFromConfig,
+} from "../../src/runner/runner_process_runtime_factory.js";
 import type { PreparedRunnerIsolation, RunnerIsolationHost } from
   "../../src/runner/runner_process_isolation.js";
+import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import { verifyFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { SessionIsolationSpec } from
   "../../src/security/session_isolation_contract.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -68,6 +73,7 @@ function runnerEnv() {
     CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 135_000,
     MCP_INTERNAL_PORT: 4308,
     MCP_PATH: "/mcp",
+    AUTH_BEARER_TOKEN: HOST_BEARER,
     OPENCODE_CLI_PATH: undefined,
   };
 }
@@ -143,7 +149,7 @@ function makeFactory(options: {
   isolationHost?: RunnerIsolationHost;
   childProcessEnv?: NodeJS.ProcessEnv;
   resolvedMcpServers?: readonly unknown[];
-  backend?: "claude" | "codex" | "opencode";
+  backend?: "claude" | "codex" | "opencode" | "antigravity";
   turnAgent?: AgentProfile;
 }) {
   const spawn = vi.fn(async () => {
@@ -284,43 +290,77 @@ describe("runner process factory restricted wiring", () => {
     expect(isolation.spec.authKind).toBe("claude-oauth-token");
   });
 
-  it("keeps the full baseline untouched and never prepares isolation", async () => {
-    const prepare = vi.fn(async () => makePrepared());
-    const childProcessEnv = {
-      AUTH_BEARER_TOKEN: HOST_BEARER,
-      DATABASE_URL: HOST_DATABASE_URL,
-      PATH: "/usr/bin",
-    };
-    const mcpServers = [{ type: "stdio", command: "/mcp" }];
-    const { runtime, spawn } = makeFactory({
-      task: makeTask({
-        executionSecurity: {
-          sessionId: "session-restricted",
-          tier: "full",
-          policyVersion: 1,
-          reason: "trusted",
-          presetId: "claude-opus",
+  it.each(["claude", "codex", "antigravity"] as const)(
+    "gives a full %s session its own credential and never prepares isolation",
+    async (backend) => {
+      const sessionId = "11111111-1111-4111-8111-111111111111";
+      const prepare = vi.fn(async () => makePrepared());
+      const childProcessEnv = {
+        AUTH_BEARER_TOKEN: HOST_BEARER,
+        PORTABLE_LOCAL_MCP_AUTHORIZATION: HOST_BEARER,
+        DATABASE_URL: HOST_DATABASE_URL,
+        PATH: "/usr/bin",
+      };
+      const mcpServers = [
+        {
+          name: "soulstream",
+          type: "streamable_http" as const,
+          url: "http://127.0.0.1:3105/mcp",
+          headers: { Authorization: `Bearer ${HOST_BEARER}` },
         },
-      }),
-      isolationHost: { prepare },
-      childProcessEnv,
-      resolvedMcpServers: mcpServers,
-    });
+        { name: "local", type: "stdio" as const, command: "/mcp" },
+      ];
+      const { runtime, spawn } = makeFactory({
+        task: makeTask({
+          agentSessionId: sessionId,
+          executionSecurity: {
+            sessionId,
+            tier: "full",
+            policyVersion: 1,
+            reason: "trusted",
+            presetId: "claude-opus",
+          },
+        }),
+        isolationHost: { prepare },
+        childProcessEnv,
+        resolvedMcpServers: mcpServers,
+        backend,
+        turnAgent: { ...agent, id: `${backend}-full`, backend },
+      });
 
-    await expect(runtime.dispatcher.prepareSession("session-restricted"))
-      .rejects.toThrow("captured isolation spawn input");
+      await expect(runtime.dispatcher.prepareSession(sessionId))
+        .rejects.toThrow("captured isolation spawn input");
 
-    expect(prepare).not.toHaveBeenCalled();
-    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
-    expect(input.childProcessEnv).toEqual(childProcessEnv);
-    expect(input.isolation).toBeUndefined();
-    expect(input.resolvedMcpServers).toEqual(mcpServers);
-    expect(input.claudeAccountPool).toEqual({
-      enabled: true,
-      accountsDir: "/worker/claude-accounts",
-    });
-  });
+      expect(prepare).not.toHaveBeenCalled();
+      const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
+      expect(input.isolation).toBeUndefined();
+
+      const env = input.childProcessEnv as Record<string, string | undefined>;
+      const credential = env.AUTH_BEARER_TOKEN!;
+      expect(credential.startsWith("ssf1.")).toBe(true);
+      expect(verifyFullSessionMcpToken(credential, HOST_BEARER))
+        .toEqual({ ok: true, sessionId });
+      expect(env.PORTABLE_LOCAL_MCP_AUTHORIZATION).toBe(credential);
+      expect(env.DATABASE_URL).toBe(HOST_DATABASE_URL);
+      expect(env.PATH).toBe("/usr/bin");
+
+      const servers = input.resolvedMcpServers as Array<Record<string, unknown>>;
+      expect(servers[0]?.headers).toEqual({ Authorization: `Bearer ${credential}` });
+      expect(servers[1]).toEqual(mcpServers[1]);
+
+      // spawn 입력 어디에도 서비스 토큰 원문이 남지 않는다.
+      expect(JSON.stringify(input)).not.toContain(HOST_BEARER);
+      if (backend === "claude") {
+        expect(input.claudeAccountPool).toEqual({
+          enabled: true,
+          accountsDir: "/worker/claude-accounts",
+        });
+      } else {
+        expect(input.claudeAccountPool).toBeUndefined();
+      }
+    },
+  );
 
   it("fails the restricted turn instead of running full when no isolation host is wired", async () => {
     const { runtime, spawn } = makeFactory({ task: makeTask() });
@@ -387,6 +427,111 @@ describe("runner process factory restricted wiring", () => {
     expect(withHost.factory.isolationSupported).toBe(true);
     await expect(withHost.runtime.dispatcher.prepareSession("session-restricted"))
       .rejects.toThrow("captured isolation spawn input");
+  });
+});
+
+describe("runner process factory full session recovery", () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+
+  function childConfig(): RunnerChildConfig {
+    return parseRunnerChildConfig({
+      schemaVersion: 1,
+      sessionId,
+      backend: "claude",
+      agent: {
+        id: "claude-full",
+        name: "Full Agent",
+        backend: "claude",
+        workspace_dir: "/workspace/full",
+      },
+      paths: {
+        sessionDirectory: `/runner/${sessionId}`,
+        databasePath: `/runner/${sessionId}/runner.sqlite`,
+        socketPath: `/runner/${sessionId}/runner.sock`,
+        pidPath: `/runner/${sessionId}/runner.pid`,
+        lockPath: `/runner/${sessionId}/runner.lock`,
+        configPath: `/runner/${sessionId}/runner-config.json`,
+        logPath: `/runner/${sessionId}/runner.log`,
+      },
+      codeSha: "sha-recover",
+      snapshotPath: "/release/sha-recover/soul-server-ts",
+      codexAdapterMode: "sdk",
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 600_000,
+      claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4307/mcp/internal",
+      codexHome: "/home/test/.codex",
+      rolloutRoot: "/home/test/.codex/sessions",
+      resolvedMcpServers: [
+        {
+          name: "soulstream-cogito",
+          type: "streamable_http",
+          url: "http://127.0.0.1:3105/mcp/cogito",
+          headers: { Authorization: `Bearer ${HOST_BEARER}` },
+        },
+      ],
+    });
+  }
+
+  it("re-spawns a recovered full session with its own credential", () => {
+    const config = childConfig();
+    const releasePool = {
+      describe: vi.fn(() => ({
+        releaseId: "sha-recover",
+        releaseRoot: "/release/sha-recover",
+        runnerModuleRoot: "/release/sha-recover/soul-server-ts",
+      })),
+      ensureRelease: vi.fn(async () => undefined),
+    };
+    const input = spawnInputFromConfig(
+      "/runner",
+      config,
+      90_000,
+      releasePool,
+      { internalMcpUrl: config.internalMcpUrl, resolvedMcpServers: config.resolvedMcpServers },
+      {
+        hostBearerToken: HOST_BEARER,
+        buildChildProcessEnv: () => ({
+          AUTH_BEARER_TOKEN: HOST_BEARER,
+          PORTABLE_LOCAL_MCP_AUTHORIZATION: HOST_BEARER,
+          PATH: "/usr/bin",
+        }),
+      },
+    );
+
+    const env = input.childProcessEnv!;
+    const credential = env.AUTH_BEARER_TOKEN!;
+    expect(verifyFullSessionMcpToken(credential, HOST_BEARER))
+      .toEqual({ ok: true, sessionId });
+    expect(env.PORTABLE_LOCAL_MCP_AUTHORIZATION).toBe(credential);
+    expect(env.PATH).toBe("/usr/bin");
+    const servers = input.resolvedMcpServers as Array<Record<string, unknown>>;
+    expect(servers[0]?.headers).toEqual({ Authorization: `Bearer ${credential}` });
+    expect(JSON.stringify(input)).not.toContain(HOST_BEARER);
+  });
+
+  it("does not add an env or touch MCP servers when no full session transform is given", () => {
+    const config = childConfig();
+    const releasePool = {
+      describe: vi.fn(() => ({
+        releaseId: "sha-recover",
+        releaseRoot: "/release/sha-recover",
+        runnerModuleRoot: "/release/sha-recover/soul-server-ts",
+      })),
+      ensureRelease: vi.fn(async () => undefined),
+    };
+    const input = spawnInputFromConfig(
+      "/runner",
+      config,
+      90_000,
+      releasePool,
+      { internalMcpUrl: config.internalMcpUrl, resolvedMcpServers: config.resolvedMcpServers },
+    );
+    expect(input.childProcessEnv).toBeUndefined();
+    expect(input.resolvedMcpServers).toBe(config.resolvedMcpServers);
   });
 });
 

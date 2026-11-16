@@ -33,9 +33,14 @@ export type RestrictedAuthKind =
   | "apikey-env"
   | "unavailable";
 
-/** 내부 MCP가 보는 세션의 신원. 토큰 원문은 담지 않는다. */
+/**
+ * 내부 MCP가 보는 세션의 신원. 토큰 원문은 담지 않는다.
+ *
+ * full은 서비스 토큰(세션 ID 없음)과 full 세션 토큰(세션 ID 있음) 둘을 받는다.
+ * 등급과 도구 범위는 같고, 신원만 다르다.
+ */
 export type McpPrincipal =
-  | { tier: "full" }
+  | { tier: "full"; sessionId?: string }
   | { tier: "restricted"; sessionId: string };
 
 export type IsolationBackend = "claude" | "codex" | "opencode" | "antigravity";
