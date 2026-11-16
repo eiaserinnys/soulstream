@@ -3,6 +3,21 @@ import type { McpToolDefinition } from "./tool_definitions.js";
 import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
 import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 const ReasoningEffortToolSchema = z.enum(MODEL_REASONING_EFFORTS);
+const AgentAliasToolSchema = z.union([
+  z.string().min(1),
+  z.object({
+    id: z.string().min(1),
+    default_preset: z.string().min(1).optional(),
+  }),
+]);
+const AgentAtomContextToolSchema = z.object({
+  node_id: z.string().min(1),
+  depth: z.number().int().min(0).optional(),
+  titles_only: z.boolean().optional(),
+  include_ids: z.boolean().optional(),
+  mode: z.enum(["full", "index", "titles"]).optional(),
+  applies_when: z.record(z.string(), z.unknown()).optional(),
+});
 
 export const clusterTools = {
   list_nodes: { name: "list_nodes", audience: "all", config: {
@@ -10,8 +25,34 @@ export const clusterTools = {
       inputSchema: {},
     } },
   list_node_agents: { name: "list_node_agents", audience: "all", config: {
-      description: "특정 노드의 에이전트 목록 조회.",
+      description: "특정 노드의 에이전트 목록 조회. source는 이름·별칭·기본 프리셋이 중앙 프로필(db)에서 왔는지 노드 agents.yaml(yaml)에서 왔는지 보인다.",
       inputSchema: { node_id: z.string().min(1) },
+    } },
+  get_central_agent_profile: { name: "get_central_agent_profile", audience: "internal", config: {
+      description:
+        "오케스트레이터 DB의 중앙 에이전트 프로필을 조회한다. 행이 있으면 그 값이 노드 agents.yaml의 같은 칸(name, aliases, default_preset, context_bundles, atom_contexts)을 덮는다. agent_id를 빼면 모든 행의 요약을 돌려준다.",
+      inputSchema: { agent_id: z.string().min(1).optional() },
+    } },
+  update_central_agent_profile: { name: "update_central_agent_profile", audience: "internal", config: {
+      description:
+        "오케스트레이터 DB의 중앙 에이전트 프로필을 갱신한다. 받은 칸만 덮어쓴다. expected_version이 null이면 새 행을 만든다(이때 name 필수). 행이 있으면 이 값이 노드 agents.yaml의 같은 칸을 덮는다.",
+      inputSchema: {
+        agent_id: z.string().min(1),
+        expected_version: z.number().int().positive().nullable(),
+        name: z.string().min(1).optional(),
+        default_preset: z.string().nullable().optional(),
+        aliases: z.array(AgentAliasToolSchema).optional(),
+        context_bundles: z.array(z.string().min(1)).optional(),
+        atom_contexts: z.array(AgentAtomContextToolSchema).optional(),
+      },
+    } },
+  delete_central_agent_profile: { name: "delete_central_agent_profile", audience: "internal", config: {
+      description:
+        "오케스트레이터 DB의 중앙 에이전트 프로필 행을 지운다. 행이 있으면 그 값이 노드 agents.yaml의 같은 칸을 덮었으므로, 지우면 그 칸은 다시 agents.yaml이 정본이 된다.",
+      inputSchema: {
+        agent_id: z.string().min(1),
+        expected_version: z.number().int().positive(),
+      },
     } },
   list_node_model_presets: { name: "list_node_model_presets", audience: "all", config: {
       description:

@@ -15,6 +15,9 @@ import type { CardRouteBodyOptions } from "../cards/card_route_body.js";
 import type { FolderAccess } from "../folders/folder_route_access.js";
 import type { FlatFolderContentHost } from "../board/flat_folder_content_host.js";
 import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
+import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
+import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
@@ -49,6 +52,12 @@ export interface McpHostOptions {
   cluster: {
     nodes: NodeSnapshotRouteOptions;
     nodeAgentProfiles: NodeAgentProfileRouteOptions;
+    /** 중앙 에이전트 프로필 도구가 직접 부르는 저장소. HTTP 라우트를 거치지 않는다. */
+    centralAgentProfiles: {
+      repository: AgentProfileRepository;
+      bundleRepository: ContextBundleRepository;
+      modelCatalog?: ModelCatalogSource;
+    };
     cogito: CogitoRouteOptions;
     sessions: SessionCommandRouteOptions;
     readSession(sessionId: string): Promise<{ folder_id?: string | null } | null>;

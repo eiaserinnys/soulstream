@@ -119,9 +119,50 @@ describe("AgentConfigService", () => {
       name: "Changed in YAML",
       backend: "codex",
       workspace_dir: "/tmp/codex",
-    })).rejects.toThrow("identity fields are owned by the DB overlay: name");
+    })).rejects.toThrow(
+      "identity fields are owned by the central profile: name. Use update_central_agent_profile to change them.",
+    );
 
     expect(fs.readFileSync(configPath, "utf-8")).toContain("name: Codex");
+  });
+
+  it("allows deleting YAML identity fields when a central profile owns the profile", async () => {
+    fs.writeFileSync(
+      configPath,
+      [
+        "agents:",
+        "  - id: codex-default",
+        "    name: Codex",
+        "    backend: codex",
+        "    workspace_dir: /tmp/codex",
+        "    default_preset: claude-opus",
+        "    aliases:",
+        "      - codex-opus",
+        "    atom_contexts:",
+        "      - node_id: 11111111-1111-4111-8111-111111111111",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      isDbIdentityOwnedProfile: (profileId) => profileId === "codex-default",
+    });
+
+    const result = await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+
+    expect(result.changed).toBe(true);
+    const written = fs.readFileSync(configPath, "utf-8");
+    expect(written).not.toContain("default_preset");
+    expect(written).not.toContain("aliases");
+    expect(written).not.toContain("atom_contexts");
   });
 
   it("notifies after registry reload when a profile apply changes config", async () => {

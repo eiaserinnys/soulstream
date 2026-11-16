@@ -76,6 +76,9 @@
       "category": "guarded",
       "guard": "worktree-create"
     },
+    "delete_central_agent_profile": {
+      "category": "deny"
+    },
     "delete_folder": {
       "category": "deny"
     },
@@ -111,6 +114,9 @@
       "category": "allow"
     },
     "get_card_orchestration_settings": {
+      "category": "allow"
+    },
+    "get_central_agent_profile": {
       "category": "allow"
     },
     "get_claude_background_task_output": {
@@ -414,6 +420,9 @@
       "category": "allow"
     },
     "update_card_orchestration_settings": {
+      "category": "deny"
+    },
+    "update_central_agent_profile": {
       "category": "deny"
     },
     "update_markdown_document": {

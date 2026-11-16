@@ -609,6 +609,7 @@ describe("live provider factory boundary", () => {
         portrait_url: undefined,
         max_turns: undefined,
         backend: "codex",
+        source: "yaml",
       },
     });
     await expect(

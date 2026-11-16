@@ -1941,7 +1941,7 @@
     "title": "Soulstream 카드 새로고침"
   },
   {
-    "description": "특정 노드의 에이전트 목록 조회.",
+    "description": "특정 노드의 에이전트 목록 조회. source는 이름·별칭·기본 프리셋이 중앙 프로필(db)에서 왔는지 노드 agents.yaml(yaml)에서 왔는지 보인다.",
     "execution": {
       "taskSupport": "forbidden"
     },

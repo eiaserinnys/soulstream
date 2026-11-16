@@ -310,7 +310,7 @@ exports[`cluster MCP roundtrip > preserves list agents > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"agents\\": [\\n    {\\n      \\"id\\": \\"roselin\\",\\n      \\"name\\": \\"로젤린\\",\\n      \\"portraitUrl\\": \\"\\",\\n      \\"max_turns\\": null,\\n      \\"backend\\": \\"codex\\",\\n      \\"default_preset\\": \\"sol\\"\\n    }\\n  ]\\n}"
+      "text": "{\\n  \\"agents\\": [\\n    {\\n      \\"id\\": \\"roselin\\",\\n      \\"name\\": \\"로젤린\\",\\n      \\"portraitUrl\\": \\"\\",\\n      \\"max_turns\\": null,\\n      \\"backend\\": \\"codex\\",\\n      \\"default_preset\\": \\"sol\\",\\n      \\"source\\": \\"yaml\\"\\n    }\\n  ]\\n}"
     }
   ],
   "structuredContent": {
@@ -321,7 +321,8 @@ exports[`cluster MCP roundtrip > preserves list agents > result 1`] = `
         "portraitUrl": "",
         "max_turns": null,
         "backend": "codex",
-        "default_preset": "sol"
+        "default_preset": "sol",
+        "source": "yaml"
       }
     ]
   }

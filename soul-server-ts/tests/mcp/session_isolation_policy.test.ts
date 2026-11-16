@@ -1,7 +1,7 @@
 /**
  * restricted 실행 정책 정본(§4) 검증.
  *
- * 143 도구의 분류(101/35/6/1), inventory fixture와의 전수 일치, digest 안정성,
+ * 146 도구의 분류(102/37/6/1), inventory fixture와의 전수 일치, digest 안정성,
  * 잘못된 정책의 거부, loader의 실패 처리(빈 정책 fallback 금지), 번들 인라인
  * 기본 provider와 리포 JSON의 동일성.
  */
@@ -43,20 +43,20 @@ function namesByCategory(policy: { tools: Record<string, { category: string }> }
 }
 
 describe("session isolation policy canonical file", () => {
-  it("classifies all 143 inventory tools exactly once (101 allow / 35 deny / 6 guarded / 1 inherit)", () => {
+  it("classifies all 146 inventory tools exactly once (102 allow / 37 deny / 6 guarded / 1 inherit)", () => {
     const policy = parseIsolationPolicy(rawPolicy);
     const names = Object.keys(policy.tools).sort();
 
-    expect(names).toHaveLength(143);
+    expect(names).toHaveLength(146);
     expect(names).toEqual([...fixtureNames].sort());
-    expect(namesByCategory(policy, "allow")).toHaveLength(101);
-    expect(namesByCategory(policy, "deny")).toHaveLength(35);
+    expect(namesByCategory(policy, "allow")).toHaveLength(102);
+    expect(namesByCategory(policy, "deny")).toHaveLength(37);
     expect(namesByCategory(policy, "guarded")).toHaveLength(6);
     expect(namesByCategory(policy, "inherit")).toHaveLength(1);
 
     const categories = ["allow", "deny", "guarded", "inherit"] as const;
     const buckets = categories.map((category) => new Set(namesByCategory(policy, category)));
-    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(143);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(146);
     for (let left = 0; left < buckets.length; left += 1) {
       for (let right = left + 1; right < buckets.length; right += 1) {
         const intersection = [...buckets[left]].filter((name) => buckets[right].has(name));
@@ -76,6 +76,9 @@ describe("session isolation policy canonical file", () => {
     expect(policy.tools["send_message_to_session"]).toEqual({ category: "guarded", guard: "message-recipient" });
     expect(policy.tools["create_agent_session"]).toEqual({ category: "inherit", guard: "create-local-session" });
     expect(policy.tools["observe_node_services"]).toEqual({ category: "allow" });
+    expect(policy.tools["get_central_agent_profile"]).toEqual({ category: "allow" });
+    expect(policy.tools["update_central_agent_profile"]).toEqual({ category: "deny" });
+    expect(policy.tools["delete_central_agent_profile"]).toEqual({ category: "deny" });
   });
 
   it("keeps digest stable across key order and changes it when a classification changes", () => {

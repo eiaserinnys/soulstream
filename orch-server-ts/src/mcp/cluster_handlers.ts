@@ -4,8 +4,18 @@ import { clusterTools, errorResult, jsonResult, readOrchErrorEnvelopeText, type 
 import { SERVICE_CALLER } from "../auth/service_caller.js";
 import { executeNodeSnapshotRoute } from "../node/node_snapshot_routes.js";
 import { executeNodeAgentProfileRoute } from "../node/node_agent_profile_routes.js";
+import {
+  AgentProfileVersionConflictError,
+  loadContextBundlesById,
+  parseAgentProfilePatch,
+  resolveAgentProfileWrite,
+  unknownContextBundles,
+  type AgentProfilePatch,
+  type AgentProfileRecord,
+} from "../node/agent_profile_routes.js";
 import { executeCogitoBriefRoute } from "../cogito/cogito_routes.js";
 import { executeCreateSessionRoute } from "../session/session_command_routes.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -57,11 +67,109 @@ const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapsh
   () => executeNodeAgentProfileRoute(o.cluster.nodeAgentProfiles, operation, String(a.node_id), JSON.parse(JSON.stringify(body(a))))));
 const profileBody = (a: Args) => ({ profile: a.profile, create_if_missing: a.create_if_missing ?? false, include_text_diff: a.include_text_diff ?? a.includeTextDiff ?? false });
 
+function projectCentralAgentProfile(profile: AgentProfileRecord): Record<string, unknown> {
+  return {
+    exists: true,
+    agent_id: profile.agentId,
+    name: profile.name,
+    default_preset: profile.defaultPreset,
+    aliases: profile.aliases,
+    context_bundles: profile.contextBundles,
+    atom_contexts: profile.atomContexts,
+    has_portrait: profile.hasPortrait,
+    version: profile.version,
+    created_at: profile.createdAt,
+    updated_at: profile.updatedAt,
+  };
+}
+
+function centralProfileConflict(agentId: string, current: AgentProfileRecord | null): CallToolResult {
+  if (current === null) {
+    return errorResult(`Agent profile "${agentId}" does not exist; pass expected_version null to create it`, {
+      code: "agent_profile_version_conflict",
+    });
+  }
+  return errorResult(
+    `Agent profile "${agentId}" changed: current version is ${current.version}. Retry with expected_version ${current.version}.`,
+    { code: "agent_profile_version_conflict", details: { current_version: current.version } },
+  );
+}
+
+/** 호출자가 이번에 보낸 default_preset id만 카탈로그와 견준다. 기존 행의 낡은 값은 건드리지 않는다. */
+function unknownPresetIds(patch: AgentProfilePatch, modelCatalog: ModelCatalogSource): string[] {
+  const known = new Set(modelCatalog.snapshot().presets.map((preset) => preset.id));
+  const supplied = [
+    ...(typeof patch.defaultPreset === "string" ? [patch.defaultPreset] : []),
+    ...(patch.aliases ?? []).flatMap((alias) =>
+      typeof alias === "string" || alias.default_preset === undefined ? [] : [alias.default_preset]),
+  ];
+  return supplied.filter((id) => !known.has(id));
+}
+
 export const clusterHandlers = {
   list_nodes: o => run(() => request("GET", "/api/nodes", async () => ({ status: 200, body: executeNodeSnapshotRoute(o.cluster.nodes) }))),
   reflect_cluster_brief: o => run(() => request("GET", "/cogito/briefs", () => executeCogitoBriefRoute(o.cluster.cogito, {}))),
   list_node_agents: node("agents", "agents", "GET"),
   list_node_model_presets: node("model-presets", "model-presets", "GET"),
+  get_central_agent_profile: (o, a) => run(async () => {
+    const { repository } = o.cluster.centralAgentProfiles;
+    if (a.agent_id === undefined) {
+      const profiles = await repository.list();
+      return { profiles: profiles.map((profile) => ({
+        agent_id: profile.agentId,
+        name: profile.name,
+        default_preset: profile.defaultPreset,
+        version: profile.version,
+        updated_at: profile.updatedAt,
+      })) };
+    }
+    const profile = await repository.get(String(a.agent_id));
+    return profile === null ? { exists: false } : projectCentralAgentProfile(profile);
+  }),
+  update_central_agent_profile: async (o, a) => {
+    const agentId = String(a.agent_id);
+    const { repository, bundleRepository, modelCatalog } = o.cluster.centralAgentProfiles;
+    const parsed = parseAgentProfilePatch(a);
+    if (!parsed.ok) return errorResult(parsed.error);
+    try {
+      const current = parsed.value.expectedVersion === null ? null : await repository.get(agentId);
+      if (parsed.value.expectedVersion !== null && current === null) {
+        return centralProfileConflict(agentId, null);
+      }
+      const write = resolveAgentProfileWrite(agentId, parsed.value, current);
+      if (!write.ok) return errorResult(write.error);
+      const bundlesById = await loadContextBundlesById(bundleRepository);
+      const unknownBundles = unknownContextBundles(write.value.contextBundles, bundlesById);
+      if (unknownBundles.length > 0) {
+        return errorResult(`unknown context bundles: ${unknownBundles.join(", ")}`);
+      }
+      const unknownPresets = modelCatalog === undefined ? [] : unknownPresetIds(parsed.value, modelCatalog);
+      if (unknownPresets.length > 0) {
+        return errorResult(`unknown model presets: ${unknownPresets.join(", ")}`, { code: "MODEL_PRESET_NOT_FOUND" });
+      }
+      return jsonResult(projectCentralAgentProfile(await repository.put(write.value)));
+    } catch (error) {
+      if (error instanceof AgentProfileVersionConflictError) {
+        return centralProfileConflict(agentId, await repository.get(agentId));
+      }
+      return errorResult(error instanceof Error ? error.message : String(error));
+    }
+  },
+  delete_central_agent_profile: async (o, a) => {
+    const agentId = String(a.agent_id);
+    const { repository } = o.cluster.centralAgentProfiles;
+    try {
+      const deleted = await repository.delete(agentId, Number(a.expected_version));
+      return deleted
+        ? jsonResult({ agent_id: agentId, deleted: true })
+        : errorResult(`Agent profile "${agentId}" not found`);
+    } catch (error) {
+      if (error instanceof AgentProfileVersionConflictError) {
+        return centralProfileConflict(agentId, await repository.get(agentId));
+      }
+      return errorResult(error instanceof Error ? error.message : String(error));
+    }
+  },
   plan_remote_agent_profile_update: node("plan", "agents/config/plan-profile-update", "POST", profileBody),
   apply_remote_agent_profile_update: node("apply", "agents/config/apply-profile-update", "POST", a => ({ ...profileBody(a), expected_config_checksum: a.expected_config_checksum ?? a.expectedConfigChecksum })),
   list_remote_agents_config_snapshots: node("snapshots", "agents/config/snapshots", "GET"),

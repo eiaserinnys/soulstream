@@ -95,8 +95,9 @@ export async function createClusterRoundtripFixture() {
   attach();
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   // The legacy node fixture omits later availability metadata; preserve its wire payload.
+  const agentProfileRepository = { list: async () => [], getPortrait: async () => null };
   const nodeAgentProfiles = { ...createLiveNodeAgentProfileRouteProviders({ registry, bridge,
-    nodeHttpClient: { requestNode: async () => { throw new Error("unused HTTP"); } }, agentProfileRepository: { list: async () => [], getPortrait: async () => null },
+    nodeHttpClient: { requestNode: async () => { throw new Error("unused HTTP"); } }, agentProfileRepository,
   }).nodeAgentProfileRoutes, modelPresetProvider: { listForNode: (id: string) => id === "node-a" ? registration.model_presets as unknown as import("../../../orch-server-ts/src/model/model_preset_availability.js").ModelPresetAvailability[] : undefined } };
   const cogito = createLiveCogitoRouteProviders({ registry, bridge, searchProvider: {} as never }).cogitoRoutes;
   const snapshotService = new NodeSnapshotService({ registry });
@@ -130,7 +131,12 @@ export async function createClusterRoundtripFixture() {
       const email = callerEmail(id);
       return email ? { ownerEmail: email, callerInfo: { source: "browser", email } } : null;
     },
-    cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: { warn: recurring.changeWarn } },
+    cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: { warn: recurring.changeWarn },
+      centralAgentProfiles: {
+        repository: agentProfileRepository as never,
+        bundleRepository: { list: async () => [] } as never,
+        modelCatalog: { snapshot: () => ({ presets: [] }) } as never,
+      } },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     folders: { authBearerToken: "service-token", nodeCredentials: null, serviceProvider: async () => { throw new Error("unused folders"); } } };
 
