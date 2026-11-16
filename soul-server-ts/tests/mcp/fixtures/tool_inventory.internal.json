@@ -2357,6 +2357,35 @@
     "annotations": {
       "destructiveHint": true
     },
+    "description": "오케스트레이터 DB의 중앙 에이전트 프로필 행을 지운다. 행이 있으면 그 값이 노드 agents.yaml의 같은 칸을 덮었으므로, 지우면 그 칸은 다시 agents.yaml이 정본이 된다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agent_id",
+        "expected_version"
+      ],
+      "type": "object"
+    },
+    "name": "delete_central_agent_profile"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true
+    },
     "description": "폴더 삭제.",
     "execution": {
       "taskSupport": "forbidden"
@@ -2761,6 +2790,23 @@
       "type": "object"
     },
     "name": "get_card_orchestration_settings"
+  },
+  {
+    "description": "오케스트레이터 DB의 중앙 에이전트 프로필을 조회한다. 행이 있으면 그 값이 노드 agents.yaml의 같은 칸(name, aliases, default_preset, context_bundles, atom_contexts)을 덮는다. agent_id를 빼면 모든 행의 요약을 돌려준다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_central_agent_profile"
   },
   {
     "description": "Claude Agent SDK background task 출력 또는 요약을 조회한다.",
@@ -3658,7 +3704,7 @@
     "name": "list_mcp_registry"
   },
   {
-    "description": "특정 노드의 에이전트 목록 조회.",
+    "description": "특정 노드의 에이전트 목록 조회. source는 이름·별칭·기본 프리셋이 중앙 프로필(db)에서 왔는지 노드 agents.yaml(yaml)에서 왔는지 보인다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -8896,6 +8942,128 @@
       "type": "object"
     },
     "name": "update_card_orchestration_settings"
+  },
+  {
+    "description": "오케스트레이터 DB의 중앙 에이전트 프로필을 갱신한다. 받은 칸만 덮어쓴다. expected_version이 null이면 새 행을 만든다(이때 name 필수). 행이 있으면 이 값이 노드 agents.yaml의 같은 칸을 덮는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "default_preset": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "atom_contexts": {
+          "items": {
+            "properties": {
+              "applies_when": {
+                "additionalProperties": {},
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "depth": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "include_ids": {
+                "type": "boolean"
+              },
+              "mode": {
+                "enum": [
+                  "full",
+                  "index",
+                  "titles"
+                ],
+                "type": "string"
+              },
+              "node_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "titles_only": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "node_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "context_bundles": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default_preset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_version": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "expected_version"
+      ],
+      "type": "object"
+    },
+    "name": "update_central_agent_profile"
   },
   {
     "description": "마크다운 문서 제목 또는 본문 수정.",

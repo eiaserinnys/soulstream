@@ -288,10 +288,15 @@ export class AgentConfigService {
         "atom_contexts",
         "aliases",
         "default_preset",
-      ] as const).filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+      ] as const).filter((key) => {
+        // 중앙 프로필이 소유한 칸을 YAML에서 지우는 것은 허용한다(행이 정본이라는 뜻).
+        // name은 스키마 필수라 지워질 수 없으므로 값 비교로 간다.
+        if (after[key] === undefined) return false;
+        return JSON.stringify(before[key]) !== JSON.stringify(after[key]);
+      });
       if (changed.length > 0) {
         throw new Error(
-          `Agent profile "${before.id}" identity fields are owned by the DB overlay: ${changed.join(", ")}`,
+          `Agent profile "${before.id}" identity fields are owned by the central profile: ${changed.join(", ")}. Use update_central_agent_profile to change them.`,
         );
       }
     }

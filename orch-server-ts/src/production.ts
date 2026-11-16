@@ -1306,6 +1306,7 @@ export function buildProductionRouteOptions(
         cluster: {
           nodes: providers.runtime.nodeSnapshotRoutes,
           nodeAgentProfiles: providers.nodeAgentProfileRoutes,
+          centralAgentProfiles: { ...providers.agentProfileRoutes, modelCatalog: providers.modelCatalog },
           cogito: providers.cogitoRoutes,
           sessions: providers.runtime.sessionCommandRoutes,
           readSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),

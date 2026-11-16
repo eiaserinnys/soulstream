@@ -51,6 +51,16 @@ export type AgentProfileWrite = {
   readonly expectedVersion: number | null;
 };
 
+/** 입력에 실제로 담긴 칸만 담는다. 빠진 칸은 기존 행 값을 유지한다. */
+export type AgentProfilePatch = {
+  readonly name?: string;
+  readonly contextBundles?: readonly string[];
+  readonly atomContexts?: readonly AgentAtomContext[];
+  readonly defaultPreset?: string | null;
+  readonly aliases?: readonly AgentAlias[];
+  readonly expectedVersion: number | null;
+};
+
 export type AgentPortraitWrite = {
   readonly agentId: string;
   readonly body: Buffer;
@@ -110,9 +120,7 @@ export function registerAgentProfileRoutes(
   app: FastifyInstance,
   options: AgentProfileRouteOptions,
 ): void {
-  const loadBundlesById = async () => new Map(
-    (await options.bundleRepository.list()).map((bundle) => [bundle.bundleId, bundle]),
-  );
+  const loadBundlesById = () => loadContextBundlesById(options.bundleRepository);
 
   app.get("/api/agent-profiles", async (_request, reply) => {
     const [profiles, bundlesById] = await Promise.all([
@@ -142,7 +150,7 @@ export function registerAgentProfileRoutes(
     const parsed = parseProfileWrite(agentId(request), request.body);
     if (!parsed.ok) return reply.code(422).send({ detail: parsed.error });
     const bundlesById = await loadBundlesById();
-    const unknownBundles = parsed.value.contextBundles.filter((bundleId) => !bundlesById.has(bundleId));
+    const unknownBundles = unknownContextBundles(parsed.value.contextBundles, bundlesById);
     if (unknownBundles.length > 0) {
       return reply.code(422).send({ detail: `unknown context bundles: ${unknownBundles.join(", ")}` });
     }
@@ -248,29 +256,75 @@ export function expandAtomContexts(
   ];
 }
 
-function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<AgentProfileWrite> {
+export async function loadContextBundlesById(
+  repository: Pick<ContextBundleRepository, "list">,
+): Promise<ReadonlyMap<string, ContextBundleRecord>> {
+  return new Map((await repository.list()).map((bundle) => [bundle.bundleId, bundle]));
+}
+
+export function unknownContextBundles(
+  contextBundles: readonly string[],
+  bundlesById: ReadonlyMap<string, unknown>,
+): string[] {
+  return contextBundles.filter((bundleId) => !bundlesById.has(bundleId));
+}
+
+/** PUT 본문과 MCP 갱신 도구가 함께 쓰는 입력 해석. 빠진 칸은 담지 않는다. */
+export function parseAgentProfilePatch(body: unknown): ParseResult<AgentProfilePatch> {
   if (!isObject(body)) return invalid("Request body must be an object");
-  if (typeof body.name !== "string" || body.name.length === 0) return invalid("name is required");
-  const contexts = parseAtomContexts(body.atom_contexts);
-  if (!contexts.ok) return contexts;
-  const contextBundles = parseContextBundleIds(body.context_bundles);
-  if (!contextBundles.ok) return contextBundles;
-  const aliases = parseAliases(body.aliases);
-  if (!aliases.ok) return aliases;
+  if (body.name !== undefined && (typeof body.name !== "string" || body.name.length === 0)) {
+    return invalid("name is required");
+  }
+  const contexts = body.atom_contexts === undefined ? undefined : parseAtomContexts(body.atom_contexts);
+  if (contexts !== undefined && !contexts.ok) return contexts;
+  const contextBundles = body.context_bundles === undefined ? undefined : parseContextBundleIds(body.context_bundles);
+  if (contextBundles !== undefined && !contextBundles.ok) return contextBundles;
+  const aliases = body.aliases === undefined ? undefined : parseAliases(body.aliases);
+  if (aliases !== undefined && !aliases.ok) return aliases;
   if (body.default_preset !== null && body.default_preset !== undefined && typeof body.default_preset !== "string") {
     return invalid("default_preset must be a string or null");
   }
   const version = nullableExpectedVersion(body.expected_version);
   if (!version.ok) return version;
   return { ok: true, value: {
-    agentId: agentIdValue,
-    name: body.name,
-    contextBundles: contextBundles.value,
-    atomContexts: contexts.value,
-    defaultPreset: typeof body.default_preset === "string" ? body.default_preset : null,
-    aliases: aliases.value,
+    ...(typeof body.name === "string" ? { name: body.name } : {}),
+    ...(contexts !== undefined && contexts.ok ? { atomContexts: contexts.value } : {}),
+    ...(contextBundles !== undefined && contextBundles.ok ? { contextBundles: contextBundles.value } : {}),
+    ...(aliases !== undefined && aliases.ok ? { aliases: aliases.value } : {}),
+    ...(body.default_preset === null
+      ? { defaultPreset: null }
+      : typeof body.default_preset === "string" ? { defaultPreset: body.default_preset } : {}),
     expectedVersion: version.value,
   } };
+}
+
+/** 빠진 칸은 기존 행 값으로 채운다. 새 행(current null)이면 name이 필수이고 나머지는 기본값이다. */
+export function resolveAgentProfileWrite(
+  agentId: string,
+  patch: AgentProfilePatch,
+  current: AgentProfileRecord | null,
+): ParseResult<AgentProfileWrite> {
+  const name = patch.name ?? current?.name;
+  if (name === undefined) return invalid("name is required");
+  return { ok: true, value: {
+    agentId,
+    name,
+    contextBundles: patch.contextBundles ?? current?.contextBundles ?? [],
+    atomContexts: patch.atomContexts ?? current?.atomContexts ?? [],
+    defaultPreset: patch.defaultPreset === undefined ? current?.defaultPreset ?? null : patch.defaultPreset,
+    aliases: patch.aliases ?? current?.aliases ?? [],
+    expectedVersion: patch.expectedVersion,
+  } };
+}
+
+function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<AgentProfileWrite> {
+  const patch = parseAgentProfilePatch(body);
+  if (!patch.ok) return patch;
+  if (patch.value.name === undefined) return invalid("name is required");
+  // PUT은 전체 교체다. MCP 갱신 도구와 달리 이 두 칸은 빠짐없이 받는다.
+  if (patch.value.atomContexts === undefined) return invalid("atom_contexts must be an array");
+  if (patch.value.aliases === undefined) return invalid("aliases must be an array");
+  return resolveAgentProfileWrite(agentIdValue, patch.value, null);
 }
 
 function parsePortraitWrite(agentIdValue: string, body: unknown): ParseResult<AgentPortraitWrite> {

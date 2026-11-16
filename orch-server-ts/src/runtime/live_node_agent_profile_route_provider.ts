@@ -104,6 +104,7 @@ function createLiveNodeAgentProfileProvider(
               ? dbProfile.defaultPreset ?? undefined
               : agent.default_preset,
             aliases: dbProfile?.aliases,
+            source: dbProfile ? "db" : "yaml",
           } satisfies RawNodeAgentProfile];
         }),
       );

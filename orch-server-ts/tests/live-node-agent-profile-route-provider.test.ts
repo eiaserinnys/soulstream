@@ -38,15 +38,51 @@ describe("live node agent profile route provider", () => {
         portrait_url: "/api/agents/agent-a/portrait",
         max_turns: 8,
         backend: "codex",
+        source: "yaml",
       },
       "agent-b": {
         name: "Agent B",
         portrait_url: undefined,
         max_turns: undefined,
         backend: undefined,
+        source: "yaml",
       },
     });
     await expect(provider.listAgentProfiles("missing-node")).resolves.toBeUndefined();
+  });
+
+  it("marks agents backed by a central profile row as source db and overlays its identity fields", async () => {
+    const { provider } = createFixture({
+      agents: [{ id: "agent-a", name: "YAML Name", default_preset: "yaml-preset" }],
+      agentProfileRepository: {
+        list: async () => [{
+          agentId: "agent-a",
+          name: "DB Name",
+          contextBundles: [],
+          atomContexts: [],
+          defaultPreset: "db-preset",
+          aliases: ["agent-a-alias"],
+          hasPortrait: false,
+          portrait: null,
+          version: 2,
+          createdAt: "2026-11-15T00:00:00.000Z",
+          updatedAt: "2026-11-15T00:00:00.000Z",
+        }],
+        getPortrait: async () => null,
+      },
+    });
+
+    await expect(provider.listAgentProfiles("node-a")).resolves.toEqual({
+      "agent-a": {
+        name: "DB Name",
+        portrait_url: undefined,
+        max_turns: undefined,
+        backend: undefined,
+        default_preset: "db-preset",
+        aliases: ["agent-a-alias"],
+        source: "db",
+      },
+    });
   });
 
   it("returns cached registration portraits before hitting node HTTP", async () => {

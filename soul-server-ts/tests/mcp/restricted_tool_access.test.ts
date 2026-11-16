@@ -1,7 +1,7 @@
 /**
  * restricted principal의 실제 MCP 표면(§4) — raw HTTP로 확인한다.
  *
- * - tools/list는 deny를 빼고 allow+guarded+inherit만 노출한다(108).
+ * - tools/list는 deny를 빼고 allow+guarded+inherit만 노출한다(109).
  * - deny 도구의 tools/call은 handler를 한 번도 실행하지 않는다.
  * - guard 실패는 orchestrator 전달 전에 MCP_POLICY_DENIED로 끝난다.
  * - caller_session_id 선언 도구는 인증된 restricted 세션으로 강제된다.
@@ -170,15 +170,17 @@ describe("restricted MCP tool surface", () => {
     await harness.server.close();
   });
 
-  it("lists only allow, guarded and inherit tools (108)", async () => {
+  it("lists only allow, guarded and inherit tools (109)", async () => {
     const payload = await rpc(harness.baseUrl, sessionId, `Bearer ${TOKEN_A}`, {
       jsonrpc: "2.0", method: "tools/list", params: {}, id: 2,
     });
     const names: string[] = (payload.result?.tools ?? []).map((tool: { name: string }) => tool.name);
-    expect(names).toHaveLength(108);
-    for (const denied of ["delete_session", "run_card", "update_agent_profile", "dispatch_work"]) {
+    expect(names).toHaveLength(109);
+    for (const denied of ["delete_session", "run_card", "update_agent_profile", "dispatch_work",
+      "update_central_agent_profile", "delete_central_agent_profile"]) {
       expect(names).not.toContain(denied);
     }
+    expect(names).toContain("get_central_agent_profile");
     expect(names).toContain("observe_node_services");
     expect(names).toContain("send_message_to_session");
     expect(names).toContain("create_agent_session");
@@ -247,7 +249,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const restrictedNames: string[] = (restricted.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(restrictedNames).toHaveLength(108);
+      expect(restrictedNames).toHaveLength(109);
       expect(restrictedNames).not.toContain("delete_session");
 
       const full = await statelessRpc(harness.baseUrl, `Bearer ${KEY}`, {
@@ -256,7 +258,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const fullNames: string[] = (full.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(fullNames).toHaveLength(143);
+      expect(fullNames).toHaveLength(146);
       expect(fullNames).toContain("delete_session");
     } finally {
       if (harness.server.closeMcp) await harness.server.closeMcp();

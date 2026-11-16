@@ -12,6 +12,8 @@ export type RawNodeAgentProfile = {
   backend?: unknown;
   aliases?: unknown;
   default_preset?: unknown;
+  /** 정체성 칸이 중앙 프로필 행(db)에서 왔는지 agents.yaml(yaml)에서 왔는지. */
+  source?: unknown;
 };
 
 export type NodeAgentProfiles = Record<string, RawNodeAgentProfile>;
@@ -293,6 +295,7 @@ function projectAgentProfile(
     ...(typeof profile.default_preset === "string"
       ? { default_preset: profile.default_preset }
       : {}),
+    source: profile.source === "db" ? "db" : "yaml",
   };
 }
 

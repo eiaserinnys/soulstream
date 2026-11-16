@@ -207,6 +207,7 @@ describe("node agent/profile route harness", () => {
           max_turns: 8,
           backend: "claude",
           default_preset: "claude-opus",
+          source: "yaml",
         },
         {
           id: "agent-b",
@@ -214,6 +215,7 @@ describe("node agent/profile route harness", () => {
           portraitUrl: "",
           max_turns: null,
           backend: "codex",
+          source: "yaml",
         },
       ],
     });

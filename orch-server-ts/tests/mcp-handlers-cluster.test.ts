@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { recurringJobTools, type McpToolName } from "@soulstream/mcp-contract";
 import { PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
+import {
+  AgentProfileVersionConflictError,
+  type AgentProfileRecord,
+  type AgentProfileRepository,
+} from "../src/node/agent_profile_routes.js";
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "../src/mcp/types.js";
 import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
@@ -11,6 +16,76 @@ const context: McpCallContext = { principal: "internal", callerSessionId: "calle
 const remote = { node_id: "node-remote", agent_id: "roselin_codex", prompt: "delegate", caller_session_id: "caller-sess-1" };
 const createInput = { name: "music recommendation", prompt: "recommend music", idempotency_key: "recurring:create:1", timezone: "Asia/Seoul", schedule_expressions: ["0 9,12 * * 1-5"], node_id: "node-a", agent_id: "roselin", model_preset: null, folder_id: "folder-a", enabled: false };
 
+function centralProfileStore() {
+  const rows = new Map<string, AgentProfileRecord>();
+  const repository: AgentProfileRepository = {
+    snapshot: () => [...rows.values()],
+    list: async () => [...rows.values()],
+    get: async (agentId) => rows.get(agentId) ?? null,
+    put: async (input) => {
+      const current = rows.get(input.agentId);
+      const conflict = input.expectedVersion === null
+        ? current !== undefined
+        : current?.version !== input.expectedVersion;
+      if (conflict) throw new AgentProfileVersionConflictError(input.agentId);
+      const record: AgentProfileRecord = {
+        agentId: input.agentId,
+        name: input.name,
+        contextBundles: input.contextBundles,
+        atomContexts: input.atomContexts,
+        defaultPreset: input.defaultPreset,
+        aliases: input.aliases,
+        hasPortrait: false,
+        portrait: null,
+        version: (current?.version ?? 0) + 1,
+        createdAt: current?.createdAt ?? "2026-11-16T00:00:00.000Z",
+        updatedAt: "2026-11-16T00:00:00.000Z",
+      };
+      rows.set(record.agentId, record);
+      return record;
+    },
+    delete: async (agentId, expectedVersion) => {
+      const current = rows.get(agentId);
+      if (current === undefined) return false;
+      if (current.version !== expectedVersion) throw new AgentProfileVersionConflictError(agentId);
+      rows.delete(agentId);
+      return true;
+    },
+    getPortrait: async () => null,
+    putPortrait: async () => { throw new Error("putPortrait is not used"); },
+    deletePortrait: async () => null,
+  };
+  return {
+    rows,
+    deps: {
+      repository,
+      bundleRepository: { list: async () => [{ bundleId: "bundle-a" }] } as never,
+      modelCatalog: { snapshot: () => ({ presets: [{ id: "preset-a" }] }) } as never,
+    },
+  };
+}
+
+type CentralProfileStore = ReturnType<typeof centralProfileStore>;
+
+function seedCentralProfile(store: CentralProfileStore, overrides: Partial<AgentProfileRecord> = {}): AgentProfileRecord {
+  const record: AgentProfileRecord = {
+    agentId: "roselin",
+    name: "로젤린",
+    contextBundles: ["bundle-a"],
+    atomContexts: [],
+    defaultPreset: "preset-a",
+    aliases: [],
+    hasPortrait: false,
+    portrait: null,
+    version: 1,
+    createdAt: "2026-11-15T00:00:00.000Z",
+    updatedAt: "2026-11-15T00:00:00.000Z",
+    ...overrides,
+  };
+  store.rows.set(record.agentId, record);
+  return record;
+}
+
 function fixture() {
   const prepare = vi.fn(async ({ body }: { body: Record<string, unknown> }) => ({ payload: body }));
   const createSession = vi.fn((_payload: unknown) => ({ node: { nodeId: "node-remote" } }));
@@ -20,14 +95,16 @@ function fixture() {
     planAgentProfileUpdate: vi.fn(async () => ({})), applyAgentProfileUpdate: vi.fn(async () => ({})),
     listAgentsConfigSnapshots: vi.fn(async () => ({})), rollbackAgentsConfig: vi.fn(async () => ({})),
   };
+  const central = centralProfileStore();
   const readSession = vi.fn(async () => ({ folder_id: "caller-folder" }));
   const options = { cluster: {
     sessions: { router: { createSession }, bridge: { sendPendingCommand: send }, createSessionLifecycle: { prepare } },
     nodeAgentProfiles: { provider: profiles, modelPresetProvider: { listForNode: vi.fn(() => undefined) } },
+    centralAgentProfiles: central.deps,
     readSession, logger: { warn: vi.fn() },
   } } as unknown as McpHostOptions;
   const call = (name: McpToolName, args: Record<string, unknown>, c = context) => executeMcpTool(options, name, args, c);
-  return { options, call, prepare, createSession, send, profiles, readSession };
+  return { options, call, prepare, createSession, send, profiles, readSession, central };
 }
 
 describe("list_node_model_presets", () => {
@@ -177,6 +254,75 @@ describe("remote agent config tools", () => {
     f.profiles.rollbackAgentsConfig.mockResolvedValue(result);
     expect(await f.call("rollback_remote_agents_config", { node_id: "node-remote", snapshot_id: "snap.yaml", include_text_diff: true })).toMatchObject({ structuredContent: result });
     expect(f.profiles.rollbackAgentsConfig).toHaveBeenCalledWith("node-remote", { snapshotId: "snap.yaml", snapshotPath: undefined, includeTextDiff: true });
+  });
+});
+
+describe("central agent profile tools", () => {
+  it("reads one central row, reports a missing row, and lists row summaries", async () => {
+    const f = fixture();
+    seedCentralProfile(f.central);
+    expect(await f.call("get_central_agent_profile", { agent_id: "roselin" })).toMatchObject({
+      structuredContent: {
+        exists: true, agent_id: "roselin", name: "로젤린", default_preset: "preset-a",
+        context_bundles: ["bundle-a"], has_portrait: false, version: 1,
+      },
+    });
+    expect(await f.call("get_central_agent_profile", { agent_id: "missing" }))
+      .toMatchObject({ structuredContent: { exists: false } });
+    expect(await f.call("get_central_agent_profile", {})).toMatchObject({
+      structuredContent: { profiles: [{
+        agent_id: "roselin", name: "로젤린", default_preset: "preset-a", version: 1,
+        updated_at: "2026-11-15T00:00:00.000Z",
+      }] },
+    });
+  });
+
+  it("updates only supplied fields and creates a new row when expected_version is null", async () => {
+    const f = fixture();
+    seedCentralProfile(f.central);
+    expect(await f.call("update_central_agent_profile", { agent_id: "roselin", expected_version: 1, name: "로젤린 (중앙)" }))
+      .toMatchObject({ structuredContent: {
+        name: "로젤린 (중앙)", default_preset: "preset-a", context_bundles: ["bundle-a"], version: 2,
+      } });
+    expect(await f.call("update_central_agent_profile", { agent_id: "new-agent", expected_version: null }))
+      .toMatchObject({ isError: true, structuredContent: { error: "name is required" } });
+    expect(await f.call("update_central_agent_profile", {
+      agent_id: "new-agent", expected_version: null, name: "새 프로필", default_preset: null,
+    })).toMatchObject({ structuredContent: {
+      agent_id: "new-agent", name: "새 프로필", default_preset: null,
+      aliases: [], atom_contexts: [], context_bundles: [], version: 1,
+    } });
+  });
+
+  it("rejects unknown context bundles and unknown model presets", async () => {
+    const f = fixture();
+    seedCentralProfile(f.central);
+    expect(await f.call("update_central_agent_profile", { agent_id: "roselin", expected_version: 1, context_bundles: ["missing-bundle"] }))
+      .toMatchObject({ isError: true, structuredContent: { error: "unknown context bundles: missing-bundle" } });
+    expect(await f.call("update_central_agent_profile", { agent_id: "roselin", expected_version: 1, default_preset: "missing-preset" }))
+      .toMatchObject({ isError: true, structuredContent: { error: "unknown model presets: missing-preset", code: "MODEL_PRESET_NOT_FOUND" } });
+  });
+
+  it("answers a stale expected_version with the current version", async () => {
+    const f = fixture();
+    seedCentralProfile(f.central);
+    expect(await f.call("update_central_agent_profile", { agent_id: "roselin", expected_version: 7, name: "x" }))
+      .toMatchObject({ isError: true, structuredContent: {
+        code: "agent_profile_version_conflict", details: { current_version: 1 },
+      } });
+  });
+
+  it("deletes a row by version and refuses a stale delete", async () => {
+    const f = fixture();
+    seedCentralProfile(f.central);
+    expect(await f.call("delete_central_agent_profile", { agent_id: "roselin", expected_version: 7 }))
+      .toMatchObject({ isError: true, structuredContent: {
+        code: "agent_profile_version_conflict", details: { current_version: 1 },
+      } });
+    expect(await f.call("delete_central_agent_profile", { agent_id: "roselin", expected_version: 1 }))
+      .toMatchObject({ structuredContent: { agent_id: "roselin", deleted: true } });
+    expect(await f.call("get_central_agent_profile", { agent_id: "roselin" }))
+      .toMatchObject({ structuredContent: { exists: false } });
   });
 });
 

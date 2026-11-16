@@ -15,6 +15,7 @@ const clusterToolNames = [
   "update_recurring_job", "run_recurring_job", "archive_recurring_job", "list_recurring_job_runs",
   "get_card_orchestration_settings", "update_card_orchestration_settings",
   "list_nodes", "list_node_agents", "list_node_model_presets", "reflect_cluster_brief",
+  "get_central_agent_profile", "update_central_agent_profile", "delete_central_agent_profile",
   "plan_remote_agent_profile_update", "apply_remote_agent_profile_update",
   "list_remote_agents_config_snapshots", "rollback_remote_agents_config", "create_remote_agent_session",
 ] as const;
