@@ -7,6 +7,7 @@ import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
+import { listActiveTaskWorkspaceDirs } from "../../src/runtime/task_active_workspace_dirs.js";
 import {
   createInProcessTaskRunnerRuntime,
   createTaskRunnerRuntime,
@@ -499,6 +500,25 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(close).toHaveBeenCalledOnce();
     expect(task.runner).toBeUndefined();
     expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+  });
+
+  it("closes a runner with no open Claude query and releases its workspace", async () => {
+    const close = vi.fn(async () => undefined);
+    const childDispatcher = { invoke: vi.fn().mockResolvedValue(null), close };
+    const engine = new RunnerProcessEngineProxy("claude", "/workspace/a", childDispatcher as never);
+    const task = makeTask({ runner: createInProcessTaskRunnerRuntime(engine) });
+    const finalizer = makeFinalizer({
+      lifecycleTransition: { persistExecutorFinalState: vi.fn().mockResolvedValue({
+        newlyFinalized: true, terminalTransitionApplied: true,
+      }) },
+      logger: makeLogger(),
+    });
+
+    expect(listActiveTaskWorkspaceDirs([task], () => undefined)).toEqual(["/workspace/a"]);
+    await finalizer.finalize(task);
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(listActiveTaskWorkspaceDirs([task], () => undefined)).toEqual([]);
   });
 
   it("does not retain a Claude runner after its dispatcher confirms the closed-engine failure", async () => {

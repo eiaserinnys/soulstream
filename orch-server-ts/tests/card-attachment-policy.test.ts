@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createCardAttachmentPreparer } from "../src/attachments/card_attachment_source_import.js";
 import {
   assertAttachmentProducerTx,
+  requireCardAttachmentReuse,
   requireCardAttachmentTx,
   type TrustedAttachmentProducer,
 } from "../src/cards/card_attachment_policy.js";
@@ -118,6 +120,52 @@ describe("assertAttachmentProducerTx", () => {
       statusCode: 403,
       code: "ATTACHMENT_CARD_SCOPE_DENIED",
     });
+  });
+});
+
+describe("requireCardAttachmentReuse", () => {
+  it("accepts an agent's own asset and a user upload registered in the caller session", async () => {
+    for (const row of [
+      committedAsset(),
+      committedAsset({ owner_kind: "user_email", owner_key: "user@example.test", source_session_id: "session-owner", registration_scope: null }),
+      committedAsset({ owner_kind: "user_email", owner_key: "user@example.test", source_session_id: null, registration_scope: { type: "session", id: "session-owner" } }),
+    ]) {
+      const { sql } = fakeSql(() => [row]);
+      await expect(requireCardAttachmentReuse(sql, "session-owner", "asset-1")).resolves.toBeUndefined();
+    }
+  });
+
+  it("accepts another session on the same card and rejects unrelated sessions", async () => {
+    const asset = committedAsset({ owner_key: "session-other", source_session_id: "session-other" });
+    const shared = fakeSql((text) => text.includes("FROM file_assets") ? [asset] : [{ card_id: "card-1" }]).sql;
+    await expect(requireCardAttachmentReuse(shared, "session-owner", "asset-1")).resolves.toBeUndefined();
+    const foreign = fakeSql((text) => text.includes("FROM file_assets") ? [asset] : []).sql;
+    await expect(requireCardAttachmentReuse(foreign, "session-owner", "asset-1")).rejects.toMatchObject({
+      statusCode: 403, code: "ATTACHMENT_CARD_SCOPE_DENIED",
+    });
+  });
+});
+
+describe("card attachment reuse preparation", () => {
+  it.each(["alias", "materialized"])("denies a foreign %s before reading or uploading", async (kind) => {
+    const path = kind === "alias" ? "media/foreign.png" : "incoming/session-other/assets/asset-1/shot.png";
+    const readSource = vi.fn();
+    const putSmall = vi.fn();
+    const insertLegacyAlias = vi.fn();
+    const sql = fakeSql((text) => text.includes("FROM file_assets")
+      ? [committedAsset({ owner_key: "session-other", source_session_id: "session-other", registration_scope: { type: "session", id: "session-other" } })]
+      : []).sql;
+    const prepare = createCardAttachmentPreparer({
+      readSource, commits: { putSmall },
+      repository: { findLegacyAliasForAsset: vi.fn(async () => kind === "alias" ? { assetId: "asset-1", availability: "resolved" } : null), insertLegacyAlias },
+      findAsset: vi.fn(async () => ({ attachmentId: "asset-1", uploadStatus: "committed", registrationSessionId: "session-other" })),
+      authorizeReuse: (sessionId: string, assetId: string) => requireCardAttachmentReuse(sql, sessionId, assetId),
+    } as never);
+    await expect(prepare({ cardId: "new", owner: { kind: "agent_session", key: "session-owner" }, sourceNodeId: "node", sourceSessionId: "session-owner", path, name: "shot.png", mimeType: "image/png" }))
+      .rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_CARD_SCOPE_DENIED" });
+    expect(readSource).not.toHaveBeenCalled();
+    expect(putSmall).not.toHaveBeenCalled();
+    expect(insertLegacyAlias).not.toHaveBeenCalled();
   });
 });
 

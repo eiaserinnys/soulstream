@@ -26,7 +26,8 @@ if(model==='environment'){
 if(model==='parse-error'){console.log('not json');process.exit(0);}
 let input=''; for await(const chunk of process.stdin) input+=chunk;
 const prompt=JSON.parse(input).message.content;
-const id=args.includes('--conversation')?value('--conversation'):'fixture-conversation';
+const requested=args.includes('--conversation')?value('--conversation'):undefined;
+const id=requested==='missing-conversation'?'replacement-conversation':requested??'fixture-conversation';
 emit({event:'init',conversation_id:id,init:{model}});
 emit({event:'step_update',step_update:{conversation_id:id,step_index:0,state:'DONE',step_type:'agent_response',text_delta:'한글',usage:{input_tokens:2,cache_read_tokens:3,output_tokens:4,thinking_tokens:1}}});
 if(model==='blocking'){
@@ -60,6 +61,20 @@ async function collect(engine: AntigravityEngineAdapter, params = input) {
 
 describe("AntigravityEngineAdapter", () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it("marks a lost resume and uses the replacement on the next turn", async () => {
+    const { engine } = fixture();
+    try {
+      const first = await collect(engine, { ...input, resumeSessionId: "missing-conversation" });
+      const session = first.find(event => event.type === "session");
+      expect(session).toMatchObject({ session_id: "replacement-conversation", resume_lost_from: "missing-conversation" });
+      const next = await collect(engine, { ...input, resumeSessionId: String(session?.session_id) });
+      expect(next.find(event => event.type === "session")).toMatchObject({ session_id: "replacement-conversation" });
+      expect(next.find(event => event.type === "session")).not.toHaveProperty("resume_lost_from");
+      const fresh = await collect(engine);
+      expect(fresh.find(event => event.type === "session")).not.toHaveProperty("resume_lost_from");
+    } finally { await engine.close(); }
+  });
 
   it("refreshes the gateway config on new and resumed turns without writing a new definition on resume", async () => {
     const servers: import("../../../src/mcp_config_service.js").ResolvedMcpServer[] = [

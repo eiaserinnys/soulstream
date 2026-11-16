@@ -46,8 +46,8 @@ function fakeHaniel(options: {
 } = {}) {
   const calls: RecordedCall[] = [];
   const services = options.services ?? {
-    alpha: { state: "running", uptime: 12, restart_count: 0 },
-    beta: { state: "stopped", uptime: 0, restart_count: 1 },
+    alpha: { state: "running", uptime: 12, restart_count: 0, config: { repo: "app", run: "private-command", enabled: true } },
+    beta: { state: "stopped", uptime: 0, restart_count: 1, config: { repo: "other", run: "other-command", enabled: true } },
   };
   const vaultUrl = options.vaultUrl ?? VAULT_URL;
   const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -67,14 +67,27 @@ function fakeHaniel(options: {
       return new Response("boom", { status: options.status ?? 500 });
     }
     if (path === "/api/status") {
-      return Response.json({ state: "ok", node_id: "test-node" });
+      return Response.json({
+        running: true, services,
+        dependency_graph: { alpha: { dependencies: ["beta"] }, beta: { dependencies: [] } },
+        repos: {
+          app: { pending_changes: { commits: ["private-commit", "another-commit"], stat: "private-diff" } },
+          other: { pending_changes: null },
+        },
+      });
     }
     if (path === "/api/services") {
       // Haniel은 status["services"] map을 그대로 반환한다.
       return Response.json(services);
     }
     if (path === "/api/orch/nodes") {
-      return Response.json({ nodes: [{ node_id: "eiaserinnys", state: "ok" }] });
+      return Response.json({ nodes: [{
+        node_id: "eiaserinnys", hostname: "host", connected: 1,
+        services: [
+          { name: "alpha", process_status: "running", health_status: "ready", ready: true, pid: 42, port: 3000, role: "app", enabled: true, uptime_ms: 12000, deps: ["beta"] },
+          { name: "beta", process_status: "stopped", health_status: "stopped", ready: false },
+        ],
+      }] });
     }
     if (path === "/api/orch/pending") {
       return Response.json({ deploys: [{ service: "alpha", target_head: "abc" }] });
@@ -151,10 +164,9 @@ describe("observe_node_services configuration", () => {
     expect(result.isError).toBeUndefined();
     expect(calls.map((call) => call.url)).toEqual([
       `${DASHBOARD_URL}/api/status`,
-      `${DASHBOARD_URL}/api/services`,
     ]);
     expect(result.structuredContent).toMatchObject({
-      dashboard: { status: { state: "ok" }, services: { alpha: { state: "running" } } },
+      dashboard: { status: { running: true } },
       orch: { code: NODE_SERVICES_OBSERVATION_NOT_CONFIGURED },
     });
   });
@@ -169,19 +181,18 @@ describe("observe_node_services configuration", () => {
     expect(calls.map((call) => call.url)).toEqual([`${ORCH_URL}/api/orch/nodes`]);
     expect(result.structuredContent).toMatchObject({
       dashboard: { code: NODE_SERVICES_OBSERVATION_NOT_CONFIGURED },
-      orch: { nodes: { nodes: [{ node_id: "eiaserinnys", state: "ok" }] } },
+      orch: { nodes: { nodes: [{ node_id: "eiaserinnys", services: [{ name: "alpha" }] }] } },
     });
   });
 });
 
 describe("observe_node_services fixed GET client", () => {
-  it("defaults to dashboard status/services and orch nodes", async () => {
+  it("defaults to bounded status and node summaries without duplicate services", async () => {
     const { fetchImpl, calls } = fakeHaniel();
     const result = await observeNodeServices(runtimeWith(fetchImpl), {});
     expect(result.isError).toBeUndefined();
     expect(calls.map((call) => call.url)).toEqual([
       `${DASHBOARD_URL}/api/status`,
-      `${DASHBOARD_URL}/api/services`,
       `${ORCH_URL}/api/orch/nodes`,
     ]);
     for (const call of calls) {
@@ -190,18 +201,58 @@ describe("observe_node_services fixed GET client", () => {
     }
     expect(calls.map((call) => call.init.headers)).toEqual([
       { Authorization: `Bearer ${DASHBOARD_TOKEN}` },
-      { Authorization: `Bearer ${DASHBOARD_TOKEN}` },
       { Authorization: `Bearer ${ORCH_TOKEN}` },
     ]);
     expect(result.structuredContent).toMatchObject({
       dashboard: {
-        status: { state: "ok" },
-        services: { alpha: { state: "running" } },
+        status: {
+          running: true,
+          services: { alpha: { name: "alpha", health_status: "running", uptime_ms: 12000, enabled: true } },
+          repos: { app: { pending_changes_count: 2 }, other: { pending_changes_count: 0 } },
+        },
       },
-      orch: { nodes: { nodes: [{ node_id: "eiaserinnys", state: "ok" }] } },
+      orch: { nodes: { nodes: [{ node_id: "eiaserinnys", services: expect.arrayContaining([
+        expect.objectContaining({ name: "alpha", process_status: "running" }),
+        expect.objectContaining({ name: "beta", process_status: "stopped" }),
+      ]) }] } },
     });
+    expect(result.structuredContent?.dashboard).not.toHaveProperty("services");
+    expect(JSON.stringify(result)).not.toContain("private-command");
+    expect(JSON.stringify(result)).not.toContain("private-commit");
+    expect(JSON.stringify(result)).not.toContain("private-diff");
+    expect(JSON.stringify(result)).not.toContain("dependency_graph");
+    expect(JSON.stringify(result)).not.toContain("deps");
     expect(JSON.stringify(result)).not.toContain(DASHBOARD_TOKEN);
     expect(JSON.stringify(result)).not.toContain(ORCH_TOKEN);
+  });
+
+  it.each([undefined, false, true])("filters every service surface when include_logs is %s", async includeLogs => {
+    const { fetchImpl, calls } = fakeHaniel();
+    const result = await observeNodeServices(runtimeWith(fetchImpl), {
+      service: "alpha", ...(includeLogs === undefined ? {} : { include_logs: includeLogs }),
+    });
+    expect(result.isError).toBeUndefined();
+    const dashboard = result.structuredContent?.dashboard as Record<string, unknown>;
+    expect(dashboard.status).toMatchObject({
+      services: { alpha: { config: { repo: "app" } } },
+      dependency_graph: { alpha: { dependencies: ["beta"] } },
+      repos: { app: { pending_changes: { commits: ["private-commit", "another-commit"] } } },
+    });
+    const status = dashboard.status as Record<string, Record<string, unknown>>;
+    expect(Object.keys(status.services!)).toEqual(["alpha"]);
+    expect(Object.keys(status.dependency_graph!)).toEqual(["alpha"]);
+    expect(Object.keys(status.repos!)).toEqual(["app"]);
+    expect(result.structuredContent?.orch).toMatchObject({ nodes: { nodes: [{
+      services: [{ name: "alpha" }],
+    }] } });
+    const nodes = ((result.structuredContent?.orch as { nodes: { nodes: Array<{ services: unknown[] }> } }).nodes.nodes);
+    expect(nodes[0]?.services).toHaveLength(1);
+    if (includeLogs) {
+      expect(dashboard.services).toEqual({ alpha: expect.any(Object) });
+    } else {
+      expect(dashboard).not.toHaveProperty("services");
+      expect(calls.some(call => call.url === `${DASHBOARD_URL}/api/services`)).toBe(false);
+    }
   });
 
   it("requires service for logs and validates lines before any fetch", async () => {
@@ -285,7 +336,6 @@ describe("observe_node_services fixed GET client", () => {
     expect(result.isError).toBeUndefined();
     expect(calls.map((call) => call.url)).toEqual([
       `${DASHBOARD_URL}/api/status`,
-      `${DASHBOARD_URL}/api/services`,
       `${ORCH_URL}/api/orch/nodes`,
       `${ORCH_URL}/api/orch/pending`,
     ]);
@@ -406,7 +456,7 @@ describe("observe_node_services vault source", () => {
 
 describe("observe_node_services failure handling", () => {
   it("reports FAILED for non-ok responses without leaking the bearer", async () => {
-    const { fetchImpl } = fakeHaniel({ failPath: "/api/services", status: 502 });
+    const { fetchImpl } = fakeHaniel({ failPath: "/api/status", status: 502 });
     const result = await observeNodeServices(runtimeWith(fetchImpl), {});
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "NODE_SERVICES_OBSERVATION_FAILED" });

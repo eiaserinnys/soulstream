@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 
@@ -18,6 +18,7 @@ export type AgentAttachmentRegistrationInput = {
   readonly checksumSha256: string;
   readonly body: Uint8Array;
   readonly signal: AbortSignal;
+  readonly idempotencyKey?: string;
 };
 
 export type AgentAttachmentRegistrationResult = {
@@ -53,7 +54,9 @@ export function createAgentAttachmentRegistration(
   return async (input) => {
     await assertAttachmentProducerTx(deps.sql, input.producer, input.targetScope);
 
-    const attachmentId = randomUUID();
+    const attachmentId = input.idempotencyKey === undefined
+      ? randomUUID()
+      : createHash("sha256").update(JSON.stringify([input.producer.sessionId, input.idempotencyKey])).digest("hex");
     const committed = await deps.commit.putSmall({
       spec: {
         attachmentId,

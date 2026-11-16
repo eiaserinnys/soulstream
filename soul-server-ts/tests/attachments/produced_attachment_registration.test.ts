@@ -73,6 +73,47 @@ function makeRegistration(layout: Layout, fetchImpl = fakeFetch()) {
 }
 
 describe("createProducedAttachmentRegistration", () => {
+  it.each([502, 503, 504])("disposes the HTTP %s response body before retrying", async (status) => {
+    const layout = await makeLayout();
+    await writeFile(join(layout.workspace, "a.txt"), "x");
+    const failure = new Response("unavailable", { status });
+    const success = fakeFetch();
+    let attempts = 0;
+    const fetchImpl = fakeFetch((url, init) => {
+      if (++attempts === 1) return failure;
+      expect(failure.bodyUsed).toBe(true);
+      return success(url, init);
+    });
+    const { registration } = makeRegistration(layout, fetchImpl);
+    await expect(registration.register({ local_path: "a.txt" }, executionFor(layout))).resolves.toMatchObject({ attachment_id: "att-1" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+  it("retries a 502 with the same key and returns the registered attachment", async () => {
+    const layout = await makeLayout();
+    await writeFile(join(layout.workspace, "a.txt"), "x");
+    let attempts = 0;
+    const success = fakeFetch();
+    const fetchImpl = fakeFetch((url, init) => ++attempts === 1
+      ? Response.json({}, { status: 502 })
+      : success(url, init));
+    const { registration } = makeRegistration(layout, fetchImpl);
+    const result = await registration.register({ local_path: "a.txt" }, executionFor(layout));
+    expect(result.attachment_id).toBe("att-1");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const first = fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>;
+    const second = fetchImpl.mock.calls[1]![1]?.headers as Record<string, string>;
+    expect(first["x-soulstream-idempotency-key"]).toBeTruthy();
+    expect(first["x-soulstream-idempotency-key"]).toBe(second["x-soulstream-idempotency-key"]);
+  });
+
+  it.each([400, 500])("does not retry a %s response", async (status) => {
+    const layout = await makeLayout();
+    await writeFile(join(layout.workspace, "a.txt"), "x");
+    const fetchImpl = fakeFetch(() => Response.json({}, { status }));
+    const { registration } = makeRegistration(layout, fetchImpl);
+    await expect(registration.register({ local_path: "a.txt" }, executionFor(layout))).rejects.toMatchObject({ statusCode: status });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
   it("validates session output IDs with trusted provenance and no workspace input", async () => {
     const layout = await makeLayout();
     const fetchImpl = fakeFetch((url, init) => {
@@ -159,6 +200,7 @@ describe("createProducedAttachmentRegistration", () => {
       "x-soulstream-agent-session-id": SESSION,
       "x-soulstream-node-id": "node-a",
       "x-soulstream-output-command-id": "cmd-1",
+      "x-soulstream-idempotency-key": expect.any(String),
     });
     expect(Buffer.from(init?.body as Uint8Array).equals(bytes)).toBe(true);
     expect(init?.signal).toBeInstanceOf(AbortSignal);

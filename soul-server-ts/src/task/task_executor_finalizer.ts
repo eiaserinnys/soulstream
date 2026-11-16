@@ -103,12 +103,13 @@ export class TaskExecutorFinalizer {
   async retainRunnerIfDetachedWorkActive(
     task: Task,
     runner: NonNullable<Task["runner"]>,
+    recovery = false,
   ): Promise<DetachedWorkRetention> {
     if (task.runnerIsOfflineReplay === true) return "not_retained";
     if (runner.dispatcher.hasClosedEngineFailureForFinalization?.() === true) {
       return "not_retained";
     }
-    const retention = await this.detachedWorkRetention(task, runner.engine);
+    const retention = await this.detachedWorkRetention(task, runner.engine, recovery);
     if (task.runner !== runner) return "not_retained";
     if (runner.dispatcher.hasLostRunner?.() === true) return "not_retained";
     if (retention === "retained" || retention === "codex_inactive") {
@@ -264,43 +265,51 @@ export class TaskExecutorFinalizer {
   private async shouldRetainClaudeRuntime(
     task: Task,
     engine: NonNullable<Task["runner"]>["engine"],
+    recovery = false,
   ): Promise<boolean> {
     const detached = engine as typeof engine & Partial<SupportsDetachedClaudeRuntime>;
     if (detached.detachedClaudeRuntime !== true) return false;
     if (typeof detached.detachedClaudeRuntimeActivity !== "function") {
       this.deps.logger.warn(
         { sessionId: task.agentSessionId },
-        "detached Claude runtime activity unavailable; retaining runner owner",
+        recovery ? "detached Claude runtime activity unavailable during recovery" :
+          "detached Claude runtime activity unavailable; retaining runner owner",
       );
-      return true;
+      return !recovery;
     }
     try {
-      const activity = await detached.detachedClaudeRuntimeActivity();
-      if (activity === null) {
+      const activity = await detached.detachedClaudeRuntimeActivity() as
+        | Awaited<ReturnType<SupportsDetachedClaudeRuntime["detachedClaudeRuntimeActivity"]>>
+        | { status: "not_supported" };
+      if (activity === null) return false;
+      if ("status" in activity) {
         this.deps.logger.warn(
           { sessionId: task.agentSessionId },
-          "detached Claude runtime activity unsupported; retaining runner owner",
+          recovery ? "detached Claude runtime activity unsupported during recovery" :
+            "detached Claude runtime activity unsupported; retaining runner owner",
         );
-        return true;
+        return !recovery;
       }
       return activity.backgroundTaskCount > 0 ||
         (activity.pendingRuntimeSignalCount ?? 0) > 0;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
-        "detached Claude runtime activity failed; retaining runner owner",
+        recovery ? "detached Claude runtime activity failed during recovery" :
+          "detached Claude runtime activity failed; retaining runner owner",
       );
-      return true;
+      return !recovery;
     }
   }
 
   private async detachedWorkRetention(
     task: Task,
     engine: NonNullable<Task["runner"]>["engine"],
+    recovery: boolean,
   ): Promise<DetachedWorkRetention> {
     const claude = engine as typeof engine & Partial<SupportsDetachedClaudeRuntime>;
     if (claude.detachedClaudeRuntime === true) {
-      return await this.shouldRetainClaudeRuntime(task, engine)
+      return await this.shouldRetainClaudeRuntime(task, engine, recovery)
         ? "retained"
         : "not_retained";
     }

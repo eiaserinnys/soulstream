@@ -18,7 +18,7 @@ import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, collectCardItemAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
-import { requireCardAttachmentTx } from "./card_attachment_policy.js";
+import { requireCardAttachmentReuse, requireCardAttachmentTx } from "./card_attachment_policy.js";
 import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
 import { normalizeAttachmentLegacyPath, attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
 import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
@@ -194,7 +194,9 @@ export class CardControlPlaneService {
       ? {kind:"agent_session" as const,key:params.actorSessionId}
       : params.actorKind==="user" && email.length>0 ? {kind:"user_email" as const,key:email} : null;
     if (owner===null) return null;
-    const prepare=createCardAttachmentPreparer({...deps,findAsset:attachmentId=>this.findReusableAttachmentAsset(attachmentId)});
+    const prepare=createCardAttachmentPreparer({...deps,findAsset:attachmentId=>this.findReusableAttachmentAsset(attachmentId),
+      authorizeReuse:(sessionId,attachmentId)=>owner.kind==="agent_session"
+        ? requireCardAttachmentReuse(this.repoSql,sessionId,attachmentId) : Promise.resolve()});
     const refs:AttachmentRef[]=[];
     const skip:CardLegacyLocation[]=[];
     for (const attachment of attachments) {

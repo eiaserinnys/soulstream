@@ -453,6 +453,48 @@ describe("RunnerChildRuntime backend session rotation", () => {
     }
   });
 
+  it("rotates a lost resume and retains its marker in the durable event", async () => {
+    const { runtime, sessionId } = await createRotationRuntime("backend-session-old", [], "antigravity");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    child.activeCommandId = "lost-resume";
+    try {
+      await child.forwardRunnerFrame(engineEventFrame({ type: "session", session_id: "backend-session-fresh", resume_lost_from: "backend-session-old" }), { frames: [], bytes: 0 });
+      expect((await child.outbox.readBootstrap())?.payload.backend_session_id).toBe("backend-session-fresh");
+      const event = (await child.outbox.readBatch())?.events[0];
+      expect(event?.payload).toMatchObject({ type: "session", session_id: "backend-session-fresh", resume_lost_from: "backend-session-old" });
+      expect(event?.session_effect).toEqual(backendSessionRotationEffect("backend-session-old", "backend-session-fresh"));
+      await expect(child.prepareExecution(executeCommandFrame("next-turn", {
+        agentSessionId: sessionId, prompt: "continue", resumeSessionId: "backend-session-fresh",
+      }))).resolves.toBeUndefined();
+    } finally { await runtime.shutdown(); }
+  });
+
+  it.each([undefined, "other"])("forwards an untrusted session ID without a set effect (marker %s)", async marker => {
+    const { runtime } = await createRotationRuntime("backend-session-old");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    child.activeCommandId = "untrusted-session";
+    try {
+      await child.forwardRunnerFrame(engineEventFrame({ type: "session", session_id: "other-id", ...(marker ? { resume_lost_from: marker } : {}) }), { frames: [], bytes: 0 });
+      expect((await child.outbox.readBootstrap())?.payload.backend_session_id).toBe("backend-session-old");
+      const event = (await child.outbox.readBatch())?.events[0];
+      expect(event?.payload).toMatchObject({ type: "session", session_id: "other-id" });
+      expect(event?.session_effect).toBeNull();
+    } finally { await runtime.shutdown(); }
+  });
+
+  it("sets the session ID when bootstrap has none", async () => {
+    const { runtime, sessionId } = await createRotationRuntime(null, [], "openai-agents");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const command = executeCommandFrame("first-turn", { agentSessionId: sessionId, prompt: "hello" });
+    child.activeCommandId = command.commandId;
+    try {
+      await child.prepareExecution(command);
+      expect((await child.outbox.readBootstrap())?.payload.backend_session_id).toBeNull();
+      await child.forwardRunnerFrame(engineEventFrame({ type: "session", session_id: "first-id" }), { frames: [], bytes: 0 });
+      expect((await child.outbox.readBatch())?.events[0]?.session_effect).toEqual({ kind: "set_backend_session_id", backend_session_id: "first-id" });
+    } finally { await runtime.shutdown(); }
+  });
+
   it("creates bootstrap before flushing buffered events when rotation starts without one", async () => {
     const { runtime, sessionId } = await createRotationRuntime(null);
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;

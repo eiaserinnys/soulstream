@@ -526,6 +526,7 @@ export class RunnerRecoveryCoordinator {
             .retainRegisteredDetachedRunner(task as Task, registration)
             ? "retained"
             : "absent";
+          facts.hasRunner = task?.runner !== undefined;
           continue;
         case "stop_detached_background":
           this.options.logger.info(

@@ -22,6 +22,7 @@ import dotenv from "dotenv";
 import { z } from "zod";
 
 import type { ObservationOptions } from "../../security/session_isolation_contract.js";
+import { projectNodeServices, projectStatus, selectService } from "./node_services_observation_projection.js";
 import { errorResult, jsonResult } from "../result.js";
 import type {
   McpRuntime,
@@ -58,12 +59,12 @@ export function registerNodeServicesObservationTool(
     "observe_node_services",
     {
       description:
-        "Haniel 노드의 서비스 상태와 로그를 읽기 전용으로 관측한다. 고정 GET(dashboard: /api/status, /api/services, 서비스 로그 / orch: /api/orch/pending, /api/orch/nodes)만 호출하며 재시작·배포 같은 제어는 하지 않는다.",
+        "Haniel 노드의 서비스 상태를 읽기 전용으로 관측한다. 기본 응답은 요약이며 service를 지정하면 해당 서비스와 저장소 상세만 반환한다. 로그와 배포 대기는 요청할 때만 조회한다.",
       inputSchema: {
-        service: z.string().min(1).optional(),
-        include_logs: z.boolean().optional(),
-        lines: z.number().int().min(1).max(MAX_LOG_LINES).optional(),
-        include_pending: z.boolean().optional(),
+        service: z.string().min(1).optional().describe("상세를 볼 서비스 이름. 로그를 요청할 때 필수이며 모든 서비스 목록을 이 이름으로 거른다."),
+        include_logs: z.boolean().optional().describe("true면 지정한 서비스의 로그와 서비스 상세 목록을 조회한다. 기본 false."),
+        lines: z.number().int().min(1).max(MAX_LOG_LINES).optional().describe("로그를 조회할 때 가져올 마지막 줄 수. 기본 200, 최대 200."),
+        include_pending: z.boolean().optional().describe("true면 오케스트레이터의 배포 대기 목록을 추가한다. 기본 false."),
       },
     },
     async (input: ObservationOptions) => observeNodeServices(runtime, input),
@@ -119,10 +120,10 @@ export async function observeNodeServices(
     if (dashboard && dashboardBase) {
       const client = createHanielReadClient(dashboard, dashboardBase, fetchImpl, readFileImpl);
       const status = await client.get({ kind: "status" });
-      const services = await client.get({ kind: "services" });
-      const dashboardResult: Record<string, unknown> = { status, services };
+      const dashboardResult: Record<string, unknown> = { status: projectStatus(status, service) };
 
       if (includeLogs && service) {
+        const services = await client.get({ kind: "services" });
         const names = serviceNames(services);
         if (!names.includes(service)) {
           return errorResult(`unknown service: ${service}`, {
@@ -130,6 +131,7 @@ export async function observeNodeServices(
             details: { services: names },
           });
         }
+        dashboardResult.services = selectService(services, service);
         const logs = await client.get({ kind: "logs", service, lines });
         dashboardResult.logs = truncateLogs(logs, lines);
       }
@@ -141,7 +143,7 @@ export async function observeNodeServices(
     if (orch && orchBase) {
       const client = createHanielReadClient(orch, orchBase, fetchImpl, readFileImpl);
       const orchResult: Record<string, unknown> = {
-        nodes: await client.get({ kind: "nodes" }),
+        nodes: projectNodeServices(await client.get({ kind: "nodes" }), service),
       };
       if (includePending) {
         orchResult.pending = await client.get({ kind: "pending" });

@@ -107,6 +107,7 @@ export function registerAgentAttachmentRoutes(
             mimeType: parsed.mimeType,
             byteSize: parsed.byteSize,
             checksumSha256: parsed.checksumSha256,
+            ...(parsed.idempotencyKey === undefined ? {} : { idempotencyKey: parsed.idempotencyKey }),
             body,
             signal: controller.abort.signal,
           };
@@ -205,6 +206,7 @@ type RegistrationRequest = {
   readonly mimeType: string;
   readonly byteSize: number;
   readonly checksumSha256: string;
+  readonly idempotencyKey?: string;
 };
 
 function parseRegistrationRequest(request: FastifyRequest): RegistrationRequest {
@@ -212,6 +214,8 @@ function parseRegistrationRequest(request: FastifyRequest): RegistrationRequest 
   const sessionId = requiredHeader(headers[SESSION_HEADER]);
   const nodeId = requiredHeader(headers[NODE_HEADER]);
   const outputCommandId = requiredHeader(headers[COMMAND_HEADER]);
+  const key = headers["x-soulstream-idempotency-key"];
+  const idempotencyKey = key === undefined ? undefined : requiredHeader(key);
 
   const params = new URLSearchParams(new URL(request.url, "http://internal").search);
   const name = requiredText(params.get("name"));
@@ -230,6 +234,7 @@ function parseRegistrationRequest(request: FastifyRequest): RegistrationRequest 
     mimeType,
     byteSize,
     checksumSha256,
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
   };
 }
 

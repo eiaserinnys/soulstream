@@ -63,6 +63,7 @@ export type CardAttachmentReusableAsset = {
 
 export type CardAttachmentPrepareDeps = CardAttachmentSourceStoreDeps & {
   readonly findAsset: (attachmentId: string) => Promise<CardAttachmentReusableAsset | null>;
+  readonly authorizeReuse: (sessionId: string, attachmentId: string) => Promise<void>;
 };
 
 export type CardAttachmentPrepareInput = {
@@ -150,6 +151,7 @@ export function createCardAttachmentPreparer(
       if (existing.availability !== "resolved" || existing.assetId === null) {
         throw new CardAttachmentSourceImportError(sourceMissingMessage(input), 404);
       }
+      await deps.authorizeReuse(input.sourceSessionId, existing.assetId);
       return preparedFor(existing.assetId, input);
     }
 
@@ -161,10 +163,9 @@ export function createCardAttachmentPreparer(
       spec: uploadSpec(input, input.owner, file),
       body: file.content,
     });
-    return preparedFor(
-      await registerAlias(deps.repository, input, normalizedPath, committed.attachmentId),
-      input,
-    );
+    const assetId = await registerAlias(deps.repository, input, normalizedPath, committed.attachmentId);
+    if (assetId !== committed.attachmentId) await deps.authorizeReuse(input.sourceSessionId, assetId);
+    return preparedFor(assetId, input);
   };
 }
 
@@ -194,7 +195,10 @@ async function reusableMaterializedAsset(
   ) {
     return null;
   }
-  return registerAlias(deps.repository, input, normalizedPath, asset.attachmentId);
+  await deps.authorizeReuse(input.sourceSessionId, asset.attachmentId);
+  const registeredId = await registerAlias(deps.repository, input, normalizedPath, asset.attachmentId);
+  if (registeredId !== asset.attachmentId) await deps.authorizeReuse(input.sourceSessionId, registeredId);
+  return registeredId;
 }
 
 async function registerAlias(

@@ -31,6 +31,8 @@ import { RunnerAdoptionRejectedError } from
   "../../src/task/runner_adoption_rejected_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
+import { listActiveTaskWorkspaceDirs } from "../../src/runtime/task_active_workspace_dirs.js";
 import type { Task } from "../../src/task/task_models.js";
 import { makeEventPersistenceTestDouble } from
   "../task/event_persistence_test_double.js";
@@ -255,6 +257,54 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       }),
       "registered runner recovery skipped because SDK background work owns the process",
     );
+  });
+
+  it.each([
+    ["no open query", null],
+    ["old runner", { status: "not_supported" }],
+  ])("releases and retires a terminal Claude runner with %s", async (_label, activity) => {
+    const terminalRegistration = registration({ lifecycleState: "completed", pidAlive: true });
+    terminalRegistration.config.backend = "claude";
+    terminalRegistration.config.agent.backend = "claude";
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const detachHost = vi.fn(async () => {});
+    const dispatcher = {
+      registrationId: () => "registration-a",
+      hasActiveExecution: () => false,
+      invoke: vi.fn(async () => activity),
+      detachHost,
+    };
+    recovered.runner = {
+      engine: new RunnerProcessEngineProxy("claude", "/workspace/a", dispatcher as never),
+      dispatcher,
+      eventPersistence: "runner",
+    } as unknown as NonNullable<Task["runner"]>;
+    recovered.runnerRetainedForDetachedWork = true;
+    const executor = new TaskExecutor(
+      () => { throw new Error("engine factory is unused"); },
+      {} as never, {} as never, {} as never, { warn: vi.fn() } as never,
+    );
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: { hydrateRunnerRecoveryTask: vi.fn(async () => recovered) } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: (owned, exact) =>
+          executor.retainRegisteredDetachedRunner(owned, exact),
+      },
+    });
+
+    expect(listActiveTaskWorkspaceDirs([recovered], () => undefined)).toEqual(["/workspace/a"]);
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBeUndefined();
+    expect(listActiveTaskWorkspaceDirs([recovered], () => undefined)).toEqual([]);
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
   });
 
   it("replays a terminal registration with the exact old Claude closed error before retirement", async () => {

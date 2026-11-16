@@ -207,6 +207,30 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.lastEventId).toBe(7);
   });
 
+  it("rotates a lost resume only when its predecessor matches the captured ID", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ codexThreadId: "old" });
+    await publisher.publishEngineEvent(task, { type: "session", session_id: "ignored", resume_lost_from: "other" } as SSEEventPayload);
+    expect(task.codexThreadId).toBe("old");
+    expect(deps.enqueueEvent.mock.calls[0]?.[2]).toBeUndefined();
+    await publisher.publishEngineEvent(task, { type: "session", session_id: "new", resume_lost_from: "old" } as SSEEventPayload);
+    expect(task.codexThreadId).toBe("new");
+    expect(deps.enqueueEvent.mock.calls[1]?.[2]).toEqual({ kind: "rotate_backend_session_id", expected_backend_session_id: "old", backend_session_id: "new" });
+    expect(deps.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "sess-1" }), expect.stringContaining("without its previous context"));
+  });
+
+  it("updates the in-memory ID from an already persisted runner event", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ codexThreadId: "old" });
+    await publisher.publishEngineEvent(task, {
+      type: "session", session_id: "new", resume_lost_from: "old",
+    } as SSEEventPayload, { alreadyPersisted: true });
+    expect(task.codexThreadId).toBe("new");
+    expect(deps.enqueueEvent).not.toHaveBeenCalled();
+  });
+
   it("rotates the active generation native session id", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

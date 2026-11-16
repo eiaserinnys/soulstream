@@ -508,6 +508,10 @@ export interface SSEEventMemory {
  */
 export interface SSEEventSession {
   type: "session";
+  /**
+   * Requested backend session ID that could not be resumed.
+   */
+  resume_lost_from?: string;
   [k: string]: unknown;
 }
 /**
