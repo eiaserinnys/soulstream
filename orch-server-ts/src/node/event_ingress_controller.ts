@@ -31,6 +31,11 @@ export type NodeEventIngressControllerOptions = {
   close(code: number, reason: string): void;
   logError(error: unknown, message: string): void;
   logWarn(context: Record<string, unknown>, message: string): void;
+  /**
+   * 정보 등급 로그. 조립 지점(ws_route)만 연결하면 되도록 두고, 연결이 빠진
+   * 생성자는 경고로 남겨 줄이 사라지지 않게 한다.
+   */
+  logInfo?(context: Record<string, unknown>, message: string): void;
   onCommittedProviderEvent?: (input: {
     nodeId: string;
     eventType: string;
@@ -107,6 +112,7 @@ export class NodeEventIngressController {
     const results = await this.options.committer.commitBatch(this.options.nodeId, batch);
     for (const item of results) {
       if (item.outcome === "dead_lettered") {
+        const staleRegistration = item.deadLetter.code === "STALE_REGISTRATION";
         this.options.logWarn({
           code: item.deadLetter.code,
           nodeId: this.options.nodeId,
@@ -114,8 +120,33 @@ export class NodeEventIngressController {
           sourceSeq: item.envelope.source_seq,
           sessionId: item.envelope.session_id,
           path: item.deadLetter.path,
-        }, "Event ingress dead-lettered permanent failure");
+          ...(staleRegistration
+            ? {
+                eventType: item.envelope.event_type,
+                registrationId: item.envelope.registration_id ?? null,
+                sessionExecutionRegistrationId:
+                  item.registrationMismatch?.sessionExecutionRegistrationId ?? null,
+                sessionEffectKind: item.envelope.session_effect?.kind ?? null,
+              }
+            : {}),
+        }, staleRegistration
+          ? "Event ingress rejected stale-registration state event (not recorded)"
+          : "Event ingress dead-lettered permanent failure");
         continue;
+      }
+      if (item.registrationMismatch && !item.duplicateReceipt) {
+        (this.options.logInfo ?? this.options.logWarn)({
+          nodeId: this.options.nodeId,
+          streamId: item.envelope.stream_id,
+          sourceSeq: item.envelope.source_seq,
+          sessionId: item.envelope.session_id,
+          eventId: item.eventId,
+          eventType: item.envelope.event_type,
+          registrationId: item.envelope.registration_id ?? null,
+          sessionExecutionRegistrationId:
+            item.registrationMismatch.sessionExecutionRegistrationId,
+          sessionEffectKind: item.envelope.session_effect?.kind ?? null,
+        }, "Event ingress recorded late event from previous registration");
       }
       if (!item.duplicateReceipt && this.options.onCommittedProviderEvent) {
         try {

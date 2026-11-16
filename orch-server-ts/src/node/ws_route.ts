@@ -512,6 +512,9 @@ function createEventIngressController(input: {
     logWarn: (context, message) => {
       app.log.warn(context, message);
     },
+    logInfo: (context, message) => {
+      app.log.info(context, message);
+    },
   });
 }
 

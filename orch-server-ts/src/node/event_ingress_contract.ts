@@ -163,11 +163,22 @@ export type EventSessionEffectApplicationWire = {
   rejection_reason?: EventSessionRejectionReason;
 };
 
+/**
+ * 사건의 등록 번호와 세션의 지금 execution_registration_id가 달랐던 수신의
+ * 진단 정보. 기록 여부와 무관하게 운영 로그가 사건과 세션의 번호를 함께 남길 때 쓴다.
+ */
+export type EventIngressRegistrationMismatch = {
+  eventRegistrationId: string | null;
+  sessionExecutionRegistrationId: string | null;
+};
+
 export type CommittedIngressEvent = {
   outcome?: "committed";
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
+  /** 낡은 등록 번호로 들어왔지만 기록한 사건의 진단 정보. */
+  registrationMismatch?: EventIngressRegistrationMismatch;
   sessionEffectApplication?: EventSessionEffectApplication;
   feedProjectionApplication?: import("./event_feed_projection_applier.js").EventFeedProjectionApplication;
   /** Durable raw-coordinate watermark for actual public-feed changes only. */
@@ -183,6 +194,8 @@ export type DeadLetteredIngressEvent = {
     rejectedAt: string;
     path: string;
   };
+  /** 등록 번호 불일치로 거절한 수신의 진단 정보. */
+  registrationMismatch?: EventIngressRegistrationMismatch;
 };
 
 export type EventIngressResult = CommittedIngressEvent | DeadLetteredIngressEvent;

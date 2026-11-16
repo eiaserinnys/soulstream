@@ -286,6 +286,40 @@ export class SessionDeliveryRepository {
           attemptToken: row.attempt_token,
         });
       }
+      // 대상 세션이 지워지면 FK ON DELETE SET NULL이 target을 비우고, pending을
+      // 집는 쿼리는 모두 세션과 조인해 이 줄을 다시 집지 않는다. 재시도 예산도
+      // 호출이 없으면 계산되지 않아 영원히 pending으로 남는다. 24시간 지난 줄만
+      // 소진과 같은 쌍(uncertain/dead_letter)으로 닫는다.
+      const orphaned = await transaction<Array<{
+        delivery_id: string;
+        attempt_token: string | null;
+        aggregate_state: SessionDeliveryRow["aggregate_state"];
+      }>>`
+        UPDATE session_deliveries
+        SET
+          state = 'uncertain',
+          aggregate_state = 'dead_letter',
+          attempt_count = attempt_count + 1,
+          attempt_token = NULL,
+          attempt_expires_at = NULL,
+          last_error = 'target_session_missing',
+          dead_letter_reason = 'target_session_missing',
+          dead_lettered_at = NOW(),
+          updated_at = NOW()
+        WHERE target_session_id IS NULL
+          AND state = 'pending'
+          AND aggregate_state = 'pending'
+          AND updated_at <= NOW() - INTERVAL '24 hours'
+        RETURNING delivery_id, attempt_token, aggregate_state
+      `;
+      for (const row of orphaned) {
+        await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
+          deliveryId: row.delivery_id,
+          outcome: attemptOutcomeFor(row),
+          reason: "target_session_missing",
+          attemptToken: row.attempt_token,
+        });
+      }
       await settleTerminalTargetCompletionDeliveries(transaction);
       return rows.length;
     });
