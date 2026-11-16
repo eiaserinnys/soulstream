@@ -267,10 +267,21 @@ function raceWithSearchAbort<T>(operation: Promise<T>, signal: AbortSignal): Pro
   });
 }
 
-function searchAbortReason(signal: AbortSignal): Error {
+/**
+ * 중단 신호의 이유를 취소 오류로 바꾼다. 검색 연결과 공유 풀 질의 취소가
+ * 같은 규칙을 쓴다. 이미 중단된 신호에는 질의를 내지 않고 이 오류로 끝낸다.
+ */
+export function abortReasonFromSignal(
+  signal: AbortSignal,
+  fallbackMessage: string,
+): Error {
   return signal.reason instanceof Error
     ? signal.reason
-    : new Error("session search was cancelled");
+    : new Error(fallbackMessage);
+}
+
+function searchAbortReason(signal: AbortSignal): Error {
+  return abortReasonFromSignal(signal, "session search was cancelled");
 }
 
 export function createLiveDbSqlResolver(

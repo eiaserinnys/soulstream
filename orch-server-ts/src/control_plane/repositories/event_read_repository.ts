@@ -12,6 +12,8 @@ import {
   type PersistentSessionHistoryQuery,
 } from "./persistent_session_history_query.js";
 import {
+  abortReasonFromSignal,
+  cancelLiveSearchQuerySafely,
   type LiveSearchDbConnectionFactory,
   type LiveSearchPendingQuery,
   type LiveSearchQueryRunner,
@@ -107,10 +109,11 @@ export class EventReadRepository {
     private readonly onSearchCancelError?: (error: unknown) => void,
   ) {}
 
-  async countEvents(sessionId: string): Promise<number> {
-    const rows = await this.sql<Array<{ event_count: string | number }>>`
-      SELECT event_count(${sessionId}) AS event_count
-    `;
+  async countEvents(sessionId: string, signal?: AbortSignal): Promise<number> {
+    const rows = await this.runPoolQuery(signal, () =>
+      this.sql<Array<{ event_count: string | number }>>`
+        SELECT event_count(${sessionId}) AS event_count
+      `);
     return Number(rows[0]?.event_count ?? 0);
   }
 
@@ -128,6 +131,7 @@ export class EventReadRepository {
     period?: SessionReadPeriod,
     metadataTypes?: string[],
     order?: "asc" | "desc",
+    signal?: AbortSignal,
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
@@ -140,33 +144,69 @@ export class EventReadRepository {
       // CASE boolean은 선택도 0.5로 추정되어 예상 행수가 LIMIT 이상이 되고, 플래너가
       // idx_events_session_type_id 역방향 스캔(Index Scan Backward)을 골라 최신 50건에서 멈춘다.
       const rows = period
-        ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-            SELECT id, session_id, event_type, payload, searchable_text, created_at
-            FROM events
-            WHERE session_id = ${sessionId}
-              AND id > ${afterId}
-              AND created_at >= ${period.since}::timestamptz
-              AND created_at < ${period.until}::timestamptz
-              AND event_type = 'metadata'
-              AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
-            ORDER BY id DESC
-            LIMIT ${limit}
-          `
-        : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-            SELECT id, session_id, event_type, payload, searchable_text, created_at
-            FROM events
-            WHERE session_id = ${sessionId}
-              AND id > ${afterId}
-              AND event_type = 'metadata'
-              AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
-            ORDER BY id DESC
-            LIMIT ${limit}
-          `;
+        ? await this.runPoolQuery(signal, () =>
+            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+              SELECT id, session_id, event_type, payload, searchable_text, created_at
+              FROM events
+              WHERE session_id = ${sessionId}
+                AND id > ${afterId}
+                AND created_at >= ${period.since}::timestamptz
+                AND created_at < ${period.until}::timestamptz
+                AND event_type = 'metadata'
+                AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
+              ORDER BY id DESC
+              LIMIT ${limit}
+            `)
+        : await this.runPoolQuery(signal, () =>
+            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+              SELECT id, session_id, event_type, payload, searchable_text, created_at
+              FROM events
+              WHERE session_id = ${sessionId}
+                AND id > ${afterId}
+                AND event_type = 'metadata'
+                AND CASE WHEN payload->>'metadata_type' = ANY(${metadata}::text[]) THEN true ELSE false END
+              ORDER BY id DESC
+              LIMIT ${limit}
+            `);
       return rows.map(normalizeEvent);
     }
     if (metadata !== null) {
       const rows = period
-        ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+        ? await this.runPoolQuery(signal, () =>
+            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+              SELECT id, session_id, event_type, payload, searchable_text, created_at
+              FROM events
+              WHERE session_id = ${sessionId}
+                AND id > ${afterId}
+                AND created_at >= ${period.since}::timestamptz
+                AND created_at < ${period.until}::timestamptz
+                AND (
+                  ${types as unknown as string[] | null}::text[] IS NULL
+                  OR event_type = ANY(${types as unknown as string[] | null}::text[])
+                )
+                AND payload->>'metadata_type' = ANY(${metadata}::text[])
+              ORDER BY id ASC
+              LIMIT ${limit}
+            `)
+        : await this.runPoolQuery(signal, () =>
+            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+              SELECT id, session_id, event_type, payload, searchable_text, created_at
+              FROM events
+              WHERE session_id = ${sessionId}
+                AND id > ${afterId}
+                AND (
+                  ${types as unknown as string[] | null}::text[] IS NULL
+                  OR event_type = ANY(${types as unknown as string[] | null}::text[])
+                )
+                AND payload->>'metadata_type' = ANY(${metadata}::text[])
+              ORDER BY id ASC
+              LIMIT ${limit}
+            `);
+      return rows.map(normalizeEvent);
+    }
+    const rows = period
+      ? await this.runPoolQuery(signal, () =>
+          this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
             SELECT id, session_id, event_type, payload, searchable_text, created_at
             FROM events
             WHERE session_id = ${sessionId}
@@ -177,48 +217,18 @@ export class EventReadRepository {
                 ${types as unknown as string[] | null}::text[] IS NULL
                 OR event_type = ANY(${types as unknown as string[] | null}::text[])
               )
-              AND payload->>'metadata_type' = ANY(${metadata}::text[])
             ORDER BY id ASC
             LIMIT ${limit}
-          `
-        : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-            SELECT id, session_id, event_type, payload, searchable_text, created_at
-            FROM events
-            WHERE session_id = ${sessionId}
-              AND id > ${afterId}
-              AND (
-                ${types as unknown as string[] | null}::text[] IS NULL
-                OR event_type = ANY(${types as unknown as string[] | null}::text[])
-              )
-              AND payload->>'metadata_type' = ANY(${metadata}::text[])
-            ORDER BY id ASC
-            LIMIT ${limit}
-          `;
-      return rows.map(normalizeEvent);
-    }
-    const rows = period
-      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-          SELECT id, session_id, event_type, payload, searchable_text, created_at
-          FROM events
-          WHERE session_id = ${sessionId}
-            AND id > ${afterId}
-            AND created_at >= ${period.since}::timestamptz
-            AND created_at < ${period.until}::timestamptz
-            AND (
-              ${types as unknown as string[] | null}::text[] IS NULL
-              OR event_type = ANY(${types as unknown as string[] | null}::text[])
+          `)
+      : await this.runPoolQuery(signal, () =>
+          this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            SELECT * FROM event_read(
+              ${sessionId},
+              ${afterId},
+              ${limit},
+              ${types as unknown as string[] | null}
             )
-          ORDER BY id ASC
-          LIMIT ${limit}
-        `
-      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-          SELECT * FROM event_read(
-            ${sessionId},
-            ${afterId},
-            ${limit},
-            ${types as unknown as string[] | null}
-          )
-        `;
+          `);
     return rows.map(normalizeEvent);
   }
 
@@ -559,6 +569,48 @@ export class EventReadRepository {
     const rows = await runQuery((searchSql) =>
       this.createSessionIdSearchQuery(searchSql, query, types, limit));
     return rows.map((row) => ({ ...normalizeEvent(row), score: Number(row.score) }));
+  }
+
+  /**
+   * 공유 풀에서 낸 질의 하나를 요청 중단 신호에 묶는다. 검색처럼 요청 소유
+   * 연결을 열지 않고(이 조회는 하루 수만 번이라 연결 수와 생성 비용이 문제다),
+   * 신호가 오면 그 질의만 취소해 연결을 풀로 돌려보낸다. 질의를 await하기 전에
+   * pending으로 잡아 두고, 끝나면 리스너를 뗀다. 이미 중단된 신호에는 질의를 내지 않는다.
+   */
+  private async runPoolQuery<T extends readonly Record<string, unknown>[]>(
+    signal: AbortSignal | undefined,
+    createQuery: () => LiveSearchPendingQuery<T>,
+  ): Promise<T> {
+    if (signal === undefined) return await createQuery();
+    if (signal.aborted) throw abortReasonFromSignal(signal, "event read was cancelled");
+    const pending = createQuery();
+    const onAbort = () => {
+      cancelLiveSearchQuerySafely(
+        pending,
+        (error) => this.reportSearchCancelError(error),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      // 리스너를 붙이기 전에 중단됐다면 이벤트가 다시 오지 않는다. 직접 취소하고 끝낸다.
+      signal.removeEventListener("abort", onAbort);
+      cancelLiveSearchQuerySafely(
+        pending,
+        (error) => this.reportSearchCancelError(error),
+      );
+      throw abortReasonFromSignal(signal, "event read was cancelled");
+    }
+    try {
+      return await pending;
+    } catch (error) {
+      // 취소로 난 57014는 검색 중단과 같은 취소 오류로 바꾼다. 연결은 풀로 돌아간다.
+      if (signal.aborted) {
+        throw abortReasonFromSignal(signal, "event read was cancelled");
+      }
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 
   private async runOwnedSearch<T extends readonly Record<string, unknown>[]>(

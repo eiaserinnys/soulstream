@@ -185,6 +185,50 @@ describe("control-plane host routes", () => {
     expect(searchSignal?.aborted).toBe(true);
   });
 
+  it("passes an HTTP disconnect through as the event-read-page cancellation signal", async () => {
+    let readSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const readEvents = vi.fn((...args: unknown[]) => {
+      readSignal = args.at(-1) as AbortSignal;
+      markStarted();
+      return new Promise<never>((_resolve, reject) => {
+        readSignal!.addEventListener(
+          "abort",
+          () => reject(new Error("caller disconnected")),
+          { once: true },
+        );
+      });
+    });
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
+      authBearerToken: token,
+      repositoryProvider: async () => ({ eventReads: { readEvents } }) as unknown as PersistenceHostRepositories,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const controller = new AbortController();
+    const request = fetch(`${address}/api/session-data/host/event_read_page`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ args: ["session-1", 0, 50, null] }),
+      signal: controller.signal,
+    });
+    await started;
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    await waitFor(() => readSignal?.aborted === true);
+    expect(readSignal?.aborted).toBe(true);
+    // 노드가 선택 인자를 생략해도 신호는 저장소 시그니처의 마지막 자리에 온다.
+    expect(readEvents).toHaveBeenCalledWith(
+      "session-1", 0, 50, null, null, null, null, readSignal,
+    );
+  });
+
   it("echoes persistence timing metadata without changing the response body", async () => {
     const app = Fastify();
     apps.push(app);
