@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { writeFileAtomically } from "../atomic_file_rename.js";
@@ -219,10 +219,17 @@ export async function recoverRunnerDirectoryIdentity(
   } catch {
     // A corrupt sidecar is not trusted. SQLite remains an independent identity source.
   }
+  const databasePath = join(sessionDirectory, "runner.sqlite");
+  try {
+    await stat(databasePath);
+  } catch (error) {
+    // 없는 DB는 열지 않는다. worker 왕복은 껍데기 폴더마다 공유 worker를 붐비게 한다.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+  }
   try {
     return await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
       await storage.readSqliteIdentity(
-        { databasePath: join(sessionDirectory, "runner.sqlite") },
+        { databasePath },
         phaseObservation,
       ));
   } catch {

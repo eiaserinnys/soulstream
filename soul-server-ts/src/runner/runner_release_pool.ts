@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type {
@@ -69,6 +69,19 @@ export class RunnerReleasePool {
   async removeReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
     this.assertDescriptor(release);
     await this.materializer.remove(release);
+  }
+
+  /**
+   * 릴리스 폴더의 마지막 수정 시각. 릴리스는 만든 뒤 굳히므로 이 값이 곧 만든 시각이다.
+   * 읽지 못하면 null을 돌려주고, 부르는 쪽이 보존 쪽으로 판단한다.
+   */
+  async releasePublishedAtMs(release: RunnerReleaseDescriptor): Promise<number | null> {
+    this.assertDescriptor(release);
+    try {
+      return (await stat(release.releaseRoot)).mtimeMs;
+    } catch {
+      return null;
+    }
   }
 
   async verifyReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {

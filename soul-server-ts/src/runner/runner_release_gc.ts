@@ -29,6 +29,12 @@ export interface RunnerReleaseGcResult {
 }
 
 /**
+ * 등록이 하나도 없는 릴리스도 이만큼 지나면 지운다. Prewarm처럼 아직 쓰이지 않은 릴리스는
+ * 이 기간 동안 보존한다.
+ */
+const DEFAULT_UNREGISTERED_RELEASE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
  * Deletes only releases with positive proof that every referencing session is
  * stopped, terminal, and fully ACKed. Missing/unreadable evidence retains data.
  */
@@ -42,6 +48,7 @@ export class RunnerReleaseGarbageCollector {
     deps?: RunnerReleaseGarbageCollectorDependencies,
     recoveryStorage?: RunnerRecoveryStorage,
     private readonly currentReleaseId?: string,
+    private readonly unregisteredReleaseRetentionMs = DEFAULT_UNREGISTERED_RELEASE_RETENTION_MS,
   ) {
     if (!stateDirectory) throw new Error("runner state directory required for release GC");
     this.deps = deps ?? defaultDependencies(recoveryStorage);
@@ -160,8 +167,15 @@ export class RunnerReleaseGarbageCollector {
           (registration) => registration.config.codeSha === release.releaseId,
         );
         if (registrations.length === 0) {
-          result.retained.push({ releaseId: release.releaseId, reason: "no_final_ack_evidence" });
-          continue;
+          // 오래된 무등록 릴리스는 Prewarm이 아니다. 폴더 나이를 읽지 못하면 보존한다.
+          const publishedAtMs = await this.pool.releasePublishedAtMs(release);
+          if (
+            publishedAtMs === null
+            || Date.now() - publishedAtMs <= this.unregisteredReleaseRetentionMs
+          ) {
+            result.retained.push({ releaseId: release.releaseId, reason: "no_final_ack_evidence" });
+            continue;
+          }
         }
         for (const registration of registrations) {
           const lightweightReason = lightweightReferenceReason(registration);
