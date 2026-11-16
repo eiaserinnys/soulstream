@@ -325,6 +325,8 @@ export class ClaudeSdkClient implements ClaudeClient {
           timeoutMs: this.internalMcpReadyTimeoutMs,
           intervalMs: this.internalMcpReadyIntervalMs,
         }, signal);
+        // 대기 중에 닫히면 아래에서 만든 세션과 CLI를 아무도 닫지 않는다.
+        if (this.isClosed || (options.trackChildExit && signal.aborted)) return;
       }
       let createdSession!: ClaudeSdkPersistentSession;
       createdSession = new ClaudeSdkPersistentSession({

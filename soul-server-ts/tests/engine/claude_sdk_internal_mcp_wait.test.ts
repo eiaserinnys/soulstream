@@ -149,4 +149,27 @@ describe("ClaudeSdkClient internal MCP listener readiness", () => {
     await turn;
     await client.close();
   });
+
+  it("does not create the Query when the client closes while waiting for the listener", async () => {
+    const port = await reserveClosedPort();
+    const harness = makeHarness();
+    const client = new ClaudeSdkClient({
+      query: harness.queryFn,
+      internalMcpReadyTimeoutMs: 300,
+      internalMcpReadyIntervalMs: 25,
+    }, silentLogger);
+    const turn = collect(client.runPersistent(
+      internalMcpRunOptions("closed while waiting", `http://127.0.0.1:${port}/mcp`),
+      abortSignal(),
+    ));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await client.close();
+    // 대기 상한(300ms)을 넘겨도 닫힌 뒤에는 Query를 만들지 않는다.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(harness.captured).toHaveLength(0);
+
+    harness.end();
+    await turn;
+  });
 });
