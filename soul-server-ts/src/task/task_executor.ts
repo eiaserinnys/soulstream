@@ -1493,10 +1493,17 @@ export class TaskExecutor {
       if (attached.dispatcher.registrationId() !== registration.registrationId) {
         return false;
       }
-      return await this.executorFinalizer.retainRunnerIfDetachedWorkActive(
+      const retention = await this.executorFinalizer.retainRunnerIfDetachedWorkActive(
         task,
         attached,
-      ) === "retained";
+        true,
+      );
+      if (retention === "not_retained"
+        && (attached.engine as { detachedClaudeRuntime?: boolean }).detachedClaudeRuntime === true
+        && releaseTaskRunner(task, attached)) {
+        await attached.dispatcher.detachHost();
+      }
+      return retention === "retained";
     }
     const runner = this.runnerProcessFactory?.recover?.(
       task,
@@ -1509,6 +1516,7 @@ export class TaskExecutor {
     const retention = await this.executorFinalizer.retainRunnerIfDetachedWorkActive(
       task,
       runner,
+      true,
     );
     if (retention === "retained") {
       return true;
