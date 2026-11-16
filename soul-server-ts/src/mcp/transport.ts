@@ -30,6 +30,7 @@ import {
   type McpPrincipalResolution,
 } from "./auth.js";
 import {
+  requestContextForPrincipal,
   SOULSTREAM_AGENT_SESSION_HEADER,
   withMcpRequestContext,
   type McpRequestContext,
@@ -344,13 +345,10 @@ async function dispatchDelete(
 }
 
 function requestContext(principal: McpPrincipal, req: FastifyRequest): McpRequestContext {
-  if (principal.tier === "restricted") {
-    return { principal, callerSessionId: principal.sessionId };
-  }
-  return {
+  return requestContextForPrincipal(
     principal,
-    callerSessionId: headerValue(req.headers[SOULSTREAM_AGENT_SESSION_HEADER]),
-  };
+    headerValue(req.headers[SOULSTREAM_AGENT_SESSION_HEADER]),
+  );
 }
 
 function toolAccess(resolution: AuthenticatedResolution): McpToolAccess | undefined {

@@ -12,6 +12,25 @@ export interface McpRequestContext {
 
 const storage = new AsyncLocalStorage<McpRequestContext>();
 
+/**
+ * 인증 계층이 판정한 principal을 요청 컨텍스트로 옮긴다.
+ *
+ * restricted와 full 세션 토큰은 그 토큰이 묶은 세션 ID를 쓴다. 서비스
+ * 토큰(세션 ID 없음)을 쓴 full 요청은 지금처럼 헤더를 따른다.
+ */
+export function requestContextForPrincipal(
+  principal: McpPrincipal,
+  agentSessionHeader: string | undefined,
+): McpRequestContext {
+  if (principal.tier === "restricted") {
+    return { principal, callerSessionId: principal.sessionId };
+  }
+  return {
+    principal,
+    callerSessionId: cleanSessionId(principal.sessionId) ?? cleanSessionId(agentSessionHeader),
+  };
+}
+
 export function withMcpRequestContext<T>(
   context: McpRequestContext,
   fn: () => T,

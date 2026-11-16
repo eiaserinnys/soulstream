@@ -59,6 +59,10 @@ import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
+import {
+  withFullSessionCredential,
+  type FullSessionCredentialOptions,
+} from "./full_session_credential.js";
 import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
 import {
@@ -86,7 +90,7 @@ type RunnerEnv = Pick<Env,
   | "CLAUDE_ACCOUNTS_DIR"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
-> & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
+> & Partial<Pick<Env, "OPENCODE_CLI_PATH" | "AUTH_BEARER_TOKEN">>;
 
 /**
  * 호스트가 restricted(격리) 선택을 부를 때만 쓰는 확장 계약. 이 옵션은
@@ -245,9 +249,17 @@ export function createRunnerProcessRuntimeFactory(
       rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
       childProcessEnv,
       prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
-    })).then(async (base) => await applyRestrictedRunnerIsolation(base, {
-      task, agent, isolationHost: options.isolationHost,
-    }));
+    })).then(async (base) => {
+      if (task.executionSecurity?.tier === "restricted") {
+        return await applyRestrictedRunnerIsolation(base, {
+          task, agent, isolationHost: options.isolationHost,
+        });
+      }
+      // full 세션은 서비스 토큰 대신 그 세션에 묶인 자격 증명을 받는다.
+      return withFullSessionCredential(base, {
+        hostBearerToken: options.env.AUTH_BEARER_TOKEN,
+      });
+    });
     const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
     void spawnedProcess.catch(() => undefined); // 준비 실패 시 디스패처가 못 받는 거부를 관측만 한다.
     return createRuntime(task, agent, backend, snapshots, spawnInput, spawnedProcess);
@@ -268,6 +280,14 @@ export function createRunnerProcessRuntimeFactory(
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
       storedRuntimeMcpConfig(config),
+      // 복구가 저장된 설정으로 다시 띄울 때도 서비스 토큰이 아니라 이 세션의
+      // 자격 증명을 쓴다. restricted 설정은 이미 ssr1로 저장돼 있으므로 건드리지 않는다.
+      config.isolation
+        ? undefined
+        : {
+            hostBearerToken: options.env.AUTH_BEARER_TOKEN,
+            buildChildProcessEnv: () => options.buildChildProcessEnv(),
+          },
     );
     return withRecoveredRunnerIsolation(createRuntime(
       task,
@@ -318,18 +338,20 @@ async function adoptRegisteredRunner(
   return adopted;
 }
 
-function spawnInputFromConfig(
+/** 복구한 러너 설정에서 spawn 입력을 조립한다. full 세션이면 자격 증명까지 바꾼다. */
+export function spawnInputFromConfig(
   stateDirectory: string,
   config: RunnerChildConfig,
   runnerLeaseTimeoutMs: number,
   releasePool: Pick<RunnerReleasePool, "ensureRelease" | "describe">,
   runtimeMcpConfig: RunnerRuntimeMcpConfig,
+  fullSession?: FullSessionCredentialOptions,
 ): SpawnRunnerProcessInput {
   const release = releasePool.describe(config.codeSha);
   if (release.runnerModuleRoot !== config.snapshotPath) {
     throw new Error(`runner snapshot path does not match release id: ${config.codeSha}`);
   }
-  return {
+  const base: SpawnRunnerProcessInput = {
     stateDirectory,
     sessionId: config.sessionId,
     backend: config.backend,
@@ -364,6 +386,7 @@ function spawnInputFromConfig(
     rolloutRoot: config.rolloutRoot,
     prepareSnapshot: async () => await releasePool.ensureRelease(release),
   };
+  return fullSession ? withFullSessionCredential(base, fullSession) : base;
 }
 
 type RunnerRuntimeMcpConfig = Pick<
