@@ -34,12 +34,20 @@ const renderMarkdownContent = (
 ): string =>
   renderToStaticMarkup(createElement(MarkdownContent, { content: markdown, ...props }));
 
-describe("MarkdownContent — shared wrapping slot", () => {
-  test("marks every rendered body with the common wrapping slot", () => {
+describe("MarkdownContent — common wrapping marker", () => {
+  test("marks the top-level blocks instead of wrapping them", () => {
     const html = renderMarkdownContent("한글 본문입니다.");
-    expect(html).toContain('data-slot="markdown-content"');
-    // 감싸는 요소는 상자를 만들지 않아야 기존 여백과 배치가 그대로다.
-    expect(html).toContain('style="display:contents"');
+    expect(html).toContain('data-markdown-block="true"');
+    // 블록을 감싸는 요소를 만들지 않아 first:/last: 여백 판정이 main과 같다.
+    expect(html).not.toContain("display:contents");
+  });
+
+  test("applies the shared wrapping rule to the gallery part the component does not render", () => {
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\[data-markdown-block\]\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\[data-markdown-block\]\s*:is\(th, td\)\s*\{[^}]*overflow-wrap:\s*break-word;/s);
+    expect(css).toMatch(/\.chat-image-run\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
   });
 });
 

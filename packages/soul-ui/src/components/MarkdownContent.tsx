@@ -78,25 +78,32 @@ const createAnchorComponent = (className: string, readContext?: AttachmentReadCo
 const defaultAnchor = createAnchorComponent(defaultAnchorClass);
 const userBubbleAnchor = createAnchorComponent(userBubbleAnchorClass);
 
+// 카드 #1342: 본문 줄바꿈 규칙(globals.css)을 거는 공용 표식. MarkdownContent가
+// 그리는 맨 위 블록마다 붙는다. 감싸는 요소를 두지 않아 first:/last: 여백 판정이
+// main과 같다.
+const markdownBlock = { "data-markdown-block": "true" } as const;
+
 const components: Components = {
   // 블록 요소
-  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  p: ({ children }) => <p {...markdownBlock} className="mb-2 last:mb-0">{children}</p>,
   h1: ({ children }) => (
-    <h1 className="text-xl font-bold mb-2 mt-3 first:mt-0">{children}</h1>
+    <h1 {...markdownBlock} className="text-xl font-bold mb-2 mt-3 first:mt-0">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h2>
+    <h2 {...markdownBlock} className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-bold mb-1.5 mt-2 first:mt-0">{children}</h3>
+    <h3 {...markdownBlock} className="text-base font-bold mb-1.5 mt-2 first:mt-0">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-base font-semibold mb-1 mt-2 first:mt-0">{children}</h4>
+    <h4 {...markdownBlock} className="text-base font-semibold mb-1 mt-2 first:mt-0">{children}</h4>
   ),
+  h5: ({ children }) => <h5 {...markdownBlock}>{children}</h5>,
+  h6: ({ children }) => <h6 {...markdownBlock}>{children}</h6>,
 
   // 리스트
-  ul: ({ children }) => <ul className="mb-2 last:mb-0 ml-4 list-disc">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2 last:mb-0 ml-4 list-decimal">{children}</ol>,
+  ul: ({ children }) => <ul {...markdownBlock} className="mb-2 last:mb-0 ml-4 list-disc">{children}</ul>,
+  ol: ({ children }) => <ol {...markdownBlock} className="mb-2 last:mb-0 ml-4 list-decimal">{children}</ol>,
   li: ({ children, className }) => {
     // GFM 태스크 리스트: remark-gfm이 className="task-list-item"을 추가
     if (className === "task-list-item") {
@@ -126,7 +133,7 @@ const components: Components = {
 
   // 코드 — 기존 CollapsibleContent/ToolCallItem의 <pre> 스타일과 통일
   pre: ({ children }) => (
-    <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
       {children}
     </pre>
   ),
@@ -166,11 +173,12 @@ const components: Components = {
 
 
   // 구분선
-  hr: () => <hr className="border-border my-3" />,
+  hr: () => <hr {...markdownBlock} className="border-border my-3" />,
 
   // 인용
   blockquote: ({ children }) => (
     <blockquote
+      {...markdownBlock}
       data-markdown-blockquote="true"
       className="border-l-2 border-muted-foreground/30 pl-3 my-2 text-muted-foreground italic"
     >
@@ -182,7 +190,7 @@ const components: Components = {
   // 다크모드 가독성: 컨테이너 bg-card(거의 검정) + 보더, 헤더 bg-input(8% white)로 강조,
   // td/th에 text-foreground 명시하여 부모 컨텍스트 무관하게 다크/라이트 모두 또렷.
   table: ({ children }) => (
-    <div className="overflow-auto my-2 rounded border border-border bg-card">
+    <div {...markdownBlock} className="overflow-auto my-2 rounded border border-border bg-card">
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
@@ -198,16 +206,18 @@ const components: Components = {
 
 // 피드 카드 등 컴팩트 레이아웃용 컴포넌트 맵 (모듈 레벨 상수, 렌더링마다 새 객체 생성 방지)
 const compactComponents: Components = {
-  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
-  h1: ({ children }) => <h1 className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold mb-0.5 mt-1 first:mt-0">{children}</h3>,
-  h4: ({ children }) => <h4 className="text-sm font-medium mb-0.5 mt-1 first:mt-0">{children}</h4>,
-  ul: ({ children }) => <ul className="mb-1 last:mb-0 ml-3 list-disc">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-1 last:mb-0 ml-3 list-decimal">{children}</ol>,
+  p: ({ children }) => <p {...markdownBlock} className="mb-1 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h1 {...markdownBlock} className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 {...markdownBlock} className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 {...markdownBlock} className="text-sm font-semibold mb-0.5 mt-1 first:mt-0">{children}</h3>,
+  h4: ({ children }) => <h4 {...markdownBlock} className="text-sm font-medium mb-0.5 mt-1 first:mt-0">{children}</h4>,
+  h5: ({ children }) => <h5 {...markdownBlock}>{children}</h5>,
+  h6: ({ children }) => <h6 {...markdownBlock}>{children}</h6>,
+  ul: ({ children }) => <ul {...markdownBlock} className="mb-1 last:mb-0 ml-3 list-disc">{children}</ul>,
+  ol: ({ children }) => <ol {...markdownBlock} className="mb-1 last:mb-0 ml-3 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="mb-0">{children}</li>,
   pre: ({ children }) => (
-    <pre className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
+    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
       {children}
     </pre>
   ),
@@ -229,16 +239,18 @@ const compactComponents: Components = {
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
     <blockquote
+      {...markdownBlock}
       data-markdown-blockquote="true"
       className="border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic"
     >
       {children}
     </blockquote>
   ),
+  hr: () => <hr {...markdownBlock} />,
   // 테이블 (compact): 다크모드 토큰을 fullsize와 동일하게 적용 + 패딩만 컴팩트.
   // 누락 시 ReactMarkdown 기본 HTML 렌더 → 다크모드에서 흰 배경 노출.
   table: ({ children }) => (
-    <div className="overflow-auto my-1 rounded border border-border bg-card">
+    <div {...markdownBlock} className="overflow-auto my-1 rounded border border-border bg-card">
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
@@ -322,7 +334,7 @@ function CopyableCodeBlock({
 
   if (codeBlockLayout === "document") {
     return (
-      <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+      <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
         <div
           data-markdown-code-scroll="horizontal"
           className="my-1.5 overflow-x-auto overflow-y-hidden rounded"
@@ -343,7 +355,7 @@ function CopyableCodeBlock({
 
   if (compact) {
     return (
-      <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+      <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
         <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 pr-9 min-h-9 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">{children}</pre>
         {copyButton}
       </div>
@@ -351,7 +363,7 @@ function CopyableCodeBlock({
   }
 
   return (
-    <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+    <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
       <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
       {copyButton}
     </div>
@@ -421,7 +433,7 @@ function CopyableBlockquote({
 
   return (
     <BlockquoteDepthContext.Provider value={depth + 1}>
-      <div className="group/blockquote relative">
+      <div {...markdownBlock} className="group/blockquote relative">
         <blockquote
           ref={contentRef}
           data-slot="blockquote-copy-content"
@@ -555,7 +567,7 @@ export function MarkdownContent({
             />
           );
         }
-        return <div {...props}>{children}</div>;
+        return <div {...props} {...markdownBlock}>{children}</div>;
       },
     } : imageComponents;
     const blockquoteComponents = enableBlockquoteCopy
@@ -570,10 +582,10 @@ export function MarkdownContent({
 
   const viewerCanOpen = imageModel !== null && viewerIndex !== null && imageModel.gallery[viewerIndex] !== undefined;
 
-  // 본문 줄바꿈 규칙(globals.css)의 공용 표식. 감싸는 요소는 상자를 만들지 않아
-  // 지금의 여백과 배치를 그대로 두고 표식만 더한다.
+  // 감싸는 요소 없이 블록을 그대로 낸다. 공용 줄바꿈 표식은 블록마다 붙어 있어
+  // (markdownBlock) 마크다운 앞뒤에 형제가 있어도 first:/last: 판정이 main과 같다.
   return (
-    <div data-slot="markdown-content" style={{ display: "contents" }}>
+    <>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={[rehypeHighlight]}
@@ -590,6 +602,6 @@ export function MarkdownContent({
           onIndexChange={onViewerIndexChange}
         />
       )}
-    </div>
+    </>
   );
 }

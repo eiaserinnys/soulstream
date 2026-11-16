@@ -107,7 +107,7 @@ describe("AssistantMessage wrapping", () => {
     expect(streamingBody).toContain("[overflow-wrap:anywhere]");
 
     const completed = renderToStaticMarkup(createElement(AssistantMessage, { msg: message }));
-    // 완료 본문의 줄바꿈 규칙은 MarkdownContent의 공용 표식이 맡는다(globals.css).
-    expect(completed).toContain('data-slot="markdown-content"');
+    // 완료 본문의 줄바꿈 규칙은 MarkdownContent의 블록 표식이 맡는다(globals.css).
+    expect(completed).toContain('data-markdown-block="true"');
   });
 });

@@ -50,7 +50,15 @@ it("shows a withdrawn question and reason without answer buttons while an open q
   expect(entries).toHaveLength(2);
   expect(entries[0]!.textContent).toContain("질문 withdrawn");
   expect(entries[0]!.querySelector(".v3-card-bubble-kind")?.textContent).toContain("철회됨");
-  expect(entries[0]!.querySelector(".v3-card-question-withdrawal")?.textContent).toBe(reason);
+  const withdrawal = entries[0]!.querySelector<HTMLElement>(".v3-card-question-withdrawal")!;
+  expect(withdrawal.textContent).toBe(reason);
+  // 카드 #1342: 철회 사유 줄이 마크다운 뒤에 형제로 서므로, 마크다운의 끝 문단은
+  // 끝 자식이 아니다. 그래서 last:mb-0이 아니라 main과 같은 mb-2(8px)가 남는다.
+  const lastMarkdownBlock = withdrawal.previousElementSibling as HTMLElement;
+  expect(lastMarkdownBlock.tagName).toBe("P");
+  expect(lastMarkdownBlock.hasAttribute("data-markdown-block")).toBe(true);
+  expect(lastMarkdownBlock.matches(":last-child")).toBe(false);
+  expect(lastMarkdownBlock.classList.contains("mb-2")).toBe(true);
   expect(entries[0]!.querySelector(".v3-card-answer-options")).toBeNull();
   expect(entries[1]!.querySelector(".v3-card-bubble-kind")?.textContent).not.toContain("철회됨");
   expect(entries[1]!.querySelectorAll(".v3-card-answer-options button")).toHaveLength(1);

@@ -63,6 +63,7 @@ import {
 import {
   consumeDashboardLinkIntent,
   readDashboardLinkIntent,
+  runSessionIntentOpen,
   type DashboardLinkIntent,
 } from "./dashboard-link-intent";
 import "./v3-dashboard-styles";
@@ -353,22 +354,29 @@ function V3DashboardContent() {
     attemptedDashboardIntent.current = identity;
     sessionIntentInFlight.current = true;
     const target = sessionTarget ?? intent.target;
-    void openDashboardLink(target, identity).then((opened) => {
-      const rememberedChatTab = chatTabPressedWhilePending.current;
-      sessionIntentInFlight.current = false;
-      sessionIntentPending.current = false;
-      chatTabPressedWhilePending.current = false;
-      if (!opened || window.location.href !== identity) return;
-      window.history.replaceState(
-        window.history.state,
-        "",
-        consumeDashboardLinkIntent(identity, intent),
-      );
-      attemptedDashboardIntent.current = null;
-      if (shouldApplyRememberedChatTab({ opened, mobileMode: mobileModeRef.current, remembered: rememberedChatTab })) {
-        setMobileTab("chat");
-      }
-    });
+    // 지정 열기가 거짓으로 끝나든 예외로 끝나든 대기 표시 셋을 함께 푼다.
+    // 예외를 그냥 두면 sessionIntentPending이 참으로 남아 이후 채팅 탭 누름이
+    // 이 화면에 머무는 동안 계속 삼켜진다.
+    runSessionIntentOpen(
+      () => openDashboardLink(target, identity),
+      {
+        inFlight: sessionIntentInFlight,
+        pending: sessionIntentPending,
+        rememberedChatTab: chatTabPressedWhilePending,
+      },
+      (opened, rememberedChatTab) => {
+        if (!opened || window.location.href !== identity) return;
+        window.history.replaceState(
+          window.history.state,
+          "",
+          consumeDashboardLinkIntent(identity, intent),
+        );
+        attemptedDashboardIntent.current = null;
+        if (shouldApplyRememberedChatTab({ opened, mobileMode: mobileModeRef.current, remembered: rememberedChatTab })) {
+          setMobileTab("chat");
+        }
+      },
+    );
   }, [authLoading, catalogLoadState.status, isAuthenticated, notify, openDashboardLink]);
   const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
   const removeRunHistorySessions = folderSessions.removeSessions;
