@@ -56,6 +56,10 @@ import {
 import { appendSystemAbortNotice, SYSTEM_ABORT_NOTICE_KEY } from "../../src/task/system_abort_notice.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
+import {
+  cellAgent, fakeRunner, flush, hydrate, makeWorld, sessionRow,
+} from "./card1266_request_cells_harness.js";
+import { stopTask } from "./card1266_request_cells_steps.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -190,6 +194,7 @@ describe("TaskExecutor.startNewExecution", () => {
 
       expect(execute).toHaveBeenCalledTimes(point === "after complete" ? 1 : 0);
       expect(task.status).toBe("error");
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
       expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
         task.agentSessionId,
         expect.objectContaining({ type: "session_ended", termination_reason: "error_aborted", termination_detail: detail }),
@@ -222,12 +227,46 @@ describe("TaskExecutor.startNewExecution", () => {
     await executor.startExecutionWithRunner(task, agent, runner);
 
     expect(dispatcher.executeFrames).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       task.agentSessionId,
       expect.objectContaining({ termination_reason: "error_aborted", termination_detail: error.toString() }),
       expect.objectContaining({ termination_reason: "error_aborted", termination_detail: error.toString() }),
     );
   });
+
+  it.each(["new execution", "attached runner"] as const)(
+    "%s keeps the user stop when the complete ACK times out during interrupt",
+    async (entry) => {
+      const ack = deferred<null>();
+      const interrupt = deferred<boolean>();
+      const runner = fakeRunner({ interrupt: () => interrupt.promise });
+      runner.dispatcher.executeFrames.mockImplementation(() => (async function* () {
+        yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 } as SSEEventPayload);
+      })());
+      runner.dispatcher.waitForSessionAck.mockImplementationOnce(() => ack.promise);
+      const world = makeWorld(sessionRow(), { runner });
+      const task = await hydrate(world);
+      const execution = entry === "new execution"
+        ? world.executor.startNewExecution(task, cellAgent)
+        : world.executor.startExecutionWithRunner(task, cellAgent, runner.runner);
+      await vi.waitFor(() => expect(runner.dispatcher.waitForSessionAck).toHaveBeenCalledOnce());
+      const stopped = stopTask(world);
+      await vi.waitFor(() => expect(runner.interrupt).toHaveBeenCalledOnce());
+      ack.reject(new EventAcknowledgementTimeoutError(42, 300000));
+      await flush();
+      interrupt.resolve(true);
+      const [, accepted] = await Promise.all([execution, stopped]);
+
+      expect(accepted).toBe(true);
+      expect(world.terminalReasons()).toEqual(["killed"]);
+      expect(task.status).toBe("interrupted");
+      expect(task.terminationDetail).toBe("user_stop");
+      const next: InterventionMessage = { text: "이어서", user: "system" };
+      await appendSystemAbortNotice(task, next, { logger: silentLogger });
+      expect(next.context).toBeUndefined();
+    },
+  );
 
   it.each([
     ["cache keepalive", true, "previous answer"],

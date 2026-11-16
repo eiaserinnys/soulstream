@@ -1165,6 +1165,8 @@ export class TaskExecutor {
         await activation?.reject(error);
         if (isTerminalTaskStatus(task.status)) return;
       }
+      await task.interruptRequest?.catch(() => false);
+      if (task.terminationEventRecorded && task.terminationReason === "killed") return;
       this.clearPrematureUnknownTermination(task);
       // A deterministic preparation failure keeps its original code in the
       // terminal detail; the raw Error message alone drops it.
@@ -1556,6 +1558,8 @@ export class TaskExecutor {
             await activation?.reject(err);
             if (isTerminalTaskStatus(task.status)) return;
           }
+          await task.interruptRequest?.catch(() => false);
+          if (task.terminationEventRecorded && task.terminationReason === "killed") return;
           // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
           const preparationFailure = executionPreparationFailure(err);
           this.clearPrematureUnknownTermination(task);
@@ -2153,6 +2157,11 @@ export class TaskExecutor {
         // 멈춤이 종료를 올리는 중이면 그 마무리를 기다린다. 먼저 마무리하면 종료가 두 번 오른다.
         await task.interruptRequest?.catch(() => false);
       }
+    } catch (error) {
+      // Let an in-flight user stop record its reason before finalization can
+      // stamp the still-running task with an unknown placeholder.
+      await task.interruptRequest?.catch(() => false);
+      throw error;
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
         if (task.terminationEventRecorded !== true) task.completedAt = new Date();
