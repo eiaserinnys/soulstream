@@ -34,6 +34,15 @@ const renderMarkdownContent = (
 ): string =>
   renderToStaticMarkup(createElement(MarkdownContent, { content: markdown, ...props }));
 
+describe("MarkdownContent — shared wrapping slot", () => {
+  test("marks every rendered body with the common wrapping slot", () => {
+    const html = renderMarkdownContent("한글 본문입니다.");
+    expect(html).toContain('data-slot="markdown-content"');
+    // 감싸는 요소는 상자를 만들지 않아야 기존 여백과 배치가 그대로다.
+    expect(html).toContain('style="display:contents"');
+  });
+});
+
 describe("MarkdownContent — remark-breaks plugin", () => {
   test("mixed checklist text and inline code stay in one inline flow", () => {
     const html = renderMarkdownContent('- [ ] 폴더 `folders.checklist_enabled` 제거 후 **기존 상태**를 유지합니다.\n- [x] `create_card` 요청 확인');

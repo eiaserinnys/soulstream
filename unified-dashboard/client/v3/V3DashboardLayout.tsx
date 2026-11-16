@@ -34,7 +34,7 @@ import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
-import { reduceMobilePlannerEscape, revealAttentionDetail, selectMobilePlannerTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
+import { reduceMobilePlannerEscape, resolveSessionIntentTabPress, revealAttentionDetail, selectMobilePlannerTab, shouldApplyRememberedChatTab, type MobilePlannerState, type MobilePlannerTab } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useFolderStarChanges } from "./folder-star-store";
 import { createPlannerDataDependencies, starredFolderPage, type PlannerFolder } from "./planner-data";
@@ -279,6 +279,13 @@ function V3DashboardContent() {
   useRegisterDashboardLinkOpeners(dashboardLinkOpeners);
 
   const attemptedDashboardIntent = useRef<string | null>(null);
+  // `?session=` 지정을 아직 읽는 중인가. 지정이 끝나기 전(인증 대기 포함)에 누른
+  // 모바일 채팅 탭은 폴더와 실행을 새로 고르지 않고 여기 기억해 둔다.
+  const sessionIntentPending = useRef(false);
+  const sessionIntentInFlight = useRef(false);
+  const chatTabPressedWhilePending = useRef(false);
+  const mobileModeRef = useRef(mobileMode);
+  useEffect(() => { mobileModeRef.current = mobileMode; }, [mobileMode]);
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const hasDashboardQuery = ["session", "card", "document", "folder", "page", "attachment"]
@@ -286,19 +293,32 @@ function V3DashboardContent() {
     const hasLegacyIntent = /^#\/feed\//.test(currentUrl.hash);
     if (currentUrl.pathname !== "/" || (!hasDashboardQuery && !hasLegacyIntent)) {
       attemptedDashboardIntent.current = null;
+      sessionIntentPending.current = false;
+      chatTabPressedWhilePending.current = false;
       return;
     }
+    const isSessionIntent = currentUrl.searchParams.has("session") || hasLegacyIntent;
+    sessionIntentPending.current = isSessionIntent;
     if (authLoading || !isAuthenticated) return;
 
     const identity = currentUrl.toString();
-    if (attemptedDashboardIntent.current === identity) return;
+    if (attemptedDashboardIntent.current === identity) {
+      // 같은 주소로 이미 열기를 시작했다. 아직 진행 중이면 지정 대기를 그대로 두고,
+      // 실패로 끝난 뒤에만 대기를 풀어 이후 탭 누름이 지금처럼 가게 한다.
+      if (!sessionIntentInFlight.current) {
+        sessionIntentPending.current = false;
+        chatTabPressedWhilePending.current = false;
+      }
+      return;
+    }
     const dashboardIntent = readDashboardLinkIntent(window.location, [window.location.origin]);
-    const isSessionIntent = currentUrl.searchParams.has("session") || hasLegacyIntent;
     let sessionTarget: Extract<InternalLinkTarget, { kind: "session" }> | null = null;
     if (isSessionIntent) {
       const sessionIntent = parseSessionSearchIntent(currentUrl);
       if (!sessionIntent) {
         attemptedDashboardIntent.current = identity;
+        sessionIntentPending.current = false;
+        chatTabPressedWhilePending.current = false;
         notify("세션 링크 형식이 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
         return;
       }
@@ -306,6 +326,8 @@ function V3DashboardContent() {
         if (!/^\d+$/.test(sessionIntent.eventId) || Number(sessionIntent.eventId) < 1
           || !Number.isSafeInteger(Number(sessionIntent.eventId))) {
           attemptedDashboardIntent.current = identity;
+          sessionIntentPending.current = false;
+          chatTabPressedWhilePending.current = false;
           notify("세션 링크의 이벤트 ID가 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
           return;
         }
@@ -322,14 +344,20 @@ function V3DashboardContent() {
       legacy: hasLegacyIntent,
     } : null);
     if (!intent) {
+      sessionIntentPending.current = false;
       return;
     }
     if ((intent.target.kind === "folder" || intent.target.kind === "page")
       && catalogLoadState.status === "loading") return;
 
     attemptedDashboardIntent.current = identity;
+    sessionIntentInFlight.current = true;
     const target = sessionTarget ?? intent.target;
     void openDashboardLink(target, identity).then((opened) => {
+      const rememberedChatTab = chatTabPressedWhilePending.current;
+      sessionIntentInFlight.current = false;
+      sessionIntentPending.current = false;
+      chatTabPressedWhilePending.current = false;
       if (!opened || window.location.href !== identity) return;
       window.history.replaceState(
         window.history.state,
@@ -337,6 +365,9 @@ function V3DashboardContent() {
         consumeDashboardLinkIntent(identity, intent),
       );
       attemptedDashboardIntent.current = null;
+      if (shouldApplyRememberedChatTab({ opened, mobileMode: mobileModeRef.current, remembered: rememberedChatTab })) {
+        setMobileTab("chat");
+      }
     });
   }, [authLoading, catalogLoadState.status, isAuthenticated, notify, openDashboardLink]);
   const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
@@ -464,6 +495,10 @@ function V3DashboardContent() {
   }, [activeSessionKey, catalog?.folders, clearProject, selectFolder, selectedFolderId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab, today]);
   const switchMobileTab = useCallback((target: MobilePlannerTab) => {
     cardNavigation.close();
+    const press = resolveSessionIntentTabPress(target, sessionIntentPending.current);
+    if (press.rememberChatTab) chatTabPressedWhilePending.current = true;
+    else if (press.forgetChatTab) chatTabPressedWhilePending.current = false;
+    if (press.deferChatTab) return;
     applyMobileState(selectMobilePlannerTab({
       activeTab: mobileTab,
       selectedFolderId: selectedFolderId,

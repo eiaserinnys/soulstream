@@ -30,18 +30,28 @@ export function InternalLinkProvider({
   );
 }
 
+/**
+ * 보통 왼쪽 누름인가. 수정자 키(Ctrl, ⌘, Shift, Alt)나 다른 단추가 붙으면
+ * 브라우저 기본 동작에 맡긴다(새 탭, 새 창, 저장 등).
+ */
+export function isPlainLeftClick(event: {
+  button: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): boolean {
+  return event.button === 0
+    && !event.ctrlKey
+    && !event.metaKey
+    && !event.shiftKey
+    && !event.altKey;
+}
+
 export function useInternalLinkClick(): MouseEventHandler<HTMLAnchorElement> {
   const context = useContext(InternalLinkContext);
   return useCallback((event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      !context
-      || event.defaultPrevented
-      || event.button !== 0
-      || event.ctrlKey
-      || event.metaKey
-      || event.shiftKey
-      || event.altKey
-    ) return;
+    if (!context || event.defaultPrevented || !isPlainLeftClick(event)) return;
 
     const href = event.currentTarget.getAttribute("href");
     if (href === null) return;

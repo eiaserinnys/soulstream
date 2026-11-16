@@ -173,7 +173,7 @@ it("keeps report and comment attachments in their own card-scoped viewer lists a
  expect(viewer.querySelector('[aria-label="이전 첨부"]')).toBeNull();
  expect(viewer.querySelector('[aria-label="다음 첨부"]')).toBeNull();
  expect(viewer.querySelector('[aria-label="원본 저장"]')).not.toBeNull();
- expect(viewer.querySelector('[aria-label="Close"]')).not.toBeNull();
+ expect(viewer.querySelector('[aria-label="닫기"]')).not.toBeNull();
  expect(fetchMock.mock.calls.every(([url])=>!String(url).includes("/api/sessions/"))).toBe(true);
  expect(fetchMock.mock.calls.some(([url])=>String(url)==="/api/attachments/report-file?context_type=card&context_id=card-1")).toBe(true);
 });
@@ -236,7 +236,7 @@ it("opens contextless legacy Markdown attachments in the current card context wh
 const metadataResponse=(id:string,name:string)=>Response.json({descriptor:{attachment_id:id,name,mime_type:"text/plain",byte_size:0,checksum_sha256:null,width:null,height:null,preview_kind:"text",preview_mime_type:"text/plain"},upload_status:"committed"});
 const title=()=>document.body.querySelector(".chat-image-viewer-title")?.textContent;
 const next=()=>document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
-const closeViewer=async()=>{await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());};
+const closeViewer=async()=>{await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="닫기"]')!.click());};
 
 it("R2 uses the existing user bubble link tone for request, answer and user comment",async()=>{
  const body="[첨부](/api/attachments/tone/content)";

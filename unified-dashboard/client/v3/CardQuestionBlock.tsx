@@ -4,6 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { ThinkingOrb } from "@seosoyoung/soul-ui/components/chat/WorkingOrb";
 import { Badge, Button, MarkdownContent, useInternalLinkClick, type PersistentReportEntry } from "@seosoyoung/soul-ui";
+import { isPlainLeftClick } from "@seosoyoung/soul-ui/components/InternalLinkProvider";
 import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { ProfileAvatar } from "@seosoyoung/soul-ui/components/ProfileAvatar";
@@ -130,6 +131,7 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
       const attachment = cardAttachmentSelectionFromEvidence(item);
       return <a key={`${item.url}:${index}`} href={item.originalUrl ?? item.url} target="_blank" rel="noreferrer" title={item.label}
         onClick={event => {
+          if (!isPlainLeftClick(event)) return;
           if (attachment) {
             event.preventDefault();
             setImage({ src: attachment.previewUrl ?? attachment.originalUrl ?? item.url, alt: item.label, attachment });

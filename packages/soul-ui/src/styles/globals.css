@@ -209,6 +209,32 @@
   line-height: var(--chat-line-height);
 }
 
+/* MarkdownContent가 그리는 모든 본문의 줄바꿈 규칙(카드 #1342). 한글 낱말은
+   글자 단위로 끊지 않고(keep-all), 끊을 곳 없는 긴 해시와 주소만 비상 줄바꿈
+   (anywhere)한다. 브라우저 기본 word-break: normal은 한글 음절 사이에서 끊는다. */
+[data-slot="markdown-content"] {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* 표 칸의 min-content는 한글 낱말보다 좁아지지 않아야 한다. break-word는
+   min-content 계산에 반영되지 않으므로 긴 해시가 든 표는 지금처럼 표 상자 안
+   가로 스크롤로 간다. 칸 안 인라인 코드와 링크만 글자 단위로 끊는다. */
+[data-slot="markdown-content"] :is(th, td) {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+[data-slot="markdown-content"] :is(th, td) :is(code, a) {
+  overflow-wrap: anywhere;
+}
+/* 감싸는 요소(display: contents)가 생겨도 prose의 첫 자식·끝 자식 여백 규칙은
+   전과 같이 이어진다. */
+.prose > [data-slot="markdown-content"]:first-child > :first-child {
+  margin-top: 0;
+}
+.prose > [data-slot="markdown-content"]:last-child > :last-child {
+  margin-bottom: 0;
+}
+
 /* The frame owns outer padding. One row owns the shared button/last-line seat. */
 [data-slot="chat-input-composer"] {
   --chat-composer-control-size: calc(var(--spacing) * 8);
@@ -1556,17 +1582,6 @@ pre[data-markdown-code-layout="document"] {
 }
 .chat-image-viewer-popup[data-attachment-kind="document"] .chat-attachment-markdown {
   max-width: 100%;
-  overflow-wrap: anywhere;
-}
-/* 표는 문서 폭을 넘지 않고 자기 상자 안에서 가로로 스크롤한다. 셀의 긴 낱말은
-   문서 본문과 달리 아무 데서나 접지 않아야 표 너비가 내용만큼 늘어난다. */
-.chat-image-viewer-popup[data-attachment-kind="document"] .chat-attachment-markdown table {
-  overflow-wrap: normal;
-}
-/* 표 칸의 한글 낱말은 글자 단위로 끊지 않는다. 끊을 곳 없는 긴 해시와 경로는
-   칸 안에서 줄바꿈되지 않고 표 상자 안 가로 스크롤로 간다. */
-.chat-image-viewer-popup[data-attachment-kind="document"] .chat-attachment-markdown table :is(th, td) {
-  word-break: keep-all;
 }
 /* Galleries, HTML previews and audio players keep the stable viewport frame so
    the frame does not move between steps or while a preview loads. */

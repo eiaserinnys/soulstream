@@ -5,7 +5,26 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InternalLinkProvider, useInternalLinkClick } from "./InternalLinkProvider";
+import { InternalLinkProvider, isPlainLeftClick, useInternalLinkClick } from "./InternalLinkProvider";
+
+describe("isPlainLeftClick", () => {
+  const base = { button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false };
+
+  it("accepts an ordinary left press", () => {
+    expect(isPlainLeftClick(base)).toBe(true);
+  });
+
+  it.each([
+    ["Ctrl", { ctrlKey: true }],
+    ["Command", { metaKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["Alt", { altKey: true }],
+    ["middle button", { button: 1 }],
+    ["right button", { button: 2 }],
+  ] as const)("rejects %s presses so the browser keeps its own behavior", (_name, modifier) => {
+    expect(isPlainLeftClick({ ...base, ...modifier })).toBe(false);
+  });
+});
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

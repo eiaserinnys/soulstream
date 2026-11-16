@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Checkbox, useInternalLinkClick } from "@seosoyoung/soul-ui";
+import { isPlainLeftClick } from "@seosoyoung/soul-ui/components/InternalLinkProvider";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
@@ -74,7 +75,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
      if(evidence.availability)return null;
      const attachment=cardAttachmentSelectionFromEvidence(evidence);
      return <a key={key} href={evidence.originalUrl??evidence.url} target="_blank" rel="noreferrer" title={evidence.label}
-      onClick={event=>{if(attachment){event.preventDefault();onOpenImage(attachment.previewUrl??attachment.originalUrl??evidence.url,evidence.label,attachment);}else internalLinkClick(event);}}>
+      onClick={event=>{if(!isPlainLeftClick(event))return;if(attachment){event.preventDefault();onOpenImage(attachment.previewUrl??attachment.originalUrl??evidence.url,evidence.label,attachment);}else internalLinkClick(event);}}>
       <Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>;
     })}{linkFailureCount>0?<span className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>:null}</div>:null}
     {!readOnly?<div className="v3-card-check-item-foot">

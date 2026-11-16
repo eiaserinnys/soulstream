@@ -119,6 +119,18 @@ it("does not show missing capture or an empty image block for link-only reported
  const node=document.createElement("div");node.innerHTML=html;
  expect(node.textContent).not.toContain("캡처 없음");expect(node.querySelector('[data-evidence-type="image"]')).toBeNull();expect(node.querySelector('[data-evidence-type="link"] a')).not.toBeNull();
 });
+it.each([["Ctrl",{ctrlKey:true}],["Command",{metaKey:true}]])("keeps the browser default for %s clicks on card-scoped evidence links",async(_name,modifier)=>{
+ const preview="/api/attachments/asset-1/content?context_type=card&context_id=card-1";
+ const onOpenImage=vi.fn();
+ await act(()=>root.render(<CardCheckItems items={[item(11,"reported",{evidence:[
+  idEvidence("link",`${preview}&download=true`,"원본 파일","asset-1",preview,`${preview}&download=true`),
+ ]})]} onConfirmChange={vi.fn()} onTargetItem={vi.fn()} onOpenImage={onOpenImage}/>));
+ const link=container.querySelector<HTMLAnchorElement>('[data-item-id="11"] [data-evidence-type="link"] a')!;
+ const click=new MouseEvent("click",{bubbles:true,cancelable:true,button:0,...modifier});
+ await act(()=>{link.dispatchEvent(click);});
+ expect(click.defaultPrevented).toBe(false);
+ expect(onOpenImage).not.toHaveBeenCalled();
+});
 it("opens a card-scoped preview in the existing dialog and restores the image trigger",async()=>{
  const preview="/api/attachments/image-1/content?context_type=card&context_id=card-1";
  const original=`${preview}&download=true`;

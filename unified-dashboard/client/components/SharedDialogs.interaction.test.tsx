@@ -52,7 +52,7 @@ it("keeps a small folder draft after failure and guards pending submit/close", a
   expect(confirm).toHaveBeenCalledTimes(1);
   expect(name.disabled).toBe(true);
   await click("취소");
-  await click("Close");
+  await click("닫기");
   expect(close).not.toHaveBeenCalled();
   await act(async () => pending.reject(new Error("HTTP 503")));
   expect(name.value).toBe("보존할 폴더");
@@ -83,7 +83,7 @@ it("keeps user form errors inside the dialog and refreshes only after one succes
   expect(writes).toBe(1);
   expect(email.disabled).toBe(true);
   await click("취소");
-  await click("Close");
+  await click("닫기");
   await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   await act(async () => pending.resolve(new Response(JSON.stringify({ detail: "이미 등록된 이메일입니다" }), { status: 409 })));

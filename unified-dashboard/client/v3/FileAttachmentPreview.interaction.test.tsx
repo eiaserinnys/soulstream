@@ -70,7 +70,7 @@ it("uses a preview chip for ready uploads and only enables attachment-only send 
   const view=container.querySelector<HTMLButtonElement>("[data-chat-attachment-chip-view]")!;
   await act(()=>view.click());
   expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
-  await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+  await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="닫기"]')!.click());
   chatInputState.removeFile.mockClear();chatInputState.send.mockClear();
   await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="첨부 제거"]')!.click());
   expect(chatInputState.removeFile).toHaveBeenCalledWith("file-a");

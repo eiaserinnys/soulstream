@@ -568,24 +568,20 @@ export function MarkdownContent({
         : blockquoteComponents;
   }, [chatImages?.readContext, codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
 
-  const markdown = (
-    <ReactMarkdown
-      remarkPlugins={remarkPlugins}
-      rehypePlugins={[rehypeHighlight]}
-      components={selectedComponents}
-    >
-      {content}
-    </ReactMarkdown>
-  );
+  const viewerCanOpen = imageModel !== null && viewerIndex !== null && imageModel.gallery[viewerIndex] !== undefined;
 
-  if (!imageModel) return markdown;
-
-  const viewerCanOpen = viewerIndex !== null && imageModel.gallery[viewerIndex] !== undefined;
-
+  // 본문 줄바꿈 규칙(globals.css)의 공용 표식. 감싸는 요소는 상자를 만들지 않아
+  // 지금의 여백과 배치를 그대로 두고 표식만 더한다.
   return (
-    <>
-      {markdown}
-      {viewerCanOpen && (
+    <div data-slot="markdown-content" style={{ display: "contents" }}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={[rehypeHighlight]}
+        components={selectedComponents}
+      >
+        {content}
+      </ReactMarkdown>
+      {imageModel && viewerCanOpen && (
         <ChatImageViewer
           gallery={imageModel.gallery}
           index={viewerIndex!}
@@ -594,6 +590,6 @@ export function MarkdownContent({
           onIndexChange={onViewerIndexChange}
         />
       )}
-    </>
+    </div>
   );
 }

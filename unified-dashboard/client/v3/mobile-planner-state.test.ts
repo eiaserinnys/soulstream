@@ -1,12 +1,49 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveSessionIntentTabPress,
   revealAttentionDetail,
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
+  shouldApplyRememberedChatTab,
   type MobilePlannerState,
   type MobilePlannerFolderOption,
 } from "./mobile-planner-state";
+
+describe("session intent tab press", () => {
+  it("defers a chat tab press while the session intent is still being read", () => {
+    expect(resolveSessionIntentTabPress("chat", true)).toEqual({
+      deferChatTab: true,
+      rememberChatTab: true,
+      forgetChatTab: false,
+    });
+  });
+
+  it("opens other tabs and forgets the chat tab press while the intent is pending", () => {
+    for (const target of ["today", "projects", "task"] as const) {
+      expect(resolveSessionIntentTabPress(target, true)).toEqual({
+        deferChatTab: false,
+        rememberChatTab: false,
+        forgetChatTab: true,
+      });
+    }
+  });
+
+  it("leaves a chat tab press after the intent finished to the existing rule", () => {
+    expect(resolveSessionIntentTabPress("chat", false)).toEqual({
+      deferChatTab: false,
+      rememberChatTab: false,
+      forgetChatTab: true,
+    });
+  });
+
+  it("moves to chat only when the open succeeded on mobile with a remembered press", () => {
+    expect(shouldApplyRememberedChatTab({ opened: true, mobileMode: true, remembered: true })).toBe(true);
+    expect(shouldApplyRememberedChatTab({ opened: false, mobileMode: true, remembered: true })).toBe(false);
+    expect(shouldApplyRememberedChatTab({ opened: true, mobileMode: false, remembered: true })).toBe(false);
+    expect(shouldApplyRememberedChatTab({ opened: true, mobileMode: true, remembered: false })).toBe(false);
+  });
+});
 
 const tasks: MobilePlannerFolderOption[] = [
   {

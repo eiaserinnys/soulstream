@@ -82,6 +82,33 @@ export function reduceMobilePlannerEscape(state: MobilePlannerState): MobilePlan
   return state;
 }
 
+/**
+ * `?session=` 지정을 아직 읽는 중인가에 따른 모바일 탭 누름의 처리.
+ * 지정이 끝나기 전의 채팅 탭은 폴더와 실행을 새로 고르지 않고 누른 사실만 기억한다.
+ * 처리 중 다른 탭을 누르면 기억을 버리고 그 탭은 지금처럼 연다.
+ */
+export function resolveSessionIntentTabPress(
+  target: MobilePlannerTab,
+  sessionIntentPending: boolean,
+): { deferChatTab: boolean; rememberChatTab: boolean; forgetChatTab: boolean } {
+  if (!sessionIntentPending) {
+    return { deferChatTab: false, rememberChatTab: false, forgetChatTab: true };
+  }
+  if (target === "chat") {
+    return { deferChatTab: true, rememberChatTab: true, forgetChatTab: false };
+  }
+  return { deferChatTab: false, rememberChatTab: false, forgetChatTab: true };
+}
+
+/** 지정 열기가 성공한 뒤, 처리 중에 누른 채팅 탭을 그대로 적용할지. */
+export function shouldApplyRememberedChatTab(input: {
+  opened: boolean;
+  mobileMode: boolean;
+  remembered: boolean;
+}): boolean {
+  return input.opened && input.mobileMode && input.remembered;
+}
+
 /** Opens the detail chat without changing the attention's selected run. */
 export function revealAttentionDetail(
   state: MobilePlannerState,
