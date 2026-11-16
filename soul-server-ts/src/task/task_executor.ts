@@ -1171,6 +1171,7 @@ export class TaskExecutor {
       await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
         task,
         preparationFailure?.detail ?? error,
+        preparationFailure?.detail ?? (error instanceof Error ? error.toString() : String(error)),
       );
       if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       await this._finalize(task);
@@ -1561,6 +1562,7 @@ export class TaskExecutor {
           await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
             task,
             preparationFailure?.detail ?? err,
+            preparationFailure?.detail ?? (err instanceof Error ? err.toString() : String(err)),
           );
           if (task.terminationEventRecorded !== true) task.completedAt = new Date();
           await this._finalize(task);

@@ -50,7 +50,11 @@ export class TaskEngineFailureRecovery {
     return "stop_on_error";
   }
 
-  async recoverFromOuterExecutionFailure(task: Task, err: unknown): Promise<void> {
+  async recoverFromOuterExecutionFailure(
+    task: Task,
+    err: unknown,
+    terminationDetail?: string,
+  ): Promise<void> {
     const message = this.errorMessage(err);
     this.deps.logger.error(
       { err, sessionId: task.agentSessionId },
@@ -59,7 +63,7 @@ export class TaskEngineFailureRecovery {
 
     this.recordError(task, message, {
       overwriteNonRunning: true,
-      terminationDetail: err instanceof Error ? err.toString() : message,
+      terminationDetail,
     });
   }
 
