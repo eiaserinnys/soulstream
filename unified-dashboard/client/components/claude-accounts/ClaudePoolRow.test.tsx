@@ -33,7 +33,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const reset = "2030-01-01T00:00:00.000Z";
-function account(id: string, priority: number, email = `${id}@example.test`): ClaudeAccount {
+function account(id: string, priority: number | null, email = `${id}@example.test`): ClaudeAccount {
   return {
     id,
     email,
@@ -42,9 +42,9 @@ function account(id: string, priority: number, email = `${id}@example.test`): Cl
     priority,
     auth_state: "ok",
     usage: {
-      five_hour: { used_percent: priority * 10, resets_at: reset },
-      seven_day: { used_percent: priority * 12, resets_at: reset },
-      fable_weekly: { used_percent: priority * 8, resets_at: reset },
+      five_hour: { used_percent: (priority ?? 0) * 10, resets_at: reset },
+      seven_day: { used_percent: (priority ?? 0) * 12, resets_at: reset },
+      fable_weekly: { used_percent: (priority ?? 0) * 8, resets_at: reset },
     },
     observed_at: null,
     blocked: null,
@@ -151,6 +151,25 @@ function header(): HTMLElement {
 async function expand() {
   await act(async () => header().dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await settle();
+}
+
+/** PATCH 를 순서대로 쌓고, 서버 목록을 실제처럼 priority 만 바꿔 돌려주는 가짜 요청. */
+function patchTracker(initial: ClaudeAccountList) {
+  let serverList = initial;
+  const patches: Array<{ id: string; priority: number }> = [];
+  const request = vi.fn<typeof fetch>(async (input, init) => {
+    if (init?.method === "PATCH") {
+      const accountId = String(input).split("/").at(-1)!;
+      const patch = JSON.parse(String(init.body)) as { priority: number };
+      patches.push({ id: accountId, priority: patch.priority });
+      serverList = {
+        ...serverList,
+        accounts: serverList.accounts.map((item) => item.id === accountId ? { ...item, priority: patch.priority } : item),
+      };
+    }
+    return data(serverList);
+  });
+  return { request: request as unknown as typeof fetch, patches, list: () => serverList };
 }
 
 describe("ClaudePoolRow", () => {
@@ -328,6 +347,122 @@ describe("ClaudePoolRow", () => {
     expect(serverList.accounts.find((item) => item.id === "first")?.priority).toBe(2);
     expect(serverList.accounts.find((item) => item.id === "second")?.priority).toBe(1);
     expect(accountIds()).toEqual(["second", "first", "third"]);
+  });
+
+  it("새 계정처럼 우선순위가 모두 비어 있으면 이동 한 번에 화면 순서대로 1..N 을 저장한다", async () => {
+    const initial = list([account("a", null), account("b", null), account("c", null), account("d", null)]);
+    const tracker = patchTracker(initial);
+    await mount(initial, tracker.request);
+    await expand();
+    expect(accountIds()).toEqual(["a", "b", "c", "d"]);
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="d"]')!).click());
+    await settle();
+
+    expect(accountIds()).toEqual(["a", "b", "d", "c"]);
+    // 저장은 서버 목록 순서대로 보내고, 값은 화면 순서 기준 1..N 이다.
+    expect(tracker.patches).toEqual([
+      { id: "a", priority: 1 },
+      { id: "b", priority: 2 },
+      { id: "c", priority: 4 },
+      { id: "d", priority: 3 },
+    ]);
+    expect(tracker.list().accounts.map((item) => [item.id, item.priority])).toEqual([
+      ["a", 1],
+      ["b", 2],
+      ["c", 4],
+      ["d", 3],
+    ]);
+    expect(client.getQueryData(["claude-auth-accounts", "node-a"])).toEqual(tracker.list());
+  });
+
+  it("값이 겹치거나 비어 있어도 누를 때마다 정확히 한 칸씩 움직인다", async () => {
+    const initial = list([account("a", 3), account("b", 3), account("c", null)]);
+    const tracker = patchTracker(initial);
+    await mount(initial, tracker.request);
+    await expand();
+    expect(accountIds()).toEqual(["a", "b", "c"]);
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+    expect(accountIds()).toEqual(["a", "c", "b"]);
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+    expect(accountIds()).toEqual(["c", "a", "b"]);
+
+    await act(async () => button("우선순위 내리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+    expect(accountIds()).toEqual(["a", "c", "b"]);
+
+    await act(async () => button("우선순위 내리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+    expect(accountIds()).toEqual(["a", "b", "c"]);
+  });
+
+  it("올렸다가 내리면 처음 화면 순서로 돌아온다", async () => {
+    const initial = list([account("a", null), account("b", 3), account("c", 3), account("d", null)]);
+    const tracker = patchTracker(initial);
+    await mount(initial, tracker.request);
+    await expand();
+    const before = accountIds();
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="d"]')!).click());
+    await settle();
+    expect(accountIds()).not.toEqual(before);
+
+    await act(async () => button("우선순위 내리기", host.querySelector('[data-account-id="d"]')!).click());
+    await settle();
+    expect(accountIds()).toEqual(before);
+  });
+
+  it("비활성 계정은 활성 계정 뒤에 남고 화살표 이동은 활성 계정 사이에서만 일어난다", async () => {
+    const initial = list([
+      account("a", 5),
+      account("b", 6),
+      account("c", null),
+      { ...account("d", 1), enabled: false },
+    ]);
+    const tracker = patchTracker(initial);
+    await mount(initial, tracker.request);
+    await expand();
+    expect(accountIds()).toEqual(["a", "b", "c", "d"]);
+    expect(button("우선순위 올리기", host.querySelector('[data-account-id="a"]')!).disabled).toBe(true);
+    expect(button("우선순위 내리기", host.querySelector('[data-account-id="c"]')!).disabled).toBe(true);
+    expect(host.querySelector('[data-account-id="d"] [aria-label="우선순위 올리기"]')).toBeNull();
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+
+    expect(accountIds()).toEqual(["a", "c", "b", "d"]);
+    expect(tracker.patches).toEqual([
+      { id: "a", priority: 1 },
+      { id: "b", priority: 3 },
+      { id: "c", priority: 2 },
+      { id: "d", priority: 4 },
+    ]);
+  });
+
+  it("우선순위 저장이 실패하면 서버 목록을 다시 읽어 화면을 맞춘다", async () => {
+    const initial = list([account("a", null), account("b", null), account("c", null)]);
+    const reloaded = list([account("a", 4), account("b", 5), account("c", 6)]);
+    const requestMock = vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.method === "PATCH") {
+        return Response.json({ code: "save_failed", message: "저장에 실패했습니다." }, { status: 503 });
+      }
+      return data(reloaded);
+    });
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+
+    expect(requestMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(1);
+    expect(requestMock).toHaveBeenCalledWith("/api/nodes/node-a/claude-auth/accounts", expect.objectContaining({ method: "GET" }));
+    expect(client.getQueryData(["claude-auth-accounts", "node-a"])).toEqual(reloaded);
+    expect(accountIds()).toEqual(["a", "b", "c"]);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("저장에 실패했습니다.");
   });
 
   it("updates enabled state and confirms deletion inline, showing deferred removal", async () => {
