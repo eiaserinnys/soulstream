@@ -1037,6 +1037,78 @@ describe("EventIngressRepository", () => {
     }]);
     expect(recordFailure).toHaveBeenCalledTimes(3);
   });
+
+  it("routes a retrying-record cleanup failure to the injected warn sink", async () => {
+    const warn = vi.fn();
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) {
+        return [{ execution_registration_id: null }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const removeRetrying = vi.fn(async () => {
+      throw new Error("dead-letter file is locked");
+    });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      {
+        find: vi.fn(async () => ({ state: "retrying" as const, path: "/dead-letter/a.json" })),
+        recordFailure: vi.fn(),
+        removeRetrying,
+      },
+      { modelCatalog: catalog, warn },
+    );
+
+    await expect(repository.commitBatch("node-a", batch())).resolves.toMatchObject([{
+      outcome: "committed",
+      eventId: 41,
+    }]);
+    expect(removeRetrying).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith({
+      cause_code: "EVENT_INGRESS_RETRYING_RECORD_REMOVE_FAILED",
+      session_id: "session-a",
+      source_seq: 1,
+      error: "dead-letter file is locked",
+    }, "event ingress retrying record remove failed");
+  });
+
+  it("routes a session machine ingress mismatch to the same injected warn sink", async () => {
+    const warn = vi.fn();
+    const sql = fakeSql(async (text) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR NO KEY UPDATE")) return [GATE_ROW];
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
+      if (text.includes("INSERT INTO event_ingress_receipts")) return [];
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const effect = vi.fn(async () => ({ applied: false, canonicalSession: null }));
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      effect,
+      undefined,
+      { modelCatalog: catalog, warn },
+    );
+
+    await expect(repository.commitBatch("node-a", batch({
+      session_effect: TERMINAL_EFFECT,
+    }, 2))).resolves.toMatchObject([{ outcome: "committed", eventId: 41 }]);
+
+    expect(effect).toHaveBeenCalledWith(sql, expect.objectContaining({ warn }));
+    expect(warn).toHaveBeenCalledWith({
+      cause_code: "SESSION_MACHINE_INGRESS_MISMATCH",
+      session_id: "session-a",
+      command: "terminal_transition",
+    }, "session machine ingress mismatch");
+  });
 });
 
 function batch(

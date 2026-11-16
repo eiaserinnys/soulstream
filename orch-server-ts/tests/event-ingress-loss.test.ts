@@ -164,6 +164,7 @@ describe("set_backend_session_id with a different stored claude_session_id", () 
       eventId: 7,
       envelope: envelope(),
       effect: { kind: "set_backend_session_id", backend_session_id: "claude-new" },
+      warn: () => undefined,
     });
 
     const read = statements.find((text) => text.includes("SELECT claude_session_id"))!;

@@ -53,6 +53,7 @@ import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
 import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
+  type EventIngressWarnSink,
   type EventSessionEffectApplier,
 } from "./node/event_ingress_repository.js";
 import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
@@ -126,7 +127,11 @@ import { RecurringJobService } from "./recurring-jobs/service.js";
 import { RecurringJobScheduler } from "./recurring-jobs/scheduler.js";
 import { createProductionRecurringJobWiring } from "./recurring-jobs/production_wiring.js";
 import { createRecurringJobTargetValidator } from "./recurring-jobs/target_validator.js";
-import { createRecurringSession } from "./session/recurring_session_creation.js";
+import {
+  createRecurringSession,
+  type CreateRecurringSessionInput,
+} from "./session/recurring_session_creation.js";
+import type { RecurringJob, RecurringJobRun } from "./recurring-jobs/types.js";
 import type { SessionDeliveryRepository } from
   "./control_plane/repositories/session_delivery_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
@@ -298,7 +303,13 @@ export async function createLiveProductionApplication(
       }
     },
   });
-  const sessionDeletionService = new SessionDeletionService({ repository: new SessionDeletionRepository(sqlResolver) });
+  const sessionDeletionService = new SessionDeletionService({
+    repository: new SessionDeletionRepository(sqlResolver, {
+      onCardsUpdated: ({ cardId, folderId }) => {
+        runtimeServices.sessionBroadcaster.append({ type: "card_updated", cardId, folderId });
+      },
+    }),
+  });
   let publishPersistentReports: PublishPersistentReports = () => undefined;
   let notifyPersistentReportPosted: OnPersistentReportPosted = () => undefined;
   let appendReportTimeline: AppendReportTimeline = async () => undefined;
@@ -315,6 +326,10 @@ export async function createLiveProductionApplication(
   const registry = new InMemoryNodeRegistry();
   let cardDispatchRuntime: Awaited<ReturnType<typeof createCardDispatchRuntime>> | undefined;
   const applyCardWorkErrorEffect = createCardWorkErrorSessionEffectApplier();
+  // 앱 로거는 여기서 아직 없으므로 startupWarnings를 거쳐 앱 로거로 넘어가는
+  // context.warn에 연결한다. 구조화 필드는 문장에 실어 pino 스트림 안에 남긴다.
+  const eventIngressWarn: EventIngressWarnSink = (fields, message) =>
+    context.warn(`${message}: ${JSON.stringify(fields)}`);
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
     applyCardWorkErrorEffect,
@@ -324,7 +339,7 @@ export async function createLiveProductionApplication(
       ".local",
       "event-ingress-dead-letter",
     )),
-    { modelCatalog: overrides.modelCatalog },
+    { modelCatalog: overrides.modelCatalog, warn: eventIngressWarn },
     applyEventFeedProjection,
   );
   const eventIngressCommitter = createCardWorkErrorIngressCommitter(
@@ -794,15 +809,7 @@ export async function createLiveProductionApplication(
         router: runtimeServices.sessionRouter,
         bridge: runtimeServices.sessionBridge,
         modelPresetAvailability: providers.modelPresetAvailability,
-      }, {
-        sessionId: run.sessionId,
-        prompt: job.prompt,
-        nodeId: job.nodeId,
-        agentId: job.agentId,
-        modelPreset: job.modelPreset,
-        folderId: job.folderId,
-        callerInfo: job.executionCaller,
-      }),
+      }, recurringSessionCreateInput(job, run)),
       findDurableSession: async (sessionId) => {
         const row = await (await persistenceRepositoryProvider()).sessionReads.getSession(sessionId);
         if (!row) return null;
@@ -1153,6 +1160,33 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
       input.warn(failure);
     }
   }
+}
+
+/**
+ * 반복 작업 발사 입력. 만든 사람의 caller_info를 보존한 사본에 이 실행이
+ * 스케줄러에서 나왔다는 표시 세 개를 덧붙인다. source는 바꾸지 않는다.
+ */
+export function recurringSessionCreateInput(
+  job: Pick<
+    RecurringJob,
+    "jobId" | "prompt" | "nodeId" | "agentId" | "modelPreset" | "folderId" | "executionCaller"
+  >,
+  run: Pick<RecurringJobRun, "runId" | "sessionId">,
+): CreateRecurringSessionInput {
+  return {
+    sessionId: run.sessionId,
+    prompt: job.prompt,
+    nodeId: job.nodeId,
+    agentId: job.agentId,
+    modelPreset: job.modelPreset,
+    folderId: job.folderId,
+    callerInfo: {
+      ...job.executionCaller,
+      scheduled_by: "recurring_job",
+      recurring_job_id: job.jobId,
+      recurring_run_id: run.runId,
+    },
+  };
 }
 
 export function createCardWorkErrorSessionEffectApplier(

@@ -64,6 +64,19 @@ export type EventIngressSqlProvider = {
   resolveSql(): Promise<EventIngressSql>;
 };
 
+/**
+ * 경고 한 건을 운영 로그로 넘기는 싱크. 첫 인자는 구조화 필드, 둘째 인자는
+ * 사람이 읽을 문장이다. 주어지지 않으면 console.warn으로 남긴다.
+ */
+export type EventIngressWarnSink = (
+  fields: Record<string, unknown>,
+  message: string,
+) => void;
+
+/** 싱크가 없을 때의 기본 경고 경로. 지금까지의 console.warn 모양을 지킨다. */
+export const consoleEventIngressWarn: EventIngressWarnSink = (fields) =>
+  console.warn(fields);
+
 export type EventSessionEffectApplier = (
   sql: EventIngressQuerySql,
   input: {
@@ -73,6 +86,8 @@ export type EventSessionEffectApplier = (
     effect: EventSessionEffect;
     /** 세션 기계가 R1(잇기 되살림)로 판정했다. */
     terminalResume?: boolean;
+    /** 효과 적용기의 경고를 이 싱크로 보낸다. 저장소가 자기 싱크를 채워 넘긴다. */
+    warn: EventIngressWarnSink;
   },
 ) => Promise<EventSessionEffectApplication>;
 
@@ -89,6 +104,8 @@ export type EventFeedProjectionApplier = (
 export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
   /** Prices usage facts at ingest time from the current catalogue file. */
   readonly modelCatalog: ModelCatalogSource;
+  /** 없으면 console.warn으로 남긴다. */
+  readonly warn?: EventIngressWarnSink;
 };
 
 type PendingIngressEntry = {
@@ -122,6 +139,7 @@ export class LiveEventIngressSqlProvider implements EventIngressSqlProvider {
 export class EventIngressRepository {
   private readonly retryPolicy: EventIngressRetryPolicy;
   private readonly modelCatalog: ModelCatalogSource;
+  private readonly warn: EventIngressWarnSink;
 
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
@@ -132,6 +150,7 @@ export class EventIngressRepository {
   ) {
     this.retryPolicy = new EventIngressRetryPolicy(options);
     this.modelCatalog = options.modelCatalog;
+    this.warn = options.warn ?? consoleEventIngressWarn;
   }
 
   async commitBatch(
@@ -221,12 +240,12 @@ export class EventIngressRepository {
     try {
       await this.deadLetterStore?.removeRetrying?.({ nodeId, envelope });
     } catch (error) {
-      console.warn({
+      this.warn({
         cause_code: "EVENT_INGRESS_RETRYING_RECORD_REMOVE_FAILED",
         session_id: envelope.session_id,
         source_seq: envelope.source_seq,
         error: error instanceof Error ? error.message : String(error),
-      });
+      }, "event ingress retrying record remove failed");
     }
   }
 
@@ -328,14 +347,15 @@ export class EventIngressRepository {
           ...(gate.kind === "apply" && gate.terminalResume
             ? { terminalResume: true }
             : {}),
+          warn: this.warn,
         });
         if (gate.kind === "apply" && sessionEffectApplication.applied === false) {
           // 기계와 SQL이 갈렸다. 사유 없이 SQL 결과를 돌려준다.
-          console.warn({
+          this.warn({
             cause_code: "SESSION_MACHINE_INGRESS_MISMATCH",
             session_id: envelope.session_id,
             command: gatedCommand,
-          });
+          }, "session machine ingress mismatch");
         }
       }
     } else if (semanticReceipt && isCanonicalTransitionEffect(envelope.session_effect)) {

@@ -147,7 +147,7 @@ async function hasConflictingBackendSessionId(
   sql: EventIngressQuerySql,
   input: Parameters<EventSessionEffectApplier>[1],
 ): Promise<boolean> {
-  const { envelope, effect, eventId } = input;
+  const { envelope, effect, eventId, warn } = input;
   if (effect.kind !== "set_backend_session_id") return false;
   const stored = await sql<Array<{ claude_session_id: string | null }>>`
     SELECT claude_session_id FROM sessions
@@ -157,13 +157,13 @@ async function hasConflictingBackendSessionId(
   if (storedId === null || storedId === "" || storedId === effect.backend_session_id) {
     return false;
   }
-  console.warn({
+  warn({
     cause_code: "BACKEND_SESSION_ID_MISMATCH_SKIPPED",
     session_id: envelope.session_id,
     stored_claude_session_id: storedId,
     incoming_claude_session_id: effect.backend_session_id,
     event_id: eventId,
-  });
+  }, "backend session id mismatch skipped");
   return true;
 }
 
