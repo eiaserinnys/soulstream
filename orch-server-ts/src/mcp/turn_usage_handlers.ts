@@ -84,6 +84,16 @@ export const turnUsageHandlers = {
           ...(row.injection_chars === undefined ? {} : { injection_chars: row.injection_chars }),
           ...(row.kind !== "no_usage" || row.ended === undefined ? {} : { ended: row.ended }),
           ...(row.kind !== "no_usage" || row.tool_calls === undefined ? {} : { tool_calls: row.tool_calls }),
+          ...(row.subagent_input_tokens === undefined ? {} : { subagent_input_tokens: row.subagent_input_tokens }),
+          ...(row.subagent_cached_input_tokens === undefined
+            ? {}
+            : { subagent_cached_input_tokens: row.subagent_cached_input_tokens }),
+          ...(row.subagent_cache_write_tokens === undefined
+            ? {}
+            : { subagent_cache_write_tokens: row.subagent_cache_write_tokens }),
+          ...(row.subagent_output_tokens === undefined ? {} : { subagent_output_tokens: row.subagent_output_tokens }),
+          ...(row.subagent_cost_usd === undefined ? {} : { subagent_cost_usd: row.subagent_cost_usd }),
+          ...(row.subagent_models === undefined ? {} : { subagent_models: row.subagent_models }),
         })),
       });
     } catch (error) {
