@@ -9,18 +9,9 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { type AtomContextSpec } from "./atom_context.js";
-import {
-  extractPageContextTruncation,
-  mergeContextManifests,
-} from "./compiler/index.js";
-import {
-  fetchCogitoContextItem,
-  type CogitoContextConfig,
-} from "./cogito_context.js";
-import {
-  resolvePasNodeResourcesContextItem,
-  type NodeResourcesContextConfig,
-} from "./node_resources_context.js";
+import { extractPageContextTruncation, mergeContextManifests } from "./compiler/index.js";
+import { fetchCogitoContextItem, type CogitoContextConfig } from "./cogito_context.js";
+import { resolvePasNodeResourcesContextItem, type NodeResourcesContextConfig } from "./node_resources_context.js";
 import type { ContextItem } from "./prompt_assembler.js";
 import {
   buildCallerInfoUpdateContextItem,
@@ -307,12 +298,7 @@ export class ExecutionContextBuilder {
       compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
       omitWorkspaceLists
         ? null
-        : fetchBoardWorkspaceContextItem(
-            this.db,
-            this.logger,
-            folder.folderId,
-            resumeContext.folderSessions,
-          ),
+        : fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId, resumeContext.folderSessions),
       omitWorkspaceLists
         ? null
         : resolveFullRunningSessionsContext(
