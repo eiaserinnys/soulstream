@@ -21,7 +21,7 @@ describe("websocket shutdown", () => {
       });
       // Keep the client from reading the server's close frame. Without the
       // plugin's terminate grace this held app.close() for ws's 30s default,
-      // the same window as the supervisor's stop timeout.
+      // the same window as Haniel's stop timeout.
       const socket = (client as unknown as { _socket: { pause(): void } })._socket;
       socket.pause();
       const startedAt = Date.now();

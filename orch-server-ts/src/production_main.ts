@@ -15,10 +15,10 @@ type ProcessErrorHandlerOptions = {
 };
 
 /**
- * The supervisor stops a service with SIGTERM and force-kills it after its own
- * timeout (30s on the server). The orchestrator must finish (or at least say
- * where it got stuck) well before that, so operators can see the cause in the
- * service log instead of guessing from a SIGKILL.
+ * Haniel stops a service with SIGTERM and force-kills it after its own timeout
+ * (30s on the server). The orchestrator must finish (or at least say where it
+ * got stuck) well before that, so operators can see the cause in the service
+ * log instead of guessing from a SIGKILL.
  */
 export const SHUTDOWN_DEADLINE_MS = 10_000;
 

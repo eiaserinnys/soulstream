@@ -7,7 +7,7 @@ const registeredApps = new WeakSet<FastifyInstance>();
 /**
  * How long clients get to finish the close handshake before the socket is
  * destroyed. `ws` otherwise waits its 30s default, which is the same as the
- * supervisor's stop timeout and is why deploys used to hang until SIGKILL.
+ * service manager's stop timeout and is why deploys used to hang until SIGKILL.
  */
 export const WEBSOCKET_CLIENT_CLOSE_GRACE_MS = 1_500;
 

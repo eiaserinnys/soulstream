@@ -27,7 +27,10 @@ async function writeBuildInfo(
   modifiedAtMs: number,
 ): Promise<void> {
   await writeFile(path, JSON.stringify({ build_id: buildId }));
-  await utimes(path, modifiedAtMs, modifiedAtMs);
+  // A Date (not a bare number) so utimes takes milliseconds, not seconds. Some
+  // CI filesystems clamp far-future second values to one mtime, which would
+  // hide the mtime change this helper exists to create.
+  await utimes(path, new Date(modifiedAtMs), new Date(modifiedAtMs));
 }
 
 
