@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import type { EventArchiveContent } from "../../src/db/event_payload_truncation.js";
 import { archiveRunnerEvent } from "../../src/runner/runner_event_archive.js";
+import { createProducedAttachmentRegistration } from "../../src/attachments/produced_attachment_registration.js";
 
 const directories: string[] = [];
 
@@ -18,6 +19,34 @@ afterEach(async () => {
 });
 
 describe("archiveRunnerEvent", () => {
+  it("attaches the archived output after a transient central failure", async () => {
+    const incomingFileDir = await mkdtemp(join(tmpdir(), "soulstream-event-archive-"));
+    directories.push(incomingFileDir);
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (fetchImpl.mock.calls.length === 1) return Response.json({}, { status: 502 });
+      const bytes = init!.body as Uint8Array;
+      return Response.json({ attachment_id: "attachment-1", descriptor: {
+        attachment_id: "attachment-1", name: "도구 결과 전문.txt", mime_type: "text/plain",
+        byte_size: bytes.byteLength, checksum_sha256: createHash("sha256").update(bytes).digest("hex"),
+        width: null, height: null, preview_kind: "text", preview_mime_type: "text/plain",
+      } });
+    });
+    const service = createProducedAttachmentRegistration({ incomingDir: incomingFileDir,
+      orch: { baseUrl: "http://orch.test", headers: {} }, fetch: fetchImpl as typeof fetch });
+    const hostCall = async (_service: string, _operation: string, args: string[]) => {
+      const result = await service.register({ local_path: args[0]!, name: args[1]!, mime_type: args[2]! },
+        { sessionId: "session-a", nodeId: "node-a", outputCommandId: "command-1", workspaceDir: incomingFileDir }, AbortSignal.timeout(30_000));
+      return result.descriptor;
+    };
+    const result = await archiveRunnerEvent({ incomingFileDir, sessionId: "session-a", eventType: "tool_result",
+      content: { body: "original output", mimeType: "text/plain", extension: "txt" }, activeExecutionCommandId: "command-1",
+      host: { call: hostCall } as never, logger: { warn: vi.fn() } as never });
+    expect(result?.attachment_id).toBe("attachment-1");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const keys = fetchImpl.mock.calls.map(([, init]) => (init?.headers as Record<string, string>)["x-soulstream-idempotency-key"]);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[0]).toBe(keys[1]);
+  });
   it("writes the original file and sends only its path, name, and MIME type to the host", async () => {
     const incomingFileDir = await mkdtemp(join(tmpdir(), "soulstream-event-archive-"));
     directories.push(incomingFileDir);

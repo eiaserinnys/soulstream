@@ -82,6 +82,16 @@ function build(options: Parameters<typeof harness>[0] = {}) {
 }
 
 describe("agent attachment registration route", () => {
+  it("passes the optional idempotency key to registration", async () => {
+    const { app, register } = build();
+    const response = await app.inject({
+      method: "POST", url: url(),
+      headers: { ...producerHeaders({ "x-soulstream-idempotency-key": "retry-key" }), authorization: `Bearer ${SERVICE_TOKEN}`, "content-type": "application/octet-stream" },
+      payload: Buffer.from([1, 2, 3, 4]),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(register.mock.calls[0]![0]).toMatchObject({ idempotencyKey: "retry-key" });
+  });
   it("accepts a valid service bearer without any user cookie", async () => {
     const { app, register } = build();
     const response = await app.inject({

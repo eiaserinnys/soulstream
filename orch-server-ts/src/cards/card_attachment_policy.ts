@@ -6,6 +6,39 @@ import type { RepositorySql } from "./control_plane/card_types.js";
 export type TrustedAttachmentProducer = { sessionId: string; nodeId: string; outputCommandId: string };
 export type AttachmentLinkActor = { sessionId: string | null };
 
+/** Authorize a reused path asset against the session creating a card. */
+export async function requireCardAttachmentReuse(sql: RepositorySql, sessionId: string, id: string): Promise<void> {
+  const rows = await sql`
+    SELECT owner_kind, owner_key, source_session_id, registration_scope, upload_status
+    FROM file_assets
+    WHERE id = ${id} AND storage_purpose = 'attachment' AND garbage_collected_at IS NULL
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (row === undefined) throw attachmentError(404, "ATTACHMENT_NOT_FOUND", "첨부를 찾을 수 없습니다.");
+  if (row.upload_status !== "committed") throw attachmentError(409, "ATTACHMENT_NOT_COMMITTED", "아직 커밋되지 않은 첨부입니다.");
+  const ownerSession = row.owner_kind === "agent_session" ? nullableString(row.owner_key) : null;
+  const sourceSession = nullableString(row.source_session_id);
+  const scope = attachmentScopeFromRegistrationScope(row.registration_scope);
+  const registrationSession = scope?.type === "session" ? scope.id : null;
+  if (sessionId.length > 0 && (
+    ownerSession === sessionId ||
+    (row.owner_kind === "user_email" && (sourceSession === sessionId || registrationSession === sessionId))
+  )) return;
+
+  if (sessionId.length > 0) {
+    const shared = await sql`
+      SELECT peer.session_id FROM sessions caller
+      JOIN sessions peer ON peer.card_id = caller.card_id
+      WHERE caller.session_id = ${sessionId} AND caller.card_id IS NOT NULL
+        AND peer.session_id IN (${ownerSession}, ${sourceSession}, ${registrationSession})
+      LIMIT 1
+    `;
+    if (shared.length > 0) return;
+  }
+  throw attachmentError(403, "ATTACHMENT_CARD_SCOPE_DENIED", "다른 세션의 첨부를 카드에 연결할 수 없습니다.");
+}
+
 export async function assertAttachmentProducerTx(
   sql: RepositorySql,
   producer: TrustedAttachmentProducer,
