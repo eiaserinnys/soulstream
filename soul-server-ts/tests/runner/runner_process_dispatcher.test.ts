@@ -17,8 +17,13 @@ import {
   runnerRequestFrame,
   type RunnerFrame,
 } from "../../src/runner/frame_protocol.js";
+import {
+  RunnerAdoptionFailureRecovery,
+  type RunnerAdoptionFailureRecoveryDeps,
+} from "../../src/runner/runner_adoption_failure_recovery.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { IsolationPreparationPolicyError } from
   "../../src/runner/session_filesystem_errors.js";
 import {
@@ -1731,6 +1736,175 @@ describe("RunnerProcessDispatcher", () => {
     });
     expect(statusCommandIds).toHaveLength(1);
     expect(dispatcher.hasActiveExecution()).toBe(false);
+
+    await dispatcher.close();
+    await endpoint.close();
+  });
+
+  it("recovers a lifecycle-running registration by its command without asking the child for status", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-09-05T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    writer.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    lifecycle.begin({
+      pid: 1001,
+      commandId: "execute-old",
+      progressedAt: "2026-09-05T00:00:00.000Z",
+    });
+    lifecycle.close();
+    const commandKinds: string[] = [];
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      commandKinds.push(frame.kind === "invoke" ? frame.capability : frame.kind);
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const spawned = await spawnedProcessForTest(paths);
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawned,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
+    });
+
+    let replayedOnce!: () => void;
+    const replaySettled = new Promise<void>((resolve) => { replayedOnce = resolve; });
+    dispatcher.recoverFrames("execute-old", replayedOnce);
+    await replaySettled;
+    expect(commandKinds.filter((kind) => kind === "execution_status")).toEqual([]);
+
+    await dispatcher.detachHost();
+    await endpoint.close();
+  });
+
+  it("carries the restart-window failure from recovery into adoption terminalization", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      if (frame.kind === "execution_status") {
+        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+          status: "ok",
+          data: { executionCommandId: null },
+        }));
+        return;
+      }
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+    }, vi.fn());
+    await endpoint.listen();
+    const spawned = await spawnedProcessForTest(paths);
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawned,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
+    });
+
+    // The adoption drain consumes the recovery stream and rejects with this
+    // exact value; the failure recovery classifies that rejection.
+    const failure = await collect(dispatcher.recoverFrames()).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: "execution_not_started" });
+
+    const registration: RunnerRegistration = {
+      config: {
+        sessionId: "session-a",
+        codeSha: "sha-a",
+        claudeRuntimeTurnTimeoutMs: 1_800_000,
+        agent: { id: "agent-a", name: "Agent A" },
+        paths: {
+          sessionDirectory: paths.sessionDirectory,
+          socketPath: paths.socketPath,
+        },
+      } as RunnerRegistration["config"],
+      pid: 1001,
+      pidAlive: true,
+      registeredAtMs: Date.now() - 1_000,
+      bootstrap: null,
+      lifecycle: null,
+      registrationId: "registration-a",
+      pidStartIdentity: "start-1001",
+    };
+    const recoveryTask: Task = {
+      agentSessionId: "session-a",
+      prompt: "hello",
+      status: "running",
+      createdAt: new Date(Date.now() - 10_000),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+    const terminateRegistration = vi.fn(async () => {});
+    const invalidateRegistration = vi.fn(async () => {});
+    const markReaped = vi.fn(async () => {});
+    const markFailure = vi.fn(async () => {});
+    const deps: RunnerAdoptionFailureRecoveryDeps = {
+      leaseTimeoutMs: 60_000,
+      logger: { info: vi.fn(), warn: vi.fn() },
+      refreshRegistration: async (value) => value,
+      hydrateRegistration: async (value) => value,
+      terminateRegistration,
+      invalidateRegistration,
+      markReaped,
+      recoverOffline: async (_registration, recoveredTask) => recoveredTask,
+      markFailure,
+      onFailure: vi.fn(),
+    };
+    const adoptionRecovery = new RunnerAdoptionFailureRecovery(deps);
+    const completion = Promise.resolve();
+    recoveryTask.executionPromise = completion;
+    await adoptionRecovery.schedule({
+      registration,
+      disposition: "adopt_prebootstrap",
+      task: recoveryTask,
+      completion,
+      ownedRunner: undefined,
+      attemptRunner: undefined,
+      error: failure,
+    });
+    expect(terminateRegistration).toHaveBeenCalledWith(registration);
+    expect(markFailure).toHaveBeenCalledWith(
+      recoveryTask,
+      "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
+    );
+    expect(markReaped).not.toHaveBeenCalled();
+    expect(adoptionRecovery.shouldSkip("session-a")).toBe(false);
 
     await dispatcher.close();
     await endpoint.close();

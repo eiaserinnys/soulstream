@@ -94,45 +94,50 @@ describe("RunnerAdoptionFailureRecovery", () => {
     expect(subject.recovery.shouldSkip("session-a")).toBe(true);
   });
 
-  it("terminalizes an identity-verified running registration whose execution never started", async () => {
+  it("terminalizes an identity-verified prebootstrap registration that never started its execution", async () => {
     const subject = makeSubject();
-    const running = registration();
+    const provisional = registration({ lifecycleState: null });
     const currentTask = task();
-    await scheduleAndWait(subject.recovery, running, currentTask, {
+    await scheduleAndWait(subject.recovery, provisional, currentTask, {
       error: new RunnerExecutionNotStartedError(),
     });
-    expect(subject.deps.terminateRegistration).toHaveBeenCalledWith(running);
-    expect(subject.deps.markReaped).toHaveBeenCalledWith(
-      expect.objectContaining({ pid: running.pid, pidAlive: false }),
-      new Date(NOW_MS).toISOString(),
-      {
-        code: "execution_not_started",
-        message: "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
-      },
+    expect(subject.deps.terminateRegistration).toHaveBeenCalledWith(provisional);
+    expect(subject.deps.invalidateRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({ pid: provisional.pid, pidAlive: false }),
     );
-    expect(subject.deps.invalidateRegistration).toHaveBeenCalled();
-    expect(subject.deps.recoverOffline).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pidAlive: false,
-        lifecycle: expect.objectContaining({
-          execution_state: "reaped",
-          terminal_error: {
-            code: "execution_not_started",
-            message: "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
-          },
-        }),
-      }),
+    expect(subject.deps.markFailure).toHaveBeenCalledWith(
       currentTask,
+      "노드 서버가 재시작되는 사이에 세션이 시작되지 못했습니다. 같은 지시를 다시 보내 주세요.",
     );
-    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.deps.markReaped).not.toHaveBeenCalled();
+    expect(subject.deps.recoverOffline).not.toHaveBeenCalled();
     expect(subject.recovery.shouldSkip("session-a")).toBe(false);
   });
 
-  it("keeps deferring the restart-window error for an identity-unverified registration", async () => {
-    const subject = makeSubject();
+  it("keeps deferring the restart-window error when the registration identity cannot be verified", async () => {
+    const verificationError = new Error("runner registration identity unreadable");
+    const subject = makeSubject({
+      hydrateRegistration: vi.fn(async () => { throw verificationError; }),
+    });
     const provisional = registration({ lifecycleState: null });
     await scheduleAndWait(subject.recovery, provisional, task(), {
-      disposition: "adopt_running",
+      error: new RunnerExecutionNotStartedError(),
+    });
+    expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.invalidateRegistration).not.toHaveBeenCalled();
+    expect(subject.deps.markFailure).not.toHaveBeenCalled();
+    expect(subject.recovery.shouldSkip("session-a")).toBe(true);
+    expect(subject.deps.onFailure).toHaveBeenCalledWith(
+      provisional,
+      "adopt_prebootstrap",
+      verificationError,
+    );
+  });
+
+  it("keeps deferring the restart-window error when the runner pid is gone", async () => {
+    const subject = makeSubject();
+    const lost = registration({ lifecycleState: null, pidAlive: false });
+    await scheduleAndWait(subject.recovery, lost, task(), {
       error: new RunnerExecutionNotStartedError(),
     });
     expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
@@ -140,10 +145,10 @@ describe("RunnerAdoptionFailureRecovery", () => {
     expect(subject.recovery.shouldSkip("session-a")).toBe(true);
   });
 
-  it("keeps deferring an identity-verified running registration on an unrelated adoption error", async () => {
+  it("keeps deferring an identity-verified running registration on the restart-window error", async () => {
     const subject = makeSubject();
     await scheduleAndWait(subject.recovery, registration(), task(), {
-      error: new Error("adoption failed"),
+      error: new RunnerExecutionNotStartedError(),
     });
     expect(subject.deps.terminateRegistration).not.toHaveBeenCalled();
     expect(subject.deps.markFailure).not.toHaveBeenCalled();

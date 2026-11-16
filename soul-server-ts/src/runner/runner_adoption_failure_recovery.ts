@@ -246,8 +246,7 @@ export class RunnerAdoptionFailureRecovery {
         return;
       }
       if (
-        disposition === "adopt_running"
-        && verifiedDisposition === "adopt_running"
+        verifiedDisposition === "adopt_prebootstrap"
         && errorChainHasCode(error, RUNNER_EXECUTION_NOT_STARTED)
       ) {
         this.deps.logger.info(
