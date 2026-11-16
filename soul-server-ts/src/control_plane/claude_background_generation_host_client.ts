@@ -2,7 +2,11 @@ import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
-import type { PersistenceHostTransport } from "./persistence_host_transport.js";
+import {
+  ORCH_HOST_REQUEST_TIMEOUT_MS,
+  requestHostOperationWithRetry,
+  type PersistenceHostTransport,
+} from "./persistence_host_transport.js";
 
 export type ClaudeBackgroundGenerationStatus =
   | "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
@@ -47,19 +51,42 @@ export type ResolveClaudeBackgroundTaskGenerationResult =
   | { status: "resolved"; row: ClaudeBackgroundTaskGenerationRow }
   | { status: "ambiguous" };
 
-export class ClaudeBackgroundGenerationHostClient {
-  constructor(private readonly transport: PersistenceHostTransport) {}
+/**
+ * Covers a ~66s core restart (nginx answers 502 while the orchestrator is
+ * down) with about 20s of headroom. The retry helper makes one more attempt
+ * than there are delays.
+ */
+export const CLAUDE_BACKGROUND_GENERATION_RETRY_DELAYS_MS = [
+  500, 1_000, 2_000, 4_000, 8_000, 12_000, 15_000, 15_000, 15_000, 15_000,
+] as const;
 
+export class ClaudeBackgroundGenerationHostClient {
+  constructor(
+    private readonly transport: PersistenceHostTransport,
+    private readonly retryDelaysMs: readonly number[] =
+      CLAUDE_BACKGROUND_GENERATION_RETRY_DELAYS_MS,
+  ) {}
+
+  /** A failed observation is swallowed by the caller, but the turn still waits for it. */
   observe(params: ObserveClaudeBackgroundTaskGenerationParams) {
-    return this.transport.request<ClaudeBackgroundTaskGenerationRow>(
-      "claude-runtime", "observe_background_generation", [params],
-      { timeoutMs: 2_000 },
+    return requestHostOperationWithRetry<ClaudeBackgroundTaskGenerationRow>(
+      this.transport, "claude-runtime", "observe_background_generation", [params],
+      {
+        timeoutMs: 2_000,
+        attempts: this.retryDelaysMs.length + 1,
+        retryDelaysMs: this.retryDelaysMs,
+      },
     );
   }
 
   terminalize(params: TerminalizeClaudeBackgroundTaskGenerationParams) {
-    return this.transport.request<TerminalizeClaudeBackgroundTaskGenerationResult>(
-      "claude-runtime", "terminalize_background_generation", [params],
+    return requestHostOperationWithRetry<TerminalizeClaudeBackgroundTaskGenerationResult>(
+      this.transport, "claude-runtime", "terminalize_background_generation", [params],
+      {
+        timeoutMs: ORCH_HOST_REQUEST_TIMEOUT_MS,
+        attempts: this.retryDelaysMs.length + 1,
+        retryDelaysMs: this.retryDelaysMs,
+      },
     );
   }
 
@@ -79,10 +106,16 @@ export class ClaudeBackgroundGenerationHostClient {
     );
   }
 
+  /** The resolve read has no side effects, so a lost response is safe to retry. */
   resolve(sourceNode: string, sessionId: string, sdkSessionId: string, taskId: string) {
-    return this.transport.request<ResolveClaudeBackgroundTaskGenerationResult>(
-      "claude-runtime", "resolve_background_generation",
+    return requestHostOperationWithRetry<ResolveClaudeBackgroundTaskGenerationResult>(
+      this.transport, "claude-runtime", "resolve_background_generation",
       [sourceNode, sessionId, sdkSessionId, taskId],
+      {
+        timeoutMs: ORCH_HOST_REQUEST_TIMEOUT_MS,
+        attempts: this.retryDelaysMs.length + 1,
+        retryDelaysMs: this.retryDelaysMs,
+      },
     );
   }
 }

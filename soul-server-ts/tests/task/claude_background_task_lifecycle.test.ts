@@ -7,8 +7,10 @@ import { attachClaudeBackgroundProvenance } from
 import { readClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
-import { ClaudeRuntimeHostClient } from
-  "../../src/control_plane/persistence_host_clients.js";
+import { ClaudeBackgroundGenerationHostClient } from
+  "../../src/control_plane/claude_background_generation_host_client.js";
+import { PersistenceHostTransport } from
+  "../../src/control_plane/persistence_host_transport.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 
@@ -154,37 +156,9 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     }));
   });
 
-  it("continues after retryable nonterminal observation failures", async () => {
-    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
-      retryable: true,
-    });
+  it("logs one failed observation and leaves the turn live", async () => {
     const observeGeneration = vi.fn()
-      .mockRejectedValueOnce(retryableFailure)
-      .mockResolvedValue({ status: "running" });
-    const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository: { observeGeneration } as never,
-      sourceNode: "node-test",
-    });
-    const event: ClaudeClientEvent = {
-      type: "claude_runtime_task_progress",
-      taskId: "background-agent",
-      sessionId: "sdk-session",
-      toolUseId: "toolu-background-agent",
-      description: "long work",
-      summary: "still running",
-    };
-    attachClaudeBackgroundProvenance(event, "sdk_membership");
-
-    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
-
-    expect(observeGeneration).toHaveBeenCalledTimes(2);
-  });
-
-  it("logs exhausted retryable observations and leaves the turn live", async () => {
-    const retryableFailure = Object.assign(new Error("502 Bad Gateway"), {
-      retryable: true,
-    });
-    const observeGeneration = vi.fn().mockRejectedValue(retryableFailure);
+      .mockRejectedValue(new Error("502 Bad Gateway"));
     const warn = vi.fn();
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: { observeGeneration } as never,
@@ -203,7 +177,31 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
 
     await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
 
-    expect(observeGeneration).toHaveBeenCalledTimes(4);
+    expect(observeGeneration).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("continues after a non-retryable observation failure", async () => {
+    const observeGeneration = vi.fn().mockRejectedValue(new Error("schema mismatch"));
+    const warn = vi.fn();
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { observeGeneration } as never,
+      sourceNode: "node-test",
+      logger: { warn },
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress",
+      taskId: "background-agent",
+      sessionId: "sdk-session",
+      toolUseId: "toolu-background-agent",
+      description: "long work",
+      summary: "still running",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+
+    expect(observeGeneration).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledOnce();
   });
 
@@ -232,12 +230,17 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     );
     const transportLogger = { warn: vi.fn(), info: vi.fn() };
     const lifecycleLogger = { warn: vi.fn() };
-    const hostClient = new ClaudeRuntimeHostClient({
-      orch: { baseUrl: "http://orch.test", headers: {} },
-      logger: transportLogger as never,
-    });
+    const hostClient = new ClaudeBackgroundGenerationHostClient(
+      new PersistenceHostTransport({
+        orch: { baseUrl: "http://orch.test", headers: {} },
+        logger: transportLogger as never,
+      }),
+      [1, 1],
+    );
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository: hostClient as never,
+      repository: {
+        observeGeneration: (params: never) => hostClient.observe(params),
+      } as never,
       sourceNode: "node-test",
       logger: lifecycleLogger,
     });
@@ -255,8 +258,8 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     try {
       await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
       expect(Date.now() - startedAt).toBeLessThan(3_000);
-      expect(timeoutCalls).toEqual([2_000, 2_000, 2_000, 2_000]);
-      expect(fetchSpy).toHaveBeenCalledTimes(4);
+      expect(timeoutCalls).toEqual([2_000, 2_000, 2_000]);
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
       expect(lifecycleLogger.warn).toHaveBeenCalledOnce();
     } finally {
       timeoutSpy.mockRestore();
