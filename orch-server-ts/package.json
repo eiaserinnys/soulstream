@@ -12,7 +12,7 @@
     "plan:page-yjs-snapshot-repair": "tsx scripts/plan-page-yjs-snapshot-repair.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist",
+    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node ../scripts/verify-bundle-load.mjs dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
