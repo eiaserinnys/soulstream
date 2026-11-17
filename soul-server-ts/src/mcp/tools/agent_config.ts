@@ -13,7 +13,7 @@ import {
 } from "../../agent_config_service.js";
 import {
   AgentAtomContextSchema,
-  AgentProfileSchema,
+  AgentProfilePatchSchema,
 } from "../../agent_registry.js";
 import { McpConfigService } from "../../mcp_config_service.js";
 import { errorResult, jsonResult } from "../result.js";
@@ -147,9 +147,9 @@ export function registerAgentConfigTools(
     "plan_agent_profile_update",
     {
       description:
-        "agents.yaml 단일 agent profile 교체 계획(diff)을 생성한다. 파일은 쓰지 않는다.",
+        "agents.yaml 단일 agent profile 변경 계획(diff)을 생성한다. 넘긴 최상위 필드만 바꾸고 생략한 필드는 보존하며 null은 삭제한다. 중첩 객체는 통째로 교체한다. 파일은 쓰지 않는다.",
       inputSchema: {
-        profile: AgentProfileSchema,
+        profile: AgentProfilePatchSchema,
         create_if_missing: z.boolean().default(false),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),
@@ -185,9 +185,9 @@ export function registerAgentConfigTools(
     "update_agent_profile",
     {
       description:
-        "agents.yaml의 단일 agent profile을 교체한다. create_if_missing=true면 새 profile을 추가한다.",
+        "agents.yaml의 단일 agent profile을 변경한다. 넘긴 최상위 필드만 바꾸고 생략한 필드는 보존하며 null은 삭제한다. 중첩 객체는 통째로 교체한다. create_if_missing=true면 새 profile을 추가한다.",
       inputSchema: {
-        profile: AgentProfileSchema,
+        profile: AgentProfilePatchSchema,
         create_if_missing: z.boolean().default(false),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),

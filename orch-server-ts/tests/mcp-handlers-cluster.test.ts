@@ -235,6 +235,17 @@ describe("remote agent config tools", () => {
     expect(await f.call("plan_remote_agent_profile_update", { node_id: "node-remote", create_if_missing: true, include_text_diff: true, profile })).toMatchObject({ structuredContent: result });
     expect(f.profiles.planAgentProfileUpdate).toHaveBeenCalledWith("node-remote", { profile: expect.objectContaining(profile), createIfMissing: true, includeTextDiff: true });
   });
+  it("passes partial profile patches, including null, through both remote tools", async () => {
+    const f = fixture();
+    const profile = { id: "codex-default", name: "Changed", model: null };
+    for (const [name, method] of [
+      ["plan_remote_agent_profile_update", f.profiles.planAgentProfileUpdate],
+      ["apply_remote_agent_profile_update", f.profiles.applyAgentProfileUpdate],
+    ] as const) {
+      await f.call(name, { node_id: "node-remote", profile });
+      expect(method).toHaveBeenCalledWith("node-remote", expect.objectContaining({ profile }));
+    }
+  });
   it("apply_remote_agent_profile_update proxies write request with checksum guard", async () => {
     const f = fixture();
     const result = { ok: true, changed: true, snapshot_path: "/srv/snap.yaml", config_checksum: "next-checksum", base_config_checksum: "base-checksum", semantic_changes: [{ op: "replace_agent", agent_id: "codex-default" }], text_diff_included: false, diff: "", reload_ok: true };

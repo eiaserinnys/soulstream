@@ -21,8 +21,8 @@ export { AgentBackendSchema } from "@soulstream/model-catalog";
 export type { AgentBackend } from "@soulstream/model-catalog";
 
 import { AgentProfileSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
-export { AgentProfileSchema, AgentAtomContextSchema, AgentsSdkHostedToolSchema, AgentsSdkMcpServerSchema } from "@soulstream/agent-profile-contract";
-export type { AgentProfile, AgentAtomContext, AgentsSdkConfig, AgentsSdkHostedTool, AgentsSdkMcpServer } from "@soulstream/agent-profile-contract";
+export { AgentProfileSchema, AgentProfilePatchSchema, AgentAtomContextSchema, AgentsSdkHostedToolSchema, AgentsSdkMcpServerSchema } from "@soulstream/agent-profile-contract";
+export type { AgentProfile, AgentProfilePatch, AgentAtomContext, AgentsSdkConfig, AgentsSdkHostedTool, AgentsSdkMcpServer } from "@soulstream/agent-profile-contract";
 
 /** yaml 파일 최상위 schema. */
 export const AgentsConfigSchema = z.object({

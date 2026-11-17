@@ -75,6 +75,14 @@ describe("ConfigStore", () => {
     expect(fs.readFileSync(configPath, "utf-8")).toContain("# Existing comments");
   });
 
+  it("returns the absolute config path when constructed with a relative path", async () => {
+    const store = makeStore(path.relative(process.cwd(), configPath), snapshotRoot);
+    const plan = await store.plan((current) => ({ agents: [...current.agents, { id: "b", name: "B" }] }));
+    const applied = await store.apply((current) => ({ agents: [...current.agents, { id: "b", name: "B" }] }));
+    expect(plan.configPath).toBe(configPath);
+    expect(applied.configPath).toBe(configPath);
+  });
+
   it("applies with a pre-write snapshot, atomic replacement, and reload hook", async () => {
     const onAfterApply = vi.fn();
     const store = makeStore(configPath, snapshotRoot, onAfterApply);
