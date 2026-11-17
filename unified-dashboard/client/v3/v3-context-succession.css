@@ -628,3 +628,11 @@
 .v3-creation-text-field > textarea {
   resize: none;
 }
+
+.v3-succession-effort-notice {
+  word-break: keep-all;
+  grid-column: 1 / -1;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 750;
+}

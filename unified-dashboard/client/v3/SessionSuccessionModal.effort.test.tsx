@@ -314,6 +314,8 @@ describe("unusable carried-over effort", () => {
     await settle();
 
     expect(unsupportedNotice()).not.toBeNull();
+    const group = document.body.querySelector('[role="group"][aria-label="추론 강도"]');
+    expect(group?.getAttribute("aria-describedby")).toBe(unsupportedNotice()?.closest("small")?.id);
     expect(startButton()?.disabled).toBe(true);
 
     flushSync(() => startButton()?.click());

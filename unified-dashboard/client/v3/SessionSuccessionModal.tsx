@@ -3,7 +3,7 @@ import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } fro
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useId, useCallback, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -256,6 +256,7 @@ export function SessionSuccessionModal({
     onClose();
   };
 
+  const effortNoticeId = useId();
   const effortNotice = effort.unsupported && selectedModelPresetInfo !== null ? <span data-testid="succession-effort-unsupported">
     {effort.options.length > 0
       ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
@@ -334,12 +335,14 @@ export function SessionSuccessionModal({
                 onError={handleAssignmentError}
               />
               {effort.options.length > 0 ? (
+                <div role="group" aria-label="추론 강도" aria-describedby={effortNotice ? effortNoticeId : undefined}>
                 <CatalogSelectionField className="v3-assignment-field" label="추론 강도" ariaLabel="추론 강도 선택"
                   value={effort.effective ?? ""} options={effortOptions}
                   selectedLabel={effortOptions.find((option) => option.value === (effort.effective ?? ""))?.label ?? ""}
-                  message={effortNotice} onValueChange={(value) => effort.setSelected(value || null)} />
+                  onValueChange={(value) => effort.setSelected(value || null)} />
+                </div>
               ) : null}
-              {effort.options.length === 0 && effortNotice ? <small role="alert">{effortNotice}</small> : null}
+              {effortNotice ? <small id={effortNoticeId} className="v3-succession-effort-notice" role="alert">{effortNotice}</small> : null}
               </section>
             </CreationDisclosure>
             <CreationDisclosure title="함께 전달할 자료" summary={<span>{inheritCard ? "폴더 정보" : "폴더 정보 제외"}{inheritSummary ? " / 이전 세션 포함" : ""}{selectedDocumentIds.size ? ` / 문서 ${selectedDocumentIds.size}개` : ""}{atomNodeId ? " / 추가 참고 자료" : ""}</span>}>

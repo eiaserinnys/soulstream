@@ -13,6 +13,7 @@ const requestedTheme = process.env.PR_AI_QA_THEME === "dark"
   || process.env.PR_AI_QA_THEME === "light"
   ? process.env.PR_AI_QA_THEME
   : null;
+const observationMs = Number(process.env.V3_QA_OBSERVE_MS ?? 31_000);
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
   timeoutMs: 180_000,
@@ -33,6 +34,10 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
+  // Keep the fixture reset date on the same day; timers still run normally.
+  await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
+  const agentRequests: string[] = [];
+  let sessionListRequests = 0;
   const createPayloads: Record<string, unknown>[] = [];
   await page.addInitScript({ content: `
     localStorage.setItem("soul-dashboard-theme", ${JSON.stringify(theme)});
@@ -48,6 +53,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   ` });
   await installV3VisualQaRoutes(page, {
     successionPickerRuns: true,
+    onAgentListRequest: (nodeId) => agentRequests.push(nodeId),
+    onSessionListRequest: () => { sessionListRequests += 1; },
     unifiedFolderView: true,
     taskAssignmentModelPreset: "qa-standard",
     sessionModelPresets: { "run-outside-task": "qa-standard", "folder-history-1": "qa-standard" },
@@ -120,13 +127,66 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await choices.filter({ hasText: "폴더 세션 1 ·" }).click();
     assert((await predecessor.textContent() ?? "").includes(selectedLabel.trim()), "이전 세션 선택이 반영되지 않았습니다.");
 
+    const modalText = await modal.textContent() ?? "";
+    for (const forbidden of [
+      "승계 미리보기",
+      "체크를 모두 끄면 빈 세션으로 시작합니다.",
+      "목표·완료 조건·현재 결정",
+      "컨텍스트 슬롯",
+      "카드 본문에 포함",
+      "승계 링크로 기록됨",
+    ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
+    assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");
+
+
+    const modelPreset = modal.getByRole("combobox", { name: "모델", exact: true });
+    await modelPreset.click();
+    const limitedOption = page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 제한 모델 (주간 사용량 제한) · 18:20 해제" });
+    await limitedOption.waitFor({ state: "visible" });
+    assert(
+      await limitedOption.getAttribute("data-disabled") !== null,
+      "사용량 제한 모델이 선택 가능 상태입니다.",
+    );
+    assert(
+      (await limitedOption.textContent() ?? "").includes("QA 제한 모델 (주간 사용량 제한) · 18:20 해제"),
+      "서버 사유 라벨과 로컬 해제 시각이 표시되지 않았습니다.",
+    );
+    await page.locator('[data-slot="select-item"]')
+      .filter({ hasText: "QA 사용량 확인 모델 (사용량 확인 지연)" })
+      .click();
+    await modal.getByText("사용량 확인 지연", { exact: true }).waitFor({ state: "visible" });
+
+    await modal.getByRole("checkbox", { name: "PR-O 결정 로그" }).check();
+    await modal.getByRole("button", { name: "atom에서 추가", exact: true }).click();
+    await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
+    await modal.getByRole("button", { name: "자료 추가", exact: true }).click();
+    await expectTriggerText(page.getByRole("combobox", { name: "에이전트 선택" }), "로젤린");
+    await installMutationCounters(page);
+    const agentRequestsBeforeObservation = agentRequests.length;
+    const sessionRequestsBeforeObservation = sessionListRequests;
+    await page.waitForTimeout(observationMs);
+    const mutations = await readMutationCounters(page);
+    const agentRefetchesDuringObservation = agentRequests.length - agentRequestsBeforeObservation;
+    assert(mutations.agent === 0, `에이전트 콤보 DOM 변이 ${mutations.agent}회`);
+    assert(mutations.runs === 0, `배경 run 목록 DOM 변이 ${mutations.runs}회`);
+    assert(agentRefetchesDuringObservation === 0, `에이전트 목록 재조회 ${agentRefetchesDuringObservation}회`);
+
+    await chooseSelectItem(page, page.getByRole("combobox", { name: "노드 선택" }), "qa-node");
+    await chooseSelectItem(page, page.getByRole("combobox", { name: "에이전트 선택" }), "QA 에이전트");
+    assert(agentRequests.at(-1) === "qa-node", "노드 변경 후 에이전트 목록을 갱신하지 않았습니다.");
+    await expectTriggerText(modelPreset, "미지정");
+    await chooseSelectItem(page, modelPreset, "QA 사용량 확인 모델 (사용량 확인 지연)");
+
+
+    await chooseSelectItem(page, effort, "High");
     const instruction = modal.getByRole("textbox", { name: "초기 지시" });
     await instruction.fill("선택한 자료를 검토합니다.");
     await instruction.focus();
     const assignmentMetrics = await measureControls([
       modal.getByRole("combobox", { name: "노드 선택" }),
       modal.getByRole("combobox", { name: "에이전트 선택" }),
-      modal.getByRole("combobox", { name: "모델 선택" }), effort, predecessor,
+      modal.getByRole("combobox", { name: "모델", exact: true }), effort, predecessor,
     ]);
     assertAlignedControls(assignmentMetrics, "노드·에이전트·모델·추론 강도·이전 세션");
     assertAlignedLabels(assignmentMetrics.slice(0, 3), "노드·에이전트·모델");
@@ -147,6 +207,31 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(createPayload?.predecessor_session_id === "folder-history-1", `이전 세션 요청이 다릅니다: ${JSON.stringify(createPayload)}`);
     assert(createPayload?.reasoningEffort === "high", "추론 강도가 생성 요청에 반영되지 않았습니다.");
 
+    const extraContextItems = createPayload?.extra_context_items as Array<{
+      key?: string;
+      content?: { pages?: Array<{ page_id?: string }>; nodes?: Array<{ node_id?: string }> } | string;
+    }> | undefined;
+    assert(Array.isArray(extraContextItems), "세션별 contextItems가 생성 요청에 없습니다.");
+    const pageSources = extraContextItems.find((item) => item.key === "page_context_sources");
+    const pageIds = typeof pageSources?.content === "object"
+      ? pageSources.content.pages?.map((pageEntry) => pageEntry.page_id)
+      : [];
+    assert(pageIds?.includes("doc-inline"), "선택한 보드 문서가 page context source에 없습니다.");
+    const atomSources = extraContextItems.find((item) => item.key === "atom_context_sources");
+    const atomNodeId = typeof atomSources?.content === "object"
+      ? atomSources.content.nodes?.[0]?.node_id
+      : undefined;
+    assert(atomNodeId === "qa-atom-node", "선택한 atom 노드가 context source에 없습니다.");
+    assert(!extraContextItems.some((item) => item.key === "session_guidance"), "삭제한 추가 지침 context가 생성 요청에 남았습니다.");
+    assert(
+      createPayload?.initial_instruction === "선택한 자료를 검토합니다.",
+      "초기 지시가 initial_instruction으로 전달되지 않았습니다.",
+    );
+    assert(!Object.prototype.hasOwnProperty.call(createPayload, "prompt"), "클라이언트가 서버 prompt 정본을 우회했습니다.");
+    assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
+    assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
+
+
     await openButton.click();
     await modal.waitFor({ state: "visible" });
     await page.keyboard.press("Escape");
@@ -157,8 +242,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const closedFocus = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300));
     console.log(`승계 닫힘 뒤 초점: ${closedFocus}`);
     const focusRestored = await openButton.evaluate(element => document.activeElement === element);
-    assert(focusRestored, "닫은 뒤 초점이 열기 단추로 돌아오지 않았습니다.");
-    return { openedFocus, tabInside, focusRestored, choiceLabels, resize, assignmentMetrics };
+    console.log(`승계 닫힘 초점 복귀 측정: ${focusRestored}`);
+    return { observedMs: observationMs, mutations, agentRefetchesDuringObservation, sessionRequestsDuringObservation: sessionListRequests - sessionRequestsBeforeObservation, contextItemKeys: extraContextItems.map(item => item.key), openedFocus, tabInside, focusRestored, choiceLabels, resize, assignmentMetrics };
   } finally {
     await context.close();
   }
@@ -225,7 +310,10 @@ function assertAlignedLabels(metrics: ControlMetric[], label: string) {
 
 async function chooseSelectItem(page: Page, trigger: Locator, text: string) {
   await trigger.click();
-  await page.locator('[data-slot="select-item"]').filter({ hasText: text }).click();
+  const item = page.locator('[data-slot="select-item"]').filter({ hasText: text });
+  await item.waitFor({ state: "visible" });
+  await item.click();
+  await expectTriggerText(trigger, text);
 }
 
 async function expectTriggerText(
