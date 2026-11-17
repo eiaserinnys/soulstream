@@ -24,14 +24,14 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_register",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1356",
+    definition: "packages/db-schema/sql/schema.sql:1362",
     callSites: [],
     note: "정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다.",
   },
   {
     name: "session_register_with_model_preset",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1386",
+    definition: "packages/db-schema/sql/schema.sql:1392",
     callSites: [
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 130 },
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 236 },
@@ -41,7 +41,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_update",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1518",
+    definition: "packages/db-schema/sql/schema.sql:1524",
     callSites: [
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 284 },
     ],
@@ -50,7 +50,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_acknowledge_review",
     writesStatus: false,
-    definition: "packages/db-schema/sql/schema.sql:1425",
+    definition: "packages/db-schema/sql/schema.sql:1431",
     callSites: [
       { file: "src/runtime/live_session_review_repository.ts", line: 23 },
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 326 },
@@ -60,7 +60,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_record_execution_registration",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1595",
+    definition: "packages/db-schema/sql/schema.sql:1601",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 196 },
     ],
@@ -69,7 +69,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_running_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:4170",
+    definition: "packages/db-schema/sql/schema.sql:4176",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 77 },
     ],
@@ -78,7 +78,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_terminal_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1736",
+    definition: "packages/db-schema/sql/schema.sql:1742",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 254 },
     ],
@@ -180,10 +180,10 @@ export interface SessionStatusLiteralFile {
 
 /** 새 줄이 생기면 시험이 깨진다. 다른 뜻이면 note에 적는다. */
 export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
-  { file: "src/cards/card_capacity.ts", comparisons: 0, lists: 0, sql: 4, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
+  { file: "src/cards/card_capacity.ts", comparisons: 0, lists: 0, sql: 5, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_delivery.ts", comparisons: 1, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_change_notification.ts", comparisons: 2, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
-  { file: "src/cards/card_dispatch_repository.ts", comparisons: 0, lists: 0, sql: 3, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
+  { file: "src/cards/card_dispatch_repository.ts", comparisons: 0, lists: 0, sql: 4, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_dispatch_runtime.ts", comparisons: 4, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_dispatcher.ts", comparisons: 5, lists: 0, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
   { file: "src/cards/card_execution_service.ts", comparisons: 4, lists: 2, sql: 0, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },

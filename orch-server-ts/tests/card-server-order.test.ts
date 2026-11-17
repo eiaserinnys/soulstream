@@ -38,7 +38,7 @@ function harness(status='queued',options:{pending?:boolean;enabled?:boolean;lock
     if(query.includes('WITH bounds'))return [];
     if(query.includes('INSERT INTO card_orchestration_dispatches')||query.includes('UPDATE card_orchestration_dispatches'))return [];
     throw Error(`Unexpected SQL: ${query}`);
-  },{json:(v:unknown)=>v}) as unknown as RepositorySql;
+  },{json:(v:unknown)=>v,array:(v:unknown)=>v}) as unknown as RepositorySql;
   const service=Object.create(CardControlPlaneService.prototype) as Service;
   Object.assign(service,{repo:{getCard:async()=>structuredClone(card)},repoSql:sql,
     core:{mutate:async(p:FolderMutateParams)=>{await p.apply(sql,1);return {idempotent:false,operation:{payload_json:p.payload}};}},
