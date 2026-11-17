@@ -130,6 +130,12 @@ export type EventOutboxPumpOptions = {
    */
   acknowledgementTimeoutMs?: number;
   now?: () => Date;
+  /** Optional polling for streams whose append notifications can be lost. */
+  watchdog?: {
+    intervalMs: number;
+    retryAfterMs: number;
+    onSend: (details: { streamId: string; sourceSeq: number; waitedMs: number }) => void;
+  };
   onQuarantine?: (result: EventOutboxQuarantineResult) => void;
 };
 

@@ -14,7 +14,8 @@ import { runnerHostStatePath } from "../../src/runner/runner_host_state_store.js
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import type { EventOutboxBatch, EventOutboxRecord } from
   "../../src/upstream/event_outbox.js";
-import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
+import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
+import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 
@@ -31,6 +32,15 @@ afterEach(async () => {
 });
 
 describe("ClosedRunnerTailDrainer", () => {
+  it("queries the actual mux for a registered stream", () => {
+    const primary = new EventOutboxPump(fakeOutbox(null), vi.fn());
+    const mux = new EventOutboxPumpMux(primary);
+    const drainer = new ClosedRunnerTailDrainer({
+      pumpMux: mux, logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    });
+    expect(drainer.hasActivePump(primary.streamId)).toBe(true);
+    expect(drainer.hasActivePump("another-stream")).toBe(false);
+  });
   it("is a no-op when the closed runner has no unacknowledged event tail", async () => {
     const outbox = fakeOutbox(null);
     const register = vi.fn();

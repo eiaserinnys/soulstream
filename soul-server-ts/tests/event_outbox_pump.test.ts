@@ -21,6 +21,79 @@ afterEach(async () => {
 });
 
 describe("EventOutboxPump", () => {
+  it("retries an unacknowledged batch at the watchdog deadline and logs only the resend", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const store = watchdogStore(true);
+      const sent: EventOutboxBatch[] = [];
+      const onWatchdogSend = vi.fn();
+      const pump = new EventOutboxPump(store, vi.fn(), {
+        watchdog: { intervalMs: 15_000, retryAfterMs: 30_000, onSend: onWatchdogSend },
+      });
+      pump.connect(async (batch) => { sent.push(batch); });
+      await settleWatchdog();
+      expect(sent).toHaveLength(1);
+      vi.advanceTimersByTime(15_000);
+      await settleWatchdog();
+      expect(sent).toHaveLength(1);
+      expect(onWatchdogSend).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(15_000);
+      await settleWatchdog();
+      expect(sent).toEqual([store.batch, store.batch]);
+      expect(onWatchdogSend).toHaveBeenCalledOnce();
+      expect(onWatchdogSend).toHaveBeenCalledWith({
+        streamId: "watchdog-stream", sourceSeq: 1, waitedMs: 30_000,
+      });
+      pump.disconnect();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("finds a silent append on the next watchdog tick and stops polling on disconnect", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const store = watchdogStore(false);
+      const sent: EventOutboxBatch[] = [];
+      const onWatchdogSend = vi.fn();
+      const pump = new EventOutboxPump(store, vi.fn(), {
+        watchdog: { intervalMs: 15_000, retryAfterMs: 30_000, onSend: onWatchdogSend },
+      });
+      await pump.connect(async (batch) => { sent.push(batch); });
+      vi.advanceTimersByTime(15_000);
+      await settleWatchdog();
+      expect(onWatchdogSend).not.toHaveBeenCalled();
+      store.available = true;
+      vi.advanceTimersByTime(15_000);
+      await settleWatchdog();
+      expect(sent).toEqual([store.batch]);
+      expect(onWatchdogSend).toHaveBeenCalledOnce();
+      expect(onWatchdogSend).toHaveBeenCalledWith({
+        streamId: "watchdog-stream", sourceSeq: 1, waitedMs: 15_000,
+      });
+      pump.disconnect();
+      const reads = store.readBatch.mock.calls.length;
+      vi.advanceTimersByTime(60_000);
+      await settleWatchdog();
+      expect(store.readBatch).toHaveBeenCalledTimes(reads);
+      expect(onWatchdogSend).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not poll or resend when the watchdog is disabled", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const store = watchdogStore(true);
+      const sent: EventOutboxBatch[] = [];
+      const pump = new EventOutboxPump(store, vi.fn());
+      pump.connect(async (batch) => { sent.push(batch); });
+      await settleWatchdog();
+      vi.advanceTimersByTime(60_000);
+      await settleWatchdog();
+      expect(sent).toHaveLength(1);
+      expect(store.readBatch).toHaveBeenCalledOnce();
+      pump.disconnect();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("validates the complete canonical ownership token in transition ACKs", () => {
     const acknowledgement = {
       type: "event_append_ack" as const,
@@ -539,6 +612,25 @@ describe("EventOutboxPump", () => {
   });
 
 });
+
+function watchdogStore(available: boolean) {
+  const batch: EventOutboxBatch = {
+    type: "event_append_batch", protocol_version: 1, stream_id: "watchdog-stream", first_seq: 1,
+    events: [{
+      stream_id: "watchdog-stream", source_seq: 1, ...eventInput("one"), payload_hash: "a".repeat(64),
+    }],
+  };
+  return {
+    streamId: batch.stream_id, ackedSeq: 0, available, batch,
+    onAppend: () => () => {},
+    readBatch: vi.fn(async function (this: { available: boolean }) { return this.available ? batch : null; }),
+    acknowledge: vi.fn(async () => {}),
+  };
+}
+
+async function settleWatchdog(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
 
 async function createOutbox(): Promise<EventOutbox> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-event-outbox-pump-"));

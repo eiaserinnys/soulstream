@@ -87,6 +87,34 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("wakes the runner pump after replay when its IPC connection is attached again", async () => {
+    let available = false;
+    const store = {
+      ...emptyStore("runner-stream"),
+      readBatch: vi.fn(async () => available ? {
+        type: "event_append_batch" as const, protocol_version: 1, stream_id: "runner-stream", first_seq: 1,
+        events: [{ stream_id: "runner-stream", source_seq: 1, session_id: "session-a", event_type: "complete",
+          payload: { type: "complete" }, searchable_text: "", created_at: "2026-11-17T00:00:00.000Z",
+          semantic_dedupe_key: null, session_effect: null, payload_hash: "a".repeat(64) }],
+      } : null),
+    };
+    const pump = new EventOutboxPump(store, vi.fn());
+    const sent: EventOutboxBatch[] = [];
+    await pump.connect(async (batch) => { sent.push(batch); });
+    available = true; // A child wrote while IPC was disconnected: no doorbell.
+    const replay = vi.fn(async () => {});
+    const dispatcher = Object.assign(Object.create(RunnerProcessDispatcher.prototype), {
+      pump, options: { logger: { error: vi.fn(), info: vi.fn() } },
+      replayPendingFrames: replay, reconcileActiveLifecycleTerminal: vi.fn(async () => {}),
+    });
+    const connection = { onFrame: vi.fn(), onFailure: vi.fn() };
+    dispatcher.attachConnection(connection, "socket");
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(replay).toHaveBeenCalledOnce();
+    expect(store.readBatch).toHaveBeenCalledTimes(2);
+    pump.disconnect();
+  });
+
   it.each(["replaced", "removed", "retired", "pid-cleared"] as const)(
     "stops reconnecting after its registration is %s and releases its event stream",
     async (change) => {

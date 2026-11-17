@@ -19,6 +19,10 @@ export class EventOutboxPumpMux implements EventOutboxPumpTransport {
     this.pumps.set(primary.streamId, primary);
   }
 
+  has(streamId: string): boolean {
+    return this.pumps.has(streamId);
+  }
+
   register(pump: EventOutboxPump): () => void {
     if (this.pumps.has(pump.streamId)) {
       throw new Error(`Durable event stream already registered: ${pump.streamId}`);

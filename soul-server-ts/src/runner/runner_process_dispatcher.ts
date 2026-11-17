@@ -975,6 +975,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.requestReconnect(socketPath, error, connectedForMs);
     });
     void this.replayPendingFrames().then(async () => {
+      this.pump?.notifyAvailable();
       await this.reconcileActiveLifecycleTerminal();
     }).catch((error) => {
       this.options.logger.error({ err: error }, "Runner IPC replay failed");
@@ -1321,6 +1322,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.options.logger.error({ err: error }, "Runner event outbox pump failed");
     }, {
       beforePublish: async () => await this.replayPendingFrames(),
+      watchdog: {
+        intervalMs: 15_000,
+        retryAfterMs: 30_000,
+        onSend: (details) => this.options.logger.warn(details, "Runner event outbox watchdog sent pending events"),
+      },
       onQuarantine: (result) => {
         this.options.logger.warn({
           path: result.path,
