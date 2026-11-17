@@ -308,6 +308,12 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
       limit: 100,
     });
 
+    const withoutSince = await listTurnUsage({
+      sessionId: "s-sub", since: undefined, until: UNTIL, cursor: 0, limit: 100,
+    });
+    expect(withoutSince.total).toBe(2);
+    expect(withoutSince.rows).toEqual(rows);
+
     expect(rows.map((row) => row.event_id)).toEqual([2, 5]);
     expect(rows[0]).toMatchObject({
       subagent_input_tokens: 1900,

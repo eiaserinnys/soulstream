@@ -27,4 +27,28 @@ describe("subagent usage query", () => {
     expect(picked).not.toMatch(/session_id\s*=\s*ANY/i);
     expect(query.slice(query.indexOf("), usage_raw AS"))).toMatch(/p\.session_id\s*=\s*ANY/i);
   });
+
+  it.each([undefined, new Date("2026-11-10T07:30:00Z")])(
+    "restricts list reads to the selected sessions inside picked (since %s)",
+    async (since) => {
+      const queries: string[] = [];
+      const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = strings.reduce((result, part, index) => {
+          const value = values[index];
+          return result + part + (value && typeof value === "object" && "text" in value
+            ? String(value.text) : index < values.length ? "?" : "");
+        }, "");
+        queries.push(text);
+        return { text, then: (resolve: (rows: unknown[]) => void) => resolve([]) };
+      }) as unknown as SqlClient;
+
+      await readSubagentUsage(sql, ["a"], {
+        since, until: new Date("2026-11-17T07:30:00Z"),
+      }, "list");
+
+      const query = queries.at(-1)!;
+      const picked = query.slice(query.indexOf("WITH picked AS"), query.indexOf("), usage_raw AS"));
+      expect(picked).toMatch(/session_id\s*=\s*ANY/i);
+    },
+  );
 });

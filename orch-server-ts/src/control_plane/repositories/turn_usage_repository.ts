@@ -252,7 +252,7 @@ export async function listTurnUsage(
   const subagentUsage = await readSubagentUsage(sql, rows.map((row) => row.session_id), {
     since: query.since,
     until: query.until,
-  });
+  }, "list");
   return {
     total,
     rows: rows.map((row) => {
@@ -341,7 +341,7 @@ export async function summarizeTurnUsage(
   const subagentUsage = await readSubagentUsage(sql, mapped.map((row) => row.session_id), {
     since: query.since,
     until: query.until,
-  });
+  }, "summary");
   return mapped.map((row) => {
     const sessionUsage = subagentUsage.get(row.session_id);
     if (!sessionUsage) return row;
