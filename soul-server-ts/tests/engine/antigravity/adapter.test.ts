@@ -11,11 +11,16 @@ function fixture(processEnv: NodeJS.ProcessEnv = process.env, resolvedMcpServers
   const directory = makeTempDirSync("agy-adapter-");
   const executable = join(directory, "fake-agy.mjs");
   writeFileSync(executable, `#!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 const args=process.argv.slice(2);
 const value=(key)=>args[args.indexOf(key)+1];
 const emit=(x)=>console.log(JSON.stringify(x));
 const model=value('--model');
+if(model==='pre-init-exit'){
+ writeFileSync('pre-init-started','');
+ await new Promise(resolve=>setTimeout(resolve,500));
+ process.exit(1);
+}
 if(model==='environment'){
  const names=['SCRATCH_WORKSPACE_DIR','SOULSTREAM_AGENT_ID','AGENT_COMMON_FILES_DIR','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_GEMINI_BASE_URL'];
  const env=Object.fromEntries(names.filter(name=>process.env[name]!==undefined).map(name=>[name,process.env[name]]));
@@ -184,6 +189,17 @@ describe("AntigravityEngineAdapter", () => {
     expect(next.find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:10,cached_input_tokens:6,output_tokens:8,reasoning_output_tokens:2 }, first_call: { input_tokens: 5, cached_input_tokens: 3 } });
     expect((await collect(engine,resume)).find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:5,cached_input_tokens:3,output_tokens:4,reasoning_output_tokens:1 } });
     await engine.close();
+  });
+  it("emits a fatal error when interrupted before init and the process exits without init", async () => {
+    const { engine, directory } = fixture();
+    try {
+      const result = collect(engine, { ...input, model: "pre-init-exit" });
+      await vi.waitFor(() => expect(existsSync(join(directory, "pre-init-started"))).toBe(true));
+      expect(await engine.interrupt()).toBe(true);
+      const events = await result;
+      expect(events).toContainEqual(expect.objectContaining({ type: "error", fatal: true }));
+      expect(events.some(event => event.type === "complete")).toBe(false);
+    } finally { await engine.close(); }
   });
   it("excludes the initial-to-resumed boundary and connects two resumed processes", async () => {
     const { engine } = fixture();

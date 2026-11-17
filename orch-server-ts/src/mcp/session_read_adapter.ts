@@ -11,6 +11,7 @@ export interface McpSessionRow {
   display_name: string | null;
   status: string;
   session_type: string;
+  model_preset: string | null;
   created_at: Date;
   updated_at: Date;
   event_count: number;

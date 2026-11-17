@@ -114,6 +114,7 @@ export function launchAntigravityProcess(options: {
   });
   let failure: string | undefined;
   let interrupted = false;
+  let interruptSignalled = false;
   let initialized = false;
   let closed = false;
   let sawResult = false;
@@ -182,7 +183,10 @@ export function launchAntigravityProcess(options: {
     descendants = snapshotDescendants(child.pid);
     try {
       process.kill(-child.pid, "SIGINT");
-      if (armGraceAfterInterrupt) armExitGraceTimer();
+      if (armGraceAfterInterrupt) {
+        interruptSignalled = true;
+        armExitGraceTimer();
+      }
       return true;
     }
     catch (error) {
@@ -215,6 +219,7 @@ export function launchAntigravityProcess(options: {
   return {
     events: events(), done,
     get interrupted() { return interrupted; },
+    get interruptSignalled() { return interruptSignalled; },
     interrupt(): boolean {
       if (closed || !child.pid) return false;
       if (interrupted) return true;

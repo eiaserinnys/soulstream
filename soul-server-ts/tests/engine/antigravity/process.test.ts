@@ -116,10 +116,20 @@ describe("Antigravity process descendants", () => {
       setInterval(()=>{},1000);`;
     const child = launchAntigravityProcess({ executablePath: process.execPath,args:["-e",source],cwd:"/tmp",env:process.env,input:"",logger:pino({level:"silent"}) });
     expect(child.interrupt()).toBe(true);
+    expect(child.interruptSignalled).toBe(false);
     const events=[]; for await (const event of child.events) events.push(event);
     expect(events[0]).toMatchObject({event:"init",conversation_id:resume?"resume":"new"});
     expect(events[1]).toMatchObject({event:"result",result:{status:"ERROR",error:"interrupted"}});
     expect((await child.done).code).toBe(1);
     expect(child.interrupted).toBe(true);
+    expect(child.interruptSignalled).toBe(true);
+  });
+  it("does not mark an interrupt as signalled when the process exits before init", async () => {
+    const child = launchAntigravityProcess({ executablePath: process.execPath, args: ["-e", "process.exit(1)"],
+      cwd: "/tmp", env: process.env, input: "", logger: pino({ level: "silent" }) });
+    expect(child.interrupt()).toBe(true);
+    for await (const _event of child.events) { /* drain */ }
+    expect((await child.done).code).toBe(1);
+    expect(child.interruptSignalled).toBe(false);
   });
 });

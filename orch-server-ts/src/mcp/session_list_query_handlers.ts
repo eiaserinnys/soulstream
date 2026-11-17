@@ -55,6 +55,7 @@ export const sessionListQueryHandlers = {
           ...(parsedPeriod.period === undefined ? {} : { period: parsedPeriod.period }),
         });
         const hasMore = c + l < total;
+        const presets = options.cluster?.centralAgentProfiles?.modelCatalog?.snapshot().presets ?? [];
         return jsonResult({
           total,
           sessions: sessions.map((s) => ({
@@ -62,6 +63,8 @@ export const sessionListQueryHandlers = {
             display_name: s.display_name,
             status: s.status,
             session_type: s.session_type,
+            model_preset: s.model_preset ?? null,
+            backend: presets.find((preset) => preset.id === s.model_preset)?.backend ?? null,
             created_at: serializeDate(s.created_at),
             updated_at: serializeDate(s.updated_at),
             event_count: s.event_count,

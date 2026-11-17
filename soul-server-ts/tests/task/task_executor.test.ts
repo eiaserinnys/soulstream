@@ -172,6 +172,32 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startNewExecution", () => {
+  it("records error_aborted when an EventAck timeout ends an active turn", async () => {
+    const mocks = makeMocks();
+    const error = new EventAcknowledgementTimeoutError(42, 300000);
+    const engine: EnginePort = {
+      ...makeFakeEngine([]),
+      async *execute() {
+        yield { type: "text_delta", text: "partial", timestamp: 1 } as SSEEventPayload;
+        throw error;
+      },
+    };
+    const executor = new TaskExecutor(
+      () => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+    );
+    const task = makeTask();
+
+    await executor.startNewExecution(task, agent);
+
+    expect(task.status).toBe("error");
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ type: "session_ended", termination_reason: "error_aborted", termination_detail: error.message }),
+      expect.objectContaining({ termination_reason: "error_aborted", termination_detail: error.message }),
+      expect.any(String),
+    );
+  });
+
   it.each(["after complete", "before first turn"] as const)(
     "%s ACK timeout records the error and adds one notice to the next input",
     async (point) => {
