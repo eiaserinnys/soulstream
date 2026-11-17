@@ -202,6 +202,8 @@ describe("retrying failure record after a successful commit", () => {
     await old.pauseWrites();
     await write;
     await expect(old.find({ nodeId: "node-a", envelope: plain() })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(old.recordFailure({ nodeId: "node-a", envelope: plain(), failure, threshold: 3 })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(old.removeRetrying({ nodeId: "node-a", envelope: plain() })).rejects.toMatchObject({ statusCode: 503 });
     const next = new FileEventIngressDeadLetterStore(directory);
     const result = await next.recordFailure({ nodeId: "node-a", envelope: plain(), failure, threshold: 3 });
     expect(result.failureCount).toBe(2);

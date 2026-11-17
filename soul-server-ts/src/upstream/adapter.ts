@@ -124,7 +124,7 @@ export class UpstreamAdapter {
     this.stopAppHeartbeat();
     this.deps.eventOutboxPump?.disconnect();
     this.deps.resourceCollector?.close();
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       this.ws.close();
     }
     this.ws = null;

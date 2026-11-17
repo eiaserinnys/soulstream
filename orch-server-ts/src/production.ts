@@ -162,6 +162,7 @@ export type ProductionApplication = {
   readonly app: FastifyInstance;
   readonly startBackground: () => Promise<void>;
   readonly closeResources: () => Promise<void>;
+  readonly closeHandoverResources?: () => Promise<void>;
   readonly beginShutdown?: () => Promise<void>;
   readonly stopBackground?: () => Promise<void>;
   readonly resumeBackground?: () => Promise<void>;
@@ -295,7 +296,7 @@ export async function createProductionOrchestrator(
     async closeForHandover() {
       await application.beginShutdown?.();
       await Promise.race([listenerClosed, new Promise<void>(resolve => setTimeout(resolve, 10_000))]);
-      if (!closed) { closed = true; await closeApplication(application, options.onShutdownStage); }
+      if (!closed) { closed = true; await closeApplication(application, options.onShutdownStage, true); }
     },
   };
 }
@@ -1113,6 +1114,7 @@ export async function createLiveProductionApplication(
       await cardDispatchRuntime.dispatcher.dispatch();
       if (!backgroundActive) return;
       usageSummaryService.start(); maintenanceService.start(); turnSummaryPipeline?.start?.();
+      lifecycle.markReady();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
         void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0))
@@ -1123,7 +1125,6 @@ export async function createLiveProductionApplication(
     if (overrides.pageGate) {
       backgroundStart = overrides.pageGate.run(startRemaining).catch(error => context.warn(`background startup failed: ${String(error)}`));
     } else await startRemaining();
-    lifecycle.markReady();
   };
   const stopBackground = async () => {
     backgroundActive = false;
@@ -1140,6 +1141,46 @@ export async function createLiveProductionApplication(
     await externalEventsTarget?.pauseWrites();
     await deadLetterStore.pauseWrites();
   };
+  const closeResources = async (handover: boolean) => {
+    if (resourcesClosed) return;
+    resourcesClosed = true;
+    const runShutdownStep = async (
+      step: string,
+      action: () => Promise<void> | void,
+    ): Promise<void> => {
+      context.onShutdownStage?.(step);
+      const startedAt = Date.now();
+      try {
+        await action();
+      } finally {
+        app.log.info(
+          {
+            event: "orchestrator.shutdown_step",
+            step,
+            elapsed_ms: Math.max(0, Date.now() - startedAt),
+          },
+          "orchestrator shutdown step",
+        );
+      }
+    };
+    if (handover) {
+      await runShutdownStep("background_stop", stopBackground);
+    } else {
+      backgroundActive = false;
+      if (documentIndexWarmupTimer !== undefined) {
+        clearTimeout(documentIndexWarmupTimer);
+        documentIndexWarmupTimer = undefined;
+      }
+      await runShutdownStep("maintenance_stop", () => maintenanceService.stop());
+      await runShutdownStep("session_reconciliation_close", () => sessionReconciliation.close());
+      await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
+      await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
+      await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
+      await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
+    }
+    await runShutdownStep("push_notifier_close", () => pushNotifier.close());
+    await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
+  };
   return {
     app,
     beginShutdown:()=>lifecycle.beginShutdown(),
@@ -1155,32 +1196,8 @@ export async function createLiveProductionApplication(
       const timer = setTimeout(() => app.log.warn("page handover save exceeds 3 seconds"), 3_000);
       try { await pageYjsService?.closeForHandover(); } finally { clearTimeout(timer); }
     },
-    async closeResources() {
-      if (resourcesClosed) return;
-      resourcesClosed = true;
-      const runShutdownStep = async (
-        step: string,
-        action: () => Promise<void> | void,
-      ): Promise<void> => {
-        context.onShutdownStage?.(step);
-        const startedAt = Date.now();
-        try {
-          await action();
-        } finally {
-          app.log.info(
-            {
-              event: "orchestrator.shutdown_step",
-              step,
-              elapsed_ms: Math.max(0, Date.now() - startedAt),
-            },
-            "orchestrator shutdown step",
-          );
-        }
-      };
-      await runShutdownStep("background_stop", stopBackground);
-      await runShutdownStep("push_notifier_close", () => pushNotifier.close());
-      await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
-    },
+    closeResources: async () => await closeResources(false),
+    closeHandoverResources: async () => await closeResources(true),
   };
 }
 
@@ -1648,6 +1665,7 @@ export function buildProductionRouteOptions(
 async function closeApplication(
   application: ProductionApplication,
   onShutdownStage?: ShutdownStageReporter,
+  handover = false,
 ): Promise<void> {
   const runShutdownStep = async (
     step: string,
@@ -1676,7 +1694,8 @@ async function closeApplication(
     appCloseError = error;
   }
   try {
-    await runShutdownStep("resources_close", () => application.closeResources());
+    await runShutdownStep("resources_close", () => handover && application.closeHandoverResources
+      ? application.closeHandoverResources() : application.closeResources());
   } catch (resourceError) {
     if (appCloseError !== undefined) {
       throw new AggregateError(

@@ -19,6 +19,7 @@ import type {
   LivePostgresSql,
 } from "../src/runtime/live_db_sql.js";
 import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+import { HandoverGate } from "../src/runtime/handover_gate.js";
 
 const catalog = repositoryModelCatalog();
 const CATALOG = catalog.snapshot();
@@ -37,6 +38,7 @@ afterEach(async () => {
 describe("production orchestrator entrypoint", () => {
   it("assembles the complete live provider bundle without contacting external services", async () => {
     const config = loadOrchServerEnvironment(minimalEnvironment());
+    const shutdownStages: string[] = [];
     const databaseSchema = {
       migration_id: "088_test_schema",
       checksum: "test-schema-checksum",
@@ -99,7 +101,7 @@ describe("production orchestrator entrypoint", () => {
     };
     const application = await createLiveProductionApplication(
       config,
-      { warn: vi.fn() },
+      { warn: vi.fn(), onShutdownStage: (step) => shutdownStages.push(step) },
       { modelCatalog: catalog,
       sqlResolver },
     );
@@ -230,6 +232,61 @@ describe("production orchestrator entrypoint", () => {
     await application.app.close();
     await application.closeResources();
     expect(sqlResolver.close).toHaveBeenCalledOnce();
+    expect(shutdownStages).toEqual([
+      "maintenance_stop", "session_reconciliation_close", "recurring_scheduler_stop",
+      "usage_summary_stop", "card_dispatch_drain", "turn_summary_drain",
+      "push_notifier_close", "db_catalog_close",
+    ]);
+  });
+
+  it("marks readiness after the gated background startup finishes", async () => {
+    const sql = Object.assign(async (strings: TemplateStringsArray) =>
+      strings.join(" ").includes("FROM schema_migrations")
+        ? [{ migration_id: "088_test_schema", checksum: "test-schema-checksum", ordinal: 88 }]
+        : [], {
+      json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
+    }) as unknown as LivePostgresSql;
+    const pageGate = new HandoverGate();
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment(minimalEnvironment()),
+      { warn: vi.fn() },
+      { modelCatalog: catalog, sqlResolver: { resolveSql: async () => sql, close: async () => undefined }, pageGate },
+    );
+    try {
+      await application.startBackground();
+      expect((await application.app.inject({ method: "GET", url: "/api/health" })).json().ready).toBe(false);
+      pageGate.open();
+      await vi.waitFor(async () => {
+        expect((await application.app.inject({ method: "GET", url: "/api/health" })).json().ready).toBe(true);
+      });
+    } finally {
+      pageGate.open();
+      await application.stopBackground?.();
+      await application.app.close();
+      await application.closeResources();
+    }
+  });
+
+  it("uses the handover resource shutdown separately from the normal shutdown", async () => {
+    const closeResources = vi.fn(async () => undefined);
+    const closeHandoverResources = vi.fn(async () => undefined);
+    const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
+      config: loadOrchServerEnvironment({ ...minimalEnvironment(), PORT: "0" }),
+      applicationFactory: async () => ({
+        app: Fastify({ forceCloseConnections: true }),
+        startBackground: async () => undefined,
+        closeResources,
+        closeHandoverResources,
+      }),
+    });
+    await server.listen();
+    server.stopListening();
+    await server.closeForHandover();
+    expect(closeHandoverResources).toHaveBeenCalledOnce();
+    expect(closeResources).not.toHaveBeenCalled();
   });
 
   it("listens on an ephemeral port and serves health, status, and dashboard over real HTTP", async () => {

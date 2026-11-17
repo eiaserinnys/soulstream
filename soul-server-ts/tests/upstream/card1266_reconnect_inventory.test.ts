@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { createServer } from "node:http";
 
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,7 +115,7 @@ describe("card #1266 U4: reconnect inventory after an engine death or a restart"
     await waitFor(() => orch.receivedMessages.some(isRunnerInventory));
     orch.sockets[0]!.close(code);
     if (code === 1012) {
-      await waitFor(() => orch.sockets.length === 2);
+      await waitFor(() => orch.receivedMessages.filter(isNodeRegister).length === 2);
       expect(wait).not.toHaveBeenCalled();
     } else {
       await waitFor(() => wait.mock.calls.length > 0);
@@ -122,6 +123,29 @@ describe("card #1266 U4: reconnect inventory after an engine death or a restart"
     }
     await adapter.shutdown();
     await run;
+  });
+
+  it("ends a connection still waiting for the WebSocket handshake on shutdown", async () => {
+    const server = createServer();
+    let socket: import("node:stream").Duplex | undefined;
+    const upgrade = new Promise<void>((resolve) => server.on("upgrade", (_request, connection) => {
+      socket = connection;
+      resolve();
+    }));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const adapter = createAdapter({ ...orch, url: `ws://127.0.0.1:${port}` }, [], async () => [], pino({ level: "silent" }));
+    const run = adapter.run();
+    await upgrade;
+    await adapter.shutdown();
+    const ended = await Promise.race([
+      run.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+    ]);
+    socket?.destroy();
+    await run;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(ended).toBe(true);
   });
 });
 
@@ -227,4 +251,9 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
 function isRunnerInventory(message: unknown): boolean {
   return typeof message === "object" && message !== null
     && (message as Record<string, unknown>).type === "runner_inventory";
+}
+
+function isNodeRegister(message: unknown): boolean {
+  return typeof message === "object" && message !== null
+    && (message as Record<string, unknown>).type === "node_register";
 }
