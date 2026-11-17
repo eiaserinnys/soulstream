@@ -746,7 +746,12 @@ for (const width of [1440, 390, 360]) {
     const { capture, write } = await preparePage(page, width);
     await installRoutes(page);
     const { dialog } = await openRecurringTab(page);
+    const dialogDescription = await textWrapMetrics(dialog.locator('[data-slot="dialog-description"]'));
+    expect.soft(dialogDescription.wordBreak, "설정 창 설명 word-break").toBe("keep-all");
+    expect.soft(dialogDescription.overflowWrap, "설정 창 설명 overflow-wrap").toBe("break-word");
+    expect.soft(dialogDescription.breaks.filter(line => !line.boundary), "설정 창 설명 낱말 중간 줄바꿈").toEqual([]);
     const measurements: Record<string, unknown> = {};
+    measurements.dialogDescription = dialogDescription;
     for (const [label, id] of [["반복 작업", "recurring-jobs-tab"], ["영구 에이전트 세션", "persistent-sessions-tab"]] as const) {
       if (id === "persistent-sessions-tab") {
         if (width <= 640) await dialog.getByRole("button", { name: "모든 설정" }).click();

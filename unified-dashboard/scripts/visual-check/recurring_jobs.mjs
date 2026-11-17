@@ -47,11 +47,14 @@ async function measureListHeader(page, tab, outputFile) {
     };
     const detail = document.querySelector('.config-dialog .config-detail-heading p');
     const dialogDescription = document.querySelector('.config-dialog [data-slot="dialog-description"]');
+    const dialogHeader = document.querySelector('.config-dialog > [data-slot="dialog-header"]');
     return { list: rect(aside), heading: rect(heading), actions: [...heading.lastElementChild.children].map(rect),
       listContent: rect(heading.nextElementSibling), paragraph: rect(paragraph), lines: linesFor(paragraph),
       wordBreak: getComputedStyle(paragraph).wordBreak, overflowWrap: getComputedStyle(paragraph).overflowWrap,
       detailLines: detail && linesFor(detail), detailWordBreak: detail && getComputedStyle(detail).wordBreak,
-      dialogDescriptionLines: dialogDescription && linesFor(dialogDescription) };
+      dialogHeader: rect(dialogHeader), dialogDescription: rect(dialogDescription),
+      dialogDescriptionLines: linesFor(dialogDescription), dialogDescriptionWordBreak: getComputedStyle(dialogDescription).wordBreak,
+      dialogDescriptionOverflowWrap: getComputedStyle(dialogDescription).overflowWrap };
   });
   await page.screenshot({ path: outputFile, animations: 'disabled' });
   return measurement;
