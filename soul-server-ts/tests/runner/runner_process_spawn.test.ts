@@ -14,8 +14,6 @@ import type { RunnerRegistration } from "../../src/runner/runner_process_registr
 import { readAuthoritativeRunnerLifecycleLocal } from
   "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { consumeRunnerMcpSecrets } from "../../src/runner/mcp_secret_refs.js";
-import { withFullSessionCredential } from "../../src/runner/full_session_credential.js";
 import {
   defaultProcessOwnershipLockDependencies,
 } from "../../src/runner/runner_process_lock.js";
@@ -972,42 +970,56 @@ async function writeDisagreedRegistration(
 }
 
 describe("MCP secret persistence at spawn", () => {
-  it.each(["full", "restricted"] as const)("externalizes %s values after credential preparation", async (mode) => {
-    const fakeRegistry = crypto.randomUUID();
-    const fakeEnvValue = crypto.randomUUID();
-    const fakeInline = crypto.randomUUID();
-    const fakeHost = crypto.randomUUID();
-    const restrictedToken = `ssr1-${crypto.randomUUID()}`;
-    const params = await input();
-    params.sessionId = "11111111-1111-4111-8111-111111111111";
-    const agent = { ...params.agent, agents_sdk: { entry_agent: "a", agents: [{ id: "a", name: "A", instructions: "test",
-      mcp_servers: [{ type: "stdio" as const, name: "soulstream", command: "test", env: { API_KEY: fakeInline } }] }] } };
-    const base = { ...params, agent, resolvedMcpServers: [
-      { type: "streamable_http" as const, name: "soulstream", url: "http://127.0.0.1:3105/mcp",
-        headers: { Authorization: mode === "restricted" ? `Bearer ${restrictedToken}` : `Bearer ${fakeHost}`, "X-Key": fakeRegistry } },
-      { type: "stdio" as const, name: "external", command: "test", env: { API_KEY: fakeEnvValue } },
-    ], childProcessEnv: { PATH: "/allowed" } };
-    const prepared = mode === "full" ? withFullSessionCredential(base, { hostBearerToken: fakeHost }) : base;
-    let childEnv: NodeJS.ProcessEnv = {};
-    const spawner = new RunnerProcessSpawner({
-      prepareDatabase, validateEntry: async () => {},
-      spawnProcess: (_entry, _args, options) => { childEnv = options.env; return { pid: 4124, unref: vi.fn() }; },
-      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
-      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
-      isPidAlive: () => false, signalPid: vi.fn(), now: () => 0, delay: async () => {},
-    });
-    const hostBefore = { ...process.env };
-    const result = await spawner.spawn(prepared);
-    const raw = await readFile(result.paths.configPath, "utf8");
-    const config = parseRunnerChildConfig(JSON.parse(raw));
-    const expected = parseRunnerChildConfig({ ...result.config, agent: prepared.agent, resolvedMcpServers: prepared.resolvedMcpServers });
-    const expectedAuth = prepared.resolvedMcpServers[0]!.headers.Authorization;
-    expect(expectedAuth.startsWith(mode === "full" ? "Bearer ssf1" : "Bearer ssr1")).toBe(true);
-    expect([fakeRegistry, fakeEnvValue, fakeInline, fakeHost, restrictedToken, expectedAuth].every((value) => !raw.includes(value))).toBe(true);
-    const restored = consumeRunnerMcpSecrets(config, config.mcpSecretRefs!, childEnv);
-    expect(restored.resolvedMcpServers).toEqual(expected.resolvedMcpServers);
-    expect(restored.agent).toEqual(expected.agent);
-    expect(childEnv.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
-    expect(JSON.stringify(process.env) === JSON.stringify(hostBefore)).toBe(true);
+  it("writes references for new, restricted and reference-aware recovery, but preserves legacy recovery", async () => {
+    const secret = crypto.randomUUID();
+    const ref = { server: "remote", field: "headers" as const, key: "X-Key", env: "TEST_MCP_REF" };
+    const prior = process.env.TEST_MCP_REF;
+    process.env.TEST_MCP_REF = secret;
+    try {
+      for (const mode of ["fresh", "restricted", "stored", "legacy"] as const) {
+        const params = await input();
+        const server = {
+          type: "streamable_http" as const, name: "remote", url: "https://example.test/mcp",
+          headers: { "X-Key": secret, Authorization: "session-scoped" },
+        };
+        let childEnv: NodeJS.ProcessEnv = {};
+        const spawner = new RunnerProcessSpawner({
+          prepareDatabase,
+          validateEntry: async () => {},
+          spawnProcess: (_entry, _args, options) => {
+            childEnv = options.env;
+            return { pid: 4124, unref: vi.fn() };
+          },
+          registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+          inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+          isPidAlive: () => false,
+          signalPid: vi.fn(),
+          now: () => 0,
+          delay: async () => {},
+        });
+        const result = await spawner.spawn({
+          ...params,
+          resolvedMcpServers: [mode === "stored" ? { ...server, headers: { Authorization: "session-scoped" } } : server],
+          ...(mode === "legacy" ? {} : { mcpSecretRefs: mode === "stored" ? [ref] : [], mcpSecretDeclarations: [ref] }),
+          childProcessEnv: mode === "restricted" ? { PATH: "/allowed" } : {},
+        });
+        const written = await readFile(result.paths.configPath, "utf8");
+        const config = JSON.parse(written);
+        expect(written.includes(secret)).toBe(mode === "legacy");
+        expect(config.resolvedMcpServers[0].headers.Authorization).toBe("session-scoped");
+        if (mode === "legacy") {
+          expect(config.mcpSecretRefs).toBeUndefined();
+          expect(childEnv.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
+        } else {
+          expect(config.mcpSecretRefs).toEqual([ref]);
+          expect(config.resolvedMcpServers[0].headers["X-Key"]).toBeUndefined();
+          expect(JSON.parse(childEnv.SOUL_RUNNER_MCP_SECRETS!).TEST_MCP_REF === secret).toBe(true);
+          if (mode === "restricted") expect(childEnv.PATH).toBe("/allowed");
+        }
+      }
+    } finally {
+      if (prior === undefined) delete process.env.TEST_MCP_REF;
+      else process.env.TEST_MCP_REF = prior;
+    }
   });
 });

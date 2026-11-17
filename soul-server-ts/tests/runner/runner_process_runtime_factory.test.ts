@@ -1,12 +1,12 @@
-import pino from "pino";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentProfileSchema, type AgentProfile } from "../../src/agent_registry.js";
-import { prepareRecoveredTask } from "../../src/runner/runner_recovery_task.js";
+
+import pino from "pino";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { AgentProfile } from "../../src/agent_registry.js";
 import { attachClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import { readClaudeBackgroundProvenance } from
@@ -17,10 +17,9 @@ import {
   RunnerNotAliveError,
 } from
   "../../src/runner/runner_process_runtime_factory.js";
-import { RunnerProcessSpawner, type RunnerChildConfig, type SpawnRunnerProcessInput } from
+import { RunnerProcessSpawner, type SpawnRunnerProcessInput, type RunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import { consumeRunnerMcpSecrets } from "../../src/runner/mcp_secret_refs.js";
 import { parseRunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from
@@ -33,80 +32,6 @@ import type { Task } from "../../src/task/task_models.js";
 describe("createRunnerProcessRuntimeFactory", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-  });
-
-  it("replaces only recovered agent MCP lists by id before a new spawn", async () => {
-    const values = [randomUUID(), randomUUID()];
-    const saved = AgentProfileSchema.parse({ id: "saved-profile", name: "Saved", backend: "openai-agents",
-      workspace_dir: "/workspace/worktree", agents_sdk: { entry_agent: "a", agents: [
-        { id: "a", name: "Saved A", instructions: "saved A", mcp_servers: [{ type: "stdio", command: "saved-a", env: {} }] },
-        { id: "b", name: "Saved B", instructions: "saved B", mcp_servers: [{ type: "stdio", command: "saved-b", env: {} }] },
-      ] } });
-    const current = AgentProfileSchema.parse({ ...saved, workspace_dir: "/workspace/current", agents_sdk: {
-      ...saved.agents_sdk!, agents: [...saved.agents_sdk!.agents].reverse().map((agent, index) => ({
-        ...agent, instructions: "new", mcp_servers: [{ type: "stdio", command: `new-${index}`, env: { KEY: values[index] } }],
-      })),
-    } });
-    const registration = adoptionRegistration();
-    registration.config.agent = saved;
-    registration.config.mcpSecretRefs = [{ server: "saved-a", field: "env", key: "KEY", env: "slot", location: "agent", agentIndex: 0, serverIndex: 0 }];
-    const task = { agentSessionId: "recovered", profileId: "saved-profile", prompt: "resume", status: "pending" } as Task;
-    prepareRecoveredTask(task, registration);
-    const spawn = vi.fn(async () => { throw new Error("capture recovered spawn"); });
-    const get = vi.fn(() => current);
-    const factory = createRunnerProcessRuntimeFactory({
-      env: runnerEnv(), logger: pino({ level: "silent" }), pumpMux: {} as never, sessionStore: {} as never,
-      agentRegistry: { get },
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
-      releasePool: { resolveCurrentRelease: vi.fn(async () => ({ releaseId: "sha", releaseRoot: "/release/sha", runnerModuleRoot: "/release/sha/soul-server-ts" })), describe: vi.fn(), ensureRelease: vi.fn(async () => {}) },
-      buildChildProcessEnv: () => ({}), spawner: { adopt: vi.fn(), spawn },
-    });
-    const snapshots = { persistRunState: vi.fn(async () => {}), persistSessionItems: vi.fn(async () => {}) };
-    const runtime = factory(task, saved, "openai-agents", snapshots);
-    await expect(runtime.dispatcher.prepareSession("recovered")).rejects.toThrow("capture recovered spawn");
-    const agent = (spawn.mock.calls[0]![0] as { agent: AgentProfile }).agent;
-    expect(agent.workspace_dir).toBe("/workspace/worktree");
-    expect(agent.agents_sdk!.agents.map((item) => item.instructions)).toEqual(["saved A", "saved B"]);
-    expect(JSON.stringify(agent.agents_sdk!.agents[0]!.mcp_servers) === JSON.stringify(current.agents_sdk!.agents[1]!.mcp_servers)).toBe(true);
-    expect(JSON.stringify(agent.agents_sdk!.agents[1]!.mcp_servers) === JSON.stringify(current.agents_sdk!.agents[0]!.mcp_servers)).toBe(true);
-    expect(get).toHaveBeenCalledWith("saved-profile");
-
-    const root = await mkdtemp(join(tmpdir(), "mcp-recovered-spawn-"));
-    let childEnv: NodeJS.ProcessEnv = {};
-    try {
-      const spawner = new RunnerProcessSpawner({
-        prepareDatabase: async (path) => { const db = await RunnerSqliteEventOutbox.create(path); db.close(); },
-        validateEntry: async () => {},
-        spawnProcess: (_entry, _args, options) => { childEnv = options.env; return { pid: 4124, unref: vi.fn() }; },
-        registerPid: async (path, pid) => await writeFile(path, `${pid}\n`),
-        inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
-        isPidAlive: () => false, signalPid: vi.fn(), now: () => 0, delay: async () => {},
-      });
-      const input = spawn.mock.calls[0]![0] as SpawnRunnerProcessInput;
-      const child = await spawner.spawn({ ...input, stateDirectory: root, prepareSnapshot: async () => {} });
-      const raw = await readFile(child.paths.configPath, "utf8");
-      expect(values.every((value) => !raw.includes(value))).toBe(true);
-      const config = parseRunnerChildConfig(JSON.parse(raw));
-      const restored = consumeRunnerMcpSecrets(config, config.mcpSecretRefs!, childEnv);
-      expect(JSON.stringify(restored.agent) === JSON.stringify(agent)).toBe(true);
-    } finally { await rm(root, { recursive: true, force: true }); }
-
-    get.mockReturnValueOnce({ ...current, agents_sdk: { ...current.agents_sdk!, agents: [current.agents_sdk!.agents[0]!] } });
-    let missingAgent = "";
-    try { factory(task, saved, "openai-agents", snapshots); } catch (error) { missingAgent = String(error); }
-    expect(missingAgent).toMatch(/saved-profile.*a/);
-    expect(values.every((value) => !missingAgent.includes(value))).toBe(true);
-    get.mockReturnValueOnce(undefined as never);
-    expect(() => factory(task, saved, "openai-agents", snapshots)).toThrow(/saved-profile.*a/);
-
-    registration.config.mcpSecretRefs = [{ server: "external", field: "headers", key: "KEY", env: "old" }];
-    prepareRecoveredTask(task, registration);
-    get.mockClear();
-    const untouched = factory(task, saved, "openai-agents", snapshots);
-    await expect(untouched.dispatcher.prepareSession("recovered")).rejects.toThrow("capture recovered spawn");
-    expect((spawn.mock.calls[1]![0] as { agent: AgentProfile }).agent).toBe(saved);
-    expect(get).not.toHaveBeenCalled();
   });
 
   it("passes the Claude account pool contract and root to new Claude runners", async () => {
@@ -128,7 +53,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(),
       },
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(async () => ({
           releaseId: "sha-pool",
@@ -163,6 +88,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
         enabled: true,
         accountsDir: "/worker/claude-accounts",
       },
+      mcpSecretRefs: [],
+      mcpSecretDeclarations: [],
     }));
   });
 
@@ -191,7 +118,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease,
         describe,
@@ -244,7 +171,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(async () => ({
           releaseId: "sha-opencode",
@@ -294,7 +221,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
         describe: vi.fn(() => ({
@@ -325,18 +252,58 @@ describe("createRunnerProcessRuntimeFactory", () => {
     expect((runtime.dispatcher as unknown as { options: { spawn: { mcpSecretRefs?: unknown } } })
       .options.spawn.mcpSecretRefs).toBeUndefined();
     const refs = [{ server: "remote", field: "headers" as const, key: "X-Key", env: "TEST_MCP_REF" }];
-    vi.stubEnv("TEST_MCP_REF", undefined);
-    for (const field of ["mcpSecretRefs", "legacyMcpSecretRefs"] as const) {
-      const stored = { ...config, resolvedMcpServers: [{ type: "streamable_http" as const,
-        name: "remote", url: "https://example.test/mcp", headers: {} }], [field]: refs };
-      const recovered = factory.recover!(task, { ...registration, config: stored }, {
-        persistRunState: vi.fn(async () => undefined), persistSessionItems: vi.fn(async () => undefined),
+    const recoveredWithRefs = factory.recover!(task, { ...registration, config: { ...config, mcpSecretRefs: refs } }, {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    }, "offline");
+    expect((recoveredWithRefs.dispatcher as unknown as { options: { spawn: { mcpSecretRefs: unknown } } })
+      .options.spawn.mcpSecretRefs).toEqual(refs);
+    const secret = randomUUID();
+    const priorSecret = process.env.TEST_MCP_REF;
+    process.env.TEST_MCP_REF = secret;
+    try {
+      const legacyConfig = {
+        ...config,
+        resolvedMcpServers: [{ type: "streamable_http" as const, name: "remote", url: "https://example.test/mcp", headers: {} }],
+        legacyMcpSecretRefs: refs,
+      };
+      const recoveredLegacy = factory.recover!(task, { ...registration, config: legacyConfig }, {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
       }, "offline");
-      const recoveredInput = (recovered.dispatcher as unknown as { options: { spawn: {
-        mcpSecretRefs?: unknown; resolvedMcpServers: unknown;
+      const legacyInput = (recoveredLegacy.dispatcher as unknown as { options: { spawn: {
+        mcpSecretRefs?: unknown; resolvedMcpServers: Array<{ headers: Record<string, string> }>;
       } } }).options.spawn;
-      expect(recoveredInput.mcpSecretRefs).toBeUndefined();
-      expect(recoveredInput.resolvedMcpServers).toEqual(stored.resolvedMcpServers);
+      expect(legacyInput.mcpSecretRefs).toBeUndefined();
+      expect(legacyInput.resolvedMcpServers[0]?.headers["X-Key"] === secret).toBe(true);
+      const stateDirectory = await mkdtemp(join(tmpdir(), "legacy-mcp-recovery-"));
+      try {
+        const spawner = new RunnerProcessSpawner({
+          prepareDatabase: async (path) => { const db = await RunnerSqliteEventOutbox.create(path); db.close(); },
+          validateEntry: async () => {},
+          spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
+          registerPid: async (path, pid) => await writeFile(path, `${pid}\n`),
+          inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+          isPidAlive: () => false,
+          signalPid: vi.fn(),
+          now: () => 0,
+          delay: async () => {},
+        });
+        const spawned = await spawner.spawn({ ...legacyInput as SpawnRunnerProcessInput, stateDirectory });
+        const raw = await readFile(spawned.paths.configPath, "utf8");
+        expect(raw.includes(secret)).toBe(true);
+        expect(JSON.parse(raw).mcpSecretRefs).toBeUndefined();
+      } finally {
+        await rm(stateDirectory, { recursive: true, force: true });
+      }
+      delete process.env.TEST_MCP_REF;
+      expect(() => factory.recover!(task, { ...registration, config: legacyConfig }, {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      }, "offline")).toThrow("TEST_MCP_REF");
+    } finally {
+      if (priorSecret === undefined) delete process.env.TEST_MCP_REF;
+      else process.env.TEST_MCP_REF = priorSecret;
     }
     expect((runtime.dispatcher as unknown as {
       options: {
@@ -365,7 +332,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
         describe: vi.fn(() => ({

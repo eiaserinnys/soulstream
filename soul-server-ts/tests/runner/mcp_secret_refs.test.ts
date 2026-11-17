@@ -1,57 +1,42 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { AgentProfileSchema } from "../../src/agent_registry.js";
-import { externalizeMcpSecrets, consumeRunnerMcpSecrets } from "../../src/runner/mcp_secret_refs.js";
+import { externalizeMcpSecrets, restoreMcpSecrets, consumeRunnerMcpSecrets } from
+  "../../src/runner/mcp_secret_refs.js";
 
-const fake = () => `fake-${randomUUID()}`;
+const secret = randomUUID();
+const declarations = [
+  { server: "external", field: "headers" as const, key: "X-Key", env: "TEST_MCP_SECRET" },
+  { server: "local", field: "env" as const, key: "API_KEY", env: "TEST_MCP_SECRET" },
+  { server: "internal", field: "headers" as const, key: "Authorization", env: "TEST_MCP_SECRET" },
+];
+const servers = [
+  { type: "streamable_http" as const, name: "external", url: "https://example.test/mcp", headers: { "X-Key": secret } },
+  { type: "stdio" as const, name: "local", command: "test", env: { API_KEY: secret } },
+  { type: "streamable_http" as const, name: "internal", url: "https://example.test/mcp", headers: { Authorization: "session-scoped" } },
+];
 
 describe("runner MCP secret references", () => {
-  it("externalizes both locations into distinct slots and restores anonymous and duplicate servers", () => {
-    const values = Array.from({ length: 6 }, fake);
-    const agent = AgentProfileSchema.parse({ id: "test", name: "Test", backend: "openai-agents", workspace_dir: "/tmp",
-      agents_sdk: { entry_agent: "a", agents: [{ id: "a", name: "A", instructions: "test", mcp_servers: [
-        { type: "stdio", command: "test-a", env: { API_KEY: values[2] }, headers: { Authorization: values[3] } },
-        { type: "stdio", command: "test-b", env: { API_KEY: values[4] } },
-        { type: "streamable_http", name: "same", url: "https://example.test/c", headers: { Authorization: values[5] } },
-      ] }] } });
-    const config = { agent, resolvedMcpServers: [
-      { type: "streamable_http" as const, name: "same", url: "https://example.test/a", headers: { Authorization: values[0]!, Empty: "" } },
-      { type: "streamable_http" as const, name: "same", url: "https://example.test/b", headers: { Authorization: values[1]! } },
-    ] };
-    const converted = externalizeMcpSecrets(config);
-    const raw = JSON.stringify(converted.config);
-    expect(values.every((value) => !raw.includes(value))).toBe(true);
-    expect(converted.refs).toHaveLength(6);
-    expect(new Set(converted.refs.map((ref) => ref.env)).size).toBe(6);
-    expect(converted.refs.filter((ref) => ref.location === "agent").map((ref) => ref.server)).toEqual(["#0", "#0", "#1", "same"]);
-    const env: NodeJS.ProcessEnv = { SOUL_RUNNER_MCP_SECRETS: JSON.stringify(converted.secrets) };
-    expect(consumeRunnerMcpSecrets(converted.config, converted.refs, env)).toEqual(config);
-    expect(env.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
+  it("removes matching registry secrets and restores them without changing session credentials", () => {
+    const result = externalizeMcpSecrets(servers, declarations, { TEST_MCP_SECRET: secret });
+    expect(result.refs).toEqual(declarations.slice(0, 2));
+    expect(JSON.stringify(result.servers).includes(secret)).toBe(false);
+    expect(JSON.stringify(result.servers).includes("session-scoped")).toBe(true);
+    expect(JSON.stringify(restoreMcpSecrets(result.servers, result.refs, { TEST_MCP_SECRET: secret })) === JSON.stringify(servers)).toBe(true);
   });
 
-  it("restores old refs by name and clears the transport", () => {
-    const secret = fake();
-    const config = { agent: AgentProfileSchema.parse({ id: "a", name: "A", backend: "codex", workspace_dir: "/tmp" }),
-      resolvedMcpServers: [{ type: "streamable_http" as const, name: "remote", url: "https://example.test/mcp", headers: {} }] };
-    const env = { SOUL_RUNNER_MCP_SECRETS: JSON.stringify({ OLD_KEY: secret }) };
-    const restored = consumeRunnerMcpSecrets(config, [{ server: "remote", field: "headers", key: "X-Key", env: "OLD_KEY" }], env);
-    expect(restored.resolvedMcpServers![0]!.headers!["X-Key"] === secret).toBe(true);
+  it("consumes the transport env before resolving and names missing variables only", () => {
+    const result = externalizeMcpSecrets(servers, declarations, { TEST_MCP_SECRET: secret });
+    const env: NodeJS.ProcessEnv = { SOUL_RUNNER_MCP_SECRETS: JSON.stringify({ TEST_MCP_SECRET: secret }) };
+    const restored = consumeRunnerMcpSecrets(result.servers, result.refs, env);
+    expect(JSON.stringify(restored) === JSON.stringify(servers)).toBe(true);
     expect(env.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
-  });
-
-  it("reports a missing slot without its value and clears the transport", () => {
-    const secret = fake();
-    const config = { agent: AgentProfileSchema.parse({ id: "a", name: "A", backend: "codex", workspace_dir: "/tmp" }),
-      resolvedMcpServers: [{ type: "streamable_http" as const, name: "remote", url: "https://example.test/mcp", headers: { "X-Key": secret } }] };
-    const converted = externalizeMcpSecrets(config);
-    for (const payload of ["{}", JSON.stringify({ [converted.refs[0]!.env]: "" })]) {
-      const env: NodeJS.ProcessEnv = { SOUL_RUNNER_MCP_SECRETS: payload };
-      let message = "";
-      try { consumeRunnerMcpSecrets(converted.config, converted.refs, env); } catch (error) { message = String(error); }
-      expect(message).toContain("remote"); expect(message).toContain("headers"); expect(message).toContain("X-Key");
-      expect(message.includes(secret)).toBe(false);
-      expect(env.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
-    }
+    const missing: NodeJS.ProcessEnv = { SOUL_RUNNER_MCP_SECRETS: "{}" };
+    let message = "";
+    try { consumeRunnerMcpSecrets(result.servers, result.refs, missing); }
+    catch (error) { message = String(error); }
+    expect(message.includes("TEST_MCP_SECRET")).toBe(true);
+    expect(message.includes(secret)).toBe(false);
+    expect(missing.SOUL_RUNNER_MCP_SECRETS).toBeUndefined();
   });
 });

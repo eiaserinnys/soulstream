@@ -134,6 +134,22 @@ export class McpConfigService {
     );
   }
 
+  /** Registry declarations retain names only; secret values remain in host memory. */
+  listSecretRefs(): import("./runner/mcp_secret_refs.js").McpSecretRef[] {
+    return this.readRegistry().servers.flatMap((server) => {
+      const refs: import("./runner/mcp_secret_refs.js").McpSecretRef[] = [];
+      for (const field of ["headers", "env"] as const) {
+        const record = field === "headers" ? server.headers : ("env" in server ? server.env : undefined);
+        for (const [key, value] of Object.entries(record ?? {})) {
+          if (typeof value !== "string") {
+            refs.push({ server: server.name ?? server.id, field, key, env: value.env });
+          }
+        }
+      }
+      return refs;
+    });
+  }
+
   readProfiles(): McpProfilesConfig {
     const registry = this.readRegistry();
     return this.readProfilesForRegistry(registry);
