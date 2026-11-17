@@ -147,6 +147,41 @@ describe("database release CI contract", () => {
     expect(commands).toContain("23");
   });
 
+  it("installs the checked-out commit from a pinned local repository", () => {
+    const workflow = parse(readFileSync(workflowPath, "utf8"));
+    const job = workflow.jobs["test-install"];
+    const checkout = job.steps.find((step: { name: string }) => step.name === "Checkout");
+    const pinIndex = job.steps.findIndex((step: { name: string }) => step.name === "Pin installer source");
+    const installIndex = job.steps.findIndex((step: { name: string }) => step.name === "Run installer and verify release activation");
+    const verifyIndex = job.steps.findIndex((step: { name: string }) => step.name === "Verify installed source commit");
+    expect(checkout.with["fetch-depth"]).toBe(0);
+    expect(pinIndex).toBeGreaterThanOrEqual(0);
+    expect(installIndex).toBeGreaterThan(pinIndex);
+    expect(verifyIndex).toBeGreaterThan(installIndex);
+
+    const pin = job.steps[pinIndex].run;
+    expect(pin).toContain('git rev-parse HEAD');
+    expect(pin).toContain('Join-Path $env:RUNNER_TEMP');
+    expect(pin).toContain('git init --bare');
+    expect(pin).toContain('git push $repository "${commit}:refs/heads/ci-pinned"');
+    expect(pin).toContain(".Replace('\\', '/')");
+    expect(pin).toContain('SOULSTREAM_SOURCE_URL=$repository');
+    expect(pin).toContain('SOULSTREAM_SOURCE_BRANCH=ci-pinned');
+    expect(pin).toContain('SOULSTREAM_PINNED_COMMIT=$commit');
+    expect(job.env.SOULSTREAM_SOURCE_URL).toBeUndefined();
+    expect(job.env.SOULSTREAM_SOURCE_BRANCH).toBeUndefined();
+
+    const install = job.steps[installIndex].run;
+    expect(install).toContain('-RepositoryUrl $env:SOULSTREAM_SOURCE_URL');
+    expect(install).toContain('-RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH');
+    const verify = job.steps[verifyIndex].run;
+    expect(verify).toContain('git -C "C:\\soulstream-test\\soulstream" rev-parse HEAD');
+    expect(verify).toContain('$env:SOULSTREAM_PINNED_COMMIT');
+    expect(verify).toContain('$installedCommit -ne $env:SOULSTREAM_PINNED_COMMIT');
+    expect(verify).toContain('throw "Installed source commit does not match pinned commit"');
+    expect(verify).toContain('startup.*update|update.*startup');
+  });
+
   it("routes all three real PostgreSQL suites through the shared safe harness", () => {
     for (const test of databaseTestFiles) {
       const source = readFileSync(new URL(test, import.meta.url), "utf8");
