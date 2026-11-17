@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import type { Logger } from "pino";
 
-import { externalizeMcpSecrets, RUNNER_MCP_SECRETS_ENV } from "./mcp_secret_refs.js";
 import { writeFileAtomically } from "../atomic_file_rename.js";
 import {
   parseRunnerChildConfig,
@@ -175,12 +174,7 @@ export class RunnerProcessSpawner {
       rolloutRoot: input.rolloutRoot,
       ...(input.isolation ? { isolation: input.isolation } : {}),
     };
-    const converted = externalizeMcpSecrets(parseRunnerChildConfig(config));
-    const validatedConfig = { ...converted.config, mcpSecretRefs: converted.refs };
-    const childProcessEnv = {
-      ...(input.childProcessEnv ?? process.env),
-      [RUNNER_MCP_SECRETS_ENV]: JSON.stringify(converted.secrets),
-    };
+    const validatedConfig = parseRunnerChildConfig(config);
     await writeFileAtomically(paths.configPath, JSON.stringify(validatedConfig));
 
     // Config + SQLite registration must exist before materialization. GC
@@ -196,7 +190,7 @@ export class RunnerProcessSpawner {
         detached: true,
         stdio: ["ignore", log.fd, log.fd],
         cwd: input.snapshotPath,
-        env: childProcessEnv,
+        env: input.childProcessEnv ?? process.env,
       });
     } catch (spawnError) {
       try {

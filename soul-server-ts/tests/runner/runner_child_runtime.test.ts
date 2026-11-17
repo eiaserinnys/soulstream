@@ -29,17 +29,11 @@ import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js
 import { readRunnerRegistrationIdentity } from
   "../../src/runner/runner_registration_identity.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import {
-  registerSecretValueSource,
-  resetSecretMaskerForTests,
-} from "../../src/secret_masker.js";
-import { computeEventOutboxPayloadHash } from "../../src/upstream/event_outbox.js";
 
 const directories: string[] = [];
 
 afterEach(async () => {
   vi.useRealTimers();
-  resetSecretMaskerForTests();
   await Promise.all(directories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
@@ -632,146 +626,6 @@ describe("RunnerChildRuntime backend session rotation", () => {
     }
   });
 });
-
-describe("RunnerChildRuntime secret masking", () => {
-  function registerRunnerSecret(): string {
-    const value = "test-secret-runner-value";
-    registerSecretValueSource("test", () => [{ name: "env:TEST_API_KEY", value }]);
-    return value;
-  }
-
-  it("masks secrets in frames buffered before the backend session ID", async () => {
-    const secret = registerRunnerSecret();
-    const { runtime } = await createRotationRuntime(null, [], "codex");
-    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
-    const buffer = { frames: [] as RunnerEventFrame[], bytes: 0 };
-    try {
-      await child.forwardRunnerFrame(
-        engineEventFrame({
-          type: "assistant_message",
-          content: `key: ${secret}`,
-          timestamp: 1,
-        }),
-        buffer,
-      );
-
-      expect(buffer.frames).toHaveLength(1);
-      expect(buffer.frames[0]?.payload).toMatchObject({
-        type: "assistant_message",
-        content: "key: [REDACTED:env:TEST_API_KEY]",
-      });
-      expect(JSON.stringify(buffer.frames)).not.toContain(secret);
-    } finally {
-      await runtime.shutdown();
-    }
-  });
-
-  it("masks durable outbox payloads and hashes the masked payload", async () => {
-    const secret = registerRunnerSecret();
-    const { runtime, sessionId } = await createRotationRuntime("backend-session-durable-mask");
-    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
-    const command = executeCommandFrame("mask-durable", {
-      agentSessionId: sessionId,
-      prompt: "go",
-      resumeSessionId: "backend-session-durable-mask",
-    });
-    child.activeCommandId = command.commandId;
-    try {
-      await child.prepareExecution(command);
-      await child.forwardRunnerFrame(
-        engineEventFrame({
-          type: "assistant_message",
-          content: `token=${secret}`,
-          timestamp: 1,
-        }),
-        { frames: [], bytes: 0 },
-      );
-
-      const [record] = (await child.outbox.readBatch())?.events ?? [];
-      expect(record).toBeDefined();
-      expect(record?.payload).toMatchObject({
-        type: "assistant_message",
-        content: "token=[REDACTED:env:TEST_API_KEY]",
-      });
-      expect(JSON.stringify(record?.payload)).not.toContain(secret);
-      const { payload_hash, ...unsigned } = record!;
-      expect(payload_hash).toBe(computeEventOutboxPayloadHash(unsigned));
-    } finally {
-      await runtime.shutdown();
-    }
-  });
-
-  it("keeps session identifiers intact while masking other payload fields", async () => {
-    const secret = registerRunnerSecret();
-    const { runtime, sessionId } = await createRotationRuntime(null, [], "openai-agents");
-    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
-    const command = executeCommandFrame("mask-session", {
-      agentSessionId: sessionId,
-      prompt: "go",
-    });
-    child.activeCommandId = command.commandId;
-    try {
-      await child.prepareExecution(command);
-      await child.forwardRunnerFrame(
-        engineEventFrame({
-          type: "session",
-          session_id: "backend-session-plain-id",
-          note: secret,
-        }),
-        { frames: [], bytes: 0 },
-      );
-
-      const [event] = (await child.outbox.readBatch())?.events ?? [];
-      expect(event?.payload).toMatchObject({
-        type: "session",
-        session_id: "backend-session-plain-id",
-      });
-      expect(event?.session_effect).toEqual({
-        kind: "set_backend_session_id",
-        backend_session_id: "backend-session-plain-id",
-      });
-      expect(JSON.stringify(event?.payload)).not.toContain(secret);
-    } finally {
-      await runtime.shutdown();
-    }
-  });
-
-  it("masks transient frames sent to the host", async () => {
-    const secret = registerRunnerSecret();
-    const { runtime, sessionId } = await createRotationRuntime("backend-session-live-mask");
-    const child = runtime as unknown as RunnerChildRuntimeSecretHarness;
-    const command = executeCommandFrame("mask-live", {
-      agentSessionId: sessionId,
-      prompt: "go",
-      resumeSessionId: "backend-session-live-mask",
-    });
-    child.activeCommandId = command.commandId;
-    const send = vi.spyOn(child, "sendBestEffort").mockResolvedValue(undefined);
-    try {
-      await child.prepareExecution(command);
-      await child.forwardRunnerFrame(
-        engineEventFrame({
-          type: "text_delta",
-          text: `text ${secret}`,
-          timestamp: 1,
-        }),
-        { frames: [], bytes: 0 },
-      );
-
-      expect(send).toHaveBeenCalledOnce();
-      const sent = send.mock.calls[0]?.[0] as RunnerEventFrame;
-      expect(sent.payload).toMatchObject({ text: "text [REDACTED:env:TEST_API_KEY]" });
-      expect(JSON.stringify(sent)).not.toContain(secret);
-    } finally {
-      send.mockRestore();
-      await runtime.shutdown();
-    }
-  });
-});
-
-type RunnerChildRuntimeSecretHarness = RunnerChildRuntimeRotationHarness & {
-  sendBestEffort(frame: RunnerEventFrame): Promise<void>;
-};
 
 type RunnerChildRuntimeRotationHarness = {
   dispatcher: { dispatch(frame: unknown): Promise<unknown> };

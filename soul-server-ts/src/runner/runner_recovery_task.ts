@@ -1,12 +1,9 @@
 import type { Logger } from "pino";
 
-import type { AgentProfile } from "../agent_registry.js";
 import type { Task } from "../task/task_models.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
-
-const recoveredTasksWithAgentRefs = new WeakSet<Task>();
 
 export async function markRegistrationReaped(
   registration: RunnerRegistration,
@@ -63,32 +60,8 @@ export function prepareRecoveredTask(
   registration: RunnerRegistration,
 ): void {
   task.agentProfileSnapshot = registration.config.agent;
-  if (registration.config.mcpSecretRefs?.some((ref) => ref.location === "agent")) {
-    recoveredTasksWithAgentRefs.add(task);
-  } else {
-    recoveredTasksWithAgentRefs.delete(task);
-  }
   const backendSessionId = registration.bootstrap?.payload.backend_session_id;
   if (backendSessionId) task.codexThreadId = backendSessionId;
-}
-
-/** Refresh only MCP lists stripped from the persisted profile before a new spawn. */
-export function resolveRecoveredAgentMcp(
-  task: Task,
-  agent: AgentProfile,
-  getProfile: (profileId: string) => AgentProfile | undefined,
-): AgentProfile {
-  if (!recoveredTasksWithAgentRefs.has(task)) return agent;
-  const profileId = task.profileId ?? "(missing)";
-  const agents = agent.agents_sdk?.agents ?? [];
-  const current = task.profileId ? getProfile(task.profileId) : undefined;
-  const restored = agents.map((saved) => {
-    const match = current?.agents_sdk?.agents.find((candidate) => candidate.id === saved.id);
-    if (!match) throw new Error(`MCP profile unavailable: ${profileId} ${saved.id}`);
-    return { ...saved, mcp_servers: match.mcp_servers };
-  });
-  if (!current) throw new Error(`MCP profile unavailable: ${profileId} ${agents[0]?.id ?? "(missing)"}`);
-  return agent.agents_sdk ? { ...agent, agents_sdk: { ...agent.agents_sdk, agents: restored } } : agent;
 }
 
 export function requireRecoveryTask(

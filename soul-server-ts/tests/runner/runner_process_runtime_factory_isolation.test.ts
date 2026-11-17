@@ -1,7 +1,4 @@
 import { join } from "node:path";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 
 import pino from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,11 +13,9 @@ import {
 } from "../../src/runner/runner_process_runtime_factory.js";
 import type { PreparedRunnerIsolation, RunnerIsolationHost } from
   "../../src/runner/runner_process_isolation.js";
-import { RunnerProcessSpawner, parseRunnerChildConfig, type RunnerChildConfig, type SpawnRunnerProcessInput } from "../../src/runner/runner_process_spawn.js";
-import { consumeRunnerMcpSecrets } from "../../src/runner/mcp_secret_refs.js";
-import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
-import { createRestrictedMcpToken, verifyFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
-import { sanitizeRestrictedMcpServers } from "../../src/security/restricted_mcp_config.js";
+import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import { verifyFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { SessionIsolationSpec } from
   "../../src/security/session_isolation_contract.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -241,7 +236,6 @@ describe("runner process factory restricted wiring", () => {
     expect(childProcessEnv.SCCACHE_DIR).toBeUndefined();
     expect(input.claudeAccountPool).toBeUndefined();
     expect(input.resolvedMcpServers).toEqual(prepared.plan.sanitizedServers);
-    expect(input.mcpSecretRefs).toBeUndefined();
     const isolation = input.isolation as {
       envKeys: string[];
       contextNotice: string;
@@ -511,7 +505,44 @@ describe("runner process factory full session recovery", () => {
     });
   }
 
-  it("keeps stored MCP values unchanged without building an environment", () => {
+  it("re-spawns a recovered full session with its own credential", () => {
+    const config = childConfig();
+    const releasePool = {
+      describe: vi.fn(() => ({
+        releaseId: "sha-recover",
+        releaseRoot: "/release/sha-recover",
+        runnerModuleRoot: "/release/sha-recover/soul-server-ts",
+      })),
+      ensureRelease: vi.fn(async () => undefined),
+    };
+    const input = spawnInputFromConfig(
+      "/runner",
+      config,
+      90_000,
+      releasePool,
+      { internalMcpUrl: config.internalMcpUrl, resolvedMcpServers: config.resolvedMcpServers },
+      {
+        hostBearerToken: HOST_BEARER,
+        buildChildProcessEnv: () => ({
+          AUTH_BEARER_TOKEN: HOST_BEARER,
+          PORTABLE_LOCAL_MCP_AUTHORIZATION: HOST_BEARER,
+          PATH: "/usr/bin",
+        }),
+      },
+    );
+
+    const env = input.childProcessEnv!;
+    const credential = env.AUTH_BEARER_TOKEN!;
+    expect(verifyFullSessionMcpToken(credential, HOST_BEARER))
+      .toEqual({ ok: true, sessionId });
+    expect(env.PORTABLE_LOCAL_MCP_AUTHORIZATION).toBe(credential);
+    expect(env.PATH).toBe("/usr/bin");
+    const servers = input.resolvedMcpServers as Array<Record<string, unknown>>;
+    expect(servers[0]?.headers).toEqual({ Authorization: `Bearer ${credential}` });
+    expect(JSON.stringify(input)).not.toContain(HOST_BEARER);
+  });
+
+  it("does not add an env or touch MCP servers when no full session transform is given", () => {
     const config = childConfig();
     const releasePool = {
       describe: vi.fn(() => ({
@@ -530,62 +561,6 @@ describe("runner process factory full session recovery", () => {
     );
     expect(input.childProcessEnv).toBeUndefined();
     expect(input.resolvedMcpServers).toBe(config.resolvedMcpServers);
-  });
-});
-
-describe("MCP secrets across factory and spawn", () => {
-  it.each(["full", "restricted"] as const)("restores the %s prepared configuration in the runner", async (mode) => {
-    const sessionId = "11111111-1111-4111-8111-111111111111";
-    const fakeHeader = randomUUID();
-    const fakeEnv = randomUUID();
-    const fakeInline = randomUUID();
-    const token = createRestrictedMcpToken(sessionId, HOST_BEARER);
-    const servers = [
-      { name: "soulstream", type: "streamable_http" as const, url: "http://127.0.0.1:3105/mcp",
-        headers: { Authorization: `Bearer ${HOST_BEARER}` } },
-      { name: "external", type: "streamable_http" as const, url: "https://example.test/mcp", headers: { "X-Key": fakeHeader } },
-      { name: "local", type: "stdio" as const, command: "test", env: { KEY: fakeEnv } },
-    ];
-    const prepared = makePrepared();
-    prepared.plan.sanitizedServers = sanitizeRestrictedMcpServers({
-      resolvedServers: servers, authenticatedSessionId: sessionId, restrictedToken: token,
-      localMcpPolicy: { requiredServerId: "soulstream", optional: [] },
-      actualInternalMcpUrl: "http://127.0.0.1:4308/mcp/internal", nodeId: "node-test",
-    }).sanitizedServers;
-    const turnAgent = { ...agent, agents_sdk: { entry_agent: "a", agents: [{ id: "a", name: "A", instructions: "test",
-      mcp_servers: [{ type: "stdio", command: "test", env: { INLINE: fakeInline } }] }] } } as unknown as AgentProfile;
-    const task = makeTask({ agentSessionId: sessionId, executionSecurity: {
-      sessionId, tier: mode, policyVersion: 1, reason: mode === "full" ? "trusted" : "untrusted-preset", presetId: "test",
-    } });
-    const { runtime, spawn } = makeFactory({ task, turnAgent, resolvedMcpServers: servers,
-      isolationHost: { prepare: vi.fn(async () => prepared) } });
-    await expect(runtime.dispatcher.prepareSession(sessionId)).rejects.toThrow("captured isolation spawn input");
-    const captured = spawn.mock.calls[0]![0] as SpawnRunnerProcessInput;
-    const root = await mkdtemp(join(tmpdir(), "mcp-slot-spawn-"));
-    let childEnv: NodeJS.ProcessEnv = {};
-    try {
-      const spawner = new RunnerProcessSpawner({
-        prepareDatabase: async (path) => { const db = await RunnerSqliteEventOutbox.create(path); db.close(); },
-        validateEntry: async () => {},
-        spawnProcess: (_entry, _args, options) => { childEnv = options.env; return { pid: 4124, unref: vi.fn() }; },
-        registerPid: async (path, pid) => await writeFile(path, `${pid}\n`),
-        inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
-        isPidAlive: () => false, signalPid: vi.fn(), now: () => 0, delay: async () => {},
-      });
-      const beforeEnv = { ...process.env };
-      const result = await spawner.spawn({ ...captured, stateDirectory: root, prepareSnapshot: async () => {} });
-      const raw = await readFile(result.paths.configPath, "utf8");
-      const config = parseRunnerChildConfig(JSON.parse(raw));
-      const normalized = parseRunnerChildConfig({ ...config, agent: captured.agent, resolvedMcpServers: captured.resolvedMcpServers });
-      const auth = (captured.resolvedMcpServers![0] as { headers: { Authorization: string } }).headers.Authorization;
-      expect(auth.startsWith(mode === "full" ? "Bearer ssf1." : "Bearer ssr1.")).toBe(true);
-      expect([auth, fakeHeader, fakeInline].every((value) => !raw.includes(value))).toBe(true);
-      if (mode === "full") expect(raw.includes(fakeEnv)).toBe(false);
-      const restored = consumeRunnerMcpSecrets(config, config.mcpSecretRefs!, childEnv);
-      expect(restored.resolvedMcpServers).toEqual(normalized.resolvedMcpServers);
-      expect(restored.agent).toEqual(normalized.agent);
-      expect(JSON.stringify(process.env) === JSON.stringify(beforeEnv)).toBe(true);
-    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
 

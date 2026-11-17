@@ -36,16 +36,6 @@ const ClaudeAccountPoolRunnerConfigSchema = z.object({
   message: "accountsDir is required when Claude account pool is enabled",
 });
 
-const McpSecretRefSchema = z.object({
-  server: z.string().min(1),
-  field: z.enum(["headers", "env"]),
-  key: z.string().min(1),
-  env: z.string().min(1),
-  location: z.literal("agent").optional(),
-  agentIndex: z.number().int().nonnegative().optional(),
-  serverIndex: z.number().int().nonnegative().optional(),
-});
-
 const RunnerChildConfigFields = {
   sessionId: z.string().min(1),
   incomingFileDir: z.string().min(1).optional(),
@@ -74,8 +64,6 @@ const RunnerChildConfigFields = {
   runnerLeaseTimeoutMs: z.number().int().positive().optional(),
   internalMcpUrl: z.string().url(),
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
-  mcpSecretRefs: z.array(McpSecretRefSchema).optional(),
-  legacyMcpSecretRefs: z.array(McpSecretRefSchema).optional(),
   codexHome: z.string().min(1).nullable(),
   rolloutRoot: z.string().min(1).nullable(),
   isolation: RunnerIsolationChildConfigSchema.optional(),

@@ -59,8 +59,10 @@ import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
-import { withFullSessionCredential } from "./full_session_credential.js";
-import { resolveRecoveredAgentMcp } from "./runner_recovery_task.js";
+import {
+  withFullSessionCredential,
+  type FullSessionCredentialOptions,
+} from "./full_session_credential.js";
 import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
 import {
@@ -112,7 +114,6 @@ export interface RunnerProcessRuntimeFactoryOptions {
     "register"
   >;
   mcpConfigService: McpConfigService;
-  agentRegistry?: Pick<import("../agent_registry.js").AgentRegistry, "get">;
   codexCliPath?: CodexCliPathResolution;
   antigravityCliPath?: AntigravityCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
@@ -196,8 +197,7 @@ export function createRunnerProcessRuntimeFactory(
     return createTaskRunnerRuntime(engine, dispatcher, "runner");
   };
 
-  const factory = ((task, savedAgent, backend, snapshots) => {
-    const agent = resolveRecoveredAgentMcp(task, savedAgent, (profileId) => options.agentRegistry?.get(profileId));
+  const factory = ((task, agent, backend, snapshots) => {
     const runtimeMcpConfig = resolveRuntimeMcpConfig(options, agent);
     const childProcessEnv = options.buildChildProcessEnv();
     const codexHome = backend === "codex"
@@ -280,6 +280,14 @@ export function createRunnerProcessRuntimeFactory(
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
       storedRuntimeMcpConfig(config),
+      // 복구가 저장된 설정으로 다시 띄울 때도 서비스 토큰이 아니라 이 세션의
+      // 자격 증명을 쓴다. restricted 설정은 이미 ssr1로 저장돼 있으므로 건드리지 않는다.
+      config.isolation
+        ? undefined
+        : {
+            hostBearerToken: options.env.AUTH_BEARER_TOKEN,
+            buildChildProcessEnv: () => options.buildChildProcessEnv(),
+          },
     );
     return withRecoveredRunnerIsolation(createRuntime(
       task,
@@ -345,13 +353,14 @@ async function adoptRegisteredRunner(
   return adopted;
 }
 
-/** 복구한 러너 설정에서 dispatcher 입력을 조립한다. */
+/** 복구한 러너 설정에서 spawn 입력을 조립한다. full 세션이면 자격 증명까지 바꾼다. */
 export function spawnInputFromConfig(
   stateDirectory: string,
   config: RunnerChildConfig,
   runnerLeaseTimeoutMs: number,
   releasePool: Pick<RunnerReleasePool, "ensureRelease" | "describe">,
   runtimeMcpConfig: RunnerRuntimeMcpConfig,
+  fullSession?: FullSessionCredentialOptions,
 ): SpawnRunnerProcessInput {
   const release = releasePool.describe(config.codeSha);
   if (release.runnerModuleRoot !== config.snapshotPath) {
@@ -392,7 +401,7 @@ export function spawnInputFromConfig(
     rolloutRoot: config.rolloutRoot,
     prepareSnapshot: async () => await releasePool.ensureRelease(release),
   };
-  return base;
+  return fullSession ? withFullSessionCredential(base, fullSession) : base;
 }
 
 type RunnerRuntimeMcpConfig = Pick<
@@ -415,7 +424,9 @@ function resolveRuntimeMcpConfig(
   };
 }
 
-function storedRuntimeMcpConfig(config: RunnerChildConfig): RunnerRuntimeMcpConfig {
+function storedRuntimeMcpConfig(
+  config: RunnerChildConfig,
+): RunnerRuntimeMcpConfig {
   return {
     internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers

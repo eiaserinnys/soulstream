@@ -16,7 +16,6 @@ import {
 } from "./claude_sdk_prompt.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { makeGenericHookEvents } from "./claude_sdk_tool_event_mapper.js";
-import { maskSecrets } from "../secret_masker.js";
 
 export function buildClaudeSdkHooks(params: {
   output: EventQueue<ClaudeClientEvent>;
@@ -222,24 +221,11 @@ export function buildClaudeSdkHooks(params: {
       {
         hooks: [
           async (input, toolUseID) => {
-            const maskedInput = maskSecrets(input);
             eventMapper.recordTranscriptPath(
-              asString(asRecord(maskedInput)?.transcript_path),
+              asString(asRecord(input)?.transcript_path),
             );
-            for (const event of makeGenericHookEvents(hookEventName, maskedInput, toolUseID)) {
+            for (const event of makeGenericHookEvents(hookEventName, input, toolUseID)) {
               output.push(event);
-            }
-            if (hookEventName === "PostToolUse") {
-              const originalResponse = asRecord(input)?.tool_response;
-              const maskedResponse = asRecord(maskedInput)?.tool_response;
-              if (maskedResponse !== originalResponse) {
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PostToolUse" as const,
-                    updatedToolOutput: maskedResponse,
-                  },
-                };
-              }
             }
             return {};
           },

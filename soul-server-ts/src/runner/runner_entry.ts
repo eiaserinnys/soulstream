@@ -7,12 +7,6 @@ import { parseAntigravityMcpProxyConfig, runAntigravityMcpSchemaProxy } from "..
 import { parseAntigravityMcpGatewayConfig, runAntigravityMcpGateway } from "../engine/antigravity/mcp_gateway.js";
 import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV, ANTIGRAVITY_MCP_GATEWAY_FLAG,
   ANTIGRAVITY_MCP_PROXY_CONFIG_ENV, ANTIGRAVITY_MCP_PROXY_FLAG } from "../engine/antigravity/mcp_schema_proxy_launch.js";
-import {
-  collectEnvSecretValues,
-  collectMcpServerSecretValues,
-  registerSecretValueSource,
-} from "../secret_masker.js";
-import { consumeRunnerMcpSecrets } from "./mcp_secret_refs.js";
 import { RunnerChildRuntime } from "./runner_child_runtime.js";
 import { parseRunnerChildConfig } from "./runner_process_spawn.js";
 import { startRunnerLogRotation } from "./runner_log_rotation.js";
@@ -76,12 +70,7 @@ async function runAntigravityMcpProxyMode(): Promise<void> {
 async function runSessionRunner(): Promise<void> {
   const configPath = readConfigArgument(process.argv.slice(2));
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-  const parsedConfig = parseRunnerChildConfig(parsed);
-  const config = consumeRunnerMcpSecrets(parsedConfig, parsedConfig.mcpSecretRefs ?? [], process.env);
-  registerSecretValueSource("runner", () => [
-    ...collectMcpServerSecretValues(config.resolvedMcpServers ?? []),
-    ...collectEnvSecretValues(process.env),
-  ]);
+  const config = parseRunnerChildConfig(parsed);
   const logger = pino({
     level: process.env.LOG_LEVEL ?? "info",
     base: { component: "session-runner", sessionId: config.sessionId },

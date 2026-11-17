@@ -8,7 +8,6 @@ import {
 } from "../db/event_persistence.js";
 import { isUsageLimitStopErrorCode } from "../engine/usage_limit_stop.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import { maskSecrets } from "../secret_masker.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 
@@ -44,7 +43,6 @@ export class TaskEngineEventPublisher {
     event: SSEEventPayload,
     options: { alreadyPersisted?: boolean } & EventSideEffectOptions = {},
   ): Promise<void> {
-    event = maskSecrets(event);
     const eventType = (event as { type: string }).type;
 
     const sessionEffect = this.captureSessionId(task, event, eventType);
