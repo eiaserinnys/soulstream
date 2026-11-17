@@ -171,7 +171,6 @@ function makeFactory(options: {
       release: vi.fn(),
     },
     mcpConfigService: {
-      listSecretRefs: vi.fn(() => []),
       resolveMcpProfile: vi.fn(() => ({
         mcp_servers: options.resolvedMcpServers ?? [],
       })),
@@ -237,7 +236,6 @@ describe("runner process factory restricted wiring", () => {
     expect(childProcessEnv.SCCACHE_DIR).toBeUndefined();
     expect(input.claudeAccountPool).toBeUndefined();
     expect(input.resolvedMcpServers).toEqual(prepared.plan.sanitizedServers);
-    expect(input.mcpSecretRefs).toEqual([]);
     const isolation = input.isolation as {
       envKeys: string[];
       contextNotice: string;
@@ -572,7 +570,7 @@ describe("session isolation composition switch", () => {
     const offEnv = { SESSION_ISOLATION_MODE: "off" } as Env;
     expect(composeSessionIsolation({
       env: offEnv,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
     })).toBeUndefined();
   });
 
@@ -584,7 +582,7 @@ describe("session isolation composition switch", () => {
     } as unknown as Env;
     const composition = composeSessionIsolation({
       env: enforceEnv,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
     });
     expect(composition?.runtime.mode).toBe("enforce");
     expect(composition?.host.prepare).toBeTypeOf("function");
@@ -601,7 +599,7 @@ describe("session isolation composition switch", () => {
     const composition = composeSessionIsolation({
       env: enforceEnv,
       worktreeService: worktreeService as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
     });
     await expect(composition!.host.prepare({
       task: makeTask({
@@ -654,7 +652,7 @@ describe("session isolation host preparation", () => {
       ...(options.worktreeService
         ? { worktreeService: options.worktreeService as never }
         : {}),
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
     });
     expect(composition).toBeDefined();
     return composition!;

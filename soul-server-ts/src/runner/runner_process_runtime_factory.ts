@@ -31,7 +31,6 @@ import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_pat
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
-import { restoreMcpSecrets } from "./mcp_secret_refs.js";
 import type {
   RunnerProcessRuntimeFactory,
   RunnerSnapshotPersistence,
@@ -280,7 +279,7 @@ export function createRunnerProcessRuntimeFactory(
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
-      storedRuntimeMcpConfig(config, options.mcpConfigService),
+      storedRuntimeMcpConfig(config),
       // 복구가 저장된 설정으로 다시 띄울 때도 서비스 토큰이 아니라 이 세션의
       // 자격 증명을 쓴다. restricted 설정은 이미 ssr1로 저장돼 있으므로 건드리지 않는다.
       config.isolation
@@ -407,7 +406,7 @@ export function spawnInputFromConfig(
 
 type RunnerRuntimeMcpConfig = Pick<
   SpawnRunnerProcessInput,
-  "internalMcpUrl" | "resolvedMcpServers" | "mcpSecretRefs" | "mcpSecretDeclarations"
+  "internalMcpUrl" | "resolvedMcpServers"
 >;
 
 function resolveRuntimeMcpConfig(
@@ -422,27 +421,14 @@ function resolveRuntimeMcpConfig(
       options.env.MCP_PATH,
     ),
     ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
-    mcpSecretRefs: [],
-    mcpSecretDeclarations: options.mcpConfigService.listSecretRefs(),
   };
 }
 
 function storedRuntimeMcpConfig(
   config: RunnerChildConfig,
-  mcpConfigService: McpConfigService,
 ): RunnerRuntimeMcpConfig {
-  if (config.legacyMcpSecretRefs !== undefined) {
-    const servers = restoreMcpSecrets(config.resolvedMcpServers ?? [], config.legacyMcpSecretRefs, process.env);
-    return {
-      internalMcpUrl: config.internalMcpUrl,
-      ...(config.resolvedMcpServers ? { resolvedMcpServers: servers } : {}),
-    };
-  }
   return {
     internalMcpUrl: config.internalMcpUrl,
-    ...(config.mcpSecretRefs !== undefined
-      ? { mcpSecretRefs: config.mcpSecretRefs, mcpSecretDeclarations: mcpConfigService.listSecretRefs() }
-      : {}),
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),

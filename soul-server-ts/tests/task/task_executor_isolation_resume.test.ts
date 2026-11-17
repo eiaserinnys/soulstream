@@ -267,7 +267,7 @@ describe("recovered isolated execution workspace", () => {
       const isolation = composeSessionIsolation({
         env: makeEnv(),
         worktreeService: makeWorktreeService() as never,
-        mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
+        mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       });
       expect(isolation).toBeDefined();
       const preparations: Array<Promise<unknown>> = [];

@@ -4,8 +4,6 @@ import { join } from "node:path";
 
 import type { Logger } from "pino";
 
-import { externalizeMcpSecrets, runnerMcpSecretValues, RUNNER_MCP_SECRETS_ENV,
-  type McpSecretRef } from "./mcp_secret_refs.js";
 import { writeFileAtomically } from "../atomic_file_rename.js";
 import {
   parseRunnerChildConfig,
@@ -59,8 +57,6 @@ export {
 export interface SpawnRunnerProcessInput extends Omit<RunnerChildConfig, "schemaVersion" | "paths"> {
   stateDirectory: string;
   childProcessEnv?: NodeJS.ProcessEnv;
-  /** Host-only registry declarations; never serialized. */
-  mcpSecretDeclarations?: readonly McpSecretRef[];
   /** Host-only preparation; never serialized into the child config. */
   prepareSnapshot?: () => Promise<void>;
 }
@@ -174,30 +170,11 @@ export class RunnerProcessSpawner {
       ...(input.resolvedMcpServers
         ? { resolvedMcpServers: input.resolvedMcpServers }
         : {}),
-      ...(input.mcpSecretRefs !== undefined ? { mcpSecretRefs: input.mcpSecretRefs } : {}),
       codexHome: input.codexHome,
       rolloutRoot: input.rolloutRoot,
       ...(input.isolation ? { isolation: input.isolation } : {}),
     };
-    let validatedConfig = parseRunnerChildConfig(config);
-    let childProcessEnv = input.childProcessEnv ?? process.env;
-    if (input.mcpSecretRefs !== undefined) {
-      const converted = externalizeMcpSecrets(
-        validatedConfig.resolvedMcpServers ?? [], input.mcpSecretDeclarations ?? [], process.env,
-      );
-      const refs = [...input.mcpSecretRefs, ...converted.refs.filter((ref) =>
-        !input.mcpSecretRefs!.some((existing) => existing.server === ref.server
-          && existing.field === ref.field && existing.key === ref.key))];
-      validatedConfig = {
-        ...validatedConfig,
-        ...(validatedConfig.resolvedMcpServers ? { resolvedMcpServers: converted.servers } : {}),
-        mcpSecretRefs: refs,
-      };
-      childProcessEnv = {
-        ...childProcessEnv,
-        [RUNNER_MCP_SECRETS_ENV]: JSON.stringify(runnerMcpSecretValues(refs, process.env)),
-      };
-    }
+    const validatedConfig = parseRunnerChildConfig(config);
     await writeFileAtomically(paths.configPath, JSON.stringify(validatedConfig));
 
     // Config + SQLite registration must exist before materialization. GC
@@ -213,7 +190,7 @@ export class RunnerProcessSpawner {
         detached: true,
         stdio: ["ignore", log.fd, log.fd],
         cwd: input.snapshotPath,
-        env: childProcessEnv,
+        env: input.childProcessEnv ?? process.env,
       });
     } catch (spawnError) {
       try {

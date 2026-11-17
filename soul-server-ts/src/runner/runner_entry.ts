@@ -7,7 +7,6 @@ import { parseAntigravityMcpProxyConfig, runAntigravityMcpSchemaProxy } from "..
 import { parseAntigravityMcpGatewayConfig, runAntigravityMcpGateway } from "../engine/antigravity/mcp_gateway.js";
 import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV, ANTIGRAVITY_MCP_GATEWAY_FLAG,
   ANTIGRAVITY_MCP_PROXY_CONFIG_ENV, ANTIGRAVITY_MCP_PROXY_FLAG } from "../engine/antigravity/mcp_schema_proxy_launch.js";
-import { consumeRunnerMcpSecrets } from "./mcp_secret_refs.js";
 import { RunnerChildRuntime } from "./runner_child_runtime.js";
 import { parseRunnerChildConfig } from "./runner_process_spawn.js";
 import { startRunnerLogRotation } from "./runner_log_rotation.js";
@@ -72,8 +71,6 @@ async function runSessionRunner(): Promise<void> {
   const configPath = readConfigArgument(process.argv.slice(2));
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
   const config = parseRunnerChildConfig(parsed);
-  const servers = consumeRunnerMcpSecrets(config.resolvedMcpServers ?? [], config.mcpSecretRefs ?? [], process.env);
-  if (config.resolvedMcpServers) config.resolvedMcpServers = servers;
   const logger = pino({
     level: process.env.LOG_LEVEL ?? "info",
     base: { component: "session-runner", sessionId: config.sessionId },
