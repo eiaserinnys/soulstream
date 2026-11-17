@@ -161,8 +161,9 @@ export class ClaudeBackgroundTaskLifecycle {
       });
     } catch (err) {
       if (!isExecutionOwnerConflict(err)) throw err;
-      // The row stays non-terminal either way; refusing the terminal write must
-      // not take the session down with it. Restart recovery terminalizes it.
+      // The row stays non-terminal either way. Only the owning execution's
+      // dead-runner cleanup terminalizes it later; refusing the terminal write
+      // must not take the session down with it.
       this.deps.logger?.error(
         {
           err,
