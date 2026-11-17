@@ -173,7 +173,7 @@ export function launchAntigravityProcess(options: {
   }
   function terminateWindowsTree(pid: number): void {
     termination = (options.terminateProcessTree ?? terminateWindowsProcessTree)(pid).catch(() => {
-      failure ??= "Antigravity process tree termination failed";
+      if (!sawResult) failure ??= "Antigravity process tree termination failed";
     });
   }
   const done = new Promise<AntigravityExit>((resolve) => {

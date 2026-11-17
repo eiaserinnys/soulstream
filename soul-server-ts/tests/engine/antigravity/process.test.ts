@@ -32,6 +32,22 @@ async function detachedSleep() {
 }
 
 describe("Antigravity process descendants", () => {
+  it("keeps a completed result when Windows tree termination fails", async () => {
+    const terminateProcessTree = vi.fn(async (pid: number) => {
+      process.kill(-pid, "SIGKILL");
+      throw new Error("process not found");
+    });
+    const source = `console.log(JSON.stringify({event:'result',result:{status:'SUCCESS',response:'finished'}}));
+      setInterval(()=>{},1000); setTimeout(()=>process.exit(0),2000);`;
+    const child = launchAntigravityProcess({ executablePath: process.execPath, args: ["-e", source],
+      cwd: "/tmp", env: process.env, input: "", logger: pino({ level: "silent" }), exitGraceMs: 30,
+      platform: "win32", terminateProcessTree });
+    for await (const _event of child.events) { /* consume result */ }
+    const exit = await child.done;
+    expect(terminateProcessTree).toHaveBeenCalledOnce();
+    expect(exit.forcedAfterResult).toBe(true);
+    expect(exit.error).toBeUndefined();
+  });
   it.each(["result", "interrupt"] as const)("uses Windows tree termination after %s", async trigger => {
     const terminateProcessTree = vi.fn(async (pid: number) => { process.kill(-pid, "SIGKILL"); });
     const source = `const emit=x=>console.log(JSON.stringify(x));
