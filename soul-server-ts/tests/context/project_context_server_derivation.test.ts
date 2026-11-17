@@ -194,7 +194,7 @@ describe("project context server derivation contract", () => {
       }));
       const context = await builder(
         db(),
-        { resolve } as PageContextResolver,
+        { resolve } as unknown as PageContextResolver,
       ).build(task(input.contextItems), agent);
 
       expect(resolve).toHaveBeenCalledWith(
@@ -285,7 +285,7 @@ describe("project context server derivation contract", () => {
     });
     const context = await builder(
       database,
-      { resolve } as PageContextResolver,
+      { resolve } as unknown as PageContextResolver,
       duplicateAgent,
     ).build(task([{
       key: "atom_context_sources",

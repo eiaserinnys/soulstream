@@ -20,7 +20,7 @@ describe("SoulstreamScheduleService", () => {
       now,
     });
 
-    const input = db.createSchedule.mock.calls[0][0] as ScheduleCreateInput;
+    const input = db.createSchedule.mock.calls[0]![0] as ScheduleCreateInput;
     expect(input).toMatchObject({
       sessionId: "sess-1",
       kind: "wakeup",
@@ -54,7 +54,7 @@ describe("SoulstreamScheduleService", () => {
       input: { wake_at: "2026-01-01T00:05:00Z" },
       now: new Date("2026-01-01T00:00:00Z"),
     });
-    expect((db.createSchedule.mock.calls[0][0] as ScheduleCreateInput).nextRunAt.toISOString())
+    expect((db.createSchedule.mock.calls[0]![0] as ScheduleCreateInput).nextRunAt.toISOString())
       .toBe("2026-01-01T00:05:00.000Z");
 
     await service.createScheduleFromTool({
@@ -64,7 +64,7 @@ describe("SoulstreamScheduleService", () => {
       input: { delay_seconds: "120" },
       now: new Date("2026-01-01T00:00:00Z"),
     });
-    expect((db.createSchedule.mock.calls[1][0] as ScheduleCreateInput).nextRunAt.toISOString())
+    expect((db.createSchedule.mock.calls[1]![0] as ScheduleCreateInput).nextRunAt.toISOString())
       .toBe("2026-01-01T00:02:00.000Z");
   });
 
@@ -179,7 +179,7 @@ describe("SoulstreamScheduleService", () => {
       now,
     });
 
-    const createInput = db.createSchedule.mock.calls[0][0] as ScheduleCreateInput;
+    const createInput = db.createSchedule.mock.calls[0]![0] as ScheduleCreateInput;
     expect(createInput.kind).toBe("cron");
     expect(createInput.recurring).toBe(true);
     expect(createInput.nextRunAt.toISOString()).toBe("2026-01-01T00:15:00.000Z");
@@ -195,7 +195,7 @@ describe("SoulstreamScheduleService", () => {
       now,
     );
 
-    const finishInput = db.finishScheduleDispatch.mock.calls[0][0];
+    const finishInput = db.finishScheduleDispatch.mock.calls[0]![0];
     expect(finishInput).toMatchObject({
       scheduleId: "sched-1",
       claimToken: "claim-1",
@@ -216,7 +216,7 @@ describe("SoulstreamScheduleService", () => {
       now: new Date("2026-01-01T23:00:00Z"),
     });
 
-    const createInput = db.createSchedule.mock.calls[0][0] as ScheduleCreateInput;
+    const createInput = db.createSchedule.mock.calls[0]![0] as ScheduleCreateInput;
     expect(createInput.timezone).toBe("Asia/Seoul");
     expect(createInput.nextRunAt.toISOString()).toBe("2026-01-02T00:00:00.000Z");
   });
@@ -397,13 +397,13 @@ function makeDb() {
         createdAt: input.createdAt?.toISOString() ?? "2026-01-01T00:00:00.000Z",
         updatedAt: input.createdAt?.toISOString() ?? "2026-01-01T00:00:00.000Z",
       })),
-    listSchedules: vi.fn(async () => []),
-    cancelSchedule: vi.fn(async () => ({ outcome: "not_found", schedule: null })),
+    listSchedules: vi.fn(async (): Promise<SoulstreamSchedule[]> => []),
+    cancelSchedule: vi.fn(async (): Promise<{ outcome: string; schedule: SoulstreamSchedule | null }> => ({ outcome: "not_found", schedule: null })),
     touchNodeHeartbeat: vi.fn(async () => undefined),
     claimDueSchedules: vi.fn(async () => []),
     repairExpiredClaims: vi.fn(async () => []),
-    markOrphanDueSchedules: vi.fn(async () => []),
-    restoreOrphanSchedulesForLiveNodes: vi.fn(async () => []),
+    markOrphanDueSchedules: vi.fn(async (): Promise<SoulstreamSchedule[]> => []),
+    restoreOrphanSchedulesForLiveNodes: vi.fn(async (): Promise<SoulstreamSchedule[]> => []),
     consumeClaimedSchedule: vi.fn(async () => null),
     confirmScheduleStillFiring: vi.fn(async () => null),
     deferScheduleDispatch: vi.fn(async () => makeSchedule({ status: "active" })),

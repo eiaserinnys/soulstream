@@ -48,7 +48,7 @@ describe("process error handlers", () => {
     expect(() => (handler as (reason: unknown) => void)(reason)).not.toThrow();
 
     expect(logger.calls).toHaveLength(1);
-    expect(logger.calls[0].context).toMatchObject({
+    expect(logger.calls[0]!.context).toMatchObject({
       event: "process.unhandled_rejection",
       component: "soul-server",
       err: reason,
@@ -73,7 +73,7 @@ describe("process error handlers", () => {
 
     const error = new Error("boom");
     (handler as (error: Error, origin: string) => void)(error, "uncaughtException");
-    expect(logger.calls[0].context).toMatchObject({
+    expect(logger.calls[0]!.context).toMatchObject({
       event: "process.uncaught_exception",
       component: "session-runner",
       err: error,

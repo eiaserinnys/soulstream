@@ -288,7 +288,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       foldCount: 1,
       updatedAt: new Date("2026-07-31T00:00:00.000Z"),
     }));
-    const cb = makeBuilder({ getSession, getSessionStory } as Partial<SessionDB>);
+    const cb = makeBuilder({ getSession, getSessionStory } as unknown as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
     const item = ctx.combinedContextItems.find(
@@ -334,7 +334,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       getSessionStory,
       countEvents,
       readEvents,
-    } as Partial<SessionDB>);
+    } as unknown as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
     const item = ctx.combinedContextItems.find(
@@ -510,7 +510,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
     expect(ctx.combinedContextItems).toHaveLength(2);
-    expect(ctx.combinedContextItems[0].key).toBe("soulstream_session");
+    expect(ctx.combinedContextItems[0]!.key).toBe("soulstream_session");
   });
 
   it("folder.folderPrompt 있음 → effectiveSystemPrompt에 prepend", async () => {
@@ -690,7 +690,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       profile,
     );
     expect(ctx.workingDir).toBe("/profile/path");
-    const item = ctx.combinedContextItems[0];
+    const item = ctx.combinedContextItems[0]!;
     expect((item.content as Record<string, unknown>).workspace_dir).toBe("/profile/path");
   });
 
@@ -698,7 +698,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const cb = makeBuilder({}, new AgentRegistry([]));
     const ctx = await cb.build(makeTask({ profileId: "missing" }), codexAgent);
     expect(ctx.workingDir).toBeUndefined();
-    const item = ctx.combinedContextItems[0];
+    const item = ctx.combinedContextItems[0]!;
     expect((item.content as Record<string, unknown>).workspace_dir).toBe("/agent/default");
   });
 
@@ -708,7 +708,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       makeTask({ callerInfo: { source: "slack", display_name: "Alice" } }),
       codexAgent,
     );
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
     expect(content.caller_info).toEqual({ source: "slack", display_name: "Alice" });
   });
 
@@ -738,7 +738,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "업무 폴더" });
     expect(content.card).toEqual({ id: "rb-item-13", title: "연결 카드", status: "running", role: "member" });
@@ -770,7 +770,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
 
     expect(content.card).toEqual({
       id: "rb-item-13",
@@ -808,7 +808,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
@@ -832,7 +832,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("source_checklist_item_id");
@@ -856,7 +856,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
-    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+    const content = ctx.combinedContextItems[0]!.content as Record<string, unknown>;
 
     expect(content.folder).toEqual({ id: "folder-a", title: "일반 폴더" });
     expect(content).not.toHaveProperty("folder_guidance");
@@ -998,8 +998,8 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     const cb = makeBuilder({ getSession, getFolderById } as Partial<SessionDB>, undefined, true);
     const ctx = await cb.build(makeTask(), codexAgent);
     expect(ctx.combinedContextItems).toHaveLength(3);  // soulstream + atom
-    expect(ctx.combinedContextItems[1].key).toBe("atom_context");
-    expect(ctx.combinedContextItems[1].content).toBe(
+    expect(ctx.combinedContextItems[1]!.key).toBe("atom_context");
+    expect(ctx.combinedContextItems[1]!.content).toBe(
       `${ATOM_CONTEXT_HEADER}## atom node\nbody`,
     );
   });
@@ -1094,12 +1094,12 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
 
     const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)));
     expect(urls).toHaveLength(2);
-    expect(urls[0].pathname).toContain("/api/tree/11111111-2222-3333-4444-555555555555/compile");
-    expect(urls[0].searchParams.get("depth")).toBe("2");
-    expect(urls[0].searchParams.get("titles_only")).toBe("true");
-    expect(urls[1].pathname).toContain("/api/tree/22222222-3333-4444-5555-666666666666/compile");
-    expect(urls[1].searchParams.get("depth")).toBe("4");
-    expect(urls[1].searchParams.has("titles_only")).toBe(false);
+    expect(urls[0]!.pathname).toContain("/api/tree/11111111-2222-3333-4444-555555555555/compile");
+    expect(urls[0]!.searchParams.get("depth")).toBe("2");
+    expect(urls[0]!.searchParams.get("titles_only")).toBe("true");
+    expect(urls[1]!.pathname).toContain("/api/tree/22222222-3333-4444-5555-666666666666/compile");
+    expect(urls[1]!.searchParams.get("depth")).toBe("4");
+    expect(urls[1]!.searchParams.has("titles_only")).toBe(false);
     const atomItem = ctx.combinedContextItems.find((item) => item.key === "atom_context");
     expect(atomItem).toBeDefined();
     const content = String(atomItem?.content);
@@ -1165,10 +1165,10 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
 
     const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)));
     expect(urls).toHaveLength(2);
-    expect(urls[0].searchParams.get("depth")).toBe("2");
-    expect(urls[0].searchParams.get("titles_only")).toBe("true");
-    expect(urls[1].searchParams.get("depth")).toBe("5");
-    expect(urls[1].searchParams.has("titles_only")).toBe(false);
+    expect(urls[0]!.searchParams.get("depth")).toBe("2");
+    expect(urls[0]!.searchParams.get("titles_only")).toBe("true");
+    expect(urls[1]!.searchParams.get("depth")).toBe("5");
+    expect(urls[1]!.searchParams.has("titles_only")).toBe(false);
     const atomItem = ctx.combinedContextItems.find((item) => item.key === "atom_context");
     expect(atomItem?.content).toContain("# root atom");
     expect(atomItem?.content).toContain("# leaf atom");
@@ -1871,11 +1871,11 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("soulstream_session");
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("board_workspace");
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("atom_context");
-    expect(ctx.contextItems[0].content).toEqual({
+    expect(ctx.contextItems[0]!.content).toEqual({
       agent_session_id: "sess-1",
       claude_session_id: "claude-session-1",
     });
-    expect(ctx.contextItems[1].content).toEqual({
+    expect(ctx.contextItems[1]!.content).toEqual({
       previous_caller_info: { source: "browser", display_name: "Alice" },
       current_caller_info: {
         source: "agent",

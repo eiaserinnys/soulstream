@@ -4,7 +4,7 @@ import { PersistentReportHostClient } from "../../src/control_plane/persistent_r
 
 afterEach(()=>vi.unstubAllGlobals());
 it('passes the entry opaquely and returns stored updated_at strings unchanged',async()=>{
-  const fetch=vi.fn(async()=>new Response(JSON.stringify({ok:true,changed:true,entries:[{key:'r1',title:'보고'}],persistent_report:[{key:'r1',updated_at:'2026-10-13T02:00:00.000Z'}]}),{status:200}));
+  const fetch=vi.fn(async(_input: string | URL | Request, _init?: RequestInit)=>new Response(JSON.stringify({ok:true,changed:true,entries:[{key:'r1',title:'보고'}],persistent_report:[{key:'r1',updated_at:'2026-10-13T02:00:00.000Z'}]}),{status:200}));
   vi.stubGlobal('fetch',fetch);
   const client=new PersistentReportHostClient({orch:{baseUrl:'https://orch.example',headers:{authorization:'Bearer test-service'}},logger:pino({level:'silent'})});
   const entry={key:'r1',card_numbers:[270],question_id:'q1'};

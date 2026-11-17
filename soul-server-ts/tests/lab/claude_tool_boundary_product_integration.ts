@@ -142,7 +142,7 @@ async function runToolScenario(): Promise<void> {
     receipt.kind !== "completed" && `delivery receipt=${JSON.stringify(receipt)}`,
   ].filter((failure): failure is string => typeof failure === "string");
 
-  const result = results[0];
+  const result = results[0] as (typeof results[number] & { user_message_uuid?: string }) | undefined;
   const summary = {
     cliVersion: execFileSync(cliPath, ["--version"], { encoding: "utf8" }).trim(),
     inputCount: inputMessages.length,
@@ -213,7 +213,7 @@ async function runFinalTextScenario(): Promise<void> {
   const foregroundUuid = inputMessages[0]?.uuid ?? null;
   const labelOf = (uuid: unknown): string =>
     uuid === foregroundUuid ? "U1" : uuid === deliveryInputUuid ? "INJ" : String(uuid);
-  const rawResults = sdkMessages.filter((message) => message.type === "result");
+  const rawResults = sdkMessages.filter((message) => message.type === "result") as Array<Extract<SDKMessage, { type: "result" }> & { user_message_uuid?: string }>;
   const lifecycle = sdkMessages
     .map((message) => message as unknown as Record<string, unknown>)
     .filter((message) => message.type === "command_lifecycle")

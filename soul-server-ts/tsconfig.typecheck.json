@@ -15,7 +15,17 @@
     "tests/claude_accounts",
     "tests/release",
     "tests/security",
-    "tests/realtime"
+    "tests/realtime",
+    "tests/attachments",
+    "tests/page",
+    "tests/lab",
+    "tests/control_plane",
+    "tests/auth",
+    "tests/llm",
+    "tests/card-orchestration",
+    "tests/integration",
+    "tests/context",
+    "tests/schedule"
   ],
   "exclude": [
     "node_modules",

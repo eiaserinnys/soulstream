@@ -8,7 +8,7 @@ describe("LLM adapters", () => {
   });
 
   it("OpenAI chat completions 요청과 usage를 매핑한다", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       new Response(
         JSON.stringify({
           choices: [{ message: { content: "안녕" } }],
@@ -44,7 +44,7 @@ describe("LLM adapters", () => {
   });
 
   it("Anthropic messages 요청은 system 메시지를 별도 필드로 보낸다", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       new Response(
         JSON.stringify({
           content: [{ type: "text", text: "Hello" }],

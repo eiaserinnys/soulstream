@@ -522,7 +522,7 @@ describe("SessionDataHostClient", () => {
   });
 
   it("reads the caller chain as one host operation", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({
       root: {
         session_id: "session-a",
         caller_session_id: "session-b",
@@ -549,8 +549,8 @@ describe("SessionDataHostClient", () => {
     expect(chain.root?.model_preset).toBe("deepseek-flash-4.1");
     expect(chain.ancestors).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/caller_chain");
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("/caller_chain");
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({ args: ["session-a"] });
   });
 });

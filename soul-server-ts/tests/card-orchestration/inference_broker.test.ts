@@ -13,7 +13,7 @@ describe('inference-only broker', () => {
   it('rejects wrong model, non-inference routes and hosted tools without invoking authenticated upstream', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'decision-broker-'));
     const socketPath = join(directory, 'broker.sock');
-    const forward = vi.fn(async () => ({ status: 200, contentType: 'text/plain', body: (async function* () { yield Buffer.from('ok'); })() }));
+    const forward = vi.fn(async (_input: { credential: typeof credential }) => ({ status: 200, contentType: 'text/plain', body: (async function* () { yield Buffer.from('ok'); })() }));
     const broker = new DecisionInferenceBroker({ socketPath, model: 'approved', credential, signal, forward });
     const post = (path: string, body: unknown) => new Promise<number>((resolve, reject) => {
       const req = request({ socketPath, method: 'POST', path }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode!)); });

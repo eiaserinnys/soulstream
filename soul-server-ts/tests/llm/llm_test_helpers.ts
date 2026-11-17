@@ -78,6 +78,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   );
   const sessionMutations = {
     registerSession,
+    registerSessionWithWorktree: vi.fn(),
     transitionSession,
     renameSession,
     deleteSession,
@@ -142,11 +143,13 @@ function makeAppliedTransitionAcknowledgement(
   ].includes(effect.kind)) {
     throw new Error("transition acknowledgement requires a transition effect");
   }
+  const effectKind: string = effect.kind;
+  if (!("updated_at" in effect)) throw new Error("transition effect missing updated_at");
   const terminal = effect.kind === "terminal_transition";
   const activated = effect.kind === "running_transition"
-    || effect.kind === "execution_activate";
-  const failed = effect.kind === "execution_fail"
-    || effect.kind === "execution_expire_dead_owner";
+    || effectKind === "execution_activate";
+  const failed = effectKind === "execution_fail"
+    || effectKind === "execution_expire_dead_owner";
   const runnerFact = "runner_fact" in effect ? effect.runner_fact : undefined;
   const runnerTerminalStatus = runnerFact === "completed"
     ? "completed"

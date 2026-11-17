@@ -1057,11 +1057,12 @@ describe("ProviderUsageService", () => {
         "claude",
       );
       expect(partialRes.success).toBe(true);
-      expect(partialRes.data?.status).toBe("auto");
-      expect(partialRes.data?.mode).toBe("pool");
-      expect(partialRes.data?.accounts).toHaveLength(2);
-      const generalAfter = partialRes.data?.accounts?.find((a) => a.id === accGeneral);
-      const fableAfter = partialRes.data?.accounts?.find((a) => a.id === accFable);
+      const partialData = partialRes.data as import("../../src/auth/provider_usage.js").ProviderLimits | undefined;
+      expect(partialData?.status).toBe("auto");
+      expect(partialData?.mode).toBe("pool");
+      expect(partialData?.accounts).toHaveLength(2);
+      const generalAfter = partialData?.accounts?.find((a) => a.id === accGeneral);
+      const fableAfter = partialData?.accounts?.find((a) => a.id === accFable);
       expect(generalAfter?.stale).toBe(false);
       expect(generalAfter?.usage.five_hour?.used_percent).toBe(10);
       expect(fableAfter?.stale).toBe(true);
@@ -1110,12 +1111,12 @@ describe("ProviderUsageService", () => {
         monthlyTokens: null,
         quotas: [],
       });
-      expect("mode" in (legacyUnconfiguredRes.data as Record<string, unknown>)).toBe(false);
+      expect("mode" in (legacyUnconfiguredRes.data as unknown as Record<string, unknown>)).toBe(false);
 
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-10-28T01:00:00.000Z"));
       const claudeAuth: ClaudeAuthCommandHandler = {
-        getStatus: vi.fn(),
+        status: vi.fn(),
         setToken: vi.fn(),
         deleteToken: vi.fn(),
         fetchProfile: vi.fn(),
@@ -1169,7 +1170,7 @@ describe("ProviderUsageService", () => {
         ...expectedLegacy,
         observedAt: expect.any(String),
       });
-      expect("mode" in (legacyConfiguredRes.data as Record<string, unknown>)).toBe(false);
+      expect("mode" in (legacyConfiguredRes.data as unknown as Record<string, unknown>)).toBe(false);
       expect(legacyConfiguredRes).toEqual({
         type: "provider_usage_get", requestId: "req-legacy-configured", success: true,
         data: expectedLegacy,

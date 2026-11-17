@@ -64,7 +64,7 @@ function harness(initial = binding()) {
       page: { id: "page-1", title: "Inbox", version: 7 },
       blocks: [{ id: "block-1" }],
     })),
-    batchPageOperations: vi.fn(async () => ({})),
+    batchPageOperations: vi.fn(async (_input: { idempotency_key?: string; expected_version?: number }) => ({})),
   };
   const legacyProjection = { project: vi.fn(async () => undefined) };
   const service = new SessionPageBindingService({
@@ -209,7 +209,7 @@ describe("SessionPageBindingService", () => {
       target_block_id: "deleted-block",
       target_expected_version: 7,
     }));
-    h.pageHost.getPage.mockResolvedValue({ page: { id: "page-1" }, blocks: [] });
+    h.pageHost.getPage.mockResolvedValue({ page: { id: "page-1", title: "Inbox", version: 7 }, blocks: [] });
     await h.service.reconcile(h.row());
 
     expect(h.repository.markFailure).toHaveBeenCalledWith(

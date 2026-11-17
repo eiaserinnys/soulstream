@@ -26,7 +26,7 @@ function request(publisher: ChatUiPublisher, attachmentIds = ["att-1", "att-2"])
 
 describe("publishSessionOutputAttachment", () => {
   it("publishes one empty assistant marker with the stable command and IDs", async () => {
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const publish = vi.fn(async (_sessionId: string, _event: { _dedupe_key?: string }, _registrationId?: string) => ({ eventId: 73 }));
     const publisher = { publish } as unknown as ChatUiPublisher;
 
     const result = await publishSessionOutputAttachment(request(publisher));
@@ -53,7 +53,7 @@ describe("publishSessionOutputAttachment", () => {
   });
 
   it("keeps retry identity stable for the same command and ordered IDs", async () => {
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const publish = vi.fn(async (_sessionId: string, _event: { _dedupe_key?: string }, _registrationId?: string) => ({ eventId: 73 }));
     const publisher = { publish } as unknown as ChatUiPublisher;
 
     await publishSessionOutputAttachment(request(publisher));

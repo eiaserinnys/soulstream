@@ -81,6 +81,7 @@ function makeFakeEngine(events: SSEEventPayload[]): EnginePort {
       for (const e of events) yield e;
     },
     async interrupt() { return true; },
+    async intervene() { throw new Error("intervention is not used in this test"); },
     async close() {},
   };
 }
@@ -118,6 +119,7 @@ function makeAppliedTransitionAcknowledgement(
   ].includes(effect.kind)) {
     throw new Error("transition acknowledgement requires a transition effect");
   }
+  if (!("updated_at" in effect)) throw new Error("transition effect missing updated_at");
   const terminal = effect.kind === "terminal_transition";
   const registered = effect.kind === "execution_registration"
     || effect.kind === "execution_acquire";
@@ -171,7 +173,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
 
     // mock postgres — 모든 stored proc 호출 캡처
     const { sql, calls: dbCalls } = makeStoredProcMock();
-    const db = new SessionDBClass(sql);
+    const db = new SessionDBClass();
 
     const registry = new AgentRegistry([codexAgent]);
 
@@ -210,6 +212,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const registerSession = vi.fn(async () => undefined);
     const sessionMutations = {
       registerSession,
+      registerSessionWithWorktree: vi.fn(),
       transitionSession: vi.fn(async () => undefined),
       renameSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
@@ -274,9 +277,9 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const createdIdx = orchReceived.findIndex((m) => m.type === "session_created" && m.session);
     expect(createdIdx).toBeGreaterThanOrEqual(0);
     const created = orchReceived[createdIdx];
-    expect((created.session as Record<string, unknown>).agent_session_id).toBe("sess-e2e-1");
-    expect((created.session as Record<string, unknown>).agentId).toBe("codex-default");
-    expect((created.session as Record<string, unknown>).backend).toBe("codex");
+    expect((created!.session as Record<string, unknown>).agent_session_id).toBe("sess-e2e-1");
+    expect((created!.session as Record<string, unknown>).agentId).toBe("codex-default");
+    expect((created!.session as Record<string, unknown>).backend).toBe("codex");
 
     // session_created ACK (requestId 박힘)
     const ack = orchReceived.find((m) => m.type === "session_created" && m.requestId === "req-1");
@@ -344,7 +347,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       orchReceived.push(data as Record<string, unknown>);
     });
     const { sql } = makeStoredProcMock();
-    const db = new SessionDBClass(sql);
+    const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(
       send,
@@ -371,6 +374,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     const registerSession = vi.fn(async () => undefined);
     const sessionMutations = {
       registerSession,
+      registerSessionWithWorktree: vi.fn(),
       transitionSession: vi.fn(async () => undefined),
       renameSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
@@ -449,7 +453,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
   it("resolves a bound worktree before engine/context creation and never falls back to profile cwd", async () => {
     const send = vi.fn(async () => undefined);
     const { sql } = makeStoredProcMock();
-    const db = new SessionDBClass(sql);
+    const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "node-worktree");
     const outbox = makeEventOutboxHarness();
@@ -567,7 +571,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       orchReceived.push(data);
     });
     const { sql, calls: dbCalls } = makeStoredProcMock();
-    const db = new SessionDBClass(sql);
+    const db = new SessionDBClass();
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "n");
     const outbox = makeEventOutboxHarness();

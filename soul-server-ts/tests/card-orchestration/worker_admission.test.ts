@@ -1,3 +1,4 @@
+import type { CommandLike } from '../../src/upstream/command_family.js';
 import pino from 'pino';
 import { describe, it, expect, vi } from 'vitest';
 import { createSessionCommandFamily } from '../../src/upstream/session_command_family.js';
@@ -39,8 +40,8 @@ describe('orchestrated worker delivery fencing', () => {
     const runtime = { createSession, intervene } as unknown as TaskRuntimeCommands;
     const session = createSessionCommandFamily({ send: vi.fn(), logger: pino({ level: 'silent' }), taskManager: {} as never, taskRuntimeCommands: runtime, sessionListCommands: {} as never });
     const intervention = createInterventionCommandFamily({ send: vi.fn(), taskRuntimeCommands: runtime, deliveryCommands: {} as never });
-    await session.create_session!({ type: 'create_session', agentSessionId: 'session', profile: 'worker', prompt: 'work', cardId: 'card', orchestrationAdmission });
-    await intervention.intervene!({ type: 'intervene', agentSessionId: 'session', text: 'resume', orchestrationAdmission });
+    await session.create_session!(({ type: 'create_session', agentSessionId: 'session', profile: 'worker', prompt: 'work', cardId: 'card', orchestrationAdmission } as CommandLike));
+    await intervention.intervene!(({ type: 'intervene', agentSessionId: 'session', text: 'resume', orchestrationAdmission } as CommandLike));
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ orchestrationAdmission }));
     expect(intervene).toHaveBeenCalledWith(expect.objectContaining({ orchestrationAdmission }));
   });

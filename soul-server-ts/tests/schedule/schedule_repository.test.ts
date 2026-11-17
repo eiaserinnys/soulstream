@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SoulstreamScheduleRepository } from "../../../orch-server-ts/src/schedule/schedule_repository.js";
-import type { SqlClient } from "../../src/db/session_db.js";
+import type { SqlClient } from "../../../orch-server-ts/src/schedule/schedule_types.js";
 
 interface MockCall {
   fragments: string[];
@@ -16,14 +16,14 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
     calls.push(call);
     return Promise.resolve(resultFor ? resultFor(call) : []);
   }) as unknown as SqlClient & {
-    array: (a: unknown[]) => unknown[];
+    array: (a: readonly unknown[]) => readonly unknown[];
     end: () => Promise<void>;
   };
 
-  fn.array = (a: unknown[]) => a;
+  fn.array = (a: readonly unknown[]) => a;
   fn.end = vi.fn().mockResolvedValue(undefined);
 
-  return { sql: fn as unknown as SqlClient, calls };
+  return { sql: fn, calls };
 }
 
 describe("SoulstreamScheduleRepository", () => {
@@ -58,8 +58,8 @@ describe("SoulstreamScheduleRepository", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].fragments.join("?")).toContain("INSERT INTO soulstream_schedules");
-    expect(calls[0].values).toEqual([
+    expect(calls[0]!.fragments.join("?")).toContain("INSERT INTO soulstream_schedules");
+    expect(calls[0]!.values).toEqual([
       "sched-1",
       "sess-1",
       "wakeup",
@@ -104,7 +104,7 @@ describe("SoulstreamScheduleRepository", () => {
       runOnceAt: nextRunAt,
     });
 
-    expect(calls[0].fragments.join("?")).toContain("ON CONFLICT (schedule_id) DO NOTHING");
+    expect(calls[0]!.fragments.join("?")).toContain("ON CONFLICT (schedule_id) DO NOTHING");
     expect(schedule).toMatchObject({
       scheduleId: "resume-after-limit:sess-1:32:0",
       sourceTool: "ResumeAfterLimit",
@@ -126,9 +126,9 @@ describe("SoulstreamScheduleRepository", () => {
       { scheduleId: "old", status: "cancelled" },
       { scheduleId: "new", status: "active" },
     ]);
-    expect(calls[0].fragments.join("?")).toContain("source_tool = ?");
-    expect(calls[0].fragments.join("?")).toContain("tool_use_id = ?");
-    expect(calls[0].fragments.join("?")).not.toContain("status NOT IN");
+    expect(calls[0]!.fragments.join("?")).toContain("source_tool = ?");
+    expect(calls[0]!.fragments.join("?")).toContain("tool_use_id = ?");
+    expect(calls[0]!.fragments.join("?")).not.toContain("status NOT IN");
   });
 
   it("claimDueSchedules only claims due schedules whose session is owned by this node", async () => {
@@ -148,11 +148,11 @@ describe("SoulstreamScheduleRepository", () => {
       limit: 10,
     });
 
-    const query = calls[0].fragments.join("?");
+    const query = calls[0]!.fragments.join("?");
     expect(query).toContain("JOIN sessions session");
     expect(query).toContain("session.node_id =");
     expect(query).toContain("FOR UPDATE OF schedule SKIP LOCKED");
-    expect(calls[0].values).toEqual([
+    expect(calls[0]!.values).toEqual([
       new Date("2026-01-01T00:00:00Z"),
       "owner-node",
       10,
@@ -173,12 +173,12 @@ describe("SoulstreamScheduleRepository", () => {
     ]);
     const result = await new SoulstreamScheduleRepository(sql).cancelSchedule("sess-1", "sched-1");
 
-    const query = calls[0].fragments.join("?");
+    const query = calls[0]!.fragments.join("?");
     expect(query).toContain("FOR UPDATE");
     expect(query).toContain("target.status IN ('active', 'dispatching', 'failed', 'orphaned')");
     expect(query).toContain("WHEN target.status = 'firing' THEN 'already_firing'");
     expect(query).toContain("claim_token = NULL");
-    expect(calls[0].values).toEqual(["sess-1", "sched-1"]);
+    expect(calls[0]!.values).toEqual(["sess-1", "sched-1"]);
     expect(result).toMatchObject({
       outcome: "cancelled",
       schedule: { scheduleId: "sched-1", status: "cancelled" },
@@ -195,7 +195,7 @@ describe("SoulstreamScheduleRepository", () => {
       limit: 25,
     });
 
-    const query = calls[0].fragments.join("?");
+    const query = calls[0]!.fragments.join("?");
     expect(query).toContain("schedule.status = 'orphaned'");
     expect(query).toContain("heartbeat.last_seen_at >=");
     expect(query).toContain("SET status = 'active'");
@@ -222,13 +222,13 @@ describe("SoulstreamScheduleRepository", () => {
       error: "no owner",
     });
 
-    const query = calls[0].fragments.join("?");
+    const query = calls[0]!.fragments.join("?");
     expect(query).toContain("LEFT JOIN sessions session");
     expect(query).toContain("LEFT JOIN soulstream_node_heartbeats heartbeat");
     expect(query).toContain("heartbeat.last_seen_at <");
     expect(query).toContain("FOR UPDATE OF schedule SKIP LOCKED");
     expect(query).toContain("status = 'orphaned'");
-    expect(calls[0].values).toEqual([now, 5 * 60 * 1000, 25, "no owner"]);
+    expect(calls[0]!.values).toEqual([now, 5 * 60 * 1000, 25, "no owner"]);
     expect(schedules).toEqual([
       expect.objectContaining({
         scheduleId: "orphan-1",

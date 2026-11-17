@@ -156,11 +156,11 @@ describePostgres("tool event PostgreSQL search integration", () => {
     });
 
     expect(starts.isError).not.toBe(true);
-    expect(starts.structuredContent?.results).toEqual([
+    expect((starts.structuredContent as { results?: unknown } | undefined)?.results).toEqual([
       expect.objectContaining({ session_id: "tool-search-session", event_type: "tool_start" }),
     ]);
     expect(results.isError).not.toBe(true);
-    expect(results.structuredContent?.results).toEqual([
+    expect((results.structuredContent as { results?: unknown } | undefined)?.results).toEqual([
       expect.objectContaining({ session_id: "tool-search-session", event_type: "tool_result" }),
     ]);
   });
@@ -205,7 +205,7 @@ describePostgres("tool event PostgreSQL search integration", () => {
     });
 
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
-    expect(result.structuredContent?.results).toEqual([
+    expect((result.structuredContent as { results?: unknown } | undefined)?.results).toEqual([
       expect.objectContaining({
         session_id: "9e75020a-efce-4e45-bc95-0f50e4ae9fe4",
         event_type: "tool_result",
