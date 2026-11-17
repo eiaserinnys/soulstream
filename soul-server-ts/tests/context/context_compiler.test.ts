@@ -298,7 +298,7 @@ describe("context compiler applies_when filter", () => {
       agent: "seosoyoung",
     }],
     ["empty OR set", { source: [] }],
-  ])("records a filtered observation for %s", async (_name, appliesWhen, parameters = session) => {
+  ])("records a filtered observation for %s", async (_name, appliesWhen, parameters: ContextFilterParameters = session) => {
     const compiled = await compileContexts(config, [{
       nodeId: "node-filtered",
       depth: 1,

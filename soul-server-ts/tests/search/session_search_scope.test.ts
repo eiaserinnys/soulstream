@@ -77,7 +77,7 @@ describe("searchSessionEvents derived-text scope", () => {
   });
 
   it("adds turn summaries and merges highlight/story matches with explicit sources", async () => {
-    const db = { searchSessionHistory: vi.fn(async () => ({
+    const db = { searchSessionHistory: vi.fn(async (_params: import('../../src/control_plane/session_data_host_client.js').SessionHistorySearchParams) => ({
       events: [{
         id: 30,
         session_id: "sess-1",

@@ -1,3 +1,4 @@
+import type { CommandLike } from '../../src/upstream/command_family.js';
 import pino from 'pino';
 import { describe, it, expect, vi } from 'vitest';
 import { createSessionCommandFamily } from '../../src/upstream/session_command_family.js';
@@ -9,7 +10,7 @@ describe('dedicated decision command authority', () => {
     const createSession = vi.fn(); const send = vi.fn();
     const family = createSessionCommandFamily({ send, logger: pino({ level: 'silent' }), taskManager: {} as never,
       taskRuntimeCommands: { prepareDecisionSession, createSession } as unknown as TaskRuntimeCommands, sessionListCommands: {} as never });
-    await family.prepare_card_orchestration_decision!({ type: 'prepare_card_orchestration_decision', requestId: 'req', profile: 'ariella-orchestrator', model_preset: 'opus' });
+    await family.prepare_card_orchestration_decision!(({ type: 'prepare_card_orchestration_decision', requestId: 'req', profile: 'ariella-orchestrator', model_preset: 'opus' } as CommandLike));
     expect(prepareDecisionSession).toHaveBeenCalledWith({ profileId: 'ariella-orchestrator', modelPreset: 'opus' });
     expect(send).toHaveBeenCalledWith({ type: 'card_orchestration_decision_prepared', requestId: 'req', status: 'ready', instructionsRevision: 'sha256:revision' });
     expect(createSession).not.toHaveBeenCalled();
@@ -21,10 +22,10 @@ describe('dedicated decision command authority', () => {
     const send = vi.fn();
     const family = createSessionCommandFamily({ send, logger: pino({ level: 'silent' }), taskManager: {} as never,
       taskRuntimeCommands: { createDecisionSession, createSession } as unknown as TaskRuntimeCommands, sessionListCommands: {} as never });
-    await family.create_card_orchestration_decision!({ type: 'create_card_orchestration_decision', requestId: 'req',
+    await family.create_card_orchestration_decision!(({ type: 'create_card_orchestration_decision', requestId: 'req',
       agentSessionId: 'visible', runId: 'run', leaseToken: 'fence', profile: 'ariella-orchestrator', model_preset: 'opus', folderId: 'system-folder',
       prompt: 'snapshot', instructionsRevision: 'revision', outputSchema: { type: 'object' },
-      allowedTools: ['Bash'], useMcp: true, oauth_token: 'spoofed', systemPrompt: 'spoofed', attachment_paths: ['/host/secret'] });
+      allowedTools: ['Bash'], useMcp: true, oauth_token: 'spoofed', systemPrompt: 'spoofed', attachment_paths: ['/host/secret'] } as CommandLike));
     expect(createDecisionSession).toHaveBeenCalledWith({ agentSessionId: 'visible', runId: 'run', leaseToken: 'fence', profileId: 'ariella-orchestrator',
       modelPreset: 'opus', folderId: 'system-folder', prompt: 'snapshot', instructionsRevision: 'revision', outputSchema: { type: 'object' } });
     expect(createSession).not.toHaveBeenCalled();

@@ -43,7 +43,7 @@ function makeService(schedule: SoulstreamSchedule) {
     consumeClaimedSchedule: vi.fn(async () => schedule),
     confirmScheduleStillFiring: vi.fn(async () => schedule),
     decideResumeDispatch: vi.fn(async () => ({ decision: "fire" as const, reason: null })),
-    deferDispatch: vi.fn(async () => makeSchedule({ status: "active" })),
+    deferDispatch: vi.fn(async (_sessionId: string, _scheduleId: string, _at: Date) => makeSchedule({ status: "active" })),
     finishDispatch: vi.fn(async () => makeSchedule({ status: "completed" })),
     failDispatch: vi.fn(async () => makeSchedule({ status: "failed" })),
   };

@@ -34,9 +34,6 @@ describe("Phase 3 first-turn page context integration", () => {
           daily_date: input.dailyDate,
           session_type: input.sessionType,
           legacy_folder_id: input.legacyFolderId,
-          legacy_container_kind: input.legacyContainerKind,
-          legacy_container_id: input.legacyContainerId,
-          source_task_item_id: input.sourceTaskItemId,
           page_state: input.initialPageState,
           legacy_state: "pending",
           attempts: 0,
@@ -103,7 +100,7 @@ describe("Phase 3 first-turn page context integration", () => {
     const bindingService = new SessionPageBindingService({
       nodeId: "node-1",
       repository,
-      pageHost,
+      pageHost: pageHost as unknown as ConstructorParameters<typeof SessionPageBindingService>[0]['pageHost'],
       legacyProjection: { project: vi.fn() },
       logger,
     });
@@ -149,7 +146,7 @@ describe("Phase 3 first-turn page context integration", () => {
         addIntervention: vi.fn(),
       },
       taskExecutor: {
-        startNewExecution: (task, agent) => {
+        startNewExecution: async (task, agent) => {
           order.push("start");
           contextPromise = resolver.resolve(task, agent).then((result) => {
             contextResult = result;

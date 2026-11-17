@@ -28,7 +28,7 @@ const validSelectedCandidate = (index = 1) => ({
 });
 
 function makeDeps(fetchImpl: typeof fetch) {
-  const enqueueEvent = vi.fn(async () => undefined);
+  const enqueueEvent = vi.fn(async (_sessionId: string, _event: unknown) => undefined);
   const warn = vi.fn();
   const observer = createPersistentJevObserver({
     orch: { baseUrl: "https://orch.test", headers: { authorization: "Bearer test-only" } },
@@ -79,7 +79,7 @@ describe("createPersistentJevObserver", () => {
     await observer({ sessionId: "session-1", inputId: "input-2", request: "two" });
 
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(enqueueEvent.mock.calls[0][1]).toMatchObject({
+    expect(enqueueEvent.mock.calls[0]![1]).toMatchObject({
       kind: "persistent_jev_candidates",
       observation: { selected: [] },
     });
@@ -107,7 +107,7 @@ describe("createPersistentJevObserver", () => {
     await observer({ sessionId: "session-1", inputId: "input-1", request: "preserve extensions" });
 
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(enqueueEvent.mock.calls[0][1]).toMatchObject({
+    expect(enqueueEvent.mock.calls[0]![1]).toMatchObject({
       kind: "persistent_jev_candidates",
       observation,
     });

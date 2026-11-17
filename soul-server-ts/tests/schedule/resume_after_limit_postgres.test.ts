@@ -25,8 +25,8 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
 
   beforeAll(async () => {
     harness = await createPostgresTestHarness();
-    sql = harness.sql;
-    repo = new SoulstreamScheduleRepository(sql);
+    sql = harness.sql as unknown as SqlClient;
+    repo = new SoulstreamScheduleRepository(sql as unknown as ConstructorParameters<typeof SoulstreamScheduleRepository>[0]);
   }, 45_000);
 
   afterAll(async () => {

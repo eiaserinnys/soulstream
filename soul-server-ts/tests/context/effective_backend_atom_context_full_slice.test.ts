@@ -29,7 +29,7 @@ function backgroundSource(): AtomContextSpec {
 }
 
 function markerCount(markdown: string | null): number {
-  return markdown?.split(BACKGROUND_MARKER).length - 1 || 0;
+  return (markdown?.split(BACKGROUND_MARKER).length ?? 1) - 1;
 }
 
 function expectedHostOsConditionValue(osType: string): string {
@@ -168,7 +168,7 @@ describe("effective-backend prompt containment full slice", () => {
       task,
       agent,
       nodeId: "eiaserinnys",
-      primaryContainer: null,
+      primaryFolder: null,
     });
 
     expect(parameters.backend).toBe("claude");
@@ -197,7 +197,7 @@ describe("effective-backend prompt containment full slice", () => {
       task,
       agent,
       nodeId: "eiaserinnys",
-      primaryContainer: null,
+      primaryFolder: null,
     }, "Windows_NT");
 
     expect(parameters.os).toBe("windows");

@@ -1,18 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { Task } from '../../src/task/task_models.js';
+import type { EventOutboxRecord } from '../../src/upstream/event_outbox.js';
 import { PurposeDecisionRunner } from '../../src/card-orchestration/purpose_runner.js';
 
 const command = { agentSessionId: 'visible', runId: 'run', leaseToken: 'fence', profileId: 'ariella-orchestrator', modelPreset: 'opus', folderId: 'system-folder', prompt: 'trusted instructions + untrusted snapshot', instructionsRevision: 'server-revision', outputSchema: { type: 'object' } };
 function harness(allowed = true) {
   const task = { agentSessionId: command.agentSessionId, status: 'initializing', executionRegistration: undefined };
-  const createTask = vi.fn(async () => task);
-  const finalizeTask = vi.fn(async () => task);
-  const enqueueEvent = vi.fn(async () => 1);
+  const createTask = vi.fn(async (_params: Parameters<ConstructorParameters<typeof PurposeDecisionRunner>[0]['taskManager']['createTask']>[0]) => task as unknown as Task);
+  const finalizeTask = vi.fn(async () => task as unknown as Task);
+  const enqueueEvent = vi.fn(async () => 1 as unknown as EventOutboxRecord);
   const handleSideEffects = vi.fn(async () => undefined);
-  const execute = vi.fn(async () => ({ status: 'ready' as const, output: { order: [] } }));
+  const execute = vi.fn(async (_input: Parameters<ConstructorParameters<typeof PurposeDecisionRunner>[0]['executor']['execute']>[0]) => ({ status: 'ready' as const, output: { order: [] } }));
   const authorize = vi.fn(async () => allowed);
   const runner = new PurposeDecisionRunner({ nodeId: 'node', taskManager: { createTask, finalizeTask },
     persistence: { enqueueEvent, handleSideEffects },
-    modelCatalog: { resolve: () => ({ id: 'opus', model: 'actual-opus', backend: 'claude', env: { COMMON_SECRET: 'must-not-inherit' } }) },
+    modelCatalog: { resolve: () => ({ id: 'opus', label: 'Opus', model: 'actual-opus', backend: 'claude', env: { COMMON_SECRET: 'must-not-inherit' } }) },
     resolveProfile: async () => ({ id: 'ariella-orchestrator' }),
     compileInstructions: async () => ({ text: 'server compiled instructions', revision: 'server-revision' }),
     authorize, executor: { execute, prepare: vi.fn(async () => ({ status: 'ready' as const })) }, transitionRunning: vi.fn(async () => undefined), timeoutMs: 30000 });
@@ -48,7 +50,7 @@ describe('canonical one-shot purpose runner', () => {
       orchestrationPurpose: { runId: 'run', leaseToken: 'fence', instructionsRevision: 'server-revision' } }));
     expect(h.createTask.mock.calls[0]?.[0]).not.toHaveProperty('modelPresetEnv');
     expect(h.execute).toHaveBeenCalledWith(expect.objectContaining({ model: 'actual-opus', backend: 'claude', outputSchema: command.outputSchema }));
-    expect(h.execute.mock.calls[0]?.[0].prompt).toContain('server compiled instructions');
+    expect(h.execute.mock.calls[0]?.[0]?.prompt).toContain('server compiled instructions');
     expect(h.enqueueEvent).toHaveBeenCalledWith('visible', expect.objectContaining({ type: 'assistant_message', content: '{"order":[]}' }));
     expect(h.finalizeTask).toHaveBeenCalledWith({ agentSessionId: 'visible', result: '{"order":[]}' });
   });

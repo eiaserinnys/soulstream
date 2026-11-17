@@ -26,8 +26,7 @@ it('owns a bounded immutable copy, preserves identity and returns without ACK',a
 it('renders the already-bounded raw snapshot without another text cut or a consumption claim',async()=>{
   const enqueueEvent=vi.fn().mockResolvedValue(undefined);
   const raw=capture();
-  raw.snapshot.cards=[{id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null}];
-  raw.snapshot.total=1; raw.snapshot.omitted=0;
+  raw.snapshot={...raw.snapshot,cards:[{id:'c',title:'제목',status:'review',latestCommentAt:null,latestReportAt:null}],total:1,omitted:0};
   await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
   const event=enqueueEvent.mock.calls[0]![1] as any;
   expect(event.content).toBe('제목 · 검수 대기 · 보고 없음');
@@ -36,8 +35,7 @@ it('renders the already-bounded raw snapshot without another text cut or a consu
 it('uses the check-item result lookup for new cards and preserves the flag in the capture',async()=>{
   const enqueueEvent=vi.fn().mockResolvedValue(undefined);
   const raw=capture();
-  raw.snapshot.cards=[{id:'item-card',title:'확인 카드',status:'running',hasItems:true,latestCommentAt:'2026-10-01T23:59:00Z',latestReportAt:null}];
-  raw.snapshot.total=1;raw.snapshot.omitted=0;
+  raw.snapshot={...raw.snapshot,cards:[{id:'item-card',title:'확인 카드',status:'running',hasItems:true,latestCommentAt:'2026-10-01T23:59:00Z',latestReportAt:null}],total:1,omitted:0};
   await createAssignedCardSnapshotRecorder({enqueueEvent} as any,{warn:vi.fn()})(raw);
   const event=enqueueEvent.mock.calls[0]![1] as any;
   expect(event.content).toBe('확인 카드 · 실행 중 · 확인 항목 결과는 get_card로 조회');

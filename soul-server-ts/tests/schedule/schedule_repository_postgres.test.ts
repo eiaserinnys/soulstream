@@ -27,8 +27,8 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
 
   beforeAll(async () => {
     harness = await createPostgresTestHarness();
-    sql = harness.sql;
-    repo = new SoulstreamScheduleRepository(sql);
+    sql = harness.sql as unknown as SqlClient;
+    repo = new SoulstreamScheduleRepository(sql as unknown as ConstructorParameters<typeof SoulstreamScheduleRepository>[0]);
   }, 45_000);
 
   afterAll(async () => {
@@ -57,7 +57,7 @@ describePostgres("Soulstream schedule repository PostgreSQL integration", () => 
       limit: 10,
     });
     expect(claimed).toHaveLength(1);
-    expect(claimed[0].schedule.status).toBe("dispatching");
+    expect(claimed[0]!.schedule.status).toBe("dispatching");
 
     const repairedDispatching = await repo.repairExpiredClaims({
       now,

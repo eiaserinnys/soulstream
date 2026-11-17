@@ -57,8 +57,8 @@ async function connect(
     max: 1,
     idle_timeout: 1,
     connection: { search_path: schema },
-  }) as SqlClient;
-  const peers: SqlClient[] = [];
+  });
+  const peers: ReturnType<typeof postgres>[] = [];
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
   const schemaSql = readFileSync(
@@ -70,15 +70,15 @@ async function connect(
   scopedUrl.searchParams.set("options", `-csearch_path=${schema}`);
   return {
     databaseUrl: scopedUrl.toString(),
-    sql,
+    sql: sql as unknown as SqlClient,
     createPeer() {
       const peer = postgres(url, {
         max: 1,
         idle_timeout: 1,
         connection: { search_path: schema },
-      }) as SqlClient;
+      });
       peers.push(peer);
-      return peer;
+      return peer as unknown as SqlClient;
     },
     async cleanup() {
       try {
@@ -102,7 +102,7 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
   if (["atom_db", "reverie", "soulstream", "serendipity"].some((word) => full.includes(word))) {
     throw new Error("TEST_DATABASE_URL points at a protected database name");
   }
-  const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
   try {
     const rows = await sql<Array<{ count: string | number }>>`
       SELECT COUNT(*)::int AS count
@@ -118,7 +118,7 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
   }
 }
 
-async function waitForPostgres(sql: SqlClient): Promise<void> {
+async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError: unknown;
   while (Date.now() < deadline) {

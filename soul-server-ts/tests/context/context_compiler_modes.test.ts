@@ -268,13 +268,13 @@ describe("context compiler Phase B render modes", () => {
   });
 
   it("warns and preserves legacy bytes for an unknown mode", async () => {
-    const spec = {
+    const spec: AtomContextSpec = {
       nodeId: ROOT,
       depth: 1,
       titlesOnly: true,
       includeIds: false,
       mode: "future-mode",
-    } satisfies AtomContextSpec;
+    };
     const legacy = await fetchAtomContext(
       config,
       spec.nodeId,

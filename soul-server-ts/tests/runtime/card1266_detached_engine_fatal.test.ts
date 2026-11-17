@@ -166,7 +166,7 @@ describe("card #1266 U4 (stuck session 16): an engine that dies with no turn in 
     factory.recover = vi.fn(() => ({
       engine: { backendId: "claude", workspaceDir: "/tmp/claude-roselin" } as never,
       dispatcher: dispatcher as never,
-      eventPersistence: "runner",
+      eventPersistence: "runner" as const,
     }));
     const { executor, double } = makeExecutor(factory);
     const task = makeTask({ status: "initializing", profileId: agent.id });

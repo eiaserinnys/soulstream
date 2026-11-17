@@ -3,7 +3,7 @@ import postgres from "postgres";
 
 import { startPostgresTestContainer } from
   "../../../packages/db-schema/scripts/postgres-test-container.mjs";
-import type { SqlClient } from "../../src/db/session_db.js";
+type SqlClient = ReturnType<typeof postgres>;
 
 export interface PostgresTestHarness {
   sql: SqlClient;
@@ -41,7 +41,7 @@ async function connectWithIsolatedSchema(
   stopContainer: (() => void) | undefined,
 ): Promise<PostgresTestHarness> {
   const schema = `schedule_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
   await sql.unsafe(`SET search_path TO ${schema}`);
@@ -72,7 +72,7 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
     throw new Error("TEST_DATABASE_URL points at a protected database name");
   }
 
-  const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
   try {
     const rows = await sql<Array<{ count: string | number }>>`
       SELECT COUNT(*)::int AS count

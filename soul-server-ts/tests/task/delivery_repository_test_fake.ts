@@ -51,7 +51,7 @@ export function makeDeliveryRepository(rows: Map<string, Record<string, unknown>
         || existing.intent !== params.intent
         || existing.completion_id !== (params.completionId ?? null);
       if (!conflict) return { row: existing, inserted: false, conflict: false };
-      const dead = {
+      const dead: Record<string, unknown> = {
         ...existing,
         state: "uncertain",
         aggregate_state: "dead_letter",

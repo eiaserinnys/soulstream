@@ -29,23 +29,23 @@ export function configureTestSessionDataHost(
   );
 
   db.configureSessionDataHost({
-    getSession: (sessionId) => sessions.getSession(sessionId),
-    getSessionOwnerNode: (sessionId) => sessions.getSessionOwnerNode(sessionId),
-    listSessionsSummary: (params) => sessions.listSessionsSummary(params),
-    listRunningSessionsSummary: (params) =>
+    getSession: (sessionId: Parameters<SessionDataHost["getSession"]>[0]) => sessions.getSession(sessionId),
+    getSessionOwnerNode: (sessionId: Parameters<SessionDataHost["getSessionOwnerNode"]>[0]) => sessions.getSessionOwnerNode(sessionId),
+    listSessionsSummary: (params: Parameters<SessionDataHost["listSessionsSummary"]>[0]) => sessions.listSessionsSummary(params),
+    listRunningSessionsSummary: (params: Parameters<SessionDataHost["listRunningSessionsSummary"]>[0]) =>
       sessions.listRunningSessionsSummary(params),
-    listSessionsForUpstreamDump: (params) =>
+    listSessionsForUpstreamDump: (params: Parameters<SessionDataHost["listSessionsForUpstreamDump"]>[0]) =>
       sessions.listSessionsForUpstreamDump(params),
-    countEvents: (sessionId) => events.countEvents(sessionId),
-    readEvents: (sessionId, afterId, limit, eventTypes, period, metadataTypes, order) =>
+    countEvents: (sessionId: Parameters<SessionDataHost["countEvents"]>[0]) => events.countEvents(sessionId),
+    readEvents: (sessionId: Parameters<SessionDataHost["readEvents"]>[0], afterId: Parameters<SessionDataHost["readEvents"]>[1], limit: Parameters<SessionDataHost["readEvents"]>[2], eventTypes: Parameters<SessionDataHost["readEvents"]>[3], period: Parameters<SessionDataHost["readEvents"]>[4], metadataTypes: Parameters<SessionDataHost["readEvents"]>[5], order: Parameters<SessionDataHost["readEvents"]>[6]) =>
       events.readEvents(sessionId, afterId, limit, eventTypes, period, metadataTypes, order),
-    readOneEvent: (sessionId, eventId) =>
+    readOneEvent: (sessionId: Parameters<SessionDataHost["readOneEvent"]>[0], eventId: Parameters<SessionDataHost["readOneEvent"]>[1]) =>
       events.readOneEvent(sessionId, eventId),
-    streamEventsRaw: (sessionId, afterId) =>
+    streamEventsRaw: (sessionId: Parameters<SessionDataHost["streamEventsRaw"]>[0], afterId: Parameters<SessionDataHost["streamEventsRaw"]>[1]) =>
       events.streamEventsRaw(sessionId, afterId),
-    searchEvents: (query, sessionIds, limit, eventTypes) =>
+    searchEvents: (query: Parameters<SessionDataHost["searchEvents"]>[0], sessionIds: Parameters<SessionDataHost["searchEvents"]>[1], limit: Parameters<SessionDataHost["searchEvents"]>[2], eventTypes: Parameters<SessionDataHost["searchEvents"]>[3]) =>
       events.searchEvents(query, sessionIds, limit, eventTypes),
-    searchEventsBySessionId: (query, eventTypes, limit) =>
+    searchEventsBySessionId: (query: Parameters<SessionDataHost["searchEventsBySessionId"]>[0], eventTypes: Parameters<SessionDataHost["searchEventsBySessionId"]>[1], limit: Parameters<SessionDataHost["searchEventsBySessionId"]>[2]) =>
       events.searchEventsBySessionId(query, eventTypes, limit),
     searchSessionHistory: async (params: SessionHistorySearchParams) => ({
       events: await events.searchEvents(
@@ -71,11 +71,11 @@ export function configureTestSessionDataHost(
           )
         : [],
     }),
-    getSessionSearchMetadata: async (sessionIds) =>
+    getSessionSearchMetadata: async (sessionIds: Parameters<SessionDataHost["getSessionSearchMetadata"]>[0]) =>
       new Map(await stories.getSessionSearchMetadata(sessionIds)),
-    countTurnSummaries: (sessionId) =>
+    countTurnSummaries: (sessionId: Parameters<SessionDataHost["countTurnSummaries"]>[0]) =>
       stories.countTurnSummaries(sessionId),
-    loadTurnSummaryRange: (sessionId, fromTurnNumber, toTurnNumber, limit) =>
+    loadTurnSummaryRange: (sessionId: Parameters<SessionDataHost["loadTurnSummaryRange"]>[0], fromTurnNumber: Parameters<SessionDataHost["loadTurnSummaryRange"]>[1], toTurnNumber: Parameters<SessionDataHost["loadTurnSummaryRange"]>[2], limit: Parameters<SessionDataHost["loadTurnSummaryRange"]>[3]) =>
       stories.loadTurnSummaryRange(
         sessionId,
         fromTurnNumber,
@@ -83,11 +83,11 @@ export function configureTestSessionDataHost(
         limit,
       ),
     searchSessionDigests: (
-      query,
-      sessionIds,
-      limit,
-      includeHighlight,
-      includeStory,
+      query: Parameters<SessionDataHost["searchSessionDigests"]>[0],
+      sessionIds: Parameters<SessionDataHost["searchSessionDigests"]>[1],
+      limit: Parameters<SessionDataHost["searchSessionDigests"]>[2],
+      includeHighlight: Parameters<SessionDataHost["searchSessionDigests"]>[3],
+      includeStory: Parameters<SessionDataHost["searchSessionDigests"]>[4],
     ) => stories.searchSessionDigests(
       query,
       sessionIds,
@@ -95,10 +95,10 @@ export function configureTestSessionDataHost(
       includeHighlight,
       includeStory,
     ),
-    getSessionStory: (sessionId) => stories.getSessionStory(sessionId),
-    getTurnExcerpt: (sessionId, maxResponseChars) =>
+    getSessionStory: (sessionId: Parameters<SessionDataHost["getSessionStory"]>[0]) => stories.getSessionStory(sessionId),
+    getTurnExcerpt: (sessionId: Parameters<SessionDataHost["getTurnExcerpt"]>[0], maxResponseChars: Parameters<SessionDataHost["getTurnExcerpt"]>[1]) =>
       composites.getTurnExcerpt(sessionId, maxResponseChars),
-    getResumeContext: (sessionId, limit) =>
+    getResumeContext: (sessionId: Parameters<SessionDataHost["getResumeContext"]>[0], limit: Parameters<SessionDataHost["getResumeContext"]>[1]) =>
       composites.getResumeContext(sessionId, limit),
   } as unknown as SessionDataHost);
 }
