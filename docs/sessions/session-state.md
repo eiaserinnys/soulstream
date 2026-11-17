@@ -823,13 +823,13 @@ state "한도 재개 예약" as sessionReservation {
 
 | 함수 | 상태를 쓰는가 | 정의 | 호출지 | 뜻 |
 | :-- | :-- | :-- | :-- | :-- |
-| session_register | 예 | packages/db-schema/sql/schema.sql:1356 | 없음 | 정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다. |
-| session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1386 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
-| session_update | 예 | packages/db-schema/sql/schema.sql:1518 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
-| session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1425 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
-| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1595 | src/node/event_session_effect_applier.ts:196 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
-| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4170 | src/node/event_session_effect_applier.ts:77 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
-| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1736 | src/node/event_session_effect_applier.ts:254 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
+| session_register | 예 | packages/db-schema/sql/schema.sql:1362 | 없음 | 정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다. |
+| session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1392 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
+| session_update | 예 | packages/db-schema/sql/schema.sql:1524 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
+| session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1431 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
+| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1601 | src/node/event_session_effect_applier.ts:196 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
+| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4176 | src/node/event_session_effect_applier.ts:77 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
+| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1742 | src/node/event_session_effect_applier.ts:254 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
 
 ### 직접 UPDATE
 
@@ -857,10 +857,10 @@ state "한도 재개 예약" as sessionReservation {
 
 | 파일 | 비교 | 목록 | SQL | 뜻 |
 | :-- | --: | --: | --: | :-- |
-| src/cards/card_capacity.ts | 0 | 0 | 4 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
+| src/cards/card_capacity.ts | 0 | 0 | 5 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_delivery.ts | 1 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_change_notification.ts | 2 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
-| src/cards/card_dispatch_repository.ts | 0 | 0 | 3 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
+| src/cards/card_dispatch_repository.ts | 0 | 0 | 4 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_dispatch_runtime.ts | 4 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_dispatcher.ts | 5 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_execution_service.ts | 4 | 2 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
@@ -938,7 +938,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 80개, 비교 82줄, 목록 29줄, SQL 57줄이다.
+파일 80개, 비교 82줄, 목록 29줄, SQL 59줄이다.
 
 ## 다시 만들기
 
