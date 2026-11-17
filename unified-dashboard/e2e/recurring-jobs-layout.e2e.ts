@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
@@ -71,7 +71,7 @@ const JOBS = [
   }),
 ];
 
-type RouteState = { failJobs: boolean };
+type RouteState = { failJobs: boolean; listGate?: Promise<void>; failSave?: boolean };
 
 async function installRoutes(page: Page, state: RouteState = { failJobs: false }) {
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1 });
@@ -80,7 +80,7 @@ async function installRoutes(page: Page, state: RouteState = { failJobs: false }
     json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } },
   }));
   // 마지막에 등록한 라우트가 먼저 잡는다. 반복 작업 API만 이 화면의 고정 자료로 답한다.
-  await page.route("**/api/recurring-jobs**", (route) => {
+  await page.route("**/api/recurring-jobs**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith("/runs")) return route.fulfill({ json: { runs: [] } });
@@ -88,7 +88,11 @@ async function installRoutes(page: Page, state: RouteState = { failJobs: false }
       return route.fulfill({ status: 500, json: { detail: { error: { message: "예약 작업을 불러오지 못했습니다" } } } });
     }
     if (url.pathname === "/api/recurring-jobs" && request.method() === "GET") {
+      await state.listGate;
       return route.fulfill({ json: { jobs: JOBS } });
+    }
+    if (state.failSave && ((url.pathname === "/api/recurring-jobs" && request.method() === "POST") || (url.pathname.startsWith("/api/recurring-jobs/") && request.method() === "PATCH"))) {
+      return route.fulfill({ status: 500, json: { detail: "저장하지 못했습니다" } });
     }
     return route.fulfill({ json: { job: JOBS[0] } });
   });
@@ -608,6 +612,59 @@ for (const width of [1440, 360]) test(`첫 목록 조회 실패 뒤 새로고침
   await expect(tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first()).toBeVisible();
   await expect(tab.getByRole("alert")).toHaveCount(0);
 });
+
+for (const width of [1440, 360]) test(`첫 로딩과 저장 실패 안내 ${width}`, async ({ page }) => {
+  const { capture } = await preparePage(page, width);
+  let release!: () => void;
+  const listGate = new Promise<void>((resolve) => { release = resolve; });
+  await installRoutes(page, { failJobs: false, failSave: true, listGate });
+  const { tab } = await openRecurringTab(page);
+  await expect(tab.getByRole("status")).toHaveText("불러오는 중…");
+  await expect(tab.getByText("활성", { exact: true })).toHaveCount(0);
+  await expect(tab.getByText("없음", { exact: true })).toHaveCount(0);
+  await capture(`first-loading-${width}`);
+  release();
+  await expect(tab.getByText("활성", { exact: true })).toBeVisible();
+  const create = tab.getByRole("button", { name: "반복 작업 생성", exact: true });
+  await create.evaluate(element => {
+    let scroller = element.parentElement;
+    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    if (!scroller) throw new Error("스크롤 칸을 찾지 못했습니다");
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+  await create.click();
+  const alert = tab.getByRole("alert");
+  await expect(alert).toContainText("저장하지 못했습니다");
+  await expect.poll(() => alertInset(alert)).toBeCloseTo(24, 0);
+  await capture(`create-error-${width}`);
+  await tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first().click();
+  const save = tab.getByRole("button", { name: "변경 저장" });
+  await save.evaluate(element => {
+    let scroller = element.parentElement;
+    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    if (!scroller) throw new Error("스크롤 칸을 찾지 못했습니다");
+    scroller.scrollTop += element.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom + 4;
+  });
+  await save.click();
+  await expect(alert).toContainText("저장하지 못했습니다");
+  const position = await alert.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const row = element.previousElementSibling!.getBoundingClientRect();
+    return { top: rect.top, rowBottom: row.bottom };
+  });
+  expect(position.top).toBeGreaterThanOrEqual(position.rowBottom);
+  await expect.poll(() => alertInset(alert)).toBeCloseTo(24, 0);
+  await capture(`save-error-${width}`);
+});
+
+async function alertInset(alert: Locator) {
+  return alert.evaluate(element => {
+    let scroller = element.parentElement;
+    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    if (!scroller) throw new Error("스크롤 칸을 찾지 못했습니다");
+    return scroller.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom;
+  });
+}
 
 for (const width of [1440, 390, 360]) {
   test(`설정 목록과 상세 끝선 ${width}`, async ({ page }) => {
