@@ -52,6 +52,8 @@ vi.mock("../v3/AgentNodeAssignmentFields", async () => {
 });
 
 import { RecurringJobsTab } from "./RecurringJobsTab";
+import { RecurringScheduleEditor } from "./RecurringScheduleEditor";
+import { defaultRecurringSchedule } from "../lib/recurring-schedule";
 
 describe("RecurringJobsTab lifecycle", () => {
   let root: Root | undefined;
@@ -66,6 +68,71 @@ describe("RecurringJobsTab lifecycle", () => {
     shared.openSession.mockReset();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("clears a failed list load on refresh and shows a new failure", async () => {
+    let fail = true;
+    vi.stubGlobal("fetch", vi.fn(async () => fail ? json({ detail: "목록 실패" }, 500) : json({ jobs: [] })));
+    await renderTab();
+    await waitFor(() => expect(document.body.querySelector('[role="alert"]')).not.toBeNull());
+    fail = false;
+    clickButton("새로고침");
+    await waitFor(() => expect(document.body.querySelector('[role="alert"]')).toBeNull());
+    fail = true;
+    clickButton("새로고침");
+    await waitFor(() => expect(document.body.querySelector('[role="alert"]')).not.toBeNull());
+  });
+
+  it("toggles monthly dates in sorted order and saves their cron expression", async () => {
+    let saved: Record<string, unknown> | undefined;
+    vi.stubGlobal("crypto", { randomUUID: () => "monthly-id" });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/recurring-jobs?include_archived=true") return json({ jobs: [] });
+      if (path === "/api/recurring-jobs" && init?.method === "POST") {
+        saved = JSON.parse(String(init.body));
+        return json({ job: recurringJob() });
+      }
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      throw new Error(`unexpected request ${path}`);
+    }));
+    await renderTab();
+    setInput("작업 이름", "월간 보고");
+    setInput("작업 내용", "보고서를 작성한다.");
+    setInput("노드", "node-a");
+    setInput("에이전트", "agent-a");
+    setSelect("결과 폴더", "folder-a");
+    setSelect("반복 주기", "monthly");
+    const group = document.body.querySelector('[role="group"][aria-label="매월 날짜"]')!;
+    expect(group).not.toBeNull();
+    const day = (number: number) => [...group.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === String(number))!;
+    expect(day(1).getAttribute("aria-pressed")).toBe("true");
+    flushSync(() => day(15).click());
+    flushSync(() => day(5).click());
+    flushSync(() => day(1).click());
+    expect(day(1).getAttribute("aria-pressed")).toBe("false");
+    expect(day(5).getAttribute("aria-pressed")).toBe("true");
+    clickButton("반복 작업 생성");
+    await waitFor(() => expect(saved?.schedule_expressions).toEqual(["0 9 5,15 * *"]));
+  });
+
+  it("emits monthly dates in ascending order when a date is toggled", () => {
+    const onChange = vi.fn();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root?.render(createElement(RecurringScheduleEditor, {
+      value: { ...defaultRecurringSchedule(), mode: "monthly", monthDays: [15, 1] }, onChange,
+    })));
+    const group = container.querySelector('[role="group"][aria-label="매월 날짜"]')!;
+    const day = [...group.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === "5")!;
+    flushSync(() => day.click());
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ monthDays: [1, 5, 15] }));
+    flushSync(() => root?.render(createElement(RecurringScheduleEditor, {
+      value: { ...defaultRecurringSchedule(), mode: "weekly" }, onChange,
+    })));
+    const monday = [...container.querySelectorAll<HTMLButtonElement>("button")].find(item => item.textContent === "월")!;
+    expect(monday.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("registers, edits, pauses, resumes, refreshes, and opens the durable run session", async () => {

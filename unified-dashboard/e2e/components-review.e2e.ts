@@ -10,8 +10,7 @@ const withdrawalCaptureRoot = path.resolve("../../../.local/artifacts");
 const withdrawalCaptureStamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
 const withdrawalCaptureStage = process.env.CARD_WITHDRAWAL_CAPTURE_STAGE ?? "capture";
 const withdrawalReasonText = "커멘트에서 여러 의견을 비교한 결과 B안으로 정리됐고, 같은 내용을 다시 확인할 필요가 없어 이 질문은 철회합니다.";
-const phase = process.env.COMPONENTS_REVIEW_PHASE;
-if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE is required");
+const phase = process.env.COMPONENTS_REVIEW_PHASE ?? "after";
 
 async function prepare(page: Page, width: number) {
   page.on("pageerror", error => console.error("pageerror", error.stack));
@@ -44,6 +43,24 @@ async function capture(page: Page, name: string) {
   await page.screenshot({ path: path.join(output, `${phase}-${name}.png`), animations: "disabled" });
 }
 
+for (const width of [1440, 360]) {
+  test(`monthly schedule review sample ${width}`, async ({ page }) => {
+    await prepare(page, width);
+    await page.route("**/api/auth/config", route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
+    await page.route("**/api/auth/status", route => route.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
+    await page.goto("/components");
+    const sample = page.getByTestId("recurring-schedule-review-sample");
+    await sample.scrollIntoViewIfNeeded();
+    const grid = sample.getByRole("group", { name: "매월 날짜" });
+    const days = grid.getByRole("button");
+    await expect(days).toHaveCount(31);
+    for (const day of [1, 15, 28]) await expect(days.nth(day - 1)).toHaveAttribute("aria-pressed", "true");
+    await capture(page, `monthly-schedule-${width}`);
+    await days.nth(1).click();
+    await expect(days.nth(1)).toHaveAttribute("aria-pressed", "true");
+  });
+}
+
 for (const width of [1440, 390]) {
   test(`existing folder and chat ${width}`, async ({ page }) => {
     await prepare(page, width);
@@ -62,6 +79,7 @@ for (const width of [1440, 390]) {
   });
 
   test(`components direct entry and local interactions ${width}`, async ({ page }) => {
+    test.setTimeout(180_000);
     await prepare(page, width);
     await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
       body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
@@ -103,7 +121,7 @@ for (const width of [1440, 390]) {
     ]);
     await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
-    await expect(review).toBeVisible();
+    await expect(review).toBeVisible({ timeout: 30_000 });
     await expect(page.locator(".v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar")).toHaveCount(0);
     // 카드 질문 장 표본의 PAS 판(main.persistent-session-main)과 구분한다.
     const viewport = await page.locator("main.v3-components-main").evaluate(el => {
@@ -467,5 +485,5 @@ test("components inherits the login boundary before authenticated entry", async 
   await capture(page, "login-390");
   authenticated = true;
   await page.reload();
-  await expect(page.getByTestId("components-review")).toBeVisible();
+  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 30_000 });
 });

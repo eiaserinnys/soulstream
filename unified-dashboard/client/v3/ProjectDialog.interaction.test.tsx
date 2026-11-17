@@ -109,8 +109,11 @@ describe("ProjectDialog shared form", () => {
     render({ mode: "create", parentFolderId: null, parentName: null }, { onSaveContext, onCreateIdentity: vi.fn().mockResolvedValue({ id: "new", name: "이름" }) });
     change(document.body.querySelector('input[aria-label="폴더 이름"]')!, "이름");
     flushSync(() => button("＋ 기본 에이전트").click());
-    const node = document.body.querySelector('select[aria-label="기본 실행 노드"]')!;
-    change(node, "sample-node");
+    flushSync(() => document.body.querySelector<HTMLButtonElement>('button[aria-label="기본 실행 노드"]')!.click());
+    await vi.waitFor(() => expect([...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].some(item => item.textContent?.trim() === "sample-node")).toBe(true));
+    const item = [...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].find(option => option.textContent?.trim() === "sample-node")!;
+    flushSync(() => item.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+    flushSync(() => item.click());
     flushSync(() => button("취소").click());
     expect(document.body.textContent).not.toContain("기본 실행 환경 편집");
     flushSync(() => button("＋ 기본 에이전트").click());

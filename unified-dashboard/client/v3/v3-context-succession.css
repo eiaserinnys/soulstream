@@ -92,8 +92,7 @@
   padding: 10px;
 }
 
-.v3-context-panel > input,
-.v3-succession-assignment select {
+.v3-context-panel > input {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -104,8 +103,7 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-context-panel input:focus-visible,
-.v3-succession-assignment select:focus-visible {
+.v3-context-panel input:focus-visible {
   border-color: var(--info);
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);

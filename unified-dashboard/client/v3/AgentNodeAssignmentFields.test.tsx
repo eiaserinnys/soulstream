@@ -148,6 +148,25 @@ describe("AgentNodeAssignmentFields", () => {
     expect(container.textContent).not.toContain("실행");
   });
 
+  it("uses the catalog trigger for nodes and preserves an unavailable current selection", async () => {
+    const onNodeIdChange = vi.fn();
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("model-presets") ? presetResponse([]) : response([])));
+    flushSync(() => root.render(createElement(AgentNodeAssignmentFields, {
+      nodeId: "offline-node", agentId: "", modelPreset: "", presentation: "session",
+      onNodeIdChange, onAgentIdChange: vi.fn(), onModelPresetChange: vi.fn(),
+    })));
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="노드 선택"]');
+    expect(trigger?.textContent).toContain("offline-node");
+    trigger!.click();
+    const items = await waitForSelectItem("node-b");
+    expect([...document.body.querySelectorAll('[data-slot="select-item"]')].map(item => item.textContent?.trim()))
+      .toEqual(["미지정", "offline-node", "node-a", "node-b"]);
+    flushSync(() => items.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+    flushSync(() => items.click());
+    await waitFor(() => expect(onNodeIdChange).toHaveBeenCalledWith("node-b"));
+  });
+
   it("does not write an empty node over a caller-managed persisted selection", async () => {
     const onNodeIdChange = vi.fn();
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) =>

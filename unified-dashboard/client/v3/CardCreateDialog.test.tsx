@@ -51,7 +51,7 @@ it("locks an uncertain submission and replays the same snapshot after a lost res
  await act(async()=>{reject(new Error('응답 손실'));await Promise.resolve();});
  expect(title.disabled).toBe(true);
  expect(document.querySelector<HTMLTextAreaElement>('[aria-label="요청 원문"]')!.disabled).toBe(true);
- expect(document.querySelector<HTMLSelectElement>('[aria-label="노드 선택"]')!.disabled).toBe(true);
+ expect(document.querySelector<HTMLButtonElement>('[aria-label="노드 선택"]')!.disabled).toBe(true);
  expect(document.querySelector<HTMLButtonElement>('[aria-label="폴더 선택"]')!.disabled).toBe(true);
  expect(document.querySelector<HTMLInputElement>('input[type="file"]')!.matches(':disabled')).toBe(true);
  expect(document.querySelector<HTMLButtonElement>('[aria-label="Remove file"]')!.matches(':disabled')).toBe(true);
@@ -87,8 +87,12 @@ async function mountCard(onSave: ReturnType<typeof vi.fn>) {
  const onClose=vi.fn(),onCreated=vi.fn();
  const upload={files:[{id:'file',file:new File(['내용'],'자료.txt'),path:'/uploaded',status:'success'}],isReady:true,isUploading:false,addFiles:vi.fn(),removeFile:vi.fn(),cancel:vi.fn(),resetLocal:vi.fn(),uploadedPaths:['/uploaded']} as any;
  await act(()=>root.render(<QueryClientProvider client={new QueryClient()}><CardCreateDialog folders={[{id:'f',name:'폴더'} as any]} initialFolderId="f" assignment={dialoguesAssignment} uploadController={upload} onSave={onSave} onClose={onClose} onCreated={onCreated}/></QueryClientProvider>));
- const node=document.querySelector<HTMLSelectElement>('[aria-label="노드 선택"]')!;
- await act(()=>{node.value='sample-node';node.dispatchEvent(new Event('change',{bubbles:true}));});
+ const node=document.querySelector<HTMLButtonElement>('[aria-label="노드 선택"]')!;
+ await act(async()=>{node.click();await new Promise(resolve=>setTimeout(resolve,30));});
+ await vi.waitFor(()=>expect([...document.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].some(item=>item.textContent?.trim()==='sample-node')).toBe(true));
+ const item=[...document.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].find(option=>option.textContent?.trim()==='sample-node')!;
+ await act(()=>item.dispatchEvent(new MouseEvent('mousemove',{bubbles:true})));
+ await act(()=>item.click());
  const title=document.querySelector<HTMLInputElement>('[aria-label="카드 제목"]')!;
  const setTitle=async(value:string)=>act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(title,value);title.dispatchEvent(new Event('input',{bubbles:true}));});
  const save=document.querySelector<HTMLButtonElement>('[aria-label="카드 저장"]')!;

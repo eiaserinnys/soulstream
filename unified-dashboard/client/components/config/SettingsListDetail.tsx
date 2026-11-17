@@ -14,7 +14,7 @@ export function SettingsListDetailFrame({ testId, list, children }: {
   return (
     <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
       <aside className="min-h-0 rounded border border-border bg-muted/20 p-3">{list}</aside>
-      <div className="min-h-0 space-y-4 overflow-y-auto pr-1">{children}</div>
+      <div className="min-h-0 space-y-4 lg:-mr-1 lg:overflow-y-auto lg:pr-1">{children}</div>
     </section>
   );
 }
