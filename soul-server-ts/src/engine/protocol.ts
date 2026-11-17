@@ -170,6 +170,11 @@ export interface EngineExecuteParams {
    */
   systemPrompt?: string;
   /**
+   * Claude SDK에 넘길 시스템 프롬프트 블록. `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 앞
+   * 블록만 세션 사이 캐시된다. 다른 백엔드는 무시한다.
+   */
+  claudeSystemPromptBlocks?: string[];
+  /**
    * agents.yaml의 `allowed_tools` — Claude SDK `ClaudeAgentOptions.allowedTools`로 forward.
    * Codex 어댑터는 무시 (Codex CLI에 turn-level 권한 표면 없음).
    */

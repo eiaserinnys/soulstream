@@ -116,7 +116,8 @@ describe("fetchCogitoContextItem", () => {
 
     const item = await fetchCogitoContextItem(makeConfig(), silentLogger);
 
-    expect(item.key).toBe("cogito_context");
+    expect(item).not.toBeNull();
+    expect(item!.key).toBe("cogito_context");
     expect(fetchMock).toHaveBeenCalledWith(
       "https://orch.test/cogito/briefs",
       expect.objectContaining({
@@ -125,7 +126,7 @@ describe("fetchCogitoContextItem", () => {
       }),
     );
 
-    const content = item.content as Record<string, unknown>;
+    const content = item!.content as Record<string, unknown>;
     expect(content.status).toBe("partial");
     expect(content.nodes).toEqual([
       expect.objectContaining({
@@ -169,20 +170,30 @@ describe("fetchCogitoContextItem", () => {
     expect(serialized).not.toContain("SECRET_TOKEN");
   });
 
-  it("turns fetch failure into an unavailable warning context", async () => {
+  it("omits the block when the aggregate lookup fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("raw-secret network down")));
 
     const item = await fetchCogitoContextItem(makeConfig(), silentLogger);
 
-    const content = item.content as Record<string, unknown>;
-    expect(content.status).toBe("unavailable");
-    expect(content.warnings).toEqual([
-      {
-        code: "cogito_context_unavailable",
-        message: "cogito cluster brief unavailable; startup continues without live cluster context",
-      },
-    ]);
-    expect(JSON.stringify(content)).not.toContain("raw-secret");
+    expect(item).toBeNull();
+  });
+
+  it("omits the block when the aggregate has no nodes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({
+          status: "ok",
+          checked_at: "2026-05-25T12:00:00.000Z",
+          nodes: [],
+          warnings: [],
+        }), { status: 200 }),
+      ),
+    );
+
+    const item = await fetchCogitoContextItem(makeConfig(), silentLogger);
+
+    expect(item).toBeNull();
   });
 
   it("aborts slow aggregate lookup at the configured timeout", async () => {
@@ -203,8 +214,7 @@ describe("fetchCogitoContextItem", () => {
     await vi.advanceTimersByTimeAsync(6);
     const item = await pending;
 
-    const content = item.content as Record<string, unknown>;
-    expect(content.status).toBe("unavailable");
+    expect(item).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -237,7 +247,8 @@ describe("fetchCogitoContextItem", () => {
       silentLogger,
     );
 
-    const content = item.content as {
+    expect(item).not.toBeNull();
+    const content = item!.content as {
       source: { omitted_nodes: number };
       nodes: Array<{ capabilities: string[]; omitted_capabilities: number }>;
       warnings: Array<{ code: string }>;
@@ -278,20 +289,22 @@ describe("fetchCogitoContextItem", () => {
     );
 
     const item = await fetchCogitoContextItem(
-      makeConfig({ maxNodes: 5, maxChars: 900 }),
+      makeConfig({ maxNodes: 5, maxChars: 1600 }),
       silentLogger,
     );
 
-    const content = item.content as {
+    expect(item).not.toBeNull();
+    const content = item!.content as {
       nodes: Array<unknown>;
       warnings: Array<{ code: string }>;
     };
+    expect(content.nodes.length).toBeGreaterThan(0);
     expect(content.nodes.length).toBeLessThan(5);
     expect(content.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "cogito_context_truncated" }),
       ]),
     );
-    expect(JSON.stringify(content, null, 2).length).toBeLessThanOrEqual(900);
+    expect(JSON.stringify(content, null, 2).length).toBeLessThanOrEqual(1600);
   });
 });

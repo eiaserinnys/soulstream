@@ -62,10 +62,11 @@ interface StartupNodeContext {
 export async function fetchCogitoContextItem(
   cfg: CogitoContextConfig,
   logger: Logger,
-): Promise<ContextItem> {
+): Promise<ContextItem | null> {
   try {
     const aggregate = await fetchAggregate(cfg);
     const content = buildSafeStartupContext(aggregate, cfg);
+    if (content.status === "unavailable" || content.nodes.length === 0) return null;
     return {
       key: "cogito_context",
       label: "Cogito cluster startup context",
@@ -73,11 +74,7 @@ export async function fetchCogitoContextItem(
     };
   } catch (err) {
     logger.warn({ err }, "cogito startup context unavailable");
-    return {
-      key: "cogito_context",
-      label: "Cogito cluster startup context",
-      content: buildUnavailableContext(cfg),
-    };
+    return null;
   }
 }
 
@@ -100,32 +97,6 @@ async function fetchAggregate(cfg: CogitoContextConfig): Promise<unknown> {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function buildUnavailableContext(cfg: CogitoContextConfig): StartupCogitoContext {
-  const checkedAt = new Date().toISOString();
-  return {
-    schema_version: CONTEXT_SCHEMA_VERSION,
-    status: "unavailable",
-    checked_at: checkedAt,
-    summary: "Cogito cluster brief unavailable. Startup continues.",
-    source: {
-      type: "orchestrator",
-      endpoint: COGITO_BRIEFS_PATH,
-      timeout_ms: cfg.timeoutMs,
-      node_count: 0,
-      included_nodes: 0,
-      omitted_nodes: 0,
-    },
-    nodes: [],
-    warnings: [
-      {
-        code: "cogito_context_unavailable",
-        message:
-          "cogito cluster brief unavailable; startup continues without live cluster context",
-      },
-    ],
-  };
 }
 
 function buildSafeStartupContext(

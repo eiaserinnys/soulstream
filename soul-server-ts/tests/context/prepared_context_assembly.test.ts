@@ -1,3 +1,4 @@
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
@@ -25,7 +26,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function assemble(task: Task) {
+function assemble(
+  task: Task,
+  overrides: Partial<Parameters<typeof assemblePreparedContext>[0]> = {},
+) {
   return assemblePreparedContext({
     nodeId: "node-1",
     task,
@@ -43,8 +47,57 @@ function assemble(task: Task) {
     generationCheckpointItem: null,
     nativeSessionId: null,
     cogitoContextItem: null,
+    ...overrides,
   });
 }
+
+describe("assemblePreparedContext claude system prompt blocks", () => {
+  it("puts the cache boundary between the agent atom prefix and folder/task prompts", () => {
+    const prepared = assemble(
+      makeTask({ systemPrompt: "task system" }),
+      { agentAtomMarkdown: "# agent rules", folderPrompt: "folder guidance" },
+    );
+
+    expect(prepared.claudeSystemPromptBlocks).toEqual([
+      "# agent rules",
+      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+      "folder guidance",
+      "task system",
+    ]);
+    expect(prepared.effectiveSystemPrompt).toBe(
+      "# agent rules\n\nfolder guidance\n\ntask system",
+    );
+  });
+
+  it("keeps the old single-block shape when only the agent atom exists", () => {
+    const prepared = assemble(makeTask(), { agentAtomMarkdown: "# agent rules" });
+
+    expect(prepared.claudeSystemPromptBlocks).toEqual([
+      "# agent rules",
+      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    ]);
+    expect(prepared.effectiveSystemPrompt).toBe("# agent rules");
+  });
+
+  it("leaves the static prefix empty when no agent atom exists", () => {
+    const prepared = assemble(makeTask({ systemPrompt: "task system" }), {
+      folderPrompt: "folder guidance",
+    });
+
+    expect(prepared.claudeSystemPromptBlocks).toEqual([
+      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+      "folder guidance",
+      "task system",
+    ]);
+  });
+
+  it("omits the blocks when every piece is empty", () => {
+    const prepared = assemble(makeTask());
+
+    expect(prepared.claudeSystemPromptBlocks).toBeUndefined();
+    expect(prepared.effectiveSystemPrompt).toBeUndefined();
+  });
+});
 
 describe("assemblePreparedContext full re-injection", () => {
   it("does not repeat the previous-turn system abort notice", () => {

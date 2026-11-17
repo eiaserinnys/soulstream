@@ -76,6 +76,8 @@ export interface FollowupContextOptions {
 
 export interface FollowupContext {
   effectiveSystemPrompt?: string;
+  /** Claude 전용 캐시 경계 블록. 전체 문맥 재주입 턴에만 채운다. */
+  claudeSystemPromptBlocks?: string[];
   contextItems: ContextItem[];
   inputMaterialBreakdown?: PreparedContext["inputMaterialBreakdown"];
   /** 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신. 없으면 그대로 둔다. */
@@ -119,6 +121,9 @@ export class ExecutionContextBuilder {
       const ctx = await this.build(taskForContext, agent, options.inputId);
       return {
         effectiveSystemPrompt: ctx.effectiveSystemPrompt,
+        ...(ctx.claudeSystemPromptBlocks
+          ? { claudeSystemPromptBlocks: ctx.claudeSystemPromptBlocks }
+          : {}),
         contextItems: ctx.combinedContextItems,
         inputMaterialBreakdown: ctx.inputMaterialBreakdown,
         ...(ctx.runningSessionsMarkerUpdate

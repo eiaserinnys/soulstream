@@ -2,6 +2,7 @@
  * ExecutionContextBuilder 단위 회귀 — Python `service/execution_context_builder.py` 정본 정합.
  */
 
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import type { Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -359,7 +360,11 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       return new Response(JSON.stringify({
         status: "ok",
         checked_at: "2026-07-13T00:00:00Z",
-        nodes: [],
+        nodes: [{
+          node_id: "node-A",
+          status: "ok",
+          data: { service: "soul-server-ts", status: "ok" },
+        }],
         warnings: [],
       }), { status: 200 });
     }) as typeof fetch;
@@ -454,6 +459,12 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       expect(ctx.effectiveSystemPrompt).toContain("# agent identity");
       expect(ctx.effectiveSystemPrompt).toContain("task system");
       expect(ctx.effectiveSystemPrompt).toContain("legacy folder prompt");
+      expect(ctx.claudeSystemPromptBlocks).toEqual([
+        expect.stringContaining("# agent identity"),
+        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+        "legacy folder prompt",
+        "task system",
+      ]);
       expect(keys).toContain("page_context");
       expect(keys).toContain("running_sessions");
       expect(keys).toContain("cogito_context");
@@ -1478,7 +1489,7 @@ describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
     );
   });
 
-  it("cogito 조회 실패 → warning context로 격리하고 build는 계속", async () => {
+  it("cogito 조회 실패 → 블록을 싣지 않고 build는 계속", async () => {
     vi.mocked(globalThis.fetch).mockRejectedValueOnce(new Error("network"));
     const cb = makeBuilder({}, undefined, false, makeCogitoConfig());
 
@@ -1486,19 +1497,8 @@ describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
 
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",
-      "cogito_context",
       "assigned_cards",
     ]);
-    expect(ctx.combinedContextItems[1]?.content).toMatchObject({
-      status: "unavailable",
-      warnings: [
-        {
-          code: "cogito_context_unavailable",
-          message:
-            "cogito cluster brief unavailable; startup continues without live cluster context",
-        },
-      ],
-    });
   });
 });
 
@@ -2791,7 +2791,11 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
       return new Response(JSON.stringify({
         status: "ok",
         checked_at: "2026-07-13T00:00:00Z",
-        nodes: [],
+        nodes: [{
+          node_id: "node-A",
+          status: "ok",
+          data: { service: "soul-server-ts", status: "ok" },
+        }],
         warnings: [],
       }), { status: 200 });
     }) as typeof fetch;

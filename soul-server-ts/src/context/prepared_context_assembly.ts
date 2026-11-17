@@ -10,7 +10,10 @@ import {
   type InputMaterialTextSegment,
 } from "./input_material_parts.js";
 import type { ContextManifest } from "./compiler/index.js";
-import { composeEffectiveSystemPrompt } from "./context_builder_helpers.js";
+import {
+  composeClaudeSystemPromptBlocks,
+  composeEffectiveSystemPrompt,
+} from "./context_builder_helpers.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 import { withoutSessionContextSourceMarkers } from "./session_context_sources.js";
 import type { PrimarySessionFolderContext } from "./session_folder_context.js";
@@ -22,6 +25,12 @@ import type {
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
   effectiveSystemPrompt?: string;
+  /**
+   * Claude 백엔드에만 넘기는 시스템 프롬프트 블록. 정적 접두(에이전트 atom)와
+   * 동적 꼬리(폴더 안내문, task systemPrompt)를 SYSTEM_PROMPT_DYNAMIC_BOUNDARY로
+   * 가른다. 다른 백엔드와 재시작 복구는 effectiveSystemPrompt 문자열을 그대로 쓴다.
+   */
+  claudeSystemPromptBlocks?: string[];
   /** soulstream_item + cogito_context + atom_context + task.contextItems. */
   combinedContextItems: ContextItem[];
   folderName?: string;
@@ -73,11 +82,13 @@ export interface PreparedContextAssemblyInput {
 }
 
 export function assemblePreparedContext(args: PreparedContextAssemblyInput): PreparedContext {
-  const effectiveSystemPrompt = composeEffectiveSystemPrompt({
+  const effectiveSystemPromptArgs = {
     agentAtomMarkdown: args.agentAtomMarkdown,
     folderPrompt: args.folderPrompt,
     taskSystemPrompt: args.task.systemPrompt,
-  });
+  };
+  const effectiveSystemPrompt = composeEffectiveSystemPrompt(effectiveSystemPromptArgs);
+  const claudeSystemPromptBlocks = composeClaudeSystemPromptBlocks(effectiveSystemPromptArgs);
   const systemSegments: InputMaterialTextSegment[] = [];
   if (args.agentAtomMarkdown) {
     systemSegments.push({
@@ -182,6 +193,7 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
 
   return {
     effectiveSystemPrompt,
+    ...(claudeSystemPromptBlocks ? { claudeSystemPromptBlocks } : {}),
     combinedContextItems,
     folderName: args.folderName,
     workingDir: args.workingDir,

@@ -1,5 +1,6 @@
 import { type as getOsType } from "node:os";
 
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
@@ -105,6 +106,27 @@ export function composeEffectiveSystemPrompt(args: {
   return [args.agentAtomMarkdown, args.folderPrompt, args.taskSystemPrompt]
     .filter((part): part is string => Boolean(part))
     .join("\n\n") || undefined;
+}
+
+/**
+ * Claude SDK에 넘길 시스템 프롬프트 블록. 에이전트 atom 텍스트만 정적 접두로 두고
+ * 폴더 안내문과 task systemPrompt는 동적 경계 뒤로 보내 세션 사이 캐시를 나눠 쓴다.
+ * 빈 조각은 빼고, 모두 비면 블록 자체를 만들지 않는다.
+ */
+export function composeClaudeSystemPromptBlocks(args: {
+  agentAtomMarkdown: string | null;
+  folderPrompt?: string;
+  taskSystemPrompt?: string;
+}): string[] | undefined {
+  const staticPrefix = args.agentAtomMarkdown;
+  const dynamicParts = [args.folderPrompt, args.taskSystemPrompt]
+    .filter((part): part is string => Boolean(part));
+  if (!staticPrefix && dynamicParts.length === 0) return undefined;
+  return [
+    ...(staticPrefix ? [staticPrefix] : []),
+    SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    ...dynamicParts,
+  ];
 }
 
 export function resolveProfileRuntimeSettings(
