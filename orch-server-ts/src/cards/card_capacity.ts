@@ -19,6 +19,8 @@ export const ACTIVE_SESSION_STATUSES: readonly string[] = [
 /** Admission reservations and dispatched executions share one session identity budget. */
 export async function cardCapacitySessions(sql: RepositorySql) {
   // 활성 카드·세션에서 시작해 idx_folder_ops_target으로 원장을 찾고, 세션은 LATERAL로 한 줄씩 본다.
+  // dispatch_card의 payload 세션은 recordDispatch가 이 카드로 새로 만들어 등록한 세션이라 card_id가 대상 카드와
+  // 같다. 등록 전이거나 지워졌으면 세션 없음 분기가 받는다. 그래서 세션의 card_id로 원장을 찾아도 결과가 같다.
   // OFFSET 0은 플래너가 sessions 전체를 해시에 올리는 Hash Left Join으로 돌아가는 것을 막는다.
   return sql<{session_id:string;node_id:string}[]>`WITH act AS (
     SELECT id AS card_id FROM cards WHERE status='running'
