@@ -179,12 +179,27 @@ jobs:
       PGPASSWORD: soulstream_schema_secret
       PGDATABASE: release_executor_test_db
       PGPORT: '54329'
-      SOULSTREAM_SOURCE_URL: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
-      SOULSTREAM_SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Pin installer source
+        shell: pwsh
+        run: |
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Could not identify checkout commit" }
+          $repository = (Join-Path $env:RUNNER_TEMP "soulstream-pinned.git").Replace('\', '/')
+          git init --bare $repository
+          if ($LASTEXITCODE -ne 0) { throw "Could not initialize pinned repository" }
+          git push $repository "${commit}:refs/heads/ci-pinned"
+          if ($LASTEXITCODE -ne 0) { throw "Could not push pinned commit" }
+          "SOULSTREAM_SOURCE_URL=$repository" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SOULSTREAM_SOURCE_BRANCH=ci-pinned" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SOULSTREAM_PINNED_COMMIT=$commit" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Pinned commit: $commit"
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v6
@@ -367,6 +382,30 @@ jobs:
             }
           } finally {
             Stop-Process -Id $stubProcess.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Verify installed source commit
+        shell: pwsh
+        run: |
+          $installedCommit = git -C "C:\soulstream-test\soulstream" rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Could not identify installed source commit" }
+          Write-Host "Pinned commit: $env:SOULSTREAM_PINNED_COMMIT"
+          Write-Host "Installed HEAD: $installedCommit"
+          $logDir = "C:\soulstream-test\logs"
+          if (Test-Path $logDir) {
+            $startupUpdates = Get-ChildItem -LiteralPath $logDir -File -Recurse |
+              Where-Object { $_.Name -match "haniel" } |
+              Select-String -Pattern "startup.*update|update.*startup"
+            if ($startupUpdates) {
+              $startupUpdates | ForEach-Object { Write-Host $_.Line }
+            } else {
+              Write-Host "Haniel startup update: no matching log lines"
+            }
+          } else {
+            Write-Host "Haniel startup update: log directory not found"
+          }
+          if ($installedCommit -ne $env:SOULSTREAM_PINNED_COMMIT) {
+            throw "Installed source commit does not match pinned commit"
           }
 
       - name: Dump service logs on failure
