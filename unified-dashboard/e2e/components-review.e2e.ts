@@ -216,15 +216,7 @@ for (const width of [1440, 390]) {
     expect(multiline.send!.h).toBe(initial.send!.h);
     expect(multiline.send!.right).toBeLessThanOrEqual(multiline.inputSection!.right);
     expect(multiline.composer!.w).toBe(multiline.inputSection!.w);
-    // 이 표본의 숨은 파일 입력은 change 처리에서 value를 비우면서 FileList까지 비운 뒤
-    // React가 상태 갱신을 처리해 첨부가 사라진다(표본 쪽 문제라 이 카드 범위 밖이다).
-    // 같은 CardComposer가 지원하는 끌어놓기 경로로 로컬 첨부 표시를 검수한다.
-    const transfer = await page.evaluateHandle(() => {
-      const data = new DataTransfer();
-      data.items.add(new File(["샘플 첨부"], "샘플.txt", { type: "text/plain" }));
-      return data;
-    });
-    await handoffSample.locator('[data-testid="card-composer"]').dispatchEvent("drop", { dataTransfer: transfer });
+    await handoffSample.locator("input[type=file]").setInputFiles({ name: "샘플.txt", mimeType: "text/plain", buffer: Buffer.from("샘플 첨부") });
     await expect(handoffSample.getByTitle("샘플.txt")).toBeVisible();
     await handoffSample.getByRole("button", { name: "샘플 전송", exact: true }).click();
     await expect(input).toHaveValue("");

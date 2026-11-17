@@ -265,6 +265,7 @@ test("opens the exact session and event after auth, follows a clicked search res
     }).toBe("/?keep=1#return");
     await expect(page.locator(".v3-chat-pane:visible")).toContainText("시각 QA 순회");
     await focusRingAppeared;
+    await expect(page.locator('[data-tree-node-id$="-42"]')).toBeInViewport();
     await expect(page.locator(".v3-chat-pane:visible")).toContainText(
       `히스토리 ${sessionId} #42`,
     );
@@ -298,6 +299,7 @@ test("opens the exact session and event after auth, follows a clicked search res
     await sessionResult.click();
 
     await expect(page.locator('[data-tree-node-id$="-7"].chat-focus-ring')).toBeVisible();
+    await expect(page.locator('[data-tree-node-id$="-7"]')).toBeInViewport();
     await expect(page.locator(".v3-chat-pane:visible")).toContainText(
       `히스토리 ${sessionId} #7`,
     );
