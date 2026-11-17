@@ -264,7 +264,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
-    env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
+    env, logger, mcpConfigService, agentRegistry, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     claudeAccounts,

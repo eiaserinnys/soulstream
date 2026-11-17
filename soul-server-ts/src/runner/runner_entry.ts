@@ -76,11 +76,10 @@ async function runAntigravityMcpProxyMode(): Promise<void> {
 async function runSessionRunner(): Promise<void> {
   const configPath = readConfigArgument(process.argv.slice(2));
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-  const config = parseRunnerChildConfig(parsed);
-  const servers = consumeRunnerMcpSecrets(config.resolvedMcpServers ?? [], config.mcpSecretRefs ?? [], process.env);
-  if (config.resolvedMcpServers) config.resolvedMcpServers = servers;
+  const parsedConfig = parseRunnerChildConfig(parsed);
+  const config = consumeRunnerMcpSecrets(parsedConfig, parsedConfig.mcpSecretRefs ?? [], process.env);
   registerSecretValueSource("runner", () => [
-    ...collectMcpServerSecretValues(servers),
+    ...collectMcpServerSecretValues(config.resolvedMcpServers ?? []),
     ...collectEnvSecretValues(process.env),
   ]);
   const logger = pino({

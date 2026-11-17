@@ -41,6 +41,9 @@ const McpSecretRefSchema = z.object({
   field: z.enum(["headers", "env"]),
   key: z.string().min(1),
   env: z.string().min(1),
+  location: z.literal("agent").optional(),
+  agentIndex: z.number().int().nonnegative().optional(),
+  serverIndex: z.number().int().nonnegative().optional(),
 });
 
 const RunnerChildConfigFields = {
