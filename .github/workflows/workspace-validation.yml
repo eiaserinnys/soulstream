@@ -13,6 +13,9 @@ on:
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
       - 'chrome-extension/**'
+      - 'scripts/tests/**'
+      - 'scripts/verify-workspace-bundle.test.mjs'
+      - 'deploy/haniel/test_build_core_darwin.py'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
       - '.github/workflows/**'
@@ -24,6 +27,9 @@ on:
       - 'soul-server-ts/**'
       - 'orch-server-ts/**'
       - 'chrome-extension/**'
+      - 'scripts/tests/**'
+      - 'scripts/verify-workspace-bundle.test.mjs'
+      - 'deploy/haniel/test_build_core_darwin.py'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
       - '.github/workflows/**'
@@ -59,6 +65,21 @@ jobs:
           - name: chat-ui contract tests
             package: packages/chat-ui
             kind: unit
+          - name: chrome-extension tests
+            package: chrome-extension
+            kind: unit
+          - name: soul-desktop tests
+            package: soul-desktop
+            kind: unit
+          - name: search-contract tests
+            package: packages/search-contract
+            kind: unit
+          - name: script tests
+            package: scripts
+            kind: unit
+          - name: Haniel build tests
+            package: deploy/haniel
+            kind: python
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,6 +95,16 @@ jobs:
           corepack enable
           corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
           corepack pnpm install --frozen-lockfile
+
+      - name: Setup Python 3.11
+        if: matrix.kind == 'python'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install Python test dependencies
+        if: matrix.kind == 'python'
+        run: python -m pip install -r packages/db-schema/tests/requirements.txt
 
       - name: Run package tests
         shell: bash
@@ -103,6 +134,14 @@ jobs:
           elif [[ "${{ matrix.package }}" == "unified-dashboard" ]]; then
             corepack pnpm --dir unified-dashboard exec vitest run \
               --config vitest.config.ts --minWorkers=1 --maxWorkers=2
+          elif [[ "${{ matrix.package }}" == "chrome-extension" || "${{ matrix.package }}" == "soul-desktop" ]]; then
+            corepack pnpm --dir "${{ matrix.package }}" exec vitest run --minWorkers=1 --maxWorkers=2 --testTimeout=60000
+          elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
+            corepack pnpm --dir packages/search-contract test
+          elif [[ "${{ matrix.package }}" == "scripts" ]]; then
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs
+          elif [[ "${{ matrix.kind }}" == "python" ]]; then
+            python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
             corepack pnpm --dir packages/chat-ui exec vitest run \
               --minWorkers=1 --maxWorkers=2 --testTimeout=60000

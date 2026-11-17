@@ -87,6 +87,20 @@ def test_database_url() -> Iterator[str]:
         yield external_url
         return
 
+    try:
+        docker = subprocess.run(
+            ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=5, check=False,
+        )
+        docker_available = docker.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        docker_available = False
+    if not docker_available:
+        message = "PostgreSQL unavailable: set TEST_DATABASE_URL or start Docker"
+        if os.environ.get("CI", "").strip().lower() not in ("", "0", "false"):
+            pytest.fail(message)
+        pytest.skip(message)
+
     container_id = subprocess.check_output(
         [
             "docker",

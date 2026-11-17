@@ -35,3 +35,12 @@ The release manifest uses Haniel's `soulstream.database-release.v1` result contr
 The worker manifest has no migration phase. Its `recovery.strategy: rollback` describes Haniel's service/code rollback; the configured `recovery.command` repeats the worker health probe and does not restore database contents. Keep database rollback and recovery in the central database release contract.
 
 The production size snapshot and guarded apply procedure for event-search covering-index migrations 101/102 are recorded in [`event-search-covering-index-apply.md`](../../docs/event-search-covering-index-apply.md). The snapshot is time-bounded; the database owner must remeasure disk and WAL headroom before applying.
+
+## Tests
+
+Install `tests/requirements.txt` and run `python -m pytest packages/db-schema/tests`.
+Set `TEST_DATABASE_URL` to an empty PostgreSQL test database (the database name must
+contain `test`), or use Docker. Without either, local DB tests are skipped and CI fails.
+The suite compares fresh-schema functions to the latest migration definitions and
+rejects duplicate definitions in `schema.sql`. For a standalone check, run
+`python packages/db-schema/scripts/check_function_drift.py --database-url "$TEST_DATABASE_URL"`.
