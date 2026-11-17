@@ -106,6 +106,8 @@ describe("CI maintenance contract", () => {
       ?.map((step) => step.run ?? "")
       .join("\n") ?? "";
     expect(commands).toContain("corepack pnpm --filter '*' --recursive --if-present typecheck");
+    expect(commands).toContain("corepack pnpm --dir orch-server-ts build");
+    expect(commands).toContain("corepack pnpm --dir soul-server-ts build");
     expect(commands).toContain("corepack pnpm --dir soul-desktop build");
     expect(commands).toContain("corepack pnpm --dir unified-dashboard test:e2e:smoke");
 

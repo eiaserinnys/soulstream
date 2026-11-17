@@ -194,6 +194,16 @@ jobs:
       - name: Typecheck active TypeScript packages
         run: corepack pnpm --filter '*' --recursive --if-present typecheck
 
+      - name: Build orch-server-ts bundle (includes verify:bundle)
+        run: corepack pnpm --dir orch-server-ts build
+
+      - name: Build soul-server-ts bundle (includes verify:bundle)
+        env:
+          SOULSTREAM_NODE_ID: release-test
+          SOULSTREAM_UPSTREAM_URL: ws://127.0.0.1:5200/ws/node
+          EVENT_OUTBOX_DIR: .local/event-outbox
+        run: corepack pnpm --dir soul-server-ts build
+
       - name: Build desktop package
         run: corepack pnpm --dir soul-desktop build
 
