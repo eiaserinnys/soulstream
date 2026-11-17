@@ -1,10 +1,14 @@
 import type { Logger } from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import {
+  registerSecretValueSource,
+  resetSecretMaskerForTests,
+} from "../../src/secret_masker.js";
 import { TaskEngineEventPublisher } from "../../src/task/task_engine_event_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
 import { TransientEventLogAggregator } from
@@ -936,5 +940,75 @@ describe("TaskEngineEventPublisher", () => {
       taskType: "bash",
     });
     expect(task.claudeRuntime?.tasks["task-sync-1"]?.isBackgrounded).not.toBe(true);
+  });
+});
+
+describe("TaskEngineEventPublisher secret masking", () => {
+  afterEach(() => {
+    resetSecretMaskerForTests();
+  });
+
+  it("masks known secret values before persistence and transient broadcast", async () => {
+    registerSecretValueSource("test", () => [
+      { name: "env:TEST_API_KEY", value: "test-secret-publisher-value" },
+    ]);
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "assistant_message",
+      content: "Authorization: Bearer test-secret-publisher-value",
+      timestamp: 1,
+    } as SSEEventPayload);
+
+    expect(deps.enqueueEvent).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        type: "assistant_message",
+        content: "Authorization: Bearer [REDACTED:env:TEST_API_KEY]",
+        timestamp: 1,
+      }),
+      undefined,
+      "registration:sess-1",
+    );
+    expect(JSON.stringify(deps.enqueueEvent.mock.calls))
+      .not.toContain("test-secret-publisher-value");
+    expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
+
+    await publisher.publishEngineEvent(task, {
+      type: "assistant_message",
+      content: "live test-secret-publisher-value",
+      timestamp: 2,
+      _live_only: true,
+    } as SSEEventPayload);
+
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ content: "live [REDACTED:env:TEST_API_KEY]" }),
+    );
+    expect(JSON.stringify(deps.emitEventEnvelope.mock.calls))
+      .not.toContain("test-secret-publisher-value");
+  });
+
+  it("keeps the original event reference and behavior when nothing is masked", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const event = {
+      type: "assistant_message",
+      content: "hello",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.enqueueEvent).toHaveBeenCalledWith(
+      "sess-1",
+      event,
+      undefined,
+      "registration:sess-1",
+    );
+    expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
   });
 });

@@ -162,6 +162,25 @@ export class McpConfigService {
     };
   }
 
+  /**
+   * Resolve every registry server with its environment secret references.
+   *
+   * Servers whose referenced environment variable is unset are skipped so one
+   * broken entry cannot hide the values of the others from the secret masker.
+   */
+  listResolvedRegistryServers(): ResolvedMcpServer[] {
+    const registry = this.readRegistry();
+    const resolved: ResolvedMcpServer[] = [];
+    for (const server of registry.servers) {
+      try {
+        resolved.push(this.resolveRegistryServer(server.id, registry));
+      } catch {
+        // The server cannot resolve its declared secrets; leave it out.
+      }
+    }
+    return resolved;
+  }
+
   listProfiles(): { profiles_path: string; profiles: Array<Record<string, unknown>> } {
     return {
       profiles_path: this.profilesPath,
@@ -476,11 +495,11 @@ function isSecretRef(value: unknown): value is { env: string } {
   return isRecord(value) && typeof value.env === "string";
 }
 
-function isSensitiveKey(key: string): boolean {
+export function isSensitiveKey(key: string): boolean {
   return /authorization|api[_-]?key|token|secret|password|cookie/i.test(key);
 }
 
-function isSensitiveUrlQueryParam(rawName: string): boolean {
+export function isSensitiveUrlQueryParam(rawName: string): boolean {
   const decodedName = decodeUrlQueryParamName(rawName);
   const segments = decodedName
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
