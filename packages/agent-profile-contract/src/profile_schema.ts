@@ -284,5 +284,5 @@ const patchFields = Object.fromEntries(
 export const AgentProfilePatchSchema = z.object({
   id: AgentProfileSchema.shape.id,
   ...patchFields,
-});
+}).strict();
 export type AgentProfilePatch = z.infer<typeof AgentProfilePatchSchema>;
