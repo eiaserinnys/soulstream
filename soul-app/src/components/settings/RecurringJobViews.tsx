@@ -76,6 +76,7 @@ export function RecurringJobsList({
   const styles = useSettingsFormStyles();
   const [jobs, setJobs] = useState<RecurringJobDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const requestRevision = useRef(0);
   useEffect(() => () => { ++requestRevision.current; }, [serverUrl]);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,7 @@ export function RecurringJobsList({
     } catch (cause) {
       if (request === requestRevision.current) setError(errorMessage(cause));
     } finally {
-      if (request === requestRevision.current) setLoading(false);
+      if (request === requestRevision.current) { setLoaded(true); setLoading(false); }
     }
   }, [serverUrl]);
   useEffect(() => { void load(); }, [load, refreshKey]);
@@ -99,9 +100,9 @@ export function RecurringJobsList({
   return (
     <View testID="recurring-jobs-list" style={styles.block}>
       <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" />{!hideCreate ? <Action label="새 작업" onPress={onCreate} /> : null}</SettingsListHeader>
-      {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+      {loading || !loaded ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {!loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
+      {loaded && !loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
       {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? jobDetail(job) : '일시정지됨'} onPress={() => onEdit(job)} />)}
     </View>
   );
@@ -112,11 +113,13 @@ export function RecurringJobEditor({
   jobId,
   onDone,
   onOpenHistory,
+  scrollToError,
 }: {
   serverUrl: string;
   jobId?: string;
   onDone(job: RecurringJobDto | null): void;
   onOpenHistory(jobId: string): void;
+  scrollToError?(): void;
 }) {
   const t = useTokens();
   const styles = useSettingsFormStyles();
@@ -147,7 +150,12 @@ export function RecurringJobEditor({
   const [preview, setPreview] = useState<string[]>([]);
   const [loading, setLoading] = useState(Boolean(jobId));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ message: string; key: number } | null>(null);
+  const errorRevision = useRef(0);
+  const editorScroll = useRef<ScrollView>(null);
+  const showActionError = (message: string) => setActionError({ message, key: ++errorRevision.current });
+  useEffect(() => { setActionError(null); }, [serverUrl, jobId]);
 
   useEffect(() => {
     if (!serverUrl) return;
@@ -166,13 +174,13 @@ export function RecurringJobEditor({
       return true;
     }
     const request = identityRevision.current;
-    setLoading(true); setError(null);
+    setLoading(true); setLoadError(null);
     try {
       const result = await createApiClient(serverUrl).listRecurringJobs(true);
       if (request !== identityRevision.current) return false;
       const found = result.jobs.find((candidate) => candidate.job_id === jobId) ?? null;
       if (!found) {
-        setError('반복 작업을 찾을 수 없습니다.');
+        if (!preserveDraft) setLoadError('반복 작업을 찾을 수 없습니다.');
         setJob(null);
         return false;
       }
@@ -180,7 +188,7 @@ export function RecurringJobEditor({
       if (!preserveDraft) setDraft(savedDraft ?? draftFromJob(found));
       return true;
     } catch (cause) {
-      if (request === identityRevision.current) setError(errorMessage(cause));
+      if (request === identityRevision.current && !preserveDraft) setLoadError(errorMessage(cause));
       return false;
     } finally {
       if (request === identityRevision.current) setLoading(false);
@@ -224,7 +232,7 @@ export function RecurringJobEditor({
   const save = async () => {
     if (!promptDraft.ready || saving) return;
     const request = identityRevision.current;
-    setSaving(true); setError(null);
+    setSaving(true); setActionError(null);
     try {
       const submittedPrompt = promptDraft.value;
       const write = writeFromDraft({ ...draft, prompt: submittedPrompt }, scheduleKind);
@@ -238,16 +246,16 @@ export function RecurringJobEditor({
       if (request !== identityRevision.current) return;
       if (isVersionConflict(cause) && job) {
         const refreshed = await loadExisting({ preserveDraft: true });
-        setError(refreshed
+        showActionError(refreshed
           ? '다른 곳에서 작업이 변경됐습니다. 내 입력은 보존했습니다. 다시 저장하면 그 변경을 내 입력으로 덮어씁니다.'
           : '동시 수정은 감지됐지만 최신 버전을 불러오지 못했습니다. 입력은 보존했습니다. 새로고침 후 다시 저장하세요.');
-      } else setError(errorMessage(cause));
+      } else showActionError(errorMessage(cause));
     } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const updateEnabled = async () => {
     if (!job || saving) return;
     const request = identityRevision.current;
-    setSaving(true); setError(null);
+    setSaving(true); setActionError(null);
     try {
       const saved = (await createApiClient(serverUrl).updateRecurringJob(job.job_id, {
         expected_version: job.version, enabled: !job.enabled,
@@ -255,33 +263,33 @@ export function RecurringJobEditor({
       if (request !== identityRevision.current) return;
       setJob(saved);
       if (!dirty) { setDraft(draftFromJob(saved)); onDone(saved); }
-    } catch (cause) { if (request === identityRevision.current) setError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const runNow = async () => {
     if (!job || saving) return;
     const request = identityRevision.current;
-    setSaving(true); setError(null);
+    setSaving(true); setActionError(null);
     try {
       await createApiClient(serverUrl).runRecurringJob(job.job_id, idempotency('run'));
       if (request !== identityRevision.current) return;
       Alert.alert('실행 요청을 접수했습니다', '저장된 작업 설정으로 요청했습니다. 실행 결과는 이력에서 확인하세요.');
-    } catch (cause) { if (request === identityRevision.current) setError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const archive = async () => {
     if (!job || saving) return;
     const request = identityRevision.current;
-    setSaving(true); setError(null);
+    setSaving(true); setActionError(null);
     try {
       await createApiClient(serverUrl).archiveRecurringJob(job.job_id, job.version);
       if (request === identityRevision.current) onDone(null);
-    } catch (cause) { if (request === identityRevision.current) setError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
   };
 
   const currentDraft = { ...draft, prompt: promptDraft.value };
   const dirty = promptDraft.ready && JSON.stringify(currentDraft) !== JSON.stringify(job ? draftFromJob(job) : emptyDraft());
   const workspace = useSettingsSaveScope('recurring-jobs', {
     dirty, busy: saving || loading, canSave: promptDraft.ready && !loading && !job?.archived_at && (!jobId || Boolean(job)), save,
-    discard: () => { resetDraft(job ? draftFromJob(job) : emptyDraft()); promptDraft.clear(); setError(null); },
+    discard: () => { resetDraft(job ? draftFromJob(job) : emptyDraft()); promptDraft.clear(); setActionError(null); },
   });
   const saveScreen = workspace ? () => workspace.select('recurring-jobs') : undefined;
   const confirmArchive = () => { if (dirty) confirmSettingsDiscard(() => { promptDraft.clear(); void archive(); }, saveScreen); else void archive(); };
@@ -294,9 +302,9 @@ export function RecurringJobEditor({
   const previewStyle = { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted };
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 편집할 수 있습니다." />;
   return <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-  <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
+  <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { ref: editorScroll, contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
-    {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{jobId && !job ? <Action label="다시 불러오기" onPress={() => { if (dirty) confirmSettingsDiscard(() => void loadExisting(), saveScreen); else void loadExisting(); }}/>: null}</View> : null}
+    {loadError ? <View><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text>{jobId && !job ? <Action label="다시 불러오기" onPress={() => { if (dirty) confirmSettingsDiscard(() => void loadExisting(), saveScreen); else void loadExisting(); }}/>: null}</View> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
     <SettingsSection id="recurring-editor-groups" title="" flattened>
     <Group title="작업 내용">
@@ -330,6 +338,7 @@ export function RecurringJobEditor({
     {!workspace ? <Action label={saving ? '저장 중...' : '저장'} disabled={saving || loading || job?.archived_at != null || (Boolean(jobId) && !job)} primary onPress={() => void save()}/> : null}
     </Group></SettingsSection>
     {job ? <View style={styles.actions}><Action label="이력" disabled={saving} onPress={() => onOpenHistory(job.job_id)} testID="recurring-job-history" /><Action label={job.enabled ? '일시정지' : '재개'} disabled={saving || job.archived_at !== null} onPress={() => void updateEnabled()} testID="recurring-job-toggle-enabled" /><Action label="지금 실행" disabled={saving || job.archived_at !== null} primary onPress={() => void runNow()} testID="recurring-job-run-now" /><Action label="보관" disabled={saving || job.archived_at !== null} onPress={confirmArchive} testID="recurring-job-archive" /></View> : null}
+    {actionError ? <Text key={actionError.key} accessibilityRole="alert" style={styles.error} onLayout={() => { if (workspace) scrollToError?.(); else editorScroll.current?.scrollToEnd({ animated: true }); }}>{actionError.message}</Text> : null}
   </Container></AppKeyboardAvoidingView>;
 }
 

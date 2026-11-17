@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { once } = require('node:events');
 
-const [playwrightPath, evidencePath, phase = 'final'] = process.argv.slice(2);
+const [playwrightPath, evidencePath, phase = 'final', scenario = 'all'] = process.argv.slice(2);
 if (!playwrightPath || !evidencePath) throw new Error('Playwright path와 증거 경로가 필요합니다.');
 const { chromium } = require(path.resolve(playwrightPath));
 const output = path.resolve(evidencePath);
@@ -48,6 +48,68 @@ async function main() {
       page.setDefaultTimeout(15000);
       page.on('pageerror', error => result.errors.push(error.message));
       await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+      if (scenario === 'recurring-feedback') {
+        const openJobs = async state => {
+          await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=modal&state=${state}`);
+          await page.getByTestId('settings-modal-header').waitFor();
+          await page.getByTestId('settings-category-recurring-jobs').click();
+          await page.getByTestId('recurring-jobs-list').waitFor();
+        };
+        await page.goto(`${base}${prefix}index.html?section=rows`);
+        await page.getByTestId('review-card-rows').screenshot({ path: path.join(output, `${phase}-unchanged-rows-${viewport.width}.png`) });
+        await openJobs('recurring-loading');
+        assert.equal(await page.getByText('등록된 반복 작업이 없습니다.').count(), 0);
+        await page.screenshot({ path: path.join(output, `${phase}-recurring-loading-${viewport.width}.png`) });
+        for (const kind of ['existing', 'new']) {
+          await openJobs('recurring-save-error');
+          if (kind === 'existing') await page.getByTestId('recurring-job-review-job-0').click();
+          else await page.getByText('새 작업', { exact: true }).click();
+          const name = page.getByLabel('작업 이름', { exact: true });
+          await name.fill(kind === 'existing' ? '매일 아침 프로젝트 진행 상황과 남은 작업 정리' : '매주 금요일 프로젝트 진행 상황과 다음 주 계획 정리');
+          if (kind === 'new') await page.getByLabel('작업 내용', { exact: true }).fill('이번 주 완료한 작업과 남은 확인 사항을 정리하고 다음 주 계획을 알려 주세요.');
+          const scroll = page.getByTestId('settings-jobs-editor-scroll');
+          await scroll.evaluate(el => { el.scrollTop = el.scrollHeight; });
+          await page.getByTestId('settings-scope-save').click();
+          const alert = page.getByRole('alert').filter({ hasText: 'HTTP 503' });
+          await alert.waitFor();
+          await page.waitForTimeout(700);
+          const focusAfterSave = await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label'), testID: document.activeElement?.getAttribute('data-testid') }));
+          const rects = await page.evaluate(() => {
+            const area = document.querySelector('[data-testid="settings-jobs-editor-scroll"]').getBoundingClientRect();
+            const alert = Array.from(document.querySelectorAll('[role="alert"]')).find(el => el.textContent.includes('HTTP 503')).getBoundingClientRect();
+            return { area: { top: area.top, bottom: area.bottom, left: area.left, right: area.right }, alert: { top: alert.top, bottom: alert.bottom, left: alert.left, right: alert.right } };
+          });
+          const visible = rects.alert.top >= rects.area.top - 1 && rects.alert.bottom <= rects.area.bottom + 1;
+          console.log(`${viewport.width}px ${kind}: 오류 표시 ${visible ? '영역 안' : '영역 밖'} ${JSON.stringify(rects)}`);
+          result.interactions.push({ viewport: viewport.width, kind, check: 'save error inside visible editor scroll', visible, rects, focusAfterSave });
+          await page.screenshot({ path: path.join(output, `${phase}-recurring-${kind}-error-${viewport.width}.png`) });
+          if (phase !== 'before') assert.ok(visible, `${kind} 오류가 스크롤 영역 밖입니다: ${JSON.stringify(rects)}`);
+          if (kind === 'existing' && phase !== 'before') {
+            await name.focus();
+            await page.keyboard.press('Tab');
+            const tabFocus = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+            assert.equal(tabFocus, '작업 내용');
+            await name.focus();
+            await scroll.evaluate(el => { el.scrollTop = (el.scrollHeight - el.clientHeight) / 2; });
+            const scrollBefore = await scroll.evaluate(el => el.scrollTop);
+            await page.setViewportSize({ width: viewport.width === 390 ? 834 : 390, height: viewport.height });
+            const scrollWideNarrow = await scroll.evaluate(el => el.scrollTop);
+            assert.equal(await name.inputValue(), '매일 아침 프로젝트 진행 상황과 남은 작업 정리');
+            assert.equal(await name.evaluate(el => document.activeElement === el), true, '폭 전환 뒤 입력 초점 유지');
+            await page.setViewportSize({ width: 360, height: viewport.height });
+            const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+            assert.equal(overflow, false, '360px 가로 넘침');
+            assert.equal(await name.inputValue(), '매일 아침 프로젝트 진행 상황과 남은 작업 정리');
+            const focused = await name.evaluate(el => document.activeElement === el);
+            assert.equal(focused, true, '크기 변경 뒤 입력 초점 유지');
+            const scrollAfter = await scroll.evaluate(el => el.scrollTop);
+            await page.setViewportSize(viewport);
+            result.interactions.push({ viewport: viewport.width, check: 'tab and resize', tabFocus, overflow, draftRetained: true, focused, scrollBefore, scrollWideNarrow, scrollAfter });
+          }
+        }
+        await context.close();
+        continue;
+      }
       await page.goto(`${base}${prefix}index.html?section=rows`);
       await page.getByTestId('review-card-rows').waitFor();
       await page.evaluate(() => document.fonts.ready);

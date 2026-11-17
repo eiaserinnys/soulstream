@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 import { openPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
@@ -31,6 +31,7 @@ export function RecurringJobsSettingsSection({
   const t = useTokens();
   const duo = useDuoSideBand();
   const workspace = useSettingsWorkspace();
+  const editorScroll = useRef<ScrollView>(null);
   const [localPanel, setLocalPanel] = useState<WidePanel>({ kind: 'list' });
   const panel = workspace?.jobs ?? localPanel;
   const setPanel = workspace?.setJobs ?? setLocalPanel;
@@ -50,7 +51,7 @@ export function RecurringJobsSettingsSection({
     const page = (kind: WidePanel['kind']) => settingsPanelPage(t, hidden(kind));
     return <View testID="wide-recurring-jobs-panel" style={{ flex: 1, minHeight: 0 }}>
       <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList hideCreate={duo} serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
-      {showEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={activeEditorId ?? 'new'} serverUrl={serverUrl} jobId={activeEditorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
+      {showEditor ? <ScrollView {...page('editor')} ref={editorScroll} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={activeEditorId ?? 'new'} serverUrl={serverUrl} jobId={activeEditorId} scrollToError={() => editorScroll.current?.scrollToEnd({ animated: true })} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
       {activeHistoryId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={activeHistoryId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
     </View>;
   }
