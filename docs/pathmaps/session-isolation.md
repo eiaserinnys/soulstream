@@ -79,7 +79,7 @@
 - (일부러 남김) 엔진이 쓰는 일부 API 키와 외부 MCP 인증은 상자 안에 보인다. 엔진이 그 인증으로 동작해야 하기 때문이다.
 - (일부러 남김) 강한 세션이 격리 세션의 산출물(스크립트, 시험)을 실행하면 그 실행은 격리 밖에서 돈다. 격리는 약한 모델 세션의 실행에만 건다.
 - (아직 막지 않음) `.local/tmp`는 세션끼리 공유하는 쓰기 영역이다. 한 격리 세션이 다른 세션의 파일을 읽고 쓸 수 있다.
-- (아직 막지 않음) 시험 DB 하나를 여러 격리 세션이 함께 쓴다. 새 컨테이너가 필요한 시험은 `TEST_DATABASE_URL`이 있으면 실패할 수 있다.
+- 시험 DB 하나를 여러 격리 세션이 함께 쓴다. Postgres 시험은 `*.postgres.test.ts`, `*-postgres.test.ts`, `*_postgres.test.ts`, `*.postgres.integration.test.ts` 이름을 쓴다. 로컬에서 `TEST_DATABASE_URL`과 동작하는 Docker가 없으면 이 시험을 건너뛰고, CI에서는 필수로 실행한다. runner full slice는 CI 또는 `SOULSTREAM_RUN_FULL_SLICE=1`일 때만 실행한다.
 - (아직 막지 않음) 비밀 경로 가림은 노드별 목록 방식이다. 홈 전체를 가리고 허용 목록만 여는 방식은 하지 않았다. 새 비밀 폴더가 생기면 정책 목록에 더해야 한다.
 - (아직 막지 않음) Windows 노드는 대상이 아니다. win32는 판정이 full/"windows"로 끝나고 상자를 만들지 않는다.
 - (알려진 한계) git view는 `packed-refs`를 파일 하나로 RO bind하므로 상자 안 git은 그 파일을 rename으로 교체하지 못한다(EBUSY). `packed-refs`에 든 ref 삭제는 실패한다. eias-linegames-wsl의 git은 loose ref를 prune할 때도 packed-refs를 다시 쓰므로 `fetch --prune`이 rc 0으로 끝나면서 stale 원격 추적 ref를 남긴다. 브랜치 정리는 상자 밖 세션이 한다.

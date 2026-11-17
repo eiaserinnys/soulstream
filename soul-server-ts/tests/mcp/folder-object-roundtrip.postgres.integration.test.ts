@@ -40,7 +40,7 @@ const cases = [
   ["rename_folder", { ...mutation, folder_id: "claude", name: "시스템" }],
 ] as const;
 
-// Actual SDK, host routes, services and disposable PG, as in page-roundtrip.integration.test.ts.
+// Actual SDK, host routes, services and disposable PG, as in page-roundtrip.postgres.integration.test.ts.
 describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;

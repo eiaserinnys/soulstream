@@ -159,10 +159,10 @@ jobs:
         shell: bash
         run: |
           corepack pnpm --dir soul-server-ts exec vitest run \
-            tests/scripts/release_executor.test.ts \
-            tests/scripts/migration_runner.test.ts \
-            tests/scripts/apply_schema.test.ts \
-            tests/scripts/release_executor_postgres_review.test.ts \
+            tests/scripts/release_executor.postgres.test.ts \
+            tests/scripts/migration_runner.postgres.test.ts \
+            tests/scripts/apply_schema.postgres.test.ts \
+            tests/scripts/release_executor_postgres_review.postgres.test.ts \
             --maxWorkers=2 --minWorkers=1 \
             --reporter=default --reporter=json \
             --outputFile.json=database-release-postgres-results.json
@@ -280,9 +280,9 @@ jobs:
             $env:PGUSER, $env:PGPASSWORD, $env:PGPORT, $env:PGDATABASE
           $resultPath = "database-release-postgres-results.json"
           corepack pnpm --dir soul-server-ts exec vitest run `
-            tests/scripts/release_executor.test.ts `
-            tests/scripts/migration_runner.test.ts `
-            tests/scripts/apply_schema.test.ts `
+            tests/scripts/release_executor.postgres.test.ts `
+            tests/scripts/migration_runner.postgres.test.ts `
+            tests/scripts/apply_schema.postgres.test.ts `
             --maxWorkers=2 --minWorkers=1 `
             --reporter=default --reporter=json --outputFile.json=$resultPath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

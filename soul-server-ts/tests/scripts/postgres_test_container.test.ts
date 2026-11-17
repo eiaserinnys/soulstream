@@ -32,6 +32,7 @@ describe("PostgreSQL test container lifecycle", () => {
     docker.mockImplementation((command, args) => {
       expect(command).toBe("docker");
       const dockerArgs = args as string[];
+      if (dockerArgs[0] === "info") return "";
       if (dockerArgs[0] === "ps") return "stale-id\nyoung-id\n";
       if (dockerArgs[0] === "inspect" && dockerArgs.at(-1) === "stale-id") {
         return "2026-08-12T21:59:59.000000000Z\n";
@@ -77,6 +78,7 @@ describe("PostgreSQL test container lifecycle", () => {
     let probes = 0;
     docker.mockImplementation((_command, args) => {
       const dockerArgs = args as string[];
+      if (dockerArgs[0] === "info") return "";
       if (dockerArgs[0] === "ps") return "";
       if (dockerArgs[0] === "run") return "starting-id\n";
       if (dockerArgs[0] === "port") return "127.0.0.1:55432\n";
@@ -107,6 +109,7 @@ describe("PostgreSQL test container lifecycle", () => {
   it("shares one exit and signal hook set across active containers", () => {
     docker.mockImplementation((_command, args) => {
       const dockerArgs = args as string[];
+      if (dockerArgs[0] === "info") return "";
       if (dockerArgs[0] === "ps") return "";
       if (dockerArgs[0] === "run") {
         return docker.mock.calls.filter(([, calledArgs]) =>
@@ -145,6 +148,12 @@ describe("PostgreSQL test container lifecycle", () => {
     expect(process.listenerCount("exit")).toBe(baseline.exit);
     expect(process.listenerCount("SIGINT")).toBe(baseline.SIGINT);
     expect(process.listenerCount("SIGTERM")).toBe(baseline.SIGTERM);
+  });
+
+  it("explains how to provide a backend when Docker is unavailable", () => {
+    docker.mockImplementation(() => { throw new Error("spawnSync docker ENOENT"); });
+    expect(() => startPostgresTestContainer({ user: "test", password: "test", database: "test" }))
+      .toThrow(/TEST_DATABASE_URL.*Docker/);
   });
 });
 

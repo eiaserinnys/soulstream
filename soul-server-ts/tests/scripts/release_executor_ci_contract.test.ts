@@ -37,9 +37,9 @@ const gitAttributesPath = fileURLToPath(new URL(
   import.meta.url,
 ));
 const databaseTestFiles = [
-  "release_executor.test.ts",
-  "migration_runner.test.ts",
-  "apply_schema.test.ts",
+  "release_executor.postgres.test.ts",
+  "migration_runner.postgres.test.ts",
+  "apply_schema.postgres.test.ts",
 ];
 
 describe("database release CI contract", () => {
@@ -121,8 +121,8 @@ describe("database release CI contract", () => {
     expect(job.services.postgres.image).toMatch(/^postgres:16/);
     expect(job.env.TEST_DATABASE_URL).toContain("release_executor_test_db");
     const commands = job.steps.map((step: { run?: string }) => step.run ?? "").join("\n");
-    expect(commands).toContain("release_executor_postgres_review.test.ts");
-    expect(commands).toContain("tests/scripts/migration_runner.test.ts");
+    expect(commands).toContain("release_executor_postgres_review.postgres.test.ts");
+    expect(commands).toContain("tests/scripts/migration_runner.postgres.test.ts");
     for (const test of databaseTestFiles) expect(commands).toContain(test);
     expect(commands).toContain("verify-vitest-contract-result.mjs");
     expect(commands).toContain(
