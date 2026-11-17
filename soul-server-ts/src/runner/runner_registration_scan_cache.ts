@@ -6,22 +6,68 @@ import { isProcessAlive } from "./runner_process_lock.js";
 import { runnerHostStatePath } from "./runner_host_state_store.js";
 
 const FULL_RECHECK_INTERVAL_MS = 300_000;
-type Entry = { fingerprint: string; registration: RunnerRegistration; checkedAt: number };
+/**
+ * 전체 재확인 만료를 여러 스캔에 나누는 지터의 한 칸. 기본 스캔 주기(15초)와 같게 두어
+ * 한 칸이 한 스캔이 되게 한다. 스무 칸이 전체 재확인 간격을 덮으므로 어떤 항목도 지금
+ * 간격의 두 배를 넘겨 재확인 없이 남지 않는다(카드 #1476: 재기동 뒤 같은 때 기록된 항목이
+ * 한 스캔에서 모두 만료되어 runner.sqlite를 수백 번 다시 열던 문제).
+ */
+const RECHECK_JITTER_SLOT_MS = 15_000;
+const RECHECK_JITTER_SLOTS = FULL_RECHECK_INTERVAL_MS / RECHECK_JITTER_SLOT_MS;
+
+export interface RunnerRegistrationCacheMissCounts {
+  /** 《캐시 못 함》: 살아 있는 러너처럼 canCache가 거짓이거나, 읽는 동안 지문이 바뀐 항목. */
+  uncacheable: number;
+  /** 캐시 항목이 있었지만 지문이 바뀐 항목. */
+  fingerprintChanged: number;
+  /** 지문은 같고 전체 재확인 간격(지터 포함)이 지난 항목. */
+  fullRecheckExpired: number;
+  /** 캐시에 없던 항목. */
+  notCached: number;
+}
+
+type Entry = {
+  fingerprint: string;
+  registration: RunnerRegistration;
+  checkedAt: number;
+  /** 같은 스캔에서 함께 기록된 항목의 만료를 흩뜨리는 지터. */
+  jitterMs: number;
+};
 
 /** Memory owned by a periodic scanner, never by destructive readers. */
 export class RunnerRegistrationScanCache {
   private readonly entries = new Map<string, Entry>();
+  private readonly misses: RunnerRegistrationCacheMissCounts = {
+    uncacheable: 0,
+    fingerprintChanged: 0,
+    fullRecheckExpired: 0,
+    notCached: 0,
+  };
   constructor(private readonly now: () => number = Date.now) {}
 
+  /**
+   * scanPosition은 한 스캔 안에서 이 폴더를 읽는 순번이다. 같은 때 기록된 항목들이 한
+   * 스캔에서 모두 만료되지 않도록 항목마다 다른 지터를 붙인다. 스캔 밖에서 부르면 0이라
+   * 지터가 없고, 간격은 전체 재확인 간격 그대로다.
+   */
   async read(
     directory: string,
     readFresh: () => Promise<RunnerRegistration>,
+    scanPosition = 0,
   ): Promise<RunnerRegistration> {
     const before = await fingerprint(directory);
     const cached = this.entries.get(directory);
-    if (cached && cached.fingerprint === before
-      && this.now() - cached.checkedAt < FULL_RECHECK_INTERVAL_MS
-      && (cached.registration.pid === null || !isProcessAlive(cached.registration.pid))) {
+    const now = this.now();
+    let missReason: keyof RunnerRegistrationCacheMissCounts;
+    if (cached === undefined) {
+      missReason = "notCached";
+    } else if (cached.fingerprint !== before) {
+      missReason = "fingerprintChanged";
+    } else if (now - cached.checkedAt >= FULL_RECHECK_INTERVAL_MS + cached.jitterMs) {
+      missReason = "fullRecheckExpired";
+    } else if (cached.registration.pid !== null && isProcessAlive(cached.registration.pid)) {
+      missReason = "uncacheable";
+    } else {
       // Callers may annotate the recovered registration; keep the stored proof isolated.
       return structuredClone(cached.registration);
     }
@@ -32,9 +78,25 @@ export class RunnerRegistrationScanCache {
         fingerprint: before,
         registration: structuredClone(registration),
         checkedAt: this.now(),
+        jitterMs: recheckJitterMs(scanPosition),
       });
+    } else {
+      missReason = "uncacheable";
     }
+    this.misses[missReason] += 1;
     return registration;
+  }
+
+  /** 마지막 reset 뒤 등록 캐시를 쓰지 못한 까닭별 건수. */
+  missCounts(): RunnerRegistrationCacheMissCounts {
+    return { ...this.misses };
+  }
+
+  resetMissCounts(): void {
+    this.misses.uncacheable = 0;
+    this.misses.fingerprintChanged = 0;
+    this.misses.fullRecheckExpired = 0;
+    this.misses.notCached = 0;
   }
 
   prune(directories: Set<string>): void {
@@ -42,6 +104,11 @@ export class RunnerRegistrationScanCache {
       if (!directories.has(directory)) this.entries.delete(directory);
     }
   }
+}
+
+function recheckJitterMs(scanPosition: number): number {
+  const slot = Math.trunc(scanPosition) % RECHECK_JITTER_SLOTS;
+  return slot * RECHECK_JITTER_SLOT_MS;
 }
 
 function canCache(registration: RunnerRegistration): boolean {
