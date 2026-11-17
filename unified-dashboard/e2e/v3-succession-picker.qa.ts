@@ -141,8 +141,10 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     }
     await modal.getByTestId("succession-effort-use-default").click();
     await modal.getByTestId("succession-effort-unsupported").waitFor({ state: "hidden" });
+    const previousInteractionMetrics = [];
     for (const width of [1440, 360]) {
       await page.setViewportSize({ width, height: 1000 });
+      previousInteractionMetrics.push(await verifyPreviousInteraction(page, modal));
       await modal.locator('[data-slot="dialog-panel-scroll"]').evaluate(element => { element.scrollTop = 0; });
       await capture(page, theme, `succession-${width}`);
       await predecessor.scrollIntoViewIfNeeded();
@@ -285,6 +287,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
 
     return {
+      previousInteractionMetrics,
       options: optionLabels.length,
       optionLabels,
       observedMs: observationMs,
@@ -307,6 +310,47 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   } finally {
     await context.close();
   }
+}
+
+/** Regression for the title/guidance checkbox target reported in visual review. */
+async function verifyPreviousInteraction(page: Page, modal: Locator) {
+  const row = modal.locator(".v3-succession-previous");
+  const checkbox = row.getByRole("checkbox", { name: "이전 세션 이어받기" });
+  const title = row.getByText("이전 세션", { exact: true }).filter({ visible: true });
+  const trigger = row.getByRole("combobox", { name: "이어받을 이전 세션", exact: true });
+  assert(await checkbox.isChecked(), "이전 세션 이어받기가 처음부터 꺼져 있습니다.");
+  assert(await title.count() === 1, "이전 세션 제목이 한 번만 보여야 합니다.");
+  await title.scrollIntoViewIfNeeded();
+  const box = await title.boundingBox();
+  assert(box, "이전 세션 제목의 누름 좌표가 없습니다.");
+  const clickTitle = () => page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await clickTitle();
+  assert(!await checkbox.isChecked(), "제목을 눌러도 체크가 꺼지지 않았습니다.");
+  assert(await page.locator('[data-slot="select-popup"]:visible').count() === 0, "제목 누름으로 선택 목록이 열렸습니다.");
+  assert(await trigger.isDisabled(), "체크를 끈 뒤 선택 칸이 활성 상태입니다.");
+  await clickTitle();
+  assert(await checkbox.isChecked(), "같은 제목 좌표를 다시 눌러도 체크가 켜지지 않았습니다.");
+  const guidance = row.locator("small");
+  await guidance.click();
+  assert(!await checkbox.isChecked(), "안내를 눌러도 체크가 꺼지지 않았습니다.");
+  await guidance.click();
+  assert(await checkbox.isChecked(), "안내를 다시 눌러도 체크가 켜지지 않았습니다.");
+  assert(await page.locator('[data-slot="select-popup"]:visible').count() === 0, "안내 누름으로 선택 목록이 열렸습니다.");
+  const metrics = await row.evaluate(element => {
+    const label = element.querySelector('input[type="checkbox"]')?.closest("label");
+    const inactive = [element, ...element.querySelectorAll("*")].filter(child =>
+      child.getClientRects().length > 0 && !label?.contains(child)
+      && !child.closest('[data-slot="select-trigger"]'));
+    return {
+      width: window.innerWidth,
+      labelHeight: label?.getBoundingClientRect().height ?? 0,
+      inactiveCursors: inactive.map(child => ({ tag: child.tagName, cursor: getComputedStyle(child).cursor })),
+    };
+  });
+  assert(metrics.labelHeight >= 24, `체크 누름 영역이 작습니다: ${JSON.stringify(metrics)}`);
+  assert(metrics.inactiveCursors.every(item => item.cursor !== "pointer"), `반응 없는 곳에 손가락 커서가 있습니다: ${JSON.stringify(metrics)}`);
+  assert(!await trigger.isDisabled(), "체크를 켠 뒤 선택 칸이 비활성 상태입니다.");
+  return metrics;
 }
 
 interface ControlMetric {

@@ -373,13 +373,19 @@ export function SessionSuccessionModal({
                 </li>
                 <li>
                   <div className="v3-succession-previous">
-                    <input
-                      type="checkbox"
-                      aria-label="이전 세션 이어받기"
-                      checked={inheritSummary}
-                      disabled={!predecessorId}
-                      onChange={(event) => setInheritSummary(event.target.checked)}
-                    />
+                    <label>
+                      <input
+                        type="checkbox"
+                        aria-label="이전 세션 이어받기"
+                        checked={inheritSummary}
+                        disabled={!predecessorId}
+                        onChange={(event) => setInheritSummary(event.target.checked)}
+                      />
+                      <span>
+                        <strong>이전 세션</strong>
+                        {predecessorId ? <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small> : null}
+                      </span>
+                    </label>
                     <div className="v3-succession-previous-field">
                       <CatalogSelectionField className="v3-assignment-field" label="이전 세션" ariaLabel="이어받을 이전 세션"
                         value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
@@ -390,7 +396,6 @@ export function SessionSuccessionModal({
                           const option = predecessorOptions[Number(value)];
                           setSelectedPredecessorId(option?.sessionId ?? null);
                         }} />
-                      {predecessorId ? <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small> : null}
                     </div>
                   </div>
                 </li>

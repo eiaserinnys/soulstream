@@ -523,3 +523,30 @@ it("blocks concurrent session starts and closing, then preserves the draft on an
   expect(createDashboardSession).toHaveBeenCalledTimes(1);
   expect(onClose).not.toHaveBeenCalled();
 });
+
+it("toggles inheritance from the previous-session title and guidance without opening the picker", async () => {
+  stubFetch([OPUS]);
+  mountWithSession(null, "claude-opus", {
+    predecessorOptions: [{ sessionId: "prev-1", label: "이전 작업", runNumber: 1 }],
+  });
+  await settle();
+  const row = document.body.querySelector(".v3-succession-previous")!;
+  const checkbox = row.querySelector<HTMLInputElement>('input[aria-label="이전 세션 이어받기"]')!;
+  const title = [...row.querySelectorAll("strong, label")].find(element => element.textContent === "이전 세션")!;
+  const guidance = row.querySelector("small")!;
+  const trigger = row.querySelector<HTMLButtonElement>('button[aria-label="이어받을 이전 세션"]')!;
+  expect(checkbox.checked).toBe(true);
+  for (const target of [title, title, guidance, guidance]) {
+    const before = checkbox.checked;
+    flushSync(() => (target as HTMLElement).click());
+    await settle();
+    expect(checkbox.checked).toBe(!before);
+    expect(trigger.disabled).toBe(before);
+    expect(document.body.querySelector('[data-slot="select-popup"]')).toBeNull();
+  }
+  const label = checkbox.closest("label")!;
+  expect(label.contains(title)).toBe(true);
+  expect(label.contains(guidance)).toBe(true);
+  expect(label.querySelector("label, button")).toBeNull();
+  expect(label.contains(trigger)).toBe(false);
+});

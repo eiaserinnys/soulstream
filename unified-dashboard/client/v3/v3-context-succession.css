@@ -404,8 +404,7 @@
   cursor: pointer;
 }
 
-.v3-succession-body li > label > span,
-.v3-succession-previous-field {
+.v3-succession-body li > label > span {
   min-width: 0;
   flex: 1;
 }
@@ -635,4 +634,39 @@
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
   font-weight: 750;
+}
+
+/* Keep the checkbox and its text on one target, apart from the picker. */
+.v3-succession-previous {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  cursor: default;
+}
+
+.v3-succession-previous > label {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+  min-height: var(--v3-space-6);
+  cursor: pointer;
+}
+
+.v3-succession-previous > label > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.v3-succession-previous-field {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.v3-succession-previous .v3-assignment-field > label {
+  display: none;
+}
+
+.v3-succession-previous > label:has(input:disabled) {
+  cursor: default;
 }
