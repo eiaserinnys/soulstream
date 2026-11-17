@@ -71,9 +71,10 @@ const JOBS = [
   }),
 ];
 
-type RouteState = { failJobs: boolean; listGate?: Promise<void>; failSave?: boolean };
+type RouteState = { failJobs: boolean; listGate?: Promise<void>; failSave?: boolean; saveGate?: Promise<void> };
 
 async function installRoutes(page: Page, state: RouteState = { failJobs: false }) {
+  let created: ReturnType<typeof recurringJob> | undefined;
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1 });
   await page.route("**/api/auth/config", (route) => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
   await page.route("**/api/auth/status", (route) => route.fulfill({
@@ -89,10 +90,17 @@ async function installRoutes(page: Page, state: RouteState = { failJobs: false }
     }
     if (url.pathname === "/api/recurring-jobs" && request.method() === "GET") {
       await state.listGate;
-      return route.fulfill({ json: { jobs: JOBS } });
+      return route.fulfill({ json: { jobs: created ? [created, ...JOBS] : JOBS } });
     }
-    if (state.failSave && ((url.pathname === "/api/recurring-jobs" && request.method() === "POST") || (url.pathname.startsWith("/api/recurring-jobs/") && request.method() === "PATCH"))) {
-      return route.fulfill({ status: 500, json: { detail: "저장하지 못했습니다" } });
+    if ((url.pathname === "/api/recurring-jobs" && request.method() === "POST") || (url.pathname.startsWith("/api/recurring-jobs/") && request.method() === "PATCH")) {
+      await state.saveGate;
+      if (state.failSave) return route.fulfill({ status: 500, json: { detail: "저장하지 못했습니다" } });
+      if (request.method() === "POST") {
+        const body = request.postDataJSON();
+        if (!body.name || !body.prompt || !body.node_id || !body.agent_id || !body.folderId) return route.fulfill({ status: 400, json: { detail: "필수 항목을 입력하세요" } });
+        created = recurringJob("created-job", body.name, body.schedule_expressions, body);
+        return route.fulfill({ json: { job: created } });
+      }
     }
     return route.fulfill({ json: { job: JOBS[0] } });
   });
@@ -578,6 +586,51 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   expect(tabStops.every((entry) => entry.info.inDialog && entry.info.visible)).toBe(true);
   expect(focusRestored).toBe(true);
 });
+
+for (const width of [1440, 360]) {
+  for (const create of [false, true]) {
+    for (const fail of [false, true]) {
+      test(`키보드 ${create ? "생성" : "저장"} ${fail ? "실패" : "성공"} 초점 ${width}`, async ({ page }) => {
+        await preparePage(page, width);
+        let release!: () => void;
+        const state = await installRoutes(page, { failJobs: false, failSave: fail, saveGate: new Promise<void>((resolve) => { release = resolve; }) });
+        const { tab } = await openRecurringTab(page);
+        await expect(tab.getByText("활성", { exact: true })).toBeVisible();
+        await settle(page);
+        if (!create) await tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first().click();
+        else {
+          await tab.getByLabel("작업 이름").fill("키보드로 만든 작업");
+          await tab.getByLabel("작업 내용").fill("보고서를 작성합니다.");
+          await tab.getByLabel("노드 선택").click();
+          await page.getByRole("option", { name: "eiaserinnys", exact: true }).click();
+          await tab.getByLabel("에이전트 선택").click();
+          await page.getByRole("option", { name: "로젤린", exact: true }).click();
+          await tab.getByRole("combobox").filter({ hasText: "폴더를 선택하세요" }).click();
+          await page.getByTestId("new-session-folder-option-folder-amber").click();
+        }
+        const preview = tab.getByRole("button", { name: "다음 5회 보기", exact: true });
+        const action = tab.getByRole("button", { name: create ? "반복 작업 생성" : "변경 저장", exact: true });
+        await preview.focus();
+        await page.keyboard.press("Tab");
+        await expect(action).toBeFocused();
+        await page.keyboard.press("Enter");
+        const busy = tab.getByRole("button", { name: "저장 중...", exact: true, disabled: true });
+        await expect(busy).toHaveAttribute("aria-disabled", "true");
+        await expectKeyboardFocus(busy);
+        release();
+        state.saveGate = undefined;
+        if (fail) await expect(tab.getByRole("alert")).toContainText("저장하지 못했습니다");
+        const finalAction = tab.getByRole("button", { name: create && fail ? "반복 작업 생성" : "변경 저장", exact: true });
+        await expectKeyboardFocus(finalAction);
+      });
+    }
+  }
+}
+
+async function expectKeyboardFocus(button: Locator) {
+  await expect.poll(() => button.evaluate(element => ({ active: document.activeElement === element, body: document.activeElement === document.body, visible: element.matches(":focus-visible") })))
+    .toEqual({ active: true, body: false, visible: true });
+}
 
 test("설정 창에서 빠른 Tab과 Shift+Tab 초점 순환", async ({ page }) => {
   test.setTimeout(120_000);

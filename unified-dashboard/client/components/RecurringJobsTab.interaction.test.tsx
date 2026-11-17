@@ -71,6 +71,34 @@ describe("RecurringJobsTab lifecycle", () => {
     delete (Element.prototype as Partial<Element>).scrollIntoView;
   });
 
+  it("keeps busy actions focusable and rejects repeated saves, while archived actions remain disabled", async () => {
+    let finishSave!: (response: Response) => void;
+    let archived = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      if (init?.method === "PATCH") return new Promise<Response>((resolve) => { finishSave = resolve; });
+      return json({ jobs: [recurringJob(archived ? { archived_at: "2026-09-22T00:00:00Z" } : {})] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await renderTab();
+    await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
+    flushSync(() => buttonContaining("음악 추천")?.click());
+    clickButton("변경 저장");
+    for (const label of ["지금 실행", "일시정지", "보관", "다음 5회 보기", "저장 중..."]) {
+      expect(button(label)?.getAttribute("aria-disabled")).toBe("true");
+      expect(button(label)?.disabled).toBe(false);
+    }
+    clickButton("저장 중...");
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(1);
+    finishSave(json({ job: recurringJob() }));
+    await waitFor(() => expect(button("변경 저장")?.getAttribute("aria-disabled")).toBe("false"));
+    archived = true;
+    clickButton("새로고침");
+    await waitFor(() => expect(button("지금 실행")?.disabled).toBe(true));
+    for (const label of ["지금 실행", "보관", "변경 저장"]) expect(button(label)?.disabled).toBe(true);
+  });
+
   it("shows a loading status until the first list request succeeds, and keeps the list on refresh", async () => {
     let resolveList!: (response: Response) => void;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveList = resolve; })));
@@ -310,10 +338,10 @@ describe("RecurringJobsTab lifecycle", () => {
     setInput("작업 이름", "음악 추천 수정");
     clickButton("변경 저장");
     await waitFor(() => expect(requests.some((request) => request.method === "PATCH" && request.body?.name === "음악 추천 수정")).toBe(true));
-    await waitFor(() => expect(button("일시정지")?.disabled).toBe(false));
+    await waitFor(() => expect(button("일시정지")?.getAttribute("aria-disabled")).toBe("false"));
     clickButton("일시정지");
     await waitFor(() => expect(document.body.textContent).toContain("재개"));
-    await waitFor(() => expect(button("재개")?.disabled).toBe(false));
+    await waitFor(() => expect(button("재개")?.getAttribute("aria-disabled")).toBe("false"));
     clickButton("재개");
     await waitFor(() => expect(document.body.textContent).toContain("일시정지"));
     clickButton("새로고침");
@@ -329,7 +357,7 @@ describe("RecurringJobsTab lifecycle", () => {
     expect(document.body.textContent).toContain("before any session was sent");
     expect(document.body.textContent).toContain("before the create_session command was sent");
     expect(document.body.textContent).toContain("check the fixed session ID");
-    await waitFor(() => expect(button("보관")?.disabled).toBe(false));
+    await waitFor(() => expect(button("보관")?.getAttribute("aria-disabled")).toBe("false"));
     clickButton("보관");
     expect(window.confirm).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(requests.some((request) => request.method === "POST" && request.path === "/api/recurring-jobs/job-1/archive")).toBe(true));
@@ -371,7 +399,7 @@ describe("RecurringJobsTab lifecycle", () => {
     await renderTab();
     clickButton("다음 5회 보기");
     await waitFor(() => expect(document.body.textContent).toContain("다음 5회"));
-    await waitFor(() => expect(button("다음 5회 보기")?.disabled).toBe(false));
+    await waitFor(() => expect(button("다음 5회 보기")?.getAttribute("aria-disabled")).toBe("false"));
     setSelect("반복 주기", "once");
     expect(document.body.querySelector('[aria-label="실행 일시"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="시간대"]')).toBeNull();
@@ -422,7 +450,7 @@ describe("RecurringJobsTab lifecycle", () => {
     await renderTab();
     await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
     flushSync(() => buttonContaining("음악 추천")?.click());
-    await waitFor(() => expect(button("지금 실행")?.disabled).toBe(false));
+    await waitFor(() => expect(button("지금 실행")?.getAttribute("aria-disabled")).toBe("false"));
     clickButton("지금 실행");
 
     await waitFor(() => expect(button("반복 작업 생성")).toBeDefined());

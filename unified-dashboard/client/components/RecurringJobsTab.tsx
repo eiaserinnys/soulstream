@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Button,
   Input,
@@ -53,6 +53,8 @@ type Editor = {
   enabled: boolean;
 };
 
+const busyButtonClassName = "aria-disabled:opacity-64 aria-disabled:pointer-events-none aria-disabled:shadow-none aria-disabled:inset-shadow-none aria-disabled:before:shadow-none";
+
 const emptyEditor = (): Editor => ({
   name: "",
   prompt: "",
@@ -78,6 +80,8 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const [runs, setRuns] = useState<RecurringJobRun[]>([]);
   const [preview, setPreview] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingCreateFocus = useRef<{ jobId: string; button: HTMLButtonElement } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ message: string; key: number } | null>(null);
   const actionErrorKey = useRef(0);
@@ -121,8 +125,16 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     void refresh().catch((caught: unknown) => setError(message(caught)));
   }, [refresh]);
 
+  useLayoutEffect(() => {
+    const pending = pendingCreateFocus.current;
+    if (!pending || selected?.job_id !== pending.jobId) return;
+    pendingCreateFocus.current = null;
+    if (!pending.button.isConnected && document.activeElement === document.body) saveButtonRef.current?.focus();
+  }, [selected]);
 
-  const save = async () => {
+  const save = async (event: MouseEvent<HTMLButtonElement>) => {
+    if (busy) return;
+    const createButton = !selected && event.detail === 0 && event.currentTarget.matches(":focus-visible") ? event.currentTarget : null;
     setBusy(true);
     setError(null);
     setActionError(null);
@@ -131,7 +143,11 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
       const saved = selected
         ? await api.updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
         : await api.createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
-      await refresh(saved.job_id).catch((caught: unknown) => setError(message(caught)));
+      if (createButton) pendingCreateFocus.current = { jobId: saved.job_id, button: createButton };
+      await refresh(saved.job_id).catch((caught: unknown) => {
+        pendingCreateFocus.current = null;
+        setError(message(caught));
+      });
     } catch (caught) {
       if (isVersionConflict(caught) && selected) {
         try {
@@ -147,6 +163,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   };
 
   const setEnabled = async (enabled: boolean) => {
+    if (busy) return;
     if (!selected) return;
     setBusy(true);
     setError(null);
@@ -165,6 +182,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   };
 
   const archive = async () => {
+    if (busy) return;
     if (!selected || !confirmRecurringArchive(selected.name)) return;
     setBusy(true);
     setError(null);
@@ -183,6 +201,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   };
 
   const runNow = async () => {
+    if (busy) return;
     if (!selected) return;
     setBusy(true);
     setError(null);
@@ -203,6 +222,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   };
 
   const previewSchedule = async () => {
+    if (busy) return;
     setBusy(true);
     setError(null);
     setActionError(null);
@@ -244,9 +264,9 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           title={selected ? selected.name : "새 반복 작업"}
           subtitle={selected ? `다음 실행: ${displayTime(selected.next_run_at)}` : null}
           actions={selected ? <>
-            <Button type="button" size="sm" variant="outline" disabled={busy || selected.archived_at !== null} onClick={() => void runNow()}>지금 실행</Button>
-            {selected.archived_at === null ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void setEnabled(!selected.enabled)}>{selected.enabled ? "일시정지" : "재개"}</Button> : null}
-            <Button type="button" size="sm" variant="outline" disabled={busy || selected.archived_at !== null} onClick={() => void archive()}>보관</Button>
+            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void runNow()}>지금 실행</Button>
+            {selected.archived_at === null ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void setEnabled(!selected.enabled)}>{selected.enabled ? "일시정지" : "재개"}</Button> : null}
+            <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} disabled={selected.archived_at !== null} onClick={() => void archive()}>보관</Button>
           </> : null}
         />
 
@@ -291,8 +311,8 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
-          <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
+          {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
+          <Button ref={saveButtonRef} type="button" size="sm" className={busyButtonClassName} aria-disabled={busy} disabled={selected?.archived_at != null} onClick={(event) => void save(event)}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
         {actionError ? <SettingsAlert key={actionError.key} scrollIntoView>{actionError.message}</SettingsAlert> : null}
         {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
