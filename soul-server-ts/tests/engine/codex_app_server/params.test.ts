@@ -312,7 +312,7 @@ describe("Codex app-server parameter builders", () => {
       },
       {
         type: "sse" as const,
-        name: "eb-lore",
+        name: "example-sse-server",
         url: "http://127.0.0.1:3300/sse",
       },
     ];

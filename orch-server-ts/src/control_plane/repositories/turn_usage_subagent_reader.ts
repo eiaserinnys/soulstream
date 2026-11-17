@@ -29,10 +29,11 @@ export async function readSubagentUsage(
   sql: SqlClient,
   sessionIds: readonly string[],
   scope: { since?: Date; until: Date },
+  path: "list" | "summary" = "summary",
 ): Promise<Map<string, SessionSubagentUsage>> {
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return new Map();
-  const ctes = createSubagentUsageCtes(sql, uniqueSessionIds, scope);
+  const ctes = createSubagentUsageCtes(sql, uniqueSessionIds, scope, path);
   const rows = await sql<SubagentUsageSqlRow[]>`
     ${ctes}
     SELECT
@@ -119,13 +120,14 @@ function createSubagentUsageCtes(
   sql: SqlClient,
   sessionIds: string[],
   scope: { since?: Date; until: Date },
+  path: "list" | "summary",
 ) {
   return sql`
     WITH picked AS MATERIALIZED (
       SELECT session_id, id, created_at, event_type
       FROM events
       WHERE event_type IN ('complete', 'result', 'error')
-        AND session_id = ANY(${sessionIds}::text[])
+        ${path === "list" ? sql`AND session_id = ANY(${sessionIds}::text[])` : sql``}
         ${scope.since ? sql`AND created_at >= ${scope.since}` : sql``}
         AND created_at < ${scope.until}
     ), usage_raw AS MATERIALIZED (
@@ -140,6 +142,7 @@ function createSubagentUsageCtes(
       FROM picked p
       JOIN events e ON e.session_id = p.session_id AND e.id = p.id
       WHERE jsonb_typeof(e.payload->'usage') = 'object'
+        ${path === "summary" ? sql`AND p.session_id = ANY(${sessionIds}::text[])` : sql``}
         AND (p.event_type <> 'result' OR e.payload->>'success' = 'false')
     ), usage_norm AS MATERIALIZED (
       SELECT
