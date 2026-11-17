@@ -19,6 +19,7 @@ import {
 export function restrictedChildEnv(
   isolation: RunnerIsolationChildConfig,
   baseEnv: Readonly<Record<string, string | undefined>>,
+  sessionKeys?: readonly string[],
 ): Record<string, string> {
   const additions: Record<string, string> = {};
   for (const key of isolation.envKeys) {
@@ -33,6 +34,7 @@ export function restrictedChildEnv(
   }
   return buildRestrictedSessionEnv({
     baseEnv,
+    sessionKeys,
     additions,
     restrictedCredential,
     fullSecrets: [],
@@ -75,7 +77,11 @@ export function launchIsolatedChild(input: LaunchIsolatedChildInput): IsolatedCh
       plan: input.isolation.spec,
       resolvConfPath: input.isolation.resolvConfPath,
       cwd: input.cwd ?? process.cwd(),
-      env: restrictedChildEnv(input.isolation, input.env ?? process.env),
+      env: restrictedChildEnv(
+        input.isolation,
+        input.env ?? process.env,
+        input.env !== undefined ? ["CLAUDE_CODE_OAUTH_TOKEN"] : undefined,
+      ),
       stdio: input.stdio,
       ...(input.signal ? { signal: input.signal } : {}),
       tools: input.isolation.tools,
