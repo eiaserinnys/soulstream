@@ -2335,6 +2335,9 @@ export class TaskExecutor {
             ...(turnInput.systemPrompt !== undefined
               ? { systemPrompt: turnInput.systemPrompt }
               : {}),
+            ...(turnInput.claudeSystemPromptBlocks !== undefined
+              ? { claudeSystemPromptBlocks: turnInput.claudeSystemPromptBlocks }
+              : {}),
             ...(turnInput.backendSessionRolloverFrom !== undefined
               ? { backendSessionRolloverFrom: turnInput.backendSessionRolloverFrom }
               : {}),

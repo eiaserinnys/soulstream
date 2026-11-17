@@ -46,6 +46,8 @@ export interface TaskEngineTurnInput {
   turnOrigin?: TurnOrigin;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
+  /** Claude 전용 시스템 프롬프트 블록. 다른 백엔드는 무시한다. */
+  claudeSystemPromptBlocks?: string[];
   backendSessionRolloverFrom?: string;
 }
 
@@ -241,6 +243,9 @@ export class TaskEngineTurnRunner {
       ...(turnInput?.systemPrompt !== undefined
         ? { systemPrompt: turnInput.systemPrompt }
         : {}),
+      ...(turnInput?.claudeSystemPromptBlocks !== undefined
+        ? { claudeSystemPromptBlocks: turnInput.claudeSystemPromptBlocks }
+        : {}),
       ...(policy.effectiveAllowedTools !== undefined
         ? { allowedTools: policy.effectiveAllowedTools }
         : {}),
@@ -330,6 +335,9 @@ export class TaskEngineTurnRunner {
       ...(task.agentsSessionItems !== undefined ? { sessionItems: task.agentsSessionItems } : {}),
       ...(queuedToolApproval ? { queuedToolApproval } : {}),
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+      ...(input.claudeSystemPromptBlocks !== undefined
+        ? { claudeSystemPromptBlocks: input.claudeSystemPromptBlocks }
+        : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
       ...(effectiveDisallowedTools !== undefined
         ? { disallowedTools: effectiveDisallowedTools }

@@ -217,6 +217,8 @@ export function prepareGenerationTurnInput(
     : backend === "antigravity" || backend === "opencode"
       ? context.effectiveSystemPrompt ?? ""
       : undefined;
+  const claudeSystemPromptBlocks =
+    backend === "claude" ? context.claudeSystemPromptBlocks : undefined;
   const systemParts = systemPrompt
     ? resolveSystemInputMaterialParts(context.inputMaterialBreakdown?.systemParts, systemPrompt)
     : [];
@@ -240,6 +242,7 @@ export function prepareGenerationTurnInput(
     ...(systemPrompt !== undefined
       ? { systemPrompt }
       : {}),
+    ...(claudeSystemPromptBlocks ? { claudeSystemPromptBlocks } : {}),
     ...(inputUuid ? { inputUuid } : {}),
     ...(instructionNumberOf(firstIntervention)
       ? { runnerInterventionId: instructionNumberOf(firstIntervention) }

@@ -1,3 +1,4 @@
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -328,6 +329,35 @@ describe("TaskTurnInputBuilder", () => {
       approximate_tokens: 3,
       estimate_source: "manifest",
     }));
+  });
+
+  it("passes the claude cache-boundary blocks for a new claude turn", async () => {
+    const blocks = ["system instructions", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, "folder prompt"];
+    const ctx = makeContext({ claudeSystemPromptBlocks: blocks });
+    const { builder } = makeSubject({
+      contextBuilder: { build: vi.fn().mockResolvedValue(ctx) },
+    });
+
+    const input = await builder.prepareInitialTurnInput(makeTask(), claudeAgent);
+
+    expect(input.claudeSystemPromptBlocks).toEqual(blocks);
+    expect(input.systemPrompt).toBe("system instructions");
+  });
+
+  it("does not pass claude cache-boundary blocks to other backends", async () => {
+    const blocks = ["system instructions", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, "folder prompt"];
+    const ctx = makeContext({ claudeSystemPromptBlocks: blocks });
+    const { builder } = makeSubject({
+      contextBuilder: { build: vi.fn().mockResolvedValue(ctx) },
+    });
+
+    const input = await builder.prepareInitialTurnInput(makeTask(), {
+      ...claudeAgent,
+      backend: "antigravity",
+    });
+
+    expect(input.claudeSystemPromptBlocks).toBeUndefined();
+    expect(input.systemPrompt).toBe("system instructions");
   });
 
   it.each(["antigravity", "claude", "opencode"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {

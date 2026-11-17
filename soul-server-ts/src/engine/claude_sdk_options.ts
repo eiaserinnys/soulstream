@@ -78,8 +78,9 @@ export function buildClaudeSdkOptions({
   const executablePath =
     options.env?.[CLAUDE_CODE_EXECPATH_ENV]?.trim()
     || resolveClaudeExecutablePath();
-  const systemPrompt = options.systemPrompt
-    ? makeCacheableSystemPrompt(options.systemPrompt)
+  const systemPromptSource = options.systemPromptBlocks ?? options.systemPrompt;
+  const systemPrompt = systemPromptSource
+    ? makeCacheableSystemPrompt(systemPromptSource)
     : undefined;
   const permissionMode = options.claudePermissionMode ?? "bypassPermissions";
 

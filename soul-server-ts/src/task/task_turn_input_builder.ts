@@ -107,6 +107,8 @@ export interface TaskTurnInput {
   originalPrompt?: string;
   imageAttachmentPaths: string[];
   systemPrompt?: string;
+  /** Claude 전용 시스템 프롬프트 블록. 있으면 Claude 어댑터가 systemPrompt 대신 쓴다. */
+  claudeSystemPromptBlocks?: string[];
   inputUuid?: string;
   runnerInterventionId?: string;
   runnerInterventionIds?: string[];
@@ -250,10 +252,12 @@ export class TaskTurnInputBuilder {
       { text: formattedContext.text, parts: formattedContext.parts },
       "followup",
     );
-    const systemPrompt =
-      ["claude", "antigravity", "opencode"].includes(effectiveTaskBackend(task, agent)) && includeFullContext
-        ? ctx?.effectiveSystemPrompt
-        : undefined;
+    const backend = effectiveTaskBackend(task, agent);
+    const includesSeparateSystemPrompt =
+      ["claude", "antigravity", "opencode"].includes(backend) && includeFullContext;
+    const systemPrompt = includesSeparateSystemPrompt ? ctx?.effectiveSystemPrompt : undefined;
+    const claudeSystemPromptBlocks =
+      includesSeparateSystemPrompt && backend === "claude" ? ctx?.claudeSystemPromptBlocks : undefined;
     const systemParts = systemPrompt
       ? systemPromptMaterialParts(ctx?.inputMaterialBreakdown?.systemParts, systemPrompt)
       : [];
@@ -265,6 +269,7 @@ export class TaskTurnInputBuilder {
       inputMaterialParts: [...systemParts, ...promptAssembly.parts],
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      ...(claudeSystemPromptBlocks ? { claudeSystemPromptBlocks } : {}),
       ...(inputUuid ? { inputUuid } : {}),
       ...(instructionNumberOf(firstIntervention)
         ? { runnerInterventionId: instructionNumberOf(firstIntervention) }
@@ -491,12 +496,14 @@ export class TaskTurnInputBuilder {
       const systemPrompt = backend === "antigravity" || backend === "opencode"
         ? ctx.effectiveSystemPrompt ?? ""
         : ctx.effectiveSystemPrompt;
+      const claudeSystemPromptBlocks = backend === "claude" ? ctx.claudeSystemPromptBlocks : undefined;
       const systemParts = systemPrompt ? systemPromptMaterialParts(ctx.inputMaterialBreakdown?.systemParts, systemPrompt) : [];
       return {
         ...replayFields,
         prompt: promptAssembly.prompt,
         inputMaterialParts: [...systemParts, ...promptAssembly.parts],
         imageAttachmentPaths,
+        ...(claudeSystemPromptBlocks ? { claudeSystemPromptBlocks } : {}),
         ...(inputUuid ? { inputUuid } : {}),
         ...(backend === "antigravity" || backend === "opencode"
           ? { systemPrompt }

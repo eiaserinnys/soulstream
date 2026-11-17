@@ -115,6 +115,11 @@ export interface ClaudeRunOptions {
   /** Maps to Claude SDK `Options.effort` (wire `output_config.effort`). */
   effort?: EffortLevel;
   systemPrompt?: string;
+  /**
+   * 시스템 프롬프트 블록. 있으면 `systemPrompt` 대신 이 배열을 SDK에 넘긴다.
+   * `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` 앞 블록만 세션 사이 캐시된다.
+   */
+  systemPromptBlocks?: string[];
   /** Python `agents.yaml.allowed_tools` → Claude SDK `ClaudeAgentOptions.allowedTools`. */
   allowedTools?: string[];
   /** Python `agents.yaml.disallowed_tools` → Claude SDK `disallowedTools`. */
@@ -1092,6 +1097,9 @@ export class ClaudeEngineAdapter
       ...(model ? { model } : {}),
       ...(claudeEffort ? { effort: claudeEffort } : {}),
       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
+      ...(params.claudeSystemPromptBlocks?.length
+        ? { systemPromptBlocks: params.claudeSystemPromptBlocks }
+        : {}),
       ...(params.allowedTools !== undefined ? { allowedTools: params.allowedTools } : {}),
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),

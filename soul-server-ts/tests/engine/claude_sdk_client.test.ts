@@ -119,6 +119,11 @@ describe("ClaudeSdkClient", () => {
           resumeSessionId: "resume-1",
           model: "claude-sonnet-4.5",
           systemPrompt: "system",
+          systemPromptBlocks: [
+            "atom rules",
+            SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+            "folder prompt",
+          ],
           env: {
             HOME: "/home/test",
             CLAUDE_CODE_OAUTH_TOKEN: "task-token",
@@ -146,7 +151,11 @@ describe("ClaudeSdkClient", () => {
       promptSuggestions: true,
       includePartialMessages: false,
       model: "claude-sonnet-4.5",
-      systemPrompt: ["system", SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
+      systemPrompt: [
+        "atom rules",
+        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+        "folder prompt",
+      ],
       resume: "resume-1",
       pathToClaudeCodeExecutable: "/opt/claude",
     });
@@ -3716,6 +3725,11 @@ describe("ClaudeSdkClient", () => {
           workspaceDir: "/tmp/claude-work",
           env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
           systemPrompt: "system instructions",
+          systemPromptBlocks: [
+            "system instructions",
+            SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+            "folder prompt",
+          ],
         },
         new AbortController().signal,
       ),
@@ -3727,7 +3741,11 @@ describe("ClaudeSdkClient", () => {
       cwd: "/tmp/claude-work",
       env: { CLAUDE_CODE_OAUTH_TOKEN: "task-token" },
       resume: "claude-sess-5",
-      systemPrompt: ["system instructions", SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
+      systemPrompt: [
+        "system instructions",
+        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+        "folder prompt",
+      ],
     });
     expect(captured[1]?.prompt).toBe("/compact");
   });

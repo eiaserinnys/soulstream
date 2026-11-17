@@ -115,6 +115,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   model: z.string().nullable().optional(),
   reasoningEffort: z.enum(MODEL_REASONING_EFFORTS).optional(),
   systemPrompt: z.string().optional(),
+  claudeSystemPromptBlocks: z.array(z.string()).optional(),
   allowedTools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
   maxTurns: z.number().int().positive().optional(),
