@@ -68,6 +68,65 @@ describe("RecurringJobsTab lifecycle", () => {
     shared.openSession.mockReset();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it("shows a loading status until the first list request succeeds, and keeps the list on refresh", async () => {
+    let resolveList!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolveList = resolve; })));
+    await renderTab();
+    expect(document.body.querySelector('[role="status"]')?.textContent).toContain("불러오는 중");
+    expect(document.body.textContent).not.toContain("활성");
+    expect(document.body.textContent).not.toContain("없음");
+    resolveList(json({ jobs: [recurringJob()] }));
+    await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
+    clickButton("새로고침");
+    expect(buttonContaining("음악 추천")).toBeDefined();
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+    resolveList(json({ jobs: [recurringJob()] }));
+    await settle();
+  });
+
+  it("places save and preview failures below their buttons, while run failures stay at the top", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "test-id" });
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/runs?limit=50")) return json({ runs: [] });
+      if (path.endsWith("/run")) return json({ detail: "실행 실패" }, 500);
+      if (path.endsWith("/preview")) return json({ detail: "미리보기 실패" }, 500);
+      if (init?.method === "PATCH") return json({ detail: "저장 실패" }, 500);
+      return json({ jobs: [recurringJob()] });
+    }));
+    await renderTab();
+    await waitFor(() => expect(buttonContaining("음악 추천")).toBeDefined());
+    flushSync(() => buttonContaining("음악 추천")?.click());
+    setInput("오프라인 허용 초", "0");
+    clickButton("변경 저장");
+    await waitFor(() => expect(document.body.textContent).toContain("오프라인 허용 초는 1 이상의 정수여야 합니다."));
+    expect(document.body.querySelector('[role="alert"]')?.previousElementSibling?.contains(button("변경 저장")!)).toBe(true);
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    setInput("오프라인 허용 초", "1800");
+    clickButton("변경 저장");
+    await waitFor(() => expect(document.body.textContent).toContain("저장 실패"));
+    const saveAlert = document.body.querySelector('[role="alert"]')!;
+    expect(button("변경 저장")!.compareDocumentPosition(saveAlert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(saveAlert.previousElementSibling?.contains(button("변경 저장")!)).toBe(true);
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+    clickButton("변경 저장");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(3));
+    clickButton("다음 5회 보기");
+    await waitFor(() => expect(document.body.textContent).toContain("미리보기 실패"));
+    expect(document.body.querySelector('[role="alert"]')?.previousElementSibling?.contains(button("변경 저장")!)).toBe(true);
+    clickButton("새 작업");
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    flushSync(() => buttonContaining("음악 추천")?.click());
+    clickButton("지금 실행");
+    await waitFor(() => expect(document.body.textContent).toContain("실행 실패"));
+    const runAlert = document.body.querySelector('[role="alert"]')!;
+    expect(runAlert.previousElementSibling?.tagName).toBe("HEADER");
+    expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(1);
   });
 
   it("clears a failed list load on refresh and shows a new failure", async () => {
@@ -456,6 +515,7 @@ describe("RecurringJobsTab lifecycle", () => {
     clickButton("변경 저장");
 
     await waitFor(() => expect(document.body.textContent).toContain("다른 변경을 반영했습니다. 입력은 보존했습니다. 최신 버전으로 다시 저장하세요."));
+    expect(document.body.querySelector('[role="alert"]')?.previousElementSibling?.contains(button("변경 저장")!)).toBe(true);
     expect((document.body.querySelector('[aria-label="작업 이름"]') as HTMLInputElement).value).toBe("보존할 초안");
     expect(listCount).toBeGreaterThanOrEqual(2);
   });

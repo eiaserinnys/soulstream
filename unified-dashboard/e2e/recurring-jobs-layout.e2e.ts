@@ -71,7 +71,7 @@ const JOBS = [
   }),
 ];
 
-type RouteState = { failJobs: boolean };
+type RouteState = { failJobs: boolean; listGate?: Promise<void>; failSave?: boolean };
 
 async function installRoutes(page: Page, state: RouteState = { failJobs: false }) {
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1 });
@@ -80,7 +80,7 @@ async function installRoutes(page: Page, state: RouteState = { failJobs: false }
     json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } },
   }));
   // 마지막에 등록한 라우트가 먼저 잡는다. 반복 작업 API만 이 화면의 고정 자료로 답한다.
-  await page.route("**/api/recurring-jobs**", (route) => {
+  await page.route("**/api/recurring-jobs**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith("/runs")) return route.fulfill({ json: { runs: [] } });
@@ -88,7 +88,11 @@ async function installRoutes(page: Page, state: RouteState = { failJobs: false }
       return route.fulfill({ status: 500, json: { detail: { error: { message: "예약 작업을 불러오지 못했습니다" } } } });
     }
     if (url.pathname === "/api/recurring-jobs" && request.method() === "GET") {
+      await state.listGate;
       return route.fulfill({ json: { jobs: JOBS } });
+    }
+    if (state.failSave && ((url.pathname === "/api/recurring-jobs" && request.method() === "POST") || (url.pathname.startsWith("/api/recurring-jobs/") && request.method() === "PATCH"))) {
+      return route.fulfill({ status: 500, json: { detail: "저장하지 못했습니다" } });
     }
     return route.fulfill({ json: { job: JOBS[0] } });
   });
@@ -607,6 +611,36 @@ for (const width of [1440, 360]) test(`첫 목록 조회 실패 뒤 새로고침
   await tab.getByTestId("recurring-jobs-refresh").click();
   await expect(tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first()).toBeVisible();
   await expect(tab.getByRole("alert")).toHaveCount(0);
+});
+
+for (const width of [1440, 360]) test(`첫 로딩과 저장 실패 안내 ${width}`, async ({ page }) => {
+  const { capture } = await preparePage(page, width);
+  let release!: () => void;
+  const listGate = new Promise<void>((resolve) => { release = resolve; });
+  await installRoutes(page, { failJobs: false, failSave: true, listGate });
+  const { tab } = await openRecurringTab(page);
+  await expect(tab.getByRole("status")).toHaveText("불러오는 중…");
+  await expect(tab.getByText("활성", { exact: true })).toHaveCount(0);
+  await expect(tab.getByText("없음", { exact: true })).toHaveCount(0);
+  await capture(`first-loading-${width}`);
+  release();
+  await tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first().click();
+  await tab.locator(":scope > div").evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await page.locator(".config-dialog .config-detail").evaluate(element => { element.scrollTop = element.scrollHeight; });
+  const save = tab.getByRole("button", { name: "변경 저장" });
+  await save.scrollIntoViewIfNeeded();
+  await save.click();
+  const alert = tab.getByRole("alert");
+  await expect(alert).toContainText("저장하지 못했습니다");
+  const position = await alert.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const row = element.previousElementSibling!.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom, rowBottom: row.bottom, height: window.innerHeight };
+  });
+  expect(position.top).toBeGreaterThanOrEqual(position.rowBottom);
+  expect(position.top).toBeGreaterThanOrEqual(0);
+  expect(position.bottom).toBeLessThanOrEqual(position.height);
+  await capture(`save-error-${width}`);
 });
 
 for (const width of [1440, 390, 360]) {

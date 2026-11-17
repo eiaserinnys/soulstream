@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Input,
@@ -72,12 +72,16 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const catalog = useDashboardStore((state) => state.catalog);
   const [jobs, setJobs] = useState<RecurringJob[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<RecurringJob | null>(null);
   const [editor, setEditor] = useState<Editor>(emptyEditor);
   const [runs, setRuns] = useState<RecurringJobRun[]>([]);
   const [preview, setPreview] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ message: string; key: number } | null>(null);
+  const actionErrorKey = useRef(0);
+  const failAction = (text: string) => setActionError({ message: text, key: ++actionErrorKey.current });
   const [listFailed, setListFailed] = useState(false);
 
   const loadRuns = useCallback(async (jobId: string) => {
@@ -93,6 +97,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     try {
       loaded = await api.listRecurringJobs(true);
       setListFailed(false);
+      setLoaded(true);
     } catch (caught) {
       setListFailed(true);
       throw caught;
@@ -120,21 +125,22 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const save = async () => {
     setBusy(true);
     setError(null);
+    setActionError(null);
     try {
       const write = writeFromEditor(editor, selected?.schedule_kind);
       const saved = selected
         ? await api.updateRecurringJob(selected.job_id, { ...write, expected_version: selected.version })
         : await api.createRecurringJob({ ...write, idempotency_key: `recurring-job:${crypto.randomUUID()}` });
-      await refresh(saved.job_id);
+      await refresh(saved.job_id).catch((caught: unknown) => setError(message(caught)));
     } catch (caught) {
       if (isVersionConflict(caught) && selected) {
         try {
           await refresh(selected.job_id, { preserveEditor: true });
-          setError("다른 변경을 반영했습니다. 입력은 보존했습니다. 최신 버전으로 다시 저장하세요.");
+          failAction("다른 변경을 반영했습니다. 입력은 보존했습니다. 최신 버전으로 다시 저장하세요.");
         } catch (reloadError) {
           setError(message(reloadError));
         }
-      } else setError(message(caught));
+      } else failAction(message(caught));
     } finally {
       setBusy(false);
     }
@@ -144,6 +150,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     if (!selected) return;
     setBusy(true);
     setError(null);
+    setActionError(null);
     try {
       const saved = await api.updateRecurringJob(selected.job_id, {
         expected_version: selected.version,
@@ -161,6 +168,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     if (!selected || !confirmRecurringArchive(selected.name)) return;
     setBusy(true);
     setError(null);
+    setActionError(null);
     try {
       await api.archiveRecurringJob(selected.job_id, selected.version);
       setSelected(null);
@@ -178,6 +186,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     if (!selected) return;
     setBusy(true);
     setError(null);
+    setActionError(null);
     try {
       const jobId = selected.job_id;
       const run = await api.runRecurringJob(jobId, `recurring-run:${crypto.randomUUID()}`);
@@ -196,6 +205,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const previewSchedule = async () => {
     setBusy(true);
     setError(null);
+    setActionError(null);
     try {
       const result = await api.previewRecurringSchedule({
         timezone: editor.timezone,
@@ -203,7 +213,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
       });
       setPreview(result.nextRuns);
     } catch (caught) {
-      setError(message(caught));
+      failAction(message(caught));
     } finally {
       setBusy(false);
     }
@@ -214,21 +224,21 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 
   return (
     <SettingsListDetailFrame testId="recurring-jobs-tab" list={<>
-        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught))); }}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
-            setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null);
+        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); setActionError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught))); }}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
+            setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null); setActionError(null);
           }}>새 작업</Button></>} />
-        {!listFailed ? <><JobList
+        {!listFailed && loaded ? <><JobList
           title="활성"
           jobs={activeJobs}
           selectedId={selected?.job_id ?? null}
-          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
+          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
         />
         {archivedJobs.length > 0 ? <JobList
           title="보관됨"
           jobs={archivedJobs}
           selectedId={selected?.job_id ?? null}
-          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
-        /> : null}</> : null}
+          onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
+        /> : null}</> : !listFailed ? <p role="status" className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p> : null}
     </>}>
         <SettingsDetailHeader
           title={selected ? selected.name : "새 반복 작업"}
@@ -284,6 +294,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
           <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
+        {actionError ? <SettingsAlert key={actionError.key} scrollIntoView>{actionError.message}</SettingsAlert> : null}
         {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
