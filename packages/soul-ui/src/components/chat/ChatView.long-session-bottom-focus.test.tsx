@@ -1723,6 +1723,65 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(3);
   });
 
+  it("고리를 붙인 뒤 목록 높이가 바뀌면 대상 행을 다시 맞춘다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    ({ container, root } = await renderChatView());
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+    const target = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+    );
+    if (!scroller || !target) throw new Error("검색 대상 chat row가 없습니다.");
+    const rect = (top: number, bottom: number): DOMRect => ({
+      x: 0, y: top, top, bottom, left: 0, right: 320,
+      width: 320, height: bottom - top, toJSON: () => ({}),
+    });
+    scroller.getBoundingClientRect = () => rect(100, 300);
+    target.getBoundingClientRect = () => rect(450, 490);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const runFrames = () => flushSync(() => frames.splice(0).forEach((callback) => callback(0)));
+    // 렌더마다 바뀌는 최신 콜백을 부른다.
+    const itemsRendered = () => (virtuosoMock.props?.itemsRendered as () => void)();
+    const heightChanged = () => (virtuosoMock.props?.totalListHeightChanged as () => void)();
+    virtuosoMock.scrollToIndex.mockClear();
+
+    // 행이 DOM에 있는데 추정 높이로 빗나간 스크롤은 행 찾기 3회 상한에 들지 않고 초점을 지우지 않는다.
+    flushSync(() => useDashboardStore.getState().setFocusEventId(42, "sess-long"));
+    await flushPassiveEffects();
+    for (let round = 0; round < 4; round += 1) {
+      runFrames();
+      flushSync(() => itemsRendered());
+    }
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(5);
+    expect(useDashboardStore.getState().focusEventId).toBe(42);
+    target.getBoundingClientRect = () => rect(150, 190);
+    flushSync(() => itemsRendered());
+    expect(target.classList.contains("chat-focus-ring")).toBe(true);
+    runFrames();
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(5);
+
+    // 고리를 붙인 뒤 추정 높이 보정으로 목록이 자라 행이 밀리면 다음 프레임에 다시 맞춘다.
+    target.getBoundingClientRect = () => rect(450, 490);
+    flushSync(() => heightChanged());
+    runFrames();
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(6);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenLastCalledWith({
+      index: findDataIndexByKey("user-msg-42"), align: "center",
+    });
+    expect(useDashboardStore.getState().focusEventId).toBe(42);
+
+    // 사용자가 직접 스크롤하면 맞추기를 멈춘다.
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    await flushPassiveEffects();
+    expect(useDashboardStore.getState().focusEventId).toBeNull();
+    flushSync(() => heightChanged());
+    runFrames();
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(6);
+  });
+
   it("렌더 뒤 늦게 온 포커스 요청에도 고리가 붙는다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
     ({ container, root } = await renderChatView());
@@ -1939,7 +1998,8 @@ describe("ChatView long-session initial bottom focus", () => {
   });
 
   it("DOM 행을 찾지 못한 포커스 요청은 재시도가 끝나면 해제한다", async () => {
-    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    // 목록이 다른 행은 그렸는데 대상 행만 없는 경우다. 행을 하나도 그리지 않은 목록은 렌더를 기다린다.
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(7), makeUserMessage(42)]);
     ({ container, root } = await renderChatView());
 
     const targetRow = container.querySelector<HTMLElement>(
