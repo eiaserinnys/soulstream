@@ -52,7 +52,6 @@ describe("MCP stateless restart recovery", () => {
       mcp: {
         runtime: makeRuntime(),
         path: "/mcp",
-        statelessTransport: true,
         auth: {
           requireAuth: true,
           bearerToken: "shared-secret",

@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import http from "node:http";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -45,6 +46,8 @@ function createSilentLogger() {
     child: () => createSilentLogger(),
   } as unknown as McpRuntime["logger"];
 }
+
+const queuedIntervention: AddInterventionResult = { delivered: false, queued: true, queuePosition: 1, consumeWhen: "next_turn", reason: "next_turn_required" };
 
 function makeRuntime(
   addInterventionResult: AddInterventionResult | Error,
@@ -274,7 +277,7 @@ describe("node-local worktree tools", () => {
   ] as const)("%s always executes on the receiving node", async (name, method, args) => {
     const capture = await createOrchCapture(500, () => ({ body: { error: "unexpected remote call" } }));
     try {
-      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const runtime = makeRuntime(queuedIntervention, capture.orch);
       const localResult = method === "list"
         ? { worktrees: [{ worktreeId: "local-worktree" }], nextCursor: null, total: 1 }
         : { worktreeId: "local-worktree" };
@@ -321,7 +324,7 @@ describe("agent profile backend boundary", () => {
       ],
     };
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [agentWithPreset, claudeAgent],
     );
@@ -355,7 +358,7 @@ describe("agent profile backend boundary", () => {
 
   it("list_local_agents는 DB/YAML 출처와 stale 상태를 함께 노출", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent],
     );
@@ -396,7 +399,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 선택한 backend profile을 executor에 그대로 전달", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -448,7 +451,7 @@ describe("agent profile backend boundary", () => {
     }));
     try {
       const runtime = makeRuntime(
-        { queued: true, queuePosition: 1 },
+        queuedIntervention,
         capture.orch,
         [{ ...claudeAgent, default_preset: "claude-default" }],
       );
@@ -495,7 +498,7 @@ describe("agent profile backend boundary", () => {
     }));
     try {
       const runtime = makeRuntime(
-        { queued: true, queuePosition: 1 },
+        queuedIntervention,
         capture.orch,
         [{ ...codexAgent, default_preset: "codex-default" }],
       );
@@ -551,7 +554,7 @@ describe("agent profile backend boundary", () => {
     }));
     try {
       const runtime = makeRuntime(
-        { queued: true, queuePosition: 1 },
+        queuedIntervention,
         capture.orch,
         [{ ...claudeAgent, default_preset: "gemini-4-argon" }],
       );
@@ -607,7 +610,7 @@ describe("agent profile backend boundary", () => {
     }));
     try {
       const runtime = makeRuntime(
-        { queued: true, queuePosition: 1 },
+        queuedIntervention,
         capture.orch,
         [{ ...claudeAgent, default_preset: "gemini-4-argon" }],
       );
@@ -649,7 +652,7 @@ describe("agent profile backend boundary", () => {
     }));
     try {
       const runtime = makeRuntime(
-        { queued: true, queuePosition: 1 },
+        queuedIntervention,
         capture.orch,
         [{ ...codexAgent, default_preset: "codex-default" }],
       );
@@ -678,7 +681,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 명시 profile을 프로필 소스에서 한 번만 조회한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent],
     );
@@ -718,7 +721,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 잘못된 preset에 조회 도구와 현재 node 힌트를 제공", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent],
     );
@@ -744,7 +747,7 @@ describe("agent profile backend boundary", () => {
   });
 
   it.each([undefined, "a661ff4c-4f01-4702-b623-581ca42c58fe"])("rejects an explicitly missing caller with worktree %s", async (worktree_id) => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const runtime = makeRuntime(queuedIntervention);
     const client = await createClient(runtime);
     const result = await client.callTool({ name: "create_agent_session", arguments: {
       agent_id: "codex-default", prompt: "child", caller_session_id: "missing", ...(worktree_id ? { worktree_id } : {}),
@@ -755,7 +758,7 @@ describe("agent profile backend boundary", () => {
   });
 
   it("continues if explicit caller lookup throws", async () => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const runtime = makeRuntime(queuedIntervention);
     vi.mocked(runtime.db.getSession).mockRejectedValue(new Error("central unavailable"));
     const client = await createClient(runtime);
     const result = await client.callTool({ name: "create_agent_session", arguments: { agent_id: "codex-default", prompt: "child", caller_session_id: "caller-sess-1" } });
@@ -767,7 +770,7 @@ describe("agent profile backend boundary", () => {
     [" caller-sess-1 ", {}],
     ["  ", { "x-soulstream-agent-session-id": "caller-sess-1" }],
   ])("preserves caller ID normalization for %j", async (caller_session_id, headers) => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const runtime = makeRuntime(queuedIntervention);
     const client = await createClient(runtime, { headers });
     const result = await client.callTool({ name: "create_agent_session", arguments: { agent_id: "codex-default", prompt: "child", caller_session_id } });
     expect(result.isError).not.toBe(true);
@@ -776,7 +779,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 caller_session_id와 caller_info를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -811,7 +814,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 worktree와 검증할 caller session을 함께 전달한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -836,7 +839,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 notify_completion=false에서도 caller provenance를 유지한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
       "root",
@@ -871,7 +874,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 predecessor_session_id를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -894,7 +897,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 MCP 요청 header의 caller id를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -927,7 +930,7 @@ describe("agent profile backend boundary", () => {
 
   it("create_agent_session은 caller의 폴더를 단건 조회해 상속한다", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
       "root",
@@ -957,7 +960,7 @@ describe("agent profile backend boundary", () => {
 
   it("reflect_service level=3은 typed runtime snapshot 안에 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
-      { queued: true, queuePosition: 1 },
+      queuedIntervention,
       undefined,
       [codexAgent, claudeAgent],
     );
@@ -996,7 +999,7 @@ describe("create_remote_agent_session forwarding attribution", () => {
   ] as const)("%s", async (_label, headers, args) => {
     const capture = await createOrchCapture(200, () => ({ body: { content: [], structuredContent: { agentSessionId: "sess-child", nodeId: "node-remote" } } }));
     try {
-      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const runtime = makeRuntime(queuedIntervention, capture.orch);
       const client = await createClient(runtime, { headers });
       const result = await client.callTool({ name: "create_remote_agent_session", arguments: {
         node_id: "node-remote", agent_id: "roselin_codex", prompt: "delegate", ...args,
@@ -1013,7 +1016,7 @@ describe("create_remote_agent_session forwarding attribution", () => {
 
 describe("reflect_cluster_brief registration", () => {
   it("returns explicit error when orchestrator proxy is not configured", async () => {
-    const client = await createClient(makeRuntime({ queued: true, queuePosition: 1 }));
+    const client = await createClient(makeRuntime(queuedIntervention));
     expect(await client.callTool({ name: "reflect_cluster_brief", arguments: {} })).toMatchObject({
       isError: true, structuredContent: { error: "multi-node not configured" },
     });
@@ -1258,14 +1261,14 @@ describe("number references reach local tools as full IDs", () => {
   }
 
   it("create_agent_session passes the full card ID to createTask", async () => {
-    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const runtime = makeRuntime(queuedIntervention);
     const lookup = withCardLookup(runtime);
     const client = await createClient(runtime);
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "create_agent_session",
       arguments: { agent_id: "codex-default", prompt: "child work", caller_session_id: "caller-sess-1", card_id: "#7" },
-    });
+    }));
 
     expect(result.isError).not.toBe(true);
     expect(lookup).toHaveBeenCalledWith(["#7"]);
@@ -1278,10 +1281,10 @@ describe("number references reach local tools as full IDs", () => {
     const lookup = withCardLookup(runtime);
     const client = await createClient(runtime);
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "send_message_to_session",
       arguments: { target_session_id: "#7.s1", message: "hello", caller_session_id: "caller-sess-1" },
-    });
+    }));
 
     expect(result.isError).not.toBe(true);
     expect(lookup).toHaveBeenCalledWith(["#7.s1"]);

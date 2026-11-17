@@ -31,7 +31,8 @@
     "tests/upstream",
     "tests/scripts",
     "tests/engine",
-    "tests/*.ts"
+    "tests/*.ts",
+    "tests/mcp"
   ],
   "exclude": [
     "node_modules",

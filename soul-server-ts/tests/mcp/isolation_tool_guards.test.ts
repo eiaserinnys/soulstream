@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 /**
  * §4 guard 계약 검증 — draft-card / card-status / worktree-create /
  * owned-worktree / message-recipient / create-local-session.
@@ -118,7 +119,7 @@ describe("message-recipient guard", () => {
     ["missing root", { root: null, ancestors: [] }],
     ["lookup failure", new Error("db down")],
   ])("denies when the caller chain is unprovable (%s)", async (_label, chain) => {
-    const ctx = context({ chains: { [ME]: chain as SessionExecutionChain | Error, [OTHER]: chains[OTHER] } });
+    const ctx = context({ chains: { [ME]: chain as SessionExecutionChain | Error, [OTHER]: required(chains[OTHER]) } });
     const decision = await runIsolationToolGuard(
       "message-recipient",
       { target_session_id: OTHER },

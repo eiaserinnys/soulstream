@@ -1,7 +1,8 @@
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { z, type ZodType } from "zod";
+import { required } from "./typecheck-helpers.js";
 import { registerCardTools } from "../../src/mcp/tools/card_tools.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { resolvePrimarySessionFolderContext } from "../../src/context/session_folder_context.js";
@@ -47,7 +48,7 @@ describe("card MCP contract", () => {
     ];
     const failures: string[] = [];
     for (const { tool, field, max, description } of limitCases) {
-      const schema = entries.get(tool)!.config.inputSchema[field];
+      const schema = required(entries.get(tool)!.config.inputSchema[field]) as ZodType;
       if (schema.description !== description) failures.push(`${tool}.${field} description=${String(schema.description)}`);
       const probes: Array<[string, number | undefined, boolean]> = [
         ["omitted", undefined, true], ["min", 1, true], ["max", max, true], ["below", 0, false], ["above", max + 1, false],
@@ -121,7 +122,7 @@ describe("card MCP contract", () => {
     const h = makeTaskCreationHarness();
     await h.creation.createTask({ agentSessionId: "session-1", prompt: "작업", folderId: "folder-1", cardId: "card-1" } as any);
     await h.creation.waitForDeferredEffects("session-1");
-    expect(h.registerSession.mock.calls[0][0]).toMatchObject({ cardId: "card-1" });
+    expect(required(h.registerSession.mock.calls[0])[0]).toMatchObject({ cardId: "card-1" });
     expect(h.moveSessionToFolder).toHaveBeenCalledWith("session-1", "folder-1");
   });
 });

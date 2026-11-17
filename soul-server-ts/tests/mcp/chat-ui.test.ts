@@ -85,7 +85,7 @@ describe("publish_chat_ui", () => {
   });
 
   it("requires an authenticated caller and an active execution registration", async () => {
-    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({ publisher, task: activeTask() }));
     const args = { publication_key: "summary", document: validDocument };
 
@@ -103,7 +103,7 @@ describe("publish_chat_ui", () => {
   });
 
   it("returns validation paths and does not publish an invalid document", async () => {
-    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({ publisher, task: activeTask() }));
     const result = await callTool(client, {
       publication_key: "summary",
@@ -139,7 +139,7 @@ describe("publish_chat_ui", () => {
   });
 
   it("publishes one allowlisted assistant event and returns the committed event id", async () => {
-    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({ publisher, task: activeTask() }));
     const result = await callTool(client, {
       publication_key: "summary",
@@ -174,7 +174,7 @@ describe("publish_chat_ui", () => {
   });
 
   it("stamps the active dispatcher command on a chat UI publication", async () => {
-    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({
       publisher,
       task: activeTaskWithCommand("dispatcher-command-1"),
@@ -191,7 +191,7 @@ describe("publish_chat_ui", () => {
   });
 
   it("derives stable identities from session, publication key, and canonical document", async () => {
-    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const publisher = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({ publisher, task: activeTask() }));
     const firstDocument = {
       schema_version: 1,

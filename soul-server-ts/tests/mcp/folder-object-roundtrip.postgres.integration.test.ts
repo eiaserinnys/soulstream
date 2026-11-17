@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -64,17 +65,17 @@ describe("folder object orchestrator MCP roundtrip", () => {
       hydratePage: async () => {},
     });
     const options = { serviceProvider: async () => new FolderControlPlaneService(sql, async () => []),
-      cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
+      cardServiceProvider: async () => cards, identity, nodeCredentials: null, authBearerToken: "service-token" };
     folderHostOptions = options;
     app = Fastify();
-    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken, folders: options, cards: {
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, nodeCredentials: null, authBearerToken: options.authBearerToken, folders: options, cards: {
       cardServiceProvider: options.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
     } });
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
     const logger = { warn: vi.fn() } as never;
-    runtime = { nodeId: "test-node", orch, logger } as McpRuntime;
+    runtime = { nodeId: "test-node", orch, logger } as unknown as McpRuntime;
   }, 60_000);
 
   afterAll(async () => { await app?.close(); await h?.cleanup(); });
@@ -96,7 +97,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
       await server.connect(serverTransport); await client.connect(clientTransport);
-      return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
+      return toolResult(await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> })));
     } finally { await client.close(); await server.close(); }
   }
 
@@ -108,11 +109,11 @@ describe("folder object orchestrator MCP roundtrip", () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
       await server.connect(serverTransport); await client.connect(clientTransport);
-      return await client.callTool({ name, arguments: input as Record<string, unknown> });
+      return toolResult(await client.callTool({ name, arguments: input as Record<string, unknown> }));
     } finally { await client.close(); await server.close(); }
   }
 
-  async function roundtrip(name: string, input: object, requestContext = context) {
+  async function roundtrip(name: string, input: object, requestContext: McpRequestContext = context) {
     await seed(); const next = await call(name, input, requestContext);
     expect(serializeResult(name, next)).toMatchSnapshot();
     return next;

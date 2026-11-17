@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 import { readFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -75,17 +76,17 @@ describe("card orchestrator MCP roundtrip", () => {
     });
     const options = { cardServiceProvider: async () => cards,
       provider: { listFolders: async () => [{ id: "cards-a" }, { id: "cards-b" }, { id: "claude" }], listSessionAssignments: () => ({}) },
-      accessProvider: createLiveDashboardAccessProvider({ configProvider: {
+      accessProvider: createLiveDashboardAccessProvider({ nodeCredentials: null, configProvider: {
         getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "" }),
       } as never, jwt: { verifyToken: async () => null } as never, repository: { findUserByEmail: async () => null } }),
-      authBearerToken: "service-token" };
+      nodeCredentials: null, authBearerToken: "service-token" };
     app = Fastify();
     // The folder host route is where the worker's number lookup lands; sessions back get_session_summary.
-    registerFolderControlPlaneHostRoute(app, { authBearerToken: options.authBearerToken,
+    registerFolderControlPlaneHostRoute(app, { nodeCredentials: null, authBearerToken: options.authBearerToken,
       serviceProvider: async () => ({}) as never, cardServiceProvider: async () => cards });
-    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: options.authBearerToken,
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, nodeCredentials: null, authBearerToken: options.authBearerToken,
       cards: { ...options, resolveAccess: serviceTokenAccessWithoutEmail }, folders: {
-      authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
+      nodeCredentials: null, authBearerToken: options.authBearerToken, serviceProvider: async () => { throw new Error("unused folder host"); },
     }, sessions: { repositoryProvider: async () => ({
       sessionReads: { getSession: async (id: string) => (await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0] ?? null },
       sessionReadComposites: { getTurnExcerpt: async () => ({ totalEvents: 0, turns: [] }) },
@@ -128,7 +129,7 @@ describe("card orchestrator MCP roundtrip", () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
       await server.connect(serverTransport); await client.connect(clientTransport);
-      return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> }));
+      return toolResult(await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: input as Record<string, unknown> })));
     } finally { await client.close(); await server.close(); }
   }
   it.each(cases)("preserves %s", async (_label, name, input, requestContext = context, fails = false) => {

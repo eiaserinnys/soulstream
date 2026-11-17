@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { STATUS_CODES } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { jsonResult, type McpToolName } from "@soulstream/mcp-contract";
@@ -22,9 +23,9 @@ describe("session message worker remote and orchestrator parity", () => {
   ])("preserves the whole result for %s", async (state, ack) => {
     const harness = createActionHarness({ createSession: state !== "missing", ackFor: () => ack });
     try {
-      const next = await executeMcpTool({ sessionMessages: { router: harness.router, bridge: harness.bridge } } as unknown as McpHostOptions,
-        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "같은 메시지" }, external);
-      const callerInfo = harness.sent.at(-1)?.caller_info;
+      const next = toolResult(await executeMcpTool({ sessionMessages: { router: harness.router, bridge: harness.bridge } } as unknown as McpHostOptions,
+        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "같은 메시지" }, external));
+      const callerInfo = harness.sent.at(-1)?.caller_info as Parameters<typeof sendMessageToSession>[1]["callerInfo"];
       const fetchImpl: typeof fetch = async (_url, init) => {
         const response = await harness.app.inject({ method: "POST", url: "/api/sessions/sess-contract/intervene",
           payload: JSON.parse(String(init!.body)) });
@@ -46,9 +47,9 @@ describe("session message worker remote and orchestrator parity", () => {
     const h = createActionHarness({ ackFor: () => ({ delivered: true }) });
     try {
       const callerInfo = { source: "agent", display_name: "로젤린", agent_node: "node", agent_id: "roselin" };
-      const result = await executeMcpTool({ sessionMessages: { router: h.router, bridge: h.bridge } } as unknown as McpHostOptions,
+      const result = toolResult(await executeMcpTool({ sessionMessages: { router: h.router, bridge: h.bridge } } as unknown as McpHostOptions,
         "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "전달" },
-        { ...external, principal: "internal", callerInfo });
+        { ...external, principal: "internal", callerInfo }));
       expect(result.isError).not.toBe(true);
       expect(h.sent[0]).toMatchObject({ caller_info: callerInfo });
     } finally { await h.app.close(); }
@@ -57,8 +58,8 @@ describe("session message worker remote and orchestrator parity", () => {
     const send = vi.fn(async () => { throw new PendingNodeCommandTimeoutError({ commandType: "intervene", requestId: "timeout", timeoutMs: 30_000 }); });
     const h = createActionHarness({ bridgeOverride: { sendPendingCommand: send } });
     try {
-      const result = await executeMcpTool({ sessionMessages: { router: h.router, bridge: { sendPendingCommand: send } } } as unknown as McpHostOptions,
-        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "전달" }, external);
+      const result = toolResult(await executeMcpTool({ sessionMessages: { router: h.router, bridge: { sendPendingCommand: send } } } as unknown as McpHostOptions,
+        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "전달" }, external));
       expect(result.structuredContent).toMatchObject({ ok: true, detail: { delivered: null, reason: "verdict_unknown", outcome: "unknown" } });
       expect(send).toHaveBeenCalledOnce();
     } finally { await h.app.close(); }
@@ -70,8 +71,8 @@ describe("session message worker remote and orchestrator parity", () => {
       const payloads: unknown[] = [];
       const route = vi.spyOn(h.router, "routeExistingSessionPendingCommand");
       route.mockImplementation(async payload => { payloads.push(payload); return { payload } as never; });
-      const result = await executeMcpTool({ sessionMessages: { router: h.router, bridge: { sendPendingCommand: send } } } as unknown as McpHostOptions,
-        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "전달" }, external);
+      const result = toolResult(await executeMcpTool({ sessionMessages: { router: h.router, bridge: { sendPendingCommand: send } } } as unknown as McpHostOptions,
+        "send_message_to_session" as McpToolName, { target_session_id: "sess-contract", message: "전달" }, external));
       expect(result.structuredContent).toMatchObject({ ok: true, detail: { relayed: true, delivered: true } });
       expect(send).toHaveBeenCalledTimes(2);
       expect(payloads[0]).toEqual(payloads[1]);

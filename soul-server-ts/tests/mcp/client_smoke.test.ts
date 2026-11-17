@@ -1,3 +1,4 @@
+import { unusedClusterDependencies } from "../../../orch-server-ts/tests/mcp-cluster-unused-fixture.js";
 /**
  * SDK Client smoke 테스트 — `@modelcontextprotocol/sdk/client/streamableHttp.js`로 실제 접속.
  *
@@ -153,9 +154,8 @@ function createMockSql() {
   fn.array = (a: unknown[]) => a;
   fn.json = (value: unknown) => value;
   fn.end = vi.fn().mockResolvedValue(undefined);
-  fn.begin = vi.fn(async <T>(callback: (sql: SqlClient) => Promise<T>) =>
-    callback(fn as unknown as SqlClient),
-  );
+  fn.begin = async <T>(callback: (sql: SqlClient) => Promise<T>) =>
+    callback(fn as unknown as SqlClient);
   fn.__calls = calls;
   return fn as unknown as SqlClient;
 }
@@ -413,9 +413,9 @@ describe("MCP SDK client smoke", () => {
     smokeRuntime = runtime;
     orch = Fastify();
     const cards = new CardControlPlaneService(createFolderContentSqlAdapter(smokeSql as never), { appendEventTx: async () => 1 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
-    registerMcpHostRoutes(orch, { authBearerToken: "smoke-token", folders: {
-      authBearerToken: "smoke-token", serviceProvider: async () => new FolderControlPlaneService(smokeSql as never, () => smokeProjection.getBoardItems()),
-      cardServiceProvider: async () => cards, identity: { create: vi.fn(), mutateFromFolder: renameFolder },
+    registerMcpHostRoutes(orch, { ...unusedClusterDependencies, authBearerToken: "smoke-token", nodeCredentials: null, folders: {
+      authBearerToken: "smoke-token", nodeCredentials: null, serviceProvider: async () => new FolderControlPlaneService(smokeSql as never, () => smokeProjection.getBoardItems()),
+      cardServiceProvider: async () => cards, identity: { create: vi.fn(), mutateFromFolder: renameFolder as unknown as NonNullable<NonNullable<Parameters<typeof registerMcpHostRoutes>[1]["folders"]>["identity"]>["mutateFromFolder"] },
     }, cards: undefined as never, board: { host: { reads: smokeProjection } as never,
       getSession: async () => null, listAgentProfiles: async () => ({ "codex-default": { name: "Codex" } }),
       broadcaster: { append: () => {} } as never, catalogFolderProvider: {} as never,

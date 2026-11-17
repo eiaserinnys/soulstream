@@ -148,7 +148,7 @@ describe("stateful principal binding", () => {
 
     const borrowed = await listTools(baseUrl, `Bearer ${TOKEN_B}`, sessionId);
     expect(borrowed.status).toBe(403);
-    expect(String((await borrowed.json()).error?.message)).toBe("principal mismatch");
+    expect(String((await borrowed.json() as { error?: { message?: string } }).error?.message)).toBe("principal mismatch");
 
     const asFull = await listTools(baseUrl, `Bearer ${KEY}`, sessionId);
     expect(asFull.status).toBe(403);
@@ -182,7 +182,7 @@ describe("stateful principal binding", () => {
 
     const restricted = await postMcp(baseUrl, `Bearer ${TOKEN_A}`, initializeBody);
     expect(restricted.status).toBe(503);
-    expect(String((await restricted.json()).error?.message)).toBe("ISOLATION_POLICY_UNAVAILABLE");
+    expect(String((await restricted.json() as { error?: { message?: string } }).error?.message)).toBe("ISOLATION_POLICY_UNAVAILABLE");
 
     const fullSession = await initialize(baseUrl, `Bearer ${KEY}`);
     const fullList = await listTools(baseUrl, `Bearer ${KEY}`, fullSession);

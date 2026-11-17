@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -89,7 +90,7 @@ describe("worker MCP card reference translation", () => {
   it("translates a #N.sK session argument", async () => {
     const t = await connect(refs => Response.json(resolved(refs)));
     try {
-      const result = await t.client.callTool({ name: "get_session_summary", arguments: { session_id: "#7.s1" } });
+      const result = toolResult(await t.client.callTool({ name: "get_session_summary", arguments: { session_id: "#7.s1" } }));
       expect(t.handlers.session.mock.calls[0]![0]).toEqual({ session_id: FULL_SESSION_ID });
       expect(result.content?.[0]).toEqual({ type: "text", text: "번호 참조 #7.s1 → 세션 「🔨 P6 체크포인트 조립」" });
     } finally { await t.close(); }

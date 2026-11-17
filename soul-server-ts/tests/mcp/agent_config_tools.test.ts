@@ -33,7 +33,7 @@ describe("get_agents_config", () => {
     const effectiveProfile = {
       ...yamlProfile,
       name: "DB Roselin",
-      atom_contexts: [{ node_id: "db-node" }],
+      atom_contexts: [{ node_id: "db-node", depth: 3, titles_only: false }],
       aliases: [{ id: "db-alias" }],
       default_preset: "db-preset",
       agents_sdk: {

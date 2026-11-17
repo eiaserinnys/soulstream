@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -93,10 +94,10 @@ async function callTool(
   callerSessionId?: string,
   toolName = "register_attachment",
 ) {
-  return withMcpRequestContext(
+  return toolResult(await withMcpRequestContext(
     callerSessionId ? { callerSessionId } : {},
     () => client.callTool({ name: toolName, arguments: input }),
-  );
+  ));
 }
 
 function errorText(result: Awaited<ReturnType<typeof callTool>>): string {
@@ -113,7 +114,7 @@ afterEach(async () => {
 
 describe("register_attachment", () => {
   it("uses the trusted caller, active dispatcher command, and task workspace", async () => {
-    const register = vi.fn(async () => attachmentResult);
+    const register = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["register"]>(async () => attachmentResult);
     const publish = vi.fn(async () => ({ eventId: 17 }));
     const task = activeTask();
     const client = await createClient(makeRuntime({ task, service: { register }, publisher: { publish } }));
@@ -142,7 +143,7 @@ describe("register_attachment", () => {
   });
 
   it("uses the running engine workspace when the session has no worktree", async () => {
-    const register = vi.fn(async () => attachmentResult);
+    const register = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["register"]>(async () => attachmentResult);
     const task = activeTask({ workspaceDir: null, engineWorkspaceDir: "/home/agent/workspace" });
     const client = await createClient(makeRuntime({ task, service: { register } }));
 
@@ -157,7 +158,7 @@ describe("register_attachment", () => {
   });
 
   it("rejects caller supplied provenance fields under the strict input schema", async () => {
-    const register = vi.fn(async () => attachmentResult);
+    const register = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["register"]>(async () => attachmentResult);
     const client = await createClient(makeRuntime({ task: activeTask(), service: { register } }));
 
     const result = await callTool(client, {
@@ -173,7 +174,7 @@ describe("register_attachment", () => {
   });
 
   it("requires a trusted caller and an active execution with a workspace", async () => {
-    const register = vi.fn(async () => attachmentResult);
+    const register = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["register"]>(async () => attachmentResult);
     const noCallerRuntime = makeRuntime({ task: activeTask(), service: { register } });
     const noCallerClient = await createClient(noCallerRuntime);
     const noCaller = await callTool(noCallerClient, { local_path: "report.txt" });
@@ -216,8 +217,8 @@ describe("register_attachment", () => {
 
 describe("attach_session_output", () => {
   it("validates normalized IDs with trusted execution and publishes the durable marker without a workspace", async () => {
-    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const validateSessionOutput = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["validateSessionOutput"]>(async ({ attachment_ids }) => ({ attachment_ids: [...attachment_ids] }));
+    const publish = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 73 }));
     const task = activeTask({ workspaceDir: null, engineWorkspaceDir: "   " });
     const client = await createClient(makeRuntime({
       task,
@@ -264,8 +265,8 @@ describe("attach_session_output", () => {
   });
 
   it("rejects forged provenance and unauthenticated callers before validation", async () => {
-    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const validateSessionOutput = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["validateSessionOutput"]>(async ({ attachment_ids }) => ({ attachment_ids: [...attachment_ids] }));
+    const publish = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 73 }));
     const client = await createClient(makeRuntime({
       task: activeTask(),
       service: { register: vi.fn(), validateSessionOutput },
@@ -288,7 +289,7 @@ describe("attach_session_output", () => {
   });
 
   it("requires an active command and registration, and reports missing services explicitly", async () => {
-    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const validateSessionOutput = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["validateSessionOutput"]>(async ({ attachment_ids }) => ({ attachment_ids: [...attachment_ids] }));
     const baseService = { register: vi.fn(), validateSessionOutput };
     const input = { attachment_ids: ["att-1"] };
 
@@ -323,7 +324,7 @@ describe("attach_session_output", () => {
   });
 
   it("does not publish when validation rejects or returns a different ID sequence", async () => {
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const publish = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 73 }));
     const denied = vi.fn(async () => {
       throw Object.assign(new Error("다른 실행의 첨부입니다."), { code: "ATTACHMENT_PRODUCER_MISMATCH" });
     });
@@ -358,12 +359,12 @@ describe("attach_session_output", () => {
   });
 
   it("does not publish if the active command or registration changes during validation", async () => {
-    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const publish = vi.fn<NonNullable<McpRuntime["chatUiPublisher"]>["publish"]>(async () => ({ eventId: 73 }));
     const commandTask = activeTask();
     commandTask.runner.dispatcher.activeExecutionCommandId = vi.fn()
       .mockReturnValueOnce("output-command-1")
       .mockReturnValueOnce("output-command-2");
-    const commandValidator = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const commandValidator = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["validateSessionOutput"]>(async ({ attachment_ids }) => ({ attachment_ids: [...attachment_ids] }));
     const commandClient = await createClient(makeRuntime({
       task: commandTask,
       service: { register: vi.fn(), validateSessionOutput: commandValidator },
@@ -399,7 +400,7 @@ describe("attach_session_output", () => {
   });
 
   it("returns delivery_unconfirmed on ACK timeout and leaves registration without an output event", async () => {
-    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const validateSessionOutput = vi.fn<NonNullable<McpRuntime["producedAttachments"]>["validateSessionOutput"]>(async ({ attachment_ids }) => ({ attachment_ids: [...attachment_ids] }));
     const publish = vi.fn(async () => { throw new EventAcknowledgementTimeoutError(1, 30_000); });
     const client = await createClient(makeRuntime({
       task: activeTask(),
@@ -422,7 +423,7 @@ describe("attach_session_output", () => {
 
 describe("resolve_attachment", () => {
   it("uses the trusted caller and materializes one attachment in resolve mode", async () => {
-    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const materialize = vi.fn<NonNullable<McpRuntime["attachmentMaterializer"]>["materialize"]>(async () => resolvedAttachmentResult);
     const task = activeTask({ commandId: null });
     const runtime = makeRuntime({ task, materializer: { materialize } });
     const client = await createClient(runtime);
@@ -447,7 +448,7 @@ describe("resolve_attachment", () => {
   });
 
   it("rejects caller and registration scope fields from the request body", async () => {
-    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const materialize = vi.fn<NonNullable<McpRuntime["attachmentMaterializer"]>["materialize"]>(async () => resolvedAttachmentResult);
     const client = await createClient(makeRuntime({ task: activeTask(), materializer: { materialize } }));
 
     const result = await callTool(client, {
@@ -461,7 +462,7 @@ describe("resolve_attachment", () => {
   });
 
   it("requires a trusted caller, an existing task, and a materializer", async () => {
-    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const materialize = vi.fn<NonNullable<McpRuntime["attachmentMaterializer"]>["materialize"]>(async () => resolvedAttachmentResult);
     const noCallerRuntime = makeRuntime({ task: activeTask(), materializer: { materialize } });
     const noCallerClient = await createClient(noCallerRuntime);
     const noCaller = await callTool(noCallerClient, { attachment_id: "attachment-1" }, undefined, "resolve_attachment");

@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -72,10 +73,10 @@ describe("recurring-job MCP tools", () => {
 
     expect(createTool.config.description).toContain("1회");
     expect(createTool.config.description).toContain("idempotency_key");
-    expect(createTool.config.inputSchema.schedule_expressions.isOptional()).toBe(true);
-    expect(createTool.config.inputSchema.run_at.isOptional()).toBe(true);
+    expect(required(createTool.config.inputSchema.schedule_expressions).isOptional()).toBe(true);
+    expect(required(createTool.config.inputSchema.run_at).isOptional()).toBe(true);
     expect(updateTool.config.description).toContain("run_at");
-    expect(updateTool.config.inputSchema.run_at.isOptional()).toBe(true);
+    expect(required(updateTool.config.inputSchema.run_at).isOptional()).toBe(true);
 
     await withMcpRequestContext(
       { callerSessionId: "caller-session" },
@@ -118,9 +119,9 @@ describe("recurring-job MCP tools", () => {
     };
 
     expect(createTool.config.description).toContain("event_trigger");
-    expect(createTool.config.inputSchema.event_trigger.isOptional()).toBe(true);
+    expect(required(createTool.config.inputSchema.event_trigger).isOptional()).toBe(true);
     expect(updateTool.config.description).toContain("event_trigger");
-    expect(updateTool.config.inputSchema.event_trigger.isOptional()).toBe(true);
+    expect(required(updateTool.config.inputSchema.event_trigger).isOptional()).toBe(true);
 
     await withMcpRequestContext(
       { callerSessionId: "caller-session" },

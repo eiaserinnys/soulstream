@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,10 +116,10 @@ describe("folder and checklist MCP contract", () => {
     expect(item.structuredContent).toMatchObject({ cards: [{ id: "card-1" }] });
     expect(forwarded).toHaveBeenCalledTimes(4);
     const bodies = forwarded.mock.calls.map(([, , , body]) => body as { args: unknown; context: unknown });
-    expect(bodies[1].args).toEqual({ folder_id: "folder-1", view: "outline" });
-    expect(bodies[2].args).toEqual({ folder_id: "folder-1", view: "full", card_id: "card-1" });
-    expect(bodies[3].args).toEqual({ folder_id: "folder-1", view: "outline", include_archived: true, limit: 7, cursor: "14" });
-    expect(bodies[0].context).toEqual({ principal: "internal", caller_session_id: null, node_id: "node-test" });
+    expect(required(bodies[1]).args).toEqual({ folder_id: "folder-1", view: "outline" });
+    expect(required(bodies[2]).args).toEqual({ folder_id: "folder-1", view: "full", card_id: "card-1" });
+    expect(required(bodies[3]).args).toEqual({ folder_id: "folder-1", view: "outline", include_archived: true, limit: 7, cursor: "14" });
+    expect(required(bodies[0]).context).toEqual({ principal: "internal", caller_session_id: null, node_id: "node-test" });
     expect(forwarded.mock.calls[0]?.[2]).toBe("/api/mcp/host/get_folder");
 
   });

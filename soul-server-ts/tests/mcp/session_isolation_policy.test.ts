@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 /**
  * restricted 실행 정책 정본(§4) 검증.
  *
@@ -59,7 +60,7 @@ describe("session isolation policy canonical file", () => {
     expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(146);
     for (let left = 0; left < buckets.length; left += 1) {
       for (let right = left + 1; right < buckets.length; right += 1) {
-        const intersection = [...buckets[left]].filter((name) => buckets[right].has(name));
+        const intersection = [...required(buckets[left])].filter((name) => required(buckets[right]).has(name));
         expect(intersection).toEqual([]);
       }
     }
@@ -168,7 +169,7 @@ describe("isolation policy validation", () => {
     }],
     ["unknown local MCP env export source", (policy: Record<string, unknown>) => {
       const localMcp = policy.localMcp as Record<string, unknown>;
-      (localMcp.optional as Record<string, unknown>[])[0].envExports = [
+      required((localMcp.optional as Record<string, unknown>[])[0]).envExports = [
         { name: "ATOM_SERVER_URL", source: "file" },
       ];
     }],

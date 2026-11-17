@@ -137,9 +137,11 @@ describe("sanitizeRestrictedMcpServers", () => {
 
   it("normalizes approved local servers to canonical 127.0.0.1 ports", () => {
     const { sanitizedServers, approvedLocalMcp } = sanitize();
-    expect(sanitizedServers.find((entry) => entry.name === "atom")?.url)
+    const atom = sanitizedServers.find((entry) => entry.name === "atom");
+    const outline = sanitizedServers.find((entry) => entry.name === "outline");
+    expect(atom && "url" in atom ? atom.url : undefined)
       .toBe("http://127.0.0.1:4200/mcp");
-    expect(sanitizedServers.find((entry) => entry.name === "outline")?.url)
+    expect(outline && "url" in outline ? outline.url : undefined)
       .toBe("http://127.0.0.1:3103/mcp");
     expect(approvedLocalMcp).toEqual([
       { serverId: "atom", hostPort: 4200 },

@@ -114,12 +114,13 @@ describe("buildBriefSnapshot", () => {
 
     const brief = await buildBriefSnapshot(runtime);
     const runtimeSection = brief.services[0]?.data.sections.runtime;
+    const dependencies = runtimeSection?.data.dependencies as { database: { status: string; checked_at: string; reason: string } };
 
     expect(brief.status).toBe("ok");
     expect(runtimeSection?.status).toBe("ok");
-    expect(runtimeSection?.data.dependencies.database.status).toBe("not_configured");
-    expect(runtimeSection?.data.dependencies.database.checked_at).toEqual(expect.any(String));
-    expect(runtimeSection?.data.dependencies.database.reason).toBe(
+    expect(dependencies.database.status).toBe("not_configured");
+    expect(dependencies.database.checked_at).toEqual(expect.any(String));
+    expect(dependencies.database.reason).toBe(
       "worker persistence is hosted by the orchestrator",
     );
     expect(runtimeSection?.errors).toEqual([]);

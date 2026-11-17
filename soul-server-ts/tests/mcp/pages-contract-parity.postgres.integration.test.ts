@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PageRepository } from "../../../orch-server-ts/src/page/page_repository.js";
 import { PageYjsService } from "../../../orch-server-ts/src/page/page_service.js";
@@ -93,7 +93,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     }), provider: { listFolders: async () => [{ id: "folder-a" }] }, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) };
     skillOptions = { enabled: true, serverUrl: "https://atom.test", apiKey: "atom", nodeId: "", typesafeApiKey: "typesafe", logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: async (url, init) => fakeFetch(url, init) }) };
     app = Fastify();
-    app.addHook("onRequest", async request => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
+    app.addHook("onRequest", async (request: FastifyRequest) => { if (request.url.startsWith("/api/mcp/host/")) hostCalls++; });
     registerMcpHostRoutes(app, { authBearerToken: "token", pages: pageOptions, skills: skillOptions, cards, folders: {} } as never);
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const orch = { baseUrl, headers: { authorization: "Bearer token" } };

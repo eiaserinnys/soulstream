@@ -35,10 +35,10 @@ describe("page MCP → orch host complete round-trip", () => {
     app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
       service,
-      authBearerToken: "service-token",
+      nodeCredentials: null, authBearerToken: "service-token",
     });
-    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, authBearerToken: "service-token", pages: { service, logger: app.log },
-      folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused"); } },
+    registerMcpHostRoutes(app, { ...unusedClusterDependencies, board: undefined as never, nodeCredentials: null, authBearerToken: "service-token", pages: { service, logger: app.log },
+      folders: { nodeCredentials: null, authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused"); } },
       cards: { provider: { listFolders: () => [], listSessionAssignments: () => ({}) }, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     });
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
