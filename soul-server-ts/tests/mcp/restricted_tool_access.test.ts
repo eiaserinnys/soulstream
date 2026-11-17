@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { buildInternalMcpServer } from "../../src/server.js";
+import type { AgentProfile } from "../../src/agent_registry.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { SessionExecutionChain } from "../../src/db/session_db_types.js";
@@ -40,6 +41,13 @@ function row(sessionId: string, callerSessionId: string | null) {
   return { session_id: sessionId, caller_session_id: callerSessionId, model_preset: null, model: null, agent_id: null };
 }
 
+const TEST_PROFILE: AgentProfile = {
+  id: "agent-a",
+  name: "Restricted tool access test agent",
+  backend: "claude",
+  workspace_dir: "/tmp/restricted-tool-access-ws",
+};
+
 interface Harness {
   server: Awaited<ReturnType<typeof buildInternalMcpServer>>;
   baseUrl: string;
@@ -49,6 +57,11 @@ interface Harness {
 
 function makeRuntime(): { runtime: McpRuntime; db: SessionDB; worktreeList: ReturnType<typeof vi.fn> } {
   const db = new SessionDB();
+  // 이 runtime에는 세션 데이터 호스트가 없다. 세션 프로필 조회가 매번 예외로
+  // 끝나면 정책 거름을 보는 이 시험의 허용 도구 호출이 조회 실패 닫음에 걸린다.
+  // 조회가 정상인 세션 행과 에이전트를 둬서 정책 거름만 보이게 한다.
+  vi.spyOn(db, "getSession").mockResolvedValue({ agent_id: TEST_PROFILE.id } as never);
+  const profiles = new Map<string, AgentProfile>([[TEST_PROFILE.id, TEST_PROFILE]]);
   const worktreeList = vi.fn(async () => []);
   const runtime = {
     nodeId: "test-node",
@@ -57,7 +70,10 @@ function makeRuntime(): { runtime: McpRuntime; db: SessionDB; worktreeList: Retu
     taskManager: { deleteTask: vi.fn(async () => undefined), listTasks: () => [], getTask: () => undefined },
     taskExecutor: {},
     onResume: () => undefined,
-    agentRegistry: { listAgents: () => [] },
+    agentRegistry: {
+      listAgents: () => [...profiles.values()],
+      get: (id: string) => profiles.get(id),
+    },
     catalogService: { broadcastSessionDeletion: vi.fn(async () => undefined) },
     logger: silentLogger(),
     worktreeService: { list: worktreeList },

@@ -384,9 +384,8 @@ function requestContext(principal: McpPrincipal, req: FastifyRequest): McpReques
  * 세션 ID가 없는 요청은 지금처럼 전체 도구다.
  *
  * 프로필이 없으면 지금처럼 거르지 않고 까닭을 남긴다. 조회가 실패하면 짧게 다시
- * 시도한 뒤, full 세션 토큰은 그 요청의 tools/call만 닫는 조회기를 붙인다.
- * restricted 세션은 기존 격리 정책이 경계이므로 조회 실패와 상관없이 정책 거름을
- * 그대로 적용하고 도구 실행을 닫지 않는다.
+ * 시도한 뒤, 세션 ID가 있는 모든 세션 토큰(full·restricted)의 그 요청 tools/call만
+ * 닫는 조회기를 붙인다. restricted는 기존 격리 정책 거름도 그대로 함께 건다.
  */
 async function toolAccess(
   runtime: McpRuntime,
@@ -404,16 +403,14 @@ async function toolAccess(
     return policy ? { principal, policy } : undefined;
   }
 
-  const profileCall = principal.tier === "full"
-    ? {
-        sessionId,
-        resolve: () => findSessionAgentProfile(runtime, sessionId, profileLookup),
-      }
-    : undefined;
+  const profileCall = {
+    sessionId,
+    resolve: () => findSessionAgentProfile(runtime, sessionId, profileLookup),
+  };
 
   // stateless tools/call은 처리기 직전에 한 번만 조회한다. 조회 실패가 이 요청의
   // 도구 실행만 닫고, 나머지 처리와 추가 지연(1초 안쪽)을 늘리지 않는다.
-  if (profileCall && options.deferProfileToCall) {
+  if (options.deferProfileToCall) {
     return { principal, ...(policy ? { policy } : {}), profileCall };
   }
 
@@ -436,11 +433,9 @@ async function toolAccess(
     { sessionId, reason: lookup.reason, attempts: lookup.attempts },
     "MCP session agent profile lookup failed",
   );
-  // restricted 정책은 조회 실패와 상관없이 그대로 적용한다. 도구 실행을 닫는 것은
-  // 프로필 거름에만 기대는 full 세션 토큰의 몫이다.
-  if (!profileCall) {
-    return policy ? { principal, policy } : undefined;
-  }
+  // 세션 ID가 있는 모든 세션 토큰(full·restricted)은 조회 실패 때 그 요청의
+  // tools/call만 닫는다. restricted도 기존 격리 정책 거름은 그대로 걸어,
+  // #1955가 ssr1에 더한 프로필 거름이 같은 몇 초 동안 다시 비지 않게 한다.
   return { principal, ...(policy ? { policy } : {}), profileCall };
 }
 

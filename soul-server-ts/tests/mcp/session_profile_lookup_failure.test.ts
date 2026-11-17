@@ -417,21 +417,77 @@ describe("service and restricted credentials", () => {
     expect(harness.warn).not.toHaveBeenCalled();
   });
 
-  it("keeps applying the restricted isolation policy when the profile lookup fails", async () => {
-    const harness = await startServer({ restricted: true });
+  async function expectRestrictedClosed(stateless: boolean): Promise<void> {
+    const harness = await startServer({ restricted: true, stateless });
     vi.spyOn(harness.db, "getSession").mockRejectedValue(new Error("ECONNREFUSED"));
 
-    const names = await toolNames(harness.baseUrl, RESTRICTED);
+    const sessionId = stateless ? undefined : await initialize(harness.baseUrl, RESTRICTED);
+    const names = await toolNames(harness.baseUrl, RESTRICTED, sessionId);
     expect(names).not.toContain("delete_session");
     expect(names).toContain("list_worktrees");
 
     harness.worktreeList.mockClear();
-    const payload = await callTool(harness.baseUrl, RESTRICTED, "list_worktrees");
-    expect(payload.result?.isError).toBeUndefined();
-    expect(harness.worktreeList).toHaveBeenCalledTimes(1);
+    const payload = await callTool(harness.baseUrl, RESTRICTED, "list_worktrees", sessionId);
+    expect(payload.result?.isError).toBe(true);
+    expect(payload.result?.structuredContent?.code).toBe("MCP_PROFILE_UNAVAILABLE");
+    expect(String(payload.result?.content?.[0]?.text)).toBe(unavailableText);
+    expect(harness.worktreeList).not.toHaveBeenCalled();
     expect(harness.warn).toHaveBeenCalledWith(
       { sessionId: SESSION_A, reason: "ECONNREFUSED", attempts: 3 },
       "MCP session agent profile lookup failed",
     );
+    expect(harness.warn).toHaveBeenCalledWith(
+      { sessionId: SESSION_A, reason: "ECONNREFUSED", attempts: 3 },
+      "MCP tools/call rejected: session agent profile lookup failed",
+    );
+  }
+
+  it("keeps the restricted policy and closes tools/call when the profile lookup fails (stateless)", async () => {
+    await expectRestrictedClosed(true);
+  });
+
+  it("keeps the restricted policy and closes tools/call when the profile lookup fails (stateful)", async () => {
+    await expectRestrictedClosed(false);
+  });
+
+  async function expectRestrictedFiltersAfterRetry(stateless: boolean): Promise<void> {
+    const harness = await startServer({ restricted: true, stateless });
+    const getSession = vi.spyOn(harness.db, "getSession")
+      .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+      .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+      .mockResolvedValue({ agent_id: "agent-a" } as never);
+    harness.profiles.set("agent-a", profile(["mcp__soulstream__search_sessions"]));
+
+    const sessionId = stateless ? undefined : await initialize(harness.baseUrl, RESTRICTED);
+    const names = await toolNames(harness.baseUrl, RESTRICTED, sessionId);
+    expect(getSession).toHaveBeenCalledTimes(3);
+    // 정책이 막은 도구와 프로필이 막은 도구가 함께 빠진다.
+    expect(names).not.toContain("delete_session");
+    expect(names).not.toContain("search_sessions");
+    expect(names).toContain("list_worktrees");
+
+    harness.worktreeList.mockClear();
+    const allowed = await callTool(harness.baseUrl, RESTRICTED, "list_worktrees", sessionId);
+    expect(allowed.result?.isError).toBeUndefined();
+    expect(harness.worktreeList).toHaveBeenCalledTimes(1);
+
+    const denied = await callTool(
+      harness.baseUrl,
+      RESTRICTED,
+      "search_sessions",
+      sessionId,
+      { query: "hello" },
+    );
+    expect(denied.result?.isError).toBe(true);
+    expect(String(denied.result?.content?.[0]?.text)).toContain("disabled");
+    expect(getSession).toHaveBeenCalledTimes(3);
+  }
+
+  it("applies the restricted policy and the profile disallowed filter together after retries succeed (stateless)", async () => {
+    await expectRestrictedFiltersAfterRetry(true);
+  });
+
+  it("applies the restricted policy and the profile disallowed filter together after retries succeed (stateful)", async () => {
+    await expectRestrictedFiltersAfterRetry(false);
   });
 });
