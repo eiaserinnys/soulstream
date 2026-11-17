@@ -500,6 +500,22 @@ async def test_session_review_schema_and_atomic_transitions(test_db):
     assert dict(row) == {"review_required": True, "review_state": "acknowledged"}
 
 
+async def test_session_deliveries_superseded_columns(test_db):
+    rows = await test_db.fetch(
+        """
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'session_deliveries'
+          AND column_name IN ('superseded_at', 'superseded_terminal_revision')
+        """
+    )
+    assert {row["column_name"]: (row["data_type"], row["is_nullable"]) for row in rows} == {
+        "superseded_at": ("timestamp with time zone", "YES"),
+        "superseded_terminal_revision": ("text", "YES"),
+    }
+
+
 async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
     await _create_session(test_db, "sess-terminal-receipt")
     first_at = _utc_now()
@@ -789,23 +805,20 @@ async def test_session_get_all_and_count(test_db):
     count = await test_db.fetchval("SELECT session_count($1::jsonb)", filters)
     assert count >= 3
 
-    # 검수 상태 필터는 최신순 페이지 창과 독립적으로 정확한 멤버십을 반환한다.
-    await test_db.execute(
-        "UPDATE sessions SET review_state = 'needs_review' WHERE session_id = 'sa-2'"
-    )
-    review_filters = json.dumps({"review_state": "needs_review"})
-    rows = await test_db.fetch(
-        "SELECT * FROM session_get_all($1::jsonb)", review_filters
-    )
-    assert [row["session_id"] for row in rows] == ["sa-2"]
-    count = await test_db.fetchval(
-        "SELECT session_count($1::jsonb)", review_filters
-    )
-    assert count == 1
-
     # limit/offset
     rows = await test_db.fetch("SELECT * FROM session_get_all(NULL, 2, 0)")
     assert len(rows) == 2
+
+
+async def test_session_review_state_filters_get_all_and_count(test_db):
+    for state in ("not_required", "needs_review", "acknowledged"):
+        await _create_session(test_db, f"review-{state}", review_state=state)
+
+    for state in ("not_required", "needs_review", "acknowledged"):
+        filters = json.dumps({"review_state": state})
+        rows = await test_db.fetch("SELECT * FROM session_get_all($1::jsonb)", filters)
+        assert [row["session_id"] for row in rows] == [f"review-{state}"]
+        assert await test_db.fetchval("SELECT session_count($1::jsonb)", filters) == 1
 
 
 async def test_session_feed_only_excludes_hidden_folders_and_llm(test_db):
