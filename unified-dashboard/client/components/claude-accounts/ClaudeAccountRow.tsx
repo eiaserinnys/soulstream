@@ -39,6 +39,7 @@ function windowSlot(
     label,
     usedPercent: Math.min(100, Math.max(0, window.used_percent)),
     resetAt: Number.isFinite(reset) ? Math.floor(reset / 1000) : null,
+    sevenDay: kind === "weekly" || kind === "fable",
   };
 }
 

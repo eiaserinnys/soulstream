@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Text, View } from 'react-native';
 import {
   providerQuotaSlots,
+  sevenDayElapsedFraction,
   type ProviderQuotaSlotKind,
   type UsageSummaryProvider,
 } from '../../../../packages/soul-ui/src/lib/usage-summary';
@@ -14,10 +15,22 @@ export type QuotaGridCell = {
   resetAt: number | string | null;
   short: boolean;
   kind: ProviderQuotaSlotKind;
+  /** 7일 창이면 바를 7칸으로 나누고 지난 자리 커서를 그린다(카드 #1510). */
+  sevenDay: boolean;
 };
 
 const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEKLY_SEGMENTS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+/** 7일 사용 비율을 칸마다의 채움 비율(0~100)로 나눈다. 웹은 같은 자리를 mask로 오려 낸다. */
+export function weeklySegmentPercents(usedPercent: number): number[] {
+  const used = Math.max(0, Math.min(100, usedPercent));
+  return WEEKLY_SEGMENTS.map((segment) => {
+    const filled = Math.max(0, Math.min(1, (used / 100) * WEEKLY_SEGMENTS.length - segment));
+    return Math.round(filled * 10_000) / 100;
+  });
+}
 
 function resetDate(resetAt: number | string | null): Date | null {
   if (resetAt === null) return null;
@@ -56,6 +69,7 @@ export function providerQuotaCells(provider: UsageSummaryProvider | null): (Quot
     resetAt: slot.resetAt,
     short: slot.kind === 'short',
     kind: slot.kind,
+    sevenDay: slot.sevenDay,
   });
 }
 
@@ -110,6 +124,10 @@ export function ProviderQuotaGrid({
         }
         const used = Math.max(0, Math.min(100, cell.usedPercent));
         const color = used >= 95 ? t.colors.error : used >= 80 ? t.colors.warning : t.colors.accent;
+        const reset = resetDate(cell.resetAt);
+        // 커서는 데이터가 새로 그려질 때 함께 다시 잰다. 따로 도는 타이머는 두지 않는다.
+        const elapsed = cell.sevenDay ? sevenDayElapsedFraction(reset ? reset.getTime() / 1000 : null, Date.now()) : null;
+        const segmentPercents = cell.sevenDay ? weeklySegmentPercents(used) : null;
         return (
           <View key={index} testID={`${prefix}-${index}`} style={styles.quotaColumn}>
             {compact ? (
@@ -133,9 +151,21 @@ export function ProviderQuotaGrid({
                 </View>
               </View>
             )}
-            <View testID={`${prefix}-bar-${index}`} style={styles.quotaTrack}>
+            {segmentPercents === null ? <View testID={`${prefix}-bar-${index}`} style={styles.quotaTrack}>
               <View style={[styles.quotaFill, { width: `${used}%`, backgroundColor: color }]} />
-            </View>
+            </View> : <View style={styles.quotaBarWrap}>
+              <View testID={`${prefix}-bar-${index}`} style={styles.quotaWeekTrack}>
+                {segmentPercents.map((percent, segment) => (
+                  <View key={segment} style={styles.quotaWeekSegment}>
+                    <View style={[styles.quotaFill, { width: `${percent}%`, backgroundColor: color }]} />
+                  </View>
+                ))}
+              </View>
+              {elapsed === null ? null : (
+                <View testID={`${prefix}-cursor-${index}`} pointerEvents="none"
+                  style={[styles.quotaPaceCursor, { left: `${elapsed * 100}%` }]} />
+              )}
+            </View>}
           </View>
         );
       })}

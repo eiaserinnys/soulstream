@@ -88,9 +88,9 @@ function flow(state: ClaudeAuthLoginFlow["state"], overrides: Partial<ClaudeAuth
 }
 
 const SUMMARY_SLOTS: ProviderQuotaSlots = [
-  { kind: "short", label: "5시간", usedPercent: 30, resetAt: null },
-  { kind: "weekly", label: "7일", usedPercent: 45, resetAt: null },
-  { kind: "fable", label: "Fable", usedPercent: 12, resetAt: null },
+  { kind: "short", label: "5시간", usedPercent: 30, resetAt: null, sevenDay: false },
+  { kind: "weekly", label: "7일", usedPercent: 45, resetAt: null, sevenDay: true },
+  { kind: "fable", label: "Fable", usedPercent: 12, resetAt: null, sevenDay: true },
 ];
 
 let host: HTMLDivElement;

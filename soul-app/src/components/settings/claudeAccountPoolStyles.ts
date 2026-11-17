@@ -40,6 +40,15 @@ export function makeClaudePoolStyles(t: DesignTokens) {
     quotaReset: { ...t.foundation.typography.meta, color: t.colors.textMuted, fontVariant: ['tabular-nums'] },
     quotaTrack: { height: t.spacing.xs, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border, overflow: 'hidden' },
     quotaFill: { height: '100%', borderRadius: t.foundation.radius.round },
+    // 카드 #1510: 7일 바는 칸막이 틈 1pt로 7칸을 만들고, 지난 자리에 세로 커서를 둔다.
+    quotaBarWrap: { position: 'relative' },
+    quotaWeekTrack: { height: t.spacing.xs, flexDirection: 'row', gap: 1 },
+    quotaWeekSegment: { flex: 1, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border, overflow: 'hidden' },
+    quotaPaceCursor: {
+      position: 'absolute', top: '50%', width: t.spacing.xxs, height: t.spacing.md,
+      marginTop: -t.spacing.md / 2, marginLeft: -t.spacing.xxs / 2,
+      borderRadius: t.foundation.radius.round, backgroundColor: t.colors.textPrimary,
+    },
     quotaSkeletonLine: { height: t.foundation.typography.meta.lineHeight, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border },
     quotaSkeletonTrack: { height: t.spacing.xs, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border },
     idleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: t.spacing.xxs },
