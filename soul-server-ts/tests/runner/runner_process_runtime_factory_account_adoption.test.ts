@@ -130,7 +130,7 @@ describe("Claude account pool live runner adoption", () => {
       pumpMux: {} as never,
       sessionStore: {} as never,
       claudeAccounts,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
         describe: vi.fn(() => ({
