@@ -86,6 +86,22 @@ jobs:
           tests/mcp/pages-contract-parity.postgres.integration.test.ts
           --minWorkers=1 --maxWorkers=2
 
+      - name: Test OAuth with shared PostgreSQL schemas and repeat
+        env:
+          TEST_DATABASE_URL: postgresql://shared_test:shared_test@127.0.0.1:5432/shared_test_db
+        shell: bash
+        run: |
+          result=0
+          corepack pnpm --dir orch-server-ts exec vitest run \
+            tests/oauth/oauth-flow.postgres.test.ts \
+            tests/mcp-baselines/board-roundtrip.postgres.integration.test.ts \
+            tests/page/page-repository.postgres.integration.test.ts \
+            --minWorkers=1 --maxWorkers=2 || result=$?
+          corepack pnpm --dir orch-server-ts exec vitest run \
+            tests/oauth/oauth-flow.postgres.test.ts \
+            --minWorkers=1 --maxWorkers=1 || result=$?
+          exit "$result"
+
       - name: Typecheck soul-server-ts
         run: corepack pnpm --dir soul-server-ts typecheck
 
