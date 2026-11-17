@@ -38,8 +38,11 @@ import {
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
 import {
+  SessionAgentIdCache,
   disallowedSoulstreamTools,
   findSessionAgentProfile,
+  logMissingSessionProfile,
+  type SessionProfileLookupOptions,
 } from "./session_profile_tools.js";
 import type { McpToolAccess } from "./tool_access.js";
 import type { McpPrincipal } from "../security/session_isolation_contract.js";
@@ -76,6 +79,12 @@ export function registerMcpRoutes(
 ): () => Promise<void> {
   const sessions = new Map<string, SessionEntry>();
   const statelessEntries = new Set<StatelessEntry>();
+  // 세션의 agent_id는 바뀌지 않으므로 프로세스 안에서 기억한다. 프로필 내용은
+  // 매번 registry에서 꺼내므로 프로필 수정은 다음 요청에 그대로 반영된다.
+  const profileLookup: SessionProfileLookupOptions = {
+    cache: new SessionAgentIdCache(),
+    ...(runtime.sessionProfileLookupSleep ? { sleep: runtime.sessionProfileLookupSleep } : {}),
+  };
 
   const path = config.path;
   const authenticate = async (
@@ -123,9 +132,10 @@ export function registerMcpRoutes(
           statelessEntries,
           runtime,
           resolution,
+          profileLookup,
         );
       } else {
-        await dispatchPost(req, reply, sessions, runtime, resolution);
+        await dispatchPost(req, reply, sessions, runtime, resolution, profileLookup);
       }
     } catch (err) {
       runtime.logger.error(
@@ -193,6 +203,7 @@ async function dispatchStatelessPost(
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
   resolution: AuthenticatedResolution,
+  profileLookup: SessionProfileLookupOptions,
 ): Promise<void> {
   await withMcpRequestContext(
     requestContext(resolution.principal, req),
@@ -204,7 +215,11 @@ async function dispatchStatelessPost(
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      const server = buildMcpServer(runtime, await toolAccess(runtime, resolution));
+      // tools/call은 프로필 조회를 처리기 직전까지 미룬다. 조회 실패가 이 요청의
+      // 도구 실행만 닫고, 같은 요청의 다른 처리(초기화·목록)는 막지 않게 한다.
+      const server = buildMcpServer(runtime, await toolAccess(runtime, resolution, profileLookup, {
+        deferProfileToCall: isToolsCallRequest(req.body),
+      }));
       const entry: StatelessEntry = { transport, server };
       active.add(entry);
       let closed = false;
@@ -248,6 +263,7 @@ async function dispatchPost(
   sessions: Map<string, SessionEntry>,
   runtime: McpRuntime,
   resolution: AuthenticatedResolution,
+  profileLookup: SessionProfileLookupOptions,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   const body = req.body;
@@ -283,7 +299,7 @@ async function dispatchPost(
     await withMcpRequestContext(
       requestContext(resolution.principal, req),
       async () => {
-        const server = buildMcpServer(runtime, await toolAccess(runtime, resolution));
+        const server = buildMcpServer(runtime, await toolAccess(runtime, resolution, profileLookup));
         await server.connect(transport);
         await transport.handleRequest(req.raw, reply.raw, body);
       },
@@ -365,12 +381,18 @@ function requestContext(principal: McpPrincipal, req: FastifyRequest): McpReques
 /**
  * 서버 쪽 도구 거름. 세션 ID가 있는 principal(ssf1/ssr1)은 그 세션 에이전트
  * 프로필의 금지 도구를 restricted 정책과 같은 방식으로 끈다. 서비스 토큰처럼
- * 세션 ID가 없는 요청은 지금처럼 전체 도구다. 프로필을 못 찾으면 거르지 않고
- * 세션 ID만 남기는 warn을 낸다.
+ * 세션 ID가 없는 요청은 지금처럼 전체 도구다.
+ *
+ * 프로필이 없으면 지금처럼 거르지 않고 까닭을 남긴다. 조회가 실패하면 짧게 다시
+ * 시도한 뒤, full 세션 토큰은 그 요청의 tools/call만 닫는 조회기를 붙인다.
+ * restricted 세션은 기존 격리 정책이 경계이므로 조회 실패와 상관없이 정책 거름을
+ * 그대로 적용하고 도구 실행을 닫지 않는다.
  */
 async function toolAccess(
   runtime: McpRuntime,
   resolution: AuthenticatedResolution,
+  profileLookup: SessionProfileLookupOptions,
+  options: { deferProfileToCall?: boolean } = {},
 ): Promise<McpToolAccess | undefined> {
   const principal = resolution.principal;
   const policy = principal.tier === "restricted" ? resolution.policy : undefined;
@@ -382,20 +404,57 @@ async function toolAccess(
     return policy ? { principal, policy } : undefined;
   }
 
-  const profile = await findSessionAgentProfile(runtime, sessionId);
-  const disallowedTools = profile ? disallowedSoulstreamTools(profile) : undefined;
-  if (!disallowedTools) {
-    runtime.logger.warn(
-      { sessionId },
-      "MCP session has no agent profile; server-side tool filtering skipped",
-    );
+  const profileCall = principal.tier === "full"
+    ? {
+        sessionId,
+        resolve: () => findSessionAgentProfile(runtime, sessionId, profileLookup),
+      }
+    : undefined;
+
+  // stateless tools/call은 처리기 직전에 한 번만 조회한다. 조회 실패가 이 요청의
+  // 도구 실행만 닫고, 나머지 처리와 추가 지연(1초 안쪽)을 늘리지 않는다.
+  if (profileCall && options.deferProfileToCall) {
+    return { principal, ...(policy ? { policy } : {}), profileCall };
   }
-  if (!policy && (!disallowedTools || disallowedTools.size === 0)) return undefined;
-  return {
-    principal,
-    ...(policy ? { policy } : {}),
-    ...(disallowedTools && disallowedTools.size > 0 ? { disallowedTools } : {}),
-  };
+
+  const lookup = await findSessionAgentProfile(runtime, sessionId, profileLookup);
+  if (lookup.status === "found") {
+    const disallowedTools = disallowedSoulstreamTools(lookup.profile);
+    if (!policy && disallowedTools.size === 0) return undefined;
+    return {
+      principal,
+      ...(policy ? { policy } : {}),
+      ...(disallowedTools.size > 0 ? { disallowedTools } : {}),
+    };
+  }
+  if (lookup.status === "missing") {
+    logMissingSessionProfile(runtime.logger, sessionId, lookup.reason);
+    return policy ? { principal, policy } : undefined;
+  }
+
+  runtime.logger.warn(
+    { sessionId, reason: lookup.reason, attempts: lookup.attempts },
+    "MCP session agent profile lookup failed",
+  );
+  // restricted 정책은 조회 실패와 상관없이 그대로 적용한다. 도구 실행을 닫는 것은
+  // 프로필 거름에만 기대는 full 세션 토큰의 몫이다.
+  if (!profileCall) {
+    return policy ? { principal, policy } : undefined;
+  }
+  return { principal, ...(policy ? { policy } : {}), profileCall };
+}
+
+/**
+ * 요청 본문(또는 batch)이 전부 tools/call인지. 섞인 batch는 지금처럼 서버를 만들 때
+ * 프로필을 조회해 목록 거름을 잃지 않게 한다(조회 실패면 처리기 거름이 닫는다).
+ */
+function isToolsCallRequest(body: unknown): boolean {
+  if (Array.isArray(body)) {
+    return body.length > 0 && body.every((entry) => isToolsCallRequest(entry));
+  }
+  return typeof body === "object"
+    && body !== null
+    && (body as { method?: unknown }).method === "tools/call";
 }
 
 function samePrincipal(left: McpPrincipal, right: McpPrincipal): boolean {

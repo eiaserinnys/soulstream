@@ -3,6 +3,12 @@ import { callWithReferenceTranslation, type CallToolResult } from "@soulstream/m
 import type { McpRuntime } from "./runtime.js";
 import { errorResult } from "./result.js";
 import { runIsolationToolGuard } from "./isolation_tool_guards.js";
+import {
+  PROFILE_LOOKUP_UNAVAILABLE_MESSAGE,
+  disallowedSoulstreamTools,
+  logMissingSessionProfile,
+  type SessionProfileLookup,
+} from "./session_profile_tools.js";
 import type {
   IsolationPolicy,
   McpPrincipal,
@@ -25,6 +31,7 @@ const REGISTERED_TOOL_NAMES_BY_RUNTIME = new WeakMap<McpRuntime, Set<string>>();
  * - restricted 요청은 격리 정책(policy)으로 거른다.
  * - 세션 ID가 있는 요청(ssf1/ssr1)은 그 세션 프로필의 `disallowedTools`도 함께 거른다.
  * - 세션 ID 없는 서비스 토큰 요청은 거름이 없다.
+ * - 프로필 조회를 미뤘거나 조회가 실패한 요청은 `profileCall`로 tools/call 하나만 닫는다.
  */
 export interface McpToolAccess {
   principal: McpPrincipal;
@@ -32,6 +39,17 @@ export interface McpToolAccess {
   policy?: IsolationPolicy;
   /** 세션 프로필이 금지한 소울스트림 도구의 맨 이름. */
   disallowedTools?: ReadonlySet<string>;
+  /**
+   * 프로필 조회를 tools/call 직전까지 미뤘거나 조회가 실패했을 때의 조회기.
+   * 있으면 모든 도구 처리기 앞에 세워, 이 호출 하나만 닫거나 금지 도구를 거른다.
+   */
+  profileCall?: McpProfileCallGuard;
+}
+
+export interface McpProfileCallGuard {
+  sessionId: string;
+  /** 조회 실패를 던지지 않고 결과로 돌려준다. */
+  resolve: () => Promise<SessionProfileLookup>;
 }
 
 export function createInventoryMcpServer(
@@ -40,6 +58,7 @@ export function createInventoryMcpServer(
   access?: McpToolAccess,
 ): McpServer {
   const restrictedAccess = restrictedPolicyAccess(access);
+  const profileCall = access?.profileCall;
   return new Proxy(server, { get(target, prop, receiver) {
     if (prop !== "registerTool") return Reflect.get(target, prop, receiver);
     return (name: string, config: unknown, handler: (...args: unknown[]) => unknown) => {
@@ -48,7 +67,14 @@ export function createInventoryMcpServer(
       const restricted = restrictedAccess
         ? restrictedToolHandler(restrictedAccess, runtime, name, config, handler)
         : handler;
-      const registered = target.registerTool(name, registeredConfig as never, translateCardReferences(runtime, config, restricted, destructive) as never);
+      const translated = translateCardReferences(runtime, config, restricted, destructive);
+      const registered = target.registerTool(
+        name,
+        registeredConfig as never,
+        (profileCall
+          ? profileCallHandler(profileCall, runtime, name, translated)
+          : translated) as never,
+      );
       recordRegisteredTool(runtime, name);
       if (access && !isToolAllowed(access, name)) {
         registered.disable();
@@ -110,6 +136,41 @@ function restrictedToolHandler(
       Object.assign(normalized, decision.args);
     }
     return await handler(normalized, extra);
+  };
+}
+
+/**
+ * 세션 프로필 조회를 기다리는 tools/call 앞의 거름.
+ *
+ * - 조회가 계속 실패하면 이 호출만 도구 결과 오류로 닫는다. HTTP 연결 실패가 아니라
+ *   restricted 세션 가드가 MCP_POLICY_DENIED를 돌려주는 것과 같은 모양(isError)이다.
+ * - 조회가 찾음으로 끝나면 지금 registry의 `disallowed_tools`를 다시 적용한다.
+ *   미뤄 둔 요청에서도 실제 실행은 tools/call에서 막힌다.
+ * - 없음은 정당한 상태이므로 거르지 않고 까닭만 남긴다.
+ */
+function profileCallHandler(
+  guard: McpProfileCallGuard,
+  runtime: McpRuntime,
+  toolName: string,
+  handler: (...args: unknown[]) => unknown,
+): (...args: unknown[]) => unknown {
+  return async (args: unknown, extra: unknown) => {
+    const lookup = await guard.resolve();
+    if (lookup.status === "unavailable") {
+      runtime.logger.warn(
+        { sessionId: guard.sessionId, reason: lookup.reason, attempts: lookup.attempts },
+        "MCP tools/call rejected: session agent profile lookup failed",
+      );
+      return errorResult(PROFILE_LOOKUP_UNAVAILABLE_MESSAGE, { code: "MCP_PROFILE_UNAVAILABLE" });
+    }
+    if (lookup.status === "missing") {
+      logMissingSessionProfile(runtime.logger, guard.sessionId, lookup.reason);
+      return await handler(args, extra);
+    }
+    if (disallowedSoulstreamTools(lookup.profile).has(toolName)) {
+      return errorResult(`Tool ${toolName} disabled`);
+    }
+    return await handler(args, extra);
   };
 }
 

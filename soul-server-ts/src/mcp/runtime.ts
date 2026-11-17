@@ -67,6 +67,11 @@ export interface McpRuntime {
   /** Durable event publisher used by the internal publish_chat_ui tool. */
   chatUiPublisher?: ChatUiPublisher;
   /**
+   * 시험 주입 포트: 세션 프로필 조회가 예외를 던졌을 때 다시 시도 사이의 대기.
+   * 생략하면 200ms·400ms를 실제로 기다린다.
+   */
+  sessionProfileLookupSleep?: (ms: number) => Promise<void>;
+  /**
    * `observe_node_services` 읽기 전용 Haniel client 설정.
    * dashboard(status/services/logs)와 orch(pending/nodes)는 주소와 토큰이 다르다.
    * 한쪽만 없으면 그쪽 결과만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED가 되고,
