@@ -8,6 +8,7 @@ import { parse } from "yaml";
 type Workflow = {
   on?: {
     pull_request?: { paths?: string[] };
+    push?: { paths?: string[] };
   };
   jobs?: Record<string, {
     steps?: Array<{
@@ -119,6 +120,33 @@ describe("CI maintenance contract", () => {
       path: "unified-dashboard/e2e/test-results/smoke",
       "if-no-files-found": "ignore",
     });
+  });
+
+  it("runs orphan-test jobs when their sources or tests change", () => {
+    const workflow = parse(readFileSync(`${workflowsDirectory}/workspace-validation.yml`, "utf8")) as Workflow;
+    const sourcesAndTests = [
+      "chrome-extension/src/shared/schema.ts",
+      "chrome-extension/src/shared/schema.test.ts",
+      "soul-desktop/src/utils/origin.ts",
+      "soul-desktop/src/utils/__tests__/origin.test.ts",
+      "packages/search-contract/src/session_search.ts",
+      "packages/search-contract/src/session-intent.test.ts",
+      "scripts/verify-bundle-load.mjs",
+      "scripts/tests/verify_bundle_load.test.mjs",
+      "scripts/verify-workspace-bundle.mjs",
+      "scripts/verify-workspace-bundle.test.mjs",
+      "deploy/haniel/build-core.sh",
+      "deploy/haniel/pack_portable_node_release.sh",
+      "deploy/macos/check-macos-node.sh",
+      "deploy/haniel/build_core_darwin.py",
+      "deploy/haniel/test_build_core_darwin.py",
+    ];
+    for (const event of ["pull_request", "push"] as const) {
+      const patterns = workflow.on?.[event]?.paths ?? [];
+      for (const path of sourcesAndTests) {
+        expect(matchesOrderedPathFilter(path, patterns), `${event}: ${path}`).toBe(true);
+      }
+    }
   });
 
   it("declares one reproducible dashboard browser smoke command", () => {

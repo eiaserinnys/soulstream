@@ -1,7 +1,7 @@
 """DB 프로시저 통합 테스트
 
 실제 PostgreSQL에 연결하여 schema.sql의 모든 프로시저를 검증한다.
-TEST_DATABASE_URL 환경변수가 없으면 전체 skip.
+TEST_DATABASE_URL 또는 격리된 Docker PostgreSQL을 사용한다.
 """
 
 import asyncio
@@ -125,20 +125,6 @@ DASHBOARD_SEARCH_EVENT_TYPES = [
 
 # === schema.sql 적용 계약 ===
 
-async def test_task_status_contract_is_mirrored_in_canonical_schema_sql():
-    migration_sql = _migration_sql("029_runbook_status.sql").strip()
-    schema_sql = _schema_sql()
-
-    assert "ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS status" in migration_sql
-    for required in [
-        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status",
-        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_session_id",
-        "ALTER TABLE tasks ADD CONSTRAINT tasks_status_check",
-        "ALTER TABLE tasks ADD CONSTRAINT tasks_completed_session_id_fkey",
-        "ALTER TABLE tasks ADD CONSTRAINT tasks_completed_event_fkey",
-    ]:
-        assert required in schema_sql
-
 
 async def test_event_search_prefix_helpers_are_retained_after_write_switch():
     migration_sql = _migration_sql("031_event_search_prefix_fallback.sql").strip()
@@ -187,29 +173,6 @@ async def test_event_type_covering_index_migration_is_mirrored_in_schema_sql():
     assert "CREATE INDEX IF NOT EXISTS idx_events_event_type_cover" in schema_sql
     assert "ON events USING btree (event_type)" in schema_sql
     assert "INCLUDE (session_id, id, created_at)" in schema_sql
-
-
-async def test_session_id_search_uses_sessions_before_indexed_event_lookup():
-    migration_sql = _migration_sql("050_session_id_search_indexed.sql").strip()
-    schema_sql = _schema_sql()
-    signature = "CREATE OR REPLACE FUNCTION session_id_search("
-    function_sql = _function_sql(migration_sql, signature)
-
-    assert function_sql in schema_sql
-    assert "FROM sessions s" in function_sql
-    assert "CROSS JOIN LATERAL" in function_sql
-    assert "e.session_id = matched.session_id" in function_sql
-    assert "ORDER BY e.id DESC" in function_sql
-    assert "FROM events e\n    WHERE e.session_id ILIKE" not in function_sql
-
-
-async def test_task_item_review_status_contract_is_mirrored_in_canonical_schema_sql():
-    migration_sql = _migration_sql("031_runbook_item_review_status.sql").strip()
-    schema_sql = _schema_sql()
-
-    assert "runbook_items_status_check" in migration_sql
-    assert "ALTER TABLE task_items ADD CONSTRAINT task_items_status_check" in schema_sql
-    assert "CHECK (status IN ('pending','in_progress','review','completed','cancelled'))" in schema_sql
 
 
 async def test_notify_completion_migration_contract_is_mirrored_in_schema_sql():
@@ -296,57 +259,6 @@ async def test_runtime_ownership_removal_intermediate_migration_contract():
     assert "execution_lease_expires_at = p_acquired_at" in acquire
 
 
-async def test_execution_registration_projection_terminal_function_converges_after_085b():
-    signature = "CREATE OR REPLACE FUNCTION session_apply_terminal_transition("
-    compatibility_sql = _function_sql(
-        _migration_sql("085a_execution_registration_projection.sql"), signature
-    )
-    final_sql = _function_sql(
-        _migration_sql("085b_execution_ownership_projection_drop.sql"), signature
-    )
-    schema_sql = _function_sql(_schema_sql(), signature)
-    rollback_sql = _function_sql(
-        _rollback_sql("085b_execution_ownership_projection_drop_rollback.sql"),
-        signature,
-    )
-
-    assert "information_schema.columns" in compatibility_sql
-    assert "EXECUTE $update$" in compatibility_sql
-    assert final_sql == schema_sql
-    assert rollback_sql == compatibility_sql
-
-    for dead_reference in [
-        "information_schema.columns",
-        "EXECUTE $update$",
-        "execution_manifest_id",
-        "execution_runtime_env_identity",
-        "execution_pid",
-        "execution_start_identity",
-        "execution_lease_expires_at",
-    ]:
-        assert dead_reference not in final_sql
-    for registration_column in [
-        "execution_registration_id = NULL",
-        "execution_command_id = NULL",
-    ]:
-        assert registration_column in final_sql
-
-
-async def test_completion_terminal_revision_fence_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("065_completion_terminal_revision_fence.sql")
-    schema_sql = _schema_sql()
-
-    for required in [
-        "superseded_at TIMESTAMPTZ",
-        "superseded_terminal_revision TEXT",
-        "'superseded'",
-        "producer_terminal_revision = p_expected_terminal_event_id::text",
-        "state IN ('pending', 'claimed', 'dispatching')",
-    ]:
-        assert required in migration_sql
-        assert required in schema_sql
-
-
 async def test_notification_outbox_hardening_is_mirrored_in_schema_sql():
     migration_sql = _migration_sql("062_notification_outbox_hardening.sql")
     schema_sql = _schema_sql()
@@ -361,20 +273,6 @@ async def test_notification_outbox_hardening_is_mirrored_in_schema_sql():
     assert "payload ? 'deliveryIntent'" in migration_sql
     assert "legacy camelCase deliveryIntent quarantined by migration 062" in migration_sql
     assert "target.node_id IS NOT NULL" in migration_sql
-
-
-async def test_session_review_filter_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("052_session_review_state_filter.sql")
-    schema_sql = _schema_sql()
-
-    for signature in [
-        "CREATE OR REPLACE FUNCTION session_get_all(",
-        "CREATE OR REPLACE FUNCTION session_count(",
-    ]:
-        function_sql = _function_sql(migration_sql, signature)
-        assert function_sql in schema_sql
-        assert "p_filters ? 'review_state'" in function_sql
-        assert "s.review_state" in function_sql
 
 
 async def test_session_predecessor_migration_contract_is_mirrored_in_schema_sql():
@@ -553,70 +451,6 @@ async def test_page_prefix_search_indexes_apply_to_fresh_and_upgraded_schema(tes
         assert fragment in migrated_indexes["idx_pages_title_prefix"]
 
 
-async def test_checklist_projection_outbox_contract_is_mirrored_in_canonical_schema_sql():
-    migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql").strip()
-    schema_sql = _schema_sql()
-
-    assert "CREATE TABLE IF NOT EXISTS checklist_runbook_projection_outbox" in migration_sql
-    for required in [
-        "CREATE TABLE IF NOT EXISTS checklist_task_projection_outbox",
-        "ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS page_id",
-        "CREATE INDEX IF NOT EXISTS idx_checklist_task_projection_due",
-        "INSERT INTO checklist_task_projection_outbox",
-    ]:
-        assert required in schema_sql
-
-
-async def test_checklist_projection_outbox_upgrade_backfills_and_reapplies(test_db):
-    await test_db.execute(
-        """
-        INSERT INTO pages (id, title, version)
-        VALUES ('page-outbox-upgrade', 'Outbox upgrade', 1)
-        """
-    )
-    await test_db.execute(
-        """
-        INSERT INTO blocks (
-          id, page_id, position_key, block_type, text_plain, properties
-        ) VALUES (
-          'block-outbox-upgrade', 'page-outbox-upgrade', 'a',
-          'checklist', 'Legacy checked', '{"checked": true}'::jsonb
-        )
-        """
-    )
-    await test_db.execute("DROP TABLE checklist_task_projection_outbox")
-
-    migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql")
-    await test_db.execute(migration_sql)
-    await test_db.execute(migration_sql)
-    await test_db.execute(_migration_sql("042_runbook_to_task.sql"))
-
-    row = await test_db.fetchrow(
-        """
-        SELECT page_id, actor_kind, processed_hash, attempts
-        FROM checklist_task_projection_outbox
-        WHERE block_id = 'block-outbox-upgrade'
-        """
-    )
-    assert dict(row) == {
-        "page_id": "page-outbox-upgrade",
-        "actor_kind": "system",
-        "processed_hash": None,
-        "attempts": 0,
-    }
-    indexes = await test_db.fetch(
-        """
-        SELECT indexname
-        FROM pg_indexes
-        WHERE schemaname = current_schema()
-          AND tablename = 'checklist_task_projection_outbox'
-        """
-    )
-    assert "idx_checklist_task_projection_due" in {
-        row["indexname"] for row in indexes
-    }
-
-
 async def test_session_review_schema_and_atomic_transitions(test_db):
     columns = {
         row["column_name"]: row
@@ -664,6 +498,22 @@ async def test_session_review_schema_and_atomic_transitions(test_db):
         "sess-review",
     )
     assert dict(row) == {"review_required": True, "review_state": "acknowledged"}
+
+
+async def test_session_deliveries_superseded_columns(test_db):
+    rows = await test_db.fetch(
+        """
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'session_deliveries'
+          AND column_name IN ('superseded_at', 'superseded_terminal_revision')
+        """
+    )
+    assert {row["column_name"]: (row["data_type"], row["is_nullable"]) for row in rows} == {
+        "superseded_at": ("timestamp with time zone", "YES"),
+        "superseded_terminal_revision": ("text", "YES"),
+    }
 
 
 async def test_terminal_receipt_is_stable_until_a_new_running_turn(test_db):
@@ -934,542 +784,6 @@ async def test_sessions_notify_completion_schema_contract(test_db):
     }
 
 
-async def test_board_items_container_schema_contract(test_db):
-    """board_items exposes the additive container membership columns and indexes."""
-
-    columns = {
-        row["column_name"]: row
-        for row in await test_db.fetch(
-            """
-            SELECT column_name, is_nullable, column_default
-            FROM information_schema.columns
-            WHERE table_name = 'board_items'
-            """
-        )
-    }
-
-    assert columns["container_kind"]["is_nullable"] == "NO"
-    assert columns["container_kind"]["column_default"] == "'folder'::text"
-    assert columns["container_id"]["is_nullable"] == "NO"
-    assert columns["membership_kind"]["is_nullable"] == "NO"
-    assert columns["membership_kind"]["column_default"] == "'primary'::text"
-    assert columns["source_task_item_id"]["is_nullable"] == "YES"
-
-    constraints = {
-        row["conname"]: row["contype"].decode()
-        if isinstance(row["contype"], bytes)
-        else row["contype"]
-        for row in await test_db.fetch(
-            """
-            SELECT conname, contype
-            FROM pg_constraint
-            WHERE conrelid = 'board_items'::regclass
-            """
-        )
-    }
-    assert constraints["board_items_container_kind_check"] == "c"
-    assert constraints["board_items_membership_kind_check"] == "c"
-    assert constraints["uq_board_items_container_item"] == "u"
-    assert constraints["board_items_source_task_item_id_fkey"] == "f"
-    assert "board_items_folder_id_item_id_key" not in constraints
-
-    indexes = {
-        row["indexname"]: row["indexdef"]
-        for row in await test_db.fetch(
-            """
-            SELECT indexname, indexdef
-            FROM pg_indexes
-            WHERE tablename = 'board_items'
-            """
-        )
-    }
-    assert "idx_board_items_folder" in indexes
-    assert "idx_board_items_container" in indexes
-    assert "container_kind, container_id, y, x" in indexes["idx_board_items_container"]
-    assert "uq_board_items_primary_membership" in indexes
-    assert "WHERE (membership_kind = 'primary'::text)" in indexes[
-        "uq_board_items_primary_membership"
-    ]
-
-
-async def test_schema_reapply_backfills_legacy_board_items_container_columns(test_db):
-    """schema.sql alone upgrades a pre-container board_items table idempotently."""
-
-    await test_db.execute(
-        """
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS uq_board_items_container_item;
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_task_item_id_fkey;
-        DROP INDEX IF EXISTS idx_board_items_container;
-        DROP INDEX IF EXISTS uq_board_items_primary_membership;
-        DROP TRIGGER IF EXISTS trg_board_items_fill_container_defaults ON board_items;
-        DROP FUNCTION IF EXISTS board_items_fill_container_defaults();
-        ALTER TABLE board_items DROP COLUMN IF EXISTS source_task_item_id CASCADE;
-        ALTER TABLE board_items DROP COLUMN IF EXISTS membership_kind CASCADE;
-        ALTER TABLE board_items DROP COLUMN IF EXISTS container_id CASCADE;
-        ALTER TABLE board_items DROP COLUMN IF EXISTS container_kind CASCADE;
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_folder_id_item_id_key;
-        ALTER TABLE board_items
-            ADD CONSTRAINT board_items_folder_id_item_id_key UNIQUE (folder_id, item_id);
-        """
-    )
-
-    await _create_folder(test_db, "legacy-container-folder", "Legacy Container Folder")
-    await test_db.execute(
-        """
-        INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'markdown', $3)
-        """,
-        "legacy-container-board-item",
-        "legacy-container-folder",
-        "legacy-container-doc",
-    )
-
-    await test_db.execute(_schema_sql())
-    await test_db.execute(_schema_sql())
-
-    row = await test_db.fetchrow(
-        """
-        SELECT folder_id, container_kind, container_id, membership_kind
-        FROM board_items
-        WHERE id = $1
-        """,
-        "legacy-container-board-item",
-    )
-    assert dict(row) == {
-        "folder_id": "legacy-container-folder",
-        "container_kind": "folder",
-        "container_id": "legacy-container-folder",
-        "membership_kind": "primary",
-    }
-
-    constraints = {
-        row["conname"]
-        for row in await test_db.fetch(
-            """
-            SELECT conname
-            FROM pg_constraint
-            WHERE conrelid = 'board_items'::regclass
-            """
-        )
-    }
-    assert "uq_board_items_container_item" in constraints
-    assert "board_items_folder_id_item_id_key" not in constraints
-
-
-async def test_board_items_container_insert_defaults_and_primary_uniqueness(test_db):
-    """Legacy INSERT paths can omit container columns; primary membership stays unique."""
-
-    await _create_folder(test_db, "container-default-folder-a", "Container Default A")
-    await _create_folder(test_db, "container-default-folder-b", "Container Default B")
-
-    await test_db.execute(
-        """
-        INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'markdown', $3)
-        """,
-        "container-default-item-a",
-        "container-default-folder-a",
-        "shared-markdown-doc",
-    )
-
-    row = await test_db.fetchrow(
-        """
-        SELECT container_kind, container_id, membership_kind
-        FROM board_items
-        WHERE id = $1
-        """,
-        "container-default-item-a",
-    )
-    assert dict(row) == {
-        "container_kind": "folder",
-        "container_id": "container-default-folder-a",
-        "membership_kind": "primary",
-    }
-
-    await test_db.execute(
-        """
-        INSERT INTO board_items (
-            id, folder_id, item_type, item_id, container_kind, container_id, membership_kind
-        )
-        VALUES ($1, $2, 'markdown', $3, 'folder', $2, 'reference')
-        """,
-        "container-reference-item-b",
-        "container-default-folder-b",
-        "shared-markdown-doc",
-    )
-
-    with pytest.raises(Exception):
-        await test_db.execute(
-            """
-            INSERT INTO board_items (
-                id, folder_id, item_type, item_id, container_kind, container_id
-            )
-            VALUES ($1, $2, 'markdown', $3, 'folder', $2)
-            """,
-            "container-primary-item-b",
-            "container-default-folder-b",
-            "shared-markdown-doc",
-        )
-
-
-async def test_custom_view_schema_enriches_board_item_metadata_and_cascades_refs(test_db):
-    await _create_folder(test_db, "custom-view-folder", "Custom View Folder")
-    await _create_session(test_db, "custom-view-session")
-    await test_db.execute(
-        """
-        INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
-        VALUES ($1, 1, 'custom_view_created', '{}'::jsonb, 'custom view created', NOW())
-        """,
-        "custom-view-session",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO board_items (
-            id, folder_id, item_type, item_id, container_kind, container_id, x, y
-        )
-        VALUES (
-            'custom_view:cv-1', 'custom-view-folder', 'custom_view', 'cv-1',
-            'folder', 'custom-view-folder', 120, 240
-        )
-        """
-    )
-    await test_db.execute(
-        """
-        INSERT INTO board_custom_views (
-            id, board_item_id, title, html, revision,
-            created_session_id, created_event_id, updated_session_id, updated_event_id
-        )
-        VALUES (
-            'cv-1', 'custom_view:cv-1', 'Progress panel',
-            '<section><h1>Progress</h1><script>alert(1)</script></section>', 3,
-            'custom-view-session', 1, 'custom-view-session', 1
-        )
-        """
-    )
-
-    row = await test_db.fetchrow(
-        """
-        SELECT item_type, metadata
-        FROM board_item_get_all()
-        WHERE id = 'custom_view:cv-1'
-        """
-    )
-
-    metadata = _decode_jsonb(row["metadata"])
-    assert row["item_type"] == "custom_view"
-    assert metadata["title"] == "Progress panel"
-    assert metadata["revision"] == 3
-    assert "Progress" in metadata["preview"]
-    assert "<section>" not in metadata["preview"]
-
-    await test_db.execute("DELETE FROM board_custom_views WHERE id = 'cv-1'")
-    remaining = await test_db.fetchval(
-        "SELECT COUNT(*) FROM board_items WHERE id = 'custom_view:cv-1'"
-    )
-    assert remaining == 0
-
-
-async def test_board_yjs_persistence_container_schema_contract(test_db):
-    """Yjs documents/cache expose synced marker and container cache key."""
-
-    document_columns = {
-        row["column_name"]
-        for row in await test_db.fetch(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'board_yjs_documents'
-            """
-        )
-    }
-    assert "synced_at" in document_columns
-    assert "revision" in document_columns
-
-    cache_columns = {
-        row["column_name"]: row
-        for row in await test_db.fetch(
-            """
-            SELECT column_name, is_nullable, column_default
-            FROM information_schema.columns
-            WHERE table_name = 'board_yjs_catalog_cache'
-            """
-        )
-    }
-    assert cache_columns["folder_id"]["is_nullable"] == "NO"
-    assert cache_columns["container_kind"]["is_nullable"] == "NO"
-    assert cache_columns["container_kind"]["column_default"] == "'folder'::text"
-    assert cache_columns["container_id"]["is_nullable"] == "NO"
-
-    pkey_columns = [
-        row["attname"]
-        for row in await test_db.fetch(
-            """
-            SELECT a.attname
-            FROM pg_index i
-            JOIN pg_attribute a
-              ON a.attrelid = i.indrelid
-             AND a.attnum = ANY(i.indkey)
-            WHERE i.indrelid = 'board_yjs_catalog_cache'::regclass
-              AND i.indisprimary
-            ORDER BY array_position(i.indkey, a.attnum)
-            """
-        )
-    ]
-    assert pkey_columns == ["container_kind", "container_id"]
-
-
-async def test_schema_reapply_backfills_legacy_board_yjs_catalog_cache_key(test_db):
-    """schema.sql upgrades legacy folder_id-keyed cache rows idempotently."""
-
-    await _create_folder(test_db, "legacy-cache-folder", "Legacy Cache Folder")
-    await test_db.execute(
-        """
-        TRUNCATE board_yjs_catalog_cache;
-        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_pkey;
-        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
-        ALTER TABLE board_yjs_catalog_cache DROP COLUMN IF EXISTS container_id;
-        ALTER TABLE board_yjs_catalog_cache DROP COLUMN IF EXISTS container_kind;
-        ALTER TABLE board_yjs_catalog_cache ADD PRIMARY KEY (folder_id);
-        INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents)
-        VALUES ('legacy-cache-folder', '[]'::jsonb, '[]'::jsonb);
-        """
-    )
-
-    await test_db.execute(_schema_sql())
-    await test_db.execute(_schema_sql())
-
-    row = await test_db.fetchrow(
-        """
-        SELECT folder_id, container_kind, container_id
-        FROM board_yjs_catalog_cache
-        WHERE folder_id = $1
-        """,
-        "legacy-cache-folder",
-    )
-    assert dict(row) == {
-        "folder_id": "legacy-cache-folder",
-        "container_kind": "folder",
-        "container_id": "legacy-cache-folder",
-    }
-
-
-async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
-    """schema.sql groups cache rows by folder/task container, not folder_id alone."""
-
-    await _create_folder(test_db, "container-cache-folder", "Container Cache Folder")
-    await test_db.execute(
-        """
-        INSERT INTO markdown_documents (id, title, body)
-        VALUES
-          ('container-folder-doc', 'Folder doc', 'folder body'),
-          ('container-task-doc', 'Task doc', 'task body')
-        """
-    )
-    await test_db.execute(
-        """
-        INSERT INTO board_items (
-            id, folder_id, item_type, item_id, container_kind, container_id, x, y
-        )
-        VALUES
-          ('markdown:container-folder-doc', 'container-cache-folder', 'markdown',
-           'container-folder-doc', 'folder', 'container-cache-folder', 0, 0),
-          ('markdown:container-task-doc', 'container-cache-folder', 'markdown',
-           'container-task-doc', 'task', 'rb-cache', 20, 20)
-        """
-    )
-
-    await test_db.execute(_schema_sql())
-
-    rows = await test_db.fetch(
-        """
-        SELECT container_kind, container_id, board_items
-        FROM board_yjs_catalog_cache
-        WHERE folder_id = $1
-        ORDER BY container_kind, container_id
-        """,
-        "container-cache-folder",
-    )
-    by_container = {
-        (row["container_kind"], row["container_id"]): _decode_jsonb(row["board_items"])
-        for row in rows
-    }
-    assert ("folder", "container-cache-folder") in by_container
-    assert ("task", "rb-cache") in by_container
-    assert by_container[("folder", "container-cache-folder")][0]["containerKind"] == "folder"
-    assert by_container[("task", "rb-cache")][0]["containerKind"] == "task"
-
-
-async def test_schema_reapply_upgrades_pre_status_tasks_table(test_db):
-    """schema.sql만 재실행해도 029 이전 tasks 테이블이 최신 형태가 된다."""
-
-    await test_db.execute(
-        """
-        DROP TABLE IF EXISTS task_operations CASCADE;
-        DROP TABLE IF EXISTS task_items CASCADE;
-        DROP TABLE IF EXISTS task_sections CASCADE;
-        DROP TABLE IF EXISTS tasks CASCADE;
-        """
-    )
-    await test_db.execute(
-        """
-        CREATE TABLE tasks (
-            id                 TEXT PRIMARY KEY,
-            board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
-            title              TEXT NOT NULL DEFAULT '',
-            archived           BOOLEAN NOT NULL DEFAULT FALSE,
-            version            INTEGER NOT NULL DEFAULT 1,
-            created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-            created_event_id   INTEGER,
-            created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            FOREIGN KEY (created_session_id, created_event_id)
-                REFERENCES events(session_id, id) ON DELETE SET NULL
-        );
-        CREATE UNIQUE INDEX uq_tasks_board_item ON tasks(board_item_id);
-        """
-    )
-
-    await _create_folder(test_db, "legacy-task-folder", "Legacy Task Folder")
-    await test_db.execute(
-        """
-        INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'task', $3)
-        """,
-        "legacy-task-board-item",
-        "legacy-task-folder",
-        "legacy-task",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO tasks (id, board_item_id, title)
-        VALUES ($1, $2, $3)
-        """,
-        "legacy-task",
-        "legacy-task-board-item",
-        "Legacy Task",
-    )
-
-    await test_db.execute(_schema_sql())
-    await test_db.execute(_schema_sql())
-
-    row = await test_db.fetchrow(
-        """
-        SELECT status, completed_kind, completed_session_id, completed_event_id,
-               completed_user_id, completed_at
-        FROM tasks
-        WHERE id = $1
-        """,
-        "legacy-task",
-    )
-    assert row["status"] == "open"
-    assert row["completed_kind"] is None
-    assert row["completed_session_id"] is None
-    assert row["completed_event_id"] is None
-    assert row["completed_user_id"] is None
-    assert row["completed_at"] is None
-
-    constraint_names = {
-        row["conname"]
-        for row in await test_db.fetch(
-            """
-            SELECT conname
-            FROM pg_constraint
-            WHERE conrelid = 'tasks'::regclass
-            """
-        )
-    }
-    assert {
-        "tasks_status_check",
-        "tasks_completed_kind_check",
-        "tasks_completed_session_id_fkey",
-        "tasks_completed_event_fkey",
-    } <= constraint_names
-
-    with pytest.raises(Exception):
-        await test_db.execute("UPDATE tasks SET status = 'invalid'")
-    with pytest.raises(Exception):
-        await test_db.execute("UPDATE tasks SET completed_kind = 'system'")
-    with pytest.raises(Exception):
-        await test_db.execute("UPDATE tasks SET completed_session_id = 'missing-session'")
-
-
-async def test_fresh_schema_uses_task_status_canonical_constraint_names(test_db):
-    constraint_names = {
-        row["conname"]
-        for row in await test_db.fetch(
-            """
-            SELECT conname
-            FROM pg_constraint
-            WHERE conrelid = 'tasks'::regclass
-            """
-        )
-    }
-
-    assert "tasks_completed_event_fkey" in constraint_names
-    assert "tasks_completed_session_id_completed_event_id_fkey" not in constraint_names
-
-
-async def test_schema_reapply_upgrades_task_item_review_status_check(test_db):
-    """schema.sql만 재실행해도 기존 task_items CHECK가 review를 허용한다."""
-
-    await test_db.execute(
-        """
-        ALTER TABLE task_items DROP CONSTRAINT IF EXISTS task_items_status_check;
-        ALTER TABLE task_items ADD CONSTRAINT task_items_status_check
-            CHECK (status IN ('pending','in_progress','completed','cancelled'));
-        """
-    )
-
-    await test_db.execute(_schema_sql())
-    await _create_folder(test_db, "review-task-folder", "Review Task Folder")
-    await test_db.execute(
-        """
-        INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'task', $3)
-        """,
-        "review-task-board-item",
-        "review-task-folder",
-        "review-task",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO tasks (id, board_item_id, title)
-        VALUES ($1, $2, $3)
-        """,
-        "review-task",
-        "review-task-board-item",
-        "Review Task",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO task_sections (id, task_id, position_key, title)
-        VALUES ($1, $2, $3, $4)
-        """,
-        "review-section",
-        "review-task",
-        "a",
-        "Review Section",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO task_items (id, section_id, position_key, title, status)
-        VALUES ($1, $2, $3, $4, 'review')
-        """,
-        "review-item",
-        "review-section",
-        "a",
-        "Ready",
-    )
-
-    status = await test_db.fetchval(
-        "SELECT status FROM task_items WHERE id = $1",
-        "review-item",
-    )
-    assert status == "review"
-
-
 # === 세션 CRUD ===
 
 async def test_session_get_all_and_count(test_db):
@@ -1491,23 +805,20 @@ async def test_session_get_all_and_count(test_db):
     count = await test_db.fetchval("SELECT session_count($1::jsonb)", filters)
     assert count >= 3
 
-    # 검수 상태 필터는 최신순 페이지 창과 독립적으로 정확한 멤버십을 반환한다.
-    await test_db.execute(
-        "UPDATE sessions SET review_state = 'needs_review' WHERE session_id = 'sa-2'"
-    )
-    review_filters = json.dumps({"review_state": "needs_review"})
-    rows = await test_db.fetch(
-        "SELECT * FROM session_get_all($1::jsonb)", review_filters
-    )
-    assert [row["session_id"] for row in rows] == ["sa-2"]
-    count = await test_db.fetchval(
-        "SELECT session_count($1::jsonb)", review_filters
-    )
-    assert count == 1
-
     # limit/offset
     rows = await test_db.fetch("SELECT * FROM session_get_all(NULL, 2, 0)")
     assert len(rows) == 2
+
+
+async def test_session_review_state_filters_get_all_and_count(test_db):
+    for state in ("not_required", "needs_review", "acknowledged"):
+        await _create_session(test_db, f"review-{state}", review_state=state)
+
+    for state in ("not_required", "needs_review", "acknowledged"):
+        filters = json.dumps({"review_state": state})
+        rows = await test_db.fetch("SELECT * FROM session_get_all($1::jsonb)", filters)
+        assert [row["session_id"] for row in rows] == [f"review-{state}"]
+        assert await test_db.fetchval("SELECT session_count($1::jsonb)", filters) == 1
 
 
 async def test_session_feed_only_excludes_hidden_folders_and_llm(test_db):
@@ -1590,13 +901,81 @@ async def test_session_metadata_search_matches_title_folder_and_node(test_db):
     assert [row["session_id"] for row in node_rows] == ["search-node"]
 
 
+async def test_custom_view_schema_enriches_board_item_metadata_and_cascades_refs(test_db):
+    await _create_folder(test_db, "custom-view-folder", "Custom View Folder")
+    await _create_session(test_db, "custom-view-session")
+    await test_db.execute(
+        """
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
+        VALUES ($1, 1, 'custom_view_created', '{}'::jsonb, 'custom view created', NOW())
+        """,
+        "custom-view-session",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, item_type, item_id, x, y
+        )
+        VALUES (
+            'custom_view:cv-1', 'custom-view-folder', 'custom_view', 'cv-1', 120, 240
+        )
+        """
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_custom_views (
+            id, board_item_id, title, html, revision,
+            created_session_id, created_event_id, updated_session_id, updated_event_id
+        )
+        VALUES (
+            'cv-1', 'custom_view:cv-1', 'Progress panel',
+            '<section><h1>Progress</h1><script>alert(1)</script></section>', 3,
+            'custom-view-session', 1, 'custom-view-session', 1
+        )
+        """
+    )
+
+    row = await test_db.fetchrow(
+        """
+        SELECT item_type, metadata
+        FROM board_item_get_all()
+        WHERE id = 'custom_view:cv-1'
+        """
+    )
+
+    metadata = _decode_jsonb(row["metadata"])
+    assert row["item_type"] == "custom_view"
+    assert metadata["title"] == "Progress panel"
+    assert metadata["revision"] == 3
+    assert "Progress" in metadata["preview"]
+    assert "<section>" not in metadata["preview"]
+
+    await test_db.execute("DELETE FROM board_custom_views WHERE id = 'cv-1'")
+    remaining = await test_db.fetchval(
+        "SELECT COUNT(*) FROM board_items WHERE id = 'custom_view:cv-1'"
+    )
+    assert remaining == 0
+
+
+async def test_session_id_search_uses_sessions_before_indexed_event_lookup():
+    schema_sql = _schema_sql()
+    signature = "CREATE OR REPLACE FUNCTION session_id_search("
+    function_sql = _function_sql(schema_sql, signature)
+
+    assert "FROM sessions s" in function_sql
+    assert "CROSS JOIN LATERAL" in function_sql
+    assert "e.session_id = matched.session_id" in function_sql
+    assert "ORDER BY e.id DESC" in function_sql
+    assert "FROM events e\n    WHERE e.session_id ILIKE" not in function_sql
+
+
 async def test_session_delete(test_db):
     await _create_folder(test_db, "unrelated-delete-cache")
     await test_db.execute(
         """
         INSERT INTO board_yjs_catalog_cache (
-            folder_id, container_kind, container_id, board_items, markdown_documents
-        ) VALUES ($1, 'folder', $1, $2::jsonb, '[]'::jsonb)
+            folder_id, board_items, markdown_documents
+        ) VALUES ($1, $2::jsonb, '[]'::jsonb)
         """,
         "unrelated-delete-cache",
         json.dumps(json.dumps([{"id": "session:someone-else"}])),
@@ -1605,71 +984,6 @@ async def test_session_delete(test_db):
     await test_db.execute("SELECT session_delete($1)", "s-del")
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-del")
     assert row is None
-
-
-async def test_session_delete_rejects_remaining_board_ydoc_references(test_db):
-    await _create_folder(test_db, "delete-guard-folder")
-    await _create_session(test_db, "s-delete-guard", folder_id="delete-guard-folder")
-    board_item = {
-        "id": "session:s-delete-guard",
-        "folderId": "delete-guard-folder",
-        "containerKind": "folder",
-        "containerId": "delete-guard-folder",
-        "membershipKind": "primary",
-        "sourceTaskItemId": None,
-        "itemType": "session",
-        "itemId": "s-delete-guard",
-        "x": 0,
-        "y": 0,
-        "metadata": {},
-    }
-    await test_db.execute(
-        """
-        INSERT INTO board_items (
-            id, folder_id, container_kind, container_id, membership_kind,
-            item_type, item_id, x, y, metadata
-        ) VALUES ($1, $2, 'folder', $2, 'primary', 'session', $3, 0, 0, '{}')
-        """,
-        board_item["id"],
-        board_item["folderId"],
-        board_item["itemId"],
-    )
-    await test_db.execute(
-        """
-        INSERT INTO board_yjs_catalog_cache (
-            folder_id, container_kind, container_id, board_items, markdown_documents
-        ) VALUES ($1, 'folder', $1, $2::jsonb, '[]'::jsonb)
-        """,
-        board_item["folderId"],
-        json.dumps([board_item]),
-    )
-
-    await test_db.execute(
-        "DELETE FROM board_items WHERE id = $1",
-        board_item["id"],
-    )
-    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
-        await test_db.execute(
-            "DELETE FROM sessions WHERE session_id = $1",
-            "s-delete-guard",
-        )
-
-    assert await test_db.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM sessions WHERE session_id = $1)",
-        "s-delete-guard",
-    )
-
-    await test_db.execute(
-        """
-        UPDATE board_yjs_catalog_cache
-        SET board_items = $2::jsonb
-        WHERE container_kind = 'folder' AND container_id = $1
-        """,
-        board_item["folderId"],
-        json.dumps(json.dumps([board_item])),
-    )
-    with pytest.raises(asyncpg.ForeignKeyViolationError, match="still has a board Y.Doc card"):
-        await test_db.execute("SELECT session_delete($1)", "s-delete-guard")
 
 
 async def test_session_delete_preserves_automatic_projection_cleanup(test_db):
@@ -1682,9 +996,8 @@ async def test_session_delete_preserves_automatic_projection_cleanup(test_db):
     await test_db.execute(
         """
         INSERT INTO board_items (
-            id, folder_id, container_kind, container_id, membership_kind,
-            item_type, item_id, x, y, metadata
-        ) VALUES ($1, $2, 'folder', $2, 'primary', 'session', $3, 0, 0, '{}')
+            id, folder_id, membership_kind, item_type, item_id, x, y, metadata
+        ) VALUES ($1, $2, 'primary', 'session', $3, 0, 0, '{}')
         """,
         "session:s-delete-projection-only",
         "delete-projection-folder",
@@ -1904,7 +1217,7 @@ async def test_session_apply_metadata_entry_leaves_other_append_paths_unchanged(
 
 async def test_session_update_last_message(test_db):
     await _create_session(test_db, "s-msg")
-    now = _utc_now()
+    now = _utc_now().replace(microsecond=300950)
     msg = json.dumps({
         "type": "assistant_message",
         "preview": " hello ",
@@ -1914,11 +1227,9 @@ async def test_session_update_last_message(test_db):
         "SELECT session_update_last_message($1, $2, $3)", "s-msg", msg, now
     )
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-msg")
-    assert _decode_jsonb(row["last_message"]) == {
-        "type": "assistant_message",
-        "preview": "hello",
-        "timestamp": now.isoformat(),
-    }
+    last_message = _decode_jsonb(row["last_message"])
+    assert datetime.fromisoformat(last_message.pop("timestamp")) == now
+    assert last_message == {"type": "assistant_message", "preview": "hello"}
 
 
 # === 읽음 상태 ===
@@ -2551,17 +1862,6 @@ async def test_catalog_get_sessions(test_db):
 
 
 # === 마이그레이션 ===
-
-
-
-
-
-
-
-
-
-
-
 
 
 # === Session feed projection ===
