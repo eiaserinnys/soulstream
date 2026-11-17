@@ -252,6 +252,43 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
     });
   });
 
+  it("counts failed results and complete usage after one user message and ignores successful results", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-result-split', '결과 분리 세션', 'node-h', 'agent-h', 'claude-preset', ${at("01:40:00.000")})`;
+    await put("s-result-split", 1, "user_message", at("01:40:00.000"), { text: "one turn" });
+    await put("s-result-split", 2, "result", at("01:40:01.000"), {
+      success: true,
+      model: "split-model",
+      usage: { input_tokens: 500, output_tokens: 500 },
+      turn_cost_usd: 9.9,
+    });
+    await put("s-result-split", 3, "result", at("01:40:02.000"), {
+      success: false,
+      model: "split-model",
+      usage: { input_tokens: 12, output_tokens: 3 },
+      turn_cost_usd: 0.25,
+      first_call: { input_tokens: 4 },
+    });
+    await put("s-result-split", 4, "complete", at("01:40:03.000"), {
+      model: "split-model",
+      usage: { input_tokens: 7, output_tokens: 2 },
+      turn_cost_usd: 0.1,
+    });
+
+    const rows = await summarizeTurnUsage({ since: SINCE, until: UNTIL });
+    expect(rows.find((row) => row.session_id === "s-result-split")).toMatchObject({
+      turns: 2,
+      turns_without_usage: 0,
+      input_tokens: 19,
+      output_tokens: 5,
+      cost_usd: 0.35,
+      model: "split-model",
+      first_call_input_tokens: 4,
+    });
+
+    await h.sql`DELETE FROM sessions WHERE session_id = 's-result-split'`;
+  });
+
   it("diffs cumulative model_usage into per-turn subagent tokens and prefers the complete payload over a stale result", async () => {
     await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
       VALUES ('s-sub', '하위 에이전트 세션', 'node-g', 'agent-g', 'claude-preset', ${at("01:50:00.000")})`;
