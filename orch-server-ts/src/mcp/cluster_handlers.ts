@@ -16,6 +16,10 @@ import {
 import { executeCogitoBriefRoute } from "../cogito/cogito_routes.js";
 import { executeCreateSessionRoute } from "../session/session_command_routes.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
+import type {
+  EventIngressDeadLetterListInput,
+  EventIngressDeadLetterListState,
+} from "../node/event_ingress_dead_letter_store.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -109,6 +113,28 @@ function unknownPresetIds(patch: AgentProfilePatch, modelCatalog: ModelCatalogSo
 export const clusterHandlers = {
   list_nodes: o => run(() => request("GET", "/api/nodes", async () => ({ status: 200, body: executeNodeSnapshotRoute(o.cluster.nodes) }))),
   reflect_cluster_brief: o => run(() => request("GET", "/cogito/briefs", () => executeCogitoBriefRoute(o.cluster.cogito, {}))),
+  list_event_ingress_dead_letters: (o, a) => run(async () => {
+    const eventIngress = o.cluster.eventIngress;
+    if (eventIngress === undefined) throw new Error("event ingress observability is not configured");
+    const input: EventIngressDeadLetterListInput = {
+      state: a.state as EventIngressDeadLetterListState,
+      ...(typeof a.since === "string" ? { since: a.since } : {}),
+      ...(typeof a.until === "string" ? { until: a.until } : {}),
+      ...(typeof a.node_id === "string" ? { nodeId: a.node_id } : {}),
+      ...(typeof a.limit === "number" ? { limit: a.limit } : {}),
+      ...(typeof a.cursor === "string" ? { cursor: a.cursor } : {}),
+    };
+    return await eventIngress.listDeadLetters(input);
+  }),
+  get_event_ingress_delivery_latency: (o, a) => run(async () => {
+    const deliveryLatency = o.cluster.eventIngress?.deliveryLatency;
+    if (deliveryLatency === undefined) throw new Error("event ingress delivery latency is not configured");
+    return await deliveryLatency({
+      ...(typeof a.since === "string" ? { since: a.since } : {}),
+      ...(typeof a.until === "string" ? { until: a.until } : {}),
+      ...(typeof a.node_id === "string" ? { node_id: a.node_id } : {}),
+    });
+  }),
   list_node_agents: node("agents", "agents", "GET"),
   list_node_model_presets: node("model-presets", "model-presets", "GET"),
   get_central_agent_profile: (o, a) => run(async () => {

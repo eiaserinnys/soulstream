@@ -867,6 +867,9 @@ CREATE TABLE IF NOT EXISTS event_ingress_receipts (
 CREATE INDEX IF NOT EXISTS idx_event_ingress_receipts_event
     ON event_ingress_receipts (session_id, event_id);
 
+CREATE INDEX IF NOT EXISTS idx_event_ingress_receipts_created_at
+    ON event_ingress_receipts (created_at);
+
 CREATE TABLE IF NOT EXISTS session_feed_state (
     session_id                TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
     attention_revision        INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),

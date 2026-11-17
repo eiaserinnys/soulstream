@@ -24,14 +24,14 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_register",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1362",
+    definition: "packages/db-schema/sql/schema.sql:1365",
     callSites: [],
     note: "정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다.",
   },
   {
     name: "session_register_with_model_preset",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1392",
+    definition: "packages/db-schema/sql/schema.sql:1395",
     callSites: [
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 130 },
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 236 },
@@ -41,7 +41,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_update",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1524",
+    definition: "packages/db-schema/sql/schema.sql:1527",
     callSites: [
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 284 },
     ],
@@ -50,7 +50,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_acknowledge_review",
     writesStatus: false,
-    definition: "packages/db-schema/sql/schema.sql:1431",
+    definition: "packages/db-schema/sql/schema.sql:1434",
     callSites: [
       { file: "src/runtime/live_session_review_repository.ts", line: 23 },
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 326 },
@@ -60,7 +60,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_record_execution_registration",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1601",
+    definition: "packages/db-schema/sql/schema.sql:1604",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 196 },
     ],
@@ -69,7 +69,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_running_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:4176",
+    definition: "packages/db-schema/sql/schema.sql:4179",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 77 },
     ],
@@ -78,7 +78,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_terminal_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1742",
+    definition: "packages/db-schema/sql/schema.sql:1745",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 254 },
     ],

@@ -22,6 +22,14 @@ import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/re
 import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
 import type { CardWorkDispatchService, DispatchWorkActor } from "../cards/card_work_dispatch_service.js";
+import type {
+  EventIngressDeadLetterListInput,
+  EventIngressDeadLetterListResult,
+} from "../node/event_ingress_dead_letter_store.js";
+import type {
+  DeliveryLatencyQueryInput,
+  DeliveryLatencyResult,
+} from "../node/event_ingress_delivery_latency.js";
 
 export interface McpCallContext {
   signal?: AbortSignal;
@@ -61,6 +69,11 @@ export interface McpHostOptions {
     cogito: CogitoRouteOptions;
     sessions: SessionCommandRouteOptions;
     readSession(sessionId: string): Promise<{ folder_id?: string | null } | null>;
+    /** event ingress 읽기 전용 조회 도구의 자리. 없는 host는 그 도구에서만 오류를 낸다. */
+    eventIngress?: {
+      listDeadLetters(input: EventIngressDeadLetterListInput): Promise<EventIngressDeadLetterListResult>;
+      deliveryLatency?(input: DeliveryLatencyQueryInput): Promise<DeliveryLatencyResult>;
+    };
     logger: Pick<FastifyBaseLogger, "warn">;
   };
   environment?: string;

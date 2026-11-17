@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { EventIngressEnvelope } from "./event_ingress_types.js";
@@ -70,6 +70,52 @@ export type EventIngressFailureDecision = {
   deadLetter: PersistedEventIngressDeadLetter | null;
 };
 
+export type EventIngressDeadLetterListState = "dead_lettered" | "retrying" | "all";
+
+export type EventIngressDeadLetterListInput = {
+  state?: EventIngressDeadLetterListState;
+  since?: string;
+  until?: string;
+  nodeId?: string;
+  limit?: number;
+  cursor?: string;
+};
+
+/**
+ * dead-letter 파일 하나의 요약. payload, failures[], searchable_text 같은 원문
+ * 칸은 일부러 담지 않는다.
+ */
+export type EventIngressDeadLetterListItem = {
+  id: string;
+  version: 1 | 2;
+  state: "dead_lettered" | "retrying";
+  code: EventIngressDeadLetterCode;
+  reason: string;
+  node_id: string;
+  session_id: string;
+  stream_id: string;
+  source_seq: number;
+  event_type: string;
+  created_at: string;
+  first_failed_at: string | null;
+  last_failed_at: string | null;
+  rejected_at: string | null;
+  failure_count: number | null;
+  last_error_name: string | null;
+  last_error_code: string | null;
+  recorded_at: string;
+  delay_ms: number;
+};
+
+export type EventIngressDeadLetterListResult = {
+  items: EventIngressDeadLetterListItem[];
+  next_cursor: string | null;
+  total_matched: number;
+  counts: { dead_lettered: number; retrying: number };
+  unreadable_count: number;
+  directory_exists: boolean;
+};
+
 export type EventIngressDeadLetterStore = {
   find(input: {
     nodeId: string;
@@ -104,6 +150,97 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
   ) {
     if (!directory)
       throw new Error("event ingress dead-letter directory is required");
+  }
+
+  /**
+   * dead-letter 디렉터리의 *.json을 직접 읽는 읽기 전용 목록. 쓰기 잠금
+   * (exclusive)과 handover pause(requireWritable)를 거치지 않으므로
+   * pauseWrites() 중에도 읽힌다.
+   */
+  async list(
+    input: EventIngressDeadLetterListInput = {},
+  ): Promise<EventIngressDeadLetterListResult> {
+    const state = input.state ?? "dead_lettered";
+    const limit = input.limit ?? 20;
+    const cursor =
+      input.cursor === undefined ? null : decodeDeadLetterCursor(input.cursor);
+    const since =
+      input.since === undefined
+        ? null
+        : parseDeadLetterTimestamp(input.since, "since");
+    const until =
+      input.until === undefined
+        ? null
+        : parseDeadLetterTimestamp(input.until, "until");
+
+    let names: string[];
+    try {
+      names = await readdir(this.directory);
+    } catch (error) {
+      if (!isMissingFile(error)) throw error;
+      return {
+        items: [],
+        next_cursor: null,
+        total_matched: 0,
+        counts: { dead_lettered: 0, retrying: 0 },
+        unreadable_count: 0,
+        directory_exists: false,
+      };
+    }
+
+    let unreadableCount = 0;
+    const scoped: EventIngressDeadLetterListItem[] = [];
+    for (const name of names.sort()) {
+      if (!name.endsWith(".json")) continue;
+      const item = await this.readListEntry(name);
+      if (item === null) {
+        unreadableCount += 1;
+        continue;
+      }
+      if (input.nodeId !== undefined && item.node_id !== input.nodeId) continue;
+      const recordedMs = Date.parse(item.recorded_at);
+      if (since !== null && recordedMs < since) continue;
+      if (until !== null && recordedMs >= until) continue;
+      scoped.push(item);
+    }
+
+    const counts = { dead_lettered: 0, retrying: 0 };
+    for (const item of scoped) counts[item.state] += 1;
+
+    const matched = scoped
+      .filter((item) => state === "all" || item.state === state)
+      .sort(compareDeadLetterItems);
+    const remaining =
+      cursor === null
+        ? matched
+        : matched.filter((item) => isAfterDeadLetterCursor(item, cursor));
+    const page = remaining.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      items: page,
+      next_cursor:
+        remaining.length > limit && last !== undefined
+          ? encodeDeadLetterCursor(last)
+          : null,
+      total_matched: matched.length,
+      counts,
+      unreadable_count: unreadableCount,
+      directory_exists: true,
+    };
+  }
+
+  private async readListEntry(
+    name: string,
+  ): Promise<EventIngressDeadLetterListItem | null> {
+    let value: unknown;
+    try {
+      value = JSON.parse(
+        await readFile(join(this.directory, name), "utf8"),
+      ) as unknown;
+    } catch {
+      return null;
+    }
+    return deadLetterListItem(name.slice(0, -".json".length), value);
   }
 
   async find(input: {
@@ -425,4 +562,126 @@ function isMissingFile(error: unknown): boolean {
     "code" in error &&
     (error as { code?: string }).code === "ENOENT",
   );
+}
+
+function parseDeadLetterTimestamp(value: string, field: string): number {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${field} must be an ISO-8601 timestamp`);
+  }
+  return parsed;
+}
+
+function encodeDeadLetterCursor(
+  item: Pick<EventIngressDeadLetterListItem, "recorded_at" | "id">,
+): string {
+  return `${item.recorded_at}|${item.id}`;
+}
+
+function decodeDeadLetterCursor(cursor: string): {
+  recordedMs: number;
+  id: string;
+} {
+  const separator = cursor.lastIndexOf("|");
+  if (separator <= 0 || separator === cursor.length - 1) {
+    throw new Error("dead-letter cursor is invalid");
+  }
+  const recordedMs = Date.parse(cursor.slice(0, separator));
+  if (!Number.isFinite(recordedMs)) {
+    throw new Error("dead-letter cursor is invalid");
+  }
+  return { recordedMs, id: cursor.slice(separator + 1) };
+}
+
+function compareDeadLetterItems(
+  left: EventIngressDeadLetterListItem,
+  right: EventIngressDeadLetterListItem,
+): number {
+  const delta = Date.parse(right.recorded_at) - Date.parse(left.recorded_at);
+  if (delta !== 0) return delta;
+  return left.id < right.id ? 1 : left.id > right.id ? -1 : 0;
+}
+
+function isAfterDeadLetterCursor(
+  item: EventIngressDeadLetterListItem,
+  cursor: { recordedMs: number; id: string },
+): boolean {
+  const recordedMs = Date.parse(item.recorded_at);
+  if (recordedMs !== cursor.recordedMs) return recordedMs < cursor.recordedMs;
+  return item.id < cursor.id;
+}
+
+function isListableEnvelope(envelope: EventIngressEnvelope): boolean {
+  return (
+    typeof envelope.stream_id === "string" &&
+    Number.isSafeInteger(envelope.source_seq) &&
+    typeof envelope.session_id === "string" &&
+    typeof envelope.event_type === "string" &&
+    typeof envelope.created_at === "string"
+  );
+}
+
+function deadLetterListItem(
+  id: string,
+  value: unknown,
+): EventIngressDeadLetterListItem | null {
+  if (isFailureRecord(value)) {
+    const last = value.failures[value.failures.length - 1];
+    if (last === undefined || !isListableEnvelope(value.envelope)) return null;
+    const recordedAt =
+      value.state === "dead_lettered" ? value.rejected_at : last.failed_at;
+    if (typeof recordedAt !== "string") return null;
+    const recordedMs = Date.parse(recordedAt);
+    const createdMs = Date.parse(value.envelope.created_at);
+    if (!Number.isFinite(recordedMs) || !Number.isFinite(createdMs)) return null;
+    return {
+      id,
+      version: 2,
+      state: value.state,
+      code: value.code,
+      reason: value.reason.slice(0, 500),
+      node_id: value.node_id,
+      session_id: value.envelope.session_id,
+      stream_id: value.envelope.stream_id,
+      source_seq: value.envelope.source_seq,
+      event_type: value.envelope.event_type,
+      created_at: value.envelope.created_at,
+      first_failed_at: value.failures[0]?.failed_at ?? null,
+      last_failed_at: last.failed_at,
+      rejected_at: value.rejected_at,
+      failure_count: value.failure_count,
+      last_error_name: last.error_name,
+      last_error_code: last.error_code ?? null,
+      recorded_at: recordedAt,
+      delay_ms: recordedMs - createdMs,
+    };
+  }
+  if (isLegacyDeadLetterRecord(value)) {
+    if (!isListableEnvelope(value.envelope)) return null;
+    const recordedMs = Date.parse(value.rejected_at);
+    const createdMs = Date.parse(value.envelope.created_at);
+    if (!Number.isFinite(recordedMs) || !Number.isFinite(createdMs)) return null;
+    return {
+      id,
+      version: 1,
+      state: "dead_lettered",
+      code: value.code,
+      reason: value.reason.slice(0, 500),
+      node_id: value.node_id,
+      session_id: value.envelope.session_id,
+      stream_id: value.envelope.stream_id,
+      source_seq: value.envelope.source_seq,
+      event_type: value.envelope.event_type,
+      created_at: value.envelope.created_at,
+      first_failed_at: null,
+      last_failed_at: null,
+      rejected_at: value.rejected_at,
+      failure_count: null,
+      last_error_name: null,
+      last_error_code: null,
+      recorded_at: value.rejected_at,
+      delay_ms: recordedMs - createdMs,
+    };
+  }
+  return null;
 }

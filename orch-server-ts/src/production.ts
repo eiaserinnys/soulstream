@@ -60,6 +60,10 @@ import {
   type EventSessionEffectApplier,
 } from "./node/event_ingress_repository.js";
 import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
+import {
+  queryEventIngressDeliveryLatency,
+  type DeliveryLatencySql,
+} from "./node/event_ingress_delivery_latency.js";
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
 import { applyEventFeedProjection } from "./node/event_feed_projection_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
@@ -930,6 +934,7 @@ export async function createLiveProductionApplication(
       cardDispatchRuntime.workDispatchServiceProvider,
       nodePairingService,
       productionSql,
+      deadLetterStore,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1363,6 +1368,7 @@ export function buildProductionRouteOptions(
   workDispatchServiceProvider?: NonNullable<McpHostOptions["cards"]["workDispatchServiceProvider"]>,
   nodePairing?: NodePairingService,
   conversationSql?: SqlClient,
+  deadLetterStore?: Pick<FileEventIngressDeadLetterStore, "list">,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -1482,6 +1488,15 @@ export function buildProductionRouteOptions(
           cogito: providers.cogitoRoutes,
           sessions: providers.runtime.sessionCommandRoutes,
           readSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
+          ...(deadLetterStore === undefined ? {} : {
+            eventIngress: {
+              listDeadLetters: (input) => deadLetterStore.list(input),
+              ...(conversationSql === undefined ? {} : {
+                deliveryLatency: (input) =>
+                  queryEventIngressDeliveryLatency(conversationSql as unknown as DeliveryLatencySql, input),
+              }),
+            },
+          }),
         },
         board: {
           host: providers.runtime.flatFolderContentRoutes.host,
