@@ -47,6 +47,7 @@ export interface PageYjsPersistenceDiagnostics {
 }
 
 export interface PageYjsPersistenceOptions {
+  withDocumentAccess?: <T>(action: () => Promise<T>) => Promise<T>;
   maxAttempts?: number;
   onStored?: (input: {
     documentName: string;
@@ -140,7 +141,7 @@ export function createPageYjsPersistence(
   };
 
   const database = new Database({
-    fetch: async (payload: fetchPayload) => {
+    fetch: async (payload: fetchPayload) => await (options.withDocumentAccess ?? (async action => await action()))(async () => {
       const pageId = requirePageDocumentName(payload.documentName);
       const snapshot = await repository.getPageYjsSnapshot(payload.documentName);
       if (!snapshot) {
@@ -150,7 +151,7 @@ export function createPageYjsPersistence(
       }
       const pending = pendingUpdates.get(payload.documentName);
       return pending ? Y.mergeUpdates([snapshot, pending]) : snapshot;
-    },
+    }),
     store: async (payload: storePayload) => {
       if (isCommittedPageSnapshotOrigin(payload.transactionOrigin)) return;
       const pageId = requirePageDocumentName(payload.documentName);

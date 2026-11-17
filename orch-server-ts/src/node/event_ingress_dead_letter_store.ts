@@ -90,6 +90,13 @@ export type EventIngressDeadLetterStore = {
 
 export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterStore {
   private operationTail: Promise<void> = Promise.resolve();
+  private paused = false;
+
+  async pauseWrites(): Promise<void> { this.paused = true; await this.operationTail; }
+  resumeWrites(): void { this.paused = false; }
+  private requireWritable(): void {
+    if (this.paused) throw Object.assign(new Error("Event failure storage is moving; retry"), { statusCode: 503, code: "HANDOVER_RETRY" });
+  }
 
   constructor(
     private readonly directory: string,
@@ -103,6 +110,7 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
     nodeId: string;
     envelope: EventIngressEnvelope;
   }): Promise<EventIngressFailureLookup | null> {
+    this.requireWritable();
     return await this.exclusive(async () => {
       const currentPath = this.recordPath(input.envelope);
       const current = await this.readRecord(currentPath);
@@ -120,6 +128,7 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
     nodeId: string;
     envelope: EventIngressEnvelope;
   }): Promise<void> {
+    this.requireWritable();
     await this.exclusive(async () => {
       const path = this.recordPath(input.envelope);
       const current = await this.readRecord(path);
@@ -139,6 +148,7 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
     failure: EventIngressFailureDetail;
     threshold: number;
   }): Promise<EventIngressFailureDecision> {
+    this.requireWritable();
     if (!Number.isSafeInteger(input.threshold) || input.threshold <= 1) {
       throw new Error(
         "event ingress failure threshold must be an integer greater than one",

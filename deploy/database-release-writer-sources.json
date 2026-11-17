@@ -1,6 +1,6 @@
 {
   "schema_version": "soulstream.database-release-writer-sources.v1",
-  "haniel_contract_sha": "250b25b13a0d567b8c7c230b6c4a062e5189e8ea",
+  "haniel_contract_sha": "aa9a8cf5e03e3bff2814066250e3b1887a5a17ef",
   "sources": {
     "central": {
       "path": "soul-server-ts/tests/fixtures/eiaserinnys-haniel-services.yaml",

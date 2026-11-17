@@ -20,6 +20,10 @@ export class ExternalEventsService {
   static async open(options: { path: string; owner: string; post?: WebhookPost; now?: () => number }) {
     return new ExternalEventsService(await SubscriptionStore.open(options.path), options.owner, options.post ?? postWebhook, options.now ?? Date.now);
   }
+  get writesPaused() { return this.store.writesPaused; }
+  async pauseWrites() { await this.store.pauseWrites(); }
+  resumeWrites() { this.store.resumeWrites(); }
+  async runWrite<T>(action: () => Promise<T>): Promise<T> { return await this.store.runMutation(action); }
   scoped(owner: string) { return new ExternalEventsService(this.store, owner, this.post, this.now); }
   allRecipients() { return this.store.values().filter(r => r.active && r.expiresAt > this.now()).map(r => this.recipient(r)); }
   async sendToRecipient(id: string, text: string, sender: string, title?: string) {
@@ -45,7 +49,8 @@ export class ExternalEventsService {
       "webhook-timestamp": String(Math.floor(signedAt.getTime() / 1000)),
       "webhook-signature": signatures.join(" "), "X-MCP-Subscription-Id": id };
   }
-  async subscribe(input: unknown) {
+  async subscribe(input: unknown) { return await this.store.runMutation(() => this.subscribeImpl(input)); }
+  private async subscribeImpl(input: unknown) {
     const request = subscribeSchema.parse(input);
     const id = subscriptionId(this.owner, request);
     const previous = this.store.get(id);
@@ -72,12 +77,16 @@ export class ExternalEventsService {
     }));
     return { id, refreshBefore: new Date(expiresAt).toISOString(), cursor: null, truncated: false };
   }
-  async unsubscribe(input: unknown) {
+  async unsubscribe(input: unknown) { return await this.store.runMutation(() => this.unsubscribeImpl(input)); }
+  private async unsubscribeImpl(input: unknown) {
     const request = identitySchema.parse(input);
     await this.store.update(subscriptionId(this.owner, request), () => undefined);
     return {};
   }
   async send(id: string, text: string, senderSessionId: string, title?: string) {
+    return await this.store.runMutation(() => this.sendImpl(id, text, senderSessionId, title));
+  }
+  private async sendImpl(id: string, text: string, senderSessionId: string, title?: string) {
     const record = this.store.get(id);
     if (!this.valid(record)) return noRecipient;
     const eventId = "evt_" + randomUUID(); const sentAt = new Date(this.now()).toISOString();

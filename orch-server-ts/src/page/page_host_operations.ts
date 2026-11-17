@@ -209,6 +209,7 @@ export async function executePageHostOperation(
   try {
     return { status: 200, body: await dispatch(operation, parsed.data, service) };
   } catch (error) {
+    if ((error as { code?: string })?.code === "HANDOVER_RETRY") return failure(503, "HANDOVER_RETRY", "Page documents are moving; retry");
     if (error instanceof PageYjsPageNotFoundError) return failure(404, error.code, error.message);
     if (error instanceof PageMutationVersionConflictError) return failure(409, error.code, error.message);
     if (error instanceof PageMutationValidationError) return failure(422, error.code, error.message);

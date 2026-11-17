@@ -312,8 +312,8 @@ export function createSessionReconciliationSink(input: {
   }) as SessionReconciliationSink;
 
   sink.start = async () => {
+    if (closed) { closed = false; startPromise = undefined; reportedNodes.clear(); }
     if (!restoreLeaseGraceOnStartup) return;
-    if (closed) throw new Error("session reconciliation sink is closed");
     startPromise ??= (async () => {
       const repository = await input.repositoryProvider();
       if (!repository.listRunningNodeIds) {

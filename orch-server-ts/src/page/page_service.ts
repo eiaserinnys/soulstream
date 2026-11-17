@@ -1,4 +1,6 @@
+// 500줄 예외: 페이지 문서와 연결의 수명주기를 한 서비스에서 소유한다.
 import { randomUUID } from "node:crypto";
+import type { HandoverGate } from "../runtime/handover_gate.js";
 import type { IncomingMessage } from "node:http";
 
 import { Hocuspocus } from "@hocuspocus/server";
@@ -85,6 +87,7 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
 }
 
 export interface PageYjsServiceConfig {
+  documentGate?: HandoverGate;
   repository: PageServiceRepository;
   mutationCore?: PageMutationCore;
   createOperationId?: () => string;
@@ -142,6 +145,8 @@ export interface PageServiceDailyResult {
 }
 
 export class PageYjsService {
+  private readonly sockets = new Set<WebSocket>();
+  private closePromise: Promise<void> | undefined;
   private readonly mutationCore: PageMutationCore;
   private readonly createOperationId: () => string;
   private readonly createPageId: () => string;
@@ -157,6 +162,7 @@ export class PageYjsService {
     this.createPageId = config.createPageId ?? randomUUID;
     this.now = config.now ?? (() => new Date());
     this.persistence = createPageYjsPersistence(config.repository, this.mutex, {
+      withDocumentAccess: config.documentGate ? action => config.documentGate!.run(action) : undefined,
       onFailure: ({ documentName, attempts, error }) => {
         config.logger?.error(
           { err: error, documentName, attempts },
@@ -354,8 +360,12 @@ export class PageYjsService {
   }
 
   handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
+    this.sockets.add(socket);
+    socket.once("close", () => this.sockets.delete(socket));
     socket.pause();
-    void this.openConnection(socket, request, pageId);
+    void (this.config.documentGate
+      ? this.config.documentGate.run(() => this.openConnection(socket, request, pageId))
+      : this.openConnection(socket, request, pageId)).catch(() => socket.close(1012, "orchestrator_handover"));
   }
 
   /**
@@ -391,7 +401,19 @@ export class PageYjsService {
   }
 
   async close(): Promise<void> {
-    await closePageYjsRuntime(this.hocuspocus, this.persistence);
+    this.closePromise ??= closePageYjsRuntime(this.hocuspocus, this.persistence);
+    await this.closePromise;
+  }
+
+  async closeForHandover(): Promise<void> {
+    await this.config.documentGate?.close();
+    await Promise.all([...this.sockets].map(socket => new Promise<void>(resolve => {
+      if (socket.readyState === socket.CLOSED) { resolve(); return; }
+      const timer = setTimeout(() => socket.terminate(), 1_500);
+      socket.once("close", () => { clearTimeout(timer); resolve(); });
+      socket.close(1012, "orchestrator_handover");
+    })));
+    await this.close();
   }
 
   getPersistenceDiagnostics(): PageYjsServiceDiagnostics {

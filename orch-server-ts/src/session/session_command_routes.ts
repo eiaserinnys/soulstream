@@ -276,6 +276,7 @@ export async function executeCreateSessionRoute(
     }
 
     try {
+      await options.router.waitForNode(firstNonEmptyString(body.node_id, body.nodeId));
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
       const admission = await admitCreateAttachments(
         options,

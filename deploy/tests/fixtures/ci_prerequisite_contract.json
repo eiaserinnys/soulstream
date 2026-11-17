@@ -1,8 +1,8 @@
 {
   "schema_version": "soulstream.ci-prerequisite-contract.v1",
   "haniel_contracts": {
-    "pinned": "250b25b13a0d567b8c7c230b6c4a062e5189e8ea",
-    "rolling": "560d251504b71d1c634f4f33cae708bd9d3733bd"
+    "pinned": "aa9a8cf5e03e3bff2814066250e3b1887a5a17ef",
+    "rolling": "aa9a8cf5e03e3bff2814066250e3b1887a5a17ef"
   },
   "composition": {
     "required_command_order": [

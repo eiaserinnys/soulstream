@@ -7,6 +7,7 @@ import { startPostgresTestContainer } from
 import type { LivePostgresSql } from "../../src/runtime/live_db_sql.js";
 
 export interface PagePostgresHarness {
+  databaseUrl: string;
   sql: ReturnType<typeof postgres>;
   peerSql: ReturnType<typeof postgres>;
   concurrentSql: ReturnType<typeof postgres>;
@@ -97,6 +98,7 @@ async function connect(url: string, stopContainer?: () => void): Promise<PagePos
     throw error;
   }
   return {
+    databaseUrl: url,
     sql,
     peerSql,
     concurrentSql,
