@@ -9,7 +9,7 @@ import { ProviderQuotaGrid, ProviderQuotaSkeleton, formatQuotaResetLabel } from 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function slot(kind: ProviderQuotaSlot["kind"], label: string, usedPercent: number, resetAt: number | null = null): ProviderQuotaSlot {
-  return { kind, label, usedPercent, resetAt };
+  return { kind, label, usedPercent, resetAt, sevenDay: kind === "weekly" || kind === "fable" };
 }
 
 const releaseTime = (epochSeconds: number) => new Intl.DateTimeFormat("ko-KR", {
@@ -74,6 +74,46 @@ describe("ProviderQuotaGrid", () => {
       "c724-quota-pct",
       "c724-quota-reset",
     ]);
+  });
+
+  it("puts the six dividers and an elapsed cursor on a seven day bar", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-17T00:00:00Z"));
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    await mount([
+      slot("weekly", "7일", 72, nowSeconds + 3.5 * 86_400),
+      slot("short", "5시간", 24, nowSeconds + 3_600),
+      null,
+    ]);
+
+    const cells = Array.from(host.querySelectorAll<HTMLElement>(".c724-quota-cell"));
+    const bar = cells[0]!.querySelector<HTMLElement>(".c724-quota-bar");
+    expect(bar).not.toBeNull();
+    expect(bar!.getAttribute("data-week")).toBe("true");
+    expect(bar!.querySelector(".c724-quota-track--week")).not.toBeNull();
+    expect(bar!.style.getPropertyValue("--c724-quota-elapsed")).toBe("0.5");
+    expect(bar!.querySelector(".c724-quota-pace-cursor")).not.toBeNull();
+    expect(cells[1]!.querySelector(".c724-quota-bar")).toBeNull();
+    expect(cells[1]!.querySelector(".c724-quota-pace-cursor")).toBeNull();
+  });
+
+  it("keeps the dividers and removes only the cursor when the reset is unknown or past", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-17T00:00:00Z"));
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    await mount([
+      slot("weekly", "7일", 35, null),
+      slot("fable", "Fable", 46, nowSeconds - 60),
+      null,
+    ]);
+
+    const cells = Array.from(host.querySelectorAll<HTMLElement>(".c724-quota-cell"));
+    for (const cell of cells.slice(0, 2)) {
+      const bar = cell.querySelector<HTMLElement>(".c724-quota-bar");
+      expect(bar).not.toBeNull();
+      expect(bar!.querySelector(".c724-quota-track--week")).not.toBeNull();
+      expect(bar!.querySelector(".c724-quota-pace-cursor")).toBeNull();
+    }
   });
 
   it("keeps the same three direct children in the skeleton label row so the loaded heights match", async () => {

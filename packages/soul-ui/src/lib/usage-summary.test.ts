@@ -8,6 +8,7 @@ import {
   nextUsageSummaryNodeId,
   providerQuotaSlots,
   selectUsageSummaryNode,
+  sevenDayElapsedFraction,
   weeklyUsageGauges,
   type UsageSummaryNode,
   type UsageSummaryProvider,
@@ -210,9 +211,9 @@ describe("provider quota slots", () => {
       quota("claude:seven_day", "7일", "7d", null, 52, 2_400),
       quota("claude:weekly_scoped:fable", "Fable", "7d", "fable", 31, 3_600),
     ]))).toEqual([
-      { kind: "short", label: "5시간", usedPercent: 26, resetAt: 1_200 },
-      { kind: "weekly", label: "7일", usedPercent: 48, resetAt: 2_400 },
-      { kind: "fable", label: "Fable", usedPercent: 69, resetAt: 3_600 },
+      { kind: "short", label: "5시간", usedPercent: 26, resetAt: 1_200, sevenDay: false },
+      { kind: "weekly", label: "7일", usedPercent: 48, resetAt: 2_400, sevenDay: true },
+      { kind: "fable", label: "Fable", usedPercent: 69, resetAt: 3_600, sevenDay: true },
     ]);
   });
 
@@ -222,9 +223,9 @@ describe("provider quota slots", () => {
       quota("opencode_go:weekly", "7일", "7d", null, 41, 7_200, "execution"),
       quota("opencode_go:monthly", "월", "monthly", null, 12, 43_200, "execution"),
     ]))).toEqual([
-      { kind: "short", label: "5시간", usedPercent: 12, resetAt: 600 },
-      { kind: "weekly", label: "7일", usedPercent: 59, resetAt: 7_200 },
-      { kind: "monthly", label: "월간", usedPercent: 88, resetAt: 43_200 },
+      { kind: "short", label: "5시간", usedPercent: 12, resetAt: 600, sevenDay: false },
+      { kind: "weekly", label: "7일", usedPercent: 59, resetAt: 7_200, sevenDay: true },
+      { kind: "monthly", label: "월간", usedPercent: 88, resetAt: 43_200, sevenDay: false },
     ]);
   });
 
@@ -233,7 +234,7 @@ describe("provider quota slots", () => {
       quota("codex:7d", "7일", "168h", null, 80, 900),
     ]))).toEqual([
       null,
-      { kind: "weekly", label: "7일", usedPercent: 20, resetAt: 900 },
+      { kind: "weekly", label: "7일", usedPercent: 20, resetAt: 900, sevenDay: true },
       null,
     ]);
   });
@@ -245,8 +246,8 @@ describe("provider quota slots", () => {
       quota("codex:7d", "7일", "168h", null, 70, 900),
       quota("codex:gpt-5:secondary", "gpt-5 7일", "168h", "gpt-5", 30, 900),
     ]))).toEqual([
-      { kind: "short", label: "5시간", usedPercent: 36, resetAt: 300 },
-      { kind: "weekly", label: "7일", usedPercent: 30, resetAt: 900 },
+      { kind: "short", label: "5시간", usedPercent: 36, resetAt: 300, sevenDay: false },
+      { kind: "weekly", label: "7일", usedPercent: 30, resetAt: 900, sevenDay: true },
       null,
     ]);
   });
@@ -258,8 +259,8 @@ describe("provider quota slots", () => {
       quota("claude:seven_day_sonnet", "Sonnet 7일", "7d", "sonnet", 90, 200),
       quota("claude:monthly_extra", "월간 추가", "monthly", null, 90, 300, "other"),
     ]))).toEqual([
-      { kind: "short", label: "5시간", usedPercent: 80, resetAt: 100 },
-      { kind: "weekly", label: "7일", usedPercent: 60, resetAt: 200 },
+      { kind: "short", label: "5시간", usedPercent: 80, resetAt: 100, sevenDay: false },
+      { kind: "weekly", label: "7일", usedPercent: 60, resetAt: 200, sevenDay: true },
       null,
     ]);
   });
@@ -275,10 +276,33 @@ describe("provider quota slots", () => {
     expect(providerQuotaSlots(provider([
       quota("claude:five_hour", "5시간", "5h", null, 26, 1_700_000_000),
     ]))).toEqual([
-      { kind: "short", label: "5시간", usedPercent: 74, resetAt: 1_700_000_000 },
+      { kind: "short", label: "5시간", usedPercent: 74, resetAt: 1_700_000_000, sevenDay: false },
       null,
       null,
     ]);
+  });
+});
+
+describe("sevenDayElapsedFraction", () => {
+  const DAY_SECONDS = 24 * 60 * 60;
+  const nowMs = Date.UTC(2026, 10, 17, 0, 0, 0);
+  const nowSeconds = nowMs / 1000;
+
+  it("measures the elapsed share of a seven day window", () => {
+    expect(sevenDayElapsedFraction(nowSeconds + 3.5 * DAY_SECONDS, nowMs)).toBeCloseTo(0.5, 10);
+    expect(sevenDayElapsedFraction(nowSeconds + 2.8 * DAY_SECONDS, nowMs)).toBeCloseTo(0.6, 10);
+    expect(sevenDayElapsedFraction(nowSeconds + 7 * DAY_SECONDS, nowMs)).toBe(0);
+  });
+
+  it("clamps a reset farther out than a week to the start", () => {
+    expect(sevenDayElapsedFraction(nowSeconds + 9 * DAY_SECONDS, nowMs)).toBe(0);
+  });
+
+  it("draws nothing when the reset time is missing or already past", () => {
+    expect(sevenDayElapsedFraction(null, nowMs)).toBeNull();
+    expect(sevenDayElapsedFraction(nowSeconds, nowMs)).toBeNull();
+    expect(sevenDayElapsedFraction(nowSeconds - 60, nowMs)).toBeNull();
+    expect(sevenDayElapsedFraction(Number.NaN, nowMs)).toBeNull();
   });
 });
 

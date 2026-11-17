@@ -1,4 +1,5 @@
-import type { ProviderQuotaSlot, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import type { CSSProperties } from "react";
+import { sevenDayElapsedFraction, type ProviderQuotaSlot, type ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const SEVEN_DAYS_MS = 7 * 86_400_000;
@@ -39,15 +40,24 @@ export function quotaColor(usedPercent: number): string {
 
 function ProviderQuotaCell({ slot }: { slot: ProviderQuotaSlot }) {
   const used = Math.min(100, Math.max(0, slot.usedPercent));
+  // 커서는 데이터가 새로 그려질 때 함께 다시 잰다. 따로 도는 타이머는 두지 않는다.
+  const elapsed = slot.sevenDay ? sevenDayElapsedFraction(slot.resetAt, Date.now()) : null;
+  const track = <div className={slot.sevenDay ? "c724-quota-track c724-quota-track--week" : "c724-quota-track"} aria-hidden="true">
+    <div className="c724-quota-fill" style={{ width: `${used}%`, backgroundColor: quotaColor(used) }} />
+  </div>;
   return <div className="c724-quota-cell">
     <div className="c724-quota-label-row">
       <span className="c724-quota-name">{slot.label}</span>
       <span className="c724-quota-pct">{Math.round(slot.usedPercent)}%</span>
       <span className="c724-quota-reset">{formatQuotaResetLabel(slot.resetAt, slot.usedPercent, slot.kind)}</span>
     </div>
-    <div className="c724-quota-track" aria-hidden="true">
-      <div className="c724-quota-fill" style={{ width: `${used}%`, backgroundColor: quotaColor(used) }} />
-    </div>
+    {slot.sevenDay
+      ? <div className="c724-quota-bar" data-week="true"
+        style={elapsed === null ? undefined : { "--c724-quota-elapsed": elapsed } as CSSProperties}>
+        {track}
+        {elapsed === null ? null : <span className="c724-quota-pace-cursor" aria-hidden="true" />}
+      </div>
+      : track}
   </div>;
 }
 

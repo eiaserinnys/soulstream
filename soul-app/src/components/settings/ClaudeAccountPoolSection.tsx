@@ -549,9 +549,9 @@ function AccountRow({
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const statusLabel = authStateLabel(account);
   const quotaCells: (QuotaGridCell | null)[] = [
-    account.usage.five_hour ? { label: '5시간', usedPercent: account.usage.five_hour.used_percent, resetAt: account.usage.five_hour.resets_at, short: true, kind: 'short' } : null,
-    account.usage.seven_day ? { label: '7일', usedPercent: account.usage.seven_day.used_percent, resetAt: account.usage.seven_day.resets_at, short: false, kind: 'weekly' } : null,
-    account.usage.fable_weekly ? { label: 'Fable', usedPercent: account.usage.fable_weekly.used_percent, resetAt: account.usage.fable_weekly.resets_at, short: false, kind: 'fable' } : null,
+    account.usage.five_hour ? { label: '5시간', usedPercent: account.usage.five_hour.used_percent, resetAt: account.usage.five_hour.resets_at, short: true, kind: 'short', sevenDay: false } : null,
+    account.usage.seven_day ? { label: '7일', usedPercent: account.usage.seven_day.used_percent, resetAt: account.usage.seven_day.resets_at, short: false, kind: 'weekly', sevenDay: true } : null,
+    account.usage.fable_weekly ? { label: 'Fable', usedPercent: account.usage.fable_weekly.used_percent, resetAt: account.usage.fable_weekly.resets_at, short: false, kind: 'fable', sevenDay: true } : null,
   ];
   const dotColor = !account.enabled ? t.colors.textMuted
     : account.auth_state === 'needs_relogin' ? t.colors.error

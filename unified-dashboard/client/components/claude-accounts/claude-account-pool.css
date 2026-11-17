@@ -199,6 +199,43 @@
   border-radius: var(--v3-space-8);
 }
 
+/* 카드 #1510: 7일 바는 칸막이 여섯 개로 7칸을 만들고, 지난 자리에 세로 커서를 둔다.
+   칸막이는 트랙과 채움을 함께 투명하게 오려 내며 자리는 늘 k/7이다. */
+.c724-quota-bar {
+  --c724-quota-cursor-width: 2px;
+  position: relative;
+}
+
+.c724-quota-track--week {
+  --c724-quota-tick-gap: 1px;
+  --c724-quota-week-mask: linear-gradient(to right,
+    #000 0 calc(100% / 7 * 1 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 1 + var(--c724-quota-tick-gap) / 2),
+    #000 0 calc(100% / 7 * 2 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 2 + var(--c724-quota-tick-gap) / 2),
+    #000 0 calc(100% / 7 * 3 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 3 + var(--c724-quota-tick-gap) / 2),
+    #000 0 calc(100% / 7 * 4 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 4 + var(--c724-quota-tick-gap) / 2),
+    #000 0 calc(100% / 7 * 5 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 5 + var(--c724-quota-tick-gap) / 2),
+    #000 0 calc(100% / 7 * 6 - var(--c724-quota-tick-gap) / 2), transparent 0 calc(100% / 7 * 6 + var(--c724-quota-tick-gap) / 2),
+    #000 0);
+  -webkit-mask-image: var(--c724-quota-week-mask);
+  mask-image: var(--c724-quota-week-mask);
+}
+
+.c724-quota-pace-cursor {
+  position: absolute;
+  top: 50%;
+  left: clamp(
+    calc(var(--c724-quota-cursor-width) / 2),
+    calc(var(--c724-quota-elapsed, 0) * 100%),
+    calc(100% - var(--c724-quota-cursor-width) / 2)
+  );
+  width: var(--c724-quota-cursor-width);
+  height: var(--v3-space-3);
+  border-radius: var(--v3-space-8);
+  background: var(--foreground);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .c724-idle-row {
   display: flex;
   align-items: center;

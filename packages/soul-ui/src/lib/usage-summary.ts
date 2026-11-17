@@ -218,6 +218,8 @@ export type ProviderQuotaSlot = {
   readonly label: string;
   readonly usedPercent: number;
   readonly resetAt: number | null;
+  /** 7일 창이면 바를 7칸으로 나누고 지난 자리 커서를 그린다. 5시간과 월간은 아니다(카드 #1510). */
+  readonly sevenDay: boolean;
 };
 
 export type ProviderQuotaSlots = readonly [
@@ -271,7 +273,26 @@ function quotaSlot(
     label,
     usedPercent: Math.min(100, Math.max(0, 100 - quota.remainingPercent)),
     resetAt: quota.resetAt,
+    // 7일 창을 weekly 칸이 받고(7d·168h), Fable 스코프 창도 7일이다.
+    sevenDay: kind === "weekly" || kind === "fable",
   };
+}
+
+const SEVEN_DAY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 7일 창에서 지금까지 지난 비율(0~1). 칸막이는 늘 k/7에 서고,
+ * 이 값이 커서의 가로 자리를 정한다. 리셋 시각이 없거나 이미 지났으면 null(커서 없음).
+ * 카드 #1510: 웹과 앱이 같은 함수로 잰다.
+ */
+export function sevenDayElapsedFraction(
+  resetAtEpochSeconds: number | null,
+  nowMs: number,
+): number | null {
+  if (resetAtEpochSeconds === null || !Number.isFinite(resetAtEpochSeconds)) return null;
+  const remainingMs = resetAtEpochSeconds * 1000 - nowMs;
+  if (remainingMs <= 0) return null;
+  return Math.min(1, Math.max(0, 1 - remainingMs / SEVEN_DAY_MS));
 }
 
 export function formatWeeklyRemainingPercent(value: number): string {

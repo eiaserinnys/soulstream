@@ -2,25 +2,33 @@ import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../.
 import type { NodeProviderSectionsApi } from '../components/settings/NodeProviderSections';
 import { reviewUsageSummary } from './usage-summary-fixtures';
 
+const reviewNowSeconds = Math.floor(Date.now() / 1000);
+const reviewIsoIn = (seconds: number) => new Date(seconds * 1000).toISOString();
+const reviewResetSoon = reviewIsoIn(reviewNowSeconds + 3 * 60 * 60);
+const reviewResetHalf = reviewIsoIn(reviewNowSeconds + Math.round(3.5 * 24 * 60 * 60));
+const reviewResetSixty = reviewIsoIn(reviewNowSeconds + Math.round(2.8 * 24 * 60 * 60));
+
 export const claudePoolReviewList: ClaudeAccountList = {
   mode: 'pool',
   accounts: [
     {
       id: 'review-one', email: 'primary@example.invalid', plan: 'Max 20x', enabled: true, priority: 1,
       auth_state: 'ok', usage: {
-        five_hour: { used_percent: 24, resets_at: '2026-10-28T12:00:00.000Z' },
-        seven_day: { used_percent: 13, resets_at: '2026-10-29T12:00:00.000Z' },
-        fable_weekly: { used_percent: 18, resets_at: '2026-10-29T12:00:00.000Z' },
+        five_hour: { used_percent: 24, resets_at: reviewResetSoon },
+        // 빨리 씀: 지난 50%, 사용 72%. 여유: 지난 60%, 사용 20%.
+        seven_day: { used_percent: 72, resets_at: reviewResetHalf },
+        fable_weekly: { used_percent: 20, resets_at: reviewResetSixty },
       }, observed_at: '2026-10-28T09:10:00.000Z', blocked: null, active_sessions: 2,
     },
     {
       id: 'review-two', email: 'backup@example.invalid', plan: 'Max 5x', enabled: true, priority: 2,
       auth_state: 'ok', usage: {
-        five_hour: { used_percent: 100, resets_at: '2026-10-28T14:30:00.000Z' },
-        seven_day: { used_percent: 68, resets_at: '2026-10-30T12:00:00.000Z' },
-        fable_weekly: { used_percent: 82, resets_at: '2026-10-30T12:00:00.000Z' },
+        five_hour: { used_percent: 100, resets_at: reviewResetSoon },
+        // 맞춤: 지난 50%, 사용 48%. 리셋 모름: 칸막이만 남고 커서가 없다.
+        seven_day: { used_percent: 48, resets_at: reviewResetHalf },
+        fable_weekly: { used_percent: 46, resets_at: null },
       }, observed_at: '2026-10-28T09:08:00.000Z',
-      blocked: { until: '2026-10-28T14:30:00.000Z', scope: 'all' }, active_sessions: 0,
+      blocked: { until: reviewResetSoon, scope: 'all' }, active_sessions: 0,
     },
     {
       id: 'review-three', email: 'reserve@example.invalid', plan: 'Pro', enabled: true, priority: 3,

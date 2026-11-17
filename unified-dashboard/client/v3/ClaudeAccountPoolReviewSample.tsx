@@ -21,6 +21,9 @@ const nowSeconds = Math.floor(Date.now() / 1000);
 const resetSoon = nowSeconds + 3 * HOUR;
 const resetWeek = nowSeconds + 5 * DAY;
 const resetMonth = nowSeconds + 11 * DAY;
+// 카드 #1510 검수 상태: 지난 50%, 지난 60%.
+const resetHalf = nowSeconds + Math.round(3.5 * DAY);
+const resetSixty = nowSeconds + Math.round(2.8 * DAY);
 
 function isoIn(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
@@ -62,8 +65,9 @@ function sampleAccounts(): ClaudeAccountList {
       auth_state: "ok",
       usage: {
         five_hour: { used_percent: 24, resets_at: isoIn(resetSoon) },
-        seven_day: { used_percent: 13, resets_at: isoIn(resetWeek) },
-        fable_weekly: { used_percent: 18, resets_at: isoIn(resetWeek) },
+        // 빨리 씀: 지난 50%, 사용 72%. 여유: 지난 60%, 사용 20%.
+        seven_day: { used_percent: 72, resets_at: isoIn(resetHalf) },
+        fable_weekly: { used_percent: 20, resets_at: isoIn(resetSixty) },
       },
       observed_at: isoIn(nowSeconds - 6 * HOUR),
       blocked: null,
@@ -78,8 +82,9 @@ function sampleAccounts(): ClaudeAccountList {
       auth_state: "ok",
       usage: {
         five_hour: { used_percent: 100, resets_at: isoIn(resetSoon) },
-        seven_day: { used_percent: 68, resets_at: isoIn(resetWeek) },
-        fable_weekly: { used_percent: 82, resets_at: isoIn(resetWeek) },
+        // 맞춤: 지난 50%, 사용 48%. 리셋 모름: 칸막이만 남고 커서가 없다.
+        seven_day: { used_percent: 48, resets_at: isoIn(resetHalf) },
+        fable_weekly: { used_percent: 46, resets_at: null },
       },
       observed_at: isoIn(nowSeconds - 8 * HOUR),
       blocked: { until: isoIn(resetSoon), scope: "all" },
