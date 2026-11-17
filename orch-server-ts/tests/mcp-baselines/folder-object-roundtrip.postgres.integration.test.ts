@@ -19,7 +19,7 @@ const folderId = "00000000-0000-4000-8000-000000000001";
 const mutation = { folder_id: folderId, expected_version: 1, idempotency_key: "tool-change" };
 const cases = [];
 
-// Actual SDK, host routes, services and disposable PG, as in page-roundtrip.integration.test.ts.
+// Actual SDK, host routes, services and disposable PG, as in page-roundtrip.postgres.integration.test.ts.
 describe("folder object orchestrator MCP roundtrip", () => {
   let h: PagePostgresHarness;
   let identity: FolderProjectIdentityService;

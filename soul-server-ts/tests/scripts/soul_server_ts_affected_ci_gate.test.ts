@@ -63,7 +63,7 @@ describe("soul-server-ts affected CI gate", () => {
     const databaseCommands = databaseWorkflow?.workflow.jobs["database-release-postgres"].steps
       .map((step: { run?: string }) => step.run ?? "")
       .join("\n");
-    expect(databaseCommands).toContain("tests/scripts/migration_runner.test.ts");
+    expect(databaseCommands).toContain("tests/scripts/migration_runner.postgres.test.ts");
 
     const labWorkflows = selectedPullRequestWorkflows([
       "scripts/lab-node/fault-acquire-application-evidence.test.mjs",
@@ -132,6 +132,17 @@ describe("soul-server-ts affected CI gate", () => {
     expect(fullSliceStep?.run).toContain(
       "--minWorkers=1 --maxWorkers=1 --no-file-parallelism",
     );
+
+    expect(job.services.postgres.image).toBe("postgres:16-alpine");
+    const sharedStep = job.steps.find(
+      (step: { name?: string }) => step.name === "Test PostgreSQL MCP roundtrips against a shared database",
+    );
+    expect(sharedStep.env.TEST_DATABASE_URL).toContain("shared_test_db");
+    for (const name of ["board-roundtrip", "board-notification-integrity", "page-roundtrip", "card-roundtrip", "folder-object-roundtrip", "pages-contract-parity"]) {
+      expect(sharedStep.run).toContain(`tests/mcp/${name}.postgres.integration.test.ts`);
+    }
+    expect(sharedStep.run).toContain("--minWorkers=1 --maxWorkers=2");
+    expect(sharedStep.run).not.toContain("--no-file-parallelism");
 
     const expectedFullSliceFiles = readdirSync(runnerTestsDirectory)
       .filter((name) => name.endsWith("_full_slice_postgres.test.ts"))

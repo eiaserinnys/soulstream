@@ -15,6 +15,7 @@ on:
       # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
       - 'orch-server-ts/src/**'
       - 'packages/mcp-contract/**'
+      - 'packages/db-schema/scripts/**'
       - 'packages/statechart/**'
       - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
@@ -29,6 +30,7 @@ on:
       - 'soul-server-ts/vitest.config.ts'
       - 'orch-server-ts/src/**'
       - 'packages/mcp-contract/**'
+      - 'packages/db-schema/scripts/**'
       - 'packages/statechart/**'
       - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
@@ -76,12 +78,12 @@ jobs:
           TEST_DATABASE_URL: postgresql://shared_test:shared_test@127.0.0.1:5432/shared_test_db
         run: >-
           corepack pnpm --dir soul-server-ts exec vitest run
-          tests/mcp/board-roundtrip.integration.test.ts
-          tests/mcp/board-notification-integrity.integration.test.ts
-          tests/mcp/page-roundtrip.integration.test.ts
-          tests/mcp/card-roundtrip.integration.test.ts
-          tests/mcp/folder-object-roundtrip.integration.test.ts
-          tests/mcp/pages-contract-parity.integration.test.ts
+          tests/mcp/board-roundtrip.postgres.integration.test.ts
+          tests/mcp/board-notification-integrity.postgres.integration.test.ts
+          tests/mcp/page-roundtrip.postgres.integration.test.ts
+          tests/mcp/card-roundtrip.postgres.integration.test.ts
+          tests/mcp/folder-object-roundtrip.postgres.integration.test.ts
+          tests/mcp/pages-contract-parity.postgres.integration.test.ts
           --minWorkers=1 --maxWorkers=2
 
       - name: Typecheck soul-server-ts

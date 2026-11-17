@@ -1,3 +1,4 @@
+import { TEST_SCHEMA_PATTERN } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -107,6 +108,7 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
       SELECT COUNT(*)::int AS count
       FROM information_schema.tables
       WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        AND table_schema !~ ${TEST_SCHEMA_PATTERN}
     `;
     if (Number(rows[0]?.count ?? 0) > 0) {
       throw new Error("TEST_DATABASE_URL must point at an empty test database");

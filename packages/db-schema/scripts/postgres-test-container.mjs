@@ -17,6 +17,11 @@ export function startPostgresTestContainer({
   database,
   staleAfterMs = DEFAULT_STALE_CONTAINER_AGE_MS,
 }) {
+  try {
+    execFileSync("docker", ["info"], { stdio: "ignore", timeout: 5_000 });
+  } catch (error) {
+    throw new Error("PostgreSQL tests require TEST_DATABASE_URL or a running Docker daemon; set TEST_DATABASE_URL or start Docker.", { cause: error });
+  }
   const reapedContainerIds = reapStalePostgresTestContainers({ staleAfterMs });
   const containerId = execFileSync("docker", [
     "run",
