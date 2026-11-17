@@ -4,6 +4,10 @@ import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { SoulstreamScheduleRepository } from "./schedule_repository.js";
 
+export const scheduleHostRouteAuthRequirements = {
+  "POST /api/schedules/host/{operation}": true,
+} as const;
+
 export interface ScheduleHostRouteOptions {
   repositoryProvider: () => Promise<SoulstreamScheduleRepository>;
   authBearerToken: string;

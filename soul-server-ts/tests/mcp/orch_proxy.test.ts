@@ -25,10 +25,11 @@ describe("orch proxy config", () => {
       buildOrchProxyConfig({
         SOULSTREAM_UPSTREAM_URL: "wss://orch.example.com/ws/node",
         AUTH_BEARER_TOKEN: "secret",
+        SOULSTREAM_NODE_ID: "node-1",
       }),
     ).toEqual({
       baseUrl: "https://orch.example.com",
-      headers: { authorization: "Bearer secret" },
+      headers: { authorization: "Bearer secret", "x-soulstream-node-id": "node-1" },
     });
   });
 
@@ -37,10 +38,11 @@ describe("orch proxy config", () => {
       buildOrchProxyConfig({
         SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:3105/ws/node",
         AUTH_BEARER_TOKEN: "",
+        SOULSTREAM_NODE_ID: "node-1",
       }),
     ).toEqual({
       baseUrl: "http://127.0.0.1:3105",
-      headers: {},
+      headers: { "x-soulstream-node-id": "node-1" },
     });
   });
 });

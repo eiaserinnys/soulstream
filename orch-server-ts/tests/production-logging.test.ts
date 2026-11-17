@@ -30,6 +30,27 @@ type WebSocketInjectableApp = {
 };
 
 describe("production operations logging", () => {
+  it("records the node header and prefers an authenticated node principal", async () => {
+    const capture = createLogCapture();
+    const app = createApp({
+      config: productionConfig,
+      logDestination: capture.stream,
+      productionAuth: {
+        resolveTokenAccess: async () => ({ ok: true as const }),
+        nodeCredentials: {
+          resolve: (token) => token === "node-token" ? { credential_id: "cred", node_id: "authenticated-node", company_pc: false } : null,
+          onRevoked: () => () => {},
+        },
+      },
+    });
+    app.post("/api/schedules/host/:operation", async () => ({ ok: true }));
+    for (const authorization of ["Bearer production-service-token", "Bearer node-token"]) {
+      expect((await app.inject({ method: "POST", url: "/api/schedules/host/test", headers: { authorization, "x-soulstream-node-id": "header-node" } })).statusCode).toBe(200);
+    }
+    await app.close();
+    const completed = capture.records().filter((record) => record.msg === "HTTP request completed");
+    expect(completed.map((record) => record.nodeId)).toEqual(["header-node", "authenticated-node"]);
+  });
   it("records access, authentication, and 5xx diagnostics while redacting secrets", async () => {
     const capture = createLogCapture();
     const resolveTokenAccess = vi.fn()

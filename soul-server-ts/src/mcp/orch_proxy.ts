@@ -35,9 +35,10 @@ export function wsToHttpBase(wsUrl: string): string {
 export function buildOrchProxyConfig(env: {
   SOULSTREAM_UPSTREAM_URL: string;
   AUTH_BEARER_TOKEN?: string;
+  SOULSTREAM_NODE_ID: string;
 }): OrchProxyConfig {
   const baseUrl = wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL);
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "x-soulstream-node-id": env.SOULSTREAM_NODE_ID };
   if (env.AUTH_BEARER_TOKEN) {
     headers["authorization"] = `Bearer ${env.AUTH_BEARER_TOKEN}`;
   }

@@ -54,6 +54,11 @@ const REDACTED_LOG_PATHS = [
 ] as const;
 
 const HTTP_REQUEST_RECEIVE_TIMEOUT_MS = 300_000;
+const authenticatedNodeIds = new WeakMap<FastifyRequest, string>();
+
+export function setAuthenticatedLogNodeId(request: FastifyRequest, nodeId: string): void {
+  authenticatedNodeIds.set(request, nodeId);
+}
 
 export function createOperationalFastifyOptions(
   config: OrchServerTsConfig,
@@ -102,11 +107,14 @@ export function registerProductionLogging(
     }, "HTTP request failed");
   });
   app.addHook("onResponse", async (request, reply) => {
+    const header = request.headers["x-soulstream-node-id"];
+    const nodeId = authenticatedNodeIds.get(request) ?? (Array.isArray(header) ? header[0] : header);
     const fields = {
       method: request.method,
       path: requestLogPath(request),
       statusCode: reply.statusCode,
       durationMs: durationMs(requestStartedAt.get(request)),
+      ...(nodeId ? { nodeId } : {}),
     };
     if (reply.statusCode === 401 || reply.statusCode === 403) {
       request.log.warn(fields, "HTTP request completed");

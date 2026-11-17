@@ -21,6 +21,7 @@ export async function fetchOrchResponse(
     signal?: AbortSignal;
     headers?: Record<string, string>;
     fetchImpl?: typeof fetch;
+    serializedBody?: string;
   } = {},
 ): Promise<Response> {
   const timeoutSignal = AbortSignal.timeout(
@@ -33,7 +34,7 @@ export async function fetchOrchResponse(
       "content-type": "application/json",
       ...options.headers,
     },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(body !== undefined ? { body: options.serializedBody ?? JSON.stringify(body) } : {}),
     signal: options.signal === undefined
       ? timeoutSignal
       : AbortSignal.any([options.signal, timeoutSignal]),
@@ -296,6 +297,7 @@ export class PersistenceHostTransport {
       signal?: AbortSignal;
       headers?: Record<string, string>;
       fetchImpl?: typeof fetch;
+      serializedBody?: string;
     } = {},
   ): Promise<Response> {
     return await fetchOrchResponse(this.config.orch, method, path, body, options);
@@ -321,18 +323,22 @@ export class PersistenceHostTransport {
     const nodeRequestedAtMs = Date.now();
     let response: Response | undefined;
     let responseBody: string;
+    let requestBody = "";
     try {
+      const body = {
+        args: args.map((argument, index) => opaqueIndexes.has(index)
+          ? argument
+          : snakeCase(argument, opaqueKeys)),
+      };
+      requestBody = JSON.stringify(body);
       response = await this.send(
         "POST",
         `/api/${domain}/host/${encodeURIComponent(operation)}`,
-        {
-          args: args.map((argument, index) => opaqueIndexes.has(index)
-            ? argument
-            : snakeCase(argument, opaqueKeys)),
-        },
+        body,
         {
           ...requestOptions,
           headers: { [REQUEST_ID_HEADER]: requestId },
+          serializedBody: requestBody,
         },
       );
       responseBody = await response.text();
@@ -379,8 +385,14 @@ export class PersistenceHostTransport {
     };
     if (!response.ok) {
       const hostError = parseHostError(responseBody);
+      const sessionId = args.map((arg) => {
+        if (typeof arg !== "object" || arg === null) return undefined;
+        const input = arg as Record<string, unknown>;
+        const value = input.sessionId ?? input.session_id;
+        return typeof value === "string" ? value : undefined;
+      }).find((value) => value !== undefined);
       this.config.logger.warn(
-        { ...timing, message: responseBody },
+        { ...timing, requestBodyBytes: Buffer.byteLength(requestBody, "utf8"), ...(sessionId ? { sessionId } : {}), message: responseBody },
         "persistence host request failed",
       );
       throw new PersistenceHostRequestError(

@@ -66,6 +66,7 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length + tsOnlyRouteKeys.length);
     expect(registeredRouteKeys).toContain("POST /api/attachments/agent-register");
+    expect(registeredRouteKeys).toContain("POST /api/schedules/host/{operation}");
     expect(registeredRouteKeys).toContain("POST /api/attachments/agent-output/validate");
     expect(registeredRouteKeys).toContain(
       "GET /api/attachments/worker/{attachment_id}/metadata",
@@ -166,6 +167,7 @@ function createAllOptInRouteApp() {
     persistentSessionRoutes: { service: inert, reports: inert, requireSessionAccess: async () => undefined },
     conversationRoutes: { service: inert, resolveAccount: async () => "test-account" },
     persistentContextRoutes: { service: inert, authBearerToken: "test-token" },
+    scheduleHostRoutes: { repositoryProvider: async () => inert as never, authBearerToken: "test-token", nodeCredentials: null },
     adminUsersRoutes: inert,
     r2SettingsRoutes: inert,
     atomRoutes: inert,
