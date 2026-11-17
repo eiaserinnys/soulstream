@@ -20,6 +20,28 @@ const messageMarkdown = ["[문서 링크](/api/markdown-documents/doc-1)", "[없
 
 
 
+const settings = {
+  default_model: { model_preset: null, reasoning_effort: null },
+  fallback_models: [],
+  show_generation_separator: true,
+  show_character: false,
+  animate_character: false,
+  show_jev_candidates: true,
+  turn_usage_mode: "collapsed" as const,
+  show_turn_usage: true,
+};
+const persistentSession = {
+  session_id: "run-alpha-2",
+  display_name: "내부 링크 검수",
+  node_id: "eiaserinnys",
+  folder_id: "rb-alpha",
+  agent_id: "roselin_codex",
+  agent_name: "로젤린",
+  persistent: true,
+  settings,
+  runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
+};
+
 const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selection", timeoutMs: 180_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
@@ -165,7 +187,7 @@ async function waitForPopupToSettle(popup: Locator) {
     const check = () => {
       const r = el.getBoundingClientRect(); const key = [r.x,r.y,r.width,r.height].join(",");
       stable = key === last ? stable + 1 : 0; last = key;
-      if (performance.now() - start > 350 && stable >= 3) resolve();
+      if (performance.now() - start >= 400 && stable >= 3 && r.x >= 0 && r.right <= innerWidth + 1) resolve();
       else if (performance.now() - start >= 1000) reject(new Error("팝오버 위치 안정화 시간 초과"));
       else requestAnimationFrame(check);
     }; requestAnimationFrame(check);
@@ -187,11 +209,11 @@ async function ctx(browser: Browser, width: number) {
 function sel(page: Page) { return page.evaluate(() => window.getSelection()?.toString() ?? ""); }
 function clear(page: Page) { return page.evaluate(() => window.getSelection()?.removeAllRanges()); }
 function us(l: Locator) { return l.evaluate(el => getComputedStyle(el).userSelect); }
-async function drag(page: Page, from: Locator, to: Locator, fromAt: "start" | "center" = "start", toAt: "center" | "end" = "center") {
+async function drag(page: Page, from: Locator, to: Locator, fromAt: "start" | "center" | "edge" = "start", toAt: "center" | "end" = "center") {
   const a = await from.boundingBox(); const b = await to.boundingBox();
   if (!a || !b) throw new Error("drag box missing");
   await clear(page);
-  await page.mouse.move(fromAt === "start" ? a.x - 1 : a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.move(fromAt === "edge" ? a.x - 1 : fromAt === "start" ? a.x + 2 : a.x + a.width / 2, fromAt === "start" ? a.y + Math.min(8, a.height / 2) : a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(b.x + (toAt === "end" ? b.width - 2 : b.width / 2), b.y + b.height / 2, { steps: 20 });
   await page.mouse.up();
@@ -216,6 +238,12 @@ async function chatPage(browser: Browser, width: number) {
     if (id === "missing-doc") return r.fulfill({ status: 500, json: { error: "missing" } });
     return r.fulfill({ json: { id, title: "주간 운영 점검 보고", body: docBody, version: 1, folderId: "rb-alpha" } });
   });
+  await page.route("**/api/persistent-sessions**", async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET" && url.pathname === "/api/persistent-sessions") return route.fulfill({ json: { sessions: [persistentSession], total: 1, create_defaults: null } });
+    if (route.request().method() === "GET" && url.pathname === "/api/persistent-sessions/run-alpha-2") return route.fulfill({ json: { session: persistentSession } });
+    return route.fallback();
+  });
   await page.goto(`${baseUrl}/?session=run-alpha-2&event=1`, { waitUntil: "domcontentloaded" });
   await page.locator("a:visible", { hasText: "문서 링크" }).first().waitFor({ state: "visible", timeout: 30_000 });
   return c;
@@ -239,7 +267,8 @@ async function documentReader(browser: Browser, width: number) {
     m.codeUS = await us(body.locator("pre, code").first());
     m.bodyButtons = await body.locator("button").evaluateAll(bs => bs.map(b => ({ label: b.getAttribute("aria-label") ?? b.textContent, us: getComputedStyle(b).userSelect, text: (b.textContent ?? "").trim() })));
     m.closeUS = await us(close);
-    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "start", "end");
+    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "edge", "end");
+    await page.screenshot({ path: path.join(output, `document-drag-${width}.png`) });
     m.forwardCopied = await copied(page);
     console.log("문서 정방향", JSON.stringify(m));
     m.reverseCopied = await dragUp(page, body.locator("p").last(), title);
@@ -249,8 +278,7 @@ async function documentReader(browser: Browser, width: number) {
     m.dragBodyToCloseCopied = await copied(page);
     m.tripleTitle = await triple(page, title);
     await page.screenshot({ path: path.join(output, `document-${width}.png`) });
-    await drag(page, title, body.locator("p").last(), "start", "end");
-    await page.screenshot({ path: path.join(output, `document-drag-${width}.png`) });
+    await drag(page, title, body.locator("p").last(), "edge", "end");
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });
     await page.locator("a:visible", { hasText: "없는 문서" }).first().click();
