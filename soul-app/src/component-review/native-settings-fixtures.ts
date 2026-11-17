@@ -22,7 +22,7 @@ const usage: ProviderUsageSnapshot = { generatedAt: '2026-10-04T00:00:00Z', prov
 } };
 let policy: SessionReviewPolicyPayload = { policy: { key: 'session_review_policy', sourceAllowlist: ['slack'], version: 1, updatedBy: '공개 예시', updatedAt: '2026-10-04T00:00:00Z' }, conditionalRules: [], sourceCatalog: ['slack', 'soul-app', 'external-llm', 'clipper', 'llm', 'agent', 'system', 'cron', 'channel_observer'].map(source => ({ source, label: source, description: '공개 예시 출처', automatic: ['llm', 'agent', 'system', 'cron', 'channel_observer'].includes(source) })) };
 let jobs: RecurringJobDto[] = Array.from({ length: 12 }, (_, index) => ({
-  job_id: `review-job-${index}`, name: `공개 예시 반복 작업 ${index + 1}`, prompt: '공개 예시 작업 내용', timezone: 'Asia/Seoul', schedule_expressions: ['0 9 * * 1-5'], node_id: 'public-node', agent_id: 'public-agent', model_preset: null, folder_id: 'public-project', late_run_window_seconds: 1800, enabled: true, archived_at: null, version: 1, next_run_at: '2026-10-05T00:00:00Z', created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:00Z',
+  job_id: `review-job-${index}`, name: `매일 아침 프로젝트 진행 상황 정리 ${index + 1}`, prompt: '최근 작업과 남은 확인 사항을 살펴보고 중요한 내용을 짧게 정리해 주세요.', timezone: 'Asia/Seoul', schedule_expressions: ['0 9 * * 1-5'], node_id: 'public-node', agent_id: 'public-agent', model_preset: null, folder_id: 'public-project', late_run_window_seconds: 1800, enabled: true, archived_at: null, version: 1, next_run_at: '2026-10-05T00:00:00Z', created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:00Z',
 }));
 const state = () => new URLSearchParams(window.location.search).get('state');
 
@@ -260,9 +260,9 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
   startClaudeAuth: async () => { throw new Error('공개 예시에서는 실제 계정 로그인을 시작하지 않습니다.'); },
   submitClaudeCode: async () => ({ ok: true }),
   deleteClaudeToken: async () => ({ ok: true }),
-  listRecurringJobs: async () => ({ jobs: state() === 'empty' ? [] : jobs }),
-  createRecurringJob: async (input: any) => { const job = { ...jobs[0], ...input, job_id: 'review-created', version: 1 }; jobs = [...jobs, job]; return { job }; },
-  updateRecurringJob: async (id: string, input: any) => { const job = jobs.find(item => item.job_id === id)!; if (input.expected_version !== job.version) throw new ApiHttpError('conflict', 409, '{}'); const saved = { ...job, ...input, version: job.version + 1 }; jobs = jobs.map(item => item.job_id === id ? saved : item); return { job: saved }; },
+  listRecurringJobs: async () => { if (state() === 'recurring-loading') return new Promise<never>(() => {}); return { jobs: state() === 'empty' ? [] : jobs }; },
+  createRecurringJob: async (input: any) => { if (state() === 'recurring-save-error') throw new ApiHttpError('HTTP 503', 503, '{}'); const job = { ...jobs[0], ...input, job_id: 'review-created', version: 1 }; jobs = [...jobs, job]; return { job }; },
+  updateRecurringJob: async (id: string, input: any) => { if (state() === 'recurring-save-error') throw new ApiHttpError('HTTP 503', 503, '{}'); const job = jobs.find(item => item.job_id === id)!; if (input.expected_version !== job.version) throw new ApiHttpError('conflict', 409, '{}'); const saved = { ...job, ...input, version: job.version + 1 }; jobs = jobs.map(item => item.job_id === id ? saved : item); return { job: saved }; },
   archiveRecurringJob: async (id: string) => { const job = jobs.find(item => item.job_id === id)!; const saved = { ...job, archived_at: new Date().toISOString(), enabled: false, version: job.version + 1 }; jobs = jobs.map(item => item.job_id === id ? saved : item); return { job: saved }; },
   runRecurringJob: async () => ({ run_id: 'public-run', session_id: 'public-session' }),
   previewRecurringSchedule: async () => ({ nextRuns: ['2026-10-05T00:00:00Z', '2026-10-06T00:00:00Z'] }),
