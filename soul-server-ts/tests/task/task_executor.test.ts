@@ -3355,6 +3355,83 @@ describe("TaskExecutor runner process boundary", () => {
     },
   );
 
+  it.each([
+    {
+      name: "a different registered command",
+      registeredCommandId: "execute-new",
+      expectedStatus: "error" as const,
+      expectedReason: "error_aborted" as const,
+    },
+    {
+      name: "the same registered command",
+      registeredCommandId: "execute-old",
+      expectedStatus: "completed" as const,
+      expectedReason: "completed_ok" as const,
+    },
+  ])(
+    "projects an offline replay lifecycle terminal only for $name",
+    async ({ registeredCommandId, expectedStatus, expectedReason }) => {
+      const mocks = makeMocks();
+      const recoveredTerminal = mocks.enqueueTerminalTransitionAndWaitForApplication;
+      const { runner } = makeRunnerProcessRuntime([]);
+      const processFactory = (() => runner) as RunnerProcessRuntimeFactory;
+      processFactory.recover = vi.fn(() => runner);
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        processFactory,
+      );
+      const task = makeTask();
+      task.status = "initializing";
+      task.executionRegistration = {
+        registrationId: "registration-current",
+        executionCommandId: registeredCommandId,
+      };
+      const registration = {
+        config: { agent },
+        lifecycle: {
+          execution_command_id: "execute-old",
+          execution_state: "completed",
+          terminal_error: null,
+        },
+      } as unknown as RunnerRegistration;
+
+      await executor.recoverRegisteredRunner(
+        task,
+        registration,
+        "execute-old",
+        "offline",
+      );
+
+      expect(task.status).toBe(expectedStatus);
+      expect(task.terminationReason).toBe(expectedReason);
+      if (expectedReason === "error_aborted") {
+        // 이전 실행의 lifecycle을 이번 실행의 완료로 쓰지 않았고, 그 까닭이 남는다.
+        expect(task.terminationDetail).toContain("이전 실행의 러너 종료 기록");
+      } else {
+        expect(task.terminationDetail).toBeNull();
+      }
+      expect(recoveredTerminal).toHaveBeenCalledWith(
+        task.agentSessionId,
+        expect.objectContaining({ type: "session_ended", status: expectedStatus }),
+        expect.objectContaining({
+          kind: "terminal_transition",
+          status: expectedStatus,
+        }),
+        "registration-current",
+      );
+    },
+  );
+
   it("refuses a recovery whose task gained a runner and gives the recovery host resources back", async () => {
     const mocks = makeMocks();
     const task = makeTask();

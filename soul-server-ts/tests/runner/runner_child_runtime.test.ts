@@ -347,6 +347,46 @@ describe("RunnerChildRuntime startup", () => {
   });
 });
 
+describe("RunnerChildRuntime execute result delivery", () => {
+  it("drains execution frames to the outbox when the host is gone before the execute result is sent", async () => {
+    const { runtime, sessionId } = await createRotationRuntime(null, [{
+      type: "assistant_message",
+      content: "output after the host disconnected",
+      timestamp: 1,
+    } as SSEEventPayload], "openai-agents");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const send = vi.fn()
+      .mockRejectedValueOnce(new Error("EPIPE"))
+      .mockResolvedValue(true);
+    // 호스트가 execute 결과를 받기 전에 끊긴 상태를 흉내 낸다.
+    Object.defineProperty(child.endpoint, "currentConnection", {
+      configurable: true,
+      get: () => ({ send }),
+    });
+    const command = executeCommandFrame("execute-while-host-gone", {
+      agentSessionId: sessionId,
+      prompt: "keep the accepted execution",
+    });
+    try {
+      await expect(child.handleCommand(command)).resolves.toBeUndefined();
+
+      await vi.waitFor(async () => {
+        const events = (await child.outbox.readBatch())?.events ?? [];
+        expect(events.map((event) => event.payload)).toContainEqual(
+          expect.objectContaining({
+            type: "assistant_message",
+            content: "output after the host disconnected",
+          }),
+        );
+      });
+      expect(send).toHaveBeenCalled();
+      expect(child.lifecycle.read()).toMatchObject({ execution_state: "completed" });
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+});
+
 describe("RunnerChildRuntime backend session rotation", () => {
   it("persists an OpenCode fatal after the rate-limit session frame bootstraps the runner", async () => {
     const fatal = {
@@ -735,6 +775,8 @@ type RunnerChildRuntimeSecretHarness = RunnerChildRuntimeRotationHarness & {
 
 type RunnerChildRuntimeRotationHarness = {
   dispatcher: { dispatch(frame: unknown): Promise<unknown> };
+  endpoint: { currentConnection: unknown };
+  handleCommand(command: RunnerCommandFrame): Promise<void>;
   activeCommandId?: string;
   outbox: RunnerSqliteEventOutbox;
   lifecycle: { read(): unknown };

@@ -262,9 +262,29 @@ export class RunnerChildRuntime {
       return;
     }
     const result = await this.dispatcher.dispatch(command);
-    await connection.send(result);
-    if (result.result.status !== "ok") return;
+    let resultSendError: unknown;
+    try {
+      await connection.send(result);
+    } catch (error) {
+      resultSendError = error;
+    }
+    if (result.result.status !== "ok") {
+      if (resultSendError) throw resultSendError;
+      return;
+    }
     if (command.kind === "execute") {
+      // The engine already accepted this execute command, so the turn must
+      // keep going even when the host disappeared before the result frame.
+      // Rethrowing here would make the frame handler fail() the transport,
+      // which tears down a connection that may still be healthy; the drain
+      // itself resolves the current connection per frame, so a reconnected
+      // host receives the output from the outbox (card #1514).
+      if (resultSendError) {
+        this.logger.warn({
+          err: resultSendError,
+          commandId: command.commandId,
+        }, "Runner execute result could not reach host; execution remains active");
+      }
       this.activeCommandId = command.commandId;
       this.startLiveness();
       void this.drainExecution(command).catch((error) => {
@@ -272,6 +292,7 @@ export class RunnerChildRuntime {
       });
       return;
     }
+    if (resultSendError) throw resultSendError;
   }
 
   private async drainExecution(
