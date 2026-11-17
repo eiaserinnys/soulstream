@@ -303,7 +303,7 @@ describe("UsageSummaryService", () => {
     expect(service.getSummary().nodes[0]).toMatchObject({
       fetchedAt: "2026-10-28T04:00:00.000Z",
       stale: true,
-      staleSince: "2026-10-28T04:10:15.000Z",
+      staleSince: "2026-10-28T04:10:46.000Z",
       providers: { claude: { mode: "pool", accounts: [{ id: "account-a" }] } },
     });
     expect(published).toHaveLength(1);
@@ -442,7 +442,7 @@ describe("UsageSummaryService", () => {
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-a",
       { type: "provider_usage_get" },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 46_000 },
     );
   });
 
@@ -493,7 +493,7 @@ describe("UsageSummaryService", () => {
         nodeId: "node-a",
         fetchedAt: "2026-07-20T10:00:00.000Z",
         stale: true,
-        staleSince: "2026-07-20T10:10:15.000Z",
+        staleSince: "2026-07-20T10:10:46.000Z",
         providers: { claude: { weeklyRemainingPercent: 84 } },
       },
       {
@@ -625,7 +625,7 @@ describe("UsageSummaryService", () => {
 
     expect(service.getSummary().nodes[0]).toMatchObject({
       stale: true,
-      staleSince: "2026-07-20T10:10:15.000Z",
+      staleSince: "2026-07-20T10:10:46.000Z",
       providers: {
         claude: { weeklyRemainingPercent: 84, stale: true, fetchedAt: "2026-07-20T10:00:00.000Z" },
         codex: { weeklyRemainingPercent: 20, stale: false, fetchedAt: "2026-07-20T10:11:00.000Z" },
@@ -709,7 +709,7 @@ describe("UsageSummaryService", () => {
     expect(service.getSummary().nodes[0]).toMatchObject({
       fetchedAt: "2026-07-20T10:00:00.000Z",
       stale: true,
-      staleSince: "2026-07-20T10:10:15.000Z",
+      staleSince: "2026-07-20T10:10:46.000Z",
       providers: {
         claude: { weeklyRemainingPercent: 84, stale: true, fetchedAt: "2026-07-20T10:00:00.000Z" },
         codex: { weeklyRemainingPercent: 80, stale: false, fetchedAt: "2026-07-20T10:11:00.000Z" },
@@ -897,17 +897,17 @@ describe("UsageSummaryService", () => {
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-c",
       { type: "provider_usage_get" },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 46_000 },
     );
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-a",
       { type: "provider_usage_get", provider: "claude" },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 46_000 },
     );
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-b",
       { type: "provider_usage_get", provider: "antigravity" },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 46_000 },
     );
     expect(service.getSummary().nodes).toMatchObject([
       {
@@ -960,7 +960,7 @@ describe("UsageSummaryService", () => {
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-z",
       { type: "provider_usage_get" },
-      { timeoutMs: 15_000 },
+      { timeoutMs: 46_000 },
     );
   });
 
@@ -1024,14 +1024,14 @@ describe("UsageSummaryService", () => {
         nodeId: "node-a",
         fetchedAt: "2026-07-20T10:00:00.000Z",
         stale: true,
-        staleSince: "2026-07-20T10:10:15.000Z",
+        staleSince: "2026-07-20T10:10:46.000Z",
         providers: { codex: { weeklyRemainingPercent: 80, stale: true } },
       },
       {
         nodeId: "node-b",
         fetchedAt: "2026-07-20T10:00:00.000Z",
         stale: true,
-        staleSince: "2026-07-20T10:10:15.000Z",
+        staleSince: "2026-07-20T10:10:46.000Z",
         providers: {
           claude: { fetchedAt: "2026-07-20T10:11:00.000Z", stale: false },
           codex: { weeklyRemainingPercent: 80, stale: true },

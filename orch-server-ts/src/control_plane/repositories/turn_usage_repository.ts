@@ -61,6 +61,8 @@ export interface TurnUsageSessionRow {
   first_call_input_tokens?: number;
   display_name?: string | null;
   agent_id?: string | null;
+  session_type?: string | null;
+  client_id?: string | null;
   node_id?: string | null;
   created_at?: Date | string;
   injection_chars?: number;
@@ -286,7 +288,9 @@ export async function summarizeTurnUsage(
       model.model,
       first_usage.first_call_input_tokens,
       s.display_name,
-      s.agent_id,
+      NULLIF(s.agent_id, '') AS agent_id,
+      s.session_type,
+      s.client_id,
       s.node_id,
       s.created_at,
       CASE WHEN jsonb_typeof(manifest.payload->'total_chars') = 'number'
@@ -334,6 +338,8 @@ export async function summarizeTurnUsage(
     ...optionalNumber("first_call_input_tokens", row.first_call_input_tokens),
     ...optionalString("display_name", row.display_name),
     ...optionalString("agent_id", row.agent_id),
+    ...optionalString("session_type", row.session_type),
+    ...optionalString("client_id", row.client_id),
     ...optionalString("node_id", row.node_id),
     ...(row.created_at ? { created_at: row.created_at } : {}),
     ...optionalNumber("injection_chars", row.injection_chars),

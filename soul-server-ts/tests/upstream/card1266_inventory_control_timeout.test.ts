@@ -12,7 +12,7 @@ import {
  * 카드 #1266 U6 결함 3. orch는 list_runner_inventory에 90초를 주고 control이 붙어 있으면
  * control로 보낸다. 노드의 control 제한이 14.5초이면 스캔이 14.5초를 넘길 때마다 control
  * 재시도가 구조적으로 실패한다. 노드 제한은 orch 시한보다 짧아야 하고(오류 프레임이 시한
- * 안에 닿도록), 사용량 명령의 14.5초에 묶여 있으면 안 된다.
+ * 안에 닿도록), 당시 사용량 명령의 14.5초에 묶여 있으면 안 된다.
  */
 
 // orch-server-ts/src/node/node_timeouts.ts RUNNER_INVENTORY_COMMAND_TIMEOUT_MS의 사본이다.
@@ -20,10 +20,10 @@ import {
 const ORCH_RUNNER_INVENTORY_COMMAND_TIMEOUT_MS = 90_000;
 
 describe("card #1266 U6 list_runner_inventory control timeout", () => {
-  it("is the node's explicit value and no longer the usage commands' 14.5s", () => {
+  it("is the node's explicit value and differs from the provider usage budget", () => {
     expect(LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS).toBe(85_000);
     expect(boundedResultTimeoutMs("list_runner_inventory", 900)).toBe(85_000);
-    expect(boundedResultTimeoutMs("provider_usage_get", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("provider_usage_get", 900)).toBe(45_500);
   });
 
   it("stays below orch's own limit with room for the error frame to arrive", () => {

@@ -22,8 +22,8 @@ const SUBAGENT_KEYS = [
 ] as const;
 
 type GroupedUsage = {
-  agent_id?: string;
-  model?: string;
+  agent_id: string;
+  model: string;
   sessions: number;
   new_sessions: number;
   turns: number;
@@ -41,9 +41,9 @@ type GroupedUsage = {
 type TopSession = {
   session_id: string;
   name?: string;
-  agent_id?: string;
+  agent_id: string;
   node_id?: string;
-  model?: string;
+  model: string;
   turns: number;
   turns_without_usage: number;
   input_tokens?: number;
@@ -59,7 +59,7 @@ type TopSession = {
 };
 
 type SubagentModelGroup = {
-  agent_id?: string;
+  agent_id: string;
   model: string;
   sessions: number;
   input_tokens: number;
@@ -70,7 +70,7 @@ type SubagentModelGroup = {
 };
 
 type SubagentGroupAccumulator = {
-  agent_id?: string;
+  agent_id: string;
   model: string;
   sessions: Set<string>;
   input_tokens: number;
@@ -110,7 +110,7 @@ export function summarizeTurnUsage(
 
   const grouped = new Map<string, TurnUsageSessionRow[]>();
   for (const row of rows) {
-    const key = JSON.stringify([row.agent_id ?? null, row.model ?? null]);
+    const key = JSON.stringify([agentLabel(row), modelLabel(row)]);
     const groupRows = grouped.get(key) ?? [];
     groupRows.push(row);
     grouped.set(key, groupRows);
@@ -120,8 +120,8 @@ export function summarizeTurnUsage(
     const injections = groupNewRows.flatMap((row) => isNumber(row.injection_chars) ? [row.injection_chars] : []);
     const firstCalls = groupNewRows.flatMap((row) => isNumber(row.first_call_input_tokens) ? [row.first_call_input_tokens] : []);
     return {
-      ...(groupRows[0]?.agent_id ? { agent_id: groupRows[0].agent_id } : {}),
-      ...(groupRows[0]?.model ? { model: groupRows[0].model } : {}),
+      agent_id: agentLabel(groupRows[0]!),
+      model: modelLabel(groupRows[0]!),
       sessions: groupRows.length,
       new_sessions: groupNewRows.length,
       turns: groupRows.reduce((sum, row) => sum + row.turns, 0),
@@ -141,9 +141,9 @@ export function summarizeTurnUsage(
     .map((row) => ({
       session_id: row.session_id,
       ...(row.display_name ? { name: row.display_name } : {}),
-      ...(row.agent_id ? { agent_id: row.agent_id } : {}),
+      agent_id: agentLabel(row),
       ...(row.node_id ? { node_id: row.node_id } : {}),
-      ...(row.model ? { model: row.model } : {}),
+      model: modelLabel(row),
       turns: row.turns,
       turns_without_usage: row.turns_without_usage,
       ...sumMeasures([row], ["input_tokens", "cached_input_tokens", "output_tokens", "cost_usd"]),
@@ -167,6 +167,14 @@ export function summarizeTurnUsage(
   };
 }
 
+function agentLabel(row: TurnUsageSessionRow): string {
+  return row.agent_id || (row.session_type === "llm" && row.client_id ? "llm:" + row.client_id : "(미상)");
+}
+
+function modelLabel(row: TurnUsageSessionRow): string {
+  return row.model || "(미기록)";
+}
+
 function combinedCost(row: TurnUsageSessionRow): number {
   return (row.cost_usd ?? 0) + (row.subagent_cost_usd ?? 0);
 }
@@ -180,10 +188,10 @@ function subagentModelGroups(rows: readonly TurnUsageSessionRow[]): SubagentMode
   const groups = new Map<string, SubagentGroupAccumulator>();
   for (const row of rows) {
     for (const model of row.subagent_models ?? []) {
-      const key = JSON.stringify([row.agent_id ?? null, model.model]);
+      const key = JSON.stringify([agentLabel(row), model.model || "(미기록)"]);
       const group = groups.get(key) ?? {
-        ...(row.agent_id ? { agent_id: row.agent_id } : {}),
-        model: model.model,
+        agent_id: agentLabel(row),
+        model: model.model || "(미기록)",
         sessions: new Set<string>(),
         input_tokens: 0,
         cached_input_tokens: 0,
@@ -197,7 +205,7 @@ function subagentModelGroups(rows: readonly TurnUsageSessionRow[]): SubagentMode
   }
   return [...groups.values()]
     .map((group) => ({
-      ...(group.agent_id ? { agent_id: group.agent_id } : {}),
+      agent_id: group.agent_id,
       model: group.model,
       sessions: group.sessions.size,
       input_tokens: group.input_tokens,

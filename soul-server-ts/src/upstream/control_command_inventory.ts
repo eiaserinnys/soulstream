@@ -102,12 +102,14 @@ export const LIST_RUNNER_INVENTORY_CONTROL_TIMEOUT_MS = 85_000;
 
 export function boundedResultTimeoutMs(commandType: string, fallbackMs: number): number {
   switch (commandType) {
-    case "prepare_card_orchestration_decision":
     case "provider_usage_get":
+      // The provider has 45s; respond before orch's 46s command timeout.
+      return 45_500;
+    case "prepare_card_orchestration_decision":
     case "claude_auth_get_usage":
     case "claude_auth_get_profile":
-      // Usage work can consume its 14s internal budget, and profile is in the
-      // same external HTTP family. Stay below orch's 15s command limit.
+      // Claude authentication retains its 14s usage budget; profile and
+      // orchestration decision retain the existing control timeout.
       return 14_500;
     case "list_runner_inventory":
       // The first inventory after a soul-server restart waits for the runner

@@ -409,6 +409,18 @@ describe("Claude auth route harness", () => {
   });
 });
 
+it("gives both provider usage routes 46 seconds without changing Claude auth", async () => {
+  const { app, registry } = createClaudeAuthHarness();
+  const spy = vi.spyOn(registry, "createCommand");
+  await app.inject({ method: "GET", url: "/api/nodes/fake-node/provider-usage" });
+  await app.inject({ method: "GET", url: "/api/nodes/fake-node/provider-usage/antigravity" });
+  await app.inject({ method: "GET", url: "/api/nodes/fake-node/claude-auth/usage" });
+  expect(spy.mock.calls[0]?.[2]).toEqual({ timeoutMs: 46_000 });
+  expect(spy.mock.calls[1]?.[2]).toEqual({ timeoutMs: 46_000 });
+  expect(spy.mock.calls[2]?.[2]?.timeoutMs).not.toBe(46_000);
+  await app.close();
+});
+
 it("accepts Antigravity provider usage through the existing REST route", async () => {
   const { app, sent } = createClaudeAuthHarness();
   const response = await app.inject({ method: "GET", url: "/api/nodes/fake-node/provider-usage/antigravity" });

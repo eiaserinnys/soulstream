@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-// Must remain below the orch provider usage command timeout (15 seconds), or the
+// Must remain below the node control command timeout (45.5 seconds), or the
 // node response will be discarded before it can cross the upstream boundary.
-export const PROVIDER_USAGE_REQUEST_TIMEOUT_MS = 14_000;
+export const PROVIDER_USAGE_REQUEST_TIMEOUT_MS = 45_000;
 export const PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS = 5_000;
 
 export type ProviderUsageLogger = Pick<Logger, "debug" | "info" | "warn">;

@@ -332,7 +332,7 @@ describe("ProviderUsageService", () => {
         expect.objectContaining({
           message: "Provider usage summary",
           fields: expect.objectContaining({
-            timeoutMs: 14_000,
+            timeoutMs: 45_000,
             attempts: [
               expect.objectContaining({ budgetMs: 12_000 }),
               expect.objectContaining({ budgetMs: 500 }),

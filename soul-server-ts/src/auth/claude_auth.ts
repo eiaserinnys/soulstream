@@ -12,7 +12,6 @@ import type { Logger } from "pino";
 
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import {
-  PROVIDER_USAGE_REQUEST_TIMEOUT_MS,
   providerUsageDurationMs,
   providerUsageEndpoint,
   providerUsageFailureResult,
@@ -23,6 +22,7 @@ import {
 export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
 
+const CLAUDE_AUTH_USAGE_TIMEOUT_MS = 14_000;
 const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
 const TOKEN_PATTERN = /^sk-ant-oat01-[A-Za-z0-9_-]+$/;
 const MISSING_STORAGE_MESSAGE = "CLAUDE_AUTH_TOKEN_PATH is not configured";
@@ -206,7 +206,7 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
   constructor(config: ClaudeAuthServiceConfig, private readonly logger: Logger) {
     this.store = config.store;
     this.httpGet = config.httpGet ?? defaultHttpGet;
-    this.usageTimeoutMs = config.usageTimeoutMs ?? PROVIDER_USAGE_REQUEST_TIMEOUT_MS;
+    this.usageTimeoutMs = config.usageTimeoutMs ?? CLAUDE_AUTH_USAGE_TIMEOUT_MS;
   }
 
   status(requestId: string, responseType: string): ClaudeAuthStatusResponse {
