@@ -3,6 +3,9 @@
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionSummary } from "@seosoyoung/soul-ui";
@@ -13,6 +16,34 @@ import {
 } from "./FolderSessionHistory";
 
 describe("FolderSessionHistory", () => {
+  it("restores focus to the new session button after cancellation", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      flushSync(() => root.render(<QueryClientProvider client={client}><FolderSessionHistory
+        folderTitle="폴더" folderPageId="page-1" folderId="folder-1" contextItems={[]}
+        documentOptions={[]} contextPending={false} sessionDefaults={null} sessionIds={[]} sessions={[]}
+        runSessionLoadStates={new Map()} runHistoryTotal={0} runHistoryHasMore={false}
+        runHistoryLoading={false} activeSessionId={null} onLoadMoreRuns={vi.fn()}
+        onOpenSession={vi.fn()} onSessionCreated={vi.fn()} />
+      </QueryClientProvider>));
+      const button = host.querySelector<HTMLButtonElement>('button[aria-label="새 세션"]')!;
+      button.focus();
+      flushSync(() => button.click());
+      await vi.waitFor(() => expect(document.activeElement).toBe(
+        document.body.querySelector('[aria-label="초기 지시"]'),
+      ));
+      const cancel = [...document.body.querySelectorAll("button")].find(element => element.textContent === "취소")!;
+      flushSync(() => cancel.click());
+      await vi.waitFor(() => expect(document.activeElement).toBe(button));
+    } finally {
+      flushSync(() => root.unmount());
+      host.remove();
+      client.clear();
+    }
+  });
   it("uses only displayName for rename prefill and never falls back to the prompt", () => {
     const promptOnly = {
       agentSessionId: "prompt-only",
