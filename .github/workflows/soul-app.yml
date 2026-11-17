@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'soul-app/**'
+      - 'packages/wire-schema/**'
       - '.easignore'
       - '.github/workflows/soul-app.yml'
   pull_request:
     paths:
       - 'soul-app/**'
+      - 'packages/wire-schema/**'
       - '.easignore'
       - '.github/workflows/soul-app.yml'
   workflow_dispatch:

@@ -1,8 +1,9 @@
 import type { CardDto, CardStatus } from '../api/cardTypes';
 import type { PersistentReportEntry } from '../api/types';
 import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../packages/wire-schema/src/persistent_report';
+import { exhaustiveList } from './exhaustive';
 
-const cardStatuses: readonly CardStatus[] = ['todo', 'queued', 'blocked', 'running', 'review', 'on_hold', 'done', 'cancelled'];
+const cardStatuses = exhaustiveList<CardStatus>()(['todo', 'queued', 'blocked', 'running', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled']);
 
 export function isPersistentReportCardExpandable(entry: PersistentReportEntry): boolean {
   return Boolean(entry.card_id) || entry.card_numbers.length === 1;
