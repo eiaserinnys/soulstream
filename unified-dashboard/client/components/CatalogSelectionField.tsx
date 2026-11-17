@@ -1,12 +1,13 @@
-import { useId, type ReactNode } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import { Select, SelectItem, SelectPopup, SelectTrigger } from "../../../packages/soul-ui/src/components/ui/select";
 
 /** Agent and model catalogs share the trigger, keyboard handling and option surface. */
 export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, options, disabled,
-  invalid, className, triggerClassName, adornment, message, onValueChange }: {
+  invalid, className, triggerClassName, triggerRef, adornment, message, onValueChange }: {
   label: string; ariaLabel: string; value: string; selectedLabel: ReactNode;
   options: readonly { value: string; label: ReactNode; disabled?: boolean }[];
   disabled?: boolean; invalid?: boolean; className?: string; triggerClassName?: string;
+  triggerRef?: Ref<HTMLButtonElement>;
   adornment?: ReactNode; message?: ReactNode; onValueChange(value: string): void;
 }) {
   const id = useId();
@@ -14,7 +15,7 @@ export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, 
     <label htmlFor={id}>{label}</label>
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <Select value={value} disabled={disabled} modal={false} onValueChange={next => onValueChange(next ?? "")}>
-        <SelectTrigger id={id} className={`v3-catalog-select-trigger ${triggerClassName ?? ""}`}
+        <SelectTrigger ref={triggerRef} id={id} className={`v3-catalog-select-trigger ${triggerClassName ?? ""}`}
           aria-label={ariaLabel} aria-invalid={invalid || undefined}>
           <span className="flex-1 truncate">{selectedLabel}</span>
         </SelectTrigger>

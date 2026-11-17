@@ -1,3 +1,10 @@
+/**
+ * 저장소 루트에서 실행:
+ * corepack pnpm -C unified-dashboard build
+ * VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm -C unified-dashboard exec vite preview --host 127.0.0.1 --port 4173 --strictPort
+ * PLAYWRIGHT_MODULE=$(realpath unified-dashboard/node_modules/@playwright/test/../../playwright/index.mjs) PR_AI_QA_OUTPUT=.local/card1576/after node soul-server-ts/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/v3-succession-picker.qa.ts > .local/card1576-result.json
+ * 4173이 사용 중이면 preview 포트와 V3_QA_BASE_URL을 같은 다른 주소로 바꾼다.
+ */
 import type { Browser, Locator, Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -117,14 +124,18 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const openedFocus = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
     // 세션을 만든 뒤에는 채팅 창이 폴더 화면을 덮으므로 Esc 닫기와 초점 측정은 첫 열기에서 한다.
     await page.keyboard.press("Escape");
-    const immediateFocus = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300));
-    console.log(`승계 닫기 직후 초점: ${immediateFocus}`);
     await modal.waitFor({ state: "hidden" });
     await page.waitForTimeout(300);
-    const closedFocus = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300));
-    console.log(`승계 닫힘 뒤 초점: ${closedFocus}`);
-    const focusRestored = await openButton.evaluate(element => document.activeElement === element);
-    console.log(`승계 닫힘 초점 복귀 측정: ${focusRestored}`);
+    const escapeFocusRestored = await openButton.evaluate(element => document.activeElement === element);
+    assert(escapeFocusRestored, "Esc로 닫은 뒤 새 세션 단추로 초점이 돌아오지 않았습니다.");
+    await openButton.click();
+    await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "visible" });
+    await modal.getByRole("button", { name: "취소", exact: true }).click();
+    await modal.waitFor({ state: "hidden" });
+    await page.waitForTimeout(300);
+    const cancelFocusRestored = await openButton.evaluate(element => document.activeElement === element);
+    assert(cancelFocusRestored, "취소 뒤 새 세션 단추로 초점이 돌아오지 않았습니다.");
+    const focusRestored = { escape: escapeFocusRestored, cancel: cancelFocusRestored };
     await openButton.click();
     await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "visible" });
     for (const title of ["실행 환경", "함께 전달할 자료"]) {
@@ -134,13 +145,42 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const effort = modal.getByRole("combobox", { name: "추론 강도 선택" });
     const predecessor = modal.getByRole("combobox", { name: "이어받을 이전 세션" });
     await modal.getByTestId("succession-effort-unsupported").waitFor({ state: "visible" });
+    const defaultButton = modal.getByTestId("succession-effort-use-default");
+    await effort.focus();
+    const unfocusedShadow = await defaultButton.evaluate(element => getComputedStyle(element).boxShadow);
     for (const width of [1440, 360]) {
       await page.setViewportSize({ width, height: 1000 });
       await effort.scrollIntoViewIfNeeded();
       await capture(page, theme, `unsupported-effort-${width}`);
+      await effort.focus();
+      await page.keyboard.press("Tab");
+      assert(await defaultButton.evaluate(element => document.activeElement === element), "Tab이 기본값 사용 단추로 가지 않았습니다.");
+      await capture(page, theme, `default-focus-${width}`);
     }
-    await modal.getByTestId("succession-effort-use-default").click();
+    const defaultFocusStyle = await defaultButton.evaluate(element => ({
+      outlineStyle: getComputedStyle(element).outlineStyle,
+      boxShadow: getComputedStyle(element).boxShadow,
+      focusVisible: element.matches(":focus-visible"),
+    }));
+    assert(defaultFocusStyle.focusVisible && defaultFocusStyle.outlineStyle === "none"
+      && defaultFocusStyle.boxShadow !== "none" && defaultFocusStyle.boxShadow !== unfocusedShadow,
+    `기본값 단추 초점 고리 오류: ${JSON.stringify(defaultFocusStyle)}`);
+    await page.keyboard.press("Enter");
     await modal.getByTestId("succession-effort-unsupported").waitFor({ state: "hidden" });
+    const defaultFocusTarget = await effort.evaluate(element => document.activeElement === element);
+    assert(defaultFocusTarget, "기본값 사용 뒤 추론 강도 칸에 초점이 없습니다.");
+    assert(await effort.getAttribute("aria-expanded") === "false", "기본값 사용 뒤 강도 목록이 열렸습니다.");
+    const previousCheckbox = modal.getByRole("checkbox", { name: "이전 세션 이어받기" });
+    const activeOpacity = await predecessor.evaluate(element => getComputedStyle(element).opacity);
+    await previousCheckbox.uncheck();
+    const disabledOpacity = await predecessor.evaluate(element => getComputedStyle(element).opacity);
+    assert(activeOpacity === "1" && disabledOpacity === "0.64", `선택 칸 투명도 오류: 활성 ${activeOpacity}, 비활성 ${disabledOpacity}`);
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await predecessor.scrollIntoViewIfNeeded();
+      await capture(page, theme, `disabled-previous-${width}`);
+    }
+    await previousCheckbox.check();
     const previousInteractionMetrics = [];
     for (const width of [1440, 360]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -305,6 +345,10 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       openedFocus,
       tabInside,
       focusRestored,
+      defaultFocusStyle,
+      defaultFocusTarget,
+      activeOpacity,
+      disabledOpacity,
       resize,
     };
   } finally {

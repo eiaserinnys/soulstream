@@ -3,7 +3,7 @@ import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } fro
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
-import { useId, useCallback, useMemo, useRef, useState } from "react";
+import { useId, useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -61,6 +61,7 @@ export function SessionSuccessionModal({
   predecessorOptions,
   pageDefaults,
   currentSession,
+  returnFocusRef,
   onClose,
   onCreated,
 }: {
@@ -77,6 +78,7 @@ export function SessionSuccessionModal({
   predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
   onClose(): void;
   onCreated(session: SessionSummary): void;
 }) {
@@ -105,6 +107,7 @@ export function SessionSuccessionModal({
   const {nodeId: atomNodeId, nodeTitle: atomNodeTitle} = atomValue;
   const [initialInstruction, setInitialInstruction] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const effortTrigger = useRef<HTMLButtonElement>(null);
   useTextareaAutoHeight(textarea, initialInstruction, 14);
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
@@ -261,7 +264,10 @@ export function SessionSuccessionModal({
     {effort.options.length > 0
       ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
       : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}{" "}
-    <button type="button" data-testid="succession-effort-use-default" onClick={() => effort.setSelected(null)}>기본값 사용</button>
+    <Button type="button" variant="outline" size="xs" className="align-middle" data-testid="succession-effort-use-default" onClick={() => {
+      (effortTrigger.current ?? textarea.current)?.focus();
+      effort.setSelected(null);
+    }}>기본값 사용</Button>
   </span> : null;
   const effortOptions = [
     ...(effort.unsupported ? [{ value: effort.selected ?? "", label: `${reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)` }] : []),
@@ -276,6 +282,7 @@ export function SessionSuccessionModal({
     <Dialog open onOpenChange={(open) => { if (!open && !pending) void close(); }}>
       <DialogPopup
         className="v3-surface v3-succession-modal max-w-[640px]"
+        {...(returnFocusRef ? { finalFocus: () => completed.current ? true : returnFocusRef.current } : {})}
         closeProps={{ "aria-label": "승계 닫기", disabled: pending }}
         onKeyDown={event => { if(event.key === "Escape" && atomDraft) { event.preventDefault(); event.stopPropagation(); if(atomOpen) setAtomOpen(false); else closeAtom(); } }}
       >
@@ -337,6 +344,7 @@ export function SessionSuccessionModal({
               {effort.options.length > 0 ? (
                 <div role="group" aria-label="추론 강도" aria-describedby={effortNotice ? effortNoticeId : undefined}>
                 <CatalogSelectionField className="v3-assignment-field" label="추론 강도" ariaLabel="추론 강도 선택"
+                  triggerRef={effortTrigger}
                   value={effort.effective ?? ""} options={effortOptions}
                   selectedLabel={effortOptions.find((option) => option.value === (effort.effective ?? ""))?.label ?? ""}
                   onValueChange={(value) => effort.setSelected(value || null)} />

@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "@seosoyoung/soul-ui/styles/globals.css";
 
+.control-surface.v3-catalog-select-trigger:is(:disabled, [data-disabled]) {
+  opacity: 0.64;
+}
+
 /* Tailwind v4 — soul-ui 컴포넌트 소스를 명시적으로 스캔 대상에 추가 */
 @source "../../packages/soul-ui/src";
 

@@ -366,10 +366,13 @@ describe("unusable carried-over effort", () => {
     await settle();
     expect(startButton()?.disabled).toBe(true);
 
+    useDefaultButton()?.focus();
     flushSync(() => useDefaultButton()?.click());
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
+    expect(document.activeElement).toBe(effortSelect());
+    expect(effortSelect()?.getAttribute("aria-expanded")).toBe("false");
 
     flushSync(() => startButton()?.click());
     await settle();
@@ -392,10 +395,12 @@ describe("unusable carried-over effort", () => {
     expect(unsupportedNotice()?.textContent ?? "").not.toContain("다른 모델");
     expect(startButton()?.disabled).toBe(true);
 
+    useDefaultButton()?.focus();
     flushSync(() => useDefaultButton()?.click());
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
+    expect(document.activeElement).toBe(document.body.querySelector('[aria-label="초기 지시"]'));
 
     flushSync(() => startButton()?.click());
     await settle();
