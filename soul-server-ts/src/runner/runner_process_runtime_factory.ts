@@ -279,7 +279,7 @@ export function createRunnerProcessRuntimeFactory(
       config,
       options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       options.releasePool,
-      storedRuntimeMcpConfig(config),
+      storedRuntimeMcpConfig(config, options.mcpConfigService),
       // 복구가 저장된 설정으로 다시 띄울 때도 서비스 토큰이 아니라 이 세션의
       // 자격 증명을 쓴다. restricted 설정은 이미 ssr1로 저장돼 있으므로 건드리지 않는다.
       config.isolation
@@ -406,7 +406,7 @@ export function spawnInputFromConfig(
 
 type RunnerRuntimeMcpConfig = Pick<
   SpawnRunnerProcessInput,
-  "internalMcpUrl" | "resolvedMcpServers"
+  "internalMcpUrl" | "resolvedMcpServers" | "mcpSecretRefs" | "mcpSecretDeclarations"
 >;
 
 function resolveRuntimeMcpConfig(
@@ -421,14 +421,20 @@ function resolveRuntimeMcpConfig(
       options.env.MCP_PATH,
     ),
     ...(resolvedMcpServers ? { resolvedMcpServers } : {}),
+    mcpSecretRefs: [],
+    mcpSecretDeclarations: options.mcpConfigService.listSecretRefs(),
   };
 }
 
 function storedRuntimeMcpConfig(
   config: RunnerChildConfig,
+  mcpConfigService: McpConfigService,
 ): RunnerRuntimeMcpConfig {
   return {
     internalMcpUrl: config.internalMcpUrl,
+    ...(config.mcpSecretRefs !== undefined
+      ? { mcpSecretRefs: config.mcpSecretRefs, mcpSecretDeclarations: mcpConfigService.listSecretRefs() }
+      : {}),
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),

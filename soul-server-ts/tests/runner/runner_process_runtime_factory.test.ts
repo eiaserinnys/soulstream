@@ -47,7 +47,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
         reportAuthFailure: vi.fn(async () => undefined),
         release: vi.fn(),
       },
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(async () => ({
           releaseId: "sha-pool",
@@ -82,6 +82,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
         enabled: true,
         accountsDir: "/worker/claude-accounts",
       },
+      mcpSecretRefs: [],
+      mcpSecretDeclarations: [],
     }));
   });
 
@@ -110,7 +112,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease,
         describe,
@@ -163,7 +165,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(async () => ({
           releaseId: "sha-opencode",
@@ -213,7 +215,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
         describe: vi.fn(() => ({
@@ -241,6 +243,15 @@ describe("createRunnerProcessRuntimeFactory", () => {
       persistRunState: vi.fn(async () => undefined),
       persistSessionItems: vi.fn(async () => undefined),
     }, "adopt", phaseObservation);
+    expect((runtime.dispatcher as unknown as { options: { spawn: { mcpSecretRefs?: unknown } } })
+      .options.spawn.mcpSecretRefs).toBeUndefined();
+    const refs = [{ server: "remote", field: "headers" as const, key: "X-Key", env: "TEST_MCP_REF" }];
+    const recoveredWithRefs = factory.recover!(task, { ...registration, config: { ...config, mcpSecretRefs: refs } }, {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    }, "offline");
+    expect((recoveredWithRefs.dispatcher as unknown as { options: { spawn: { mcpSecretRefs: unknown } } })
+      .options.spawn.mcpSecretRefs).toEqual(refs);
     expect((runtime.dispatcher as unknown as {
       options: {
         spawn: { codexDetachedResultRetentionMs: number };
@@ -268,7 +279,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
       sessionStore: {} as never,
-      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null), listSecretRefs: vi.fn(() => []) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
         describe: vi.fn(() => ({

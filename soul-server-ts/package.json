@@ -23,6 +23,7 @@
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs scripts/verify_build_gate_contract.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node scripts/verify_runner_release_isolation.mjs",
     "verify:startup": "node --test scripts/verify_main_bundle_runner_startup.test.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
+    "runner-config:scrub-secrets": "tsx scripts/scrub_runner_config_secrets.ts",
     "runner-outbox:inspect": "tsx scripts/inspect_runner_outbox.ts",
     "notification-outbox:list-dlq": "tsx scripts/list_notification_dlq.ts",
     "notification-outbox:requeue": "tsx scripts/requeue_notification_dlq.ts",
