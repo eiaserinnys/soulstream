@@ -52,7 +52,7 @@ export interface RunnerRecoveryCoordinatorOptions {
    * 운영 공급자는 늘 없음을 돌려준다(실제 영속은 카드 #1266).
    */
   hasPendingRunnerSettlement?: RunnerSettlementPendingProbe;
-  closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain">;
+  closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain"> & Partial<Pick<ClosedRunnerTailDrainer, "hasActivePump">>;
   logger: Pick<Logger, "error" | "info" | "warn">;
   spawner?: Pick<
     RunnerProcessSpawner,

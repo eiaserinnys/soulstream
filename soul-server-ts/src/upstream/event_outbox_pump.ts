@@ -1,3 +1,4 @@
+// The pump keeps delivery, ACK handling, and its watchdog in one lifecycle; splitting it would expose mutable in-flight state.
 import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
 import type { EventOutboxQuarantineResult } from "./event_outbox_quarantine.js";
 import {
@@ -45,6 +46,10 @@ const DEFAULT_ACKNOWLEDGEMENT_TIMEOUT_MS = 30_000;
 export class EventOutboxPump {
   private sender?: (batch: EventOutboxBatch) => Promise<void>;
   private inFlight?: EventOutboxBatch;
+  private inFlightSentAt = 0;
+  private watchdogTimer?: ReturnType<typeof setInterval>;
+  private watchdogSince?: number;
+  private lastWatchdogPollAt = 0;
   private generation = 0;
   private flushScheduled = false;
   private flushActive = false;
@@ -101,9 +106,16 @@ export class EventOutboxPump {
 
   connect(sender: (batch: EventOutboxBatch) => Promise<void>): Promise<boolean> {
     this.resolveReadiness(false);
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
     this.generation += 1;
     this.sender = sender;
     this.inFlight = undefined;
+    this.watchdogSince = undefined;
+    this.lastWatchdogPollAt = this.nowMs();
+    if (this.options.watchdog) {
+      this.watchdogTimer = setInterval(() => this.watchdogTick(), this.options.watchdog.intervalMs);
+      this.watchdogTimer.unref?.();
+    }
     const generation = this.generation;
     const ready = new Promise<boolean>((resolve) => {
       this.readiness = { generation, resolve };
@@ -117,6 +129,9 @@ export class EventOutboxPump {
     this.generation += 1;
     this.sender = undefined;
     this.inFlight = undefined;
+    this.watchdogSince = undefined;
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = undefined;
     for (const timer of this.retryFlushTimers) clearTimeout(timer);
     this.retryFlushTimers.clear();
   }
@@ -382,6 +397,24 @@ export class EventOutboxPump {
     });
   }
 
+  private nowMs(): number {
+    return (this.options.now ?? (() => new Date()))().getTime();
+  }
+
+  private watchdogTick(): void {
+    const watchdog = this.options.watchdog!;
+    const now = this.nowMs();
+    if (this.inFlight) {
+      if (this.flushActive || now - this.inFlightSentAt < watchdog.retryAfterMs) return;
+      this.watchdogSince = this.inFlightSentAt;
+      this.inFlight = undefined;
+    } else {
+      this.watchdogSince ??= this.lastWatchdogPollAt;
+    }
+    this.lastWatchdogPollAt = now;
+    this.scheduleFlush();
+  }
+
   /**
    * Resend after a delay. A retryable rejection usually means the far side is
    * briefly unable to commit; re-sending on the next microtask would spin a hot
@@ -429,14 +462,26 @@ export class EventOutboxPump {
       const batch = await this.outbox.readBatch(this.singleEventProbe ? 1 : undefined);
       if (sender !== this.sender || generation !== this.generation) return;
       if (!batch) {
+        this.watchdogSince = undefined;
         this.resolveReadiness(true, generation);
         return;
       }
       await this.options.beforePublish?.(batch);
       if (sender !== this.sender || generation !== this.generation) return;
       this.inFlight = batch;
+      const sentAt = this.nowMs();
+      this.inFlightSentAt = sentAt;
+      const watchdogSince = this.watchdogSince;
+      this.watchdogSince = undefined;
       try {
         await sender(batch);
+        if (watchdogSince !== undefined) {
+          this.options.watchdog?.onSend({
+            streamId: batch.stream_id,
+            sourceSeq: batch.events[0]!.source_seq,
+            waitedMs: Math.max(0, sentAt - watchdogSince),
+          });
+        }
       } catch (error) {
         if (generation === this.generation) this.onError(error);
       }

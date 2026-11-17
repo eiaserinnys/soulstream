@@ -1479,6 +1479,25 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("retires without draining when the same runner stream is already registered", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "closed" });
+    current.closedTailState = {
+      status: "requires_drain", streamId: "stream-session-a", sessionId: "session-a",
+      latestDurableSourceSeq: 3, acknowledgedThrough: 2,
+    };
+    const drain = vi.fn(async () => {});
+    const hasActivePump = vi.fn((streamId: string) => streamId === "stream-session-a");
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain, hasActivePump },
+    });
+    recordTerminalCompletion(subject.task);
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(hasActivePump).toHaveBeenCalledWith("stream-session-a");
+    expect(drain).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+  });
+
   it("retires a recorded closed registration with a fully acknowledged tail without draining", async () => {
     const current = registration({ pidAlive: false, lifecycleState: "closed" });
     current.closedTailState = {

@@ -5,6 +5,14 @@ import { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../src/upstream/event_outbox_pump_mux.js";
 
 describe("EventOutboxPumpMux", () => {
+  it("reports stream ownership while a pump is registered", () => {
+    const mux = new EventOutboxPumpMux(new EventOutboxPump(makeStore("node-stream"), vi.fn()));
+    const unregister = mux.register(new EventOutboxPump(makeStore("runner-stream"), vi.fn()));
+    expect(mux.has("node-stream")).toBe(true);
+    expect(mux.has("runner-stream")).toBe(true);
+    unregister();
+    expect(mux.has("runner-stream")).toBe(false);
+  });
   it("routes batches and ACKs by stream_id without repackaging", async () => {
     const primaryStore = makeStore("node-stream");
     const runnerStore = makeStore("runner-stream");

@@ -597,10 +597,15 @@ export class RunnerRecoveryCoordinator {
             && closedRunnerTailRequiresDrain(registration)
           ) {
             if (registration.pidAlive) await this.registrationControl.terminate(registration);
-            await this.options.closedTailDrainer.drain(
-              { ...registration, pidAlive: false },
-              phaseObservation,
-            );
+            const tail = registration.closedTailState;
+            const streamId = (tail && "streamId" in tail ? tail.streamId : undefined)
+              ?? registration.bootstrap?.stream_id;
+            if (!streamId || !this.options.closedTailDrainer.hasActivePump?.(streamId)) {
+              await this.options.closedTailDrainer.drain(
+                { ...registration, pidAlive: false },
+                phaseObservation,
+              );
+            }
           }
           await this.registrationControl.retireTerminal(registration);
           this.options.logger.info(

@@ -18,7 +18,7 @@ export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
 }
 
 interface ClosedRunnerTailDrainerOptions {
-  pumpMux: Pick<EventOutboxPumpMux, "register">;
+  pumpMux: Pick<EventOutboxPumpMux, "register"> & Partial<Pick<EventOutboxPumpMux, "has">>;
   logger: Pick<Logger, "error" | "info" | "warn">;
   openOutbox?: (
     databasePath: string,
@@ -31,6 +31,10 @@ interface ClosedRunnerTailDrainerOptions {
 /** Drains only orch-bound events retained after a runner is durably closed. */
 export class ClosedRunnerTailDrainer {
   constructor(private readonly options: ClosedRunnerTailDrainerOptions) {}
+
+  hasActivePump(streamId: string): boolean {
+    return this.options.pumpMux.has?.(streamId) ?? false;
+  }
 
   async drain(
     registration: RunnerRegistration,
