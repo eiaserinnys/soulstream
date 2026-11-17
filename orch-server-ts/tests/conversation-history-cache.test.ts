@@ -15,6 +15,7 @@ function createDb() {
     events: new Map<string, EventRow[]>(),
     assets: [] as Array<{ id: string; original_name: string; mime_type: string; upload_status: string; garbage_collected_at: Date | null }>,
     uploads: [] as Array<Record<string, unknown>>,
+    failFileAssets: 0,
   };
   const queries: Query[] = [];
   const add = (session: string, id: number, type: string, payload: Record<string, unknown> = {}) => {
@@ -44,6 +45,10 @@ function createDb() {
       return state.uploads.filter(upload => paths.includes(upload.path as string)).map(upload => ({ upload }));
     }
     if (text.includes("FROM file_assets")) {
+      if (state.failFileAssets > 0) {
+        state.failFileAssets -= 1;
+        throw new Error("file_assets query failed");
+      }
       const ids = values[0] as readonly string[];
       return state.assets.filter(asset => ids.includes(asset.id)
         && asset.upload_status === "committed" && asset.garbage_collected_at === null);
@@ -192,7 +197,7 @@ describe("conversation history incremental projection cache", () => {
     expect(eventQueries(db.queries)).toHaveLength(0);
   });
 
-  it("expires a cached execution after ten idle minutes", async () => {
+  it("expires ten minutes after the cache entry was created, even when it is used", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-17T00:00:00Z"));
     const db = createDb();
@@ -200,13 +205,18 @@ describe("conversation history incremental projection cache", () => {
     const history = new ConversationHistory(db.sql);
 
     await history.load(binding());
-    vi.setSystemTime(new Date("2026-11-17T00:09:00Z"));
-    db.add("exec-1", 5, "user_message", { text: "9분", caller_info: { source: "browser" } });
+    vi.setSystemTime(new Date("2026-11-17T00:05:00Z"));
+    db.queries.length = 0;
+    await history.load(binding());
+    expect(eventQueries(db.queries)).toHaveLength(0);
+
+    db.add("exec-1", 5, "user_message", { text: "9분 59초", caller_info: { source: "browser" } });
+    vi.setSystemTime(new Date("2026-11-17T00:09:59Z"));
     db.queries.length = 0;
     const warm = await history.load(binding());
     expect(eventQueries(db.queries)[0]!.text).toContain("id > ?");
 
-    vi.setSystemTime(new Date("2026-11-17T00:19:01Z"));
+    vi.setSystemTime(new Date("2026-11-17T00:10:00Z"));
     db.queries.length = 0;
     const expired = await history.load(binding());
     const cold = eventQueries(db.queries);
@@ -214,6 +224,26 @@ describe("conversation history incremental projection cache", () => {
     expect(cold[0]!.text).not.toContain("id >");
     expect(snapshot(expired)).toEqual(snapshot(await new ConversationHistory(db.sql).load(binding())));
     expect(snapshot(warm).items).toEqual(snapshot(expired).items);
+  });
+
+  it("discards a partially applied entry when incremental enrichment fails", async () => {
+    const db = createDb();
+    seedConversation(db);
+    const history = new ConversationHistory(db.sql);
+    await history.load(binding());
+
+    db.add("exec-1", 5, "user_message", { text: "적용 뒤 실패", caller_info: { source: "browser" } });
+    db.add("exec-1", 6, "user_message", { text: "실패 지점", caller_info: { source: "browser" }, attachment_ids: ["asset-1"] });
+    db.state.failFileAssets = 1;
+    await expect(history.load(binding())).rejects.toThrow("file_assets query failed");
+
+    db.queries.length = 0;
+    const recovered = await history.load(binding());
+    const reads = eventQueries(db.queries);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]!.text).not.toContain("id >");
+    expect(recovered.items.map(entry => entry.item.text)).toEqual(["첫 입력", "첫 답", "적용 뒤 실패", "실패 지점"]);
+    expect(snapshot(recovered)).toEqual(snapshot(await new ConversationHistory(db.sql).load(binding())));
   });
 
   it("discards the cache when the event watermark moves backwards", async () => {

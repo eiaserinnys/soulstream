@@ -6,7 +6,7 @@ import { formatPosition } from "./conversation_position.js";
 type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
 type CachedItem = { eventId: number; item: Item };
-type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; usedAt: number };
+type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; createdAt: number };
 const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
 const CACHE_EXECUTIONS = 64;
 const CACHE_TTL_MS = 10 * 60_000;
@@ -45,34 +45,38 @@ export class ConversationHistory {
       const max = watermark?.id ?? 0;
       const now = Date.now();
       let entry = this.cache.get(key);
-      if (entry && (now - entry.usedAt > CACHE_TTL_MS || entry.lastEventId > max)) { this.cache.delete(key); entry = undefined; }
+      if (entry && (now - entry.createdAt >= CACHE_TTL_MS || entry.lastEventId > max)) { this.cache.delete(key); entry = undefined; }
       if (!entry) {
         entry = { projection: new ConversationProjection(execution.first_input_is_initial_instruction),
-          lastEventId: 0, items: [], usedAt: now };
+          lastEventId: 0, items: [], createdAt: now };
       }
       if (entry.lastEventId < max) {
-        const rows = entry.lastEventId === 0
-          ? await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
-            WHERE session_id=${execution.session_id} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`
-          : await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
-            WHERE session_id=${execution.session_id} AND id > ${entry.lastEventId} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`;
-        for (const row of rows) {
-          row.payload = await this.enrichPayload(row.payload ?? {});
-          const result = entry.projection.apply(sourceEvent(row));
-          if (result.item) entry.items.push({ eventId: row.id, item: result.item });
+        try {
+          const rows = entry.lastEventId === 0
+            ? await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+              WHERE session_id=${execution.session_id} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`
+            : await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+              WHERE session_id=${execution.session_id} AND id > ${entry.lastEventId} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`;
+          for (const row of rows) {
+            row.payload = await this.enrichPayload(row.payload ?? {});
+            const result = entry.projection.apply(sourceEvent(row));
+            if (result.item) entry.items.push({ eventId: row.id, item: result.item });
+          }
+        } catch (error) {
+          this.cache.delete(key);
+          throw error;
         }
       }
       entry.lastEventId = max;
-      entry.usedAt = Date.now();
       this.remember(key, entry);
       return entry;
     });
   }
   private remember(key: string, entry: CachedExecution): void {
     const now = Date.now();
-    for (const [candidate, value] of this.cache) if (now - value.usedAt > CACHE_TTL_MS) this.cache.delete(candidate);
     this.cache.delete(key);
     this.cache.set(key, entry);
+    for (const [candidate, value] of this.cache) if (now - value.createdAt >= CACHE_TTL_MS) this.cache.delete(candidate);
     while (this.cache.size > CACHE_EXECUTIONS) {
       const oldest = this.cache.keys().next().value;
       if (oldest === undefined) break;
