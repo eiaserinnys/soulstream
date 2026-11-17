@@ -1,6 +1,6 @@
 {
   "name": "@soulstream/chrome-extension",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Chrome MV3 extension for sending page actions to Soulstream sessions.",

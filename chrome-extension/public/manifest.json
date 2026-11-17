@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Soulstream Page Actions",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "Send the current page to Soulstream as bookmark, digest, or reference tasks.",
   "permissions": ["contextMenus", "notifications", "storage", "activeTab"],
   "host_permissions": ["http://*/*", "https://*/*"],

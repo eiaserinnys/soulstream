@@ -35,16 +35,18 @@ Load `chrome-extension/dist` from `chrome://extensions` with Developer Mode enab
 ## Release artifact
 
 Chrome extension releases use tags that match `chrome-extension-v*`.
+Before pushing a tag, update the versions in `public/manifest.json` and `package.json`
+to match its number (for example, `0.2.0` for `chrome-extension-v0.2.0`).
 
 ```bash
-git tag chrome-extension-v0.0.1
-git push origin chrome-extension-v0.0.1
+git tag chrome-extension-v0.2.0
+git push origin chrome-extension-v0.2.0
 ```
 
 Pushing that tag runs the `Release Chrome Extension` workflow. The workflow tests, typechecks, builds, packages `chrome-extension/dist`, creates a GitHub Release, and uploads a zip named like:
 
 ```text
-soulstream-chrome-extension-chrome-extension-v0.0.1.zip
+soulstream-chrome-extension-chrome-extension-v0.2.0.zip
 ```
 
 The workflow can also be run manually from GitHub Actions. Manual runs upload the same zip as a workflow artifact, but they do not create or update a GitHub Release.
@@ -53,7 +55,7 @@ To create the same zip locally:
 
 ```bash
 pnpm --dir chrome-extension build
-pnpm --dir chrome-extension package -- --tag chrome-extension-v0.0.1-test
+pnpm --dir chrome-extension package -- --tag chrome-extension-v0.2.0-test
 ```
 
 The package step verifies that the zip contains `manifest.json` at the root, so the extracted folder can be loaded directly.
