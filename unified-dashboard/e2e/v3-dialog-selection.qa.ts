@@ -49,6 +49,11 @@ async function verify(browser: Browser, width: number) {
     const popoverButton = popover.locator("button", { hasText: "노드 선택" });
     await popoverButton.waitFor({ state: "visible" });
     const popoverSelect = await selectionStyle(popoverButton);
+    await page.setViewportSize({ width: 360, height: 1000 });
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const popupBox = await popover.boundingBox();
+    const popupInViewport = popupBox === null || (popupBox.x >= 0 && popupBox.x + popupBox.width <= 361);
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.keyboard.press("Escape");
     if (await popover.isVisible()) await page.keyboard.press("Escape");
     await popover.waitFor({ state: "hidden" });
@@ -85,9 +90,12 @@ async function verify(browser: Browser, width: number) {
     await page.screenshot({ path: path.join(output, `succession-${width}.png`), animations: "disabled" });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     const modalOverflow = await modal.evaluate(el => el.scrollWidth > el.clientWidth);
+    const scrollPanel = modal.locator('[data-slot="dialog-panel-scroll"]');
+    const scrollBefore = await scrollPanel.evaluate(el => el.scrollTop);
     await page.setViewportSize({ width: width === 360 ? 1440 : 360, height: 1000 });
     const inputRetained = await input.inputValue();
     await page.setViewportSize({ width, height: 1000 });
+    const scrollAfter = await scrollPanel.evaluate(el => el.scrollTop);
     await defaultButton.click();
     await modal.getByRole("button", { name: "세션 시작", exact: true }).click();
     const error = modal.locator(".v3-error-notice strong");
@@ -109,13 +117,13 @@ async function verify(browser: Browser, width: number) {
     await page.getByRole("button", { name: "새 폴더", exact: true }).first().click();
     const otherDialog = page.getByRole("dialog", { name: "새 폴더", exact: true });
     const otherDialogStyle = await selectionStyle(otherDialog.getByRole("button", { name: "취소", exact: true }));
-    const metrics = { width, selection, defaultStyle, cancelStyle, inputStyle, inputSelection, errorStyle, errorText, errorSelection, retryAvailable, otherDialogStyle, popoverSelect, focusOnOpen, focusOnClose, tabOrder, overflow, modalOverflow, inputRetained };
+    const metrics = { width, selection, defaultStyle, cancelStyle, inputStyle, inputSelection, errorStyle, errorText, errorSelection, retryAvailable, otherDialogStyle, popoverSelect, popupInViewport, focusOnOpen, focusOnClose, tabOrder, overflow, modalOverflow, inputRetained, scrollBefore, scrollAfter };
     if (!baseline) {
       assert(selection.includes("이어받은 추론 강도"), `안내문 선택 실패: ${selection}`);
       assert(!selection.includes("기본값 사용") && !selection.includes("취소"), `단추가 함께 선택됨: ${selection}`);
       assert([defaultStyle, cancelStyle, otherDialogStyle, popoverSelect].every(x => x === "none"), `단추 선택 허용: ${JSON.stringify(metrics)}`);
       assert(inputStyle === "text" && inputSelection === "시각 검수에서 입력 유지 확인" && errorStyle === "text" && errorSelection.includes("세션을 시작하지"), `본문 선택 불가: ${JSON.stringify(metrics)}`);
-      assert(focusOnOpen && focusOnClose && tabOrder && !overflow && !modalOverflow && retryAvailable && inputRetained === "시각 검수에서 입력 유지 확인", `조작 검사 실패: ${JSON.stringify(metrics)}`);
+      assert(focusOnOpen && focusOnClose && tabOrder && !overflow && !modalOverflow && retryAvailable && inputRetained === "시각 검수에서 입력 유지 확인" && Math.abs(scrollAfter - scrollBefore) <= 1, `대화상자 조작 검사 실패: ${JSON.stringify(metrics)}`);
     }
     return metrics;
   } finally { await context.close(); }
