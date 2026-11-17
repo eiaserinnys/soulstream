@@ -1204,7 +1204,7 @@ async def test_session_apply_metadata_entry_leaves_other_append_paths_unchanged(
 
 async def test_session_update_last_message(test_db):
     await _create_session(test_db, "s-msg")
-    now = _utc_now()
+    now = _utc_now().replace(microsecond=300950)
     msg = json.dumps({
         "type": "assistant_message",
         "preview": " hello ",
@@ -1214,11 +1214,9 @@ async def test_session_update_last_message(test_db):
         "SELECT session_update_last_message($1, $2, $3)", "s-msg", msg, now
     )
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-msg")
-    assert _decode_jsonb(row["last_message"]) == {
-        "type": "assistant_message",
-        "preview": "hello",
-        "timestamp": now.isoformat(),
-    }
+    last_message = _decode_jsonb(row["last_message"])
+    assert datetime.fromisoformat(last_message.pop("timestamp")) == now
+    assert last_message == {"type": "assistant_message", "preview": "hello"}
 
 
 # === 읽음 상태 ===

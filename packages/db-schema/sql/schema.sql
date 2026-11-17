@@ -1443,7 +1443,7 @@ BEGIN
     ELSIF v_review_state = 'acknowledged' THEN
         RETURN 'already_acknowledged';
     ELSIF v_review_state <> 'needs_review' THEN
-        RETURN 'not_pending_x';
+        RETURN 'not_pending';
     END IF;
 
     UPDATE sessions
