@@ -37,12 +37,21 @@ export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOpti
     request.raw.once("aborted", onAborted);
     reply.raw.once("close", onClosed);
     try {
-      return reply.send(await executeMcpTool(executionOptions, definition.name, args, {
+      const execute = async () => await executeMcpTool(executionOptions, definition.name, args, {
         principal: context.principal, callerSessionId: context.caller_session_id, nodeId: context.node_id,
         execution: context.execution,
         callerInfo: context.callerInfo,
         signal: controller.signal,
-      }));
+      });
+      const service = options.externalLlm?.service;
+      if (definition.name === "send_to_external_llm" && service) {
+        try { return reply.send(await service.runWrite(execute)); }
+        catch (error) {
+          if ((error as { code?: string }).code !== "HANDOVER_RETRY") throw error;
+          return reply.code(503).send({ detail: { error: { code: "HANDOVER_RETRY", message: "Subscription storage is moving; retry" } } });
+        }
+      }
+      return reply.send(await execute());
     } finally {
       request.raw.removeListener("aborted", onAborted);
       reply.raw.removeListener("close", onClosed);

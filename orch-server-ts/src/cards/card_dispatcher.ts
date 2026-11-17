@@ -64,9 +64,11 @@ export function pickNextCard(cards: readonly DispatchCard[], occupancy: Record<s
 }
 export class CardDispatcher {
     private pending: Promise<void> = Promise.resolve();
+    private paused = false;
     private lastLimitCheck = 0;
     constructor(private readonly options: CardDispatcherOptions) { }
     private enqueue(work: () => Promise<void>): Promise<void> {
+        if (this.paused) return Promise.resolve();
         this.pending = this.pending.then(work).catch(error => this.options.warn(`card dispatch: ${String(error)}`));
         return this.pending;
     }
@@ -74,6 +76,8 @@ export class CardDispatcher {
         previous = this.pending;
         await previous;
     } while (previous !== this.pending); }
+    async pause(): Promise<void> { this.paused = true; await this.drain(); }
+    resume(): void { this.paused = false; }
     dispatch(): Promise<void> { return this.enqueue(() => this.dispatchOnce()); }
     checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeAutoLimits(); await this.wakeAwaitingVerifications(this.options.now?.() ?? Date.now()); if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
     async tick(): Promise<void> {

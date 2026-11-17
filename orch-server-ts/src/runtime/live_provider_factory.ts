@@ -204,6 +204,7 @@ export type LiveOrchestratorProviderBundle = {
 
 export type LiveSessionStatisticsProvider = SessionStatisticsRouteOptions & {
   readonly startBackground?: () => void;
+  readonly stopBackground?: () => Promise<void>;
 };
 
 export type CreateLiveOrchestratorProviderBundleOptions = {
@@ -683,7 +684,9 @@ function createLiveSessionStatisticsProvider(options: {
     folderProvider: options.folderProvider,
     now: options.now,
     modelCatalog: options.modelCatalog,
+    stopBackground: () => service.stopBackground(),
     startBackground: () => {
+      service.resume();
       void service.startBackground(async () => {
         const asOf = options.now().toISOString();
         return {

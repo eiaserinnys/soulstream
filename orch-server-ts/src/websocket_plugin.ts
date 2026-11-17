@@ -1,7 +1,17 @@
 import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
+import type WebSocket from "ws";
 
 const registeredApps = new WeakSet<FastifyInstance>();
+const nodeSockets = new WeakMap<FastifyInstance, Set<WebSocket>>();
+export function trackNodeSocket(app: FastifyInstance, socket: WebSocket): void {
+  let sockets = nodeSockets.get(app);
+  if (!sockets) { sockets = new Set(); nodeSockets.set(app, sockets); }
+  sockets.add(socket); socket.once("close", () => sockets!.delete(socket));
+}
+export function closeNodeSocketsForHandover(app: FastifyInstance): void {
+  for (const socket of nodeSockets.get(app) ?? []) socket.close(1012, "orchestrator_handover");
+}
 
 /**
  * How long clients get to finish the close handshake before the socket is

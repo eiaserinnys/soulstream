@@ -105,6 +105,7 @@ export function createLiveExecuteProxyRouteProvider(
         agentSessionId,
       );
       try {
+        await options.router.waitForNode(payload.nodeId);
         let selected = options.router.selectNodeForCreate({
           nodeId: payload.nodeId,
           profileId: payload.profile,

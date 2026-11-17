@@ -407,6 +407,7 @@ function routeError(
   error: unknown,
   operation: string,
 ): FastifyReply {
+  if ((error as { code?: string })?.code === "HANDOVER_RETRY") return errorReply(reply, 503, "HANDOVER_RETRY", "Page documents are moving; retry");
   if (
     error instanceof PageMutationVersionConflictError ||
     error instanceof PageMutationStateVectorConflictError

@@ -105,6 +105,24 @@ describe("card #1266 U4: reconnect inventory after an engine death or a restart"
     expect([...(inventory.running_session_ids as string[])].sort()).toEqual(["engine-healthy"]);
     await adapter.shutdown();
   });
+
+  it.each([1012, 1001])("uses the reconnect policy only for non-handover close %s", async code => {
+    const wait = vi.fn(async () => { await new Promise(resolve => setTimeout(resolve, 1_000)); });
+    const policy = { attempt: 0, currentDelaySeconds: 1, reset: vi.fn(), wait };
+    const adapter = createAdapter(orch, [], async () => [], pino({ level: "silent" }), policy);
+    const run = adapter.run();
+    await waitFor(() => orch.receivedMessages.some(isRunnerInventory));
+    orch.sockets[0]!.close(code);
+    if (code === 1012) {
+      await waitFor(() => orch.sockets.length === 2);
+      expect(wait).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => wait.mock.calls.length > 0);
+      expect(orch.sockets).toHaveLength(1);
+    }
+    await adapter.shutdown();
+    await run;
+  });
 });
 
 function makeTask(overrides: Partial<Task> & { agentSessionId: string }): Task {
@@ -132,6 +150,7 @@ function createAdapter(
   tasks: Task[],
   listLiveRunnerSessionIds: () => Promise<string[]>,
   logger: import("pino").Logger,
+  reconnectPolicy?: import("../../src/upstream/adapter.js").ReconnectPolicyBoundary,
 ): UpstreamAdapter {
   const sessionDb = {
     listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
@@ -164,6 +183,7 @@ function createAdapter(
       providerUsage: { fetchUsage: vi.fn() },
       sessionDb,
       listLiveRunnerSessionIds,
+      reconnectPolicy,
     },
   );
 }

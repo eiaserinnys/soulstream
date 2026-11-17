@@ -2,6 +2,9 @@
   "schema_version": "haniel.release.v1",
   "release_id": "soulstream-claude-runtime-v2",
   "environment_service": "soulstream-orch-server",
+  "service_restart_strategies": {
+    "soulstream-orch-server": { "mode": "overlap", "exit_timeout_sec": 60 }
+  },
   "migration": {
     "operation": "discover",
     "result_contract": "soulstream.database-release.v1",

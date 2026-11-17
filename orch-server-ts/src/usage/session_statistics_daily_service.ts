@@ -14,6 +14,7 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
   private readonly live = new Map<string, LiveEntry>();
   private readonly liveOverview = new Map<string, LiveEntry>();
   private timer?: ReturnType<typeof setTimeout>;
+  private calculation?: Promise<void>;
   private started = false;
   private closed = false;
 
@@ -38,7 +39,12 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
   close(): void {
     this.closed = true;
     if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = undefined;
+    this.started = false;
   }
+
+  resume(): void { this.closed = false; }
+  async stopBackground(): Promise<void> { this.close(); await this.calculation; }
 
   async startBackground(inputProvider?: () => Promise<SessionStatisticsReadRequest>): Promise<void> {
     if (inputProvider === undefined || this.closed) return;
@@ -153,11 +159,12 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
         }, this.modelCatalog.snapshot());
       } catch { this.reportFailure(); }
       if (!this.closed) {
-        this.timer = setTimeout(() => { void tick(); }, computed ? 0 : 60_000);
+        this.timer = setTimeout(run, computed ? 0 : 60_000);
         this.timer.unref();
       }
     };
-    this.timer = setTimeout(() => { void tick(); }, 0);
+    const run = () => { this.calculation = tick().finally(() => { this.calculation = undefined; }); };
+    this.timer = setTimeout(run, 0);
     this.timer.unref();
   }
 

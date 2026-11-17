@@ -1,4 +1,6 @@
 import { ConversationMessageService } from "./conversation/conversation_messages.js";
+import { HandoverGate, guardMethods } from "./runtime/handover_gate.js";
+import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { ConversationCatalog } from "./conversation/conversation_catalog.js";
@@ -20,7 +22,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyListenOptions, FastifyRequest } from "fastify";
 import { SERVICE_CALLER, isServiceCaller, type ServiceCaller } from "./auth/service_caller.js";
 
 import { createApp, type CreateAppOptions } from "./app.js";
@@ -161,6 +163,11 @@ export type ProductionApplication = {
   readonly startBackground: () => Promise<void>;
   readonly closeResources: () => Promise<void>;
   readonly beginShutdown?: () => Promise<void>;
+  readonly stopBackground?: () => Promise<void>;
+  readonly resumeBackground?: () => Promise<void>;
+  readonly waitForPendingCommands?: () => Promise<void>;
+  readonly closePages?: () => Promise<void>;
+  readonly markOwner?: () => void;
 };
 
 export type ShutdownStageReporter = (step: string) => void;
@@ -178,6 +185,7 @@ export type LiveProductionApplicationOverrides = {
   readonly sqlResolver?: LiveDbSqlResolver;
   /** Opened once by the entrypoint; every consumer reads the same file-backed store. */
   readonly modelCatalog: ModelCatalogSource;
+  readonly pageGate?: HandoverGate;
 } & LiveTurnSummaryProductionOverrides;
 
 export type CreateProductionOrchestratorOptions = {
@@ -186,12 +194,21 @@ export type CreateProductionOrchestratorOptions = {
   readonly applicationFactory?: ProductionApplicationFactory;
   readonly warn?: (message: string) => void;
   readonly onShutdownStage?: ShutdownStageReporter;
+  readonly handover?: boolean;
 };
 
 export type ProductionOrchestrator = {
   readonly app: FastifyInstance;
   readonly listen: () => Promise<string>;
   readonly close: () => Promise<void>;
+  readonly pageGate: HandoverGate;
+  readonly stopBackground: () => Promise<void>;
+  readonly resumeBackground: () => Promise<void>;
+  readonly stopListening: () => void;
+  readonly waitForPendingCommands: () => Promise<void>;
+  readonly closeNodeSockets: () => void;
+  readonly closePages: () => Promise<void>;
+  readonly closeForHandover: () => Promise<void>;
 };
 
 export function createRunnerInventoryCommand(
@@ -213,6 +230,7 @@ export async function createProductionOrchestrator(
   options: CreateProductionOrchestratorOptions,
 ): Promise<ProductionOrchestrator> {
   const startupWarnings: string[] = [];
+  const pageGate = new HandoverGate();
   let warningSink: (message: string) => void = options.warn
     ?? ((message) => startupWarnings.push(message));
   const warn = (message: string) => warningSink(message);
@@ -226,7 +244,7 @@ export async function createProductionOrchestrator(
       ? (config: OrchServerEnvironmentConfig, context: {
           readonly warn: (message: string) => void;
           readonly onShutdownStage?: ShutdownStageReporter;
-        }) => createLiveProductionApplication(config, context, { modelCatalog: options.modelCatalog })
+        }) => createLiveProductionApplication(config, context, { modelCatalog: options.modelCatalog, ...(options.handover ? { pageGate } : {}) })
       : options.applicationFactory
   )(options.config, { warn, onShutdownStage: options.onShutdownStage });
   if (options.warn === undefined) {
@@ -240,19 +258,24 @@ export async function createProductionOrchestrator(
 
   let startAttempted = false;
   let closed = false;
+  let listenerClosed: Promise<void> | undefined;
   return {
     app: application.app,
+    pageGate,
     async listen() {
       if (closed) throw new Error("Production orchestrator is already closed");
       if (startAttempted) throw new Error("Production orchestrator listen() may only run once");
       startAttempted = true;
       try {
+        application.markOwner?.();
         await application.startBackground();
         return await application.app.listen({
           host: options.config.host,
           port: options.config.port,
-        });
+          ...(options.handover ? { reusePort: true } : {}),
+        } as FastifyListenOptions & { reusePort?: boolean });
       } catch (error) {
+        if (options.handover) await pageGate.close();
         await closeApplication(application);
         closed = true;
         throw error;
@@ -263,11 +286,23 @@ export async function createProductionOrchestrator(
       closed = true;
       await closeApplication(application, options.onShutdownStage);
     },
+    stopBackground: async () => await application.stopBackground?.(),
+    resumeBackground: async () => await application.resumeBackground?.(),
+    stopListening() { listenerClosed = new Promise<void>(resolve => application.app.server.close(() => resolve())); },
+    waitForPendingCommands: async () => await application.waitForPendingCommands?.(),
+    closeNodeSockets: () => closeNodeSocketsForHandover(application.app),
+    closePages: async () => await application.closePages?.(),
+    async closeForHandover() {
+      await application.beginShutdown?.();
+      await Promise.race([listenerClosed, new Promise<void>(resolve => setTimeout(resolve, 10_000))]);
+      if (!closed) { closed = true; await closeApplication(application, options.onShutdownStage); }
+    },
   };
 }
 
 const SESSION_SEARCH_SLOW_WARN_MS = 3_000;
 const SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS = 10_000;
+function unrestrictedPageGate(): HandoverGate { const gate = new HandoverGate(); gate.open(); return gate; }
 
 export async function createLiveProductionApplication(
   config: OrchServerEnvironmentConfig,
@@ -321,21 +356,21 @@ export async function createLiveProductionApplication(
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
+  let backgroundActive = false;
+  const nodeRecoveryTasks = new Set<Promise<void>>();
   let cardDispatchRuntime: Awaited<ReturnType<typeof createCardDispatchRuntime>> | undefined;
   const applyCardWorkErrorEffect = createCardWorkErrorSessionEffectApplier();
   // 앱 로거는 여기서 아직 없으므로 startupWarnings를 거쳐 앱 로거로 넘어가는
   // context.warn에 연결한다. 구조화 필드는 문장에 실어 pino 스트림 안에 남긴다.
   const eventIngressWarn: EventIngressWarnSink = (fields, message) =>
     context.warn(`${message}: ${JSON.stringify(fields)}`);
+  const deadLetterStore = new FileEventIngressDeadLetterStore(resolve(
+    dirname(fileURLToPath(import.meta.url)), "..", ".local", "event-ingress-dead-letter",
+  ));
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
     applyCardWorkErrorEffect,
-    new FileEventIngressDeadLetterStore(resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "..",
-      ".local",
-      "event-ingress-dead-letter",
-    )),
+    deadLetterStore,
     { modelCatalog: overrides.modelCatalog, warn: eventIngressWarn },
     applyEventFeedProjection,
   );
@@ -371,7 +406,9 @@ export async function createLiveProductionApplication(
     registry,
     repository: dbCatalogRepository,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
-    onNodeReady: async (nodeId, connectionId) => {
+    onNodeReady: (nodeId, connectionId) => {
+      if (!backgroundActive) return Promise.resolve();
+      const task = (async () => {
       try {
         await replayPendingImmediateDeliveriesForNode({
           nodeId,
@@ -383,11 +420,15 @@ export async function createLiveProductionApplication(
         });
       } finally {
         try {
-          await cardDispatchRuntime?.kickPendingWorkForNode(nodeId);
+          if (backgroundActive) await cardDispatchRuntime?.kickPendingWorkForNode(nodeId);
         } catch (error) {
           context.warn(warningMessage(`pending card work recovery failed for ${nodeId}`, error));
         }
       }
+      })();
+      nodeRecoveryTasks.add(task);
+      void task.finally(() => nodeRecoveryTasks.delete(task)).catch(() => {});
+      return task;
     },
   });
   const pushNotifier = new PushNotifier({
@@ -504,9 +545,9 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       sessionCacheSeed,
       sessionReconciliation,
-      (events) => turnSummaryPipeline?.accept(events),
-      (events) => recurringJobScheduler?.accept(events),
-      (events) => cardDispatcher?.accept(events),
+      (events) => { if (backgroundActive) turnSummaryPipeline?.accept(events); },
+      (events) => { if (backgroundActive) recurringJobScheduler?.accept(events); },
+      (events) => { if (backgroundActive) cardDispatcher?.accept(events); },
       async (events) => (await persistenceRepositoryProvider()).persistentReports!.acceptNodeEvents(events),
       (events) => childSessionCheckService?.acceptNodeEvents(events),
     ],
@@ -533,8 +574,9 @@ export async function createLiveProductionApplication(
         ),
       resolveBrowserUser: async (request) =>
         await providers.authenticatedUserResolvers.resolveUser(request),
-      createService: (logger) => pageYjsService ??= new PageYjsService({
+      createService: (logger) => pageYjsService ??= guardMethods(new PageYjsService({
         repository: pageRepository,
+        documentGate: overrides.pageGate,
         logger,
         onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
         mutateFolderIdentity: async (input) =>
@@ -547,7 +589,7 @@ export async function createLiveProductionApplication(
           resolveDashboardUserFromHeaders: (headers) =>
             providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
         },
-      }),
+      }), overrides.pageGate ?? unrestrictedPageGate(), ["createPage", "mutatePage", "transferBlocks", "getPage", "getBrowserPage", "findPage", "getDailyPage", "hydrateCommittedPage"]),
     },
   });
   appendReportTimeline = createReportTimelineAppender({
@@ -685,7 +727,7 @@ export async function createLiveProductionApplication(
       return rows.length > 0;
     },
   });
-  folderProjectIdentityService = new FolderProjectIdentityService({
+  folderProjectIdentityService = guardMethods(new FolderProjectIdentityService({
     repository: folderProjectIdentityRepository,
     hydratePage: async (pageId) => {
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
@@ -695,7 +737,7 @@ export async function createLiveProductionApplication(
       await broadcastCatalogSnapshot(providers.folderRoutes.provider, runtimeServices.sessionBroadcaster);
     },
     onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
-  });
+  }), overrides.pageGate ?? unrestrictedPageGate(), ["create", "mutateFromFolder", "mutateFromPage"]);
   const ephemeralProcessEnv = overrides.turnSummaryProcessEnv ?? process.env;
   const ephemeralCodexPath = overrides.turnSummaryCodexPath ??
     resolveCodexCliPath(config.codex_cli_path, ephemeralProcessEnv)?.path;
@@ -830,8 +872,19 @@ export async function createLiveProductionApplication(
     onTick:()=>cardDispatchRuntime.dispatcher.tick(),
   });
   recurringJobScheduler = recurringJobWiring.scheduler;
-  const externalEvents = config.mcp_external_events_state_file ? await ExternalEventsService.open({
-    path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
+  let externalEventsTarget: ExternalEventsService | undefined;
+  const loadExternalEvents = async () => {
+    if (config.mcp_external_events_state_file) externalEventsTarget = await ExternalEventsService.open({
+      path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
+    });
+  };
+  if (!overrides.pageGate) await loadExternalEvents();
+  const externalEvents = config.mcp_external_events_state_file ? new Proxy({} as ExternalEventsService, {
+    get(_target, key) {
+      if (!externalEventsTarget) throw new Error("External events have not been loaded");
+      const value = Reflect.get(externalEventsTarget, key, externalEventsTarget);
+      return typeof value === "function" ? value.bind(externalEventsTarget) : value;
+    },
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildInfo,runtimeServices.sessionBroadcaster);
   const productionSql = await sqlResolver.resolveSql() as unknown as SqlClient;
@@ -935,6 +988,11 @@ export async function createLiveProductionApplication(
       authorizeWorker:cardDispatchRuntime.authorizeWorker,
     },
   });
+  if (overrides.pageGate) app.addHook("preHandler", async request => {
+    const params = request.params as Record<string, unknown> | undefined;
+    const nodeId = params?.node_id ?? params?.nodeId;
+    if (typeof nodeId === "string" && request.url.startsWith("/api/nodes/")) await registry.waitForNode(nodeId);
+  });
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
     configPath: overrides.turnSummaryConfigPath ??
@@ -1037,36 +1095,65 @@ export async function createLiveProductionApplication(
   });
   let resourcesClosed = false;
   let documentIndexWarmupTimer: ReturnType<typeof setTimeout> | undefined;
-  return {
-    app,
-    beginShutdown:()=>lifecycle.beginShutdown(),
-    startBackground: async () => {
+  let backgroundStart: Promise<void> | undefined;
+  const startBackground = async () => {
+    if (!externalEventsTarget) await loadExternalEvents();
+    externalEventsTarget?.resumeWrites();
+    deadLetterStore.resumeWrites();
+    cardDispatchRuntime.dispatcher.resume();
+    backgroundActive = true;
+    await sessionReconciliation.start();
+    const startRemaining = async () => {
+      if (!backgroundActive) return;
       providers.sessionStatisticsRoutes.startBackground?.();
-      await sessionReconciliation.start();
       await recurringJobScheduler?.start();
       await dbCatalogRepository.agentProfileRepository.list();
       try { await (await persistenceRepositoryProvider()).persistentReports!.syncActiveBoards(context.warn); }
       catch(error){context.warn(`PAS board boot refresh failed: ${String(error)}`);}
       await cardDispatchRuntime.dispatcher.dispatch();
-      usageSummaryService.start();
-      maintenanceService.start();
-      turnSummaryPipeline?.start?.();
-      lifecycle.markReady();
+      if (!backgroundActive) return;
+      usageSummaryService.start(); maintenanceService.start(); turnSummaryPipeline?.start?.();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
-        const startedAt = Date.now();
-        void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0)).then(
-          (sessionCount) => app.log.info(
-            { elapsed_ms: Math.max(0, Date.now() - startedAt), session_count: sessionCount },
-            "session document index warmup finished",
-          ),
-          (error: unknown) => app.log.warn(
-            { error: error instanceof Error ? error.message : String(error) },
-            "session document index warmup failed",
-          ),
-        );
+        void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0))
+          .catch((error: unknown) => context.warn(`session document index warmup failed: ${String(error)}`));
       }, SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS);
       documentIndexWarmupTimer.unref();
+    };
+    if (overrides.pageGate) {
+      backgroundStart = overrides.pageGate.run(startRemaining).catch(error => context.warn(`background startup failed: ${String(error)}`));
+    } else await startRemaining();
+    lifecycle.markReady();
+  };
+  const stopBackground = async () => {
+    backgroundActive = false;
+    await sessionReconciliation.close();
+    await Promise.allSettled([...nodeRecoveryTasks]);
+    await backgroundStart;
+    if (documentIndexWarmupTimer !== undefined) { clearTimeout(documentIndexWarmupTimer); documentIndexWarmupTimer = undefined; }
+    await maintenanceService.stop();
+    await providers.sessionStatisticsRoutes.stopBackground?.();
+    await recurringJobScheduler?.stop();
+    await usageSummaryService.stop();
+    await cardDispatchRuntime.dispatcher.pause();
+    await turnSummaryPipeline?.drain();
+    await externalEventsTarget?.pauseWrites();
+    await deadLetterStore.pauseWrites();
+  };
+  return {
+    app,
+    beginShutdown:()=>lifecycle.beginShutdown(),
+    startBackground,
+    stopBackground,
+    resumeBackground: startBackground,
+    markOwner: () => registry.beginHandoverNodeWait(),
+    waitForPendingCommands: async () => {
+      const deadline = Date.now() + 3_000;
+      while (registry.pendingCommandCount() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+    },
+    closePages: async () => {
+      const timer = setTimeout(() => app.log.warn("page handover save exceeds 3 seconds"), 3_000);
+      try { await pageYjsService?.closeForHandover(); } finally { clearTimeout(timer); }
     },
     async closeResources() {
       if (resourcesClosed) return;
@@ -1090,16 +1177,7 @@ export async function createLiveProductionApplication(
           );
         }
       };
-      if (documentIndexWarmupTimer !== undefined) {
-        clearTimeout(documentIndexWarmupTimer);
-        documentIndexWarmupTimer = undefined;
-      }
-      await runShutdownStep("maintenance_stop", () => maintenanceService.stop());
-      await runShutdownStep("session_reconciliation_close", () => sessionReconciliation.close());
-      await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
-      await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
-      await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
-      await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
+      await runShutdownStep("background_stop", stopBackground);
       await runShutdownStep("push_notifier_close", () => pushNotifier.close());
       await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
     },

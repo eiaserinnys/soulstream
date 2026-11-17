@@ -75,6 +75,9 @@ export function registerExternalEventsRoutes(app: FastifyInstance, options: McpH
   });
   const nodeHandler = toNodeHandler(handler);
   app.route({ method: ["POST", "GET", "DELETE"], url: config.path, handler: async (request, reply) => {
+    const body = request.body as { method?: unknown; id?: unknown } | undefined;
+    const isWrite = (value: { method?: unknown } | undefined) => value?.method === "events/subscribe" || value?.method === "events/unsubscribe";
+    const mutating = Array.isArray(body) ? body.some(isWrite) : isWrite(body);
     let ownedAgent: McpCallContext["ownedAgent"];
     const authorization = request.headers.authorization;
     const token = typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -92,9 +95,19 @@ export function registerExternalEventsRoutes(app: FastifyInstance, options: McpH
     const context: McpCallContext = ownedAgent ? { ...baseContext, ownedAgent,
       callerInfo: { ...baseContext.callerInfo, agent_id: ownedAgent.agentId, external_agent_id: ownedAgent.agentId,
         email: ownedAgent.ownerEmail, user_id: ownedAgent.ownerEmail } } : baseContext;
-    reply.hijack();
-    await requestScope.run({ context, eventsOwner: credentialOwner(config.path, token) },
-      () => nodeHandler(request.raw, reply.raw, request.body));
+    const execute = async () => {
+      reply.hijack();
+      await requestScope.run({ context, eventsOwner: credentialOwner(config.path, token) },
+        () => nodeHandler(request.raw, reply.raw, request.body));
+    };
+    if (service && mutating) {
+      try { await service.runWrite(execute); }
+      catch (error) {
+        if ((error as { code?: string }).code !== "HANDOVER_RETRY") throw error;
+        return reply.code(503).send({ jsonrpc: "2.0", id: body?.id ?? null,
+          error: { code: -32000, message: "Subscription storage is moving; retry" } });
+      }
+    } else await execute();
   } });
   return () => handler.close();
 }

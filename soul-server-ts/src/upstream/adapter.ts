@@ -47,6 +47,7 @@ const UPSTREAM_SERVE_DRAIN_TIMEOUT_MS = 10_000;
 export class UpstreamAdapter {
   private ws: WebSocket | null = null;
   private running = false;
+  private handoverReconnect = false;
   private readonly reconnect: ReconnectPolicyBoundary;
   private readonly dispatcher: CommandDispatcher;
   private readonly commandTransportObserver: CommandTransportObserver;
@@ -112,7 +113,8 @@ export class UpstreamAdapter {
           { attempt: this.reconnect.attempt + 1, delay: this.reconnect.currentDelaySeconds },
           "Reconnecting after delay",
         );
-        await this.reconnect.wait();
+        if (this.handoverReconnect) this.handoverReconnect = false;
+        else await this.reconnect.wait();
       }
     }
   }
@@ -299,6 +301,7 @@ export class UpstreamAdapter {
         resolve();
       };
       const onClose = (code: number, reason: Buffer) => {
+        this.handoverReconnect = code === 1012;
         void settle("close", { code, reason });
       };
       const onError = (err: Error) => {

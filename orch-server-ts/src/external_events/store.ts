@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { writeFileAtomically } from "../atomic_file_rename.js";
 import { recordSchema, type SubscriptionRecord } from "./contracts.js";
@@ -9,6 +10,9 @@ const stateSchema = z.object({ version: z.literal(1), subscriptions: z.array(rec
 export class SubscriptionStore {
   private records = new Map<string, SubscriptionRecord>();
   private pending: Promise<void> = Promise.resolve();
+  private paused = false;
+  private readonly mutationContext = new AsyncLocalStorage<boolean>();
+  private readonly active = new Set<Promise<unknown>>();
   private constructor(private readonly path: string) {}
   static async open(path: string): Promise<SubscriptionStore> {
     if (!isAbsolute(path)) throw new Error("MCP_EXTERNAL_EVENTS_STATE_FILE must be absolute");
@@ -27,7 +31,19 @@ export class SubscriptionStore {
   }
   get(id: string) { return this.records.get(id); }
   values() { return [...this.records.values()]; }
+  get writesPaused() { return this.paused; }
+  async pauseWrites(): Promise<void> { this.paused = true; await Promise.allSettled([...this.active]); await this.pending; }
+  resumeWrites(): void { this.paused = false; }
+  runMutation<T>(action: () => Promise<T>): Promise<T> {
+    if (this.mutationContext.getStore()) return action();
+    if (this.paused) return Promise.reject(Object.assign(new Error("Subscription storage is moving; retry"), { statusCode: 503, code: "HANDOVER_RETRY" }));
+    const running = this.mutationContext.run(true, action);
+    this.active.add(running);
+    void running.finally(() => this.active.delete(running)).catch(() => {});
+    return running;
+  }
   update(id: string, change: (current: SubscriptionRecord | undefined) => SubscriptionRecord | undefined): Promise<void> {
+    if (this.paused && !this.mutationContext.getStore()) return Promise.reject(Object.assign(new Error("Subscription storage is moving; retry"), { statusCode: 503, code: "HANDOVER_RETRY" }));
     const save = this.pending.then(async () => {
       const next = new Map(this.records);
       const record = change(next.get(id));

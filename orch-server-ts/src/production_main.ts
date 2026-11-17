@@ -8,6 +8,8 @@ import {
 
 import { loadOrchServerEnvironment } from "./config.js";
 import { createProductionOrchestrator } from "./production.js";
+import { HandoverPostgres } from "./runtime/handover_postgres.js";
+import { OrchestratorHandover } from "./runtime/orchestrator_handover.js";
 
 type ProcessErrorHandlerOptions = {
   readonly runtimeProcess?: Pick<NodeJS.Process, "on" | "removeListener">;
@@ -97,6 +99,7 @@ export async function runProductionMain(): Promise<void> {
     server = await createProductionOrchestrator({
       config,
       modelCatalog,
+      handover: true,
       onShutdownStage: (step) => {
         shutdownStage = step;
       },
@@ -105,6 +108,19 @@ export async function runProductionMain(): Promise<void> {
     modelCatalog.close();
     throw error;
   }
+  const locks = new HandoverPostgres(config.database_url, server.pageGate);
+  const handover = new OrchestratorHandover(locks, {
+    start: async () => { const address = await server.listen(); console.info(`soulstream-orch-server-ts listening at ${address}`); },
+    stopBackground: server.stopBackground,
+    resumeBackground: server.resumeBackground,
+    stopListening: server.stopListening,
+    drainCommands: server.waitForPendingCommands,
+    closeNodeSockets: server.closeNodeSockets,
+    closePages: server.closePages,
+    closeHttp: server.closeForHandover,
+    exit: () => { modelCatalog.close(); process.exit(0); },
+    log: (step, elapsedMs) => console.info("orchestrator handover", { step, elapsed_ms: elapsedMs }),
+  });
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
@@ -114,7 +130,11 @@ export async function runProductionMain(): Promise<void> {
       currentStage: () => shutdownStage,
     });
     try {
+      handover.cancel();
+      const stopAdmission = locks.cancel();
       await server.close();
+      await stopAdmission;
+      await locks.close();
     } catch (error) {
       console.error("Orchestrator shutdown failed", error);
       process.exitCode = 1;
@@ -129,11 +149,12 @@ export async function runProductionMain(): Promise<void> {
   process.once("SIGTERM", onSigterm);
 
   try {
-    const address = await server.listen();
-    console.info(`soulstream-orch-server-ts listening at ${address}`);
+    await handover.start();
   } catch (error) {
     process.removeListener("SIGINT", onSigint);
     process.removeListener("SIGTERM", onSigterm);
+    await handover.close();
+    await server.close();
     modelCatalog.close();
     throw error;
   }

@@ -7,6 +7,7 @@ import type {
   NodeCommandTransportHub,
 } from "./transport_hub.js";
 import { verifyNodeWsBearer } from "./ws_auth.js";
+import { trackNodeSocket } from "../websocket_plugin.js";
 import { NODE_ID_MISMATCH_REJECT_REASON } from "./ws_frame_controller.js";
 import type {
   NodeCredentialResolver,
@@ -72,6 +73,7 @@ export function registerNodeControlWsRoute(
       principalByRequest.set(request, auth.principal ?? null);
     },
   }, (socket, request) => {
+    trackNodeSocket(app, socket);
     const principal = principalByRequest.get(request) ?? null;
     const transport: NodeCommandTransport = {
       send: (data) => socket.send(data),

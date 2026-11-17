@@ -13,7 +13,7 @@ import type {
   NodeCommandTransportHub,
 } from "./transport_hub.js";
 import { verifyNodeWsBearer } from "./ws_auth.js";
-import { registerWebsocketPlugin } from "../websocket_plugin.js";
+import { registerWebsocketPlugin, trackNodeSocket } from "../websocket_plugin.js";
 import {
   NodeEventIngressController,
   type NodeEventIngressCommitter,
@@ -136,6 +136,7 @@ export function registerNodeWsRoute(
         principalByRequest.set(request, auth.principal ?? null);
       },
     }, (socket, request) => {
+      trackNodeSocket(app, socket);
       const principal = principalByRequest.get(request) ?? null;
       const connectionIdentity = principal === null
         ? LEGACY_AUTH_IDENTITY

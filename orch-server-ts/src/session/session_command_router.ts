@@ -148,6 +148,7 @@ export class SessionCommandRouter {
   isNodeConnected(nodeId: string): boolean {
     return !!this.registry.getConnectedNode(nodeId);
   }
+  async waitForNode(nodeId?: string): Promise<void> { await this.registry.waitForNode(nodeId); }
 
   createSession<
     TPayload extends CreateSessionNodeCommandPayload | RequestResponseNodeCommandPayload<"prepare_card_orchestration_decision">,
@@ -305,6 +306,7 @@ export class SessionCommandRouter {
     if (durableNodeId === null) {
       throw new SessionRouteSessionOwnerMissingError(agentSessionId);
     }
+    await this.registry.waitForNode(durableNodeId);
     const durableNode = this.registry.getConnectedNode(durableNodeId);
     if (durableNode === undefined) {
       throw new SessionRouteNodeUnavailableError({

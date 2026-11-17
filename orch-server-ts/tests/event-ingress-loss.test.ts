@@ -196,6 +196,19 @@ describe("retrying failure record after a successful commit", () => {
   const plain = () => envelope({ session_effect: null, event_type: "assistant_message" });
   const failure = { reason: "boom", errorName: "Error" };
 
+  it("drains failure records before ownership moves and returns a retryable error afterward", async () => {
+    const old = new FileEventIngressDeadLetterStore(directory);
+    const write = old.recordFailure({ nodeId: "node-a", envelope: plain(), failure, threshold: 3 });
+    await old.pauseWrites();
+    await write;
+    await expect(old.find({ nodeId: "node-a", envelope: plain() })).rejects.toMatchObject({ statusCode: 503 });
+    const next = new FileEventIngressDeadLetterStore(directory);
+    const result = await next.recordFailure({ nodeId: "node-a", envelope: plain(), failure, threshold: 3 });
+    expect(result.failureCount).toBe(2);
+    old.resumeWrites();
+    await expect(old.find({ nodeId: "node-a", envelope: plain() })).resolves.toBeTruthy();
+  });
+
   it("deletes a retrying record once the event commits", async () => {
     const store = new FileEventIngressDeadLetterStore(directory);
     await store.recordFailure({ nodeId: "node-a", envelope: plain(), failure, threshold: 3 });

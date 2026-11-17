@@ -370,7 +370,7 @@ describe("conversation thread API", () => {
   });
   it("reserves ids only through the internal create argument", async () => {
     const sent: any[] = [];
-    const opts: any = { router: { createSession: (payload: any) => { sent.push(payload); return { node: { nodeId: "node" } }; } },
+    const opts: any = { router: { waitForNode: async () => {}, createSession: (payload: any) => { sent.push(payload); return { node: { nodeId: "node" } }; } },
       bridge: { sendPendingCommand: async () => ({}) } };
     const fakeRequest: any = {};
     const id = "84b26b6c-81c5-46d9-a49e-651b17b6b43d";

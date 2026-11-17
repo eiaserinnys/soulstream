@@ -62,6 +62,16 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
   }
 }
 describe("orchestrator dedicated external MCP ingress", () => {
+  it("returns retryable 503 for subscription changes while handing over", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "events-drain-")); cleanup.push(() => rm(dir, { recursive: true, force: true }));
+    const service = await ExternalEventsService.open({ path: join(dir, "state.json"), owner: "owner" });
+    const { app } = await web({ externalLlm: { service, getSession: async () => ({}) } } as unknown as McpHostOptions);
+    await service.pauseWrites();
+    const response = await app.inject({ method: "POST", url: "/dot", headers: { authorization: "Bearer test-dot" },
+      payload: { jsonrpc: "2.0", id: 1, method: "events/subscribe", params: {} } });
+    expect(response.statusCode).toBe(503);
+    service.resumeWrites();
+  });
   it("is absent by default", async () => {
     const app = createApp({ config: parseOrchServerConfig({ environment: "test", databaseUrl: "unused", authBearerToken: "test" }) });
     cleanup.push(() => app.close());

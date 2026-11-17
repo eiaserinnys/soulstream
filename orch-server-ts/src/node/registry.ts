@@ -1,3 +1,4 @@
+// 500줄 예외: 노드 연결과 명령의 단일 메모리 정본을 유지한다.
 import {
   PendingNodeCommands,
   type FireAndForgetNodeCommandPayload,
@@ -77,6 +78,22 @@ export class InMemoryNodeRegistry {
   private readonly requestIdGenerator: NodeCommandRequestIdGenerator | undefined;
   private readonly nodes = new Map<string, MutableNodeConnection>();
   private connectionSequence = 0;
+  private handoverWaitUntil = 0;
+  private readonly registrationWaiters = new Set<() => void>();
+  beginHandoverNodeWait(): void { this.handoverWaitUntil = Date.now() + 30_000; }
+  async waitForNode(nodeId?: string): Promise<void> {
+    const available = () => nodeId ? this.getConnectedNode(nodeId) !== undefined : this.listConnectedNodes().length > 0;
+    if (available() || Date.now() >= this.handoverWaitUntil) return;
+    await new Promise<void>(resolve => {
+      const finish = () => { clearTimeout(timer); this.registrationWaiters.delete(check); resolve(); };
+      const check = () => { if (available()) finish(); };
+      const timer = setTimeout(finish, 10_000);
+      this.registrationWaiters.add(check); check();
+    });
+  }
+  pendingCommandCount(): number {
+    return [...this.nodes.values()].reduce((sum, node) => sum + node.pendingCommands.pendingCount, 0);
+  }
 
   constructor(options: InMemoryNodeRegistryOptions = {}) {
     this.sessionCache = options.sessionCache ?? new PerNodeSessionCache();
@@ -143,6 +160,7 @@ export class InMemoryNodeRegistry {
     };
 
     this.nodes.set(node.nodeId, node);
+    for (const check of this.registrationWaiters) check();
     const event: NodeRegisteredEvent = {
       type: "node_registered",
       nodeId: node.nodeId,
