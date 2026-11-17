@@ -50,8 +50,13 @@ describe("ClaudeCliCredentialRenewer", () => {
   it("terminates a CLI that exceeds the time limit and logs only the account ID", async () => {
     fakeCli("setInterval(() => {}, 1000);");
     const actualSetTimeout = globalThis.setTimeout;
-    vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: never[]) => void, delay?: number, ...args: never[]) =>
-      actualSetTimeout(callback, delay === 20_000 ? 150 : delay, ...args)) as typeof setTimeout);
+    const shortenedSetTimeout: typeof setTimeout = Object.assign(
+      function shortened<TArgs extends unknown[]>(callback: (...args: TArgs) => void, delay?: number, ...args: TArgs) {
+        return actualSetTimeout(callback, delay === 20_000 ? 150 : delay, ...args);
+      },
+      { __promisify__: actualSetTimeout.__promisify__ },
+    );
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(shortenedSetTimeout);
     await new ClaudeCliCredentialRenewer({ logger, executablePath: executable }).renew({ accountId: "account-a", profileDir: root });
     expect(warn.mock.calls[0]).toEqual([{ accountId: "account-a" }, "Claude account credential renewal failed"]);
   });

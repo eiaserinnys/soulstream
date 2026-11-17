@@ -43,14 +43,16 @@ function interfaceEntry(
   family: string,
   internal: boolean,
 ): NetworkInterfaceInfo {
+  // 시험은 IP 계열이 아닌 "unknown"도 만든다. Node 타입은 두 계열만 알므로 여기서 맞춘다.
   return {
     address,
     netmask: family === "IPv4" ? "255.255.255.0" : "ffff:ffff:ffff:ffff::",
-    family,
+    family: family as NetworkInterfaceInfo["family"],
     mac: "00:00:00:00:00:00",
     internal,
     cidr: family === "IPv4" ? `${address}/24` : `${address}/64`,
-  };
+    scopeid: 0,
+  } as NetworkInterfaceInfo;
 }
 
 describe("sandbox resolv.conf", () => {

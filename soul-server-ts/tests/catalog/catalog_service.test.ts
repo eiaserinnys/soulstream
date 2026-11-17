@@ -30,14 +30,14 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   fn.array = (a: unknown[]) => a;
   fn.json = (value: unknown) => value;
   fn.end = vi.fn().mockResolvedValue(undefined);
-  fn.begin = vi.fn(async <T>(callback: (sql: SqlClient) => Promise<T>) => {
+  fn.begin = async <T>(callback: (sql: SqlClient) => Promise<T>): Promise<T> => {
     inTransaction = true;
     try {
       return await callback(fn as unknown as SqlClient);
     } finally {
       inTransaction = false;
     }
-  });
+  };
   return { sql: fn as unknown as SqlClient, calls };
 }
 

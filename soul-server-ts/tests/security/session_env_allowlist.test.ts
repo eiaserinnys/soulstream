@@ -102,8 +102,13 @@ describe("restrictedSessionEnvKeys", () => {
       {
         ...agent,
         env: { OPENAI_API_KEY: "${PROFILE_OPENAI_KEY}" },
-        agents_sdk: { provider: { type: "openai", api_key_env: "AGENTS_KEY" } },
-      } as AgentProfile,
+        agents_sdk: {
+          entry_agent: "triage",
+          agents: [],
+          guardrails: { input_blocklist: [], output_blocklist: [] },
+          provider: { type: "openai", api_key_env: "AGENTS_KEY" },
+        },
+      } satisfies Pick<AgentProfile, "env" | "agents_sdk">,
     );
 
     expect(keys).toEqual(["AGENTS_KEY", "PROFILE_OPENAI_KEY"]);

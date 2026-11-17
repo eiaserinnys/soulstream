@@ -160,7 +160,7 @@ describe("bindPortableRelease", () => {
     const outsideDirectory = await mkdtemp(join(tmpdir(), "portable-release-outside-"));
     temporaryDirectories.push(outsideDirectory);
     const outsideMain = join(outsideDirectory, "main.js");
-    await writeFile(outsideMain, PAYLOAD_FILES["main.js"], "utf8");
+    await writeFile(outsideMain, PAYLOAD_FILES["main.js"]!, "utf8");
     await rm(join(releaseDirectory, "main.js"));
     await symlink(outsideMain, join(releaseDirectory, "main.js"));
 
@@ -178,7 +178,7 @@ describe("bindPortableRelease", () => {
     await mkdir(join(outsideDirectory, "chunks"), { recursive: true });
     await writeFile(
       join(outsideDirectory, "chunks/vendor.js"),
-      PAYLOAD_FILES["chunks/vendor.js"],
+      PAYLOAD_FILES["chunks/vendor.js"]!,
       "utf8",
     );
     await rm(join(releaseDirectory, "chunks"), { recursive: true, force: true });

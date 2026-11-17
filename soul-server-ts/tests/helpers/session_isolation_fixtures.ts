@@ -64,15 +64,17 @@ export function launchInput(overrides: Partial<IsolationLaunchInput> = {}): Isol
   };
 }
 
-export function interfaceEntry(address: string, family: string): NetworkInterfaceInfo {
-  return {
+export function interfaceEntry(address: string, family: NetworkInterfaceInfo["family"]): NetworkInterfaceInfo {
+  const entry = {
     address,
     netmask: family === "IPv4" ? "255.255.255.0" : "ffff:ffff:ffff:ffff::",
-    family,
     mac: "00:00:00:00:00:00",
     internal: false,
     cidr: family === "IPv4" ? `${address}/24` : `${address}/64`,
   };
+  return family === "IPv4"
+    ? { ...entry, family }
+    : { ...entry, family, scopeid: 0 };
 }
 
 export function testDependencies(

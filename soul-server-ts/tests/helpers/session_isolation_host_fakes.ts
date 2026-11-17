@@ -98,12 +98,12 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
 
   const systemFactEntries = Object.entries(systemFacts);
 
-  const systemFact = (path: string): HostPathFact | null | undefined => {
+  const systemFact = (path: string): (HostPathFact & Pick<FakeSystemFact, "realPath">) | null | undefined => {
     if (!(path in systemFacts)) return undefined;
     const entry = systemFacts[path];
-    if (entry === null) return null;
+    if (entry === null || entry === undefined) return null;
     const index = systemFactEntries.findIndex(([candidate]) => candidate === path);
-    return { kind: entry.kind, dev: 1, ino: 9000 + index, nlink: entry.nlink ?? 1 };
+    return { kind: entry.kind, dev: 1, ino: 9000 + index, nlink: entry.nlink ?? 1, realPath: entry.realPath };
   };
 
   const ports: FakeHostPorts = {

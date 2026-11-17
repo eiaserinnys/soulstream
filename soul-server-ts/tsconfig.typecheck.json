@@ -1,0 +1,24 @@
+// tests는 오류 0건 폴더부터 넓힌다(#1493).
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*",
+    "tests/cogito",
+    "tests/collaboration",
+    "tests/folder",
+    "tests/fixtures",
+    "tests/setup",
+    "tests/catalog",
+    "tests/claude_accounts",
+    "tests/release",
+    "tests/security",
+    "tests/realtime"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

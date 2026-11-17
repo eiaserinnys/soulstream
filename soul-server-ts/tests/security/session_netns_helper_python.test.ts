@@ -30,6 +30,7 @@ interface ProbeResult {
   code?: number;
   argv?: string[];
   start_bwrap_path?: string;
+  start_argv?: string[];
   waited?: boolean;
   status_fd_open_at_wait?: boolean;
   readiness_fd_closed_after?: boolean;

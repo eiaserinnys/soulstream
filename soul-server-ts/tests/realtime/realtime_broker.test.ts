@@ -40,7 +40,7 @@ const profile: AgentProfile = {
 };
 
 function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
-  return {
+  return Object.assign({
     session_id: "sess-rt",
     folder_id: null,
     display_name: null,
@@ -59,10 +59,12 @@ function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     updated_at: new Date("2026-05-21T00:00:00Z"),
     agent_id: "codex-realtime",
     caller_session_id: null,
+    predecessor_session_id: null,
+    termination_reason: null,
+    termination_detail: null,
     away_summary: null,
     execution_registration_id: "registration:sess-rt",
-    ...overrides,
-  };
+  }, overrides);
 }
 
 function createBroker(opts: {
@@ -112,7 +114,7 @@ function createBroker(opts: {
 
 describe("RealtimeBroker.createCall", () => {
   it("posts SDP offer to OpenAI Realtime calls and persists connected status", async () => {
-    const fetch = vi.fn(async () => ({
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       status: 200,
       statusText: "OK",
@@ -140,7 +142,7 @@ describe("RealtimeBroker.createCall", () => {
         headers: { Authorization: "Bearer sk-test" },
       }),
     );
-    const form = fetch.mock.calls[0][1].body as FormData;
+    const form = fetch.mock.calls[0]![1]!.body as FormData;
     expect(form.get("sdp")).toBe("offer-sdp");
     expect(JSON.parse(String(form.get("session")))).toMatchObject({
       type: "realtime",
