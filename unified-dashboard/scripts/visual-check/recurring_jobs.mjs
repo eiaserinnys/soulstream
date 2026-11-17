@@ -47,6 +47,8 @@ try {
     await page.route('**/api/auth/status', route => route.fulfill({ json: { authenticated: true, user: { email: 'qa@example.test', name: 'QA', isAdmin: true } } }));
     let release;
     const gate = new Promise(resolve => { release = resolve; });
+    let releaseSave;
+    let saveGate;
     await page.route('**/api/recurring-jobs**', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -56,6 +58,7 @@ try {
         return route.fulfill({ json: { jobs: [job] } });
       }
       if ((url.pathname === '/api/recurring-jobs' && request.method() === 'POST') || (url.pathname.endsWith(job.job_id) && request.method() === 'PATCH')) {
+        if (saveGate) await saveGate;
         return route.fulfill({ status: 500, json: { detail: '저장하지 못했습니다. 다시 시도해 주세요.' } });
       }
       return route.fulfill({ json: { job } });
@@ -85,6 +88,24 @@ try {
     await tab.getByRole('button').filter({ hasText: job.name }).first().click();
     await tab.getByText('최근 실행', { exact: true }).waitFor();
     const save = tab.getByRole('button', { name: '변경 저장', exact: true });
+    saveGate = new Promise(resolve => { releaseSave = resolve; });
+    await tab.getByRole('button', { name: '다음 5회 보기', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    const busyButton = tab.getByText('저장 중...', { exact: true });
+    await busyButton.waitFor();
+    await page.waitForTimeout(150);
+    const busyFocus = await busyButton.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { focused: document.activeElement === element, focusVisible: element.matches(':focus-visible'), activeTag: document.activeElement?.tagName, opacity: style.opacity, shadow: style.boxShadow, insetShadow: style.getPropertyValue('--tw-inset-shadow'), beforeShadow: getComputedStyle(element, '::before').boxShadow };
+    });
+    await page.screenshot({ path: path.join(output, `busy-focus-${width}.png`), animations: 'disabled' });
+    releaseSave();
+    await alert.waitFor({ state: 'attached' });
+    await page.waitForTimeout(300);
+    const failureFocus = await save.evaluate(element => ({ focused: document.activeElement === element, focusVisible: element.matches(':focus-visible'), activeTag: document.activeElement?.tagName }));
+    await page.screenshot({ path: path.join(output, `save-failure-focus-${width}.png`), animations: 'disabled' });
+    saveGate = undefined;
     await measureInset(save, 'edge');
     await save.click();
     await alert.waitFor({ state: 'attached' });
@@ -116,7 +137,7 @@ try {
     await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     const closed = await dialog.isHidden();
     const restored = await opener.evaluate(element => element === document.activeElement);
-    result[width] = { loading, rest, createAlert, saveAlert, saveButton, geometry, focusAfterSave, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
+    result[width] = { loading, rest, createAlert, saveAlert, saveButton, geometry, focusAfterSave, busyFocus, failureFocus, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
     await context.close();
 
     // 공용 틀을 쓰는 영구 세션의 배치와 scrollIntoView 오류도 같은 전후 조건에서 잰다.
@@ -159,6 +180,7 @@ console.log(JSON.stringify(result, null, 2));
 if (mode === 'after') {
   for (const entry of Object.values(result)) {
     if (entry.loading.status !== 1 || entry.loading.active || entry.loading.empty) throw new Error('첫 로딩 상태 실패');
+    if (!entry.busyFocus.focused || !entry.busyFocus.focusVisible || !entry.failureFocus.focused || !entry.failureFocus.focusVisible) throw new Error('저장 처리 중 또는 실패 뒤 키보드 초점 실패');
     const g = entry.geometry;
     if (g.top < g.rowBottom - 1 || Math.abs(entry.createAlert.inset - 24) > 1 || Math.abs(entry.saveAlert.inset - 24) > 1 || entry.saveButton.inset < 0 || entry.saveButton.topInset < 0) throw new Error('스크롤 칸 안의 오류 안내 위치 실패');
     if (entry.persistent.error.inset < 23 || entry.persistent.error.topInset < 23) throw new Error('영구 세션 오류 안내가 스크롤 칸 끝에 닿습니다');
