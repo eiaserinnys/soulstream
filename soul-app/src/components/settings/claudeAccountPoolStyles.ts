@@ -41,8 +41,9 @@ export function makeClaudePoolStyles(t: DesignTokens) {
     quotaTrack: { height: t.spacing.xs, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border, overflow: 'hidden' },
     quotaFill: { height: '100%', borderRadius: t.foundation.radius.round },
     // 카드 #1510: 7일 바는 칸막이 틈 1pt로 7칸을 만들고, 지난 자리에 세로 커서를 둔다.
+    // 틈 1pt는 가장 작은 간격 토큰의 절반이다(시안 고정값).
     quotaBarWrap: { position: 'relative' },
-    quotaWeekTrack: { height: t.spacing.xs, flexDirection: 'row', gap: 1 },
+    quotaWeekTrack: { height: t.spacing.xs, flexDirection: 'row', gap: t.spacing.xxs / 2 },
     quotaWeekSegment: { flex: 1, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.border, overflow: 'hidden' },
     quotaPaceCursor: {
       position: 'absolute', top: '50%', width: t.spacing.xxs, height: t.spacing.md,
