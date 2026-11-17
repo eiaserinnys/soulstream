@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -119,13 +120,14 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       max: 1,
       idle_timeout: 1,
     });
-    const database = "release_fingerprint_test_db";
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${database}`);
-    await admin.unsafe(`CREATE DATABASE ${database}`);
-    await admin.end({ timeout: 5 });
-    const url = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
-    const sql = postgres(url, { max: 1, idle_timeout: 1 });
+    const database = `release_fingerprint_test_${process.pid}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    let databaseCreated = false;
+    let sql: ReturnType<typeof postgres> | undefined;
     try {
+      await admin.unsafe(`CREATE DATABASE ${database}`);
+      databaseCreated = true;
+      const url = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
+      sql = postgres(url, { max: 1, idle_timeout: 1 });
       await sql`CREATE TABLE public.review_original (id integer)`;
       const original = await inspectUserObjectInventory(sql);
       await sql`ALTER TABLE public.review_original RENAME TO review_renamed`;
@@ -149,7 +151,18 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
         replacement,
       )).toBe("ambiguous");
     } finally {
-      await sql.end({ timeout: 5 });
+      try {
+        await sql?.end({ timeout: 5 });
+      } finally {
+        try {
+          if (databaseCreated) {
+            await admin.unsafe(`DROP DATABASE ${database}`);
+            expect(await admin`SELECT 1 FROM pg_database WHERE datname = ${database}`).toHaveLength(0);
+          }
+        } finally {
+          await admin.end({ timeout: 5 });
+        }
+      }
     }
   });
 
@@ -158,20 +171,22 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
       max: 1,
       idle_timeout: 1,
     });
-    const database = "release_unprivileged_test_db";
-    const reader = "release_unprivileged_reader";
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${database}`);
-    await admin.unsafe(`CREATE DATABASE ${database}`);
-    await admin.unsafe(`DROP ROLE IF EXISTS ${reader}`);
-    await admin.unsafe(
-      `CREATE ROLE ${reader} LOGIN NOSUPERUSER PASSWORD 'unprivileged-secret'`,
-    );
-    await admin.unsafe(`GRANT CONNECT ON DATABASE ${database} TO ${reader}`);
-    await admin.end({ timeout: 5 });
-
-    const adminUrl = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
-    const owner = postgres(adminUrl, { max: 1, idle_timeout: 1 });
+    const suffix = `${process.pid}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    const database = `release_unprivileged_test_${suffix}`;
+    const reader = `release_unprivileged_reader_${suffix}`;
+    let databaseCreated = false;
+    let roleCreated = false;
+    let owner: ReturnType<typeof postgres> | undefined;
     try {
+      await admin.unsafe(`CREATE DATABASE ${database}`);
+      databaseCreated = true;
+      await admin.unsafe(
+        `CREATE ROLE ${reader} LOGIN NOSUPERUSER PASSWORD 'unprivileged-secret'`,
+      );
+      roleCreated = true;
+      await admin.unsafe(`GRANT CONNECT ON DATABASE ${database} TO ${reader}`);
+      const adminUrl = safeTestDatabaseUrl(databaseUrlFor(databaseUrl, database));
+      owner = postgres(adminUrl, { max: 1, idle_timeout: 1 });
       // The catalogs a non-superuser cannot read in full: pg_user_mapping is
       // superuser-only, and pg_subscription.subconninfo carries a column-level REVOKE.
       await owner.unsafe(`
@@ -212,7 +227,31 @@ describeWithTestDatabase.sequential("database release canonical PostgreSQL inven
         await unprivileged.end({ timeout: 5 });
       }
     } finally {
-      await owner.end({ timeout: 5 });
+      try {
+        if (owner) {
+          try {
+            await owner`DROP SUBSCRIPTION IF EXISTS review_subscription`;
+          } finally {
+            await owner.end({ timeout: 5 });
+          }
+        }
+      } finally {
+        try {
+          if (databaseCreated) {
+            await admin.unsafe(`DROP DATABASE ${database}`);
+            expect(await admin`SELECT 1 FROM pg_database WHERE datname = ${database}`).toHaveLength(0);
+          }
+        } finally {
+          try {
+            if (roleCreated) {
+              await admin.unsafe(`DROP ROLE ${reader}`);
+              expect(await admin`SELECT 1 FROM pg_roles WHERE rolname = ${reader}`).toHaveLength(0);
+            }
+          } finally {
+            await admin.end({ timeout: 5 });
+          }
+        }
+      }
     }
   });
 });
