@@ -17,6 +17,7 @@ jest.mock('expo-file-system/legacy', () => ({
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  TurboModuleRegistry: { get: () => null },
   Share: {
     share: jest.fn(),
     sharedAction: 'sharedAction',
