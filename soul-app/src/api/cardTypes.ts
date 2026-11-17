@@ -2,6 +2,9 @@ import type { CatalogFolder, Session } from './types';
 import type { CardColor } from '../../../packages/wire-schema/src/card_colors';
 import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+
+export type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 
 export type CardAttachmentAssetEvidence =
   | {
@@ -29,7 +32,6 @@ export type CardAttachmentEvidence =
   | { type: 'image' | 'link'; url: string; label: string }
   | CardAttachmentAssetEvidence;
 
-export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'awaiting_verification' | 'review' | 'on_hold' | 'done' | 'cancelled';
 export interface CardAttachment {
   nodeId: string;
   path: string;

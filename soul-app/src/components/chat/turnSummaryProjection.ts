@@ -1,4 +1,5 @@
 import type { SessionEvent } from '../../api/types';
+import type { CardStatus } from '../../api/cardTypes';
 import type {
   ChatRenderItem,
   TurnSummaryRenderItem,
@@ -61,8 +62,13 @@ function hasLaterComment(card: Record<string,unknown>): boolean {
     && Date.parse(card.latestCommentAt)>Date.parse(card.latestReportAt);
 }
 
+const STATUS_LABELS: Record<CardStatus, string> = {
+  todo:'할 일',queued:'대기',blocked:'막힘',running:'실행 중',awaiting_verification:'검증 대기',
+  review:'검수 대기',on_hold:'보류',done:'완료',cancelled:'취소',
+};
+
 function statusLabel(status:string):string {
-  return ({todo:'할 일',queued:'대기',blocked:'막힘',running:'실행 중',awaiting_verification:'검증 대기',review:'검수 대기',on_hold:'보류',done:'완료',cancelled:'취소'} as Record<string,string>)[status]??status;
+  return STATUS_LABELS[status as CardStatus]??status;
 }
 
 function positiveEventId(value: unknown): number | null {
