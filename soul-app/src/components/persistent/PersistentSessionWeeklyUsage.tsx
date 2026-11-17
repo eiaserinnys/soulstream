@@ -4,7 +4,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   formatUsageResetCountdown,
   formatUsageUpdatedLabel,
-  formatWeeklyRemainingPercent,
+  formatWeeklyUsedPercent,
+  weeklyUsedPercent,
 } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { LiquidGlassButton } from '../LiquidGlassButton';
@@ -40,8 +41,8 @@ export function PersistentSessionWeeklyUsage({
   const stale = loadState === 'connectionError' && gauges.length > 0;
   const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
   const accessibilityLabel = stale && updatedLabel
-    ? `주간 남은 사용량, 갱신 지연, ${updatedLabel}`
-    : '주간 남은 사용량';
+    ? `주간 사용량, 갱신 지연, ${updatedLabel}`
+    : '주간 사용량';
   const placeholderCount = gauges.length === 0 ? 2 : 0;
   const meta = t.foundation.typography.meta;
   const trackHeight = DESIGN_SPACING.xs;
@@ -56,8 +57,9 @@ export function PersistentSessionWeeklyUsage({
   </View>);
 
   const renderGauge = (gauge: Props['gauges'][number], index: number) => {
-    const percent = formatWeeklyRemainingPercent(gauge.remainingPercent);
-    const warning = gauge.remainingPercent < 20;
+    const used = weeklyUsedPercent(gauge.remainingPercent);
+    const percent = used === null ? '—' : formatWeeklyUsedPercent(used);
+    const warning = used !== null && used >= 80;
     const compactCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, true);
     const fullCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, false);
     const poolFractionColor = gauge.poolState === 'partial' ? t.colors.warningText
@@ -77,10 +79,10 @@ export function PersistentSessionWeeklyUsage({
           fontWeight: '600', fontVariant: ['tabular-nums'] }}>{percent}</Text>
       </View>
       <View testID={`persistent-session-weekly-usage-track-${gauge.id}`} accessibilityRole="progressbar"
-        accessibilityLabel={`${gaugeLabel} 주간 잔량`}
-        accessibilityValue={{ min: 0, max: 100, now: gauge.remainingPercent, text: percent }}
+        accessibilityLabel={`${gaugeLabel} 주간 사용량`}
+        accessibilityValue={{ min: 0, max: 100, now: used ?? undefined, text: percent }}
         style={{ height: trackHeight, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
-        <View style={{ height: '100%', width: `${gauge.remainingPercent}%`, backgroundColor: warning ? t.colors.warning : t.colors.accent }} />
+        <View style={{ height: '100%', width: `${used ?? 0}%`, backgroundColor: warning ? t.colors.warning : t.colors.accent }} />
       </View>
     </View>;
   };

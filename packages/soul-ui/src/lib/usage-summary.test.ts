@@ -4,7 +4,8 @@ import {
   findUsageSummaryNode,
   formatUsageResetCountdown,
   formatUsageUpdatedLabel,
-  formatWeeklyRemainingPercent,
+  formatWeeklyUsedPercent,
+  weeklyUsedPercent,
   nextUsageSummaryNodeId,
   providerQuotaSlots,
   selectUsageSummaryNode,
@@ -159,9 +160,16 @@ describe("usage summary projection", () => {
   });
 
   it("rounds percentages away from zero at ties", () => {
-    expect(formatWeeklyRemainingPercent(19.49)).toBe("19%");
-    expect(formatWeeklyRemainingPercent(19.5)).toBe("20%");
-    expect(formatWeeklyRemainingPercent(-19.5)).toBe("-20%");
+    expect(formatWeeklyUsedPercent(19.49)).toBe("19%");
+    expect(formatWeeklyUsedPercent(19.5)).toBe("20%");
+    expect(formatWeeklyUsedPercent(-19.5)).toBe("-20%");
+  });
+
+  it("converts remaining to bounded used percentage", () => {
+    expect(weeklyUsedPercent(73)).toBe(27);
+    expect(weeklyUsedPercent(null)).toBeNull();
+    expect(weeklyUsedPercent(-5)).toBe(100);
+    expect(weeklyUsedPercent(105)).toBe(0);
   });
 
   it("formats reset epoch seconds against the supplied millisecond evaluation time", () => {

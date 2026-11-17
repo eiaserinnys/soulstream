@@ -129,8 +129,9 @@ describe("ProviderQuotaGrid", () => {
 });
 
 describe("formatQuotaResetLabel", () => {
-  it("returns an empty label without a reset time", () => {
-    expect(formatQuotaResetLabel(null, 40)).toBe("");
+  it("returns a dash without a valid reset time", () => {
+    expect(formatQuotaResetLabel(null, 40)).toBe("—");
+    expect(formatQuotaResetLabel(Number.NaN, 40)).toBe("—");
   });
 
   it("shows minutes and hours until the reset inside twelve hours", () => {

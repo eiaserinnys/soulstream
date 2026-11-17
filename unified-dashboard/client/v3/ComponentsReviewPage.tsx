@@ -127,6 +127,10 @@ export function ComponentsReviewPage() {
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'weekly-usage') return <div className="v3-detail-pane v3-detail-pane--inline">
+    <p className="v3-components-label">PersistentSessionWeeklyUsage</p>
+    <PersistentSessionWeeklyUsageReviewSample />
+  </div>;
   if (sampleParams.get('sample') === 'claude-accounts') return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-accounts-review">
     <p className="v3-components-label">NodeProvidersPanel · 실제 노드 패널 · 가짜 API</p>
     <ClaudeAccountPoolReviewSample

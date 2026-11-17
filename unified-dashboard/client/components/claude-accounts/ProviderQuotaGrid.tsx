@@ -18,9 +18,9 @@ export function formatQuotaResetLabel(
   usedPercent: number,
   kind?: ProviderQuotaSlot["kind"],
 ): string {
-  if (resetAtEpochSeconds === null) return "";
+  if (resetAtEpochSeconds === null) return "—";
   const reset = new Date(resetAtEpochSeconds * 1000);
-  if (!Number.isFinite(reset.getTime())) return "";
+  if (!Number.isFinite(reset.getTime())) return "—";
   const roundedUsed = Math.round(usedPercent);
   const diffMs = reset.getTime() - Date.now();
   const isMonthlyOrLong = kind === "monthly" || diffMs >= SEVEN_DAYS_MS;

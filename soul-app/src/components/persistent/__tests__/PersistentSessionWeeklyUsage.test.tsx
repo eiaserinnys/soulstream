@@ -34,11 +34,14 @@ test('uses the existing meta text and reduces the visible height with two gauges
   const dimensions = useTabletDimensions();
   const view = render(<PersistentSessionWeeklyUsage {...base} />);
 
-  expect(view.getByTestId('persistent-session-weekly-usage').props.accessibilityLabel).toBe('주간 남은 사용량');
+  expect(view.getByTestId('persistent-session-weekly-usage').props.accessibilityLabel).toBe('주간 사용량');
   expect(view.getByText('Claude')).toBeTruthy();
   expect(view.getAllByText('4일')).toHaveLength(3);
   expect(view.getAllByLabelText('초기화까지 4일 2시간')).toHaveLength(3);
-  expect(view.getByText('73%')).toBeTruthy();
+  expect(view.getByText('27%')).toBeTruthy();
+  const claudeTrack = view.getByTestId('persistent-session-weekly-usage-track-claude');
+  expect(claudeTrack.props.accessibilityValue.now).toBe(27);
+  expect(StyleSheet.flatten(claudeTrack.props.children.props.style).width).toBe('27%');
   const providerText = StyleSheet.flatten(view.getByText('Claude').props.style);
   expect(providerText.fontSize).toBe(13);
   expect(providerText.lineHeight).toBe(18);
@@ -47,7 +50,7 @@ test('uses the existing meta text and reduces the visible height with two gauges
   expect(slot.gap).toBe(2);
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-track-claude').props.style).height).toBe(DESIGN_SPACING.xs);
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage').props.style).gap).toBe(16);
-  expect(StyleSheet.flatten(view.getByText('18%').props.style).color).toBeTruthy();
+  expect(StyleSheet.flatten(view.getByText('82%').props.style).color).toBeTruthy();
 
   const nodeButton = view.getByLabelText('노드 바꾸기, 현재 node-a');
   const hitFrame = StyleSheet.flatten(nodeButton.props.style);
@@ -131,7 +134,7 @@ test('keeps stale gauges in place and adds refresh timing to the group descripti
   const view = render(<PersistentSessionWeeklyUsage {...base} loadState="connectionError" />);
 
   expect(view.getByTestId('persistent-session-weekly-usage').props.accessibilityLabel)
-    .toBe(`주간 남은 사용량, 갱신 지연, ${formatUsageUpdatedLabel(node.fetchedAt, true)}`);
+    .toBe(`주간 사용량, 갱신 지연, ${formatUsageUpdatedLabel(node.fetchedAt, true)}`);
   expect(view.queryByText(/갱신 지연/)).toBeNull();
   expect(view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true })).toHaveLength(3);
 
@@ -157,5 +160,20 @@ test.each([
   expect(view.getByText(fraction)).toBeTruthy();
   expect(supportedColors.some(theme => theme[colorRole] === color)).toBe(true);
   expect(view.getByTestId('persistent-session-weekly-usage-track-claude').props.accessibilityLabel)
-    .toBe(`Claude ${fraction} 주간 잔량`);
+    .toBe(`Claude ${fraction} 주간 사용량`);
+  if (state === 'blocked') {
+    const track = view.getByTestId('persistent-session-weekly-usage-track-claude');
+    expect(track.props.accessibilityValue.now).toBe(100);
+    expect(StyleSheet.flatten(track.props.children.props.style).width).toBe('100%');
+    expect([LIGHT_COLORS.warning, DARK_COLORS.warning]).toContain(StyleSheet.flatten(track.props.children.props.style).backgroundColor);
+  }
+});
+
+test('starts warning at 80 percent used', () => {
+  const view = render(<PersistentSessionWeeklyUsage {...base} gauges={[{ ...gauges[0], remainingPercent: 20 }]} />);
+  let track = view.getByTestId('persistent-session-weekly-usage-track-claude');
+  expect([LIGHT_COLORS.warning, DARK_COLORS.warning]).toContain(StyleSheet.flatten(track.props.children.props.style).backgroundColor);
+  view.rerender(<PersistentSessionWeeklyUsage {...base} gauges={[{ ...gauges[0], remainingPercent: 21 }]} />);
+  track = view.getByTestId('persistent-session-weekly-usage-track-claude');
+  expect([LIGHT_COLORS.warning, DARK_COLORS.warning]).not.toContain(StyleSheet.flatten(track.props.children.props.style).backgroundColor);
 });

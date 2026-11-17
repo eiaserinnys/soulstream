@@ -58,8 +58,9 @@ it("shows compact reset labels, full accessible times, percentages, and a whole-
   expect(countdown.textContent).toBe("4일");
   expect(countdown.getAttribute("aria-label")).toBe("초기화까지 4일 2시간");
   expect(host.querySelectorAll('[role="progressbar"]')).toHaveLength(2);
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("73");
-  expect(host.querySelector('[aria-label="Codex 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("41");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("27");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"] i')?.getAttribute("style")).toContain("27%");
+  expect(host.querySelector('[aria-label="Codex 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("59");
   expect(host.querySelectorAll(".persistent-session-weekly-usage-row[aria-hidden=\"true\"]")).toHaveLength(0);
 
   const nodeButton = host.querySelector<HTMLButtonElement>('[aria-label="노드 바꾸기, 현재 node-a"]')!;
@@ -151,13 +152,13 @@ function nodeWithClaudePool(available: number, total: number, best: number | nul
   };
 }
 
-it("keeps legacy and one-account PAS labels unchanged", () => {
+it("keeps legacy and one-account PAS pool behavior", () => {
   renderUsage({ node: nodeWithClaudePool(1, 1, 45) });
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("73");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("27");
   expect(host.querySelector(".persistent-session-weekly-usage-provider")?.textContent).toBe("Claude");
 
   renderUsage({ node: nodeWithClaudePool(0, 1, 0, "2030-01-01T03:45:00.000Z") });
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("73");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("27");
   expect(host.querySelector(".persistent-session-weekly-usage-pool-count")).toBeNull();
   expect(host.querySelector(".persistent-session-weekly-usage-countdown")?.textContent).toBe("4일");
 });
@@ -165,22 +166,37 @@ it("keeps legacy and one-account PAS labels unchanged", () => {
 it("shows pool availability and best remaining usage for multi-account PAS", () => {
   renderUsage({ node: nodeWithClaudePool(2, 3, 62) });
   expect(host.querySelector(".persistent-session-weekly-usage-provider")?.textContent).toBe("Claude2/3");
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("62");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("38");
 
   renderUsage({ node: nodeWithClaudePool(1, 3, 41) });
   expect(host.querySelector(".persistent-session-weekly-usage-pool-count")?.getAttribute("data-warn")).toBe("true");
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.classList.contains("is-warning")).toBe(false);
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.classList.contains("is-warning")).toBe(false);
 });
 
-it("shows the local earliest recovery time and zero percent when every account is blocked", () => {
+it("shows the local earliest recovery time and full usage when every account is blocked", () => {
   const earliest = "2030-01-01T03:45:00.000Z";
   renderUsage({
     node: nodeWithClaudePool(0, 2, 0, earliest),
     gauges: [gauges[1]],
   });
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')).not.toBeNull();
   const localTime = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(earliest));
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.previousElementSibling?.textContent).toContain(`${localTime} 해제`);
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.previousElementSibling?.textContent).toContain("0%");
-  expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("0");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.previousElementSibling?.textContent).toContain(`${localTime} 해제`);
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.previousElementSibling?.textContent).toContain("100%");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.getAttribute("aria-valuenow")).toBe("100");
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.classList.contains("is-warning")).toBe(true);
+});
+
+it("starts the warning at 80 percent used", () => {
+  renderUsage({ gauges: [{ ...gauges[0], remainingPercent: 20 }] });
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.classList.contains("is-warning")).toBe(true);
+  renderUsage({ gauges: [{ ...gauges[0], remainingPercent: 21 }] });
+  expect(host.querySelector('[aria-label="Claude 주간 사용량"]')?.classList.contains("is-warning")).toBe(false);
+});
+
+it("shows a dash and no fill when the pool has no remaining value", () => {
+  renderUsage({ node: nodeWithClaudePool(1, 2, null), gauges: [] });
+  const row = host.querySelector(".persistent-session-weekly-usage-row")!;
+  expect(row.querySelector("strong")?.textContent).toBe("—");
+  expect(row.querySelector(".persistent-session-weekly-usage-track i")).toBeNull();
 });
