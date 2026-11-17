@@ -394,6 +394,11 @@ describe("ChatView long-session initial bottom focus", () => {
     useDashboardStore.getState().reset();
     useDashboardStore.getState().setActiveSession("sess-long");
     vi.spyOn(performance, "now").mockImplementation(() => now);
+    // jsdom에는 레이아웃이 없으므로 기본 행과 스크롤 영역이 겹치도록 둔다.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, bottom: 400, left: 0, right: 320,
+      width: 320, height: 400, toJSON: () => ({}),
+    });
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -1675,6 +1680,47 @@ describe("ChatView long-session initial bottom focus", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("검색 대상 행이 DOM에 있어도 보이는 영역 밖이면 다시 스크롤하고 보일 때 고리를 붙인다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(42)]);
+    ({ container, root } = await renderChatView());
+    const target = container.querySelector<HTMLElement>(
+      '[data-chat-item-key="user-msg-42"] [data-tree-node-id]',
+    );
+    if (!target) throw new Error("검색 대상 chat row가 없습니다.");
+    const rect = (top: number, bottom: number): DOMRect => ({
+      x: 0, y: top, top, bottom, left: 0, right: 320,
+      width: 320, height: bottom - top, toJSON: () => ({}),
+    });
+    target.getBoundingClientRect = () => rect(450, 490);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    virtuosoMock.scrollToIndex.mockClear();
+
+    flushSync(() => useDashboardStore.getState().setFocusEventId(42, "sess-long"));
+    await flushPassiveEffects();
+
+    expect(target.classList.contains("chat-focus-ring")).toBe(false);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(1);
+    flushSync(() => frames.splice(0).forEach((callback) => callback(0)));
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(2);
+    expect(virtuosoMock.scrollToIndex).toHaveBeenLastCalledWith({
+      index: findDataIndexByKey("user-msg-42"), align: "center",
+    });
+
+    target.getBoundingClientRect = () => rect(100, 140);
+    flushSync(() => (virtuosoMock.props?.itemsRendered as () => void)());
+    expect(target.classList.contains("chat-focus-ring")).toBe(true);
+
+    // 나중에 행 높이가 보정되어 대상이 다시 밀린 경우에도 위치를 되찾는다.
+    target.getBoundingClientRect = () => rect(450, 490);
+    flushSync(() => (virtuosoMock.props?.totalListHeightChanged as () => void)());
+    flushSync(() => frames.splice(0).forEach((callback) => callback(0)));
+    expect(virtuosoMock.scrollToIndex).toHaveBeenCalledTimes(3);
   });
 
   it("렌더 뒤 늦게 온 포커스 요청에도 고리가 붙는다", async () => {

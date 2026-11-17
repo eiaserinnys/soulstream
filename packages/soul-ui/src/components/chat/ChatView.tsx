@@ -523,7 +523,7 @@ function ChatViewContent({
     focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
   }, [activeSessionKey, focusEventRequestId]);
   // 포커스 고리는 Virtuoso 렌더 콜백과, 행이 이미 렌더된 뒤 늦게 도착한 요청의 effect가 함께 쓴다.
-  // 대상 행이 아직 DOM에 없으면 스크롤 재시도를 걸고, 붙인 고리는 2초 뒤 지운다.
+  // 대상 행이 없거나 스크롤 영역 밖이면 재시도하고, 보이는 행에 붙인 고리는 2초 뒤 지운다.
   const applyFocusRing = useCallback(() => {
     if (focusEventId == null) return;
     const targetIndex = findFocusIndex(timelineItems, focusEventId);
@@ -533,7 +533,14 @@ function ChatViewContent({
       scrollerRef.current?.querySelectorAll<HTMLElement>("[data-chat-item-key]") ?? [],
     ).find((row) => row.dataset.chatItemKey === targetKey);
     const el = targetRow?.querySelector<HTMLElement>("[data-tree-node-id]") ?? null;
-    if (!el) {
+    const scroller = scrollerRef.current;
+    if (!el || !scroller) {
+      retryFocusScroll();
+      return;
+    }
+    const rowRect = el.getBoundingClientRect();
+    const viewportRect = scroller.getBoundingClientRect();
+    if (rowRect.bottom <= viewportRect.top || rowRect.top >= viewportRect.bottom) {
       retryFocusScroll();
       return;
     }
@@ -675,7 +682,9 @@ function ChatViewContent({
     // 행의 실제 높이는 Markdown/접힌 도구 렌더 뒤에도 바뀔 수 있다. Follow는
     // 명시적 사용자 의도이므로 켜져 있는 동안에는 그 높이 변화도 하단에 고정한다.
     maintainBottomIfFollowing();
-  }, [maintainBottomIfFollowing, notifyHistoryViewportGeometry]);
+    // 추정 높이가 뒤늦게 보정되면 같은 렌더 범위에서도 초점 행이 화면 밖으로 밀릴 수 있다.
+    applyFocusRing();
+  }, [applyFocusRing, maintainBottomIfFollowing, notifyHistoryViewportGeometry]);
 
   useLayoutEffect(() => {
     if (!activeSessionKey) {

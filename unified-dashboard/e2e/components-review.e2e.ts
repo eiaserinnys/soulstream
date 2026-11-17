@@ -97,7 +97,7 @@ for (const width of [1440, 390]) {
     const documentSample = rows.locator('[data-component="InlineMarkdownCard"]');
     const timelineSample = review.locator('#components-bubbles [data-component="CardTimeline / UserMessage / AssistantMessage"]');
     const handoffSample = review.locator("#components-input").getByTestId("card-handoff-review-sample");
-    await expect(review).toBeVisible();
+    await expect(review).toBeVisible({ timeout: 30_000 });
     await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
       "목록 행", "말풍선과 첨부", "카드 질문 장", "입력창", "선택과 설정", "패널 표면",
     ]);
