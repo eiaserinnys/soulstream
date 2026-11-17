@@ -1,15 +1,24 @@
 /* Dashboard chrome is not document content, including portaled surfaces. */
-.v3-shell,
-.v3-popup-chrome,
-[data-slot="dialog-viewport"],
-[data-slot="dialog-popup"],
-[data-slot="alert-dialog-popup"],
-[data-slot="popover-popup"] {
+:is(
+  .v3-shell,
+  .v3-popup-chrome,
+  [data-slot="dialog-viewport"],
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"],
+  [data-slot="popover-popup"]
+) {
   -webkit-user-select: none;
   user-select: none;
 }
 
-.v3-shell :where(
+:is(
+  .v3-shell,
+  .v3-popup-chrome,
+  [data-slot="dialog-viewport"],
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"],
+  [data-slot="popover-popup"]
+) :where(
   input,
   textarea,
   [contenteditable="true"],
@@ -19,107 +28,30 @@
   [data-slot="chat-body"] *,
   [data-slot="chat-tool-body"],
   [data-slot="chat-tool-body"] *,
-  [data-slot="inherited-prompt-body"],
-  [data-slot="inherited-prompt-body"] *,
-  [data-slot="session-story-body"],
-  [data-slot="session-story-body"] *,
   [data-slot="attachment-preview-body"],
   [data-slot="attachment-preview-body"] *,
   [data-slot="dialog-error-message"],
   [data-slot="dialog-error-message"] *,
   [data-slot="dialog-error-detail"],
-  [data-slot="dialog-error-detail"] *
-),
-.v3-popup-chrome :where(
-  input,
-  textarea,
-  [contenteditable="true"],
-  [data-v3-selectable-content="true"],
-  [data-v3-selectable-content="true"] *,
-  [data-slot="chat-body"],
-  [data-slot="chat-body"] *,
-  [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *,
-  [data-slot="inherited-prompt-body"],
-  [data-slot="inherited-prompt-body"] *,
+  [data-slot="dialog-error-detail"] *,
   [data-slot="session-story-body"],
   [data-slot="session-story-body"] *,
-  [data-slot="attachment-preview-body"],
-  [data-slot="attachment-preview-body"] *,
-  [data-slot="dialog-error-message"],
-  [data-slot="dialog-error-message"] *,
-  [data-slot="dialog-error-detail"],
-  [data-slot="dialog-error-detail"] *
-),
-[data-slot="dialog-popup"] :where(
-  input,
-  textarea,
-  [contenteditable="true"],
-  [data-v3-selectable-content="true"],
-  [data-v3-selectable-content="true"] *,
-  [data-slot="chat-body"],
-  [data-slot="chat-body"] *,
-  [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *,
   [data-slot="inherited-prompt-body"],
-  [data-slot="inherited-prompt-body"] *,
-  [data-slot="session-story-body"],
-  [data-slot="session-story-body"] *,
-  [data-slot="attachment-preview-body"],
-  [data-slot="attachment-preview-body"] *,
-  [data-slot="dialog-error-message"],
-  [data-slot="dialog-error-message"] *,
-  [data-slot="dialog-error-detail"],
-  [data-slot="dialog-error-detail"] *
-),
-[data-slot="alert-dialog-popup"] :where(
-  input,
-  textarea,
-  [contenteditable="true"],
-  [data-v3-selectable-content="true"],
-  [data-v3-selectable-content="true"] *,
-  [data-slot="chat-body"],
-  [data-slot="chat-body"] *,
-  [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *,
-  [data-slot="inherited-prompt-body"],
-  [data-slot="inherited-prompt-body"] *,
-  [data-slot="session-story-body"],
-  [data-slot="session-story-body"] *,
-  [data-slot="attachment-preview-body"],
-  [data-slot="attachment-preview-body"] *,
-  [data-slot="dialog-error-message"],
-  [data-slot="dialog-error-message"] *,
-  [data-slot="dialog-error-detail"],
-  [data-slot="dialog-error-detail"] *
-),
-[data-slot="popover-popup"] :where(
-  input,
-  textarea,
-  [contenteditable="true"],
-  [data-v3-selectable-content="true"],
-  [data-v3-selectable-content="true"] *,
-  [data-slot="chat-body"],
-  [data-slot="chat-body"] *,
-  [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *,
-  [data-slot="inherited-prompt-body"],
-  [data-slot="inherited-prompt-body"] *,
-  [data-slot="session-story-body"],
-  [data-slot="session-story-body"] *,
-  [data-slot="attachment-preview-body"],
-  [data-slot="attachment-preview-body"] *,
-  [data-slot="dialog-error-message"],
-  [data-slot="dialog-error-message"] *,
-  [data-slot="dialog-error-detail"],
-  [data-slot="dialog-error-detail"] *
+  [data-slot="inherited-prompt-body"] *
 ) {
   -webkit-user-select: text;
   user-select: text;
 }
 
 /* Document previews can contain copy controls alongside selectable prose. */
-:is([data-slot="dialog-popup"], [data-slot="alert-dialog-popup"], [data-slot="popover-popup"]) :where(
+:is(
+  .v3-shell,
+  .v3-popup-chrome,
+  [data-slot="dialog-viewport"],
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"],
+  [data-slot="popover-popup"]
+) :where(
   [data-v3-selectable-content="true"] button,
   [data-v3-selectable-content="true"] button *,
   [data-slot="attachment-preview-body"] button,
