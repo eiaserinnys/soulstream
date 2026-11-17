@@ -743,6 +743,37 @@ describe("agent profile backend boundary", () => {
     });
   });
 
+  it.each([undefined, "a661ff4c-4f01-4702-b623-581ca42c58fe"])("rejects an explicitly missing caller with worktree %s", async (worktree_id) => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const client = await createClient(runtime);
+    const result = await client.callTool({ name: "create_agent_session", arguments: {
+      agent_id: "codex-default", prompt: "child", caller_session_id: "missing", ...(worktree_id ? { worktree_id } : {}),
+    } });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({ error: "SESSION_NOT_FOUND: 호출 세션을 찾을 수 없습니다: missing. caller_session_id에는 지금 세션의 전체 ID(soulstream_session.agent_session_id)를 넣으세요." });
+    expect(runtime.createTask).not.toHaveBeenCalled();
+  });
+
+  it("continues if explicit caller lookup throws", async () => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    vi.mocked(runtime.db.getSession).mockRejectedValue(new Error("central unavailable"));
+    const client = await createClient(runtime);
+    const result = await client.callTool({ name: "create_agent_session", arguments: { agent_id: "codex-default", prompt: "child", caller_session_id: "caller-sess-1" } });
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [" caller-sess-1 ", {}],
+    ["  ", { "x-soulstream-agent-session-id": "caller-sess-1" }],
+  ])("preserves caller ID normalization for %j", async (caller_session_id, headers) => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const client = await createClient(runtime, { headers });
+    const result = await client.callTool({ name: "create_agent_session", arguments: { agent_id: "codex-default", prompt: "child", caller_session_id } });
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({ callerSessionId: "caller-sess-1", folderId: "caller-folder" }));
+  });
+
   it("create_agent_session은 caller_session_id와 caller_info를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },

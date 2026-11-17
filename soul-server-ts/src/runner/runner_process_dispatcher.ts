@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
+import { TRANSITION_ACK_TIMEOUT_MS } from "../db/event_persistence.js";
 
 import type { EngineExecuteParams } from "../engine/protocol.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
@@ -602,7 +603,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.latestPendingRecord = undefined;
       return null;
     }
-    const eventId = await this.pump.waitForAcknowledgement(record);
+    const eventId = await this.pump.waitForAcknowledgement(record, { timeoutMs: TRANSITION_ACK_TIMEOUT_MS });
     if (this.latestPendingRecord?.source_seq === record.source_seq) {
       this.latestPendingRecord = undefined;
     }

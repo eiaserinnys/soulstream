@@ -41,6 +41,7 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   };
   /** Re-enters the ordinary durable intervention route with the same row. */
   redeliverContent?(row: SessionDeliveryRow): Promise<void>;
+  hasLiveRunner?(row: SessionDeliveryRow): boolean;
   logger: Pick<Logger, "warn">;
 }
 
@@ -57,8 +58,8 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  * transcript therefore settles the ledger directly. An accepted input that is
  * still pending returns to reconnect admission.
  *
- * Every other row (an absent Claude input, or a backend with no Claude
- * transcript such as Codex) is judged by asking the runner for the delivery's
+ * An absent Claude input with no live runner is redelivered. Otherwise an
+ * absent input or a backend with no Claude transcript such as Codex is judged by asking the runner for the delivery's
  * instruction number. A queued row that carries no dispatch stamp was never
  * handed to any runner, so it is simply redelivered without asking. For the
  * rest, "applied" closes the row as consumed, "not_applied" (a runner of the
@@ -162,6 +163,10 @@ export class QueuedDeliveryTranscriptRecovery {
             );
           }
           settled += 1;
+          continue;
+        }
+        if (receipt.kind === "absent" && this.deps.hasLiveRunner?.(row) === false) {
+          settled += await this.redeliverUnseen(row);
           continue;
         }
         if (

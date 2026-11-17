@@ -23,7 +23,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
-      logger: { error: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -88,7 +88,7 @@ describe("Claude background generation upgrade recovery", () => {
         lifecycle: { observe } as never,
         recordRelationConsumed: vi.fn(async () => undefined),
         sourceNode: "node-a",
-        logger: { error: vi.fn() },
+        logger: { error: vi.fn(), info: vi.fn() },
         sessionStore: {} as never,
         getSession: vi.fn(async () => ({
           session_id: "caller-session",
@@ -114,7 +114,7 @@ describe("Claude background generation upgrade recovery", () => {
 
   it("closes an unavailable worktree row as skipped, marks it, and logs no error", async () => {
     const loadMessages = vi.fn();
-    const logger = { error: vi.fn() };
+    const logger = { error: vi.fn(), info: vi.fn() };
     const markStartupReconciled = vi.fn(async () => 1);
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
@@ -157,6 +157,7 @@ describe("Claude background generation upgrade recovery", () => {
     });
     expect(loadMessages).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith({ sessionId: "caller-session", worktreeId: "worktree-missing", taskId: "shared-task" }, "background generation reconciliation skipped: worktree not ready");
     expect(markStartupReconciled).toHaveBeenCalledOnce();
     expect(markStartupReconciled).toHaveBeenCalledWith("node-a", [{
       sessionId: "caller-session",
@@ -165,7 +166,7 @@ describe("Claude background generation upgrade recovery", () => {
   });
 
   it("leaves a row that failed for a transient reason unmarked for the next boot", async () => {
-    const logger = { error: vi.fn() };
+    const logger = { error: vi.fn(), info: vi.fn() };
     const markStartupReconciled = vi.fn(async () => 1);
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
@@ -207,7 +208,7 @@ describe("Claude background generation upgrade recovery", () => {
   });
 
   it("counts a missing worktree resolver as failed and leaves the row unmarked", async () => {
-    const logger = { error: vi.fn() };
+    const logger = { error: vi.fn(), info: vi.fn() };
     const markStartupReconciled = vi.fn(async () => 1);
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
@@ -258,7 +259,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
-      logger: { error: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -300,7 +301,7 @@ describe("Claude background generation upgrade recovery", () => {
     const recordRelationConsumed = vi.fn(async () => {
       throw new Error("ledger unavailable");
     });
-    const generationLogger = { error: vi.fn() };
+    const generationLogger = { error: vi.fn(), info: vi.fn() };
     const generationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
@@ -369,7 +370,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe } as never,
       recordRelationConsumed,
       sourceNode: "node-a",
-      logger: { error: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -416,7 +417,7 @@ describe("Claude background generation upgrade recovery", () => {
       lifecycle: { observe: vi.fn(async () => true) } as never,
       recordRelationConsumed,
       sourceNode: "node-a",
-      logger: { error: vi.fn() },
+      logger: { error: vi.fn(), info: vi.fn() },
       sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
@@ -466,7 +467,7 @@ describe("Claude background generation upgrade recovery", () => {
     const recordRelationConsumed = vi.fn(async (input: { callerSessionId: string }) => {
       if (input.callerSessionId === "caller-X") throw new Error("ledger unavailable");
     });
-    const generationLogger = { error: vi.fn() };
+    const generationLogger = { error: vi.fn(), info: vi.fn() };
     const generationRecovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [failed, recoverable]),

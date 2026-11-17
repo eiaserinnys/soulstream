@@ -11,6 +11,13 @@ import { QueuedDeliveryTranscriptRecovery } from
 type LedgerState = "claimed" | "delivered" | "consumed" | "queued";
 
 describe("queued transcript recovery rolling contract", () => {
+  it("redelivers an absent transcript when there is no live runner", async () => {
+    const redeliverContent = vi.fn(async () => undefined);
+    const harness = makeDeferredHarness("absent", { redeliverContent, instructionVerdict: "unknown", hasLiveRunner: false });
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({ claimed: 1, settled: 1 });
+    expect(redeliverContent).toHaveBeenCalledOnce();
+    expect(harness.markUncertain).not.toHaveBeenCalled();
+  });
   it.each([
     ["caller_turn_id", { caller_turn_id: "turn-existing" }],
     ["target_receipt_id", { target_receipt_id: "receipt-existing" }],
@@ -373,6 +380,7 @@ function makeDeferredHarness(
     intent?: DeliveryIntent;
     redeliverContent?: (row: SessionDeliveryRow) => Promise<void>;
     instructionVerdict?: "applied" | "not_applied" | "unknown";
+    hasLiveRunner?: boolean;
   } = {},
 ) {
   let claimable = true;
@@ -405,6 +413,7 @@ function makeDeferredHarness(
     instructionReceipt: {
       lookup: async () => options.instructionVerdict ?? "not_applied",
     },
+    ...(options.hasLiveRunner === undefined ? {} : { hasLiveRunner: () => options.hasLiveRunner }),
     deliveryRepository: {
       get: vi.fn(async () => claimedRow),
       markConsumed: vi.fn(async () => null),

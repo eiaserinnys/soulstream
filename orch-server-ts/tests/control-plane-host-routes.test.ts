@@ -766,6 +766,23 @@ describe("control-plane host routes", () => {
     });
   });
 
+  it("accepts a transcript batch larger than the default body limit", async () => {
+    const appendClaudeTranscriptEntriesIdempotent = vi.fn(async () => 1);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null, authBearerToken: token,
+      repositoryProvider: async () => ({ claudeTranscripts: { appendClaudeTranscriptEntriesIdempotent } }) as unknown as PersistenceHostRepositories,
+    });
+    const response = await app.inject({
+      method: "POST", url: "/api/claude-runtime/host/append_transcript_entries_idempotent",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [{ entries: [{ text: "x".repeat(1024 * 1024) }] }] },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(appendClaudeTranscriptEntriesIdempotent).toHaveBeenCalledOnce();
+  });
+
   it("round-trips transcript entry keys unchanged through the worker transport and host store", async () => {
     const workerModules = await vi.importActual<Record<string, unknown>>(
       "../../soul-server-ts/src/control_plane/persistence_host_clients.js",

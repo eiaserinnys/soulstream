@@ -69,6 +69,15 @@ import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js"
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as
   typeof import("node:sqlite");
 
+it("waits five minutes for the turn-boundary acknowledgement", async () => {
+  const waitForAcknowledgement = vi.fn(async () => 42);
+  const record = { source_seq: 1 };
+  const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as RunnerProcessDispatcher;
+  Object.assign(dispatcher, { latestPendingRecord: record, outbox: { ackedSeq: 0 }, pump: { waitForAcknowledgement } });
+  await expect(dispatcher.waitForSessionAck()).resolves.toBe(42);
+  expect(waitForAcknowledgement).toHaveBeenCalledWith(record, { timeoutMs: 300_000 });
+});
+
 const directories: string[] = [];
 
 afterEach(async () => {

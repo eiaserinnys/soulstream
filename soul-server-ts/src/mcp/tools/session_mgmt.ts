@@ -139,10 +139,22 @@ export function registerSessionMgmtTools(
 
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
-      const resolvedFolderId = await resolveDelegatedFolderId(runtime, {
-        callerSessionId: attribution.callerSessionId,
-        ...(folder_id !== undefined ? { folderId: folder_id } : {}),
-      });
+      let resolvedFolderId: string | null;
+      if (caller_session_id?.trim() && attribution.callerSessionId) {
+        let caller: Awaited<ReturnType<typeof runtime.db.getSession>> | undefined;
+        try {
+          caller = await runtime.db.getSession(attribution.callerSessionId);
+        } catch (err) {
+          runtime.logger.warn({ err, callerSessionId: attribution.callerSessionId }, "caller session folder lookup failed");
+        }
+        if (caller === null) return errorResult(`SESSION_NOT_FOUND: 호출 세션을 찾을 수 없습니다: ${caller_session_id}. caller_session_id에는 지금 세션의 전체 ID(soulstream_session.agent_session_id)를 넣으세요.`);
+        resolvedFolderId = folder_id ?? caller?.folder_id ?? null;
+      } else {
+        resolvedFolderId = await resolveDelegatedFolderId(runtime, {
+          callerSessionId: attribution.callerSessionId,
+          ...(folder_id !== undefined ? { folderId: folder_id } : {}),
+        });
+      }
 
       const sessionId = randomUUID();
       try {
