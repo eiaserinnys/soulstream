@@ -168,7 +168,7 @@ describe("live persistent instruction extractor wiring", () => {
     });
     expect(liveFactoryMocks.generate).toHaveBeenCalledTimes(1);
     expect(liveFactoryMocks.generate.mock.calls[0]?.[1]).toMatchObject({
-      model: "gpt-6.1-sol",
+      model: "gpt-6.2-sol",
       reasoningEffort: "high",
       timeoutMs: 1_234,
       codexConcurrencyLimit: 3,
