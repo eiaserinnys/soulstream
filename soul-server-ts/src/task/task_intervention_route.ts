@@ -52,6 +52,7 @@ type NotificationPublication = Awaited<
  */
 export type AddInterventionResult =
   | RunningInterventionResult
+  | { delivered: true; reason: string }
   | { autoResumed: true }
   | { suppressed: true; deliveryId: string; reason: string };
 
@@ -222,6 +223,9 @@ export class TaskInterventionRoute {
         deliveryId: admission.deliveryId,
         reason: admission.reason,
       };
+    }
+    if (admission.kind === "already_accepted") {
+      return { delivered: true, reason: admission.reason };
     }
     const message = admission.kind === "admitted"
       ? hydrateStoredDeliveryMessage(initialMessage, admission.row)

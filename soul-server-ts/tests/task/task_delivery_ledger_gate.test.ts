@@ -13,6 +13,99 @@ function row(deliveryId: string, state: SessionDeliveryRow["state"]): SessionDel
 }
 
 describe("TaskDeliveryLedgerGate", () => {
+  it.each([
+    { state: "claimed", token: undefined, reason: "delivery_claimed" },
+    { state: "claimed", token: "route:other", reason: "delivery_claimed" },
+    { state: "dispatching", token: undefined, reason: "delivery_dispatching" },
+    { state: "queued", token: undefined, reason: "delivery_queued" },
+    { state: "delivered", token: undefined, reason: "delivery_delivered" },
+    { state: "consumed", token: undefined, reason: "delivery_consumed" },
+  ] as const)("recognizes the same target's existing $state delivery", async ({ state, token, reason }) => {
+    const deliveryId = "same-delivery";
+    const existing = {
+      ...row(deliveryId, state),
+      aggregate_state: state === "consumed" ? "consumed" : "pending",
+      target_session_id: "caller-1",
+      attempt_token: "maintenance:owner",
+      intent: "human_live_steer" as const,
+      relation_key: "relation-1",
+      completion_id: "completion-1",
+    };
+    const claimAttemptForTarget = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn().mockResolvedValue(existing),
+      claimAttemptForTarget,
+    } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user: "agent", deliveryId,
+      deliveryIntent: "human_live_steer", relationKey: "relation-1",
+      completionId: "completion-1", deliveryAttemptToken: token,
+    })).resolves.toEqual({ kind: "already_accepted", deliveryId, reason });
+    expect(claimAttemptForTarget).not.toHaveBeenCalled();
+  });
+
+  it("keeps a different target's claimed delivery suppressed", async () => {
+    const existing = {
+      ...row("delivery-1", "claimed"), aggregate_state: "pending",
+      target_session_id: "other-session", attempt_token: "maintenance:owner",
+      intent: "human_live_steer", relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const gate = new TaskDeliveryLedgerGate(true, { get: vi.fn().mockResolvedValue(existing) } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user: "agent", deliveryId: "delivery-1",
+      deliveryIntent: "human_live_steer", relationKey: "relation-1", completionId: "completion-1",
+    })).resolves.toEqual({ kind: "suppressed", deliveryId: "delivery-1", reason: "delivery_target_changed" });
+  });
+
+  it("admits the attempt that owns the claimed delivery", async () => {
+    const existing = {
+      ...row("delivery-1", "claimed"), aggregate_state: "pending",
+      target_session_id: "caller-1", attempt_token: "maintenance:owner",
+      intent: "human_live_steer", relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const gate = new TaskDeliveryLedgerGate(true, { get: vi.fn().mockResolvedValue(existing) } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user: "agent", deliveryId: "delivery-1",
+      deliveryIntent: "human_live_steer", relationKey: "relation-1", completionId: "completion-1",
+      deliveryAttemptToken: "maintenance:owner",
+    })).resolves.toEqual({ kind: "admitted", deliveryId: "delivery-1", row: existing });
+  });
+
+  it("recognizes a maintenance claim that wins after the route reads pending", async () => {
+    const existing = {
+      ...row("delivery-1", "pending"), aggregate_state: "pending",
+      target_session_id: "caller-1", intent: "human_live_steer",
+      relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const claimed = { ...existing, state: "claimed", attempt_token: "maintenance:owner" };
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(claimed),
+      claimAttemptForTarget: vi.fn().mockResolvedValue(null),
+    } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user: "agent", deliveryId: "delivery-1",
+      deliveryIntent: "human_live_steer", relationKey: "relation-1", completionId: "completion-1",
+    })).resolves.toEqual({ kind: "already_accepted", deliveryId: "delivery-1", reason: "delivery_claimed" });
+  });
+
+  it("still admits an explicit stored-content recovery of a queued delivery", async () => {
+    const existing = {
+      ...row("delivery-1", "queued"), aggregate_state: "pending",
+      target_session_id: "caller-1", intent: "human_live_steer",
+      relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const claimed = { ...existing, state: "claimed", attempt_token: "route:recovery" };
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn().mockResolvedValue(existing),
+      claimAttemptForTarget: vi.fn().mockResolvedValue(claimed),
+    } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user: "agent", deliveryId: "delivery-1",
+      deliveryIntent: "human_live_steer", relationKey: "relation-1", completionId: "completion-1",
+      storedDeliveryPayload: { text: "continue" }, storedDeliveryPayloadHash: "stored-hash",
+    })).resolves.toEqual({ kind: "admitted", deliveryId: "delivery-1", row: claimed });
+  });
+
   it("records an Agent result as a pre-terminal tombstone for the exact generation", async () => {
     const recordRelationConsumed = vi.fn().mockResolvedValue({
       relation: {},

@@ -36,6 +36,7 @@ import { recordClaudeBackgroundRelationConsumption } from
 export type DeliveryLedgerAdmission =
   | { kind: "legacy" }
   | { kind: "suppressed"; deliveryId: string; reason: string }
+  | { kind: "already_accepted"; deliveryId: string; reason: string }
   | { kind: "admitted"; deliveryId: string; row: SessionDeliveryRow };
 
 const RESERVATION_CONFLICT_RETRY_MAX_DELAY_MS = 10_000;
@@ -96,6 +97,18 @@ export class TaskDeliveryLedgerGate {
         reason: "identity_conflict_uncertain",
       };
     }
+    if (
+      registered.row.state === "claimed"
+      && registered.row.target_session_id !== params.agentSessionId
+    ) {
+      return {
+        kind: "suppressed",
+        deliveryId: registered.row.delivery_id,
+        reason: "delivery_target_changed",
+      };
+    }
+    const accepted = alreadyAccepted(registered.row, params);
+    if (accepted) return accepted;
     if (registered.row.aggregate_state === "consumed") {
       return {
         kind: "suppressed",
@@ -111,17 +124,6 @@ export class TaskDeliveryLedgerGate {
       };
     }
     if (registered.row.state === "claimed") {
-      if (
-        registered.row.target_session_id !== params.agentSessionId ||
-        !params.deliveryAttemptToken ||
-        registered.row.attempt_token !== params.deliveryAttemptToken
-      ) {
-        return {
-          kind: "suppressed",
-          deliveryId: registered.row.delivery_id,
-          reason: "delivery_target_changed",
-        };
-      }
       return {
         kind: "admitted",
         deliveryId: registered.row.delivery_id,
@@ -145,6 +147,17 @@ export class TaskDeliveryLedgerGate {
     );
     if (!claimed) {
       const current = await repository.get(registered.row.delivery_id);
+      if (current) {
+        if (current.state === "claimed" && current.target_session_id !== params.agentSessionId) {
+          return {
+            kind: "suppressed",
+            deliveryId: current.delivery_id,
+            reason: "delivery_target_changed",
+          };
+        }
+        const accepted = alreadyAccepted(current, params);
+        if (accepted) return accepted;
+      }
       return {
         kind: "suppressed",
         deliveryId: registered.row.delivery_id,
@@ -455,6 +468,35 @@ export class TaskDeliveryLedgerGate {
     }
     return this.repository;
   }
+}
+
+function alreadyAccepted(
+  row: SessionDeliveryRow,
+  params: AddInterventionParams,
+): Extract<DeliveryLedgerAdmission, { kind: "already_accepted" }> | undefined {
+  if (row.target_session_id !== params.agentSessionId || row.aggregate_state === "dead_letter") {
+    return undefined;
+  }
+  if (row.aggregate_state === "consumed") {
+    return { kind: "already_accepted", deliveryId: row.delivery_id, reason: "delivery_consumed" };
+  }
+  // Recovery explicitly supplies the stored payload and is allowed to reclaim
+  // a queued row; an ordinary duplicate request must not do so.
+  if (row.state === "claimed") {
+    if (params.deliveryAttemptToken && row.attempt_token === params.deliveryAttemptToken) {
+      return undefined;
+    }
+  } else if (
+    row.state !== "dispatching" && row.state !== "delivered" && row.state !== "consumed"
+    && (row.state !== "queued" || params.storedDeliveryPayloadHash !== undefined)
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "already_accepted",
+    deliveryId: row.delivery_id,
+    reason: `delivery_${row.state}`,
+  };
 }
 
 function requiresExactDeliveryConsumption(message: InterventionMessage): boolean {
