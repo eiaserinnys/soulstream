@@ -9,7 +9,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
  *
  *   - 같은 줄의 한 줄 입력 표면 높이가 모두 같다(이름, 시간대, 오프라인, 반복 주기, 실행 일시)
  *   - 실행 시각 입력과 같은 줄의 삭제·시각 추가 단추 높이가 같다
- *   - 매월 날짜 목록의 위아래 안쪽 여백이 0보다 크다
+ *   - 매월 날짜 버튼 31개가 7열에 놓이고 좁은 화면을 넘지 않으며 선택을 토글한다
  *   - 실행 시각·실행 일시 입력의 color-scheme이 어두운 바탕(dark)이다
  *   - 1회 작업 편집에서 반복 주기 select가 비활성이고, 비활성 글자색이 soul-ui Input의
  *     비활성 글자색(text-muted-foreground)과 같다
@@ -23,10 +23,24 @@ const KOREAN_NAME = "매주 월요일 아침에 지난주 회의록과 이번 �
 const MONTHLY_NAME = "매월 정산 보고";
 const ONCE_NAME = "한 번만 실행하는 알림 작업 - ".repeat(6).trim();
 const NOW = "2026-11-16T10:00:00.000Z";
-const WIDTHS = [1440, 390];
+const WIDTHS = [1440, 390, 360];
 const ONE_LINE_LABELS = ["작업 이름", "시간대", "오프라인 허용 초", "반복 주기"] as const;
 const ONCE_ONE_LINE_LABELS = ["작업 이름", "오프라인 허용 초", "반복 주기", "실행 일시"] as const;
 const BUTTON_LABELS = ["삭제", "시각 추가"] as const;
+
+test("다른 화면의 실행 대상 비교", async ({ page }) => {
+  const outDir = process.env.RECURRING_LAYOUT_OUT_DIR ? path.resolve(process.env.RECURRING_LAYOUT_OUT_DIR) : test.info().outputPath(".");
+  mkdirSync(outDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => { localStorage.setItem("ls.webglGlass", "0"); });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  await page.goto("/");
+  await page.getByTestId("card-home").getByRole("button", { name: "새 카드", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "새 카드" });
+  await dialog.locator("details").evaluate((element: HTMLDetailsElement) => { element.open = true; });
+  await expect(dialog.getByLabel("노드 선택", { exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(outDir, "card-assignment-1440.png"), animations: "disabled" });
+});
 
 function job(jobId: string, name: string, kind: "recurring" | "once", expressions: string[], patch: Record<string, unknown> = {}) {
   return {
@@ -193,6 +207,18 @@ for (const width of WIDTHS) {
     const { tab } = await openRecurringTab(page);
     const editor = tab.getByTestId("recurring-schedule-editor");
 
+    const node = tab.getByLabel("노드 선택", { exact: true });
+    const agent = tab.getByLabel("에이전트 선택", { exact: true });
+    await node.scrollIntoViewIfNeeded();
+    const assignment = await node.evaluate(element => {
+      const nodeRect = element.getBoundingClientRect();
+      const agentRect = document.querySelector('[aria-label="에이전트 선택"]')!.getBoundingClientRect();
+      return { nodeHeight: nodeRect.height, agentHeight: agentRect.height };
+    });
+    await page.screenshot({ path: path.join(outDir, `assignment-${width}.png`), animations: "disabled" });
+    writeFileSync(path.join(outDir, `assignment-${width}.json`), JSON.stringify(assignment, null, 2));
+    expect(Math.abs(assignment.nodeHeight - assignment.agentHeight)).toBeLessThanOrEqual(1);
+
     const states: StateMeasurement[] = [];
     const violations: string[] = [];
     const fail = (message: string) => violations.push(message);
@@ -239,22 +265,35 @@ for (const width of WIDTHS) {
     const timeScheme = control(times4, "실행 시각 1").colorScheme;
     if (!timeScheme.includes("dark")) fail(`실행 시각 color-scheme이 dark가 아님: ${timeScheme}`);
 
-    // 2. 매월 모드: 매월 날짜 목록의 위아래 안쪽 여백
+    // 2. 매월 모드: 격자와 토글 상태
     await tab.getByLabel("반복 주기").selectOption("monthly");
-    const monthly = await record("monthly", "page");
-    const monthDays = control(monthly, "매월 날짜");
-    if (monthDays.paddingTop <= 0 || monthDays.paddingBottom <= 0) {
-      fail(`매월 날짜 목록 안쪽 여백이 0: 위 ${monthDays.paddingTop}px, 아래 ${monthDays.paddingBottom}px`);
-    }
+    const grid = tab.getByRole("group", { name: "매월 날짜" });
+    const days = grid.getByRole("button");
+    await expect(days).toHaveCount(31);
+    await expect(days.nth(0)).toHaveAttribute("aria-pressed", "true");
+    await days.nth(14).click();
+    await expect(days.nth(14)).toHaveAttribute("aria-pressed", "true");
+    await days.nth(14).click();
+    await expect(days.nth(14)).toHaveAttribute("aria-pressed", "false");
+    const gridMetrics = await grid.evaluate(element => {
+      const editor = element.closest('[data-testid="recurring-schedule-editor"]')!;
+      const editorStyle = getComputedStyle(editor);
+      return { columns: getComputedStyle(element).gridTemplateColumns.split(" ").length,
+        gridRight: element.getBoundingClientRect().right,
+        innerRight: editor.getBoundingClientRect().right - parseFloat(editorStyle.borderRightWidth) - parseFloat(editorStyle.paddingRight),
+        documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth };
+    });
+    writeFileSync(path.join(outDir, `monthly-grid-${width}.json`), JSON.stringify(gridMetrics, null, 2));
+    expect(gridMetrics.columns).toBe(7);
+    expect(gridMetrics.gridRight).toBeLessThanOrEqual(gridMetrics.innerRight + 1);
+    expect(gridMetrics.documentWidth).toBeLessThanOrEqual(gridMetrics.viewportWidth);
+    await record("monthly", "page");
 
-    // 3. 기존 매월 작업(1, 15, 28일): 선택 띠가 위아래 여백 안에 있는지 같은 자리에서 확인
+    // 3. 기존 매월 작업(1, 15, 28일): 저장된 선택 상태를 확인한다.
     await tab.getByRole("button").filter({ hasText: MONTHLY_NAME }).first().click();
     await expect(tab.getByLabel("반복 주기")).toHaveValue("monthly");
-    const monthlyExisting = await record("monthly-existing");
-    const monthDaysExisting = control(monthlyExisting, "매월 날짜");
-    if (monthDaysExisting.paddingTop <= 0 || monthDaysExisting.paddingBottom <= 0) {
-      fail(`기존 매월 작업 목록 안쪽 여백이 0: 위 ${monthDaysExisting.paddingTop}px, 아래 ${monthDaysExisting.paddingBottom}px`);
-    }
+    await record("monthly-existing", "editor");
+    for (const day of [1, 15, 28]) await expect(days.nth(day - 1)).toHaveAttribute("aria-pressed", "true");
 
     // 4. 고급 cron 모드
     await tab.getByLabel("반복 주기").selectOption("advanced");

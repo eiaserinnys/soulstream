@@ -33,7 +33,7 @@ for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
  await expect(dialog.getByRole('heading',{name:'새 카드',exact:true})).toBeVisible();
  await dialog.getByRole('textbox',{name:'카드 제목'}).fill('첨부와 실행 대상을 보존하는 카드');
  await dialog.getByRole('button',{name:'폴더 선택',exact:true}).click();await page.locator('.v3-card-folder-picker').getByRole('tab',{name:'전체',exact:true}).click();await page.locator('.v3-card-folder-picker').getByRole('button',{name:'소울스트림',exact:true}).click();
- await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveValue('');
+ await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveText('미지정');
  await dialog.getByRole('combobox',{name:'노드 선택'}).click();await capture(page,`node-open-${width}`);await page.keyboard.press('Escape');
  await dialog.getByRole('combobox',{name:'에이전트 선택'}).click();await expect(page.getByRole('listbox')).toBeVisible();await capture(page,`agent-open-${width}`);await page.keyboard.press('Escape');
  await dialog.getByRole('combobox',{name:'모델 선택'}).click();await expect(page.getByRole('listbox')).toBeVisible();await capture(page,`model-open-${width}`);await page.keyboard.press('Escape');
@@ -45,7 +45,7 @@ for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
  const encoded=readFileSync('public/icon-192.png').toString('base64');
  await dialog.getByRole('textbox',{name:'요청 원문'}).evaluate((element,encoded)=>{const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));const data=new DataTransfer();data.items.add(new File([bytes],'붙여넣기.png',{type:'image/png'}));element.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},encoded);
  await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();await imageLoaded(page,'붙여넣기.png');
- await dialog.getByRole('combobox',{name:'노드 선택'}).selectOption('qa-node');await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeDisabled();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();
+ await dialog.getByRole('combobox',{name:'노드 선택'}).click();await page.getByRole('option',{name:'qa-node',exact:true}).click();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeDisabled();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();
  expect(state.uploads.at(-1)).toBe('qa-node');await capture(page,`node-switch-${width}`);
  const metrics=await dialog.evaluate(el=>{const r=el.getBoundingClientRect(),header=el.querySelector('[data-slot="dialog-header"]')!.getBoundingClientRect(),footer=el.querySelector('[data-slot="dialog-footer"]')!.getBoundingClientRect(),title=el.querySelector('[aria-label="카드 제목"]')!.getBoundingClientRect(),request=el.querySelector('[aria-label="요청 원문"]')!.getBoundingClientRect(),body=el.querySelector('[data-slot="dialog-panel-scroll"]')!,fields=[...el.querySelectorAll('.v3-succession-assignment > div')].map(field=>{const box=field.getBoundingClientRect();return {left:box.x,top:box.y,right:box.right};});return {popup:{x:r.x,y:r.y,width:r.width,height:r.height},headerInset:header.x-r.x,footerInset:footer.x-r.x,inputInset:title.x-r.x,inputRightInset:r.right-title.right,inputRequestAlignment:Math.abs(title.x-request.x),fields,tokens:getComputedStyle(el).getPropertyValue('--v3-space-3'),bodyScroll:body.scrollHeight>body.clientHeight};});
  expect(metrics.popup.x).toBeGreaterThanOrEqual(0);expect(metrics.popup.x+metrics.popup.width).toBeLessThanOrEqual(width);expect(metrics.tokens.trim()).toBe('12px');
@@ -75,7 +75,7 @@ test('all and folder board/list share the production form',async({page})=>{
 test('component review opens the actual form with live assignment choices',async({page})=>{
  test.skip(phase==='before');await fixture(page);await page.goto('/components');
  await page.getByRole('button',{name:'새 카드 작성 검수',exact:true}).click();const dialog=page.getByRole('dialog',{name:'새 카드'});
- await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveValue('');await expect(dialog.getByRole('combobox',{name:'모델 선택'})).toBeEnabled();
+ await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveText('미지정');await expect(dialog.getByRole('combobox',{name:'모델 선택'})).toBeEnabled();
  await dialog.locator('input[type="file"]').setInputFiles({name:'검수.png',mimeType:'image/png',buffer:readFileSync('public/icon-192.png')});await imageLoaded(page,'검수.png');await capture(page,'review-form');
 });
 

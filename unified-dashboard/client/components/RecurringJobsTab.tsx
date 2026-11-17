@@ -206,7 +206,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
 
   return (
     <SettingsListDetailFrame testId="recurring-jobs-tab" list={<>
-        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught)))}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
+        <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught))); }}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
             setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null);
           }}>새 작업</Button></>} />
         <JobList

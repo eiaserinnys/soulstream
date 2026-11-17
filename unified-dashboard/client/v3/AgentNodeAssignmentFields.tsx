@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentInfo,
   ModelPresetAvailability,
 } from "@seosoyoung/soul-ui";
 
 import { AgentSelectionField } from "./AgentSelectionField";
+import { CatalogSelectionField } from "../components/CatalogSelectionField";
 import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
 import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -58,7 +59,6 @@ export function AgentNodeAssignmentFields({
   );
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
-  const nodeSelectId = useId();
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -127,15 +127,12 @@ export function AgentNodeAssignmentFields({
       onAgentInfoChange?.(agentOptions.find(agent => agent.id === value) ?? null);
     }} />;
   const nodeField = (
-    <div className="v3-assignment-field">
-      <label htmlFor={nodeSelectId}>
-        {presentation === "session" ? "노드" : "실행 노드"}
-      </label>
-      <select id={nodeSelectId} value={nodeId} aria-label={presentation === "session" ? "노드 선택" : "기본 실행 노드"} disabled={disabled} onChange={(event) => onNodeIdChange(event.target.value)}>
-        <option value="">미지정</option>
-        {nodeOptions.map((node) => <option key={node.nodeId} value={node.nodeId}>{node.nodeId}</option>)}
-      </select>
-    </div>
+    <CatalogSelectionField className="v3-assignment-field" value={nodeId} disabled={disabled}
+      label={presentation === "session" ? "노드" : "실행 노드"}
+      ariaLabel={presentation === "session" ? "노드 선택" : "기본 실행 노드"}
+      selectedLabel={nodeId || "미지정"}
+      options={[{ value: "", label: "미지정" }, ...nodeOptions.map(node => ({ value: node.nodeId, label: node.nodeId }))]}
+      onValueChange={onNodeIdChange} />
   );
   const modelField = (
     <NodeModelPresetSelect

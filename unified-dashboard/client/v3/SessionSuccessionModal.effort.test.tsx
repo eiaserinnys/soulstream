@@ -181,6 +181,14 @@ function setSelect(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+async function chooseNode(value: string) {
+  flushSync(() => document.body.querySelector<HTMLButtonElement>('button[aria-label="노드 선택"]')!.click());
+  await vi.waitFor(() => expect([...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].some(item => item.textContent?.trim() === value)).toBe(true));
+  const item = [...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')].find(option => option.textContent?.trim() === value)!;
+  flushSync(() => item.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+  flushSync(() => item.click());
+}
+
 function modelSelect(): HTMLSelectElement | null {
   return document.body.querySelector<HTMLSelectElement>('select[aria-label="모델 선택"]');
 }
@@ -248,8 +256,7 @@ describe("SessionSuccessionModal reasoning effort", () => {
     await settle();
     expect(effortSelect()?.value).toBe("low");
 
-    const nodes = document.body.querySelector<HTMLSelectElement>('select[aria-label="노드 선택"]');
-    flushSync(() => setSelect(nodes!, "node-b"));
+    await chooseNode("node-b");
     await settle(25);
 
     // Changing the node clears the model selection on this surface, so the
@@ -469,7 +476,7 @@ describe("SessionSuccessionModal attachments", () => {
     flushSync(() => input.dispatchEvent(paste)); await settle();
     expect(paste.defaultPrevented).toBe(true);
     expect(document.body.querySelector('img[src="blob:test"]')).not.toBeNull();
-    flushSync(() => setSelect(document.body.querySelector<HTMLSelectElement>('select[aria-label="노드 선택"]')!, "node-b"));
+    await chooseNode("node-b");
     await settle();
     const submit = document.body.querySelector<HTMLButtonElement>(".v3-succession-footer button:last-child")!;
     expect(submit.disabled).toBe(true);

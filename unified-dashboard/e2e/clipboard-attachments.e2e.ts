@@ -117,7 +117,8 @@ for (const width of [1440, 390]) {
     const state = await setup(page, width); await page.goto("/"); await folder(page, width);
     await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "새 세션", exact: true });
-    await dialog.getByLabel("노드 선택", { exact: true }).selectOption("eiaserinnys");
+    await dialog.getByLabel("노드 선택", { exact: true }).click();
+    await page.getByRole("option", { name: "eiaserinnys", exact: true }).click();
     // Existing soulstream-e2e Base UI Select interaction: select only the open popup.
     await dialog.getByLabel("에이전트 선택", { exact: true }).click();
     await page.locator('[data-slot="select-positioner"]:not([hidden]) [data-slot="select-item"]').filter({ hasText: "로젤린" }).first().click();
@@ -125,7 +126,8 @@ for (const width of [1440, 390]) {
     await expect.poll(() => state.uploads.length).toBe(1);
     await expect(dialog.locator(".v3-succession-footer button:last-child")).toBeEnabled();
     await capture(page, `new-conversation-${width}`);
-    state.hold(); await dialog.getByLabel("노드 선택", { exact: true }).selectOption("qa-node");
+    state.hold(); await dialog.getByLabel("노드 선택", { exact: true }).click();
+    await page.getByRole("option", { name: "qa-node", exact: true }).click();
     await expect.poll(() => state.uploads.length).toBe(2);
     await expect(dialog.locator(".v3-succession-footer button:last-child")).toBeDisabled(); expect(state.creates).toHaveLength(0);
     state.release(); await expect(dialog.locator(".v3-succession-footer button:last-child")).toBeEnabled();

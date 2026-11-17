@@ -104,7 +104,7 @@ type Measurement = {
   mode: ScheduleMode;
   row: Rect;
   fields: FieldRect[];
-  scrollers: Array<{ name: string; scrollWidth: number; clientWidth: number }>;
+  scrollers: Array<{ name: string; scrollWidth: number; clientWidth: number; overflowX: string }>;
   header: { title: Rect | null; actions: Rect | null };
 };
 
@@ -139,6 +139,7 @@ async function measure(page: Page, width: number, angle: "new" | "edit", nameId:
       name,
       scrollWidth: element ? element.scrollWidth : 0,
       clientWidth: element ? element.clientWidth : 0,
+      overflowX: element ? getComputedStyle(element).overflowX : "visible",
     });
     const headerTitle = tab.querySelector("header h3");
     const headerActions = tab.querySelector("header > div:last-child");
@@ -308,7 +309,7 @@ function violationsOf(measurement: Measurement): string[] {
     }
   }
   for (const scroller of measurement.scrollers) {
-    if (scroller.scrollWidth - scroller.clientWidth > 1) {
+    if ((scroller.name === "document" || scroller.overflowX !== "visible") && scroller.scrollWidth - scroller.clientWidth > 1) {
       found.push(`가로 스크롤: ${scroller.name} (${scroller.scrollWidth} > ${scroller.clientWidth})`);
     }
   }
@@ -507,6 +508,14 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
     tabStops.push({ step, info: await activeInfo(page) });
   }
 
+  const nodeTrigger = tab.getByLabel("노드 선택", { exact: true });
+  await nodeTrigger.click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(nodeTrigger).toBeFocused();
+  const nodeFocusRestored = await nodeTrigger.evaluate(element => document.activeElement === element);
+
   // 17. 오류 상태: 실패하면 그 자리에 안내가 서고, 새로고침으로 다시 시도할 수 있다.
   routeState.failJobs = true;
   await tab.getByTestId("recurring-jobs-refresh").click();
@@ -518,6 +527,7 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   await tab.getByTestId("recurring-jobs-refresh").click();
   await expect(tab.getByRole("button").filter({ hasText: NAMES.korean }).first()).toBeVisible();
   const alertStillVisible = await errorAlert.isVisible().catch(() => false);
+  await expect(errorAlert).toHaveCount(0);
 
   // 18. 창 크기 바꾸기: 넓은 폭 → 좁은 폭 → 다시 넓은 폭에서 배치가 다시 서고 입력이 남는다.
   const resize: Array<{ width: number; violations: string[]; nameValue: string; dialogFits: boolean }> = [];
@@ -550,6 +560,7 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
     resize,
     closedFocus,
     focusRestoredToTrigger: focusRestored,
+    nodeFocusRestored,
   };
   write("interaction.json", report);
   console.log(`조작 항목 측정: ${JSON.stringify(report)}`);
@@ -561,3 +572,65 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   expect(tabStops.every((entry) => entry.info.inDialog && entry.info.visible)).toBe(true);
   expect(focusRestored).toBe(true);
 });
+
+test("첫 목록 조회 실패 뒤 새로고침 성공", async ({ page }) => {
+  const { capture } = await preparePage(page, 390);
+  const state = await installRoutes(page, { failJobs: true });
+  const { tab } = await openRecurringTab(page);
+  await expect(tab.getByRole("alert")).toBeVisible();
+  await capture("initial-load-error");
+  state.failJobs = false;
+  await tab.getByTestId("recurring-jobs-refresh").click();
+  await expect(tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first()).toBeVisible();
+  await expect(tab.getByRole("alert")).toHaveCount(0);
+});
+
+for (const width of [1440, 390, 360]) {
+  test(`설정 목록과 상세 끝선 ${width}`, async ({ page }) => {
+    const { capture, write } = await preparePage(page, width);
+    await installRoutes(page);
+    const { dialog } = await openRecurringTab(page);
+    const measurements: Record<string, unknown> = {};
+    for (const [label, id] of [["반복 작업", "recurring-jobs-tab"], ["영구 에이전트 세션", "persistent-sessions-tab"]] as const) {
+      if (id === "persistent-sessions-tab") {
+        if (width <= 640) await dialog.getByRole("button", { name: "모든 설정" }).click();
+        await dialog.getByRole("button", { name: label, exact: true }).click();
+      }
+      const tab = page.getByTestId(id);
+      const group = tab.getByText("실행 대상", { exact: true }).locator("..");
+      await expect(group).toBeVisible();
+      await group.scrollIntoViewIfNeeded();
+      await settle(page);
+      const edges = await tab.evaluate(element => {
+        const list = element.querySelector("aside")!.getBoundingClientRect();
+        const detail = element.querySelector(":scope > div")!;
+        const group = [...detail.querySelectorAll("div.rounded.border")].find(box => box.querySelector("p")?.textContent === "실행 대상")!.getBoundingClientRect();
+        const frame = element.getBoundingClientRect();
+        return { listRight: list.right, groupRight: group.right, frameRight: frame.right,
+          detailClientRight: detail.getBoundingClientRect().left + detail.clientWidth,
+          detailScrollHeight: detail.scrollHeight, detailClientHeight: detail.clientHeight };
+      });
+      measurements[id] = edges;
+      await capture(`edges-${id}-${width}`);
+      if (width < 1024) expect.soft(Math.abs(edges.listRight - edges.groupRight), `${id} 목록과 상세`).toBeLessThanOrEqual(1);
+      else expect.soft(Math.abs(edges.frameRight - edges.groupRight), `${id} 상세와 내용 끝선`).toBeLessThanOrEqual(1);
+      expect.soft(edges.groupRight).toBeLessThanOrEqual(edges.detailClientRight + 1);
+      if (width === 1440) {
+        // 프레임 높이가 제한된 경우에도 상세 스크롤바가 상자의 끝선을 덮지 않는지 확인한다.
+        await tab.evaluate(element => { element.style.height = "30rem"; });
+        const scrolled = await tab.evaluate(element => {
+          const detail = element.querySelector<HTMLElement>(":scope > div")!;
+          detail.scrollTop = detail.scrollHeight;
+          const group = [...detail.querySelectorAll("div.rounded.border")].find(box => box.querySelector("p")?.textContent === "실행 대상")!.getBoundingClientRect();
+          return { scrollTop: detail.scrollTop, scrollHeight: detail.scrollHeight, clientHeight: detail.clientHeight,
+            groupRight: group.right, clientRight: detail.getBoundingClientRect().left + detail.clientWidth };
+        });
+        measurements[`${id}-scrolled`] = scrolled;
+        expect.soft(scrolled.scrollTop).toBeGreaterThan(0);
+        expect.soft(scrolled.groupRight).toBeLessThanOrEqual(scrolled.clientRight + 1);
+        await capture(`edges-${id}-${width}-scrolled`);
+      }
+    }
+    write(`edges-${width}.json`, measurements);
+  });
+}

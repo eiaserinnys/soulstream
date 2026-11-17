@@ -154,10 +154,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
     await modal.getByRole("textbox", { name: "초기 지시" }).fill("선택한 컨텍스트를 세 문장으로 요약하세요.");
 
-    await page.getByRole("combobox", { name: "에이전트 선택" })
-      .locator('option[value="roselin_codex"]')
-      .filter({ hasText: "로젤린" })
-      .waitFor({ state: "attached" });
+    await expectTriggerText(page.getByRole("combobox", { name: "에이전트 선택" }), "로젤린");
     await installMutationCounters(page);
     const agentRequestsBeforeObservation = agentRequests.length;
     const sessionRequestsBeforeObservation = sessionListRequests;
@@ -168,8 +165,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(mutations.runs === 0, `배경 run 목록 DOM 변이 ${mutations.runs}회`);
     assert(agentRefetchesDuringObservation === 0, `에이전트 목록 재조회 ${agentRefetchesDuringObservation}회`);
 
-    await page.getByRole("combobox", { name: "노드 선택" }).selectOption("qa-node");
-    await page.getByRole("combobox", { name: "에이전트 선택" }).selectOption("qa-agent");
+    await chooseSelectItem(page, page.getByRole("combobox", { name: "노드 선택" }), "qa-node");
+    await chooseSelectItem(page, page.getByRole("combobox", { name: "에이전트 선택" }), "QA 에이전트");
     assert(agentRequests.at(-1) === "qa-node", "노드 변경 후 에이전트 목록을 갱신하지 않았습니다.");
     await expectTriggerText(modelPreset, "미지정");
     await chooseSelectItem(page, modelPreset, "QA 사용량 확인 모델 (사용량 확인 지연)");
@@ -299,7 +296,7 @@ async function installMutationCounters(page: Page) {
   await page.evaluate(() => {
     const state = { agent: 0, runs: 0 };
     (window as Window & { __prAiMutationCounts?: typeof state }).__prAiMutationCounts = state;
-    const agent = document.querySelector('select[aria-label="에이전트 선택"]');
+    const agent = document.querySelector('[data-slot="select-trigger"][aria-label="에이전트 선택"]');
     const runs = document.querySelector(".v3-run-list");
     if (!agent || !runs) throw new Error("플래싱 관찰 대상을 찾지 못했습니다.");
     new MutationObserver((records) => { state.agent += records.length; })

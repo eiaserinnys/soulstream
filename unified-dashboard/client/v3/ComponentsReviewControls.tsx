@@ -2,7 +2,9 @@ import { useState } from "react";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { AgentSelectionField } from "./AgentSelectionField";
 import { NodeModelPresetSelect } from "../components/NodeModelPresetSelect";
+import { RecurringScheduleEditor } from "../components/RecurringScheduleEditor";
 import { SettingFieldWidget, type SettingField } from "../components/config/SettingFieldWidget";
+import { defaultRecurringSchedule, type RecurringScheduleDraft } from "../lib/recurring-schedule";
 import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
 import "./v3-context-succession.css";
 
@@ -30,6 +32,7 @@ const fields: SettingField[] = [
 export function ComponentsReviewControls() {
   const [agent, setAgent] = useState("roselin");
   const [model, setModel] = useState("sol");
+  const [schedule, setSchedule] = useState<RecurringScheduleDraft>(() => ({ ...defaultRecurringSchedule(), mode: "monthly", monthDays: [1, 15, 28] }));
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map(field => [field.key, String(field.value)])));
   return <div className="v3-components-samples" data-testid="components-review-controls">
     <div className="v3-components-sample">
@@ -45,6 +48,10 @@ export function ComponentsReviewControls() {
       <p className="v3-components-label">SettingFieldWidget · 입력 / 토글 / 마스킹 / 읽기 전용</p>
       {fields.map(field => <SettingFieldWidget key={field.key} field={field} value={values[field.key]}
         onChange={value => setValues(current => ({ ...current, [field.key]: value }))}/>)}
+    </div>
+    <div className="v3-components-sample" data-testid="recurring-schedule-review-sample">
+      <p className="v3-components-label">RecurringScheduleEditor · 매월 날짜</p>
+      <RecurringScheduleEditor value={schedule} onChange={setSchedule} scheduleKind="recurring" />
     </div>
   </div>;
 }
