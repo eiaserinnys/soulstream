@@ -46,12 +46,12 @@ async function verify(browser: Browser) {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
     await page.getByTestId("v3-all-projects")
       .getByRole("button", { name: fixtureTitles.project, exact: true })
       .click();
     await page.getByRole("heading", { name: fixtureTitles.project }).waitFor({ state: "visible" });
-    const taskCard = page.getByTestId("v3-task-task-alpha");
+    const taskCard = page.getByTestId("v3-task-alpha");
     await taskCard.waitFor({ state: "visible" });
     await taskCard.click({ force: true });
     try {
@@ -132,7 +132,7 @@ async function verify(browser: Browser) {
     const sessionAddedMs = Date.now() - addStartedAt;
 
     await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-    const projectTask = page.getByTestId("v3-task-task-alpha");
+    const projectTask = page.getByTestId("v3-task-alpha");
     await projectTask.waitFor({ state: "visible" });
     const removeStartedAt = Date.now();
     await projectTask.click({ button: "right" });
