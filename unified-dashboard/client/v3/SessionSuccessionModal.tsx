@@ -3,7 +3,7 @@ import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } fro
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
 import { handleClipboardFiles } from "@seosoyoung/soul-ui/lib/clipboard-files";
-import { useCallback, useMemo, useRef, useState, useId } from "react";
+import { useId, useCallback, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -25,6 +25,7 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createDashboardSession } from "../lib/session-create";
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
+import { CatalogSelectionField } from "../components/CatalogSelectionField";
 import {
   buildSuccessionCreateOptions,
   resolveRunAssignmentDefaults,
@@ -128,7 +129,6 @@ export function SessionSuccessionModal({
     // a different model refills that preset's default instead.
     initialEffort: resolvedDefaults.reasoningEffort,
   });
-  const effortSelectId = useId();
   const presetHasDefaultEffort = Boolean(selectedModelPresetInfo?.default_effort);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createFolderPageAnchor>> | null>(null);
   const submitting = useRef(false);
@@ -256,6 +256,22 @@ export function SessionSuccessionModal({
     onClose();
   };
 
+  const effortNoticeId = useId();
+  const effortNotice = effort.unsupported && selectedModelPresetInfo !== null ? <span data-testid="succession-effort-unsupported">
+    {effort.options.length > 0
+      ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
+      : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}{" "}
+    <button type="button" data-testid="succession-effort-use-default" onClick={() => effort.setSelected(null)}>기본값 사용</button>
+  </span> : null;
+  const effortOptions = [
+    ...(effort.unsupported ? [{ value: effort.selected ?? "", label: `${reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)` }] : []),
+    ...(effort.unsupported || !presetHasDefaultEffort ? [{ value: "", label: effort.unsupported ? "기본값 사용" : "기본값" }] : []),
+    ...effort.options.map((option) => ({ value: option, label: reasoningEffortLabel(option) })),
+  ];
+  const predecessorChoices = predecessorOptions.map((option, index) => ({
+    value: String(index), label: `${option.label}${option.runNumber === null ? "" : ` · 세션 #${option.runNumber}`}`,
+  }));
+
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !pending) void close(); }}>
       <DialogPopup
@@ -300,7 +316,7 @@ export function SessionSuccessionModal({
             <SessionAttachmentFields files={files} pending={pending} nodeId={selectedNodeId} isUploading={isUploading} addFiles={addFiles} removeFile={removeFile}/>
 
             <CreationDisclosure title="실행 환경" invalid={!modelPresetValid || effort.unsupported || !selectedNodeId || !selectedAgentId} summary={`${selectedNodeId || "노드 선택"} / ${selectedAgent?.name ?? "에이전트 선택"} / ${selectedModelPreset || "기본 모델"}`}>
-              <section>
+              <section className="v3-succession-assignment">
               <AgentNodeAssignmentFields data={assignment}
                 presentation="session"
                 disabled={pending}
@@ -319,54 +335,14 @@ export function SessionSuccessionModal({
                 onError={handleAssignmentError}
               />
               {effort.options.length > 0 ? (
-                <>
-                  <label htmlFor={effortSelectId}>추론 강도</label>
-                  <select
-                    id={effortSelectId}
-                    aria-label="추론 강도 선택"
-                    value={effort.effective ?? ""}
-                    onChange={(event) => effort.setSelected(event.target.value || null)}
-                  >
-                    {/* An unusable carry-over stays the selected value so the box
-                        shows what is actually wrong — and so choosing 기본값 사용
-                        is a real change event rather than a no-op. */}
-                    {effort.unsupported ? (
-                      <option value={effort.selected ?? ""}>
-                        {reasoningEffortLabel(effort.selected ?? "")} (지원 안 함)
-                      </option>
-                    ) : null}
-                    {/* "Send nothing, let the preset default apply". It must stay
-                        available while the preset has no default of its own,
-                        otherwise picking a level is a one-way door. */}
-                    {effort.unsupported || !presetHasDefaultEffort ? (
-                      <option value="">
-                        {effort.unsupported ? "기본값 사용" : "기본값"}
-                      </option>
-                    ) : null}
-                    {effort.options.map((option) => (
-                      <option key={option} value={option}>
-                        {reasoningEffortLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-
-                </>
+                <div role="group" aria-label="추론 강도" aria-describedby={effortNotice ? effortNoticeId : undefined}>
+                <CatalogSelectionField className="v3-assignment-field" label="추론 강도" ariaLabel="추론 강도 선택"
+                  value={effort.effective ?? ""} options={effortOptions}
+                  selectedLabel={effortOptions.find((option) => option.value === (effort.effective ?? ""))?.label ?? ""}
+                  onValueChange={(value) => effort.setSelected(value || null)} />
+                </div>
               ) : null}
-              {effort.unsupported && selectedModelPresetInfo !== null ? (
-                <small role="alert" data-testid="succession-effort-unsupported">
-                  {effort.options.length > 0
-                    ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
-                    : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}
-                  {" "}
-                  <button
-                    type="button"
-                    data-testid="succession-effort-use-default"
-                    onClick={() => effort.setSelected(null)}
-                  >
-                    기본값 사용
-                  </button>
-                </small>
-              ) : null}
+              {effortNotice ? <small id={effortNoticeId} className="v3-succession-effort-notice" role="alert">{effortNotice}</small> : null}
               </section>
             </CreationDisclosure>
             <CreationDisclosure title="함께 전달할 자료" summary={<span>{inheritCard ? "폴더 정보" : "폴더 정보 제외"}{inheritSummary ? " / 이전 세션 포함" : ""}{selectedDocumentIds.size ? ` / 문서 ${selectedDocumentIds.size}개` : ""}{atomNodeId ? " / 추가 참고 자료" : ""}</span>}>
@@ -396,35 +372,32 @@ export function SessionSuccessionModal({
                   </label>
                 </li>
                 <li>
-                  <label>
-                    <input
-                      type="checkbox"
-                      aria-label="이전 세션 이어받기"
-                      checked={inheritSummary}
-                      disabled={!predecessorId}
-                      onChange={(event) => setInheritSummary(event.target.checked)}
-                    />
-                    <span>
-                      <strong>이전 세션</strong>
-                      <select
-                        aria-label="이어받을 이전 세션"
+                  <div className="v3-succession-previous">
+                    <label>
+                      <input
+                        type="checkbox"
+                        aria-label="이전 세션 이어받기"
+                        checked={inheritSummary}
+                        disabled={!predecessorId}
+                        onChange={(event) => setInheritSummary(event.target.checked)}
+                      />
+                      <span>
+                        <strong>이전 세션</strong>
+                        {predecessorId ? <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small> : null}
+                      </span>
+                    </label>
+                    <div className="v3-succession-previous-field">
+                      <CatalogSelectionField className="v3-assignment-field" label="이전 세션" ariaLabel="이어받을 이전 세션"
                         value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
                         disabled={!inheritSummary || predecessorOptions.length === 0}
-                        onChange={(event) => {
-                          const option = predecessorOptions[Number(event.target.value)];
+                        selectedLabel={predecessorChoices[selectedPredecessorIndex]?.label ?? "이전 세션 없음"}
+                        options={predecessorChoices.length ? predecessorChoices : [{ value: "", label: "이전 세션 없음" }]}
+                        onValueChange={(value) => {
+                          const option = predecessorOptions[Number(value)];
                           setSelectedPredecessorId(option?.sessionId ?? null);
-                        }}
-                      >
-                        {predecessorOptions.length === 0 ? <option value="">이전 세션 없음</option> : null}
-                        {predecessorOptions.map((option, index) => (
-                          <option key={option.sessionId} value={String(index)}>
-                            {option.label}{option.runNumber === null ? "" : ` · 세션 #${option.runNumber}`}
-                          </option>
-                        ))}
-                      </select>
-                      {predecessorId ? <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small> : null}
-                    </span>
-                  </label>
+                        }} />
+                    </div>
+                  </div>
                 </li>
               </ol>
               <strong>보드 문서</strong>

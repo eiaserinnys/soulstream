@@ -78,6 +78,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
   const [preview, setPreview] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listFailed, setListFailed] = useState(false);
 
   const loadRuns = useCallback(async (jobId: string) => {
     const loaded = await api.listRecurringJobRuns(jobId);
@@ -88,7 +89,14 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
     selectId?: string | null,
     options: { preserveEditor?: boolean } = {},
   ) => {
-    const loaded = await api.listRecurringJobs(true);
+    let loaded: RecurringJob[];
+    try {
+      loaded = await api.listRecurringJobs(true);
+      setListFailed(false);
+    } catch (caught) {
+      setListFailed(true);
+      throw caught;
+    }
     setJobs(loaded);
     if (selectId) {
       const next = loaded.find((job) => job.job_id === selectId) ?? null;
@@ -209,7 +217,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
         <SettingsListHeader title="반복 작업" description="서버가 다음 실행을 계산합니다." actions={<><Button type="button" size="sm" variant="outline" data-testid="recurring-jobs-refresh" onClick={() => { setError(null); void refresh(selected?.job_id, { preserveEditor: true }).catch((caught: unknown) => setError(message(caught))); }}>새로고침</Button><Button type="button" size="sm" variant="outline" onClick={() => {
             setSelected(null); setEditor(emptyEditor()); setRuns([]); setPreview([]); setError(null);
           }}>새 작업</Button></>} />
-        <JobList
+        {!listFailed ? <><JobList
           title="활성"
           jobs={activeJobs}
           selectedId={selected?.job_id ?? null}
@@ -220,7 +228,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           jobs={archivedJobs}
           selectedId={selected?.job_id ?? null}
           onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
-        /> : null}
+        /> : null}</> : null}
     </>}>
         <SettingsDetailHeader
           title={selected ? selected.name : "새 반복 작업"}

@@ -521,6 +521,8 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   await tab.getByTestId("recurring-jobs-refresh").click();
   const errorAlert = tab.getByRole("alert");
   await expect(errorAlert).toBeVisible();
+  await expect(tab.getByText("없음", { exact: true })).toHaveCount(0);
+  await expect(tab.getByText("활성", { exact: true })).toHaveCount(0);
   const errorText = (await errorAlert.textContent())?.trim() ?? "";
   await capture("interaction-error");
   routeState.failJobs = false;
@@ -573,12 +575,34 @@ test("예약 작업 편집기 조작 항목", async ({ page }) => {
   expect(focusRestored).toBe(true);
 });
 
-test("첫 목록 조회 실패 뒤 새로고침 성공", async ({ page }) => {
-  const { capture } = await preparePage(page, 390);
+test("설정 창에서 빠른 Tab과 Shift+Tab 초점 순환", async ({ page }) => {
+  test.setTimeout(120_000);
+  await preparePage(page, 1440);
+  await installRoutes(page);
+  const { dialog } = await openRecurringTab(page);
+  const escapes: Array<{ direction: string; round: number; step: number; info: Awaited<ReturnType<typeof activeInfo>> }> = [];
+  for (const [direction, key] of [["forward", "Tab"], ["backward", "Shift+Tab"]] as const) {
+    for (let round = 1; round <= 3; round += 1) {
+      await dialog.getByLabel("작업 이름").focus();
+      for (let step = 1; step <= 90; step += 1) {
+        await page.keyboard.press(key);
+        const info = await activeInfo(page);
+        if (!info.inDialog) escapes.push({ direction, round, step, info });
+      }
+    }
+  }
+  console.log(`초점 이탈: ${JSON.stringify(escapes)}`);
+  expect(escapes).toEqual([]);
+});
+
+for (const width of [1440, 360]) test(`첫 목록 조회 실패 뒤 새로고침 성공 ${width}`, async ({ page }) => {
+  const { capture } = await preparePage(page, width);
   const state = await installRoutes(page, { failJobs: true });
   const { tab } = await openRecurringTab(page);
   await expect(tab.getByRole("alert")).toBeVisible();
-  await capture("initial-load-error");
+  await expect(tab.getByText("없음", { exact: true })).toHaveCount(0);
+  await expect(tab.getByText("활성", { exact: true })).toHaveCount(0);
+  await capture(`initial-load-error-${width}`);
   state.failJobs = false;
   await tab.getByTestId("recurring-jobs-refresh").click();
   await expect(tab.getByRole("button").filter({ hasText: KOREAN_LONG_NAME }).first()).toBeVisible();

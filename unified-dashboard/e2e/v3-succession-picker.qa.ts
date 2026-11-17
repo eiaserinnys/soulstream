@@ -34,6 +34,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
+  // Keep the fixture reset date on the same day; timers still run normally.
+  await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
   const agentRequests: string[] = [];
   let sessionListRequests = 0;
   const createPayloads: Record<string, unknown>[] = [];
@@ -49,12 +51,23 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       Object.defineProperty(serviceWorker, "controller", { configurable: true, get: () => null });
     }
   ` });
+  // rb-alpha(카드 밀도와 계층 최종 QA) 폴더의 두 run이 이어받을 모델과 지원 안 하는 강도를 갖는다.
+  const alphaRuns = ["run-alpha-1", "run-alpha-2"];
   await installV3VisualQaRoutes(page, {
     successionPickerRuns: true,
     onAgentListRequest: (nodeId) => agentRequests.push(nodeId),
     onSessionCreate: (payload) => { createPayloads.push(payload); },
     onSessionListRequest: () => { sessionListRequests += 1; },
+    sessionModelPresets: Object.fromEntries(alphaRuns.map((id) => [id, "qa-standard"])),
+    sessionReasoningEfforts: Object.fromEntries(alphaRuns.map((id) => [id, "ultra"])),
   });
+  await page.route("**/api/nodes/*/model-presets", (route) => route.fulfill({ json: {
+    model_presets: [
+      { id: "qa-standard", label: "QA 표준 모델", backend: "codex", available: true, supported_efforts: ["low", "medium", "high"], default_effort: "medium" },
+      { id: "qa-warning", label: "QA 사용량 확인 모델", backend: "codex", available: true, usage_warning: true, supported_efforts: ["low", "medium", "high"], default_effort: "medium" },
+      { id: "qa-limited", label: "QA 제한 모델", backend: "codex", available: false, reason: "quota_exhausted", reason_label: "주간 사용량 제한", resets_at: "2026-07-28T18:20:00+09:00" },
+    ],
+  } }));
   await page.route("**/api/atom/nodes", async (route) => {
     await route.fulfill({
       status: 200,
@@ -71,8 +84,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.getByTestId("v3-starred-task-row-task-alpha").waitFor({ state: "visible" });
+    await page.getByTestId("v3-starred-task-row-task-alpha").click();
     try {
       await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible", timeout: 10_000 });
     } catch (error) {
@@ -81,36 +94,89 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       await capture(page, theme, "diagnostic-task-open-failure");
       throw error;
     }
-    await page.locator(".v3-run-row").filter({ hasText: "세션 #3" }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "컨텍스트 추가", exact: true }).click();
-    const sharedPicker = page.locator(".v3-context-picker").filter({ has: page.getByRole("tab", { name: "atom" }) });
-    const sharedTabs = await sharedPicker.getByRole("tab").allTextContents();
-    assert(JSON.stringify(sharedTabs) === JSON.stringify(["📄 페이지", "🧠 atom"]), `공통 픽커 탭이 잘못됐습니다: ${JSON.stringify(sharedTabs)}`);
-    assert(!(await sharedPicker.textContent() ?? "").includes("상속됨(프로젝트에서)"), "공통 픽커에 중복 상속 표시가 남았습니다.");
-    await sharedPicker.getByRole("tab", { name: "atom" }).click();
-    await sharedPicker.getByRole("button", { name: /노드 선택/ }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "컨텍스트 선택 닫기", exact: true }).click();
-    await page.getByRole("button", { name: "새 세션", exact: true }).click();
+    await page.locator(".v3-run-row").filter({ hasText: "세션 #1" }).first().waitFor({ state: "visible" });
 
+    // 폴더 공통 컨텍스트 편집기: atom 추가 팝오버가 노드 선택기를 띄우고 상속 표시를 겹쳐 쓰지 않는다.
+    const projectContext = page.getByTestId("v3-project-context");
+    assert(!(await projectContext.textContent() ?? "").includes("상속됨(프로젝트에서)"), "공통 컨텍스트에 중복 상속 표시가 남았습니다.");
+    await projectContext.getByRole("button", { name: "atom 추가", exact: true }).click();
+    const sharedPicker = page.locator('[data-slot="popover-popup"]').filter({ hasText: "atom 노드" });
+    // 노드 트리가 함께 열리면 바깥 팝오버가 접근성 트리에서 가려지므로 글로 찾는다.
+    await sharedPicker.locator("button", { hasText: "노드 선택" }).waitFor({ state: "visible" });
+    for (let attempt = 0; attempt < 2 && await sharedPicker.isVisible(); attempt += 1) {
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+    }
+    await sharedPicker.waitFor({ state: "hidden" });
+
+    // 세션을 만든 뒤에는 세션 히스토리 쪽에도 같은 이름의 단추가 생기므로 폴더 화면의 단추로 좁힌다.
+    const openButton = page.getByTestId("v3-planner-scroll").getByRole("button", { name: "새 세션", exact: true });
+    await openButton.click();
     const modal = page.locator(".v3-succession-modal");
     await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "visible" });
-    const predecessor = page.getByRole("combobox", { name: "이어받을 이전 세션" });
-    const optionLabels = await predecessor.locator("option").allTextContents();
-    assert(optionLabels.some((label) => label.includes("🧭 다음 검증은 이전 실행을 골라 이어서 진행해 주세요.")), "lastMessage 선택지가 없습니다.");
-    assert(optionLabels.some((label) => label.includes("시각 QA 순회")), "displayName 선택지가 없습니다.");
-    assert(optionLabels.some((label) => label.includes("밀도 기준 정리")), "비직전 run 선택지가 없습니다.");
+    const openedFocus = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    // 세션을 만든 뒤에는 채팅 창이 폴더 화면을 덮으므로 Esc 닫기와 초점 측정은 첫 열기에서 한다.
+    await page.keyboard.press("Escape");
+    const immediateFocus = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300));
+    console.log(`승계 닫기 직후 초점: ${immediateFocus}`);
+    await modal.waitFor({ state: "hidden" });
+    await page.waitForTimeout(300);
+    const closedFocus = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300));
+    console.log(`승계 닫힘 뒤 초점: ${closedFocus}`);
+    const focusRestored = await openButton.evaluate(element => document.activeElement === element);
+    console.log(`승계 닫힘 초점 복귀 측정: ${focusRestored}`);
+    await openButton.click();
+    await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "visible" });
+    for (const title of ["실행 환경", "함께 전달할 자료"]) {
+      const disclosure = modal.locator("details").filter({ hasText: title });
+      if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").click();
+    }
+    const effort = modal.getByRole("combobox", { name: "추론 강도 선택" });
+    const predecessor = modal.getByRole("combobox", { name: "이어받을 이전 세션" });
+    await modal.getByTestId("succession-effort-unsupported").waitFor({ state: "visible" });
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await effort.scrollIntoViewIfNeeded();
+      await capture(page, theme, `unsupported-effort-${width}`);
+    }
+    await modal.getByTestId("succession-effort-use-default").click();
+    await modal.getByTestId("succession-effort-unsupported").waitFor({ state: "hidden" });
+    const previousInteractionMetrics = [];
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ width, height: 1000 });
+      previousInteractionMetrics.push(await verifyPreviousInteraction(page, modal));
+      await modal.locator('[data-slot="dialog-panel-scroll"]').evaluate(element => { element.scrollTop = 0; });
+      await capture(page, theme, `succession-${width}`);
+      await predecessor.scrollIntoViewIfNeeded();
+      await capture(page, theme, `succession-previous-${width}`);
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await chooseSelectItem(page, effort, "High");
+    assert((await effort.textContent() ?? "").includes("High"), "추론 강도가 바뀌지 않았습니다.");
+    await predecessor.click();
+    const choices = page.locator('[data-slot="select-item"]:visible');
+    await choices.first().waitFor({ state: "visible" });
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-slot="select-item"]')]
+      .filter(element => element.getClientRects().length > 0).length > 1);
+    const optionLabels = await choices.allTextContents();
+    assert(optionLabels.some((label) => label.includes("시각 QA 순회")), `displayName 선택지가 없습니다: ${JSON.stringify(optionLabels)}`);
+    assert(optionLabels.some((label) => label.includes("밀도 기준 정리")), `비직전 run 선택지가 없습니다: ${JSON.stringify(optionLabels)}`);
+    assert(!optionLabels.some((label) => label.includes("run-alpha-")), "이전 세션 선택지에 세션 UUID가 노출됐습니다.");
+    const previousLabel = optionLabels.find((label) => label.includes("밀도 기준 정리"))!.trim();
+    await choices.filter({ hasText: "밀도 기준 정리" }).click();
+    await expectTriggerText(predecessor, previousLabel);
     assert(!(await modal.textContent() ?? "").includes("run-alpha-"), "모달에 세션 UUID가 노출됐습니다.");
 
     const modalText = await modal.textContent() ?? "";
     for (const required of [
-      "노드 / 에이전트 / 모델",
-      "컨텍스트",
+      "실행 환경",
+      "함께 전달할 자료",
       "플래너 UX 원칙",
       "대비와 잘림을 실제 픽셀로 확인",
-      "디자인 검수 메모",
       "보드 문서",
-      "atom 노드",
-      "초기 지시",
+      "PR-O 결정 로그",
+      "추가 참고 자료",
+      "무엇을 시작할까요?",
       "이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.",
     ]) assert(modalText.includes(required), `필수 문구/컨텍스트가 없습니다: ${required}`);
     for (const forbidden of [
@@ -123,37 +189,31 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
     assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");
 
-    const modelPreset = modal.getByRole("combobox", { name: "모델 선택" });
+
+    const modelPreset = modal.getByRole("combobox", { name: "모델", exact: true });
     await modelPreset.click();
-    const limitedOption = page.locator('[data-slot="select-item"]')
-      .filter({ hasText: "QA 제한 모델 (주간 사용량 제한) · 18:20 해제" });
+    // 사용 불가 모델은 이름 아래 줄에 서버 사유와 로컬 해제 시각을 따로 그린다(괄호 없음).
+    const limitedOption = page.locator('[data-slot="select-item"]:visible')
+      .filter({ hasText: "QA 제한 모델" });
     await limitedOption.waitFor({ state: "visible" });
     assert(
       await limitedOption.getAttribute("data-disabled") !== null,
       "사용량 제한 모델이 선택 가능 상태입니다.",
     );
     assert(
-      (await limitedOption.textContent() ?? "").includes("QA 제한 모델 (주간 사용량 제한) · 18:20 해제"),
+      (await limitedOption.textContent() ?? "").includes("주간 사용량 제한 · 18:20 해제"),
       "서버 사유 라벨과 로컬 해제 시각이 표시되지 않았습니다.",
     );
-    await page.locator('[data-slot="select-item"]')
+    await page.locator('[data-slot="select-item"]:visible')
       .filter({ hasText: "QA 사용량 확인 모델 (사용량 확인 지연)" })
       .click();
     await modal.getByText("사용량 확인 지연", { exact: true }).waitFor({ state: "visible" });
-    await modal.getByRole("textbox", { name: "초기 지시" }).focus();
-    const assignmentMetrics = await measureControls([
-      modal.getByRole("combobox", { name: "노드 선택" }),
-      modal.getByRole("combobox", { name: "에이전트 선택" }),
-      modelPreset,
-    ]);
-    assertAlignedControls(assignmentMetrics, "v3 노드·에이전트·모델");
-    assertAlignedLabels(assignmentMetrics, "v3 노드·에이전트·모델");
 
     await modal.getByRole("checkbox", { name: "PR-O 결정 로그" }).check();
-    await modal.locator("label").filter({ hasText: "atom 노드" }).locator("button").click();
+    // 버튼이 「추가 참고 자료」 label 안에 있어 접근 이름은 label 글이다.
+    await modal.getByRole("button", { name: "추가 참고 자료", exact: true }).filter({ hasText: "atom에서 추가" }).click();
     await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
-    await modal.getByRole("textbox", { name: "초기 지시" }).fill("선택한 컨텍스트를 세 문장으로 요약하세요.");
-
+    await modal.getByRole("button", { name: "자료 추가", exact: true }).click();
     await expectTriggerText(page.getByRole("combobox", { name: "에이전트 선택" }), "로젤린");
     await installMutationCounters(page);
     const agentRequestsBeforeObservation = agentRequests.length;
@@ -169,16 +229,39 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await chooseSelectItem(page, page.getByRole("combobox", { name: "에이전트 선택" }), "QA 에이전트");
     assert(agentRequests.at(-1) === "qa-node", "노드 변경 후 에이전트 목록을 갱신하지 않았습니다.");
     await expectTriggerText(modelPreset, "미지정");
-    await chooseSelectItem(page, modelPreset, "QA 사용량 확인 모델 (사용량 확인 지연)");
+    // 옵션에는 사용량 경고 접미사가 붙고 트리거에는 모델 이름만 보인다.
+    await chooseSelectItem(page, modelPreset, "QA 사용량 확인 모델 (사용량 확인 지연)", "QA 사용량 확인 모델");
 
-    const previousIndex = optionLabels.findIndex((label) => label.includes("밀도 기준 정리"));
-    assert(previousIndex >= 0, "비직전 predecessor index를 찾지 못했습니다.");
-    await predecessor.selectOption(String(previousIndex));
+
+    await chooseSelectItem(page, effort, "High");
+    const instruction = modal.getByRole("textbox", { name: "초기 지시" });
+    await instruction.fill("선택한 자료를 검토합니다.");
+    await instruction.focus();
+    const assignmentMetrics = await measureControls([
+      modal.getByRole("combobox", { name: "노드 선택" }),
+      modal.getByRole("combobox", { name: "에이전트 선택" }),
+      modal.getByRole("combobox", { name: "모델", exact: true }), effort, predecessor,
+    ]);
+    assertAlignedControls(assignmentMetrics, "노드·에이전트·모델·추론 강도·이전 세션");
+    assertAlignedLabels(assignmentMetrics.slice(0, 3), "노드·에이전트·모델");
+    const resize: Array<{ width: number; scrollWidth: number; clientWidth: number; value: string }> = [];
+    for (const width of [360, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const dimensions = await modal.evaluate(element => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+      resize.push({ width, ...dimensions, value: await instruction.inputValue() });
+    }
+    assert(resize.every(item => item.scrollWidth <= item.clientWidth + 1 && item.value === "선택한 자료를 검토합니다."), `크기 변경 오류: ${JSON.stringify(resize)}`);
+    await effort.focus();
+    await page.keyboard.press("Tab");
+    const tabInside = await modal.evaluate(element => element.contains(document.activeElement));
+    assert(tabInside, "Tab 초점이 창 밖으로 이동했습니다.");
     await capture(page, theme, "01-picker-stable-30s");
-    await page.getByRole("button", { name: "시작", exact: true }).click();
-    await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "detached" });
+    await modal.getByRole("button", { name: "세션 시작", exact: true }).click();
+    await modal.waitFor({ state: "hidden" });
     const createPayload = createPayloads.at(-1);
-    assert(createPayload?.predecessor_session_id === "run-alpha-1", "비직전 predecessor가 생성 요청에 전달되지 않았습니다.");
+    assert(createPayload?.predecessor_session_id === "run-alpha-1", `비직전 predecessor가 생성 요청에 전달되지 않았습니다: ${JSON.stringify(createPayload)}`);
+    assert(createPayload?.reasoningEffort === "high", "추론 강도가 생성 요청에 반영되지 않았습니다.");
+
     const extraContextItems = createPayload?.extra_context_items as Array<{
       key?: string;
       content?: { pages?: Array<{ page_id?: string }>; nodes?: Array<{ node_id?: string }> } | string;
@@ -196,7 +279,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(atomNodeId === "qa-atom-node", "선택한 atom 노드가 context source에 없습니다.");
     assert(!extraContextItems.some((item) => item.key === "session_guidance"), "삭제한 추가 지침 context가 생성 요청에 남았습니다.");
     assert(
-      createPayload?.initial_instruction === "선택한 컨텍스트를 세 문장으로 요약하세요.",
+      createPayload?.initial_instruction === "선택한 자료를 검토합니다.",
       "초기 지시가 initial_instruction으로 전달되지 않았습니다.",
     );
     assert(!Object.prototype.hasOwnProperty.call(createPayload, "prompt"), "클라이언트가 서버 prompt 정본을 우회했습니다.");
@@ -204,21 +287,70 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(createPayload?.model_preset === "qa-warning", "선택한 모델 프리셋이 생성 요청에 없습니다.");
 
     return {
+      previousInteractionMetrics,
       options: optionLabels.length,
+      optionLabels,
       observedMs: observationMs,
       agentMutations: mutations.agent,
       runMutations: mutations.runs,
       agentRefetchesDuringObservation,
       sessionRequestsDuringObservation: sessionListRequests - sessionRequestsBeforeObservation,
       predecessorRoundtrip: createPayload?.predecessor_session_id,
+      reasoningEffortRoundtrip: createPayload?.reasoningEffort,
       contextItemKeys: extraContextItems.map((item) => item.key),
       nodeChangeAgentRefresh: agentRequests.at(-1),
       modelPresetRoundtrip: createPayload?.model_preset,
       assignmentControlHeights: assignmentMetrics.map((metric) => metric.height),
+      assignmentLabelTops: assignmentMetrics.map((metric) => metric.labelTop),
+      openedFocus,
+      tabInside,
+      focusRestored,
+      resize,
     };
   } finally {
     await context.close();
   }
+}
+
+/** Regression for the title/guidance checkbox target reported in visual review. */
+async function verifyPreviousInteraction(page: Page, modal: Locator) {
+  const row = modal.locator(".v3-succession-previous");
+  const checkbox = row.getByRole("checkbox", { name: "이전 세션 이어받기" });
+  const title = row.getByText("이전 세션", { exact: true }).filter({ visible: true });
+  const trigger = row.getByRole("combobox", { name: "이어받을 이전 세션", exact: true });
+  assert(await checkbox.isChecked(), "이전 세션 이어받기가 처음부터 꺼져 있습니다.");
+  assert(await title.count() === 1, "이전 세션 제목이 한 번만 보여야 합니다.");
+  await title.scrollIntoViewIfNeeded();
+  const box = await title.boundingBox();
+  assert(box, "이전 세션 제목의 누름 좌표가 없습니다.");
+  const clickTitle = () => page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await clickTitle();
+  assert(!await checkbox.isChecked(), "제목을 눌러도 체크가 꺼지지 않았습니다.");
+  assert(await page.locator('[data-slot="select-popup"]:visible').count() === 0, "제목 누름으로 선택 목록이 열렸습니다.");
+  assert(await trigger.isDisabled(), "체크를 끈 뒤 선택 칸이 활성 상태입니다.");
+  await clickTitle();
+  assert(await checkbox.isChecked(), "같은 제목 좌표를 다시 눌러도 체크가 켜지지 않았습니다.");
+  const guidance = row.locator("small");
+  await guidance.click();
+  assert(!await checkbox.isChecked(), "안내를 눌러도 체크가 꺼지지 않았습니다.");
+  await guidance.click();
+  assert(await checkbox.isChecked(), "안내를 다시 눌러도 체크가 켜지지 않았습니다.");
+  assert(await page.locator('[data-slot="select-popup"]:visible').count() === 0, "안내 누름으로 선택 목록이 열렸습니다.");
+  const metrics = await row.evaluate(element => {
+    const label = element.querySelector('input[type="checkbox"]')?.closest("label");
+    const inactive = [element, ...element.querySelectorAll("*")].filter(child =>
+      child.getClientRects().length > 0 && !label?.contains(child)
+      && !child.closest('[data-slot="select-trigger"]'));
+    return {
+      width: window.innerWidth,
+      labelHeight: label?.getBoundingClientRect().height ?? 0,
+      inactiveCursors: inactive.map(child => ({ tag: child.tagName, cursor: getComputedStyle(child).cursor })),
+    };
+  });
+  assert(metrics.labelHeight >= 24, `체크 누름 영역이 작습니다: ${JSON.stringify(metrics)}`);
+  assert(metrics.inactiveCursors.every(item => item.cursor !== "pointer"), `반응 없는 곳에 손가락 커서가 있습니다: ${JSON.stringify(metrics)}`);
+  assert(!await trigger.isDisabled(), "체크를 켠 뒤 선택 칸이 비활성 상태입니다.");
+  return metrics;
 }
 
 interface ControlMetric {
@@ -235,7 +367,9 @@ interface ControlMetric {
 }
 
 async function measureControls(controls: Locator[]): Promise<ControlMetric[]> {
-  return await Promise.all(controls.map(async (control) => await control.evaluate((element) => {
+  return await Promise.all(controls.map(async (control) => await control.evaluate(async (element) => {
+    // 선택 목록이 닫히며 초점이 빠진 트리거는 그림자 전환이 끝난 뒤에 잰다.
+    await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
     const rect = element.getBoundingClientRect();
     const field = element.closest(".v3-assignment-field, .v3-model-preset-field");
     const label = field?.querySelector("label");
@@ -280,9 +414,12 @@ function assertAlignedLabels(metrics: ControlMetric[], label: string) {
   );
 }
 
-async function chooseSelectItem(page: Page, trigger: Locator, text: string) {
+async function chooseSelectItem(page: Page, trigger: Locator, text: string, triggerText = text) {
   await trigger.click();
-  await page.locator('[data-slot="select-item"]').filter({ hasText: text }).click();
+  const item = page.locator('[data-slot="select-item"]:visible').filter({ hasText: text });
+  await item.waitFor({ state: "visible" });
+  await item.click();
+  await expectTriggerText(trigger, triggerText);
 }
 
 async function expectTriggerText(

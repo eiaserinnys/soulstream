@@ -168,17 +168,22 @@ async function settle(times = 6) {
 }
 
 // The dialog renders through a portal onto document.body, not into container.
-function effortSelect(): HTMLSelectElement | null {
-  return document.body.querySelector<HTMLSelectElement>('select[aria-label="추론 강도 선택"]');
+function effortSelect(): HTMLButtonElement | null {
+  return document.body.querySelector<HTMLButtonElement>('button[aria-label="추론 강도 선택"]');
 }
 
-function setSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+async function effortOptions() {
+  flushSync(() => effortSelect()!.click());
+  await vi.waitFor(() => expect(document.body.querySelector('[data-slot="select-item"]')).not.toBeNull());
+  return [...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')];
+}
+
+async function chooseEffort(label: string) {
+  const options = await effortOptions();
+  const item = options.find(option => option.textContent?.trim() === label)!;
+  expect(item).toBeTruthy();
+  flushSync(() => item.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+  flushSync(() => item.click());
 }
 
 async function chooseNode(value: string) {
@@ -208,14 +213,8 @@ describe("SessionSuccessionModal reasoning effort", () => {
     await settle();
     const select = effortSelect();
     expect(select).not.toBeNull();
-    expect(select?.value).toBe("xhigh");
-    expect(Array.from(select?.options ?? []).map((option) => option.value)).toEqual([
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+    expect(select?.textContent).toContain("X High");
+    expect((await effortOptions()).map(option => option.textContent?.trim())).toEqual(["Low", "Medium", "High", "X High", "Max"]);
   });
 
   it("offers no picker for a preset that advertises nothing", async () => {
@@ -250,11 +249,11 @@ describe("SessionSuccessionModal reasoning effort", () => {
     }));
     mount();
     await settle();
-    expect(effortSelect()?.value).toBe("xhigh");
+    expect(effortSelect()?.textContent).toContain("X High");
 
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
+    expect(effortSelect()?.textContent).toContain("Low");
 
     await chooseNode("node-b");
     await settle(25);
@@ -287,10 +286,9 @@ describe("SessionSuccessionModal reasoning effort", () => {
 
     createDashboardSession.mockClear();
     flushSync(() => root.render(null)); mount(); await settle();
-    const select = effortSelect();
-    flushSync(() => setSelect(select!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
+    expect(effortSelect()?.textContent).toContain("Low");
 
     flushSync(() => startButton()?.click());
     await settle();
@@ -316,6 +314,8 @@ describe("unusable carried-over effort", () => {
     await settle();
 
     expect(unsupportedNotice()).not.toBeNull();
+    const group = document.body.querySelector('[role="group"][aria-label="추론 강도"]');
+    expect(group?.getAttribute("aria-describedby")).toBe(unsupportedNotice()?.closest("small")?.id);
     expect(startButton()?.disabled).toBe(true);
 
     flushSync(() => startButton()?.click());
@@ -328,7 +328,7 @@ describe("unusable carried-over effort", () => {
     mountWithSession(predecessorAtUltra);
     await settle();
 
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
@@ -346,10 +346,9 @@ describe("unusable carried-over effort", () => {
     stubFetch([OPUS]);
     mountWithSession(predecessorAtUltra);
     await settle();
-    expect(effortSelect()?.value).toBe("ultra");
-    expect(effortSelect()?.options[0]?.textContent).toContain("지원 안 함");
+    expect(effortSelect()?.textContent).toContain("Ultra (지원 안 함)");
 
-    flushSync(() => setSelect(effortSelect()!, ""));
+    await chooseEffort("기본값 사용");
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
@@ -430,8 +429,8 @@ describe("preset with efforts but no advertised default", () => {
     await settle();
 
     const select = effortSelect();
-    expect(select?.value).toBe("");
-    expect(Array.from(select?.options ?? []).map((option) => option.textContent))
+    expect(select?.textContent).toContain("기본값");
+    expect((await effortOptions()).map(option => option.textContent?.trim()))
       .toEqual(["기본값", "Low", "Medium", "High", "X High", "Max"]);
 
     flushSync(() => startButton()?.click());
@@ -442,12 +441,12 @@ describe("preset with efforts but no advertised default", () => {
     // its own, so "기본값" has to stay on the list.
     createDashboardSession.mockClear();
     flushSync(() => root.render(null)); mount(); await settle();
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
-    flushSync(() => setSelect(effortSelect()!, ""));
+    expect(effortSelect()?.textContent).toContain("Low");
+    await chooseEffort("기본값");
     await settle();
-    expect(effortSelect()?.value).toBe("");
+    expect(effortSelect()?.textContent).toContain("기본값");
 
     flushSync(() => startButton()?.click());
     await settle();
@@ -523,4 +522,31 @@ it("blocks concurrent session starts and closing, then preserves the draft on an
   expect(instruction.value).toBe("유지할 지시");
   expect(createDashboardSession).toHaveBeenCalledTimes(1);
   expect(onClose).not.toHaveBeenCalled();
+});
+
+it("toggles inheritance from the previous-session title and guidance without opening the picker", async () => {
+  stubFetch([OPUS]);
+  mountWithSession(null, "claude-opus", {
+    predecessorOptions: [{ sessionId: "prev-1", label: "이전 작업", runNumber: 1 }],
+  });
+  await settle();
+  const row = document.body.querySelector(".v3-succession-previous")!;
+  const checkbox = row.querySelector<HTMLInputElement>('input[aria-label="이전 세션 이어받기"]')!;
+  const title = [...row.querySelectorAll("strong, label")].find(element => element.textContent === "이전 세션")!;
+  const guidance = row.querySelector("small")!;
+  const trigger = row.querySelector<HTMLButtonElement>('button[aria-label="이어받을 이전 세션"]')!;
+  expect(checkbox.checked).toBe(true);
+  for (const target of [title, title, guidance, guidance]) {
+    const before = checkbox.checked;
+    flushSync(() => (target as HTMLElement).click());
+    await settle();
+    expect(checkbox.checked).toBe(!before);
+    expect(trigger.disabled).toBe(before);
+    expect(document.body.querySelector('[data-slot="select-popup"]')).toBeNull();
+  }
+  const label = checkbox.closest("label")!;
+  expect(label.contains(title)).toBe(true);
+  expect(label.contains(guidance)).toBe(true);
+  expect(label.querySelector("label, button")).toBeNull();
+  expect(label.contains(trigger)).toBe(false);
 });
