@@ -89,7 +89,7 @@ export function RecurringJobsList({
       const result = await createApiClient(serverUrl).listRecurringJobs(true);
       if (request === requestRevision.current) setJobs(result.jobs);
     } catch (cause) {
-      if (request === requestRevision.current) setError(errorMessage(cause));
+      if (request === requestRevision.current) setError(failureMessage(cause, LOAD_FAILED));
     } finally {
       if (request === requestRevision.current) { setLoaded(true); setLoading(false); }
     }
@@ -189,7 +189,7 @@ export function RecurringJobEditor({
       if (!preserveDraft) setDraft(savedDraft ?? draftFromJob(found));
       return true;
     } catch (cause) {
-      if (request === identityRevision.current && !preserveDraft) setLoadError(errorMessage(cause));
+      if (request === identityRevision.current && !preserveDraft) setLoadError(failureMessage(cause, LOAD_FAILED));
       return false;
     } finally {
       if (request === identityRevision.current) setLoading(false);
@@ -219,7 +219,16 @@ export function RecurringJobEditor({
   }, [draft.nodeId, serverUrl, targetsReload]);
 
   const update = (patch: Partial<EditorDraft>) => setDraft((current) => ({ ...current, ...patch }));
-  useEffect(() => { ++previewRevision.current; setPreview([]); setPreviewError(null); setPreviewLoading(false); }, [draft.timezone, draft.schedule]);
+  // 일정이나 시간대가 실제로 바뀔 때만 미리보기를 지운다. 마운트나 같은 값으로 다시 만든 draft(저장 뒤 초기화)에서는
+  // 상태를 건드리지 않아, 시험 종료 뒤 act 밖에서 도는 할 일 없는 갱신을 만들지 않는다.
+  const previewKey = JSON.stringify([draft.timezone, draft.schedule]);
+  const previewKeyRef = useRef(previewKey);
+  useEffect(() => {
+    if (previewKeyRef.current === previewKey) return;
+    previewKeyRef.current = previewKey;
+    ++previewRevision.current;
+    setPreview([]); setPreviewError(null); setPreviewLoading(false);
+  }, [previewKey]);
   const previewSchedule = async () => {
     const request = ++previewRevision.current;
     setPreviewLoading(true); setPreviewError(null);
@@ -250,7 +259,7 @@ export function RecurringJobEditor({
         showActionError(refreshed
           ? '다른 곳에서 작업이 변경됐습니다. 내 입력은 보존했습니다. 다시 저장하면 그 변경을 내 입력으로 덮어씁니다.'
           : '동시 수정은 감지됐지만 최신 버전을 불러오지 못했습니다. 입력은 보존했습니다. 새로고침 후 다시 저장하세요.');
-      } else showActionError(errorMessage(cause));
+      } else showActionError(failureMessage(cause, '저장하지 못했습니다.'));
     } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const updateEnabled = async () => {
@@ -264,7 +273,7 @@ export function RecurringJobEditor({
       if (request !== identityRevision.current) return;
       setJob(saved);
       if (!dirty) { setDraft(draftFromJob(saved)); onDone(saved); }
-    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(failureMessage(cause, job.enabled ? '일시정지하지 못했습니다.' : '재개하지 못했습니다.')); } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const runNow = async () => {
     if (!job || saving) return;
@@ -274,7 +283,7 @@ export function RecurringJobEditor({
       await createApiClient(serverUrl).runRecurringJob(job.job_id, idempotency('run'));
       if (request !== identityRevision.current) return;
       Alert.alert('실행 요청을 접수했습니다', '저장된 작업 설정으로 요청했습니다. 실행 결과는 이력에서 확인하세요.');
-    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(failureMessage(cause, '지금 실행하지 못했습니다.')); } finally { if (request === identityRevision.current) setSaving(false); }
   };
   const archive = async () => {
     if (!job || saving) return;
@@ -283,7 +292,7 @@ export function RecurringJobEditor({
     try {
       await createApiClient(serverUrl).archiveRecurringJob(job.job_id, job.version);
       if (request === identityRevision.current) onDone(null);
-    } catch (cause) { if (request === identityRevision.current) showActionError(errorMessage(cause)); } finally { if (request === identityRevision.current) setSaving(false); }
+    } catch (cause) { if (request === identityRevision.current) showActionError(failureMessage(cause, '보관하지 못했습니다.')); } finally { if (request === identityRevision.current) setSaving(false); }
   };
 
   const currentDraft = { ...draft, prompt: promptDraft.value };
@@ -406,12 +415,24 @@ function jobDetail(job: RecurringJobDto): string {
 }
 function formatTime(value: string | null, timeZone?: string): string { return value ? new Date(value).toLocaleString(undefined, timeZone ? { timeZone } : undefined) : '없음'; }
 function idempotency(kind: string): string { return `recurring:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`; }
-function errorMessage(cause: unknown): string {
-  // Local form validation contains no remote payload or credentials.
+const LOAD_FAILED = '반복 작업을 불러오지 못했습니다.';
+// Local form validation contains no remote payload or credentials, so its sentence is shown as written.
+function localErrorMessage(cause: unknown): string | null {
   if (cause instanceof Error && !(cause instanceof ApiHttpError)) {
     const message = cause.message;
     if (message === '오프라인 허용 초는 1 이상의 정수여야 합니다.' || message.startsWith('요일을 ') || message.startsWith('매월 날짜을 ') || message.startsWith('실행 시각') || message.startsWith('고급 cron')) return message;
   }
+  return null;
+}
+function errorDetail(cause: unknown): string {
   return safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
+}
+function errorMessage(cause: unknown): string {
+  return localErrorMessage(cause) ?? errorDetail(cause);
+}
+/** Server failures lead with the action that failed; local validation sentences already say it. */
+function failureMessage(cause: unknown, action: string): string {
+  const local = localErrorMessage(cause);
+  return local ?? `${action}\n${errorDetail(cause)}`;
 }
 function isVersionConflict(cause: unknown): cause is ApiHttpError { return cause instanceof ApiHttpError && cause.status === 409; }

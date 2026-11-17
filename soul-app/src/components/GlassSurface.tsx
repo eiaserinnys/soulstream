@@ -362,6 +362,11 @@ export interface GlassButtonProps {
   onPress: () => void;
   children: React.ReactNode | ((state: GlassButtonContentState) => React.ReactNode);
   disabled?: boolean;
+  /**
+   * 처리 중. 누름을 무시하고 비활성처럼 흐리게 그리되, Pressable을 disabled로 만들지 않아
+   * 키보드 초점이 BODY로 빠지지 않는다. 계속 막아야 하는 조건은 disabled로 남긴다.
+   */
+  busy?: boolean;
   hitSlop?: number;
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -386,6 +391,7 @@ export function GlassButton({
   onPress,
   children,
   disabled,
+  busy,
   hitSlop,
   accessibilityLabel,
   accessibilityHint,
@@ -411,8 +417,10 @@ export function GlassButton({
   const buttonPrimitive = roles[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
   const primitive = roles.iconFrame;
   const activeContentColor = tone === 'link' ? t.colors.link : buttonPrimitive.contentColor;
+  // busy는 disabled와 같은 흐림을 입지만, Pressable을 막지 않아 초점이 남는다.
+  const dimmed = !!disabled || !!busy;
   const resolvedChildren = typeof children === 'function'
-    ? children({ contentColor: resolveGlassButtonContentColor(buttonPrimitive, !!disabled, activeContentColor) })
+    ? children({ contentColor: resolveGlassButtonContentColor(buttonPrimitive, dimmed, activeContentColor) })
     : children;
   const paper = variant === 'paper';
   const plain = variant === 'plain';
@@ -425,10 +433,12 @@ export function GlassButton({
     : undefined;
   const compactFrameStyle = [frameStyle, Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : undefined];
   const compactFocusStyle = focused && !disabled ? { borderWidth: GLASS_BUTTON_BORDER_WIDTH, borderColor: buttonPrimitive.focusedColor } : undefined;
+  const resolvedAccessibilityState = { disabled: !!disabled || !!busy, ...(busy ? { busy: true } : {}), ...accessibilityState };
+  const pressHandler = () => { if (busy) return; onPress(); };
   const renderButton = (nativePressFeedback: boolean) => (
     <Pressable
       testID={testID}
-      onPress={onPress}
+      onPress={pressHandler}
       onFocus={() => {
         if (!disabled) setFocused(true);
       }}
@@ -438,7 +448,8 @@ export function GlassButton({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled: !!disabled, ...accessibilityState }}
+      accessibilityState={resolvedAccessibilityState}
+      {...(busy ? { 'aria-busy': true } : {})}
       {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
       style={({ pressed }) => [
         styles.buttonInner,
@@ -450,12 +461,12 @@ export function GlassButton({
           paddingVertical: vertical,
           borderRadius: resolvedRadius,
           gap: t.spacing.xs,
-          opacity: disabled ? 0.55 : 1,
+          opacity: dimmed ? 0.55 : 1,
           backgroundColor: paper
-            ? resolvePaperButtonBackground(t, buttonPrimitive, !!disabled, pressed)
+            ? resolvePaperButtonBackground(t, buttonPrimitive, dimmed, pressed)
             : plain
-              ? resolvePlainButtonBackground(buttonPrimitive, !!disabled, pressed, focused)
-            : resolveGlassButtonBackground(buttonPrimitive, !!disabled, pressed, nativePressFeedback),
+              ? resolvePlainButtonBackground(buttonPrimitive, dimmed, pressed, focused)
+            : resolveGlassButtonBackground(buttonPrimitive, dimmed, pressed, nativePressFeedback),
           borderWidth: paper || plain ? 0 : GLASS_BUTTON_BORDER_WIDTH,
           borderColor: paper || plain ? 'transparent' : focused && !disabled ? buttonPrimitive.focusedColor : 'transparent',
         },
@@ -472,7 +483,7 @@ export function GlassButton({
     return (
       <Pressable
         testID={testID}
-        onPress={onPress}
+        onPress={pressHandler}
         onFocus={() => {
           if (!disabled) setFocused(true);
         }}
@@ -484,15 +495,16 @@ export function GlassButton({
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
-        accessibilityState={{ disabled: !!disabled, ...accessibilityState }}
+        accessibilityState={resolvedAccessibilityState}
+        {...(busy ? { 'aria-busy': true } : {})}
         {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
         style={[{
           minWidth: Math.max(t.hitTarget.min, primitive.minHeight),
           minHeight: Math.max(t.hitTarget.min, primitive.minHeight),
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: disabled ? 0.55 : 1,
-        }, compactFrameStyle, disabled ? { opacity: 0.55 } : undefined]}
+          opacity: dimmed ? 0.55 : 1,
+        }, compactFrameStyle, dimmed ? { opacity: 0.55 } : undefined]}
       >
         <View
           testID={surfaceTestID}
@@ -503,7 +515,7 @@ export function GlassButton({
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: 'transparent',
-          }, style, (plainPressed || focused) && !disabled
+          }, style, (plainPressed || focused) && !dimmed
             ? { backgroundColor: resolvePlainButtonBackground(buttonPrimitive, false, plainPressed, focused) }
             : undefined]}
         >
@@ -518,9 +530,9 @@ export function GlassButton({
       borderRadius: resolvedRadius };
     if (iconOnly && size !== 'standard') {
       const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
-      return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+      return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={pressHandler} disabled={disabled} accessibilityRole={accessibilityRole}
         onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
-        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
+        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={resolvedAccessibilityState} {...(busy ? { 'aria-busy': true } : {})}>
         <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{resolvedChildren}</View>
       </CompactTouchTarget>;
     }
@@ -531,9 +543,9 @@ export function GlassButton({
     const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
     const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
       alignItems: 'center', justifyContent: 'center' };
-    return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+    return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={pressHandler} disabled={disabled} accessibilityRole={accessibilityRole}
       onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
-      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
+      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={resolvedAccessibilityState} {...(busy ? { 'aria-busy': true } : {})}>
       {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{resolvedChildren}</View>
         : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{resolvedChildren}</GlassSurfaceImpl>}
     </CompactTouchTarget>;

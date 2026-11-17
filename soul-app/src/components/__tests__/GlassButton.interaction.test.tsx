@@ -452,6 +452,29 @@ describe('GlassButton interaction contract', () => {
     </GlassButton>);
     expect(StyleSheet.flatten(secondary.getByTestId('secondary-pressed').props.style).backgroundColor).toBe(secondaryRole.backgroundColor);
   });
+
+  test('busy는 누름을 무시하고 초점 테두리를 남기며 스크린리더에 처리 중으로 읽힌다', () => {
+    const onPress = jest.fn();
+    const screen = render(
+      <GlassButton variant="primary" busy testID="busy" onPress={onPress}>
+        {({ contentColor }) => <Text style={{ color: contentColor }}>처리 중…</Text>}
+      </GlassButton>,
+    );
+    const button = screen.getByTestId('busy');
+    const primary = createPrimitiveRoles(phoneTokens()).buttonPrimary;
+    // Pressable을 disabled로 만들지 않아 초점이 남는다. 흐림만 비활성과 같다.
+    expect(button.props.disabled).toBeFalsy();
+    expect(button.props.accessibilityState).toEqual({ disabled: true, busy: true });
+    expect(StyleSheet.flatten(button.props.style).opacity).toBe(0.55);
+    expect(screen.getByText('처리 중…').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
+    fireEvent.press(button);
+    expect(onPress).not.toHaveBeenCalled();
+    fireEvent(button, 'focus');
+    expect(StyleSheet.flatten(button.props.style)).toMatchObject({
+      borderWidth: 2,
+      borderColor: primary.focusedColor,
+    });
+  });
 });
 
 function phoneTokens(): DesignTokens {

@@ -69,21 +69,29 @@ async function main() {
           if (kind === 'new') await page.getByLabel('작업 내용', { exact: true }).fill('이번 주 완료한 작업과 남은 확인 사항을 정리하고 다음 주 계획을 알려 주세요.');
           const scroll = page.getByTestId('settings-jobs-editor-scroll');
           await scroll.evaluate(el => { el.scrollTop = el.scrollHeight; });
-          await page.getByTestId('settings-scope-save').click();
+          const saveButton = page.getByTestId('settings-scope-save');
+          await saveButton.focus();
+          await page.keyboard.press('Enter');
           const alert = page.getByRole('alert').filter({ hasText: 'HTTP 503' });
           await alert.waitFor();
           await page.waitForTimeout(700);
           const focusAfterSave = await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label'), testID: document.activeElement?.getAttribute('data-testid') }));
+          const alertText = await alert.evaluate(el => el.textContent ?? '');
+          const firstLine = alertText.split('\n')[0];
           const rects = await page.evaluate(() => {
             const area = document.querySelector('[data-testid="settings-jobs-editor-scroll"]').getBoundingClientRect();
             const alert = Array.from(document.querySelectorAll('[role="alert"]')).find(el => el.textContent.includes('HTTP 503')).getBoundingClientRect();
             return { area: { top: area.top, bottom: area.bottom, left: area.left, right: area.right }, alert: { top: alert.top, bottom: alert.bottom, left: alert.left, right: alert.right } };
           });
           const visible = rects.alert.top >= rects.area.top - 1 && rects.alert.bottom <= rects.area.bottom + 1;
-          console.log(`${viewport.width}px ${kind}: 오류 표시 ${visible ? '영역 안' : '영역 밖'} ${JSON.stringify(rects)}`);
-          result.interactions.push({ viewport: viewport.width, kind, check: 'save error inside visible editor scroll', visible, rects, focusAfterSave });
+          console.log(`${viewport.width}px ${kind}: 오류 표시 ${visible ? '영역 안' : '영역 밖'} 첫 줄 ${JSON.stringify(firstLine)} ${JSON.stringify(rects)}`);
+          result.interactions.push({ viewport: viewport.width, kind, check: 'save error first line and focus inside visible editor scroll', visible, firstLine, rects, focusAfterSave });
           await page.screenshot({ path: path.join(output, `${phase}-recurring-${kind}-error-${viewport.width}.png`) });
-          if (phase !== 'before') assert.ok(visible, `${kind} 오류가 스크롤 영역 밖입니다: ${JSON.stringify(rects)}`);
+          if (phase !== 'before') {
+            assert.ok(visible, `${kind} 오류가 스크롤 영역 밖입니다: ${JSON.stringify(rects)}`);
+            assert.equal(firstLine, '저장하지 못했습니다.', `${kind} 저장 실패 안내 첫 줄이 동작을 밝히지 않습니다: ${JSON.stringify(firstLine)}`);
+            assert.equal(focusAfterSave.testID, 'settings-scope-save', `${kind} 저장 뒤 초점이 저장 단추에 남지 않았습니다: ${JSON.stringify(focusAfterSave)}`);
+          }
           if (kind === 'existing' && phase !== 'before') {
             await name.focus();
             await page.keyboard.press('Tab');
@@ -108,6 +116,28 @@ async function main() {
             await page.setViewportSize(viewport);
             result.interactions.push({ viewport: viewport.width, check: 'tab and resize', tabFocus, overflow, draftRetained: true, focused, scrollBefore, scrollWideNarrow, scrollAfter });
           }
+        }
+        // 처리 중 저장 단추의 초점 유지: 영구 세션 편집기의 저장 요청을 fixture가 붙잡고 있어(pas-save-loading)
+        // '처리 중…' 상태가 유지된다. 초점 테두리가 보이는지 화면으로 남긴다.
+        await page.goto(`${base}${prefix}index.html?section=nativeSettings&entry=modal&state=pas-save-loading`);
+        await page.getByTestId('settings-modal-header').waitFor();
+        await page.getByTestId('settings-category-persistent').click();
+        await page.getByTestId('persistent-session-review-pas-1').click();
+        await page.getByTestId('persistent-session-editor').waitFor();
+        const busySave = page.getByTestId('settings-scope-save');
+        await busySave.waitFor();
+        await busySave.focus();
+        await page.keyboard.press('Enter');
+        await page.getByText('처리 중…', { exact: true }).waitFor();
+        await page.waitForTimeout(400);
+        const busyFocus = await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label'), testID: document.activeElement?.getAttribute('data-testid') }));
+        const busyBorder = await busySave.evaluate(el => getComputedStyle(el).borderColor);
+        const busyAria = await busySave.evaluate(el => ({ busy: el.getAttribute('aria-busy'), disabled: el.getAttribute('aria-disabled') }));
+        result.interactions.push({ viewport: viewport.width, check: 'busy save keeps focus and focus ring', busyFocus, busyBorder, busyAria });
+        await page.screenshot({ path: path.join(output, `${phase}-recurring-busy-focus-${viewport.width}.png`) });
+        if (phase !== 'before') {
+          assert.equal(busyFocus.testID, 'settings-scope-save', `처리 중 저장 단추에 초점이 없습니다: ${JSON.stringify(busyFocus)}`);
+          assert.equal(busyAria.busy, 'true', `처리 중 단추가 스크린리더에 busy로 읽히지 않습니다: ${JSON.stringify(busyAria)}`);
         }
         await context.close();
         continue;

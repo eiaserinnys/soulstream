@@ -93,6 +93,28 @@ test.each(['server', 'validation', 'conflict'])('폰 %s 저장 실패는 저장 
   }
 });
 
+test('저장 서버 실패 안내는 첫 줄에 저장 동작을 밝히고 오류 상세를 그 아래에 둔다', async () => {
+  const api = makeApi();
+  jest.mocked(createApiClient).mockReturnValue(api as any);
+  const screen = render(editor());
+  await screen.findByDisplayValue(job.name);
+  fireEvent.press(screen.getByText('저장'));
+  const alert = await screen.findByText(/^저장하지 못했습니다\./);
+  expect(alert.props.children.split('\n')[0]).toBe('저장하지 못했습니다.');
+  expect(alert.props.children).toContain('HTTP 503');
+});
+
+test('지금 실행 서버 실패 안내는 첫 줄에 실행 동작을 밝힌다', async () => {
+  const api = makeApi();
+  jest.mocked(createApiClient).mockReturnValue(api as any);
+  const screen = render(editor());
+  await screen.findByDisplayValue(job.name);
+  fireEvent.press(screen.getByTestId('recurring-job-run-now'));
+  const alert = await screen.findByText(/^지금 실행하지 못했습니다\./);
+  expect(alert.props.children.split('\n')[0]).toBe('지금 실행하지 못했습니다.');
+  expect(alert.props.children).toContain('HTTP 503');
+});
+
 test('같은 실패 안내의 재배치는 스크롤하지 않고 다음 실패는 다시 스크롤한다', async () => {
   const api = makeApi();
   jest.mocked(createApiClient).mockReturnValue(api as any);
