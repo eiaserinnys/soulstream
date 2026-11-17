@@ -107,9 +107,16 @@ export function SettingsAlert({ children, scrollIntoView = false }: { children: 
   );
 }
 
+/**
+ * 한 줄 입력 칸. 칸(label)과 그 안의 한 줄 입력은 최소 폭 0을 가져야 한다.
+ * 그리드 항목의 min-width가 auto면 입력의 고유 폭(브라우저 기본 20자)이 칸보다
+ * 넓을 때 칸을 넘어 이웃 칸과 겹친다(카드 #1456, 226px 칸에서 276px 입력).
+ * 프로젝트 한 줄 입력 부품(soul-ui Input, inputControlClassName)의 표면 span도
+ * 그리드 항목이라 같은 이유로 min-width를 0으로 둔다.
+ */
 export function SettingsField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-1 text-sm">
+    <label className="grid min-w-0 gap-1 text-sm [&>input]:w-full [&>input]:min-w-0 [&>[data-slot=input-control]]:min-w-0">
       <span className="text-muted-foreground">{label}</span>
       {children}
     </label>
