@@ -7,7 +7,6 @@ import type { Logger } from "pino";
 
 import { shouldPersistEvent } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import { maskSecrets } from "../secret_masker.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import {
   executionEndedControlFrame,
@@ -381,10 +380,6 @@ export class RunnerChildRuntime {
       await this.sendRequired(frame);
       this.recordProgress();
       return;
-    }
-    const maskedPayload = maskSecrets(frame.payload);
-    if (maskedPayload !== frame.payload) {
-      frame = { ...frame, payload: maskedPayload };
     }
     const event = frame.payload as SSEEventPayload;
     this.recordEngineProgress(event);

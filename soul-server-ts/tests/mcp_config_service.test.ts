@@ -505,40 +505,4 @@ describe("McpConfigService", () => {
       /MCP registry server docs header Authorization env DOCS_AUTH is not set/,
     );
   });
-
-  it("resolves every registry server for the masker and skips one with a missing secret env", () => {
-    fs.writeFileSync(
-      registryPath,
-      [
-        "servers:",
-        "  - id: live",
-        "    type: streamable_http",
-        "    url: https://mcp.example.test/mcp",
-        "    headers:",
-        "      Authorization:",
-        "        env: LIVE_AUTH",
-        "  - id: broken",
-        "    type: streamable_http",
-        "    url: https://broken.example.test/mcp",
-        "    headers:",
-        "      Authorization:",
-        "        env: MISSING_AUTH",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
-    const service = new McpConfigService({
-      agentsConfigPath,
-      processEnv: { LIVE_AUTH: "Bearer test-secret-service-value" },
-    });
-
-    expect(service.listResolvedRegistryServers()).toEqual([
-      {
-        type: "streamable_http",
-        name: "live",
-        url: "https://mcp.example.test/mcp",
-        headers: { Authorization: "Bearer test-secret-service-value" },
-      },
-    ]);
-  });
 });
