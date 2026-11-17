@@ -275,6 +275,7 @@ export class PersistentSessionSettingsService {
       ...(initialCandidate.reasoning_effort === null ? {} : { reasoningEffort: initialCandidate.reasoning_effort }),
       ...(body.folder_id === undefined ? {} : { folderId: body.folder_id }),
       initial_instruction: body.initial_instruction || PERSISTENT_INITIAL_INSTRUCTION,
+      ...(body.caller_info === undefined ? {} : { caller_info: body.caller_info }),
     }, logger);
     if (created.status !== 201 || typeof created.body.agentSessionId !== "string") return created;
 
@@ -539,11 +540,12 @@ type CreateBody = {
   initial_instruction: string;
   default_model: PersistentModelSelection;
   fallback_models?: PersistentModelSelection[];
+  caller_info?: Record<string, unknown>;
 };
 
 function parseCreateBody(input: unknown): CreateBody {
   const body = requireObjectBody(input);
-  rejectUnknownKeys(body, ["display_name", "agent_id", "folder_id", "initial_instruction", "settings"]);
+  rejectUnknownKeys(body, ["display_name", "agent_id", "folder_id", "initial_instruction", "settings", "caller_info"]);
   if (typeof body.agent_id !== "string" || body.agent_id.trim().length === 0) {
     throw invalid("agent_id must be a non-empty string");
   }
@@ -558,6 +560,7 @@ function parseCreateBody(input: unknown): CreateBody {
   if (settings?.default_model === undefined) throw invalid("settings.default_model is required");
   const hiddenKeys = Object.keys(settings).filter((key) => key !== "default_model" && key !== "fallback_models");
   if (hiddenKeys.length > 0) throw invalid(`settings.${hiddenKeys[0]} cannot be set when creating a session`);
+  const callerInfo = parseCallerInfo(body.caller_info);
   return {
     display_name: parseDisplayName(body.display_name),
     agent_id: body.agent_id.trim(),
@@ -565,7 +568,17 @@ function parseCreateBody(input: unknown): CreateBody {
     initial_instruction: typeof body.initial_instruction === "string" ? body.initial_instruction.trim() : "",
     default_model: settings.default_model,
     ...(settings.fallback_models === undefined ? {} : { fallback_models: settings.fallback_models }),
+    ...(callerInfo === undefined ? {} : { caller_info: callerInfo }),
   };
+}
+
+/** Provenance travels with the create only; its fields are trusted at the same level as ordinary creates. */
+function parseCallerInfo(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid("caller_info must be a JSON object");
+  }
+  return value as Record<string, unknown>;
 }
 
 function parseDisplayName(value: unknown): string {
