@@ -656,6 +656,10 @@
     {
       "id": "162_sessions_partial_indexes.sql",
       "sha256": "33ab9780158e9435be60eeb5b919dc70074ea1cacf8e3c752733078c35c5a0bc"
+    },
+    {
+      "id": "163_events_failed_result_index.sql",
+      "sha256": "d3f1aaa0b9a2dbb7b0f7e556661a14ccad86a6d3654d58955777cc512f5ce3e7"
     }
   ]
 }

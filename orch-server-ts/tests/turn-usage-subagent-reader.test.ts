@@ -21,7 +21,8 @@ describe("subagent usage query", () => {
 
     const query = queries.at(-1)!;
     const picked = query.slice(query.indexOf("WITH picked AS"), query.indexOf("), usage_raw AS"));
-    expect(picked).toContain("event_type IN ('complete', 'result', 'error')");
+    expect(picked).toContain("event_type IN ('complete', 'error')");
+    expect(picked).toContain("event_type = 'result' AND (payload->>'success') = 'false'");
     expect(picked).toContain("created_at >=");
     expect(picked).toContain("created_at <");
     expect(picked).not.toMatch(/session_id\s*=\s*ANY/i);

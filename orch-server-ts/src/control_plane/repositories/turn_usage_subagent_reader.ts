@@ -126,7 +126,16 @@ function createSubagentUsageCtes(
     WITH picked AS MATERIALIZED (
       SELECT session_id, id, created_at, event_type
       FROM events
-      WHERE event_type IN ('complete', 'result', 'error')
+      WHERE event_type IN ('complete', 'error')
+        ${path === "list" ? sql`AND session_id = ANY(${sessionIds}::text[])` : sql``}
+        ${scope.since ? sql`AND created_at >= ${scope.since}` : sql``}
+        AND created_at < ${scope.until}
+      UNION ALL
+      -- usage는 success=false result에서만 읽는다. 이 조건은 부분 인덱스
+      -- idx_events_failed_result의 WHERE와 같다.
+      SELECT session_id, id, created_at, event_type
+      FROM events
+      WHERE event_type = 'result' AND (payload->>'success') = 'false'
         ${path === "list" ? sql`AND session_id = ANY(${sessionIds}::text[])` : sql``}
         ${scope.since ? sql`AND created_at >= ${scope.since}` : sql``}
         AND created_at < ${scope.until}

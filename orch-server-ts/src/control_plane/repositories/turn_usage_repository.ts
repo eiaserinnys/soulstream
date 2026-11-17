@@ -264,7 +264,28 @@ export async function listTurnUsage(
   };
 }
 
+// 도구 계약 timeoutMs 60초 안에서 캐시가 찬 첫 호출을 받기 위한 값이다.
+const SUMMARY_STATEMENT_TIMEOUT = "55000ms";
+
+type TurnUsageTransactionClient = {
+  begin?: (callback: (transaction: SqlClient) => Promise<TurnUsageSessionRow[]>) => Promise<TurnUsageSessionRow[]>;
+};
+
 export async function summarizeTurnUsage(
+  sql: SqlClient,
+  query: TurnUsageSummaryQuery,
+): Promise<TurnUsageSessionRow[]> {
+  // postgres.js의 TransactionSql은 연결 관리 메서드가 없어 SqlClient와 타입이
+  // 겹치지 않지만, 질의 클라이언트로는 그대로 쓸 수 있다.
+  const begin = (sql as unknown as TurnUsageTransactionClient).begin;
+  if (begin === undefined) return await runTurnUsageSummary(sql, query);
+  return await begin.call(sql, async (transaction) => {
+    await transaction`SELECT set_config('statement_timeout', ${SUMMARY_STATEMENT_TIMEOUT}, true)`;
+    return await runTurnUsageSummary(transaction, query);
+  });
+}
+
+async function runTurnUsageSummary(
   sql: SqlClient,
   query: TurnUsageSummaryQuery,
 ): Promise<TurnUsageSessionRow[]> {
@@ -370,7 +391,14 @@ function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
     WITH picked AS MATERIALIZED (
       SELECT session_id, id, created_at, event_type
       FROM events
-      WHERE event_type IN ('complete', 'result', 'error', 'user_message', 'session_ended')
+      WHERE event_type IN ('complete', 'error', 'user_message', 'session_ended')
+        ${conditions}
+      UNION ALL
+      -- usage는 success=false result에서만 읽는다. 이 조건은 부분 인덱스
+      -- idx_events_failed_result의 WHERE와 같다.
+      SELECT session_id, id, created_at, event_type
+      FROM events
+      WHERE event_type = 'result' AND (payload->>'success') = 'false'
         ${conditions}
     ), usage_raw AS MATERIALIZED (
       SELECT
@@ -411,21 +439,24 @@ function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
       SELECT session_id, id, created_at,
         lead(id) OVER (PARTITION BY session_id ORDER BY id) AS next_user_id
       FROM picked WHERE event_type = 'user_message'
+    ), ended AS (
+      SELECT session_id, max(id) AS max_end_id
+      FROM picked WHERE event_type = 'session_ended'
+      GROUP BY session_id
+    ), stream AS (
+      SELECT session_id, id, created_at, next_user_id, true AS is_user FROM marks
+      UNION ALL
+      SELECT session_id, id, created_at, NULL::bigint AS next_user_id, false AS is_user FROM usage_rec
+    ), stream_next AS (
+      SELECT *, lead(is_user) OVER (PARTITION BY session_id ORDER BY id) AS next_is_user
+      FROM stream
     ), no_usage AS (
-      SELECT m.session_id, m.id, m.created_at, m.next_user_id
-      FROM marks m
-      WHERE NOT EXISTS (
-        SELECT 1 FROM usage_rec u
-        WHERE u.session_id = m.session_id AND u.id > m.id
-          AND (m.next_user_id IS NULL OR u.id < m.next_user_id)
-      )
-      AND (
-        m.next_user_id IS NOT NULL
-        OR EXISTS (
-          SELECT 1 FROM picked x
-          WHERE x.session_id = m.session_id AND x.event_type = 'session_ended' AND x.id > m.id
-        )
-      )
+      SELECT s.session_id, s.id, s.created_at, s.next_user_id
+      FROM stream_next s
+      LEFT JOIN ended en ON en.session_id = s.session_id
+      WHERE s.is_user
+        AND (s.next_is_user IS NULL OR s.next_is_user)
+        AND (s.next_user_id IS NOT NULL OR en.max_end_id > s.id)
     ), turn_rows AS (
       SELECT
         session_id,

@@ -4690,3 +4690,9 @@ CREATE INDEX IF NOT EXISTS idx_cards_updated_session_id
     ON cards(updated_session_id) WHERE updated_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_cards_completed_session_id
     ON cards(completed_session_id) WHERE completed_session_id IS NOT NULL;
+
+-- Partial index behind the turn usage read path (migration 163). Kept at the
+-- end of the file so the pinned definition lines above stay put.
+CREATE INDEX IF NOT EXISTS idx_events_failed_result
+    ON events (created_at) INCLUDE (session_id, id)
+    WHERE event_type = 'result' AND (payload->>'success') = 'false';
