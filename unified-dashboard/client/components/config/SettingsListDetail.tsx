@@ -28,7 +28,7 @@ export function SettingsListHeader({ title, description, actions }: {
     <div className="mb-3 flex items-center justify-between gap-2">
       <div>
         <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="break-keep break-words text-xs text-muted-foreground">{description}</p>
       </div>
       <div className="flex gap-2">{actions}</div>
     </div>

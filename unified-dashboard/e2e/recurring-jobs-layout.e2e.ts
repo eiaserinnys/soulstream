@@ -719,6 +719,28 @@ async function alertInset(alert: Locator) {
   });
 }
 
+async function textWrapMetrics(paragraph: Locator) {
+  return paragraph.evaluate(element => {
+    const node = element.firstChild;
+    if (!node || node.nodeType !== Node.TEXT_NODE) throw new Error("설명 텍스트를 찾지 못했습니다");
+    const text = node.textContent ?? "";
+    const breaks: Array<{ before: string; after: string; boundary: boolean }> = [];
+    let previous: { index: number; top: number } | undefined;
+    for (let index = 0; index < text.length; index++) {
+      if (/\s/.test(text[index])) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + 1);
+      const top = range.getBoundingClientRect().top;
+      if (previous && Math.abs(top - previous.top) > 1) {
+        breaks.push({ before: text[previous.index], after: text[index], boundary: /\s/.test(text.slice(previous.index + 1, index)) });
+      }
+      previous = { index, top };
+    }
+    return { wordBreak: getComputedStyle(element).wordBreak, overflowWrap: getComputedStyle(element).overflowWrap, breaks };
+  });
+}
+
 for (const width of [1440, 390, 360]) {
   test(`설정 목록과 상세 끝선 ${width}`, async ({ page }) => {
     const { capture, write } = await preparePage(page, width);
@@ -731,6 +753,23 @@ for (const width of [1440, 390, 360]) {
         await dialog.getByRole("button", { name: label, exact: true }).click();
       }
       const tab = page.getByTestId(id);
+      const list = tab.locator("aside");
+      const description = list.locator(":scope > div:first-child p");
+      if (width === 1440 && id === "recurring-jobs-tab") {
+        // 판정기가 낱말 중간 줄바꿈을 실제로 잡는지 확인한 뒤 원래 스타일로 되돌린다.
+        await description.evaluate(element => { (element as HTMLElement).style.cssText = "word-break:break-all;width:30px"; });
+        const broken = await textWrapMetrics(description);
+        expect(broken.breaks.some(line => !line.boundary)).toBe(true);
+        await description.evaluate(element => { (element as HTMLElement).style.cssText = ""; });
+      }
+      const wrap = await textWrapMetrics(description);
+      expect.soft(wrap.wordBreak, `${id} word-break`).toBe("keep-all");
+      expect.soft(wrap.overflowWrap, `${id} overflow-wrap`).toBe("break-word");
+      expect.soft(wrap.breaks.filter(line => !line.boundary), `${id} 낱말 중간 줄바꿈`).toEqual([]);
+      const overflow = await list.evaluate(element => ({ list: element.scrollWidth - element.clientWidth,
+        document: document.documentElement.scrollWidth - document.documentElement.clientWidth }));
+      expect.soft(overflow.list, `${id} 목록 가로 넘침`).toBeLessThanOrEqual(1);
+      expect.soft(overflow.document, `${id} 문서 가로 넘침`).toBeLessThanOrEqual(1);
       const group = tab.getByText("실행 대상", { exact: true }).locator("..");
       await expect(group).toBeVisible();
       await group.scrollIntoViewIfNeeded();
@@ -744,7 +783,7 @@ for (const width of [1440, 390, 360]) {
           detailClientRight: detail.getBoundingClientRect().left + detail.clientWidth,
           detailScrollHeight: detail.scrollHeight, detailClientHeight: detail.clientHeight };
       });
-      measurements[id] = edges;
+      measurements[id] = { ...edges, wrap, overflow };
       await capture(`edges-${id}-${width}`);
       if (width < 1024) expect.soft(Math.abs(edges.listRight - edges.groupRight), `${id} 목록과 상세`).toBeLessThanOrEqual(1);
       else expect.soft(Math.abs(edges.frameRight - edges.groupRight), `${id} 상세와 내용 끝선`).toBeLessThanOrEqual(1);

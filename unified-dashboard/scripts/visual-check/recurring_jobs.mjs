@@ -24,6 +24,38 @@ const runs = ['2026-11-16', '2026-11-09', '2026-11-02'].map((date, index) => ({
 }));
 const browser = await chromium.launch();
 const result = {};
+async function measureListHeader(page, tab, outputFile) {
+  await page.evaluate(() => document.fonts.ready);
+  await tab.locator('aside').scrollIntoViewIfNeeded();
+  const measurement = await tab.evaluate(element => {
+    const aside = element.querySelector('aside');
+    const heading = aside.firstElementChild;
+    const paragraph = heading.querySelector('p');
+    const rect = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+    const linesFor = element => {
+      const lines = [];
+      const node = element.firstChild;
+      for (let i = 0; i < node.textContent.length; i++) {
+        const range = document.createRange();
+        range.setStart(node, i); range.setEnd(node, i + 1);
+        const box = range.getBoundingClientRect();
+        const line = lines.find(item => Math.abs(item.top - box.top) < 1);
+        if (line) line.text += node.textContent[i];
+        else lines.push({ top: box.top, text: node.textContent[i] });
+      }
+      return lines;
+    };
+    const detail = document.querySelector('.config-dialog .config-detail-heading p');
+    const dialogDescription = document.querySelector('.config-dialog [data-slot="dialog-description"]');
+    return { list: rect(aside), heading: rect(heading), actions: [...heading.lastElementChild.children].map(rect),
+      listContent: rect(heading.nextElementSibling), paragraph: rect(paragraph), lines: linesFor(paragraph),
+      wordBreak: getComputedStyle(paragraph).wordBreak, overflowWrap: getComputedStyle(paragraph).overflowWrap,
+      detailLines: detail && linesFor(detail), detailWordBreak: detail && getComputedStyle(detail).wordBreak,
+      dialogDescriptionLines: dialogDescription && linesFor(dialogDescription) };
+  });
+  await page.screenshot({ path: outputFile, animations: 'disabled' });
+  return measurement;
+}
 // 세라피엘의 flush.mjs와 같은 방식으로 실제 스크롤 조상을 찾고 칸의 보이는 끝과 견준다.
 async function measureInset(locator, operation = 'measure') {
   return locator.evaluate((element, operation) => {
@@ -75,6 +107,7 @@ try {
     await page.screenshot({ path: path.join(output, `loading-${width}.png`), animations: 'disabled' });
     release();
     await tab.getByText('활성', { exact: true }).waitFor();
+    const listHeader = await measureListHeader(page, tab, path.join(output, `recurring-header-${width}.png`));
     await tab.getByLabel('작업 이름').fill('검수용 새 반복 작업');
     const create = tab.getByRole('button', { name: '반복 작업 생성', exact: true });
     await measureInset(create, 'end');
@@ -137,7 +170,7 @@ try {
     await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     const closed = await dialog.isHidden();
     const restored = await opener.evaluate(element => element === document.activeElement);
-    result[width] = { loading, rest, createAlert, saveAlert, saveButton, geometry, focusAfterSave, busyFocus, failureFocus, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
+    result[width] = { listHeader, loading, rest, createAlert, saveAlert, saveButton, geometry, focusAfterSave, busyFocus, failureFocus, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
     await context.close();
 
     // 공용 틀을 쓰는 영구 세션의 배치와 scrollIntoView 오류도 같은 전후 조건에서 잰다.
@@ -157,6 +190,7 @@ try {
     await persistentTab.getByRole('button').filter({ hasText: session.display_name }).first().click();
     const persistentName = persistentTab.getByLabel('세션 이름');
     await persistentName.waitFor();
+    const persistentListHeader = await measureListHeader(persistentPage, persistentTab, path.join(output, `persistent-header-${width}.png`));
     const layout = await persistentTab.evaluate(element => {
       const rect = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
       return { list: rect(element.querySelector('aside')), detail: rect(element.querySelector(':scope > div')), header: rect(element.querySelector('header')) };
@@ -171,7 +205,7 @@ try {
     await persistentPage.waitForTimeout(300);
     const persistentError = await measureInset(persistentAlert);
     await persistentPage.screenshot({ path: path.join(output, `persistent-error-${width}.png`), animations: 'disabled' });
-    result[width].persistent = { layout, error: persistentError };
+    result[width].persistent = { listHeader: persistentListHeader, layout, error: persistentError };
     await persistentContext.close();
   }
 } finally { await browser.close(); }
