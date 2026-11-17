@@ -51,8 +51,13 @@ describe("restricted base env allowlist", () => {
       "XDG_CREDENTIAL_PATH",
       "DATABASE_URL",
       "SSH_AUTH_SOCK",
-      "MCP_INTERNAL_PORT",
     ]) {
+      expect(isRestrictedBaseEnvKeyAllowed(key), key).toBe(false);
+    }
+  });
+
+  it("keeps internal MCP coordinates out of the base because the isolation plan supplies them", () => {
+    for (const key of ["MCP_INTERNAL_PORT", "MCP_PATH"]) {
       expect(isRestrictedBaseEnvKeyAllowed(key), key).toBe(false);
     }
   });

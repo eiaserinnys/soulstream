@@ -450,6 +450,9 @@ export async function prepareIsolationPlan(
     ...githubEnvironment,
     GH_CONFIG_DIR: ghConfigDirectory,
     AUTH_BEARER_TOKEN: restrictedCredential,
+    // 내부 MCP 주소는 호스트 설정 원문 대신 이미 승인된 격리 계획에서 전달한다.
+    MCP_INTERNAL_PORT: String(portOf(input.actualInternalMcpUrl, "내부 MCP")),
+    MCP_PATH: new URL(input.actualInternalMcpUrl).pathname.slice(0, -"/internal".length),
     // 승인된 로컬 MCP의 REST 주소·키. 전달이 없는 세션에는 정책이 있어도 값이 없다.
     ...localMcpApproval.environment,
   };
