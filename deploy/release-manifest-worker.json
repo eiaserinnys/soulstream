@@ -3,6 +3,27 @@
   "release_id": "soulstream-worker-env-bound-v2",
   "environment_service": "soulstream-server",
   "requires_service_env_file": true,
+  "change_ignore_paths": [
+    "soul-app/*",
+    "docs/*",
+    ".github/*",
+    "install/*",
+    "portable-node/*",
+    "assets/*",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+    ".gitignore",
+    ".gitattributes",
+    ".easignore",
+    ".env.soul-server-ts.example",
+    "unified-dashboard/[!p]*",
+    "orch-server-ts/[!p]*",
+    "soul-desktop/[!p]*",
+    "chrome-extension/[!p]*",
+    "packages/soul-ui/[!p]*"
+  ],
   "post_start_verify": [
     {
       "name": "verify-release-health",
