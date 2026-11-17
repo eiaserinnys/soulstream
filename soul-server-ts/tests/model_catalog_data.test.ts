@@ -121,21 +121,24 @@ type PresetExpectation = {
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
+const CLAUDE_ENV = { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" };
 const KIMI_ENV = {
   ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
   ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
   CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+  ...CLAUDE_ENV,
 };
 
 /** Values of the 19 common presets plus the 5 china operating additions. */
 const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
-  "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku" },
+  "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku", env: CLAUDE_ENV },
   "claude-sonnet": {
     label: "Claude - Sonnet",
     backend: "claude",
     model: "sonnet",
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
+    env: CLAUDE_ENV,
   },
   "claude-sonnet-trusted": {
     label: "Claude - Sonnet (상자 밖, 배달과 운영 조사)",
@@ -144,6 +147,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
     trusted_execution: true,
+    env: CLAUDE_ENV,
   },
   "claude-opus": {
     label: "Claude - Opus",
@@ -152,6 +156,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
     trusted_execution: true,
+    env: CLAUDE_ENV,
   },
   "claude-opus-lean": {
     label: "Claude - Opus (담당 시범, 압축 25만)",
@@ -161,7 +166,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
     trusted_execution: true,
-    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000", ENABLE_TOOL_SEARCH: "false" },
+    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000", ENABLE_TOOL_SEARCH: "false", ...CLAUDE_ENV },
   },
   "claude-fable": {
     label: "Claude - Fable 5.1",
@@ -171,6 +176,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "high",
     trusted_execution: true,
+    env: CLAUDE_ENV,
   },
   "claude-fable-5.2": {
     label: "Claude - Fable 5.2",
@@ -180,6 +186,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "medium",
     trusted_execution: true,
+    env: CLAUDE_ENV,
   },
   "codex-6-astra": {
     label: "Codex - 6 Astra",
@@ -282,6 +289,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
       ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4.1-flash",
       ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-v4.1-flash",
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+      ...CLAUDE_ENV,
     },
   },
   "gemini-3.8-flash": {
@@ -382,6 +390,12 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 describe("repository model catalogue data", () => {
+  it("disables background tasks for every Claude backend preset", () => {
+    for (const preset of catalog.presets.filter((entry) => entry.backend === "claude")) {
+      expect(preset.env?.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, preset.id).toBe("1");
+    }
+  });
+
   it("carries the 24 operating presets and gates only the china group", () => {
     expect(catalog.schema_version).toBe(1);
     expect(catalog.groups).toEqual(["china"]);
