@@ -1,11 +1,38 @@
+import { SESSION_STATUSES } from "@soulstream/wire-schema";
+import { isTerminalSessionStatus } from "../session/session_status.js";
+import { SESSION_STATUS_LEAVES, type StoredSessionStatus } from "../session/state/session_state_value.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
+
+/**
+ * 점유 판정이 "아직 끝나지 않은 세션"으로 보는 상태(initializing, running, unknown).
+ * 저장 상태 어휘(SESSION_STATUS_LEAVES)와 wire 상태 목록(SESSION_STATUSES)에서 "none"과
+ * 종료 상태를 뺀 합집합이다. 손으로 나열하지 않고, 질의는 이 목록을 = ANY로 넘겨
+ * idx_sessions_status를 탄다.
+ */
+export const ACTIVE_SESSION_STATUSES: readonly string[] = [
+  ...new Set<string>([
+    ...SESSION_STATUS_LEAVES.filter((status): status is StoredSessionStatus =>
+      status !== "none" && !isTerminalSessionStatus(status)),
+    ...SESSION_STATUSES.filter((status) => !isTerminalSessionStatus(status)),
+  ]),
+];
 /** Admission reservations and dispatched executions share one session identity budget. */
 export async function cardCapacitySessions(sql: RepositorySql) {
-  return sql<{session_id:string;node_id:string}[]>`SELECT DISTINCT session_id,node_id FROM (
+  // 활성 카드·세션에서 시작해 idx_folder_ops_target으로 원장을 찾고, 세션은 LATERAL로 한 줄씩 본다.
+  // OFFSET 0은 플래너가 sessions 전체를 해시에 올리는 Hash Left Join으로 돌아가는 것을 막는다.
+  return sql<{session_id:string;node_id:string}[]>`WITH act AS (
+    SELECT id AS card_id FROM cards WHERE status='running'
+    UNION SELECT card_id FROM sessions WHERE card_id IS NOT NULL
+      AND status = ANY(${sql.array(ACTIVE_SESSION_STATUSES)}::text[])
+  )
+  SELECT DISTINCT session_id,node_id FROM (
     SELECT op.payload_json->>'session_id' AS session_id,op.payload_json->>'node_id' AS node_id
-    FROM folder_operations op JOIN cards c ON c.id=op.target_id
-    LEFT JOIN sessions s ON s.session_id=op.payload_json->>'session_id'
-    WHERE op.operation_type='dispatch_card' AND (s.status NOT IN ('completed','error','interrupted')
+    FROM act JOIN folder_operations op ON op.target_kind='card' AND op.target_id=act.card_id
+      AND op.operation_type='dispatch_card'
+    JOIN cards c ON c.id=op.target_id
+    LEFT JOIN LATERAL (SELECT s0.session_id,s0.status,s0.updated_at FROM sessions s0
+      WHERE s0.session_id=op.payload_json->>'session_id' OFFSET 0) s ON true
+    WHERE (s.status NOT IN ('completed','error','interrupted')
       OR s.session_id IS NULL AND c.status='running' AND op.id=(SELECT latest.id FROM folder_operations latest
         WHERE latest.target_id=c.id AND latest.operation_type='dispatch_card' ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
       OR c.status='running' AND EXISTS(SELECT 1 FROM folder_operations r WHERE r.target_id=c.id AND r.operation_type='resume_card'

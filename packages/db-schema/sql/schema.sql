@@ -1083,6 +1083,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_caller_session_id
+    ON sessions (caller_session_id) WHERE caller_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_persistent_report
+    ON sessions (session_id) WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at_session_id
+    ON sessions (updated_at DESC, session_id DESC);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_session
     ON soulstream_schedules (session_id, status, next_run_at);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due

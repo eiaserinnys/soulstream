@@ -82,10 +82,6 @@ import { createR2StorageResolver } from "./runtime/r2_storage_resolver.js";
 import { readR2Settings, updateR2Settings } from "./system/r2_settings.js";
 import { OrchestratorMaintenanceService } from "./runtime/orchestrator_maintenance_service.js";
 import { createOrchestratorMemoryStatsCollector } from "./runtime/orchestrator_memory_stats.js";
-import {
-  StableSessionOrderIndexMaintenance,
-  startStableSessionOrderIndexMaintenance,
-} from "./runtime/stable_session_order_index_maintenance.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import { broadcastTargetedSessionCatalogDelta } from
@@ -1039,8 +1035,6 @@ export async function createLiveProductionApplication(
       );
     },
   });
-  const stableSessionOrderIndexMaintenance =
-    new StableSessionOrderIndexMaintenance(sqlResolver);
   let resourcesClosed = false;
   let documentIndexWarmupTimer: ReturnType<typeof setTimeout> | undefined;
   return {
@@ -1054,10 +1048,6 @@ export async function createLiveProductionApplication(
       try { await (await persistenceRepositoryProvider()).persistentReports!.syncActiveBoards(context.warn); }
       catch(error){context.warn(`PAS board boot refresh failed: ${String(error)}`);}
       await cardDispatchRuntime.dispatcher.dispatch();
-      startStableSessionOrderIndexMaintenance(
-        stableSessionOrderIndexMaintenance,
-        app.log,
-      );
       usageSummaryService.start();
       maintenanceService.start();
       turnSummaryPipeline?.start?.();

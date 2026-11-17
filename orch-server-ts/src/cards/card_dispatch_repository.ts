@@ -1,4 +1,4 @@
-import { cardCapacitySessions } from "./card_capacity.js";
+import { ACTIVE_SESSION_STATUSES, cardCapacitySessions } from "./card_capacity.js";
 import { endedCardWork } from "./card_work_lifecycle.js";
 import type { CardOwnerSession } from "./card_session_target.js";
 import type { CardRow, SqlClient } from "./control_plane/card_types.js";
@@ -57,13 +57,23 @@ export class CardDispatchRepository {
           return result;
         }
         // Dispatch provenance uses the existing immutable operation ledger. Manually created sessions have no marker.
+        // 활성 카드·세션에서 시작해 idx_folder_ops_target으로 원장을 찾고, 세션은 LATERAL로 한 줄씩 본다.
+        // OFFSET 0은 플래너가 sessions 전체를 해시에 올리는 Hash Left Join으로 돌아가는 것을 막는다(그러면 순차 스캔이 남는다).
         const rows = await sql<{
             node_id: string;
             count: number;
-        }[]> `SELECT op.payload_json->>'node_id' AS node_id,count(*)::int AS count
-      FROM folder_operations op JOIN cards c ON c.id=op.target_id
-      LEFT JOIN sessions s ON s.session_id=op.payload_json->>'session_id' AND s.card_id=c.id
-      WHERE op.operation_type='dispatch_card' AND (
+        }[]> `WITH act AS (
+          SELECT id AS card_id FROM cards WHERE status='running'
+          UNION SELECT card_id FROM sessions WHERE card_id IS NOT NULL
+            AND status = ANY(${sql.array(ACTIVE_SESSION_STATUSES)}::text[])
+        )
+        SELECT op.payload_json->>'node_id' AS node_id,count(*)::int AS count
+      FROM act JOIN folder_operations op ON op.target_kind='card' AND op.target_id=act.card_id
+        AND op.operation_type='dispatch_card'
+      JOIN cards c ON c.id=op.target_id
+      LEFT JOIN LATERAL (SELECT s0.session_id,s0.status,s0.updated_at FROM sessions s0
+        WHERE s0.session_id=op.payload_json->>'session_id' AND s0.card_id=c.id OFFSET 0) s ON true
+      WHERE (
         s.status NOT IN ('completed','error','interrupted') OR s.session_id IS NULL AND c.status='running'
           AND op.id=(SELECT latest.id FROM folder_operations latest WHERE latest.target_id=c.id
             AND latest.operation_type='dispatch_card' ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
