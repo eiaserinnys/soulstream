@@ -100,6 +100,12 @@ jobs:
           corepack pnpm --dir orch-server-ts exec vitest run \
             tests/oauth/oauth-flow.postgres.test.ts \
             --minWorkers=1 --maxWorkers=1 || result=$?
+          corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/scripts/release_executor_postgres_review.postgres.test.ts \
+            --minWorkers=1 --maxWorkers=1 || result=$?
+          corepack pnpm --dir soul-server-ts exec vitest run \
+            tests/scripts/release_executor_postgres_review.postgres.test.ts \
+            --minWorkers=1 --maxWorkers=1 || result=$?
           exit "$result"
 
       - name: Typecheck soul-server-ts

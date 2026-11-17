@@ -153,6 +153,7 @@ describe("soul-server-ts affected CI gate", () => {
     expect(oauthStep.run).toContain("tests/page/page-repository.postgres.integration.test.ts");
     expect(oauthStep.run).toContain("--maxWorkers=2");
     expect(oauthStep.run).toContain('exit "$result"');
+    expect(oauthStep.run.match(/tests\/scripts\/release_executor_postgres_review\.postgres\.test\.ts/g)).toHaveLength(2);
 
     const expectedFullSliceFiles = readdirSync(runnerTestsDirectory)
       .filter((name) => name.endsWith("_full_slice_postgres.test.ts"))
