@@ -67,6 +67,7 @@ function DialogPopup({
   bottomStickOnMobile = false,
   closeProps,
   style,
+  onKeyDown,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
@@ -97,6 +98,25 @@ function DialogPopup({
           data-slot="dialog-popup"
           style={popupStyle}
           {...props}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            if (event.defaultPrevented || event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+            const popup = event.currentTarget;
+            if (!(event.target instanceof Node) || !popup.contains(event.target)) return;
+            const tabbable = [...popup.querySelectorAll<HTMLElement>("*")].filter((element) =>
+              element.tabIndex >= 0 && !element.matches(":disabled") && !element.closest("[inert], [hidden]")
+              && getComputedStyle(element).visibility !== "hidden" && element.getClientRects().length > 0,
+            );
+            const first = tabbable[0];
+            const last = tabbable[tabbable.length - 1];
+            if (event.shiftKey && (event.target === first || event.target === popup) && last) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && event.target === last && first) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
         >
           {/* Overlay glass stays CSS/backdrop based: the shared WebGL canvas samples wallpaper only, not content behind modal z-layers. */}
           <LiquidGlassLayer cornerRadius={26} enhanced={enhanced} />

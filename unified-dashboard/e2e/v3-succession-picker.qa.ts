@@ -51,10 +51,18 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   ` });
   await installV3VisualQaRoutes(page, {
     successionPickerRuns: true,
+    unifiedFolderView: true,
     onAgentListRequest: (nodeId) => agentRequests.push(nodeId),
     onSessionCreate: (payload) => { createPayloads.push(payload); },
     onSessionListRequest: () => { sessionListRequests += 1; },
   });
+  await page.route("**/api/nodes/*/model-presets", (route) => route.fulfill({ json: {
+    model_presets: [
+      { id: "qa-standard", label: "QA 표준 모델", backend: "codex", available: true, supported_efforts: ["low", "medium", "high"], default_effort: "medium" },
+      { id: "qa-warning", label: "QA 사용량 확인 모델", backend: "codex", available: true, usage_warning: true, supported_efforts: ["low", "medium", "high"], default_effort: "medium" },
+      { id: "qa-limited", label: "QA 제한 모델", backend: "codex", available: false, reason: "quota_exhausted", reason_label: "주간 사용량 제한", resets_at: "2026-07-28T18:20:00+09:00" },
+    ],
+  } }));
   await page.route("**/api/atom/nodes", async (route) => {
     await route.fulfill({
       status: 200,
@@ -71,29 +79,57 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
-    await page.getByTestId("v3-task-task-alpha").click();
-    try {
-      await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible", timeout: 10_000 });
-    } catch (error) {
-      console.error(`[pr-ai/qa] 폴더 진입 실패 URL · ${page.url()}`);
-      console.error(`[pr-ai/qa] 폴더 진입 실패 본문 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
-      await capture(page, theme, "diagnostic-task-open-failure");
-      throw error;
-    }
-    await page.locator(".v3-run-row").filter({ hasText: "세션 #3" }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "컨텍스트 추가", exact: true }).click();
-    const sharedPicker = page.locator(".v3-context-picker").filter({ has: page.getByRole("tab", { name: "atom" }) });
-    const sharedTabs = await sharedPicker.getByRole("tab").allTextContents();
-    assert(JSON.stringify(sharedTabs) === JSON.stringify(["📄 페이지", "🧠 atom"]), `공통 픽커 탭이 잘못됐습니다: ${JSON.stringify(sharedTabs)}`);
-    assert(!(await sharedPicker.textContent() ?? "").includes("상속됨(프로젝트에서)"), "공통 픽커에 중복 상속 표시가 남았습니다.");
-    await sharedPicker.getByRole("tab", { name: "atom" }).click();
-    await sharedPicker.getByRole("button", { name: /노드 선택/ }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "컨텍스트 선택 닫기", exact: true }).click();
-    await page.getByRole("button", { name: "새 세션", exact: true }).click();
+    await page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true }).click();
+    const openButton = page.getByRole("button", { name: "새 세션", exact: true });
+    await openButton.click();
 
     const modal = page.locator(".v3-succession-modal");
     await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "visible" });
+    const openedFocus = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    for (const title of ["실행 환경", "함께 전달할 자료"]) {
+      const disclosure = modal.locator("details").filter({ hasText: title });
+      if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").click();
+    }
+    await modal.getByLabel("추론 강도 선택").waitFor({ state: "visible" });
+    for (const width of [1440, 360]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await capture(page, theme, `succession-${width}`);
+      await modal.getByLabel("이어받을 이전 세션").scrollIntoViewIfNeeded();
+      await capture(page, theme, `succession-previous-${width}`);
+      await modal.locator('[data-slot="dialog-panel-scroll"]').evaluate(element => { element.scrollTop = 0; });
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    if (process.env.CARD1540_QA === "1") {
+      const effort = modal.getByRole("combobox", { name: "추론 강도 선택" });
+      const predecessor = modal.getByRole("combobox", { name: "이어받을 이전 세션" });
+      await chooseSelectItem(page, effort, "High");
+      assert((await effort.textContent() ?? "").includes("High"), "추론 강도가 바뀌지 않았습니다.");
+      await predecessor.click();
+      const choices = page.locator('[data-slot="select-item"]:visible');
+      const choiceLabels = await choices.allTextContents();
+      assert(choiceLabels.length > 1, "이전 세션 선택지가 부족합니다.");
+      await choices.nth(1).click();
+      assert((await predecessor.textContent() ?? "").includes(choiceLabels[1].trim()), "이전 세션 선택이 반영되지 않았습니다.");
+      const instruction = modal.getByRole("textbox", { name: "초기 지시" });
+      await instruction.fill("선택한 자료를 검토합니다.");
+      const resize: Array<{ width: number; scrollWidth: number; clientWidth: number; value: string }> = [];
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 1000 });
+        const dimensions = await modal.evaluate(element => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+        resize.push({ width, ...dimensions, value: await instruction.inputValue() });
+      }
+      assert(resize.every(item => item.scrollWidth <= item.clientWidth + 1 && item.value === "선택한 자료를 검토합니다."), `크기 변경 오류: ${JSON.stringify(resize)}`);
+      await effort.focus();
+      await page.keyboard.press("Tab");
+      const tabInside = await modal.evaluate(element => element.contains(document.activeElement));
+      assert(tabInside, "Tab 초점이 창 밖으로 이동했습니다.");
+      await page.keyboard.press("Escape");
+      await modal.waitFor({ state: "hidden" });
+      await page.waitForTimeout(300);
+      const focusRestored = await openButton.evaluate(element => document.activeElement === element);
+      assert(focusRestored, "닫은 뒤 초점이 열기 단추로 돌아오지 않았습니다.");
+      return { openedFocus, tabInside, focusRestored, choiceLabels, resize };
+    }
     const predecessor = page.getByRole("combobox", { name: "이어받을 이전 세션" });
     const optionLabels = await predecessor.locator("option").allTextContents();
     assert(optionLabels.some((label) => label.includes("🧭 다음 검증은 이전 실행을 골라 이어서 진행해 주세요.")), "lastMessage 선택지가 없습니다.");

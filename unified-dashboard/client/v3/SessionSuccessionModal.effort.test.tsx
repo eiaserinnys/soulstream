@@ -168,17 +168,22 @@ async function settle(times = 6) {
 }
 
 // The dialog renders through a portal onto document.body, not into container.
-function effortSelect(): HTMLSelectElement | null {
-  return document.body.querySelector<HTMLSelectElement>('select[aria-label="추론 강도 선택"]');
+function effortSelect(): HTMLButtonElement | null {
+  return document.body.querySelector<HTMLButtonElement>('button[aria-label="추론 강도 선택"]');
 }
 
-function setSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+async function effortOptions() {
+  flushSync(() => effortSelect()!.click());
+  await vi.waitFor(() => expect(document.body.querySelector('[data-slot="select-item"]')).not.toBeNull());
+  return [...document.body.querySelectorAll<HTMLElement>('[data-slot="select-item"]')];
+}
+
+async function chooseEffort(label: string) {
+  const options = await effortOptions();
+  const item = options.find(option => option.textContent?.trim() === label)!;
+  expect(item).toBeTruthy();
+  flushSync(() => item.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+  flushSync(() => item.click());
 }
 
 async function chooseNode(value: string) {
@@ -208,14 +213,8 @@ describe("SessionSuccessionModal reasoning effort", () => {
     await settle();
     const select = effortSelect();
     expect(select).not.toBeNull();
-    expect(select?.value).toBe("xhigh");
-    expect(Array.from(select?.options ?? []).map((option) => option.value)).toEqual([
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+    expect(select?.textContent).toContain("X High");
+    expect((await effortOptions()).map(option => option.textContent?.trim())).toEqual(["Low", "Medium", "High", "X High", "Max"]);
   });
 
   it("offers no picker for a preset that advertises nothing", async () => {
@@ -250,11 +249,11 @@ describe("SessionSuccessionModal reasoning effort", () => {
     }));
     mount();
     await settle();
-    expect(effortSelect()?.value).toBe("xhigh");
+    expect(effortSelect()?.textContent).toContain("X High");
 
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
+    expect(effortSelect()?.textContent).toContain("Low");
 
     await chooseNode("node-b");
     await settle(25);
@@ -287,10 +286,9 @@ describe("SessionSuccessionModal reasoning effort", () => {
 
     createDashboardSession.mockClear();
     flushSync(() => root.render(null)); mount(); await settle();
-    const select = effortSelect();
-    flushSync(() => setSelect(select!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
+    expect(effortSelect()?.textContent).toContain("Low");
 
     flushSync(() => startButton()?.click());
     await settle();
@@ -328,7 +326,7 @@ describe("unusable carried-over effort", () => {
     mountWithSession(predecessorAtUltra);
     await settle();
 
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
@@ -346,10 +344,9 @@ describe("unusable carried-over effort", () => {
     stubFetch([OPUS]);
     mountWithSession(predecessorAtUltra);
     await settle();
-    expect(effortSelect()?.value).toBe("ultra");
-    expect(effortSelect()?.options[0]?.textContent).toContain("지원 안 함");
+    expect(effortSelect()?.textContent).toContain("Ultra (지원 안 함)");
 
-    flushSync(() => setSelect(effortSelect()!, ""));
+    await chooseEffort("기본값 사용");
     await settle();
     expect(unsupportedNotice()).toBeNull();
     expect(startButton()?.disabled).toBe(false);
@@ -430,8 +427,8 @@ describe("preset with efforts but no advertised default", () => {
     await settle();
 
     const select = effortSelect();
-    expect(select?.value).toBe("");
-    expect(Array.from(select?.options ?? []).map((option) => option.textContent))
+    expect(select?.textContent).toContain("기본값");
+    expect((await effortOptions()).map(option => option.textContent?.trim()))
       .toEqual(["기본값", "Low", "Medium", "High", "X High", "Max"]);
 
     flushSync(() => startButton()?.click());
@@ -442,12 +439,12 @@ describe("preset with efforts but no advertised default", () => {
     // its own, so "기본값" has to stay on the list.
     createDashboardSession.mockClear();
     flushSync(() => root.render(null)); mount(); await settle();
-    flushSync(() => setSelect(effortSelect()!, "low"));
+    await chooseEffort("Low");
     await settle();
-    expect(effortSelect()?.value).toBe("low");
-    flushSync(() => setSelect(effortSelect()!, ""));
+    expect(effortSelect()?.textContent).toContain("Low");
+    await chooseEffort("기본값");
     await settle();
-    expect(effortSelect()?.value).toBe("");
+    expect(effortSelect()?.textContent).toContain("기본값");
 
     flushSync(() => startButton()?.click());
     await settle();

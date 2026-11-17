@@ -75,12 +75,39 @@ describe("RecurringJobsTab lifecycle", () => {
     vi.stubGlobal("fetch", vi.fn(async () => fail ? json({ detail: "목록 실패" }, 500) : json({ jobs: [] })));
     await renderTab();
     await waitFor(() => expect(document.body.querySelector('[role="alert"]')).not.toBeNull());
+    expect(document.body.textContent).not.toContain("활성");
+    expect(document.body.textContent).not.toContain("없음");
     fail = false;
     clickButton("새로고침");
-    await waitFor(() => expect(document.body.querySelector('[role="alert"]')).toBeNull());
+    await waitFor(() => {
+      expect(document.body.querySelector('[role="alert"]')).toBeNull();
+      expect(document.body.textContent).toContain("활성");
+      expect(document.body.textContent).toContain("없음");
+    });
     fail = true;
     clickButton("새로고침");
     await waitFor(() => expect(document.body.querySelector('[role="alert"]')).not.toBeNull());
+    expect(document.body.textContent).not.toContain("활성");
+    expect(document.body.textContent).not.toContain("없음");
+  });
+
+  it("keeps the empty list visible when saving fails", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "save-failure" });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST" && String(input) === "/api/recurring-jobs") return json({ detail: "저장 실패" }, 500);
+      return json({ jobs: [] });
+    }));
+    await renderTab();
+    await waitFor(() => expect(document.body.textContent).toContain("활성"));
+    setInput("작업 이름", "작업");
+    setInput("작업 내용", "실행 내용");
+    setInput("노드", "node-a");
+    setInput("에이전트", "agent-a");
+    setSelect("결과 폴더", "folder-a");
+    clickButton("반복 작업 생성");
+    await waitFor(() => expect(document.body.querySelector('[role="alert"]')).not.toBeNull());
+    expect(document.body.textContent).toContain("활성");
+    expect(document.body.textContent).toContain("없음");
   });
 
   it("toggles monthly dates in sorted order and saves their cron expression", async () => {
