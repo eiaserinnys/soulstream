@@ -71,14 +71,20 @@ def is_test_file(path: str, package_dir: str) -> bool:
     )
 
 
-def protected_paths(service_dir: str, files: set[str]) -> set[str]:
+def protected_paths(
+    service_dir: str, files: set[str], *, workspace_package_manifests_only: bool = False
+) -> set[str]:
     package_dirs = service_packages(service_dir)
+    workspace_manifests = {
+        (directory / "package.json").relative_to(ROOT).as_posix()
+        for directory in workspace_packages().values()
+    } | {"package.json"}
     protected = {
         path
         for path in files
         if any(path.startswith(directory + "/") and not is_test_file(path, directory) for directory in package_dirs)
         or path.startswith(("plugins/", "patches/", "deploy/", "scripts/"))
-        or Path(path).name == "package.json"
+        or (path in workspace_manifests if workspace_package_manifests_only else Path(path).name == "package.json")
         or path in {"pnpm-lock.yaml", "pnpm-workspace.yaml"}
     }
     return protected
