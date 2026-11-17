@@ -191,7 +191,7 @@ describe("restricted MCP tool surface", () => {
       jsonrpc: "2.0", method: "tools/list", params: {}, id: 2,
     });
     const names: string[] = (payload.result?.tools ?? []).map((tool: { name: string }) => tool.name);
-    expect(names).toHaveLength(109);
+    expect(names).toHaveLength(111);
     for (const denied of ["delete_session", "run_card", "update_agent_profile", "dispatch_work",
       "update_central_agent_profile", "delete_central_agent_profile"]) {
       expect(names).not.toContain(denied);
@@ -265,7 +265,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const restrictedNames: string[] = (restricted.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(restrictedNames).toHaveLength(109);
+      expect(restrictedNames).toHaveLength(111);
       expect(restrictedNames).not.toContain("delete_session");
 
       const full = await statelessRpc(harness.baseUrl, `Bearer ${KEY}`, {
@@ -274,7 +274,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const fullNames: string[] = (full.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(fullNames).toHaveLength(146);
+      expect(fullNames).toHaveLength(148);
       expect(fullNames).toContain("delete_session");
     } finally {
       if (harness.server.closeMcp) await harness.server.closeMcp();

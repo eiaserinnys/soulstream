@@ -390,3 +390,27 @@ it("uses the verified normal caller-session actor for query, creation, and updat
   expect(update).toHaveBeenCalledWith(actor, "job-1", { expectedVersion: 1, enabled: true });
   expect(f.options.resolveSessionOwner).toHaveBeenCalledWith("caller-session");
 });
+
+describe("event ingress observability tools", () => {
+  it("maps dead-letter arguments and returns the store result", async () => {
+    const f = fixture();
+    const listDeadLetters = vi.fn(async () => ({
+      items: [], next_cursor: null, total_matched: 0,
+      counts: { dead_lettered: 0, retrying: 0 }, unreadable_count: 0, directory_exists: true,
+    }));
+    f.options.cluster.eventIngress = { listDeadLetters };
+    expect(await f.call("list_event_ingress_dead_letters", {
+      state: "retrying", node_id: "node-a", limit: 5,
+      since: "2026-11-17T00:00:00.000Z", cursor: "2026-11-17T00:00:00.000Z|dead",
+    })).toMatchObject({ structuredContent: { directory_exists: true } });
+    expect(listDeadLetters).toHaveBeenCalledWith({
+      state: "retrying", nodeId: "node-a", limit: 5,
+      since: "2026-11-17T00:00:00.000Z", cursor: "2026-11-17T00:00:00.000Z|dead",
+    });
+  });
+  it("reports an unconfigured host instead of guessing", async () => {
+    const f = fixture();
+    expect(await f.call("get_event_ingress_delivery_latency", {}))
+      .toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("not configured") } });
+  });
+});

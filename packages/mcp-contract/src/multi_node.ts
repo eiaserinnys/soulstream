@@ -64,6 +64,29 @@ export const clusterTools = {
         "오케스트레이터를 통해 연결된 TS 노드들의 reflect_brief를 집계한다. 로컬 reflect_brief(self-only)와 별도 도구다.",
       inputSchema: {},
     } },
+  list_event_ingress_dead_letters: { name: "list_event_ingress_dead_letters", audience: "internal", config: {
+      description:
+        "오케스트레이터의 event ingress dead-letter 디렉터리를 읽기 전용으로 조회한다. state·기간·노드로 거르고 (recorded_at, id) keyset으로 넘긴다. payload 같은 원문 칸은 내지 않는다.",
+      inputSchema: {
+        state: z.enum(["dead_lettered", "retrying", "all"]).default("dead_lettered"),
+        since: z.string().min(1).optional(),
+        until: z.string().min(1).optional(),
+        node_id: z.string().min(1).optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+        cursor: z.string().min(1).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    } },
+  get_event_ingress_delivery_latency: { name: "get_event_ingress_delivery_latency", audience: "internal", config: {
+      description:
+        "orch가 사건을 커밋한 시각(event_ingress_receipts.created_at)에서 노드가 만든 시각(events.created_at)을 뺀 전달 지연을 조회한다. 기간은 7일 이하만 받고 overall·노드별 count와 p50/p90/p99/max, 느린 5건을 낸다.",
+      inputSchema: {
+        since: z.string().min(1).optional(),
+        until: z.string().min(1).optional(),
+        node_id: z.string().min(1).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    } },
   plan_remote_agent_profile_update: { name: "plan_remote_agent_profile_update", audience: "all", timeoutMs: 35000, config: {
       description:
         "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 넘긴 최상위 필드만 바꾸고 생략한 필드는 보존하며 null은 삭제한다. 중첩 객체는 통째로 교체한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",

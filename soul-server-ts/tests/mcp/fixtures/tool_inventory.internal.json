@@ -3021,6 +3021,34 @@
     "name": "get_daily_page"
   },
   {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "orch가 사건을 커밋한 시각(event_ingress_receipts.created_at)에서 노드가 만든 시각(events.created_at)을 뺀 전달 지연을 조회한다. 기간은 7일 이하만 받고 overall·노드별 count와 p50/p90/p99/max, 느린 5건을 낸다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "until": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_event_ingress_delivery_latency"
+  },
+  {
     "description": "폴더와 카드를 조회한다. 기본 full은 기존 상세 응답이다. view=outline은 상세 본문 없는 카드 목록을 기본 20장씩 반환하며 보관 카드는 기본 제외한다. outline 목록은 limit(최대 50), cursor로 이어 읽고 get_card로 상세를 확인한다. 목록 옵션은 full 또는 card_id 직접 조회에서 무시된다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -3537,6 +3565,53 @@
       "type": "object"
     },
     "name": "list_custom_views"
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "오케스트레이터의 event ingress dead-letter 디렉터리를 읽기 전용으로 조회한다. state·기간·노드로 거르고 (recorded_at, id) keyset으로 넘긴다. payload 같은 원문 칸은 내지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "default": "dead_lettered",
+          "enum": [
+            "dead_lettered",
+            "retrying",
+            "all"
+          ],
+          "type": "string"
+        },
+        "until": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_event_ingress_dead_letters"
   },
   {
     "annotations": {
