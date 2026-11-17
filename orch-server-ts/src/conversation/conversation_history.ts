@@ -4,39 +4,91 @@ import { ConversationProjection, type Item, type SourceEvent } from "./conversat
 import { formatPosition } from "./conversation_position.js";
 
 type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
+type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
+type CachedItem = { eventId: number; item: Item };
+type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; usedAt: number };
 const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
+const CACHE_EXECUTIONS = 64;
+const CACHE_TTL_MS = 10 * 60_000;
+
+// 손으로 돌리는 이관 스크립트(attachment-migration/backfill_message_refs.ts, omit-inline-image-data.ts)는
+// 이미 들어간 이벤트의 payload를 바꾸지만 예외로 둔다. 그 결과는 캐시 만료(최대 10분) 뒤 반영된다.
 export class ConversationHistory {
+  private readonly cache = new Map<string, CachedExecution>();
+  private readonly locks = new Map<string, Promise<void>>();
   constructor(private readonly sql: SqlClient) {}
   async load(binding: Binding) {
-    const executions = await this.sql<Array<{ session_id: string; ordinal: number; first_input_is_initial_instruction: boolean }>>`
+    const executions = await this.sql<Execution[]>`
       SELECT session_id,ordinal,first_input_is_initial_instruction FROM conversation_executions
       WHERE thread_id=${binding.session_id} AND phase='complete' ORDER BY ordinal`;
     if (!executions.length) executions.push({session_id:binding.session_id, ordinal:0,
       first_input_is_initial_instruction:binding.first_input_is_initial_instruction || Boolean(binding.creation_request?.initial_instruction?.length)});
+    const loaded: Array<{ execution: Execution; entry: CachedExecution }> = [];
+    for (const execution of executions) loaded.push({ execution, entry: await this.loadExecution(execution) });
     const items: Array<{ position: string; item: Item; session: string }> = binding.notices.map(n => ({
       position: "0", session: binding.session_id, item: { id:n.id, kind:"notice", text:n.text, at:n.at, attachments:[] },
     }));
-    let cursor = "0";
-    let projection = new ConversationProjection(false);
-    for (const execution of executions) {
-      const [watermark] = await this.sql<Array<{ id: number }>>`SELECT COALESCE(MAX(id), 0)::int AS id FROM events WHERE session_id=${execution.session_id}`;
-      const max = watermark?.id ?? 0;
-      cursor = formatPosition(execution.ordinal, max);
-      const rows = await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
-        WHERE session_id=${execution.session_id} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`;
-      projection = new ConversationProjection(execution.first_input_is_initial_instruction);
-      for (const row of rows) {
-        row.payload = await this.enrichPayload(row.payload ?? {});
-        const result = projection.apply(sourceEvent(row));
-        if (result.item) {
-          const position = formatPosition(execution.ordinal, row.id);
-          items.push({ position, session:execution.session_id, item:{...result.item, id:position} });
-        }
+    for (const { execution, entry } of loaded) {
+      for (const cached of entry.items) {
+        const position = formatPosition(execution.ordinal, cached.eventId);
+        items.push({ position, session: execution.session_id, item: { ...cached.item, id: position } });
       }
     }
-    return { cursor, projection, items, active:executions.at(-1)! };
+    const last = loaded.at(-1)!;
+    return { cursor: formatPosition(last.execution.ordinal, last.entry.lastEventId),
+      projection: last.entry.projection.clone(), items, active: executions.at(-1)! };
   }
-
+  private async loadExecution(execution: Execution): Promise<CachedExecution> {
+    const key = cacheKey(execution);
+    return await this.locked(key, async () => {
+      const [watermark] = await this.sql<Array<{ id: number }>>`SELECT COALESCE(MAX(id), 0)::int AS id FROM events WHERE session_id=${execution.session_id}`;
+      const max = watermark?.id ?? 0;
+      const now = Date.now();
+      let entry = this.cache.get(key);
+      if (entry && (now - entry.usedAt > CACHE_TTL_MS || entry.lastEventId > max)) { this.cache.delete(key); entry = undefined; }
+      if (!entry) {
+        entry = { projection: new ConversationProjection(execution.first_input_is_initial_instruction),
+          lastEventId: 0, items: [], usedAt: now };
+      }
+      if (entry.lastEventId < max) {
+        const rows = entry.lastEventId === 0
+          ? await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+            WHERE session_id=${execution.session_id} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`
+          : await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+            WHERE session_id=${execution.session_id} AND id > ${entry.lastEventId} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`;
+        for (const row of rows) {
+          row.payload = await this.enrichPayload(row.payload ?? {});
+          const result = entry.projection.apply(sourceEvent(row));
+          if (result.item) entry.items.push({ eventId: row.id, item: result.item });
+        }
+      }
+      entry.lastEventId = max;
+      entry.usedAt = Date.now();
+      this.remember(key, entry);
+      return entry;
+    });
+  }
+  private remember(key: string, entry: CachedExecution): void {
+    const now = Date.now();
+    for (const [candidate, value] of this.cache) if (now - value.usedAt > CACHE_TTL_MS) this.cache.delete(candidate);
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    while (this.cache.size > CACHE_EXECUTIONS) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+  }
+  private async locked<T>(key: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.locks.set(key, tail);
+    await previous;
+    try { return await action(); }
+    finally { release(); if (this.locks.get(key) === tail) this.locks.delete(key); }
+  }
   async enrichPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     const ids = Array.isArray(payload.attachment_ids) ? payload.attachment_ids.filter((x): x is string => typeof x === "string") : [];
     const rawPaths = Array.isArray(payload.attachments) ? payload.attachments : Array.isArray(payload.attachment_paths) ? payload.attachment_paths : [];
@@ -66,6 +118,9 @@ export class ConversationHistory {
     const slice = history.items.slice(start, end);
     return { items: slice.map(x => x.item), ...(start > 0 ? { next_before: slice[0]!.item.id } : {}), cursor: history.cursor };
   }
+}
+function cacheKey(execution: Execution): string {
+  return `${execution.session_id}\u0000${execution.first_input_is_initial_instruction ? 1 : 0}`;
 }
 export function sourceEvent(row: Row): SourceEvent {
   const payload = row.payload ?? {};
