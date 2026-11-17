@@ -4,6 +4,7 @@ import {
   type NodeCommandResponse,
   type RequestResponseNodeCommandPayload,
 } from "./pending_commands.js";
+import { USAGE_SUMMARY_NODE_TIMEOUT_MS } from "../usage/usage_summary_service.js";
 import type { NodeConnectionSnapshot } from "./registry.js";
 import { supportsClaudeAccountPool } from "./registry_helpers.js";
 import {
@@ -396,7 +397,7 @@ async function dispatchNodeCommandResult(
   }
   try {
     const command = options.registry.createCommand(nodeId, payload, {
-      timeoutMs: options.timeoutMs,
+      timeoutMs: payload.type === "provider_usage_get" ? USAGE_SUMMARY_NODE_TIMEOUT_MS : options.timeoutMs,
     });
     const response = await options.bridge.sendPendingCommand({ node, command });
     return { ok: true, response };

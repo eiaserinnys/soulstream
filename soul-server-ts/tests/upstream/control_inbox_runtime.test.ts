@@ -214,7 +214,7 @@ describe("ControlInboxRuntime", () => {
     });
 
     await runtime.handleCommand({ type: "provider_usage_get", requestId: "req-over-limit" });
-    await vi.advanceTimersByTimeAsync(14_499);
+    await vi.advanceTimersByTimeAsync(45_499);
     expect(frames).not.toContainEqual(expect.objectContaining({
       code: "CONTROL_RESULT_TIMEOUT",
     }));

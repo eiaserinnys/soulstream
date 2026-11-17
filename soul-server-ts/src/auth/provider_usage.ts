@@ -131,8 +131,8 @@ const CODEX_USAGE_URLS = [
   "https://chatgpt.com/api/codex/usage",
 ] as const;
 // A 9.3s wham response has been observed in production. The 12s primary budget
-// preserves useful margin, while the 14s provider cap stays below orch's 15s
-// command timeout. Fast recovery probes retain 1s for fallback and serialization.
+// preserves useful margin. The 45s provider cap stays below the 45.5s node
+// control timeout and the 46s orch command timeout; recovery probes remain short.
 const CODEX_USAGE_PRIMARY_TIMEOUT_MS = 12_000;
 const CODEX_USAGE_RECOVERY_TIMEOUT_MS = 500;
 const CODEX_USAGE_MIN_ATTEMPT_BUDGET_MS = 100;

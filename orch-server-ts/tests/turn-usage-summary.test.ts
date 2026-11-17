@@ -27,6 +27,22 @@ function row(overrides: Record<string, unknown> = {}) {
 }
 
 describe("summarizeTurnUsage", () => {
+  it("labels missing agent and model and groups null and empty IDs", () => {
+    const result = summarizeTurnUsage([
+      row({ session_id: "a", agent_id: null, model: null, session_type: "llm", client_id: "translate", turns: 0, turns_without_usage: 1 }),
+      row({ session_id: "b", agent_id: "", model: "", session_type: "llm", client_id: "translate", turns: 0, turns_without_usage: 1 }),
+      row({ session_id: "c", agent_id: null, session_type: "llm", client_id: "observer", subagent_models: [{ model: "worker", input_tokens: 1, cached_input_tokens: 0, cache_write_tokens: 0, output_tokens: 0 }] }),
+      row({ session_id: "d", agent_id: "", session_type: "claude", client_id: "translate" }),
+    ], SINCE, UNTIL);
+    expect(result.by_agent_model).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent_id: "llm:translate", model: "(미기록)", sessions: 2, turns_without_usage: 2 }),
+      expect.objectContaining({ agent_id: "llm:observer", model: "(미기록)", sessions: 1 }),
+      expect.objectContaining({ agent_id: "(미상)", model: "(미기록)", sessions: 1 }),
+    ]));
+    expect(result.top_sessions.find((item) => item.session_id === "a")).toMatchObject({ agent_id: "llm:translate", model: "(미기록)" });
+    expect(result.top_sessions.find((item) => item.session_id === "d")).toMatchObject({ agent_id: "(미상)", model: "(미기록)" });
+    expect(result.subagents_by_agent_model?.[0]).toMatchObject({ agent_id: "llm:observer", model: "worker" });
+  });
   it("groups totals, rounds cost, computes odd/even new-session medians, and returns the 20 highest-cost sessions", () => {
     const rows = [
       row({

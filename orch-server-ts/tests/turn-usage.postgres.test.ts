@@ -34,7 +34,7 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     repository = new EventReadRepository(h.sql);
-    await h.sql`ALTER TABLE sessions ADD COLUMN model_preset TEXT`;
+    await h.sql`ALTER TABLE sessions ADD COLUMN model_preset TEXT, ADD COLUMN client_id TEXT`;
     await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
       VALUES
         ('s-cl', 'Claude 세션', 'node-a', 'agent-a', 'claude-preset', ${at("01:00:00.000")}),
@@ -184,6 +184,21 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
       node_id: "node-a",
       model_preset: "claude-preset",
     });
+  });
+
+  it("normalizes missing agent IDs and returns LLM client identity", async () => {
+    await h.sql`INSERT INTO sessions(session_id, agent_id, session_type, client_id) VALUES
+      ('s-llm-null', NULL, 'llm', 'translate'), ('s-llm-empty', '', 'llm', 'translate')`;
+    await put("s-llm-null", 1, "user_message", at("01:30:00.000"), { text: "hello" });
+    await put("s-llm-null", 2, "session_ended", at("01:30:01.000"), {});
+    await put("s-llm-empty", 1, "user_message", at("01:30:00.000"), { text: "hello" });
+    await put("s-llm-empty", 2, "session_ended", at("01:30:01.000"), {});
+    const rows = await summarizeTurnUsage({ since: SINCE, until: UNTIL });
+    for (const id of ["s-llm-null", "s-llm-empty"]) {
+      expect(rows.find((item) => item.session_id === id)).toMatchObject({ session_type: "llm", client_id: "translate", turns_without_usage: 1 });
+      expect(rows.find((item) => item.session_id === id)?.agent_id).toBeUndefined();
+    }
+    await h.sql`DELETE FROM sessions WHERE session_id IN ('s-llm-null', 's-llm-empty')`;
   });
 
   it("returns one summary row per session, including sessions with only no-usage turns", async () => {

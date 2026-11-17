@@ -23,7 +23,7 @@ const catalog = parseModelCatalogYaml(fs.readFileSync(
 
 describe("list price turn cost", () => {
   it("exposes the fixed pricing snapshot through the catalog", () => {
-    expect(catalog.price_snapshot.price_version).toBe("api-list-usd-2026-11-17-v1");
+    expect(catalog.price_snapshot.price_version).toBe("api-list-usd-2026-11-17-v2");
     expect(priceInferenceUsage(catalog, {
       provider: "claude",
       model: "claude-opus-5-5",
@@ -33,7 +33,7 @@ describe("list price turn cost", () => {
       cache_write_1h: 0,
       cache_write_unknown: 0,
       output_total: 0,
-    }).price_version).toBe("api-list-usd-2026-11-17-v1");
+    }).price_version).toBe("api-list-usd-2026-11-17-v2");
   });
 
   it("prices only explicitly timed Claude cache writes through the legacy wrapper", () => {
@@ -78,6 +78,8 @@ describe("list price turn cost", () => {
     const usage = { input_tokens: 1_000_000, cached_input_tokens: 200_000, output_tokens: 100_000 };
     expect(codexTurnCostUsd(catalog, usage, "gpt-6.1-terra")).toBe(1.31);
     expect(codexTurnCostUsd(catalog, usage, "gpt-5.6-sol")).toBe(5.28);
+    expect(codexTurnCostUsd(catalog, usage, "gpt-5.6-terra")).toBe(2.84);
+    expect(codexTurnCostUsd(catalog, usage, "gpt-5.6-luna")).toBe(0.284);
   });
 
   it("normalizes only dated and bracketed suffixes before exact model matching", () => {
@@ -110,7 +112,7 @@ describe("list price turn cost", () => {
   it("omits prices for unknown models and non-record Claude usage", () => {
     expect(claudeTurnCostUsd(catalog, { input_tokens: 1, output_tokens: 1 }, "claude-opus-5-7"))
       .toBeUndefined();
-    expect(codexTurnCostUsd(catalog, { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 }, "gpt-5.6-terra"))
+    expect(codexTurnCostUsd(catalog, { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 }, "gpt-unknown"))
       .toBeUndefined();
     expect(claudeTurnCostUsd(catalog, null, "claude-opus-5-5")).toBeUndefined();
   });
@@ -168,7 +170,7 @@ describe("fixed inference price reference", () => {
     const result = priceInferenceUsage(catalog, { provider, model, ...completeInput });
 
     expect(result.known_cost_usd).toBe(expectedCost);
-    expect(result.price_version).toBe("api-list-usd-2026-11-17-v1");
+    expect(result.price_version).toBe("api-list-usd-2026-11-17-v2");
     expect(result.as_of).toBe("2026-10-19");
     expect(result.priced_tokens).toBe(2_000);
     expect(result.unpriced_tokens).toBe(0);
@@ -301,7 +303,7 @@ describe("precise inference price components", () => {
     };
     const components = priceInferenceUsageComponents(catalog, input);
 
-    expect(components.price_version).toBe("api-list-usd-2026-11-17-v1");
+    expect(components.price_version).toBe("api-list-usd-2026-11-17-v2");
     expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.000006", is_partial: false });
     expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.00028", is_partial: false });
     expect(priceInferenceUsage(catalog, input).known_cost_usd).toBe(0.000286);
@@ -360,7 +362,7 @@ describe("precise inference price components", () => {
   it("returns both sides unknown for an unpriced model", () => {
     const components = priceInferenceUsageComponents(catalog, {
       provider: "codex",
-      model: "gpt-5.6-terra",
+      model: "gpt-unknown",
       input_total: 100,
       cache_read: 60,
       cache_write_5m: 0,

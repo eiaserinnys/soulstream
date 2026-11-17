@@ -487,8 +487,8 @@ describe("repository model catalogue data", () => {
   });
 
   it("keeps every legacy price row and alias at its previous rates", () => {
-    expect(catalog.models).toHaveLength(20);
-    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(19);
+    expect(catalog.models).toHaveLength(22);
+    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(21);
     for (const [key, rates] of Object.entries(EXPECTED_RATES)) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -511,6 +511,8 @@ describe("repository model catalogue data", () => {
       provider: "codex", source,
       rates: { input: 1, cache_read: 0.05, cache_write_5m: 1.25, cache_write_1h: 1.25, output: 5 },
     });
+    expect(findModelRow(catalog, "gpt-5.6-terra")).toMatchObject({ provider: "codex", source, rates: { input: 2, cache_read: 0.2, cache_write_5m: 2.5, cache_write_1h: 2.5, output: 12 } });
+    expect(findModelRow(catalog, "gpt-5.6-luna")).toMatchObject({ provider: "codex", source, rates: { input: 0.2, cache_read: 0.02, cache_write_5m: 0.25, cache_write_1h: 0.25, output: 1.2 } });
     expect(findModelRow(catalog, "gpt-5.6-sol")).toMatchObject({
       provider: "codex", source,
       rates: { input: 4, cache_read: 0.4, cache_write_5m: 5, cache_write_1h: 5, output: 20 },
@@ -532,7 +534,7 @@ describe("repository model catalogue data", () => {
         : key;
       const rates = EXPECTED_RATES[canonicalKey]!;
       const result = priceInferenceUsage(catalog, { provider, model, ...USAGE });
-      expect(result.price_version).toBe("api-list-usd-2026-11-17-v1");
+      expect(result.price_version).toBe("api-list-usd-2026-11-17-v2");
       expect(result.as_of).toBe("2026-10-19");
       expect(result.pricing_complete).toBe(true);
       expect(result.known_cost_usd).toBeCloseTo(rates[0] + rates[4], 10);
@@ -541,7 +543,7 @@ describe("repository model catalogue data", () => {
 
   it("keeps the price snapshot metadata", () => {
     expect(catalog.price_snapshot).toEqual({
-      price_version: "api-list-usd-2026-11-17-v1",
+      price_version: "api-list-usd-2026-11-17-v2",
       as_of: "2026-10-19",
       checked_at: "2026-10-19",
       currency: "USD",
@@ -550,7 +552,7 @@ describe("repository model catalogue data", () => {
       legacy_rows_last_checked_at: "2026-10-05",
       refreshed_model_rows: {
         claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
-        codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-5.6-sol", "gpt-6-luna"],
+        codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
         antigravity: ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
         deepseek: [
           "deepseek-v4.1-flash-1017",
@@ -588,7 +590,7 @@ describe("repository model catalogue data", () => {
       cache_write_unknown: 0,
       output_total: 0,
     });
-    expect(components.price_version).toBe("api-list-usd-2026-11-17-v1");
+    expect(components.price_version).toBe("api-list-usd-2026-11-17-v2");
     expect(components.cache_read.known_cost_usd_decimal).toBe("0.006");
     expect(components.non_cache.known_cost_usd_decimal).toBe("0.3");
   });

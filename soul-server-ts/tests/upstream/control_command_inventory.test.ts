@@ -122,14 +122,15 @@ describe("control command inventory", () => {
     );
   });
 
-  it("gives external provider queries their 14.5 second result budget", () => {
+  it("uses distinct budgets for provider usage and Claude authentication", () => {
     for (const commandType of [
-      "provider_usage_get",
       "claude_auth_get_usage",
       "claude_auth_get_profile",
     ]) {
       expect(boundedResultTimeoutMs(commandType, 900)).toBe(14_500);
     }
+    expect(boundedResultTimeoutMs("provider_usage_get", 900)).toBe(45_500);
+    expect(boundedResultTimeoutMs("prepare_card_orchestration_decision", 900)).toBe(14_500);
     expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
   });
 

@@ -28,7 +28,7 @@ import {
 } from "./claude_account_pool_observation.js";
 import { providerRequestKey, resolveProviderOwners } from "./usage_summary_account_groups.js";
 
-export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
+export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 46_000;
 
 export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "antigravity", "opencode_go"] as const;
 
