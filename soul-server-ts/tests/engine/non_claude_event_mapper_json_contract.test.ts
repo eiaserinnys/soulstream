@@ -39,6 +39,7 @@ describe("non-Claude mapper runner JSON contract", () => {
       undefined,
       {
         tokenUsage: {
+          first: null,
           baseline: {
             totalTokens: 0,
             inputTokens: 0,

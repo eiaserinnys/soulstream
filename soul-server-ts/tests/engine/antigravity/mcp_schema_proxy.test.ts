@@ -76,7 +76,7 @@ describe("Antigravity MCP schema proxy", () => {
   });
 
   it("forwards HTTP initialize, pagination, notifications, errors, and empty-string calls", async () => {
-    const requests: Array<{ message: JsonRpcRequest; authorization?: string; protocol?: string; session?: string }> = [];
+    const requests: Array<{ message: JsonRpcRequest; authorization?: string; protocol?: string | string[]; session?: string | string[] }> = [];
     const calls: unknown[] = [];
     let resolveCancellation!: () => void;
     const cancellationReceived = new Promise<void>(resolveReceived => { resolveCancellation = resolveReceived; });

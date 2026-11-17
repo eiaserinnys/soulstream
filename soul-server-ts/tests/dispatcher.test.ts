@@ -105,7 +105,7 @@ function createDispatcher(opts: {
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
     cancelTask: vi.fn(async () => true),
-    acknowledgeReview: vi.fn(async () => "acknowledged"),
+    acknowledgeReview: vi.fn(async () => "acknowledged" as const),
     deliverInputResponse: vi.fn(),
     deliverToolApproval: vi.fn(),
   };
@@ -261,10 +261,11 @@ describe("CommandDispatcher Claude runtime correlation", () => {
       taskManager: {
         listClaudeRuntimeTasks: vi.fn(async () => ({
           sessionId: "sess-runtime",
-          sessionState: "running",
+          sessionState: "running" as const,
           runtimeSessionId: "runtime-1",
           updatedAt: 1,
           tasks: [],
+          notifications: [], remoteTriggers: [], transcriptMirror: null, planMode: null, worktreeMode: null,
         })),
       },
     });
@@ -455,7 +456,7 @@ describe("CommandDispatcher.create_session", () => {
         prompt: params.prompt,
         status: "running" as const,
         profileId: params.profileId,
-        creationWarnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+        creationWarnings: [{ code: "PAGE_BINDING_PENDING" as const, message: "Binding will retry." }],
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
@@ -700,7 +701,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("optional delivery metadata를 손실 없이 task boundary로 전달한다", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
 
     await dispatcher.dispatch({
@@ -738,7 +739,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("running task에 intervene → addIntervention queued → intervene_ack(queued)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",
@@ -775,7 +776,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("running task에 intervene → addIntervention queued → intervene_ack(queued, queuePosition)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 2 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",
@@ -911,7 +912,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
           }
         : null,
     );
-    const updateSession = vi.fn(async () => undefined);
+    const updateSession = vi.fn(async (_id: string, _fields: unknown) => undefined);
     const db = {
       getSession,
       updateSession,
@@ -1053,7 +1054,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("requestId 부재 시 ACK 발행 안 함 (atom c13f7826 빈 ACK 금지)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",

@@ -458,7 +458,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       }),
       reject: vi.fn(),
       reportAuthFailure: vi.fn(async () => undefined),
-      release: vi.fn(async (input: { clear_all?: boolean }) => {
+      release: vi.fn(async (input: { session_id: string; clear_all?: boolean }) => {
         if (input.clear_all) events.push("previous-close-release");
       }),
     };
@@ -617,7 +617,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         };
         return account;
       }),
-      reject: vi.fn(async () => undefined),
+      reject: vi.fn(async (_input: Parameters<import("../../src/engine/claude_account_pool.js").ClaudeAccountTurnPort["reject"]>[0]) => undefined),
       reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
@@ -646,7 +646,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       processEnv: { PATH: "/usr/bin" },
       claudeAccountPoolEnabled: true,
       trackChildExit: true,
-      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnPort: accountTurnPort as unknown as import("../../src/engine/claude_account_pool.js").ClaudeAccountTurnPort,
       claudeAccountTurnState: state,
       persistentSessionRegistry: registry,
     }, silentLogger);
@@ -922,7 +922,7 @@ describe("ClaudeEngineAdapter options parity", () => {
             errorCode: "claude_rate_limit_stop_failure",
             message: "Claude account pool exhausted",
             rateLimitType: "seven_day",
-            resetsAt: decision.kind === "exhausted" ? decision.resetsAt : undefined,
+            resetsAt: decision.kind === "exhausted" ? decision.resetsAt ?? undefined : undefined,
           };
         },
         async close() {},
@@ -965,7 +965,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         processEnv: { PATH: "/usr/bin" },
         claudeAccountPoolEnabled: true,
         trackChildExit: true,
-        claudeAccountTurnPort: accountTurnPort,
+        claudeAccountTurnPort: accountTurnPort as unknown as import("../../src/engine/claude_account_pool.js").ClaudeAccountTurnPort,
         claudeAccountTurnState: state,
         persistentSessionRegistry: registry,
       }, silentLogger);
@@ -1980,7 +1980,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       reason: "next_turn_required",
     });
     expect(interruptActiveTurnForSteer).toHaveBeenCalledTimes(1);
-    expect(activeSignal?.aborted).toBe(false);
+    expect((activeSignal as AbortSignal | null)?.aborted).toBe(false);
     expect(captured[0]).not.toHaveProperty("onIntervention");
     expect(onIntervention).not.toHaveBeenCalled();
   });

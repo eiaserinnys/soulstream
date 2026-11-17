@@ -383,7 +383,7 @@ describe("item.completed 매핑", () => {
     });
     // `content` 키는 *제거됨* (design-principles §3 정본 둘 안티패턴 회피)
     expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
-    expect(typeof (sse[0] as { result: unknown }).result).toBe("string");
+    expect(typeof (sse[0] as { result?: unknown } | undefined)?.result).toBe("string");
   });
 
   it("F2: command_execution failed + 빈 출력 → result에 exit_code 단서 prefix (is_error=true)", () => {

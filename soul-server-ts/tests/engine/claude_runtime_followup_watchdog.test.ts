@@ -87,15 +87,10 @@ describe("ClaudeRuntimeFollowupWatchdog ownership", () => {
 function makeWatchdog() {
   const interrupt = vi.fn(async () => ({ still_queued: [] }));
   const close = vi.fn(async () => undefined);
+  const config = { timeoutMs: 30_000, resultWaitMs: 10, logger: silentLogger, interrupt, close };
   return {
     interrupt,
     close,
-    watchdog: new ClaudeRuntimeFollowupWatchdog({
-      timeoutMs: 30_000,
-      resultWaitMs: 10,
-      logger: silentLogger,
-      interrupt,
-      close,
-    }),
+    watchdog: new ClaudeRuntimeFollowupWatchdog(config),
   };
 }

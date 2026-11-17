@@ -889,7 +889,7 @@ describe("apply-schema.mjs", () => {
     expect(manifest.migration.apply.command).toBe(
       "node packages/db-schema/scripts/release-executor.mjs apply --manifest deploy/release-manifest.json --database-contract deploy/database-release-central.json",
     );
-    expect(fixture.services["soulstream-soul-server-ts"].after).toEqual([
+    expect(fixture.services["soulstream-soul-server-ts"]!.after).toEqual([
       "soulstream-orch-server",
     ]);
   });

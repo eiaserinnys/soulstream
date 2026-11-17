@@ -61,8 +61,8 @@ function createRuntime(opts: {
   agents?: AgentProfile[];
   agentRegistry?: Pick<AgentRegistry, "get">;
   createTask?: TaskManager["createTask"];
-  addIntervention?: TaskManager["addIntervention"];
-  ensureRunning?: TaskManager["ensureRunning"];
+  addIntervention?: unknown;
+  ensureRunning?: unknown;
   startNewExecution?: TaskExecutor["startNewExecution"];
   presets?: ModelPreset[];
   agentProfileSource?: NewSessionAgentProfileSource;
@@ -74,7 +74,7 @@ function createRuntime(opts: {
     createTask: opts.createTask ?? vi.fn(async (params) => makeTask(params)),
     addIntervention: opts.addIntervention ?? vi.fn(),
     ensureRunning: opts.ensureRunning ?? vi.fn(),
-  } as Pick<TaskManager, "createTask" | "addIntervention" | "ensureRunning">;
+  } as unknown as Pick<TaskManager, "createTask" | "addIntervention" | "ensureRunning">;
   const taskExecutor = {
     startNewExecution: opts.startNewExecution ?? vi.fn(),
   } as Pick<TaskExecutor, "startNewExecution">;
@@ -109,10 +109,10 @@ describe("TaskRuntimeCommands.createSession", () => {
     const source: NewSessionAgentProfileSource = {
       resolve: vi.fn(async () => ({
         profile: dbAgent,
-        source: "db",
+        source: "db" as const,
         stale: false,
         hasPortrait: false,
-        portraitSource: "none",
+        portraitSource: "none" as const,
       })),
       list: vi.fn(async () => []),
       state: vi.fn(() => ({
@@ -427,7 +427,7 @@ describe("TaskRuntimeCommands.createSession", () => {
         model: "gpt-legacy-explicit",
       }),
     );
-    expect(taskManager.createTask.mock.calls[1]?.[0]).not.toHaveProperty("modelPreset");
+    expect(vi.mocked(taskManager.createTask).mock.calls[1]?.[0]).not.toHaveProperty("modelPreset");
   });
 
   it("fails before task creation when profile id is unknown", async () => {
@@ -482,7 +482,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       attachmentPaths: ["/tmp/a.png"],
     });
 
-    const calledParams = taskManager.createTask.mock.calls[0]?.[0] as {
+    const calledParams = vi.mocked(taskManager.createTask).mock.calls[0]?.[0] as {
       attachmentIds?: string[];
       attachmentBindings?: unknown[];
     };

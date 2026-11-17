@@ -84,7 +84,7 @@ describe("Codex app-server parameter builders", () => {
   });
 
   it("routes soulstream MCP through the internal listener with the current session header", () => {
-    const mcpServers = [
+    const mcpServers: import("../../../src/mcp_config_service.js").ResolvedMcpServer[] = [
       {
         type: "stdio" as const,
         name: "local",

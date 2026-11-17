@@ -632,6 +632,7 @@ describe("ClaudeSdkClient", () => {
                 { delaySeconds: 60, prompt: "wake me" },
                 {
                   signal: new AbortController().signal,
+                  requestId: "test-request",
                   toolUseID: "toolu-schedule",
                 },
               );
@@ -731,6 +732,7 @@ describe("ClaudeSdkClient", () => {
                 {},
                 {
                   signal: new AbortController().signal,
+                  requestId: "test-request",
                   toolUseID: "toolu-cron-list",
                 },
               );
@@ -759,9 +761,9 @@ describe("ClaudeSdkClient", () => {
       behavior: "deny",
       toolUseID: "toolu-cron-list",
     });
-    expect(permissionResults[0]?.message).toContain("id=sched-visible");
-    expect(permissionResults[0]?.message).toContain("nextRunAt=2026-01-01T01:00:00.000Z");
-    expect(permissionResults[0]?.message).toContain('prompt="summarize open loops"');
+    expect((permissionResults[0] as Extract<PermissionResult, { behavior: "deny" }> | undefined)?.message).toContain("id=sched-visible");
+    expect((permissionResults[0] as Extract<PermissionResult, { behavior: "deny" }> | undefined)?.message).toContain("nextRunAt=2026-01-01T01:00:00.000Z");
+    expect((permissionResults[0] as Extract<PermissionResult, { behavior: "deny" }> | undefined)?.message).toContain('prompt="summarize open loops"');
   });
 
   it("clears intercepted schedule tool ids between runs so reused ids do not hide unrelated denials", async () => {
@@ -778,6 +780,7 @@ describe("ClaudeSdkClient", () => {
                   { delaySeconds: 60 },
                   {
                     signal: new AbortController().signal,
+                    requestId: "test-request",
                     toolUseID: "toolu-reused",
                   },
                 );
@@ -1603,6 +1606,7 @@ describe("ClaudeSdkClient", () => {
                 { title: "Heads up", message: "review is waiting", priority: "high" },
                 {
                   signal: new AbortController().signal,
+                  requestId: "test-request",
                   toolUseID: "toolu-push",
                 },
               );
@@ -1612,6 +1616,7 @@ describe("ClaudeSdkClient", () => {
                 { trigger: "intervention", prompt: "continue now" },
                 {
                   signal: new AbortController().signal,
+                  requestId: "test-request",
                   toolUseID: "toolu-remote",
                 },
               );
@@ -1820,7 +1825,7 @@ describe("ClaudeSdkClient", () => {
         query: (params) =>
           makeQuery(
             (async function* () {
-              const hooks = params.options.hooks!;
+              const hooks = params.options!.hooks!;
               await hooks.PostToolUse?.[0]?.hooks[0]?.({
                 hook_event_name: "PostToolUse",
                 session_id: "claude-sess-hooks",
@@ -2570,6 +2575,7 @@ describe("ClaudeSdkClient", () => {
                 },
                 {
                   signal: new AbortController().signal,
+                  requestId: "test-request",
                   toolUseID: "toolu_ask",
                 },
               );
@@ -5113,7 +5119,7 @@ function makeReenterableQuery(
     [Symbol.asyncIterator]() {
       const factory = factories[Math.min(iteratorIndex, factories.length - 1)];
       iteratorIndex += 1;
-      return factory();
+      return factory!();
     },
     ...overrides,
   } as unknown as ClaudeSdkQuery;

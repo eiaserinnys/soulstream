@@ -298,7 +298,7 @@ describe("claude auth command boundary", () => {
     const commands = new ClaudeAuthCommands({
       agentRegistry: createAgentRegistry(["claude"]),
       claudeAuth: createClaudeAuth(),
-      claudeAccounts,
+      claudeAccounts: claudeAccounts as unknown as import("../../src/upstream/claude_auth_commands.js").ClaudeAccountsCommandHandler,
     });
 
     const listRes = await commands.handle({
@@ -434,9 +434,11 @@ describe("claude auth command boundary", () => {
       type: "claude_auth_accounts_list",
       requestId: "req-wire-expiry",
     });
-    const accounts = (
-      response as { data: { accounts: Array<Record<string, unknown>> } }
-    ).data.accounts;
+    const data = response && "data" in response ? response.data : null;
+    if (!data || typeof data !== "object" || !("accounts" in data) || !Array.isArray(data.accounts)) {
+      throw new Error("Missing account list response");
+    }
+    const accounts = data.accounts as Array<Record<string, unknown>>;
     expect(accounts[0]).toMatchObject({
       auth_state: "logging_in",
       login_expires_at: loginExpiresAt,

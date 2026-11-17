@@ -67,7 +67,7 @@ function environment(directory: string, operation = "upgrade") {
   };
 }
 function plan({
-  ledger = [],
+  ledger = [] as Array<Record<string, unknown>>,
   pending = [] as Array<Record<string, unknown>>,
   bootstrap = [] as Array<Record<string, unknown>>,
 } = {}) {
@@ -275,7 +275,7 @@ describe("database release executor", () => {
     directories.push(directory);
     const env = environment(directory, "fresh_install");
     const all = [migration("001_initial.sql", 1)];
-    const migrationRun = vi.fn(async () => ({ status: "ok" }));
+    const migrationRun = vi.fn(async (_mode: string, _options: { env: NodeJS.ProcessEnv }) => ({ status: "ok" }));
     let ledger: Array<Record<string, unknown>> = [];
     await runDatabaseRelease("preflight", {
       env,
@@ -482,7 +482,7 @@ describe("database release executor", () => {
     expect(retried).toMatchObject({ status: "applied_reconciled" });
     const verifySql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     const [count] = await verifySql`SELECT COUNT(*)::int AS count FROM schema_migrations`;
-    expect(count.count).toBe(MANIFEST_MIGRATION_COUNT);
+    expect(count!.count).toBe(MANIFEST_MIGRATION_COUNT);
     await verifySql.end({ timeout: 5 });
   }, 90_000);
 
@@ -501,7 +501,7 @@ describe("database release executor", () => {
       inventoryRead: async () => populatedInventory(),
       planRead: async () => plan({
         ledger: [{ ...all[0], release_id: "other-release" }],
-        pending: [all[1]],
+        pending: [all[1]!],
       }),
       migrationRun: vi.fn(),
     })).rejects.toThrow("AMBIGUOUS_COMMIT_STATE");

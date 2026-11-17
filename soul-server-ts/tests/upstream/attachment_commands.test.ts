@@ -166,14 +166,15 @@ describe("attachment command boundary", () => {
       attachmentCommands: { upload } as unknown as AttachmentCommands,
     });
 
-    await family.upload_attachment({
+    const command = {
       type: "upload_attachment",
       request_id: "family-up-empty",
       session_id: "sess-family-empty",
       filename: "empty.txt",
       content_type: "text/plain",
       content_b64: "",
-    });
+    };
+    await family.upload_attachment!(command);
 
     expect(upload).toHaveBeenCalledWith({
       requestId: "family-up-empty",
@@ -201,7 +202,7 @@ describe("attachment command boundary", () => {
       attachmentCommands: { importFromUrl } as unknown as AttachmentCommands,
     });
 
-    await family.import_attachment_from_url({
+    const command = {
       type: "import_attachment_from_url",
       request_id: "family-import-empty",
       upload_id: "upload-family-empty",
@@ -210,7 +211,8 @@ describe("attachment command boundary", () => {
       expected_size: 0,
       download_url:
         "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/object",
-    });
+    };
+    await family.import_attachment_from_url!(command);
 
     expect(importFromUrl).toHaveBeenCalledWith({
       requestId: "family-import-empty",

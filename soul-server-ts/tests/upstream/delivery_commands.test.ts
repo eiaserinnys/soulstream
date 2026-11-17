@@ -24,9 +24,9 @@ const openaiAgent: AgentProfile = {
       {
         name: "default",
         instructions: "You are a test agent.",
-      },
+      } as NonNullable<AgentProfile["agents_sdk"]>["agents"][number],
     ],
-  },
+  } as NonNullable<AgentProfile["agents_sdk"]>,
 };
 
 function makeTask(params: Partial<Task> = {}): Task {
@@ -59,9 +59,9 @@ function createDeliveryCommands(opts: {
     deliverToolApproval:
       opts.deliverToolApproval ??
       vi.fn(async () => ({
-        status: "delivered",
+        status: "delivered" as const,
         approvalId: "approval-1",
-        decision: "approved",
+        decision: "approved" as const,
       })),
   } as Pick<TaskManager, "deliverInputResponse" | "deliverToolApproval">;
   const taskExecutor = {
@@ -163,9 +163,9 @@ describe("DeliveryCommands.toolApproval", () => {
     const deliverToolApproval = vi.fn(async (_params, onResume) => {
       onResume(resumedTask);
       return {
-        status: "delivered",
+        status: "delivered" as const,
         approvalId: "approval-1",
-        decision: "approved",
+        decision: "approved" as const,
         eventId: 88,
       };
     });

@@ -22,7 +22,7 @@ function files(directory: string): string[] {
 function violations(entries: Array<{ path: string; source: string }>): string[] {
   return entries.filter(({ path, source }) => {
     const imports = [...source.matchAll(/\bfrom\s*["']([^"']+)["']/g)];
-    return imports.some(([, target]) => harness.test(target)) && !exemptions[path] && !isPostgresTestFile(path);
+    return imports.some(([, target]) => harness.test(target!)) && !exemptions[path] && !isPostgresTestFile(path);
   }).map(({ path }) => path).sort();
 }
 

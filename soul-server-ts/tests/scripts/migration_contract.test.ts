@@ -291,7 +291,7 @@ describe("versioned migration contract", () => {
     const migrations = await loadMigrationManifest();
 
     expect(migrations.length).toBeGreaterThan(0);
-    expect(migrations[0].id).toBe("001_list_sessions_folder_node_filter.sql");
+    expect(migrations[0]!.id).toBe("001_list_sessions_folder_node_filter.sql");
     expect(migrations.at(-1)?.ordinal).toBe(migrations.length);
     expect(migrations.map((item) => item.id)).toEqual(
       [...migrations.map((item) => item.id)].sort(),
@@ -477,7 +477,7 @@ describe("versioned migration contract", () => {
       "ambiguous database schema state",
     );
     expect(() => validateLedger(migrations, [{
-      migration_id: migrations[0].id,
+      migration_id: migrations[0]!.id,
       checksum: "0".repeat(64),
       ordinal: 1,
     }])).toThrow("applied migration checksum differs");

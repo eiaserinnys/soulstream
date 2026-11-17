@@ -28,6 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-17T01:00:00Z"),
     lastEventId: 0,
     lastReadEventId: 0,
+    interventionQueue: [],
     profileId: "codex-default",
     ...overrides,
   };
@@ -259,6 +260,7 @@ describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
       name: "F1",
       sortOrder: 0,
       settings: {},
+      parentFolderId: null,
       projectPageId: "page-f1",
     }];
     await b.emitCatalogUpdated(folders, {}, {});
