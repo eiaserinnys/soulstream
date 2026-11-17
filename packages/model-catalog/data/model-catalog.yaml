@@ -31,7 +31,7 @@ presets:
     # 카드 #1292 디렉터 결정(261113): 배달원(bubbles)과 운영 조사(blossom) 자리에만 쓰는 상자 밖 Sonnet이다.
     # claude-sonnet은 상자 안 그대로 둔다. 모델과 요율, 계정 풀은 claude-sonnet과 같다.
     # 되돌림: 이 프리셋 세션이 맡은 일 밖의 프로세스 종료, 서비스 재시작, 승인 없는 배포 같은 사고를 내면
-    # 이 항목의 trusted_execution을 거두고, 두 자리를 원래 모델(codex-6.1-sol, 코덱스 한도 동안 claude-opus high)로
+    # 이 항목의 trusted_execution을 거두고, 두 자리를 원래 모델(codex-6.2-sol, 코덱스 한도 동안 claude-opus high)로
     # 되돌린다. atom 공통 node-model-selection의 「코덱스 불가 시 대체 위임」과 서소영 카드 담당 rules도 함께 되돌린다.
   - id: claude-opus
     label: Claude - Opus
@@ -75,6 +75,20 @@ presets:
     trusted_execution: true
     env:
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+  - id: codex-6.2-astra
+    label: Codex - 6.2 Astra
+    backend: codex
+    model: gpt-6.2-astra
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: medium
+    trusted_execution: true
+  - id: codex-6.2-sol
+    label: Codex - 6.2 Sol
+    backend: codex
+    model: gpt-6.2-sol
+    supported_efforts: [low, medium, high, xhigh, max, ultra]
+    default_effort: high
+    trusted_execution: true
   - id: codex-6-astra
     label: Codex - 6 Astra
     backend: codex
@@ -336,6 +350,11 @@ models:
     rates: {input: 2, cache_read: 0.1, cache_write_5m: 2.5, cache_write_1h: 2.5, output: 10}
     source: https://developers.openai.com/api/docs/pricing?tab=suite
   - provider: codex
+    model: gpt-6.2-sol
+    display_name: GPT-6.2 Sol
+    rates: {input: 2, cache_read: 0.1, cache_write_5m: 2.5, cache_write_1h: 2.5, output: 10}
+    source: https://developers.openai.com/api/docs/pricing?tab=suite
+  - provider: codex
     model: gpt-6.1-terra
     display_name: GPT-6.1 Terra
     rates: {input: 1, cache_read: 0.05, cache_write_5m: 1.25, cache_write_1h: 1.25, output: 5}
@@ -358,6 +377,11 @@ models:
   - provider: codex
     model: gpt-6-astra
     rates: {input: 10, cache_read: 1, cache_write_5m: 12.5, cache_write_1h: 12.5, output: 50}
+    source: https://developers.openai.com/api/docs/pricing?tab=suite
+  - provider: codex
+    model: gpt-6.2-astra
+    display_name: GPT-6.2 Astra
+    rates: {input: 8, cache_read: 0.4, cache_write_5m: 10, cache_write_1h: 10, output: 40}
     source: https://developers.openai.com/api/docs/pricing?tab=suite
   - provider: antigravity
     model: gemini-4-carbon
@@ -395,7 +419,7 @@ models:
     rates: null
 
 price_snapshot:
-  price_version: api-list-usd-2026-11-17-v2
+  price_version: api-list-usd-2026-11-18-v1
   as_of: "2026-10-19"
   checked_at: "2026-10-19"
   currency: USD
@@ -404,7 +428,7 @@ price_snapshot:
   legacy_rows_last_checked_at: "2026-10-05"
   refreshed_model_rows:
     claude: [claude-opus-5-5, claude-fable-5-2, claude-fable-5-1, claude-sonnet-5-5]
-    codex: [gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-6-luna]
+    codex: [gpt-6.2-sol, gpt-6.2-astra, gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-6-luna]
     antigravity: [gemini-4-carbon, gemini-4-hydrogen, gemini-4-argon, gemini-3.8-flash]
     deepseek:
       - deepseek-v4.1-flash-1017
@@ -428,5 +452,5 @@ price_snapshot:
 persistent_defaults:
   model_preset: claude-opus
   fallback_models:
-    - model_preset: codex-6.1-sol
+    - model_preset: codex-6.2-sol
       reasoning_effort: high

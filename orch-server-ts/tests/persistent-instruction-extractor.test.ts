@@ -146,7 +146,7 @@ describe("persistent instruction extraction", () => {
     if (expectedCalls === 1) {
       const [, solConfig, options] = generate.mock.calls[0] ?? [];
       expect(solConfig).toMatchObject({
-        model: "gpt-6.1-sol",
+        model: "gpt-6.2-sol",
         reasoningEffort: "high",
         timeoutMs: CONFIG.timeoutMs,
         codexConcurrencyLimit: CONFIG.codexConcurrencyLimit,

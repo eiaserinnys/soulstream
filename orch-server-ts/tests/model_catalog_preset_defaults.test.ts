@@ -52,7 +52,7 @@ describe("persistent session catalogue defaults", () => {
     catalog = createTempModelCatalog((text) => text
       .replace("model_preset: claude-opus\n", "model_preset: claude-sonnet\n")
       .replace(
-        "    - model_preset: codex-6.1-sol\n      reasoning_effort: high\n",
+        "    - model_preset: codex-6.2-sol\n      reasoning_effort: high\n",
         "    - model_preset: codex-6-sol\n      reasoning_effort: xhigh\n",
       ));
     const { service, resolveStaticForNode } = settingsService(catalog.store, {

@@ -877,8 +877,8 @@ describe("buildPersistentDecisionInput", () => {
       },
     );
 
-    expect(input.fallback_models).toEqual(["codex-6.1-sol"]);
-    expect(input.preset_providers).toMatchObject({ "codex-6.1-sol": "codex" });
+    expect(input.fallback_models).toEqual(["codex-6.2-sol"]);
+    expect(input.preset_providers).toMatchObject({ "codex-6.2-sol": "codex" });
   });
 
   it("prices the latest valid bootstrap and uses its growth when aggregate metadata is absent", async () => {

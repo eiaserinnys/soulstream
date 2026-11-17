@@ -31,6 +31,8 @@ const COMMON_PRESET_IDS = [
   "claude-opus-lean",
   "claude-fable",
   "claude-fable-5.2",
+  "codex-6.2-astra",
+  "codex-6.2-sol",
   "codex-6-astra",
   "codex-6.1-sol",
   "codex-6.1-terra",
@@ -110,10 +112,10 @@ describe("ModelCatalog", () => {
   it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
     const defaultView = openRepositoryCatalog();
     expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
-    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(24);
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(26);
 
     const chinaView = openRepositoryCatalog({ enabledGroups: ["china"] });
-    expect(chinaView.list()).toHaveLength(24);
+    expect(chinaView.list()).toHaveLength(26);
     expect(chinaView.list().map((preset) => preset.id)).toEqual(expect.arrayContaining([
       ...COMMON_PRESET_IDS,
       ...CHINA_PRESET_IDS,
@@ -388,6 +390,8 @@ describe("model preset trusted execution", () => {
     "claude-opus-lean",
     "claude-fable",
     "claude-fable-5.2",
+    "codex-6.2-astra",
+    "codex-6.2-sol",
     "codex-6-astra",
     "codex-6.1-sol",
     "codex-6-sol",
@@ -396,7 +400,7 @@ describe("model preset trusted execution", () => {
     "gemini-4-hydrogen",
   ];
 
-  it("marks exactly the ten trusted presets in the repository catalog", () => {
+  it("marks exactly the thirteen trusted presets in the repository catalog", () => {
     const catalog = openRepositoryCatalog();
     expect(
       catalog.list()

@@ -41,7 +41,7 @@ describe("portable node default config", () => {
     expect(config.agents.map((agent) => agent.backend)).toEqual(["claude", "codex"]);
     expect(config.agents.map((agent) => agent.default_preset)).toEqual([
       "claude-opus",
-      "codex-6.1-sol",
+      "codex-6.2-sol",
     ]);
     for (const agent of config.agents) {
       expect(agent.workspace_dir).toBe(path.join(stateRoot, "workspace"));

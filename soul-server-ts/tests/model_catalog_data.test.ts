@@ -40,6 +40,8 @@ const PRESET_IDS = [
   "claude-opus-lean",
   "claude-fable",
   "claude-fable-5.2",
+  "codex-6.2-astra",
+  "codex-6.2-sol",
   "codex-6-astra",
   "codex-6.1-sol",
   "codex-6.1-terra",
@@ -67,7 +69,7 @@ const CHINA_PRESET_IDS = [
   "opencode-deepseek-v4.1-flash-free",
 ];
 
-/** 17 formerly priced rows: provider:model -> [input, cache_read, write5m, write1h, output]. */
+/** 19 formerly priced rows: provider:model -> [input, cache_read, write5m, write1h, output]. */
 const EXPECTED_RATES: Record<string, readonly [number, number, number | null, number | null, number]> = {
   "claude:claude-opus-5-5": [4, 0.2, 5, 8, 20],
   "claude:claude-fable-5-2": [8, 0.2, 10, 16, 40],
@@ -80,7 +82,9 @@ const EXPECTED_RATES: Record<string, readonly [number, number, number | null, nu
   "codex:gpt-6-luna": [0.1, 0.01, 0.125, 0.125, 0.5],
   "codex:gpt-6-sol": [2, 0.2, 2.5, 2.5, 10],
   "codex:gpt-6.1-sol": [2, 0.1, 2.5, 2.5, 10],
+  "codex:gpt-6.2-sol": [2, 0.1, 2.5, 2.5, 10],
   "codex:gpt-6-astra": [10, 1, 12.5, 12.5, 50],
+  "codex:gpt-6.2-astra": [8, 0.4, 10, 10, 40],
   "antigravity:gemini-4-carbon": [2, 0.1, null, null, 10],
   "antigravity:gemini-4-hydrogen": [1.5, 0.075, null, null, 7.5],
   "antigravity:gemini-4-argon": [2, 0.1, null, null, 10],
@@ -129,7 +133,7 @@ const KIMI_ENV = {
   ...CLAUDE_ENV,
 };
 
-/** Values of the 19 common presets plus the 5 china operating additions. */
+/** Values of the 21 common presets plus the 5 china operating additions. */
 const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
   "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku", env: CLAUDE_ENV },
   "claude-sonnet": {
@@ -187,6 +191,22 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     default_effort: "medium",
     trusted_execution: true,
     env: CLAUDE_ENV,
+  },
+  "codex-6.2-astra": {
+    label: "Codex - 6.2 Astra",
+    backend: "codex",
+    model: "gpt-6.2-astra",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "medium",
+    trusted_execution: true,
+  },
+  "codex-6.2-sol": {
+    label: "Codex - 6.2 Sol",
+    backend: "codex",
+    model: "gpt-6.2-sol",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "high",
+    trusted_execution: true,
   },
   "codex-6-astra": {
     label: "Codex - 6 Astra",
@@ -396,7 +416,7 @@ describe("repository model catalogue data", () => {
     }
   });
 
-  it("carries the 24 operating presets and gates only the china group", () => {
+  it("carries the 26 operating presets and gates only the china group", () => {
     expect(catalog.schema_version).toBe(1);
     expect(catalog.groups).toEqual(["china"]);
     expect(catalog.presets.map((preset) => preset.id)).toEqual(PRESET_IDS);
@@ -501,8 +521,8 @@ describe("repository model catalogue data", () => {
   });
 
   it("keeps every legacy price row and alias at its previous rates", () => {
-    expect(catalog.models).toHaveLength(22);
-    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(21);
+    expect(catalog.models).toHaveLength(24);
+    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(23);
     for (const [key, rates] of Object.entries(EXPECTED_RATES)) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -533,12 +553,12 @@ describe("repository model catalogue data", () => {
     });
   });
 
-  it("prices all 22 legacy keys from the data file", () => {
+  it("prices all 24 legacy keys from the data file", () => {
     const keys = [
       ...Object.keys(EXPECTED_RATES),
       ...DEEPSEEK_ALIASES.map((alias) => `deepseek:${alias}`),
     ];
-    expect(keys).toHaveLength(22);
+    expect(keys).toHaveLength(24);
     for (const key of keys) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -548,7 +568,7 @@ describe("repository model catalogue data", () => {
         : key;
       const rates = EXPECTED_RATES[canonicalKey]!;
       const result = priceInferenceUsage(catalog, { provider, model, ...USAGE });
-      expect(result.price_version).toBe("api-list-usd-2026-11-17-v2");
+      expect(result.price_version).toBe("api-list-usd-2026-11-18-v1");
       expect(result.as_of).toBe("2026-10-19");
       expect(result.pricing_complete).toBe(true);
       expect(result.known_cost_usd).toBeCloseTo(rates[0] + rates[4], 10);
@@ -557,7 +577,7 @@ describe("repository model catalogue data", () => {
 
   it("keeps the price snapshot metadata", () => {
     expect(catalog.price_snapshot).toEqual({
-      price_version: "api-list-usd-2026-11-17-v2",
+      price_version: "api-list-usd-2026-11-18-v1",
       as_of: "2026-10-19",
       checked_at: "2026-10-19",
       currency: "USD",
@@ -566,7 +586,7 @@ describe("repository model catalogue data", () => {
       legacy_rows_last_checked_at: "2026-10-05",
       refreshed_model_rows: {
         claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
-        codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
+        codex: ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
         antigravity: ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
         deepseek: [
           "deepseek-v4.1-flash-1017",
@@ -604,7 +624,7 @@ describe("repository model catalogue data", () => {
       cache_write_unknown: 0,
       output_total: 0,
     });
-    expect(components.price_version).toBe("api-list-usd-2026-11-17-v2");
+    expect(components.price_version).toBe("api-list-usd-2026-11-18-v1");
     expect(components.cache_read.known_cost_usd_decimal).toBe("0.006");
     expect(components.non_cache.known_cost_usd_decimal).toBe("0.3");
   });
@@ -636,7 +656,7 @@ describe("repository model catalogue data", () => {
   it("keeps the PAS defaults in the data file", () => {
     expect(catalog.persistent_defaults).toEqual({
       model_preset: "claude-opus",
-      fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
+      fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
     });
   });
 });
