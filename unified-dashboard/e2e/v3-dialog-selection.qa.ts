@@ -250,13 +250,14 @@ async function chatPage(browser: Browser, width: number) {
 }
 
 async function documentReader(browser: Browser, width: number) {
-  const { context, page } = await chatPage(browser, width);
+  const { context, page } = await chatPage(browser, 1440);
   try {
     await page.locator("a:visible", { hasText: /^문서 링크$/ }).first().click();
     const dialog = page.getByTestId("internal-document-dialog");
     await dialog.waitFor({ state: "visible" });
     const body = dialog.locator(".v3-folder-board-document-copy");
     await body.waitFor({ state: "visible" });
+    await page.setViewportSize({ width, height: width < 500 ? 844 : 1000 });
     await page.waitForTimeout(300);
     const title = dialog.locator('[data-slot="dialog-title"]');
     const close = dialog.getByRole("button", { name: "문서 닫기" });
@@ -279,6 +280,7 @@ async function documentReader(browser: Browser, width: number) {
     m.tripleTitle = await triple(page, title);
     await page.screenshot({ path: path.join(output, `document-${width}.png`) });
     await drag(page, title, body.locator("p").last(), "edge", "end");
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });
     await page.locator("a:visible", { hasText: "없는 문서" }).first().click();
