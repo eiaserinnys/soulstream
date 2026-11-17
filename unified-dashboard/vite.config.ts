@@ -40,6 +40,9 @@ export default defineConfig(({ command, mode }: ConfigEnv) => {
       VitePWA(DASHBOARD_PWA_OPTIONS),
     ],
     root: ".",
+    // 워크트리 사이에서 공유하는 node_modules/.vite 캐시가 체크아웃 절대경로 때문에
+    // 매번 무효화되어 첫 적재가 느려지던 문제를 막는다(카드 #1460).
+    cacheDir: ".vite-cache",
     resolve: {
       dedupe: ["react", "react-dom"],
       alias: {

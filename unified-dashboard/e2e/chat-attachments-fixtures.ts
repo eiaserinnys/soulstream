@@ -217,7 +217,7 @@ export async function openAttachmentSample(page: Page, width: number, theme: "li
   }, theme);
   await page.goto("/dialogues?sample=chat-attachments");
   const sample = page.getByTestId("dialogue-sample");
-  await expect(sample).toBeVisible();
+  await expect(sample).toBeVisible({ timeout: 30_000 });
   await expect(sample.getByRole("region", { name: "실제 메시지 첨부 연결" })).toBeVisible();
   return sample;
 }

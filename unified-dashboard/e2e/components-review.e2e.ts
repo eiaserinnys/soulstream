@@ -68,14 +68,22 @@ for (const width of [1440, 390]) {
     await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
       body: JSON.stringify({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } }) }));
     const errors: string[] = [], writes: string[] = [], fixtureRequests: string[] = [], dashboardReads: string[] = [];
+    // 검수 레이아웃과 표본이 마운트 때 여는 대시보드 골격 읽기. 이 밖의 운영 읽기는
+    // 여전히 없어야 한다(카드 #1460).
+    const bootReads = new Set(["/api/folders", "/api/sessions", "/api/sessions/stream", "/api/nodes/stream"]);
     page.on("pageerror", error => errors.push(error.message));
     page.on("request", request => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith("/api/") && !["GET", "HEAD"].includes(request.method())
-        && !url.pathname.includes("ui-events")) writes.push(`${request.method()} ${url.pathname}`);
-      if (url.pathname.startsWith("/api/") && url.pathname.includes("components-")) fixtureRequests.push(url.pathname);
-      if (/^\/api\/(planner|sessions|folders|pages|cards|catalog)(\/|$)/.test(url.pathname)
-        || /^\/api\/nodes(\/stream)?$/.test(url.pathname)) dashboardReads.push(url.pathname);
+      if (!url.pathname.startsWith("/api/")) return;
+      if (!["GET", "HEAD"].includes(request.method()) && !url.pathname.includes("ui-events")) {
+        writes.push(`${request.method()} ${url.pathname}`);
+      }
+      // 검수 페이지에 박힌 표본 채팅은 자기 표본 세션(components-review-*)만 읽는다.
+      // 그 밖의 components- 경로와 대시보드 운영 경로는 읽지 않아야 한다(카드 #1460).
+      const sampleSessionRead = /^\/api\/sessions\/components-review-[^/]+(\/|$)/.test(url.pathname);
+      if (url.pathname.includes("components-") && !sampleSessionRead) fixtureRequests.push(url.pathname);
+      if (!sampleSessionRead && (/^\/api\/(planner|sessions|folders|pages|cards|catalog)(\/|$)/.test(url.pathname)
+        || /^\/api\/nodes(\/stream)?$/.test(url.pathname))) dashboardReads.push(url.pathname);
     });
     await page.goto("/components");
     const review = page.getByTestId("components-review");
@@ -89,15 +97,16 @@ for (const width of [1440, 390]) {
     const documentSample = rows.locator('[data-component="InlineMarkdownCard"]');
     const timelineSample = review.locator('#components-bubbles [data-component="CardTimeline / UserMessage / AssistantMessage"]');
     const handoffSample = review.locator("#components-input").getByTestId("card-handoff-review-sample");
-    await expect(review).toBeVisible();
+    await expect(review).toBeVisible({ timeout: 30_000 });
     await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
-      "목록 행", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
+      "목록 행", "말풍선과 첨부", "카드 질문 장", "입력창", "선택과 설정", "패널 표면",
     ]);
     await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
     await expect(review).toBeVisible();
     await expect(page.locator(".v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar")).toHaveCount(0);
-    const viewport = await page.locator("main").evaluate(el => {
+    // 카드 질문 장 표본의 PAS 판(main.persistent-session-main)과 구분한다.
+    const viewport = await page.locator("main.v3-components-main").evaluate(el => {
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height,
         viewportWidth: innerWidth, viewportHeight: innerHeight,
@@ -107,8 +116,33 @@ for (const width of [1440, 390]) {
     expect(viewport.x).toBe(0); expect(viewport.y).toBe(0);
     expect(viewport.width).toBe(viewport.viewportWidth);
     expect(viewport.height).toBe(viewport.viewportHeight);
-    expect(viewport.scrollWidth).toBe(viewport.clientWidth);
     expect(viewport.documentWidth).toBe(width);
+    // 카드 질문 장 표본 하나는 스스로 520px 고정 폭을 선언한 검수 캔버스라 390 화면에서는
+    // 주 영역보다 넓다(카드 #1197 표본). 페이지 껍데기와 그 밖의 표본이 넘치지 않는지는
+    // 그대로 보고, 고정 폭 캔버스 안에서만 넘치는 것을 허용한다.
+    const overflowOutsideFixedCanvas = await page.locator("main.v3-components-main").evaluate(el => {
+      const right = el.getBoundingClientRect().right;
+      const insideFixedCanvas = (node: Element) => {
+        for (let parent: Element | null = node; parent && parent !== el; parent = parent.parentElement) {
+          if (parent instanceof HTMLElement && parent.style.width === "520px") return true;
+        }
+        return false;
+      };
+      // 중간 스크롤 상자에 잘린 내용은 주 영역의 scrollWidth를 늘리지 않는다.
+      const clippedBeforeMain = (node: Element) => {
+        for (let parent = node.parentElement; parent && parent !== el; parent = parent.parentElement) {
+          const overflowX = getComputedStyle(parent).overflowX;
+          if (overflowX === "auto" || overflowX === "scroll" || overflowX === "hidden") return true;
+        }
+        return false;
+      };
+      return [...el.querySelectorAll<HTMLElement>("*")]
+        .filter(node => !clippedBeforeMain(node))
+        .filter(node => node.getBoundingClientRect().right > right + 1 && !insideFixedCanvas(node))
+        .map(node => `${node.tagName}.${node.className}`);
+    });
+    expect(overflowOutsideFixedCanvas).toEqual([]);
+    if (width >= 760) expect(viewport.scrollWidth).toBe(viewport.clientWidth);
     await capture(page, `components-${width}-rows`);
     await sessionSample.locator(".v3-run-open").focus();
     await page.keyboard.press("Enter");
@@ -119,7 +153,9 @@ for (const width of [1440, 390]) {
     await rows.getByTestId("v3-task-components-parent").click();
     await expect(notice).toHaveText("상위 폴더 샘플을 열었습니다.");
     await documentSample.locator(".v3-inline-board-expand").click();
-    await expect(documentSample.locator('button.v3-description-content[aria-label="검수 문서 편집"]')).toBeVisible();
+    // 펼친 문서 본문의 편집 단추는 FolderDescriptionPanel의 아이콘 캡이 그린다. 본문 자체는
+    // v3-description-content인 div라 단추가 아니다.
+    await expect(documentSample.getByRole("button", { name: "검수 문서 편집", exact: true })).toBeVisible();
     await capture(page, `components-${width}-documents`);
     const star = review.locator("#components-heads").getByRole("button", { name: "샘플 별표", exact: true });
     await star.click();
@@ -191,7 +227,7 @@ for (const width of [1440, 390]) {
     await capture(page, `components-${width}-surface`);
     await page.keyboard.press("Escape");
     expect(errors).toEqual([]); expect(writes).toEqual([]); expect(fixtureRequests).toEqual([]);
-    expect(dashboardReads).toEqual([]);
+    expect(dashboardReads.filter(path => !bootReads.has(path))).toEqual([]);
     writeFileSync(path.join(output, `${phase}-${width}-metrics.json`), JSON.stringify({ viewport, initial, multiline, writes, fixtureRequests, dashboardReads }, null, 2));
     await review.getByRole("button", { name: "대시보드로 돌아가기", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
@@ -210,7 +246,9 @@ for (const width of [1440, 390]) {
 
     const sample = page.getByTestId("card-board-sample");
     await sample.locator('[data-card-id="board-size-comparison"] .v3-postit-open').first().click();
-    const detail = page.getByTestId("card-detail");
+    // CardWorkspace는 카드 질문 장 표본의 카드 상세 다섯과 섞이지 않도록
+    // 자기 작업대(v3-card-workspace) 안에서 찾는다.
+    const detail = page.getByTestId("v3-card-workspace").getByTestId("card-detail");
     await expect(detail).toBeVisible();
     await detail.getByRole("tab", { name: "커멘트" }).click();
     const timeline = detail.locator(".v3-card-timeline");
@@ -220,10 +258,12 @@ for (const width of [1440, 390]) {
     const commentTarget = timeline.locator(".v3-card-comment-target");
     await expect(openQuestion).toBeVisible();
     await expect(withdrawnQuestion).toBeVisible();
-    await expect(openQuestion.locator(".v3-card-answer-options button")).toHaveCount(1);
+    // 카드 상세의 질문 장은 새 질문 부품으로 그린다. 철회된 질문도 선택지를 보여 주되
+    // 잠그므로, 열린 질문에만 고를 수 있는 단추가 있어야 한다(카드 #1197).
+    await expect(openQuestion.locator(".v3-card-question-choices button")).toHaveCount(1);
     await expect(withdrawnQuestion.locator(".v3-card-bubble-kind")).toContainText("철회됨");
     await expect(withdrawalReason).toHaveText(withdrawalReasonText);
-    await expect(withdrawnQuestion.locator(".v3-card-answer-options")).toHaveCount(0);
+    await expect(withdrawnQuestion.locator(".v3-card-question-choices button:not([disabled])")).toHaveCount(0);
     await expect(commentTarget).toHaveCount(1);
     await openQuestion.scrollIntoViewIfNeeded();
     await withdrawnQuestion.scrollIntoViewIfNeeded();
@@ -270,7 +310,8 @@ const w13Now = new Date().toISOString();
 const w13Stamp = `${w13Now.slice(0, 10).replaceAll("-", "")}-${w13Now.slice(11, 16).replace(":", "")}`;
 
 for (const width of [1440, 390]) {
-  test(`W13 manuscript activity sample ${width}`, async ({ page }) => {
+  test(`W13 manuscript activity sample ${width}`, async ({ page }, testInfo) => {
+    if (width === 390) testInfo.setTimeout(120_000);
     await prepare(page, width);
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: width === 390 ? "reduce" : "no-preference" });
     await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",

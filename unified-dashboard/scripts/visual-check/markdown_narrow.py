@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
 """마크다운 줄바꿈 시각 검수 — 좁은 폭의 한글 낱말 끊김과 가로 넘침 (카드 #1342).
 
-`scripts/visual-check/markdown-narrow-fixture.html`이 세우는 표면 다섯을 360과 1440에서
+`scripts/visual-check/markdown-narrow-fixture.html`이 세우는 표면 여덟을 360과 1440에서
 찍고 잰다.
 
-  - attachment: 첨부 보기 창 문서(한글 본문, 한글 칸과 코드 해시 칸과 맨글 해시 칸이 든 표)
+  - attachment: 첨부 보기 창 문서(한글 본문, 한글 칸과 코드 해시 칸과 맨글 해시 칸,
+    링크와 긴 주소가 든 칸이 있는 표)
   - document-reader: 문서 읽기 창
-  - chat: 채팅 답 메시지
+  - chat: 채팅 답 메시지(긴 주소 포함)
+  - user: 사용자 말풍선(긴 주소 포함)
+  - stream: 스트리밍·완료 본문 네 조합(줄 시작 위치 비교)
+  - siblings: 마크다운 앞뒤 형제(대체 표시, 질문 철회 본문, 세 줄 자르기)
   - notes: 카드 인계 요약과 노트
   - question: 질문 장 배경
 
-측정은 셋이다.
+측정은 넷이다.
 
   1. 가로 넘침: 문서와 표면 뿌리의 scrollWidth가 clientWidth를 넘지 않는가.
      문서 표는 자기 상자(overflow-auto) 안에서만 가로 스크롤해야 한다.
   2. 한글 낱말 끊김: 본문 텍스트 노드에서 한글 음절이 이어진 구간(낱말)을 찾아, 한 낱말이
      둘 이상의 줄 조각으로 갈라진 곳을 센다. `word-break: normal`(고치기 전)은 한글 음절
      사이에서 끊는다. 해시처럼 붙은 라틴 낱말의 글자 단위 끊김은 세지 않는다.
-  3. ui-design 0절 14~18번: 대화상자 초점, Tab과 Esc, 좁은 폭 넘침, 오류 상태,
+  3. 스트리밍 줄 위치: 같은 글을 스트리밍 중에 그린 본문과 완료 뒤에 그린 본문에서 줄이
+     시작하는 글자 자리가 같은가.
+  4. ui-design 0절 14~18번: 대화상자 초점, Tab과 Esc, 좁은 폭 넘침, 오류 상태,
      창 크기 바꾸기(문서 읽기 창).
 
 준비
@@ -62,9 +68,13 @@ SURFACES = (
     ("attachment", ".chat-image-viewer-popup .chat-attachment-markdown"),
     ("document-reader", '[data-testid="internal-document-dialog"] .v3-folder-board-document-copy'),
     ("chat", '[data-slot="chat-body"]'),
+    ("user", '[data-sel="root"] [data-slot="chat-body"]'),
+    ("stream", '[data-slot="chat-root"]'),
+    ("siblings", '[data-sel="root"]'),
     ("notes", ".v3-card-notes"),
     ("question", ".v3-card-question-background"),
 )
+STREAM_PAIRS = (("streaming", "completed"), ("streaming-m", "completed-m"))
 DIALOG_SURFACES = {"attachment", "document-reader"}
 EVIDENCE_TOLERANCE_PX = 1
 
@@ -106,6 +116,38 @@ MEASURE_SCRIPT = """
     brokenKorean,
     table: tableBox ? { scrollWidth: tableBox.scrollWidth, clientWidth: tableBox.clientWidth } : null,
   };
+}
+"""
+
+LINES_SCRIPT = """
+(selector) => {
+  // 본문 글자마다 줄 위치를 재서 줄이 시작하는 글자 자리를 돌려준다.
+  const body = document.querySelector(selector);
+  if (!body) return null;
+  const nodes = [];
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) nodes.push(node);
+  const starts = [];
+  let lastTop = null;
+  for (const textNode of nodes) {
+    const text = textNode.nodeValue ?? '';
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] === ' ') continue;
+      const range = document.createRange();
+      range.setStart(textNode, index);
+      range.setEnd(textNode, index + 1);
+      const rect = [...range.getClientRects()].find((item) => item.width > 0);
+      if (rect) {
+        const top = Math.round(rect.top);
+        if (lastTop === null || Math.abs(top - lastTop) > 4) {
+          starts.push(text.slice(index, index + 6));
+          lastTop = top;
+        }
+      }
+    }
+  }
+  return starts;
 }
 """
 
@@ -201,6 +243,14 @@ def run(args: argparse.Namespace) -> int:
             for width, height in WIDTHS:
                 open_surface(page, base, surface, width, height)
                 data = measure_surface(page, selector)
+                if surface == "stream":
+                    data["lines"] = {
+                        variant: page.evaluate(
+                            LINES_SCRIPT, f'[data-sel="{variant}"] [data-slot="chat-body"]',
+                        )
+                        for pair in STREAM_PAIRS
+                        for variant in pair
+                    }
                 data.update({"surface": surface, "width": width, "height": height})
                 measurements[f"{surface}-{width}"] = data
                 capture(page, output, f"markdown-narrow-{surface}-{width}-{mode}")
@@ -217,6 +267,15 @@ def run(args: argparse.Namespace) -> int:
                     if data["brokenKorean"]:
                         tokens = ", ".join(item["token"] for item in data["brokenKorean"][:5])
                         problems.append(f"{surface}/{width}: 한글 낱말이 끊겼습니다 ({tokens})")
+                    if surface == "stream":
+                        for streaming, completed in STREAM_PAIRS:
+                            streaming_lines = data["lines"].get(streaming)
+                            completed_lines = data["lines"].get(completed)
+                            if streaming_lines and completed_lines and streaming_lines != completed_lines:
+                                problems.append(
+                                    f"stream/{width}: 스트리밍과 완료의 줄 시작이 다릅니다 "
+                                    f"({streaming} vs {completed})"
+                                )
                 if surface == "attachment" and data.get("table"):
                     if width == 360 and data["table"]["scrollWidth"] <= data["table"]["clientWidth"]:
                         problems.append("attachment/360: 표가 자기 상자 안에서 가로 스크롤하지 않습니다")
