@@ -1402,7 +1402,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   it("retires a recorded terminal registration before replay can duplicate session_ended", async () => {
     const current = registration({ pidAlive: false, lifecycleState: "completed" });
     const retireTerminalRegistration = vi.fn(async () => {});
+    const drain = vi.fn(async () => {});
     const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain },
       spawner: {
         terminate: vi.fn(async () => {}),
         invalidateRegistration: vi.fn(async () => {}),
@@ -1429,10 +1431,105 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.waitForSettled();
 
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(drain).not.toHaveBeenCalled();
     expect(retireTerminalRegistration).toHaveBeenCalledWith(
       current.config.paths,
       "registration-a",
     );
+  });
+
+  it("drains an unacknowledged runner tail before retiring a recorded terminal registration", async () => {
+    const current = registration({ pidAlive: true, lifecycleState: "closed" });
+    current.closedTailState = {
+      status: "requires_drain",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 3,
+      acknowledgedThrough: 2,
+    };
+    const draining = deferred<void>();
+    const drain = vi.fn(() => draining.promise);
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain },
+    });
+    recordTerminalCompletion(subject.task);
+
+    const scan = subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+    expect(subject.terminate).toHaveBeenCalledWith(
+      current.config.paths,
+      { pid: 4123, startIdentity: "start-4123" },
+    );
+    expect(subject.terminate.mock.invocationCallOrder[0]).toBeLessThan(
+      drain.mock.invocationCallOrder[0]!,
+    );
+    expect(drain).toHaveBeenCalledWith(
+      expect.objectContaining({ registrationId: "registration-a", pidAlive: false }),
+      expect.anything(),
+    );
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+
+    draining.resolve();
+    await scan;
+    await subject.coordinator.waitForSettled();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      current.config.paths,
+      "registration-a",
+    );
+  });
+
+  it("retires a recorded closed registration with a fully acknowledged tail without draining", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "closed" });
+    current.closedTailState = {
+      status: "fully_acknowledged",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 2,
+      acknowledgedThrough: 2,
+    };
+    const drain = vi.fn(async () => {});
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain },
+    });
+    recordTerminalCompletion(subject.task);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(drain).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed closed tail drain before retiring a recorded terminal registration", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "closed" });
+    current.closedTailState = {
+      status: "requires_drain",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 3,
+      acknowledgedThrough: 2,
+    };
+    const drain = vi.fn(async () => {}).mockRejectedValueOnce(new Error("ACK timed out"));
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain },
+    });
+    recordTerminalCompletion(subject.task);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(drain).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.objectContaining({ message: "ACK timed out" }) }),
+      "runner recovery action failed",
+    );
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(drain).toHaveBeenCalledTimes(2);
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
   });
 
   it("retires the measured released sidecar shape without trusting stale lifecycle pid", async () => {

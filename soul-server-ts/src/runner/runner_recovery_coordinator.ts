@@ -592,6 +592,16 @@ export class RunnerRecoveryCoordinator {
         case "stop_retired_attached_terminal":
           return;
         case "retire_recorded_terminal":
+          if (
+            registration.lifecycle?.execution_state === "closed"
+            && closedRunnerTailRequiresDrain(registration)
+          ) {
+            if (registration.pidAlive) await this.registrationControl.terminate(registration);
+            await this.options.closedTailDrainer.drain(
+              { ...registration, pidAlive: false },
+              phaseObservation,
+            );
+          }
           await this.registrationControl.retireTerminal(registration);
           this.options.logger.info(
             { sessionId: registration.config.sessionId },
