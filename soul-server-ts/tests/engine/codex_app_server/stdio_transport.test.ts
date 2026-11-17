@@ -4,6 +4,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  type StdioSpawnProcess,
   buildCodexAppServerArgs,
   createStdioAppServerTransport,
 } from "../../../src/engine/codex_app_server/stdio_transport.js";
@@ -65,7 +66,7 @@ describe("stdio app-server transport", () => {
       spawnProcess: (command, args) => {
         expect(command).toBe("codex");
         expect(args).toEqual(["app-server", "--listen", "stdio://"]);
-        return child;
+        return child as unknown as ReturnType<StdioSpawnProcess>;
       },
     });
 
@@ -82,7 +83,7 @@ describe("stdio app-server transport", () => {
 
     createStdioAppServerTransport({
       platform: "linux",
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
       applyOomScore,
     });
 
@@ -99,7 +100,7 @@ describe("stdio app-server transport", () => {
       spawnProcess: (command, args) => {
         commands.push(command);
         expect(args).toEqual(["app-server", "--listen", "stdio://"]);
-        return child;
+        return child as unknown as ReturnType<StdioSpawnProcess>;
       },
     });
 
@@ -117,7 +118,7 @@ describe("stdio app-server transport", () => {
       platform: "win32",
       spawnProcess: (_command, _args, options) => {
         spawnOptions.push(options);
-        return child;
+        return child as unknown as ReturnType<StdioSpawnProcess>;
       },
     });
 
@@ -135,7 +136,7 @@ describe("stdio app-server transport", () => {
     const transport = createStdioAppServerTransport({
       command: "C:\\Users\\LG\\AppData\\Roaming\\npm\\codex.cmd",
       platform: "win32",
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
       terminateProcessTree,
     });
 
@@ -154,7 +155,7 @@ describe("stdio app-server transport", () => {
       platform: "win32",
       spawnProcess: (_command, _args, options) => {
         spawnOptions.push(options);
-        return child;
+        return child as unknown as ReturnType<StdioSpawnProcess>;
       },
     });
 
@@ -168,7 +169,7 @@ describe("stdio app-server transport", () => {
     const child = new MockChildProcess();
     const messages: AppServerJsonMessage[] = [];
     const transport = createStdioAppServerTransport({
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
     });
     transport.onMessage((message) => messages.push(message));
 
@@ -186,7 +187,7 @@ describe("stdio app-server transport", () => {
     const errors: string[] = [];
     const messages: AppServerJsonMessage[] = [];
     const transport = createStdioAppServerTransport({
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
     });
     transport.onError((error) => errors.push(error.message));
     transport.onMessage((message) => messages.push(message));
@@ -202,7 +203,7 @@ describe("stdio app-server transport", () => {
     const child = new MockChildProcess();
     const { logger, lines } = createLogger();
     createStdioAppServerTransport({
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
       logger,
     });
 
@@ -219,7 +220,7 @@ describe("stdio app-server transport", () => {
     const child = new MockChildProcess();
     const closeErrors: Array<string | undefined> = [];
     const transport = createStdioAppServerTransport({
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
       closeGraceMs: 10,
     });
     transport.onClose((error) => closeErrors.push(error?.message));
@@ -238,7 +239,7 @@ describe("stdio app-server transport", () => {
     const child = new MockChildProcess();
     const closeErrors: Array<string | undefined> = [];
     const transport = createStdioAppServerTransport({
-      spawnProcess: () => child,
+      spawnProcess: () => child as unknown as ReturnType<StdioSpawnProcess>,
     });
     transport.onClose((error) => closeErrors.push(error?.message));
 

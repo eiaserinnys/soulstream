@@ -179,7 +179,7 @@ describe("CI maintenance contract", () => {
         const match = line.match(/^\s*(?:-\s*)?uses:\s+([^@\s]+)@([0-9a-f]{40})\s+#\s+(.+?)\s*$/);
         expect(match, `${filename} must pin ${line.trim()} to a commented full SHA`).not.toBeNull();
         const [, action, sha, comment] = match!;
-        observedActions.add(action);
+        observedActions.add(action!);
         expect(allowedReleaseActions, `${action} must be in the reviewed release Action inventory`)
           .toContain(action);
         expect(sha).toMatch(/^[0-9a-f]{40}$/);

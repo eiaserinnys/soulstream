@@ -81,7 +81,7 @@ describe("Antigravity gateway definition", () => {
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });
   it("never rewrites soulstream SSE entries and matches whitespace-padded names", async () => {
-    const sseServers = [
+    const sseServers: import("../../../src/mcp_config_service.js").ResolvedMcpServer[] = [
       { name: "soulstream", type: "sse" as const, url: "https://external.example.test/sse", headers: { authorization: "Bearer sse-secret" } },
       { name: " soulstream ", type: "streamable_http" as const, url: "http://obsolete.invalid/mcp", headers: { Authorization: "fixture-secret" } },
     ];

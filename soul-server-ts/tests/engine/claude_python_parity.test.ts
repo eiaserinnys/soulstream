@@ -218,7 +218,7 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
     });
     assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.tool_result!);
     // Python ToolResultSSEEvent.result: str. TS는 JSON.stringify로 직렬화.
-    expect((out[0] as { result: unknown }).result).toBe('{"ok":true}');
+    expect((out[0] as { result?: unknown } | undefined)?.result).toBe('{"ok":true}');
   });
 
   it("result — Python ResultSSEEvent (schemas.py:198-211) all optional fields propagated", () => {

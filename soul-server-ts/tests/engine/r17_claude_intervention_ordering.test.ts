@@ -37,7 +37,7 @@ describe("R17 Claude intervention arrival ordering", () => {
     const receipt = new Promise<void>((resolve) => {
       releaseReceipt = resolve;
     });
-    harness.interrupt.mockImplementationOnce(async () => await receipt);
+    harness.interrupt.mockImplementationOnce(async () => { await receipt; return undefined; });
     const registry = new ClaudeSessionClientRegistry(
       () => new ClaudeSdkClient(
         { query: harness.queryFn, detachedEventSink: harness.detached },
@@ -118,6 +118,7 @@ describe("R17 Claude intervention arrival ordering", () => {
       harness.interrupt.mockImplementationOnce(async () => {
         await receiptGate;
         markReceiptReturned();
+        return undefined;
       });
       const registry = new ClaudeSessionClientRegistry(
         () => new ClaudeSdkClient(

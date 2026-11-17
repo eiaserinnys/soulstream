@@ -105,7 +105,7 @@ function createDispatcher(opts: {
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
     cancelTask: vi.fn(async () => true),
-    acknowledgeReview: vi.fn(async () => "acknowledged"),
+    acknowledgeReview: vi.fn(async () => "acknowledged" as const),
     deliverInputResponse: vi.fn(),
     deliverToolApproval: vi.fn(),
   };
@@ -261,10 +261,11 @@ describe("CommandDispatcher Claude runtime correlation", () => {
       taskManager: {
         listClaudeRuntimeTasks: vi.fn(async () => ({
           sessionId: "sess-runtime",
-          sessionState: "running",
+          sessionState: "running" as const,
           runtimeSessionId: "runtime-1",
           updatedAt: 1,
           tasks: [],
+          notifications: [], remoteTriggers: [], transcriptMirror: null, planMode: null, worktreeMode: null,
         })),
       },
     });
@@ -438,7 +439,7 @@ describe("CommandDispatcher.create_session", () => {
     expect(tm.createTask).toHaveBeenCalledTimes(1);
     expect(te.startNewExecution).toHaveBeenCalledTimes(1);
     expect(createdTasks).toHaveLength(1);
-    expect(createdTasks[0].agentSessionId).toBe("sess-1");
+    expect(createdTasks[0]!.agentSessionId).toBe("sess-1");
 
     expect(sent).toHaveLength(1);
     expect(sent[0]).toEqual({
@@ -455,7 +456,7 @@ describe("CommandDispatcher.create_session", () => {
         prompt: params.prompt,
         status: "running" as const,
         profileId: params.profileId,
-        creationWarnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+        creationWarnings: [{ code: "PAGE_BINDING_PENDING" as const, message: "Binding will retry." }],
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
@@ -524,7 +525,7 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
       extra_context_items: contextItems,
     });
-    expect(createdTasks[0].contextItems).toEqual(contextItems);
+    expect(createdTasks[0]!.contextItems).toEqual(contextItems);
   });
 
   it("reasoningEffort를 createTask로 전달", async () => {
@@ -536,7 +537,7 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
       reasoningEffort: "medium",
     });
-    expect(createdTasks[0].reasoningEffort).toBe("medium");
+    expect(createdTasks[0]!.reasoningEffort).toBe("medium");
   });
 
   it("create_session 도구/MCP 옵션을 createTask로 전달", async () => {
@@ -551,10 +552,10 @@ describe("CommandDispatcher.create_session", () => {
       use_mcp: false,
       claude_permission_mode: "default",
     });
-    expect(createdTasks[0].allowedTools).toEqual(["Read"]);
-    expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
-    expect(createdTasks[0].useMcp).toBe(false);
-    expect(createdTasks[0].claudePermissionMode).toBe("default");
+    expect(createdTasks[0]!.allowedTools).toEqual(["Read"]);
+    expect(createdTasks[0]!.disallowedTools).toEqual(["Bash"]);
+    expect(createdTasks[0]!.useMcp).toBe(false);
+    expect(createdTasks[0]!.claudePermissionMode).toBe("default");
   });
 
   it("notify_completion=false를 createTask로 전달", async () => {
@@ -566,7 +567,7 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
       notify_completion: false,
     });
-    expect(createdTasks[0].notifyCompletion).toBe(false);
+    expect(createdTasks[0]!.notifyCompletion).toBe(false);
   });
 
   it("create_session 과도기 camelCase 도구/MCP 옵션도 createTask로 전달", async () => {
@@ -581,10 +582,10 @@ describe("CommandDispatcher.create_session", () => {
       useMcp: false,
       claudePermissionMode: "acceptEdits",
     });
-    expect(createdTasks[0].allowedTools).toEqual(["Read"]);
-    expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
-    expect(createdTasks[0].useMcp).toBe(false);
-    expect(createdTasks[0].claudePermissionMode).toBe("acceptEdits");
+    expect(createdTasks[0]!.allowedTools).toEqual(["Read"]);
+    expect(createdTasks[0]!.disallowedTools).toEqual(["Bash"]);
+    expect(createdTasks[0]!.useMcp).toBe(false);
+    expect(createdTasks[0]!.claudePermissionMode).toBe("acceptEdits");
   });
 
   it("oauth_token을 createTask.oauthToken으로 전달한다", async () => {
@@ -598,7 +599,7 @@ describe("CommandDispatcher.create_session", () => {
       profile: "claude-roselin",
       oauth_token: "task-oauth-token",
     });
-    expect(createdTasks[0].oauthToken).toBe("task-oauth-token");
+    expect(createdTasks[0]!.oauthToken).toBe("task-oauth-token");
   });
 
   it("attachment_paths가 오면 prompt 본문에 path note를 추가하고 전체 경로는 task에 보존", async () => {
@@ -610,13 +611,13 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
       attachment_paths: ["/tmp/a.png", "/tmp/b.txt"],
     });
-    expect(createdTasks[0].prompt).toBe(
+    expect(createdTasks[0]!.prompt).toBe(
       "see file\n\n" +
         "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
         "[첨부 파일 로컬 경로: /tmp/b.txt]",
     );
-    expect(createdTasks[0].contextItems).toBeUndefined();
-    expect(createdTasks[0].attachmentPaths).toEqual(["/tmp/a.png", "/tmp/b.txt"]);
+    expect(createdTasks[0]!.contextItems).toBeUndefined();
+    expect(createdTasks[0]!.attachmentPaths).toEqual(["/tmp/a.png", "/tmp/b.txt"]);
   });
 
   it("agentSessionId 또는 prompt 부재 시 error", async () => {
@@ -700,7 +701,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("optional delivery metadata를 손실 없이 task boundary로 전달한다", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
 
     await dispatcher.dispatch({
@@ -738,7 +739,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("running task에 intervene → addIntervention queued → intervene_ack(queued)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",
@@ -775,7 +776,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("running task에 intervene → addIntervention queued → intervene_ack(queued, queuePosition)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 2 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",
@@ -911,7 +912,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
           }
         : null,
     );
-    const updateSession = vi.fn(async () => undefined);
+    const updateSession = vi.fn(async (_id: string, _fields: unknown) => undefined);
     const db = {
       getSession,
       updateSession,
@@ -1053,7 +1054,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   it("requestId 부재 시 ACK 발행 안 함 (atom c13f7826 빈 ACK 금지)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
     const { dispatcher, sent } = createDispatcher({
-      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskManager: { addIntervention } as unknown as Partial<TaskManager>,
     });
     await dispatcher.dispatch({
       type: "intervene",

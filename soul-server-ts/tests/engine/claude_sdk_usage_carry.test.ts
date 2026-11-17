@@ -6,7 +6,7 @@ import { attachClaudeResultReceiptMetadata, readClaudeResultReceiptMetadata } fr
   "../../src/engine/claude_result_receipt_metadata.js";
 
 // Use the same client-event surface as the existing persistent-session harness.
-function result(usage: unknown, turnCostUsd: number): ClaudeClientEvent {
+function result(usage: unknown, turnCostUsd: number): Extract<ClaudeClientEvent, { type: "result" }> {
   return { type: "result", success: true, output: "done", usage, turnCostUsd };
 }
 

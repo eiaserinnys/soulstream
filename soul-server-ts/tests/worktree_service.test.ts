@@ -399,7 +399,7 @@ describe("WorktreeService", () => {
       expect(existsSync(paths.get(kind)!)).toBe(true);
       expect(host.records.get(ids.get(kind)!)?.state).toBe("ready");
     }
-    expect(begin.mock.calls.every(([input]) => input.sweeperNodeId === "node-a" && !input.actorSessionId)).toBe(true);
+    expect(begin.mock.calls.every(([input]) => "sweeperNodeId" in input && input.sweeperNodeId === "node-a" && !("actorSessionId" in input && input.actorSessionId))).toBe(true);
   }, 30_000);
 
   it("preserves a shared worktree when base dependency links point back into it", async () => {
@@ -1483,7 +1483,6 @@ describe("WorktreeService restricted sessions", () => {
 describe("WorktreeService.listSessionAttachments", () => {
   function record(overrides: Partial<WorktreeRecord> & Pick<WorktreeRecord, "id">): WorktreeRecord {
     return {
-      id: overrides.id,
       nodeId: "node-a",
       repoId: "repo-a",
       canonicalPath: `/projects/${overrides.id}`,
@@ -1700,7 +1699,7 @@ class MemoryWorktreeHost implements WorktreeHost {
       canonicalPath: input.canonicalPath,
       branch: input.branch,
       createdFromSha: input.createdFromSha,
-      ownerTaskId: null,
+      ownerFolderId: null,
       createdBySessionId: input.actorSessionId,
       state: "ready",
       setupMode: input.setupMode,

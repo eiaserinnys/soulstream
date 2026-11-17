@@ -106,7 +106,7 @@ describe.sequential("versioned migration runner", () => {
 
       expect((await sql`SELECT to_regclass('public.event_search_terms') AS relation`)[0]?.relation).toBeNull();
       const prefixIndex = await sql`SELECT pg_get_indexdef('public.event_search_dictionary_korean_prefix'::regclass) AS definition`;
-      expect(prefixIndex[0].definition).toContain('INCLUDE (term_id)');
+      expect(prefixIndex[0]!.definition).toContain('INCLUDE (term_id)');
 
       await restorePreFolderSchema(sql);
       await seedHistoricalFolder(sql);
@@ -210,7 +210,7 @@ describe.sequential("versioned migration runner", () => {
         indnkeyatts: 1,
         indnatts: 4,
       });
-      expect(eventTypeIndex[0].definition).toContain(
+      expect(eventTypeIndex[0]!.definition).toContain(
         "INCLUDE (session_id, id, created_at)",
       );
 
@@ -219,7 +219,7 @@ describe.sequential("versioned migration runner", () => {
       const afterRetry = await sql`
         SELECT COUNT(*)::int AS count FROM schema_migrations
       `;
-      expect(afterRetry[0].count).toBe(MANIFEST_MIGRATION_COUNT);
+      expect(afterRetry[0]!.count).toBe(MANIFEST_MIGRATION_COUNT);
     } finally {
       await sql.end({ timeout: 5 });
     }

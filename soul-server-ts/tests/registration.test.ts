@@ -200,7 +200,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
             available: false,
             reason: "env_unresolved",
             usage_provider: null,
-          },
+          } as import("../src/model_catalog.js").AdvertisedModelPreset,
         ],
       },
     });

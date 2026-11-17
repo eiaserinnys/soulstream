@@ -79,6 +79,7 @@ describe("card #1266 U4: reconnect inventory after an engine death or a restart"
       runner: {
         engine: {} as never,
         dispatcher: { hasClosedEngineFailureForFinalization: () => true } as never,
+        eventPersistence: "host",
       },
     });
     const healthy = makeTask({
@@ -87,6 +88,7 @@ describe("card #1266 U4: reconnect inventory after an engine death or a restart"
       runner: {
         engine: {} as never,
         dispatcher: { hasClosedEngineFailureForFinalization: () => false } as never,
+        eventPersistence: "host",
       },
     });
     const adapter = createAdapter(
@@ -129,7 +131,7 @@ function createAdapter(
   orch: MockOrch,
   tasks: Task[],
   listLiveRunnerSessionIds: () => Promise<string[]>,
-  logger: ReturnType<typeof pino>,
+  logger: import("pino").Logger,
 ): UpstreamAdapter {
   const sessionDb = {
     listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),

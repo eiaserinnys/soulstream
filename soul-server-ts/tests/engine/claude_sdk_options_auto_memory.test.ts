@@ -71,10 +71,11 @@ describe("claude sdk options auto memory", () => {
         args: ["-e", "process.exit(0)"],
         cwd: process.cwd(),
         env: process.env as Record<string, string>,
+        signal: new AbortController().signal,
       });
       await new Promise<void>((resolve, reject) => {
         child.once("error", reject);
-        child.once("close", () => resolve());
+        (child as import("node:child_process").ChildProcess).once("close", () => resolve());
       });
       await observed;
       expect(onChildProcessClosed).toHaveBeenCalledOnce();

@@ -150,7 +150,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
     // decided once at creation and stored; a pre-089 session's legacy value is
     // restored at the turn boundary. A default here would be a second authority
     // and would make the UI's "auto (backend default)" a lie.
-    expect(mockStartThread.mock.calls[0][0].modelReasoningEffort).toBeUndefined();
+    expect(mockStartThread.mock.calls[0]![0]!.modelReasoningEffort).toBeUndefined();
   });
 
   it("요청 effort를 ThreadOptions.modelReasoningEffort로 전달", async () => {
@@ -170,7 +170,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
       // drain
     }
 
-    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
+    expect(mockStartThread.mock.calls[0]![0]).toMatchObject({
       model: "gpt-5.5",
       modelReasoningEffort: "medium",
     });
@@ -193,7 +193,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
       // drain
     }
 
-    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
+    expect(mockStartThread.mock.calls[0]![0]).toMatchObject({
       model: "gpt-6-luna",
       modelReasoningEffort: "max",
     });
@@ -218,7 +218,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
       // drain
     }
 
-    const options = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const options = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(options.model).toBe("gpt-4o");
     expect(options.modelReasoningEffort).toBeUndefined();
     expect(warnSpy.join("\n")).toContain("dropping reasoning effort");
@@ -241,7 +241,7 @@ describe("CodexEngineAdapter — reasoning effort", () => {
       // drain
     }
 
-    const options = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const options = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(options.model).toBe("gpt-4-turbo");
     expect(options.modelReasoningEffort).toBeUndefined();
   });
@@ -263,7 +263,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
         },
         silentLogger(),
       );
-      const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+      const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
       expect(passedEnv[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-work");
       expect(passedEnv[SOULSTREAM_AGENT_ID_ENV]).toBe("codex-agent");
       expect(passedEnv[AGENT_COMMON_FILES_DIR_ENV]).toBe("/srv/agent-common");
@@ -283,7 +283,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
       },
       silentLogger(),
     );
-    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
     expect(passedEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(passedEnv.HOME).toBe("/home/test");
     expect(passedEnv.PATH).toBe("/usr/bin");
@@ -301,7 +301,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
       },
       silentLogger(),
     );
-    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
     expect(passedEnv).not.toHaveProperty("CODEX_API_KEY");
     expect(passedEnv.HOME).toBe("/home/test");
   });
@@ -318,7 +318,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
       },
       silentLogger(),
     );
-    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
     expect(passedEnv.OPENAI_API_KEY).toBe("sk-real-key");
   });
 
@@ -334,7 +334,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
       },
       silentLogger(),
     );
-    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
     expect(passedEnv).not.toHaveProperty("MISSING");
     expect(passedEnv.HOME).toBe("/home/test");
   });
@@ -350,7 +350,7 @@ describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
         { workspaceDir: "/tmp/work" },
         silentLogger(),
       );
-      const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+      const passedEnv = mockCodexCtor.mock.calls[0]![0]!.env as Record<string, string>;
       expect(passedEnv.HOME).toBe("/process/env/home");
       expect(passedEnv).not.toHaveProperty("OPENAI_API_KEY");
     } finally {
@@ -377,7 +377,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 10,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 5,
             reasoning_output_tokens: 0,
           },
@@ -420,7 +420,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 1,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 1,
             reasoning_output_tokens: 0,
           },
@@ -460,7 +460,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 1,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 1,
             reasoning_output_tokens: 0,
           },
@@ -498,7 +498,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 1,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 1,
             reasoning_output_tokens: 0,
           },
@@ -517,7 +517,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       // drain
     }
 
-    expect(mockRunStreamed.mock.calls[0][0]).toBe("텍스트만");
+    expect(mockRunStreamed.mock.calls[0]![0]).toBe("텍스트만");
   });
 
   it("codex가 item.completed (agent_message)만 emit하면 assistant_message+complete를 yield한다", async () => {
@@ -537,7 +537,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 100,
-            cached_input_tokens: 50,
+            cached_input_tokens: 50, cache_write_input_tokens: 0,
             output_tokens: 3,
             reasoning_output_tokens: 0,
           },
@@ -616,7 +616,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 1,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 1,
             reasoning_output_tokens: 0,
           },
@@ -657,7 +657,7 @@ describe("CodexEngineAdapter — approvalPolicy 정본 박힘 (Python permission
     for await (const _ of engine.execute({ prompt: "x" })) {
       // drain
     }
-    const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const calledWith = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(calledWith.approvalPolicy).toBe("never");
   });
 
@@ -676,7 +676,7 @@ describe("CodexEngineAdapter — approvalPolicy 정본 박힘 (Python permission
     })) {
       // drain
     }
-    const calledWith = mockResumeThread.mock.calls[0][1] as Record<string, unknown>;
+    const calledWith = mockResumeThread.mock.calls[0]![1] as Record<string, unknown>;
     expect(calledWith.approvalPolicy).toBe("never");
   });
 
@@ -692,7 +692,7 @@ describe("CodexEngineAdapter — approvalPolicy 정본 박힘 (Python permission
     for await (const _ of engine.execute({ prompt: "x", model: "gpt-5" })) {
       // drain
     }
-    const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const calledWith = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(calledWith.approvalPolicy).toBe("never");
     expect(calledWith.model).toBe("gpt-5");
   });
@@ -718,7 +718,7 @@ describe("CodexEngineAdapter — sandboxMode=danger-full-access (Python permissi
     for await (const _ of engine.execute({ prompt: "x" })) {
       // drain
     }
-    const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const calledWith = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(calledWith.sandboxMode).toBe("danger-full-access");
     // networkAccessEnabled는 *미박힘* — danger-full-access에 자동 포함이고 키 prefix가
     // workspace_write라 본 모드에서 무의미. PR #60 오진단 정정.
@@ -740,7 +740,7 @@ describe("CodexEngineAdapter — sandboxMode=danger-full-access (Python permissi
     })) {
       // drain
     }
-    const calledWith = mockResumeThread.mock.calls[0][1] as Record<string, unknown>;
+    const calledWith = mockResumeThread.mock.calls[0]![1] as Record<string, unknown>;
     expect(calledWith.sandboxMode).toBe("danger-full-access");
     expect(calledWith.networkAccessEnabled).toBeUndefined();
   });
@@ -757,7 +757,7 @@ describe("CodexEngineAdapter — sandboxMode=danger-full-access (Python permissi
     for await (const _ of engine.execute({ prompt: "x", model: "gpt-5" })) {
       // drain
     }
-    const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    const calledWith = mockStartThread.mock.calls[0]![0] as Record<string, unknown>;
     expect(calledWith.sandboxMode).toBe("danger-full-access");
     expect(calledWith.model).toBe("gpt-5");
   });
@@ -941,7 +941,7 @@ describe("CodexEngineAdapter — 오류 경로", () => {
           type: "turn.completed",
           usage: {
             input_tokens: 1,
-            cached_input_tokens: 0,
+            cached_input_tokens: 0, cache_write_input_tokens: 0,
             output_tokens: 1,
             reasoning_output_tokens: 0,
           },
@@ -1158,7 +1158,7 @@ describe("CodexEngineAdapter.execute — complete.result enrichment (F3)", () =>
         {
           type: "turn.completed",
           usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
-        },
+        } as ThreadEvent,
       ]),
     });
 
@@ -1193,7 +1193,7 @@ describe("CodexEngineAdapter.execute — complete.result enrichment (F3)", () =>
         { type: "thread.started", thread_id: "thr-empty" },
         {
           type: "turn.completed",
-          usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
+          usage: { input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
         },
       ]),
     });
@@ -1241,7 +1241,7 @@ describe("CodexEngineAdapter.execute — complete.result enrichment (F3)", () =>
         },
         {
           type: "turn.completed",
-          usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+          usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
         },
       ]),
     });
@@ -1271,7 +1271,7 @@ describe("CodexEngineAdapter.execute — complete.result enrichment (F3)", () =>
         },
         {
           type: "turn.completed",
-          usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
+          usage: { input_tokens: 1, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
         },
       ]),
     });

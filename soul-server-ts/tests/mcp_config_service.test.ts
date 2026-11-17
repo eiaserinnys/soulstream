@@ -129,7 +129,7 @@ describe("McpConfigService", () => {
     expect(service.listRegistry().servers[0]?.url).toBe(
       "https://mcp.example.test/mcp?exaApiKey=<redacted>&tools=web_search_exa,get_code_context_exa",
     );
-    expect(service.resolveMcpProfile(profile)?.mcp_servers[0]?.url).toBe(runtimeUrl);
+    expect((service.resolveMcpProfile(profile)?.mcp_servers[0] as { url?: string } | undefined)?.url).toBe(runtimeUrl);
   });
 
   it("leaves queryless registry URLs unchanged in listings", () => {
@@ -247,7 +247,7 @@ describe("McpConfigService", () => {
     expect(resolved.agents_sdk?.agents[0]?.hosted_tools).toEqual([
       { type: "web_search", search_context_size: "low" },
     ]);
-    expect(service.listRegistry().servers[0]?.headers?.Authorization).toEqual({
+    expect((service.listRegistry().servers[0]?.headers as Record<string, unknown> | undefined)?.Authorization).toEqual({
       env: "DOCS_AUTH",
       resolved: true,
     });
@@ -328,11 +328,11 @@ describe("McpConfigService", () => {
     const [profile] = service.listProfiles().profiles;
     const [hostedTool] = profile?.hosted_tools as Array<Record<string, unknown>>;
 
-    expect(hostedTool.server_url).toBe(
+    expect(hostedTool!.server_url).toBe(
       "https://hosted.example.com/mcp?authToken=<redacted>&mode=readonly",
     );
-    expect(hostedTool.authorization).toEqual({ redacted: true });
-    expect(hostedTool.headers).toEqual({
+    expect(hostedTool!.authorization).toEqual({ redacted: true });
+    expect(hostedTool!.headers).toEqual({
       Authorization: { redacted: true },
       "X-API-Key": { redacted: true },
       "X-Trace-Id": "trace-id",

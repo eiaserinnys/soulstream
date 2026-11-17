@@ -357,7 +357,7 @@ describe("codex app-server transport isolated launch", () => {
 
   it("keeps the off baseline spawn unchanged", () => {
     const child = new FakeChild();
-    const spawnProcess = vi.fn(() => child);
+    const spawnProcess = vi.fn(() => child as unknown as ReturnType<import("../../src/engine/codex_app_server/stdio_transport.js").StdioSpawnProcess>);
     const env = { PATH: "/usr/bin" };
 
     createStdioAppServerTransport({

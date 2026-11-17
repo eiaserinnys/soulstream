@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import { createPagePostgresHarness } from "./page/page_postgres_harness.js";
-// @ts-expect-error JavaScript migration contract boundary, matching existing migration tests.
 import { loadMigrationManifest } from "../../packages/db-schema/scripts/migration-contract.mjs";
 
 it("applies check-item migration without changing existing card content", async () => {

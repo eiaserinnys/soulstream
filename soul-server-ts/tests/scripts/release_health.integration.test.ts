@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { AgentRegistry } from "../../src/agent_registry.js";
@@ -11,7 +11,7 @@ import { deriveInternalMcpHealthUrl, readMcpHealth, verifyReleaseHealth } from "
 // Real listeners/SDK follow stateless_restart_recovery.test.ts; only the
 // orchestrator host's backing data is synthetic. No MCP client or fetch mock.
 let worker: Awaited<ReturnType<typeof buildServer>>;
-let host: ReturnType<typeof Fastify>;
+let host: FastifyInstance;
 let env: Record<string, string>;
 let forwarded: Array<{ tool: string; args: unknown; context: unknown }>;
 
@@ -53,7 +53,7 @@ afterEach(async () => {
 });
 
 it.each([null, "health-folder"])("reads %s through the internal listener without a caller session", async folderId => {
-  const result = await readMcpHealth({ url: new URL(localInternalMcpUrl(Number(env.MCP_INTERNAL_PORT), env.MCP_PATH)),
+  const result = await readMcpHealth({ url: new URL(localInternalMcpUrl(Number(env.MCP_INTERNAL_PORT), env.MCP_PATH!)),
     token: env.AUTH_BEARER_TOKEN, folderId });
   expect(result).toEqual({ ping: "ok", tool: folderId ? "get_folder" : "list_cards", folder_id: folderId });
   expect(forwarded).toEqual([{ tool: folderId ? "get_folder" : "list_cards",
@@ -68,7 +68,7 @@ it.each([null, "health-folder"])("release health uses the live internal listener
   expect(result.status).toBe("ok");
   expect(result.mcp).toEqual({ ping: "ok", tool: folderId ? "get_folder" : "list_cards", folder_id: folderId });
   expect(forwarded).toHaveLength(1);
-  expect(forwarded[0].context).toEqual({ principal: "internal", caller_session_id: null, node_id: "health-node" });
+  expect(forwarded[0]!.context).toEqual({ principal: "internal", caller_session_id: null, node_id: "health-node" });
 });
 
 // The release script runs as plain Node JS and cannot import the bundled TS

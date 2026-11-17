@@ -151,11 +151,12 @@ describe("read_attachment_source command", () => {
       },
       attachmentCommands: commands(),
     });
-    await family.read_attachment_source?.({
+    const command = {
       type: "read_attachment_source",
       requestId: "read-8",
       path: file,
-    });
+    };
+    await family.read_attachment_source?.(command);
 
     expect(sent).toEqual([
       {

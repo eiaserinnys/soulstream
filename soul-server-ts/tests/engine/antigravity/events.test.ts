@@ -15,6 +15,8 @@ const init = { event: "init", conversation_id: "conversation", init: { model: "g
 const step = (index: number, extra: object) => ({ event: "step_update", step_update: {
   conversation_id: "conversation", step_index: index, state: "DONE", step_type: "agent_response", ...extra,
 } });
+const field = (event: object | undefined, name: string): unknown =>
+  (event as Record<string, unknown> | undefined)?.[name];
 
 describe("AntigravityEventMapper", () => {
   it("counts growth once per positive DONE and excludes decreases", () => {
@@ -62,7 +64,7 @@ describe("AntigravityEventMapper", () => {
     const events = mapper.accept(withOutput);
     expect(events).toMatchObject([{ type: "tool_start" },
       { type: "tool_result", result: "validation failed", is_error: true }]);
-    expect(events[0]?.tool_use_id).toBe(events[1]?.tool_use_id);
+    expect(field(events[0], "tool_use_id")).toBe(field(events[1], "tool_use_id"));
     expect(mapper.accept(withOutput)).toEqual([]);
     expect(mapper.accept(failed(2, { name: "tool", error: { message: "fallback" } })))
       .toMatchObject([{ type: "tool_start" }, { type: "tool_result", result: "fallback", is_error: true }]);
@@ -81,11 +83,11 @@ describe("AntigravityEventMapper", () => {
       raw_event_type: "antigravity/agent_response" };
     for (const event of [...active, ...done]) {
       expect(event).toMatchObject(identity);
-      if (event.type !== "assistant_message") expect(event._live_only).toBe(true);
+      if (event.type !== "assistant_message") expect(field(event, "_live_only")).toBe(true);
     }
     expect(done[1]).toMatchObject({ content: "이미지와 상단 HUD", _final_for_live_stream: true });
-    expect(mapper.accept(step(1, { text_delta: "next" }))[0]?.item_id).toBe("1");
-    expect(new AntigravityEventMapper("turn-b").accept(step(0, { text_delta: "resume" }))[0]?.turn_id).toBe("turn-b");
+    expect(field(mapper.accept(step(1, { text_delta: "next" }))[0], "item_id")).toBe("1");
+    expect(field(new AntigravityEventMapper("turn-b").accept(step(0, { text_delta: "resume" }))[0], "turn_id")).toBe("turn-b");
   });
   it("counts each model DONE once, adds cache to input, keeps thinking inside output, ignores result cumulative usage, and reports first call, last context, and priced cost", () => {
     const mapper = new AntigravityEventMapper("turn-a", false, undefined, () => MODEL_CATALOG);
@@ -115,8 +117,8 @@ describe("AntigravityEventMapper", () => {
     const second = new AntigravityEventMapper("turn-b");
     const events = first.accept(call);
     expect(events).toMatchObject([{ type: "tool_start", tool_name: "mcp/probe/echo", tool_input: { text: "한글" } }, { type: "tool_result", result: "답", is_error: false }]);
-    expect(events[0]?.tool_use_id).toBe(events[1]?.tool_use_id);
-    expect(events[0]?.tool_use_id).not.toBe(second.accept(call)[0]?.tool_use_id);
+    expect(field(events[0], "tool_use_id")).toBe(field(events[1], "tool_use_id"));
+    expect(field(events[0], "tool_use_id")).not.toBe(field(second.accept(call)[0], "tool_use_id"));
     expect(first.accept(call)).toEqual([]);
     const active = step(4, { state: "ACTIVE", step_type: "tool", tool_info: { name: "view_file", parameters: {} } });
     expect(first.accept(active)).toHaveLength(1);

@@ -60,7 +60,7 @@ vi.mock("node:os", async importOriginal => ({ ...await importOriginal<typeof imp
 const agents = join(testHome, ".gemini/config/agents");
 const definitionFile = () => join(agents, readdirSync(agents).find(name => name.startsWith("soulstream-"))!);
 const input = { agentSessionId: "test-session", prompt: "요청", systemPrompt: "지시", model: "normal" };
-async function collect(engine: AntigravityEngineAdapter, params = input) {
+async function collect(engine: AntigravityEngineAdapter, params: Parameters<AntigravityEngineAdapter["execute"]>[0] = input) {
   const events = []; for await (const event of engine.execute(params)) events.push(event); return events;
 }
 
@@ -116,7 +116,7 @@ describe("AntigravityEngineAdapter", () => {
       const complete = events.find(event => event.type === "complete");
       expect(complete).toBeDefined();
       if (complete?.type !== "complete") throw new Error("Fixture did not complete");
-      expect(JSON.parse(complete.result!)).toEqual({
+      expect(JSON.parse(String(complete.result))).toEqual({
         SCRATCH_WORKSPACE_DIR: directory,
         SOULSTREAM_AGENT_ID: "test",
         AGENT_COMMON_FILES_DIR: "/fixture/worker-common",

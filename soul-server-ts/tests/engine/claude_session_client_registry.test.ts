@@ -42,8 +42,8 @@ describe("ClaudeSessionClientRegistry", () => {
     vi.useFakeTimers();
     try {
       const close = vi.fn().mockResolvedValue(undefined);
-      const activity = {
-        foregroundPhase: "drain" as const,
+      const activity: NonNullable<ReturnType<NonNullable<ClaudeClient["persistentRuntimeActivity"]>>> = {
+        foregroundPhase: "drain",
         queryLifecycle: "open" as const,
         backgroundTaskCount: 1,
         pendingInputRequestCount: 0,

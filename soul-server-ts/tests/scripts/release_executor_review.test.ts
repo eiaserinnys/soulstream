@@ -167,7 +167,7 @@ describe.sequential("database release review regressions", () => {
     const archives = (await readdir(directory))
       .filter((name) => name.startsWith("database-release.archive-"));
     expect(archives).toHaveLength(1);
-    expect(await readFile(join(directory, archives[0]), "utf8")).toBe(terminalBytes);
+    expect(await readFile(join(directory, archives[0]!), "utf8")).toBe(terminalBytes);
     expect(JSON.parse(terminalBytes)).toMatchObject({
       request_id: "request-first",
       target_head: "2".repeat(40),
@@ -237,7 +237,7 @@ describe.sequential("database release review regressions", () => {
     const archives = (await readdir(directory))
       .filter((name) => name.startsWith("database-release.archive-"));
     expect(archives).toHaveLength(1);
-    expect(await readFile(join(directory, archives[0]), "utf8")).toBe(firstTerminalBytes);
+    expect(await readFile(join(directory, archives[0]!), "utf8")).toBe(firstTerminalBytes);
   });
 
   it("uses revision CAS and monotonic expected states for concurrent transitions", async () => {
@@ -449,7 +449,7 @@ describe.sequential("database release review regressions", () => {
         (value.quiescence_receipt as Record<string, unknown>).stopped_services = ["other"];
       });
     }],
-    ["quiesced service set", async (env: ReturnType<typeof environment>) => {
+    ["quiesced service set", async (env: Awaited<ReturnType<typeof writeHanielEvidence>>) => {
       await mutateJson(env.HANIEL_QUIESCENCE_RECEIPT, (value) => {
         value.quiesced_services = ["other"];
       });

@@ -48,7 +48,7 @@ describe("OpenCode DeepSeek live contract", () => {
         agentSessionId: "opencode-live-session-398",
         model: "opencode/deepseek-v4.1-flash-free",
         prompt: "Repeat the read marker and instruction marker from our previous turn.",
-        resumeSessionId: sessionId?.type === "session" ? sessionId.session_id : undefined,
+        resumeSessionId: sessionId?.type === "session" ? sessionId.session_id as string : undefined,
       });
       const resumedText = resumed.filter((event) => event.type === "assistant_message")
         .map((event) => event.type === "assistant_message" ? event.content : "").join("\n");

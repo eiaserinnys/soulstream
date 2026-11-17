@@ -39,7 +39,7 @@ describe("ClaudeRuntimeCommands", () => {
         status: "ok",
       })),
     };
-    const commands = new ClaudeRuntimeCommands(taskManager);
+    const commands = new ClaudeRuntimeCommands(taskManager as unknown as ConstructorParameters<typeof ClaudeRuntimeCommands>[0]);
 
     await expect(
       commands.listTasks({
@@ -201,7 +201,7 @@ describe("ClaudeRuntimeCommands", () => {
     const deleteSchedule = vi.fn();
     const commands = new ClaudeRuntimeCommands(
       {
-        listClaudeRuntimeTasks,
+        listClaudeRuntimeTasks: listClaudeRuntimeTasks as unknown as import("../../src/task/task_manager.js").TaskManager["listClaudeRuntimeTasks"],
         getClaudeRuntimeTaskOutput,
         stopClaudeRuntimeTask,
         backgroundClaudeRuntimeTasks,

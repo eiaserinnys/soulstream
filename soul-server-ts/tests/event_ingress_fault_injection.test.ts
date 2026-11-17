@@ -8,7 +8,7 @@ import {
   EVENT_INGRESS_MAX_BATCH_FRAME_BYTES,
   EVENT_INGRESS_MAX_SINGLE_EVENT_FRAME_BYTES,
 } from "../../orch-server-ts/src/node/event_ingress_types.js";
-import peakFixture from "./fixtures/event_ingress_peak_fixture.json";
+import peakFixture from "./fixtures/event_ingress_peak_fixture.json" with { type: "json" };
 import {
   EventIngressTestHarness,
   drainOutbox,

@@ -98,7 +98,7 @@ describe("database release CLI and direct writer boundaries", () => {
     await expect(runDatabaseReleaseCli(async (
       _command: string,
       options: { env: Record<string, string> },
-    ) => ({ affected_services: JSON.parse(options.env.HANIEL_DATABASE_AFFECTED_SERVICES) }), {
+    ) => ({ affected_services: JSON.parse(options.env.HANIEL_DATABASE_AFFECTED_SERVICES!) }), {
       argv: [
         "probe", "--manifest", CENTRAL_MANIFEST,
         "--database-contract", CENTRAL_CONTRACT,
@@ -107,7 +107,7 @@ describe("database release CLI and direct writer boundaries", () => {
       stdout: () => undefined,
       stderr: () => undefined,
     })).resolves.toBe(0);
-    expect(JSON.parse(env.HANIEL_DATABASE_AFFECTED_SERVICES)).toEqual([
+    expect(JSON.parse(env.HANIEL_DATABASE_AFFECTED_SERVICES!)).toEqual([
       "soulstream-orch-server",
       "soulstream-soul-server-ts",
     ]);
@@ -137,7 +137,7 @@ describe("database release CLI and direct writer boundaries", () => {
     expect(code).toBe(1);
     expect(invoked).toBe(0);
     expect(errors).toHaveLength(1);
-    expect(JSON.parse(errors[0])).toMatchObject({
+    expect(JSON.parse(errors[0]!)).toMatchObject({
       ok: false,
       error: { code: "JOURNAL_GATE_FAILED" },
     });
@@ -180,8 +180,8 @@ describe("database release CLI and direct writer boundaries", () => {
       });
       expect(code).toBe(outcome === "success" ? 0 : 1);
       expect(lines).toHaveLength(1);
-      expect(() => JSON.parse(lines[0])).not.toThrow();
-      expect(Buffer.byteLength(lines[0], "utf8")).toBeLessThanOrEqual(32_768);
+      expect(() => JSON.parse(lines[0]!)).not.toThrow();
+      expect(Buffer.byteLength(lines[0]!, "utf8")).toBeLessThanOrEqual(32_768);
       expect(lines[0]).not.toContain(secret);
       expect(lines[0]).not.toContain(identity);
       expect(lines[0]).not.toContain(`user:${secret}@`);
@@ -209,8 +209,8 @@ describe("database release CLI and direct writer boundaries", () => {
 
     expect(code).toBe(0);
     expect(lines).toHaveLength(1);
-    expect(() => JSON.parse(lines[0])).not.toThrow();
-    expect(Buffer.byteLength(lines[0], "utf8")).toBeLessThanOrEqual(32_768);
+    expect(() => JSON.parse(lines[0]!)).not.toThrow();
+    expect(Buffer.byteLength(lines[0]!, "utf8")).toBeLessThanOrEqual(32_768);
   });
 
   it.each(["apply", "initialize", "fresh-install", "recover"])(

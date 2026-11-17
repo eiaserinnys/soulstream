@@ -187,7 +187,7 @@ describe("OpenCode session configuration", () => {
       opencodeMcpToolAllowlist: allowlist,
       resolvedMcpServers: [
         { type: "streamable_http", name: "soulstream", url: "https://obsolete.example/mcp", headers: { Authorization: "header-secret" } },
-        { type: "streamable_http", name: "serendipity", headers: { Authorization: "must-not-be-read" } },
+        { type: "streamable_http", name: "serendipity", headers: { Authorization: "must-not-be-read" } } as unknown as import("../../../src/mcp_config_service.js").ResolvedMcpServer,
         { type: "streamable_http", name: "exa", url: "https://exa.example/mcp" },
         { type: "stdio", name: "atom", command: "node", args: ["atom.mjs"] },
       ],

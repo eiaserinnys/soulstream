@@ -11,7 +11,7 @@ describe("Claude session engine child exit tracking", () => {
       args: ["-e", "process.stderr.write('stderr-tail'); setTimeout(() => {}, 10);"],
       cwd: process.cwd(),
       env: process.env,
-      signal: undefined,
+      signal: new AbortController().signal,
     }, pino({ level: "silent" }), (closed) => { childClosed = closed; });
 
     expect(childClosed).toBeDefined();

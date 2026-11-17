@@ -314,7 +314,7 @@ describe("RunnerSqliteEventOutbox", () => {
       protocolVersion: 1,
       channel: "event",
       kind: "engine_event",
-      payload: input.payload as Record<string, unknown>,
+      payload: input.payload as Extract<import("../src/runner/frame_protocol.js").RunnerEventFrame, { kind: "engine_event" }>["payload"],
     }, rotation);
 
     await expect(outbox.readBootstrap()).resolves.toMatchObject({
@@ -1236,7 +1236,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const legacyRecord = await legacyOutbox.append(legacyDurable.appendInput);
     expect(Buffer.byteLength(JSON.stringify(legacyRecord.payload), "utf8"))
       .toBeLessThan(2 * 1024 * 1024);
-    expect(legacyRecord.payload.truncation).toMatchObject({ attachment: null });
+    expect((legacyRecord.payload as Record<string, unknown>).truncation).toMatchObject({ attachment: null });
     legacyOutbox.close();
 
     const records = [];
@@ -1251,13 +1251,13 @@ describe("RunnerSqliteEventOutbox", () => {
       "assistant_message",
       "complete",
     ]);
-    const storedResult = records[1]?.payload.result as {
+    const storedResult = (records[1]?.payload as Record<string, unknown> | undefined)?.result as {
       content: Array<{ text: string }>;
     };
     expect(Buffer.byteLength(storedResult.content[0]!.text, "utf8"))
       .toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
     expect(storedResult.content[0]!.text.endsWith("\n[잘림]")).toBe(true);
-    expect(records[1]?.payload.truncation).toMatchObject({ attachment: null });
+    expect((records[1]?.payload as Record<string, unknown> | undefined)?.truncation).toMatchObject({ attachment: null });
     outbox.close();
 
     const firstReader = await RunnerSqliteEventOutbox.open(path);
@@ -1629,7 +1629,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
 
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     expect(sent[0]).toMatchObject({
@@ -1691,7 +1691,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     try {
       const first = await writer.append(eventInput("one"));
-      pump.connect(async (batch) => sent.push(batch));
+      pump.connect(async (batch) => { sent.push(batch); });
       await waitFor(() => sent.length === 1);
       const acknowledged = pump.waitForAcknowledgement(first);
 
@@ -1726,7 +1726,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const sent: EventOutboxBatch[] = [];
     const onError = vi.fn();
     const pump = new EventOutboxPump(consumer, onError);
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await pump.drainScheduled();
 
     const writer = await RunnerSqliteEventOutbox.create(path);
@@ -1749,7 +1749,7 @@ describe("RunnerSqliteEventOutbox", () => {
   it("journals only an outbox reference and reconstructs the durable frame from the event ledger", async () => {
     const outbox = await createOutbox();
     const frame = {
-      protocolVersion: 1,
+      protocolVersion: 1 as const,
       channel: "event" as const,
       kind: "engine_event" as const,
       payload: { type: "assistant_message", content: "one" },

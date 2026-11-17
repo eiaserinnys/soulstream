@@ -30,7 +30,6 @@ import {
   collectSse,
   makeHarness,
   runOptions,
-  sdkAssistantText,
   sdkCommandLifecycle,
   sdkInit,
   sdkInterruptedResult,
@@ -38,7 +37,7 @@ import {
   sdkTaskNotificationInput,
   sdkTaskNotificationResult,
 } from "./claude_sdk_persistent_test_harness.js";
-import contextUsageFixture from "./claude_context_usage_after_compact.fixture.json";
+import contextUsageFixture from "./claude_context_usage_after_compact.fixture.json" with { type: "json" };
 
 const silentLogger = pino({ level: "silent" });
 
@@ -489,7 +488,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
         resumeSessionId: request.sessionId,
       },
     }));
-    const onAccountQueryClosed = vi.fn(async () => undefined);
+    const onAccountQueryClosed = vi.fn(async (_reason?: import("../../src/engine/claude_session_runtime.js").ClaudeRuntimeCloseReason) => undefined);
     const output = collect(client.run({
       ...runOptions("one-shot original"),
       inputUuid: "one-shot-original-id",
@@ -855,7 +854,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
         model: "claude-sonnet-4.5",
         trackChildExit: true,
         env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
-        onAccountQueryClosed: async () => events.push("account-release"),
+        onAccountQueryClosed: async () => { events.push("account-release"); },
       }, abortSignal())) {
         if (event.type === "error" && event.fatal) {
           sawFatalEvent = true;

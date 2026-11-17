@@ -40,3 +40,27 @@ export function serializeDatabaseReleaseResult(
   value: unknown,
   env?: NodeJS.ProcessEnv,
 ): string;
+export { DATABASE_RELEASE_SCHEMA_VERSION, databaseReleaseJournalPath, inspectUserObjectInventory, readDatabaseReleaseJournal } from "./database-release-journal.mjs";
+export function classifyDatabaseOperation(inventory: import("./database-release-journal.mjs").DatabaseInventory): "fresh_install" | "upgrade";
+export interface DatabaseReleaseOptions {
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  sql?: import("postgres").Sql;
+  inventoryRead?: () => Promise<import("./database-release-journal.mjs").DatabaseInventory>;
+  planRead?: () => Promise<import("./database-release-journal.mjs").DatabasePlan>;
+  migrationRun?: (mode: string, options: { env: NodeJS.ProcessEnv; sql?: import("postgres").Sql | null }) => Promise<unknown>;
+  subphase?: string;
+  childCommand?: string[];
+  manifestMigration?: unknown;
+  afterApplyCommit?: () => void | Promise<void>;
+  subphaseRun?: (command: string[], env: NodeJS.ProcessEnv, timeoutMs: number) => void | Promise<void>;
+  timeoutMs?: number;
+}
+export interface DatabaseReleaseResult {
+  [key: string]: unknown;
+  journal_path: string | null;
+}
+export function runDatabaseRelease(command: string, options?: DatabaseReleaseOptions): Promise<DatabaseReleaseResult>;
+export function planDatabaseRelease(options: DatabaseReleaseOptions & { expectedOperation: string }): Promise<DatabaseReleaseResult>;
+export function executeDatabaseReleasePhase(phase: "preflight", options?: DatabaseReleaseOptions): Promise<DatabaseReleaseResult & { journal_path: string }>;
+export function executeDatabaseReleasePhase(phase: string, options?: DatabaseReleaseOptions): Promise<DatabaseReleaseResult>;

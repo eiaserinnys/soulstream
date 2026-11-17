@@ -28,6 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-05-17T01:00:00Z"),
     lastEventId: 0,
     lastReadEventId: 0,
+    interventionQueue: [],
     profileId: "codex-default",
     ...overrides,
   };
@@ -46,7 +47,7 @@ describe("emitSessionCreated", () => {
     await b.emitSessionCreated(task, "folder-1");
 
     expect(send).toHaveBeenCalledTimes(1);
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    const msg = send.mock.calls[0]![0] as Record<string, unknown>;
     expect(msg.type).toBe("session_created");
     expect(msg.folder_id).toBe("folder-1");
     expect(msg.folderId).toBe("folder-1");
@@ -83,7 +84,7 @@ describe("emitSessionCreated", () => {
       makeTask({ profileId: undefined }),
       null,
     );
-    const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
+    const session = (send.mock.calls[0]![0] as Record<string, unknown>).session as Record<string, unknown>;
     expect(session.agentId).toBeNull();
     expect(session.agentName).toBeNull();
     expect(session.agentPortraitUrl).toBeNull();
@@ -103,7 +104,7 @@ describe("emitSessionCreated", () => {
       agentProfileHasDbPortrait: true,
     }), null);
 
-    const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
+    const session = (send.mock.calls[0]![0] as Record<string, unknown>).session as Record<string, unknown>;
     expect(session.agentName).toBe("DB Codex");
     expect(session.agentPortraitUrl).toBe(
       "/api/nodes/eias-shopping-ts/agents/codex-default/portrait",
@@ -119,7 +120,7 @@ describe("emitSessionCreated", () => {
       makeTask({ profileId: "unknown-profile" }),
       null,
     );
-    const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
+    const session = (send.mock.calls[0]![0] as Record<string, unknown>).session as Record<string, unknown>;
     expect(session.agentId).toBe("unknown-profile");
     expect(session.agentName).toBeNull();
     expect(session.backend).toBe("claude");
@@ -129,7 +130,7 @@ describe("emitSessionCreated", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     await b.emitSessionCreated(makeTask(), null);
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    const msg = send.mock.calls[0]![0] as Record<string, unknown>;
     expect(msg.caller_source).toBeNull();
     expect(msg.folder_id).toBeNull();
     expect(msg.folderId).toBeNull();
@@ -158,7 +159,7 @@ describe("emitSessionUpdated", () => {
     });
     await b.emitSessionUpdated(task);
 
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    const msg = send.mock.calls[0]![0] as Record<string, unknown>;
     expect(msg).toMatchObject({
       type: "session_updated",
       agent_session_id: "sess-1",
@@ -181,7 +182,7 @@ describe("emitSessionUpdated", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     await b.emitSessionUpdated(makeTask());
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    const msg = send.mock.calls[0]![0] as Record<string, unknown>;
     expect(typeof msg.updated_at).toBe("string");
     // valid ISO string
     expect(Number.isNaN(new Date(msg.updated_at as string).getTime())).toBe(false);
@@ -191,7 +192,7 @@ describe("emitSessionUpdated", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     await b.emitSessionUpdated(makeTask());
-    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    const msg = send.mock.calls[0]![0] as Record<string, unknown>;
     expect(msg.caller_source).toBeNull();
     expect(msg.userName).toBeNull();
     expect(msg.userPortraitUrl).toBeNull();
@@ -259,6 +260,7 @@ describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
       name: "F1",
       sortOrder: 0,
       settings: {},
+      parentFolderId: null,
       projectPageId: "page-f1",
     }];
     await b.emitCatalogUpdated(folders, {}, {});
