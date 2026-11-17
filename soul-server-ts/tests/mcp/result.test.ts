@@ -19,7 +19,7 @@ describe("jsonResult", () => {
 
   it("배열 응답도 그대로 직렬화", () => {
     const result = jsonResult([1, 2, 3]);
-    expect(result.content[0].type).toBe("text");
+    expect(result.content[0]?.type).toBe("text");
     expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual([
       1, 2, 3,
     ]);

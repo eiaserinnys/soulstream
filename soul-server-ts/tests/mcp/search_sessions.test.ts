@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -191,13 +192,13 @@ describe("search_sessions", () => {
     const { registered } = register();
     const schema = registered.get("search_sessions")!.config.inputSchema;
 
-    expect(schema.query.safeParse("").success).toBe(false);
-    expect(schema.query.safeParse("x".repeat(501)).success).toBe(false);
-    expect(schema.top_k.safeParse(0).success).toBe(false);
-    expect(schema.top_k.safeParse(31).success).toBe(false);
-    expect(schema.top_k.safeParse(1.5).success).toBe(false);
-    expect(schema.top_k.parse(undefined)).toBe(10);
-    expect(schema.folder_id.safeParse(undefined).success).toBe(true);
+    expect(required(schema.query).safeParse("").success).toBe(false);
+    expect(required(schema.query).safeParse("x".repeat(501)).success).toBe(false);
+    expect(required(schema.top_k).safeParse(0).success).toBe(false);
+    expect(required(schema.top_k).safeParse(31).success).toBe(false);
+    expect(required(schema.top_k).safeParse(1.5).success).toBe(false);
+    expect(required(schema.top_k).parse(undefined)).toBe(10);
+    expect(required(schema.folder_id).safeParse(undefined).success).toBe(true);
   });
 
   it("returns orch HTTP failures through errorResult", async () => {

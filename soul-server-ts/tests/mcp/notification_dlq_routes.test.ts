@@ -65,7 +65,7 @@ interface DlqHarness {
 const openServers: DlqHarness[] = [];
 
 async function startDlqServer(options: {
-  listImpl?: () => Promise<unknown[]>;
+  listImpl?: () => Promise<SessionDeliveryNotificationOutboxRow[]>;
 } = {}): Promise<DlqHarness> {
   const notifications = {
     listDeadLetters: vi.fn(options.listImpl ?? (async () => [DEAD_LETTER_ROW])),
@@ -181,7 +181,7 @@ describe("notification DLQ routes", () => {
 
 describe("notification DLQ CLI common", () => {
   it("calls the local internal MCP address with the env token", async () => {
-    const fetchMock = vi.fn(async () => new Response(
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ rows: [], row: null }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
@@ -210,7 +210,7 @@ describe("notification DLQ CLI common", () => {
   });
 
   it("derives the internal port from PORT when MCP_INTERNAL_PORT is absent", async () => {
-    const fetchMock = vi.fn(async () => new Response(
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ rows: [] }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));

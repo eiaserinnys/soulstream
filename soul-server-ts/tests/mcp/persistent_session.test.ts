@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import pino from "pino";
@@ -42,6 +43,7 @@ function makeRow(sessionId: string, overrides: Partial<SessionRow> = {}): Sessio
     updated_at: new Date("2026-10-05T09:00:00.000Z"),
     agent_id: "agent-1",
     caller_session_id: null,
+    predecessor_session_id: null,
     away_summary: null,
     termination_reason: "completed_ok",
     termination_detail: null,
@@ -111,10 +113,10 @@ describe("set_session_persistent MCP tool", () => {
         await server.connect(serverTransport);
         await client.connect(clientTransport);
 
-        const enabled = await client.callTool({
+        const enabled = toolResult(await client.callTool({
           name: "set_session_persistent",
           arguments: { session_id: sessionId, enabled: true },
-        });
+        }));
 
         expect(enabled.structuredContent).toEqual({
           session_id: sessionId,
@@ -133,10 +135,10 @@ describe("set_session_persistent MCP tool", () => {
         expect((row.metadata as Array<Record<string, unknown>>)
           .filter((entry) => entry.type === "persistent_session")).toHaveLength(1);
 
-        const added = await client.callTool({
+        const added = toolResult(await client.callTool({
           name: "add_persistent_instruction",
           arguments: { session_id: sessionId, text: "Keep replies concise." },
-        });
+        }));
         expect(added.structuredContent).toMatchObject({
           session_id: sessionId,
           status: "ok",
@@ -145,18 +147,18 @@ describe("set_session_persistent MCP tool", () => {
         expect(added.content[0]).toMatchObject({ text: expect.stringMatching(/^Keep replies concise\./) });
         const instructionId = (added.structuredContent?.instruction as { id: string }).id;
 
-        const listed = await client.callTool({
+        const listed = toolResult(await client.callTool({
           name: "list_persistent_instructions",
           arguments: { session_id: sessionId },
-        });
+        }));
         expect(listed.structuredContent).toMatchObject({
           instructions: [{ id: instructionId, text: "Keep replies concise.", source_turns: [] }],
         });
 
-        const removed = await client.callTool({
+        const removed = toolResult(await client.callTool({
           name: "update_persistent_instruction",
           arguments: { session_id: sessionId, instruction_id: instructionId, status: "removed" },
-        });
+        }));
         expect(removed.structuredContent).toMatchObject({
           status: "ok",
           instruction: { id: instructionId, text: "Keep replies concise.", status: "removed" },
@@ -175,7 +177,7 @@ describe("set_session_persistent MCP tool", () => {
         const sourceInstruction = sourceRule.results[0]?.item;
         expect(sourceInstruction).toBeDefined();
 
-        const sourcesRemoved = await client.callTool({
+        const sourcesRemoved = toolResult(await client.callTool({
           name: "update_persistent_instruction",
           arguments: {
             session_id: sessionId,
@@ -183,7 +185,7 @@ describe("set_session_persistent MCP tool", () => {
             remove_source_turns: ["T11"],
             remove_source_event_ids: [103],
           },
-        });
+        }));
         expect(sourcesRemoved.structuredContent).toMatchObject({
           status: "ok",
           instruction: {
@@ -199,7 +201,7 @@ describe("set_session_persistent MCP tool", () => {
         expect(readPersistentInstructions(row.metadata).find((item) => item.id === sourceInstruction!.id))
           .toMatchObject({ source_turns: ["T10", "T12"], source_event_ids: [101, 102] });
 
-        const emptyRemoval = await client.callTool({
+        const emptyRemoval = toolResult(await client.callTool({
           name: "update_persistent_instruction",
           arguments: {
             session_id: sessionId,
@@ -207,18 +209,18 @@ describe("set_session_persistent MCP tool", () => {
             remove_source_turns: [],
             remove_source_event_ids: [],
           },
-        });
+        }));
         expect(emptyRemoval.structuredContent).toMatchObject({
           status: "ok",
           instruction: { source_turns: ["T10", "T12"], source_event_ids: [101, 102] },
         });
 
         const metadataBeforeRejectedUpdate = row.metadata;
-        const missingUpdate = await client.callTool({
+        const missingUpdate = toolResult(await client.callTool({
           name: "update_persistent_instruction",
           arguments: { session_id: sessionId, instruction_id: sourceInstruction!.id },
-        });
-        const invalidSources = await client.callTool({
+        }));
+        const invalidSources = toolResult(await client.callTool({
           name: "update_persistent_instruction",
           arguments: {
             session_id: sessionId,
@@ -226,7 +228,7 @@ describe("set_session_persistent MCP tool", () => {
             remove_source_turns: ["not-a-turn"],
             remove_source_event_ids: [1.5],
           },
-        });
+        }));
         expect(missingUpdate.isError).toBe(true);
         expect(invalidSources.isError).toBe(true);
         expect(row.metadata).toBe(metadataBeforeRejectedUpdate);
@@ -234,10 +236,10 @@ describe("set_session_persistent MCP tool", () => {
         const hydratedTask = hydrateEvictedTaskFromSessionRow(row, pino({ level: "silent" }));
         expect(hydratedTask?.persistent).toBe(true);
 
-        const disabled = await client.callTool({
+        const disabled = toolResult(await client.callTool({
           name: "set_session_persistent",
           arguments: { session_id: sessionId, enabled: false },
-        });
+        }));
         expect(disabled.structuredContent).toEqual({
           session_id: sessionId,
           persistent: false,
@@ -281,17 +283,17 @@ describe("set_session_persistent MCP tool", () => {
         await server.connect(serverTransport);
         await client.connect(clientTransport);
 
-        const llm = await client.callTool({
+        const llm = toolResult(await client.callTool({
           name: "set_session_persistent",
           arguments: { session_id: llmRow.session_id, enabled: true },
-        });
+        }));
         expect(llm.isError).toBe(true);
         expect(taskManager.getTask(llmRow.session_id)).toBeDefined();
 
-        const otherNode = await client.callTool({
+        const otherNode = toolResult(await client.callTool({
           name: "set_session_persistent",
           arguments: { session_id: otherNodeRow.session_id, enabled: true },
-        });
+        }));
         expect(otherNode.isError).toBe(true);
         expect(otherNode.content.some((item) => item.type === "text" && item.text.includes("owner=node-2")))
           .toBe(true);
@@ -473,6 +475,7 @@ describe("request_session_generation_rollover MCP tool", () => {
           },
         });
 
+        if (!hydratedTask) throw new Error("Expected hydrated task");
         const instructionsBeforeRollover = readPersistentInstructions(hydratedTask.metadata);
         hydratedTask.interventionQueue.push({ text: "continue from checkpoint", user: "test" });
         const active = beginGenerationRolloverIfPending(
@@ -544,7 +547,7 @@ describe("request_session_generation_rollover MCP tool", () => {
         expect(String(checkpoint.item.content)).not.toContain("summary-that-must-be-reset");
         expect(String(checkpoint.item.content)).not.toContain("recent-that-must-be-reset");
 
-        const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+        const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
           record: {} as never,
           eventId: 43,
         }));

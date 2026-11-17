@@ -113,7 +113,8 @@ describe("cluster MCP roundtrip", () => {
       return await withMcpRequestContext(requestContext, () => client.callTool({ name, arguments: args }));
     } finally { await client.close(); await server.close(); }
   }
-  it.each(cases)("preserves %s", async (label, name, args, requestContext = context, fails = false, offline = false) => {
+  it.each(cases.map(([label, name, args, requestContext = context, fails = false, offline = false]) =>
+    [label, name, args, requestContext, fails, offline] as [string, string, Record<string, unknown>, McpRequestContext, boolean, boolean]))("preserves %s", async (label, name, args, requestContext = context, fails = false, offline = false) => {
     fixture.seed(offline);
     const next = await call(name, args, requestContext);
     expect(next.isError === true, JSON.stringify(next)).toBe(fails);

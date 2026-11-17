@@ -1,3 +1,4 @@
+import { toolResult } from "./typecheck-helpers.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -150,13 +151,13 @@ describe("list_sessions", () => {
     const listSessionsSummary = vi.fn(async () => ({ sessions: [], total: 0 }));
     const client = await createClient(makeRuntime({ db: { listSessionsSummary } }));
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "list_sessions",
       arguments: {
         since: "2026-10-05T09:00:00+09:00",
         until: "2026-10-06T09:00:00+09:00",
       },
-    });
+    }));
 
     expect(listSessionsSummary).toHaveBeenCalledWith(expect.objectContaining({
       period: {
@@ -306,10 +307,10 @@ describe("list_session_events", () => {
     });
     const client = await createClient(runtime);
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "list_session_events",
       arguments: { session_id: "sess-1", cursor: 0, limit: 2 },
-    });
+    }));
 
     expect(result.structuredContent).toMatchObject({
       session_id: "sess-1",
@@ -1162,10 +1163,10 @@ describe("search_session_history", () => {
       { "x-soulstream-agent-session-id": "caller-session" },
     );
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "search_session_history",
       arguments: { query: "needle", top_k: 2 },
-    });
+    }));
 
     expect(result.isError).not.toBe(true);
     expect(searchSessionHistory.mock.calls[0]?.[0].limit).toBe(22);
@@ -1175,7 +1176,7 @@ describe("search_session_history", () => {
   });
 
   it("keeps the caller's events when session_ids explicitly includes the caller", async () => {
-    const searchSessionHistory = vi.fn(async () => ({
+    const searchSessionHistory = vi.fn(async (_params: SessionHistorySearchParams) => ({
       events: [{
         id: 1,
         session_id: "caller-session",
@@ -1191,14 +1192,14 @@ describe("search_session_history", () => {
       { "x-soulstream-agent-session-id": "caller-session" },
     );
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "search_session_history",
       arguments: {
         query: "needle",
         session_ids: ["caller-session"],
         top_k: 1,
       },
-    });
+    }));
 
     expect(result.isError).not.toBe(true);
     expect(searchSessionHistory.mock.calls[0]?.[0]).toMatchObject({
@@ -1266,10 +1267,10 @@ describe("search_session_history", () => {
     });
     const client = await createClient(makeRuntime({ searchEvents }));
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "search_session_history",
       arguments: { query: "deadline" },
-    });
+    }));
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).not.toEqual({ results: [] });
@@ -1364,7 +1365,7 @@ describe("search_session_history", () => {
   });
 
   it("adds turn summaries and digest fields only when explicitly requested", async () => {
-    const searchEvents = vi.fn(async () => []);
+    const searchEvents = vi.fn<SessionDB["searchEvents"]>(async () => []);
     const searchSessionDigests = vi.fn(async () => []);
     const client = await createClient(makeRuntime({
       searchEvents,
@@ -1426,10 +1427,10 @@ describe("search_session_history", () => {
       db: { getSessionSearchMetadata },
     }));
 
-    const result = await client.callTool({
+    const result = toolResult(await client.callTool({
       name: "search_session_history",
       arguments: { query: "needle" },
-    });
+    }));
 
     expect(getSessionSearchMetadata).toHaveBeenCalledWith(["s1"]);
     expect(result.structuredContent?.results).toEqual([

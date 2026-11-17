@@ -1,3 +1,4 @@
+import { required } from "./typecheck-helpers.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -105,7 +106,7 @@ describe("advertised MCP tool inventory", () => {
     const registerAttachment = internal.find(tool => tool.name === "register_attachment");
     expect(registerAttachment).toBeDefined();
     expect(registerAttachment!.description ?? "").toContain("attach_session_output");
-    expect(Object.keys(registerAttachment!.inputSchema.properties).sort()).toEqual([
+    expect(Object.keys(required(registerAttachment!.inputSchema.properties)).sort()).toEqual([
       "local_path", "mime_type", "name", "target_scope",
     ]);
     const attachSessionOutput = internal.find(tool => tool.name === "attach_session_output");
@@ -117,7 +118,7 @@ describe("advertised MCP tool inventory", () => {
         additionalProperties: false,
       },
     });
-    expect(Object.keys(attachSessionOutput!.inputSchema.properties)).toEqual(["attachment_ids"]);
+    expect(Object.keys(required(attachSessionOutput!.inputSchema.properties))).toEqual(["attachment_ids"]);
     const resolveAttachment = internal.find(tool => tool.name === "resolve_attachment");
     expect(resolveAttachment).toMatchObject({
       name: "resolve_attachment",
@@ -128,12 +129,12 @@ describe("advertised MCP tool inventory", () => {
         additionalProperties: false,
       },
     });
-    expect(Object.keys(resolveAttachment!.inputSchema.properties)).toEqual(["attachment_id"]);
+    expect(Object.keys(required(resolveAttachment!.inputSchema.properties))).toEqual(["attachment_id"]);
     for (const name of ["mode", "delivery_id", "credential"])
-      expect(resolveAttachment!.inputSchema.properties).not.toHaveProperty(name);
+      expect(required(resolveAttachment!.inputSchema.properties)).not.toHaveProperty(name);
 
     const reportItem = internal.find(tool => tool.name === "report_card_item")!;
-    const evidenceVariants = (reportItem.inputSchema.properties.evidence as {
+    const evidenceVariants = (required(reportItem.inputSchema.properties).evidence as {
       items: { anyOf: Array<{
         additionalProperties?: boolean;
         properties: Record<string, unknown>;
@@ -159,7 +160,7 @@ describe("advertised MCP tool inventory", () => {
     ]);
     const observation = internal.find(tool => tool.name === "observe_node_services");
     expect(observation).toBeDefined();
-    expect(Object.keys(observation!.inputSchema.properties).sort()).toEqual([
+    expect(Object.keys(required(observation!.inputSchema.properties)).sort()).toEqual([
       "include_logs", "include_pending", "lines", "service",
     ]);
     expect(internal).toHaveLength(146);

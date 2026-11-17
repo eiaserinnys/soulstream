@@ -119,7 +119,7 @@ describe("MCP transport lifecycle (raw HTTP)", () => {
       }),
     });
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = await res.json() as { error?: unknown };
     expect(body.error).toBeDefined();
   });
 
@@ -267,7 +267,7 @@ describe("MCP bearer auth guard", () => {
 it("logs the authenticated agent session and MCP tool name", async () => {
   const info = vi.fn();
   const logger = { ...createSilentLogger(), info } as McpRuntime["logger"];
-  logger.child = () => logger;
+  logger.child = (() => logger) as unknown as typeof logger.child;
   const sessionId = "11111111-1111-4111-8111-111111111111";
   const server = await buildInternalMcpServer({ logger, statelessTransport: true, runtime: { ...makeRuntime(), logger }, path: "/mcp/internal", auth: { requireAuth: true, bearerToken: "secret-token", allowedHosts: ["127.0.0.1"] } });
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
