@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Logger } from "pino";
 import { antigravityEnvironment } from "../antigravity_env.js";
+import { terminateWindowsProcessTree } from "../../process/terminate_windows_process_tree.js";
 import {
   readDarwinProcessTable,
   type DarwinProcessRow,
@@ -107,7 +108,10 @@ export function launchAntigravityProcess(options: {
   executablePath: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; input: string;
   logger: Pick<Logger, "warn">;
   exitGraceMs?: number;
+  platform?: NodeJS.Platform;
+  terminateProcessTree?: (pid: number) => Promise<void>;
 }) {
+  const platform = options.platform ?? process.platform;
   const child = spawn(options.executablePath, options.args, {
     cwd: options.cwd, env: antigravityEnvironment(options.env),
     detached: true, stdio: ["pipe", "pipe", "pipe"],
@@ -120,6 +124,7 @@ export function launchAntigravityProcess(options: {
   let forcedAfterResult = false;
   let exitGraceTimer: ReturnType<typeof setTimeout> | undefined;
   let descendants: DescendantIdentity[] = [];
+  let termination: Promise<void> | undefined;
   const lines = createInterface({ input: child.stdout });
   const iterator = lines[Symbol.asyncIterator]();
   // Do not retain or log stderr: diagnostics may include credentials and input.
@@ -150,6 +155,11 @@ export function launchAntigravityProcess(options: {
     exitGraceTimer = setTimeout(() => {
       exitGraceTimer = undefined;
       if (closed || !child.pid) return;
+      if (platform === "win32") {
+        if (sawResult) forcedAfterResult = true;
+        terminateWindowsTree(child.pid);
+        return;
+      }
       descendants = snapshotDescendants(child.pid);
       try {
         process.kill(-child.pid, "SIGKILL");
@@ -161,10 +171,16 @@ export function launchAntigravityProcess(options: {
       }
     }, options.exitGraceMs ?? 15_000);
   }
+  function terminateWindowsTree(pid: number): void {
+    termination = (options.terminateProcessTree ?? terminateWindowsProcessTree)(pid).catch(() => {
+      if (!sawResult) failure ??= "Antigravity process tree termination failed";
+    });
+  }
   const done = new Promise<AntigravityExit>((resolve) => {
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       closed = true;
       clearExitGraceTimer();
+      await termination;
       try {
         const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
         if (terminatedProcessCount > 0) options.logger.warn(
@@ -179,6 +195,11 @@ export function launchAntigravityProcess(options: {
   });
   function signalGroup(armGraceAfterInterrupt = false): boolean {
     if (closed || !child.pid) return false;
+    if (platform === "win32") {
+      terminateWindowsTree(child.pid);
+      if (armGraceAfterInterrupt) armExitGraceTimer();
+      return true;
+    }
     descendants = snapshotDescendants(child.pid);
     try {
       process.kill(-child.pid, "SIGINT");

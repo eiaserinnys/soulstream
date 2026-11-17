@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { createHash } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -28,7 +29,12 @@ export function splitAntigravityGatewayToolName(name: string): { server: string;
 }
 
 export function antigravityGatewayServerName(agentId: string): string {
-  return `profile-${agentId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+  const slug = agentId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const original = `profile-${slug}`;
+  if (original.length <= 16) return original;
+  const prefix = slug.slice(0, 7).replace(/-+$/, "");
+  const hash = createHash("sha256").update(slug).digest("hex").slice(0, 6);
+  return `p-${prefix}-${hash}`;
 }
 
 export function parseAntigravityMcpGatewayConfig(raw: string): AntigravityMcpGatewayUpstream[] {

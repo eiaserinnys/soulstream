@@ -28,7 +28,7 @@ describe("Antigravity gateway definition", () => {
     expect(parsed.tools).toEqual([...ANTIGRAVITY_AGENT_TOOLS]);
     expect(parsed.mcpServers).toEqual([
       { name: "soulstream", url: "http://127.0.0.1:4206/mcp/internal", headers: { Authorization: "fixture-secret", "x-soulstream-agent-session-id": "session-test" } },
-      { name: "profile-test-agent", ...launch, env: { SOULSTREAM_ANTIGRAVITY_MCP_GATEWAY_CONFIG: base.gatewayConfigPath } },
+      { name: "p-test-ag-9bcb1d", ...launch, env: { SOULSTREAM_ANTIGRAVITY_MCP_GATEWAY_CONFIG: base.gatewayConfigPath } },
     ]);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     await definition.remove();
@@ -89,7 +89,7 @@ describe("Antigravity gateway definition", () => {
     const parsed = frontmatter(join(definition.directory, `${definition.name}.md`));
     expect(parsed.mcpServers).toEqual([
       { name: " soulstream ", url: "http://127.0.0.1:4206/mcp/internal", headers: { Authorization: "fixture-secret", "x-soulstream-agent-session-id": "session-test" } },
-      { name: "profile-test-agent", ...launch, env: { SOULSTREAM_ANTIGRAVITY_MCP_GATEWAY_CONFIG: base.gatewayConfigPath } },
+      { name: "p-test-ag-9bcb1d", ...launch, env: { SOULSTREAM_ANTIGRAVITY_MCP_GATEWAY_CONFIG: base.gatewayConfigPath } },
     ]);
     logger.warn.mockClear();
     expect(antigravityMcpGatewayUpstreams({ resolvedMcpServers: sseServers, logger })).toEqual([]);

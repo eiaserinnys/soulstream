@@ -26,10 +26,26 @@ describe("Antigravity MCP gateway", () => {
       JSON.stringify({ version: 1, servers: [{ name: "", upstream: config.servers[0]!.upstream }] }),
       JSON.stringify({ version: 1, servers: [{ name: "x", upstream: { type: "stdio" } }] }),
     ]) expect(() => parseAntigravityMcpGatewayConfig(invalid)).toThrow();
-    expect(antigravityGatewayServerName("Test_Agent")).toBe("profile-test-agent");
+    expect(antigravityGatewayServerName("Test_Agent")).toBe("p-test-ag-9bcb1d");
     expect(antigravityGatewayToolName("alpha", "x__y")).toBe("alpha__x__y");
     expect(splitAntigravityGatewayToolName("alpha__x__y")).toEqual({ server: "alpha", tool: "x__y" });
     for (const invalid of ["x", "__x", "x__"]) expect(splitAntigravityGatewayToolName(invalid)).toBeUndefined();
+  });
+
+  it("keeps short names and deterministically shortens long names within the CLI limit", () => {
+    const short = ["utonium", "keke"];
+    const long = ["seosoyoung", "seosoyoung-pas", "writer-seosoyoung-lite", "roselin-reader", "selaphiel"];
+    for (const id of short) expect(antigravityGatewayServerName(id)).toBe(`profile-${id}`);
+    const names = long.map(antigravityGatewayServerName);
+    expect(new Set(names).size).toBe(long.length);
+    for (const [index, id] of long.entries()) {
+      expect(antigravityGatewayServerName(id)).toBe(names[index]);
+      expect(names[index]!.length).toBeLessThanOrEqual(16);
+    }
+    for (const id of [...short, ...long]) {
+      expect(`mcp_${antigravityGatewayServerName(id)}_arbor__arbor_appstore_data_list_collections`.length)
+        .toBeLessThanOrEqual(64);
+    }
   });
 
   it("lists paginated stdio tools, sanitizes and routes calls despite one failed upstream", async () => {
