@@ -15,6 +15,11 @@ import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import {
+  collectEnvSecretValues,
+  collectMcpServerSecretValues,
+  registerSecretValueSource,
+} from "./secret_masker.js";
+import {
   ModelCatalog,
   assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
@@ -118,6 +123,10 @@ async function main(): Promise<void> {
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     processEnv: process.env,
   });
+  registerSecretValueSource("host", () => [
+    ...collectMcpServerSecretValues(mcpConfigService.listResolvedRegistryServers()),
+    ...collectEnvSecretValues(process.env),
+  ]);
   let agentRegistry;
   try {
     agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH, {
