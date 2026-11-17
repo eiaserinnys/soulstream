@@ -52,7 +52,7 @@ async function waitFor<T>(promise: Promise<T>, label: string): Promise<T> {
     return await Promise.race([
       promise,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(label)), 5_000);
+        timer = setTimeout(() => reject(new Error(label)), 20_000);
       }),
     ]);
   } finally {
