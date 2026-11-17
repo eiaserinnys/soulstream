@@ -9,7 +9,7 @@ import { isDashboardFallbackRequest } from "../dashboard/dashboard_serving.js";
 import type { NodeCredentialResolver, NodePrincipal } from "../node_credentials/types.js";
 import { oauthScopeForRoute, requireOAuthScope, type OAuthResourceAccess } from "../oauth/oauth_access.js";
 import { isNodeCredentialRouteAllowed } from "./node_credential_route_allowlist.js";
-import { requestLogPath } from "./production_logging.js";
+import { requestLogPath, setAuthenticatedLogNodeId } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
   readonly resolveTokenAccess: AuthTokenResolver;
@@ -57,6 +57,7 @@ export function registerProductionAuthGuard(
     // inline (card orchestration, MCP host, attachments, host transports) are
     // covered too.
     const nodePrincipal = resolveNodeCredentialPrincipal(request, options);
+    if (nodePrincipal !== null) setAuthenticatedLogNodeId(request, nodePrincipal.node_id);
     if (
       nodePrincipal !== null &&
       !isNodeCredentialRouteAllowed(requestRouteIdentity(request))

@@ -101,6 +101,13 @@ export function registerMcpRoutes(
       });
       return undefined;
     }
+    const body = req.body as { method?: unknown; params?: { name?: unknown } } | undefined;
+    const agentSessionId = requestContext(resolution.principal, req).callerSessionId;
+    req.log.info({
+      ...(agentSessionId ? { agentSessionId } : {}),
+      ...(typeof body?.method === "string" ? { method: body.method } : {}),
+      ...(typeof body?.params?.name === "string" ? { toolName: body.params.name } : {}),
+    }, "MCP request");
     return resolution;
   };
 

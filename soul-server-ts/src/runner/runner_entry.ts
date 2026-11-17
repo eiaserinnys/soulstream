@@ -68,6 +68,7 @@ async function runAntigravityMcpProxyMode(): Promise<void> {
 }
 
 async function runSessionRunner(): Promise<void> {
+  Error.stackTraceLimit = 50;
   const configPath = readConfigArgument(process.argv.slice(2));
   const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
   const config = parseRunnerChildConfig(parsed);

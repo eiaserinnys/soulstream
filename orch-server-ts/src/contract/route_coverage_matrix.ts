@@ -2,6 +2,7 @@ import { conversationRouteAuthRequirements } from "../conversation/conversation_
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
 import { oauthRouteAuthRequirements } from "../oauth/oauth_routes.js";
 import { mcpHostRouteAuthRequirements } from "../mcp/mcp_host_routes.js";
+import { scheduleHostRouteAuthRequirements } from "../schedule/schedule_host_route.js";
 import { cardOrchestrationRouteAuthRequirements } from "../cards/card_orchestration_routes.js";
 import { cardOrchestrationDecisionRouteAuthRequirements } from "../cards/card_orchestration_decision_routes.js";
 import { r2SettingsRouteAuthRequirements } from "../admin/r2_settings_routes.js";
@@ -59,6 +60,7 @@ export const routeCoverageOwners = [
   { owner: "oauth", authRequirements: oauthRouteAuthRequirements },
   { owner: "owned.agents", authRequirements: ownedAgentRouteAuthRequirements },
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
+  { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
@@ -148,6 +150,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/settings/card-orchestration",
   "PUT /api/settings/card-orchestration",
   "POST /api/card-orchestration/host/{operation}",
+  "POST /api/schedules/host/{operation}",
   "POST /api/card-orchestration/decision/authorize",
   "POST /api/card-orchestration/worker/authorize",
   "WEBSOCKET /ws/node/control",

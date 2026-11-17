@@ -7,6 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { buildInternalMcpServer, buildServer } from "../../src/server.js";
+import { createFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
@@ -261,6 +262,29 @@ describe("MCP bearer auth guard", () => {
     expect(res.status).toBe(200);
     await res.text();
   });
+});
+
+it("logs the authenticated agent session and MCP tool name", async () => {
+  const info = vi.fn();
+  const logger = { ...createSilentLogger(), info } as McpRuntime["logger"];
+  logger.child = () => logger;
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const server = await buildInternalMcpServer({ logger, statelessTransport: true, runtime: { ...makeRuntime(), logger }, path: "/mcp/internal", auth: { requireAuth: true, bearerToken: "secret-token", allowedHosts: ["127.0.0.1"] } });
+  const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
+  try {
+    const response = await fetch(`${baseUrl}/mcp/internal`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${createFullSessionMcpToken(sessionId, "secret-token")}`, "x-soulstream-agent-session-id": "wrong-session" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "example_tool", arguments: {} } }) });
+    await response.text();
+    const serviceResponse = await fetch(`${baseUrl}/mcp/internal`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer secret-token", "x-soulstream-agent-session-id": "service-session" }, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }) });
+    await serviceResponse.text();
+    const records = info.mock.calls.filter((call) => call[1] === "MCP request").map((call) => call[0]);
+    expect(records).toEqual([
+      expect.objectContaining({ agentSessionId: sessionId, method: "tools/call", toolName: "example_tool" }),
+      expect.objectContaining({ agentSessionId: "service-session", method: "tools/list" }),
+    ]);
+  } finally {
+    if (server.closeMcp) await server.closeMcp();
+    await server.close();
+  }
 });
 
 function initialize(baseUrl: string, origin?: string): Promise<Response> {

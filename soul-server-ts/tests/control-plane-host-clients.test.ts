@@ -21,6 +21,17 @@ afterEach(() => {
 });
 
 describe("worker control-plane host clients", () => {
+  it("logs the actual UTF-8 request size and session on a 413", async () => {
+    const warn = vi.fn();
+    let sentBody = "";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      sentBody = String(init?.body);
+      return new Response("too large", { status: 413 });
+    }));
+    const transport = new PersistenceHostTransport({ orch, logger: { info: vi.fn(), warn } as unknown as Logger });
+    await expect(transport.request("claude-runtime", "append_transcript_entries_idempotent", [{ sessionId: "session-1", entries: ["한글"] }])).rejects.toThrow();
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ status: 413, sessionId: "session-1", requestBodyBytes: Buffer.byteLength(sentBody, "utf8") }), "persistence host request failed");
+  });
   it("records all four persistence host round-trip timestamps", async () => {
     const info = vi.fn();
     const timingLogger = { info, warn: vi.fn() } as unknown as Logger;
