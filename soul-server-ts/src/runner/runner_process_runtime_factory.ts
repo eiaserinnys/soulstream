@@ -31,6 +31,7 @@ import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_pat
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
+import { restoreMcpSecrets } from "./mcp_secret_refs.js";
 import type {
   RunnerProcessRuntimeFactory,
   RunnerSnapshotPersistence,
@@ -430,6 +431,13 @@ function storedRuntimeMcpConfig(
   config: RunnerChildConfig,
   mcpConfigService: McpConfigService,
 ): RunnerRuntimeMcpConfig {
+  if (config.legacyMcpSecretRefs !== undefined) {
+    const servers = restoreMcpSecrets(config.resolvedMcpServers ?? [], config.legacyMcpSecretRefs, process.env);
+    return {
+      internalMcpUrl: config.internalMcpUrl,
+      ...(config.resolvedMcpServers ? { resolvedMcpServers: servers } : {}),
+    };
+  }
   return {
     internalMcpUrl: config.internalMcpUrl,
     ...(config.mcpSecretRefs !== undefined

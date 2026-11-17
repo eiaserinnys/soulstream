@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,8 +17,9 @@ import {
   RunnerNotAliveError,
 } from
   "../../src/runner/runner_process_runtime_factory.js";
-import type { RunnerChildConfig } from
+import { RunnerProcessSpawner, type SpawnRunnerProcessInput, type RunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
+import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { parseRunnerChildConfig } from
   "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from
@@ -252,6 +258,53 @@ describe("createRunnerProcessRuntimeFactory", () => {
     }, "offline");
     expect((recoveredWithRefs.dispatcher as unknown as { options: { spawn: { mcpSecretRefs: unknown } } })
       .options.spawn.mcpSecretRefs).toEqual(refs);
+    const secret = randomUUID();
+    const priorSecret = process.env.TEST_MCP_REF;
+    process.env.TEST_MCP_REF = secret;
+    try {
+      const legacyConfig = {
+        ...config,
+        resolvedMcpServers: [{ type: "streamable_http" as const, name: "remote", url: "https://example.test/mcp", headers: {} }],
+        legacyMcpSecretRefs: refs,
+      };
+      const recoveredLegacy = factory.recover!(task, { ...registration, config: legacyConfig }, {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      }, "offline");
+      const legacyInput = (recoveredLegacy.dispatcher as unknown as { options: { spawn: {
+        mcpSecretRefs?: unknown; resolvedMcpServers: Array<{ headers: Record<string, string> }>;
+      } } }).options.spawn;
+      expect(legacyInput.mcpSecretRefs).toBeUndefined();
+      expect(legacyInput.resolvedMcpServers[0]?.headers["X-Key"] === secret).toBe(true);
+      const stateDirectory = await mkdtemp(join(tmpdir(), "legacy-mcp-recovery-"));
+      try {
+        const spawner = new RunnerProcessSpawner({
+          prepareDatabase: async (path) => { const db = await RunnerSqliteEventOutbox.create(path); db.close(); },
+          validateEntry: async () => {},
+          spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
+          registerPid: async (path, pid) => await writeFile(path, `${pid}\n`),
+          inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+          isPidAlive: () => false,
+          signalPid: vi.fn(),
+          now: () => 0,
+          delay: async () => {},
+        });
+        const spawned = await spawner.spawn({ ...legacyInput as SpawnRunnerProcessInput, stateDirectory });
+        const raw = await readFile(spawned.paths.configPath, "utf8");
+        expect(raw.includes(secret)).toBe(true);
+        expect(JSON.parse(raw).mcpSecretRefs).toBeUndefined();
+      } finally {
+        await rm(stateDirectory, { recursive: true, force: true });
+      }
+      delete process.env.TEST_MCP_REF;
+      expect(() => factory.recover!(task, { ...registration, config: legacyConfig }, {
+        persistRunState: vi.fn(async () => undefined),
+        persistSessionItems: vi.fn(async () => undefined),
+      }, "offline")).toThrow("TEST_MCP_REF");
+    } finally {
+      if (priorSecret === undefined) delete process.env.TEST_MCP_REF;
+      else process.env.TEST_MCP_REF = priorSecret;
+    }
     expect((runtime.dispatcher as unknown as {
       options: {
         spawn: { codexDetachedResultRetentionMs: number };

@@ -57,21 +57,22 @@ async function run(): Promise<void> {
     const config = parseRunnerChildConfig(raw);
     const converted = externalizeMcpSecrets(config.resolvedMcpServers ?? [], declarations, process.env);
     const alive = await runnerMayBeAlive(directory);
-    let refs = config.mcpSecretRefs;
+    const refs = config.mcpSecretRefs;
     let plaintextCount = converted.refs.length;
     if (values.apply && !alive) {
       const latest = await stat(configPath);
       if (latest.mtimeMs === before.mtimeMs && !(await runnerMayBeAlive(directory))) {
-        refs = mergeRefs(config.mcpSecretRefs ?? [], converted.refs);
-        const updated = {
-          ...raw,
-          ...(config.resolvedMcpServers ? { resolvedMcpServers: converted.servers } : {}),
-          mcpSecretRefs: refs,
-        };
-        await writeFileAtomically(configPath, JSON.stringify(updated));
+        if (plaintextCount > 0) {
+          const updated = {
+            ...raw,
+            ...(config.resolvedMcpServers ? { resolvedMcpServers: converted.servers } : {}),
+            legacyMcpSecretRefs: mergeRefs(config.legacyMcpSecretRefs ?? [], converted.refs),
+          };
+          await writeFileAtomically(configPath, JSON.stringify(updated));
+          plaintextCount = 0;
+        }
         for (const file of claudeFiles) await unlink(join(directory, file));
         claudeFiles = [];
-        plaintextCount = 0;
       }
     }
     counts.configs++;
