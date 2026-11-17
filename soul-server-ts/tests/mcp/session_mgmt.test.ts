@@ -763,6 +763,17 @@ describe("agent profile backend boundary", () => {
     expect(runtime.createTask).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    [" caller-sess-1 ", {}],
+    ["  ", { "x-soulstream-agent-session-id": "caller-sess-1" }],
+  ])("preserves caller ID normalization for %j", async (caller_session_id, headers) => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const client = await createClient(runtime, { headers });
+    const result = await client.callTool({ name: "create_agent_session", arguments: { agent_id: "codex-default", prompt: "child", caller_session_id } });
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({ callerSessionId: "caller-sess-1", folderId: "caller-folder" }));
+  });
+
   it("create_agent_session은 caller_session_id와 caller_info를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
