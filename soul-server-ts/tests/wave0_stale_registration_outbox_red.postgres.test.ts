@@ -49,7 +49,6 @@ describe("Wave 0 stale registration outbox contract", () => {
     const currentRunner = await createDurableRunnerEvidence(CURRENT_REGISTRATION_ID);
     const oldTerminal = await oldRunner.outbox.append({
       session_id: SESSION_ID,
-      execution_generation: 7,
       event_type: "session_ended",
       payload: { type: "session_ended", status: "completed" },
       searchable_text: null,
@@ -66,7 +65,6 @@ describe("Wave 0 stale registration outbox contract", () => {
     });
     const currentLiveEvent = await currentRunner.outbox.append({
       session_id: SESSION_ID,
-      execution_generation: 7,
       event_type: "assistant_message",
       payload: { type: "assistant_message", content: "current runner is live" },
       searchable_text: null,

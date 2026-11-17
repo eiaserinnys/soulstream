@@ -37,7 +37,7 @@ describe("CommandTransportObserver", () => {
         socket.bufferedAmount = 3;
         callback();
       }),
-    } as unknown as WebSocket;
+    };
     const observer = new CommandTransportObserver(logger, nowMs);
 
     await observer.observe(
@@ -47,7 +47,7 @@ describe("CommandTransportObserver", () => {
         agentSessionId: "sess-create",
       },
       async () => {
-        await observer.send(socket, {
+        await observer.send(socket as unknown as WebSocket, {
           type: "session_created",
           requestId: "req-create",
         });

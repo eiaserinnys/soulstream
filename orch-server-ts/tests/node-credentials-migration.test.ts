@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 
 import { expect, it } from "vitest";
-// @ts-expect-error JavaScript migration contract boundary, matching existing migration tests.
 import { loadMigrationManifest } from "../../packages/db-schema/scripts/migration-contract.mjs";
 
 const MIGRATION_ID = "150_node_credentials.sql";

@@ -47,14 +47,8 @@ describe("UpstreamAdapter runner inventory after restart", () => {
         agentSessionId: "hydrated-registered",
         hydratedFromDb: true,
         executionRegistration: {
-          ownerKind: "adopted_runner",
-          manifestId: "manifest-restored",
-          runtimeEnvIdentity: "runtime-restored",
           registrationId: "registration-restored",
-          pid: 42_002,
-          startIdentity: "start-restored",
           executionCommandId: "command-restored",
-          ownershipGeneration: 3,
         },
       }),
       makeTask({ agentSessionId: "in-memory-initializing" }),
@@ -102,7 +96,7 @@ function createAdapter(
   orch: MockOrch,
   tasks: Task[],
   listLiveRunnerSessionIds: () => Promise<string[]>,
-  logger: ReturnType<typeof pino>,
+  logger: import("pino").Logger,
 ): UpstreamAdapter {
   const sessionDb = {
     listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),

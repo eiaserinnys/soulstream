@@ -77,7 +77,7 @@ describe("EventOutboxPump", () => {
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
 
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => readBatch.mock.calls.length === 1);
     await outbox.append(eventInput("two"));
     await new Promise((resolve) => setImmediate(resolve));
@@ -121,11 +121,11 @@ describe("EventOutboxPump", () => {
     const firstConnection: EventOutboxBatch[] = [];
     const secondConnection: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => firstConnection.push(batch));
+    pump.connect(async (batch) => { firstConnection.push(batch); });
     await waitFor(() => firstConnection.length === 1);
 
     pump.disconnect();
-    pump.connect(async (batch) => secondConnection.push(batch));
+    pump.connect(async (batch) => { secondConnection.push(batch); });
     await waitFor(() => secondConnection.length === 1);
 
     expect(secondConnection[0]).toEqual(firstConnection[0]);
@@ -136,7 +136,7 @@ describe("EventOutboxPump", () => {
     const first = await outbox.append(eventInput("one"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
     await pump.handleAck({
       type: "event_append_ack",
@@ -172,7 +172,7 @@ describe("EventOutboxPump", () => {
     const record = await outbox.append(eventInput("one"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     const acknowledged = pump.waitForAcknowledgement(record);
@@ -196,7 +196,7 @@ describe("EventOutboxPump", () => {
     const record = await outbox.append(eventInput("one"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     await pump.handleAck({
@@ -215,7 +215,7 @@ describe("EventOutboxPump", () => {
     const second = await outbox.append(eventInput("two"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     await pump.handleAck({
@@ -241,12 +241,12 @@ describe("EventOutboxPump", () => {
     const firstConnection: EventOutboxBatch[] = [];
     const secondConnection: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => firstConnection.push(batch));
+    pump.connect(async (batch) => { firstConnection.push(batch); });
     await waitFor(() => firstConnection.length === 1);
 
     const acknowledged = pump.waitForAcknowledgement(record);
     pump.disconnect();
-    pump.connect(async (batch) => secondConnection.push(batch));
+    pump.connect(async (batch) => { secondConnection.push(batch); });
     await waitFor(() => secondConnection.length === 1);
     await pump.handleAck({
       type: "event_append_ack",
@@ -263,7 +263,7 @@ describe("EventOutboxPump", () => {
     const record = await outbox.append(eventInput("deleted session"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     const acknowledged = pump.waitForAcknowledgement(record);
@@ -320,7 +320,7 @@ describe("EventOutboxPump", () => {
     };
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
-      pump.connect(async (batch) => sent.push(batch));
+      pump.connect(async (batch) => { sent.push(batch); });
       await waitFor(() => sent.length === attempt);
       await pump.handleRejection(rejection);
       if (attempt < 3) {
@@ -389,7 +389,7 @@ describe("EventOutboxPump", () => {
     const firstConnection: EventOutboxBatch[] = [];
     const secondConnection: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => firstConnection.push(batch));
+    pump.connect(async (batch) => { firstConnection.push(batch); });
     await waitFor(() => firstConnection.length === 1);
 
     const rejection = {
@@ -404,7 +404,7 @@ describe("EventOutboxPump", () => {
     expect(pump.isRejection(rejection)).toBe(true);
     await expect(pump.handleRejection(rejection)).resolves.toBeNull();
     pump.disconnect();
-    pump.connect(async (batch) => secondConnection.push(batch));
+    pump.connect(async (batch) => { secondConnection.push(batch); });
     await waitFor(() => secondConnection.length === 1);
 
     expect(secondConnection[0]).toEqual(firstConnection[0]);
@@ -416,7 +416,7 @@ describe("EventOutboxPump", () => {
     await outbox.append(eventInput("retry me"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn(), { retryFlushDelayMs: 1 });
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     await expect(pump.handleRejection({
@@ -444,7 +444,7 @@ describe("EventOutboxPump", () => {
     const first: EventOutboxBatch[] = [];
     const second: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn(), { retryFlushDelayMs: 20 });
-    pump.connect(async (batch) => first.push(batch));
+    pump.connect(async (batch) => { first.push(batch); });
     await waitFor(() => first.length === 1);
 
     await pump.handleRejection({
@@ -457,7 +457,7 @@ describe("EventOutboxPump", () => {
       source_seq: 1,
     } as const);
     pump.disconnect();
-    pump.connect(async (batch) => second.push(batch));
+    pump.connect(async (batch) => { second.push(batch); });
     await waitFor(() => second.length === 1);
     await new Promise((resolve) => setTimeout(resolve, 40));
 
@@ -472,7 +472,7 @@ describe("EventOutboxPump", () => {
     const second = await outbox.append(eventInput("later poison"));
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
     expect(sent[0]?.events.map((event) => event.source_seq)).toEqual([
       first.source_seq,
@@ -490,7 +490,7 @@ describe("EventOutboxPump", () => {
       source_seq: second.source_seq,
     });
     pump.disconnect();
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 2);
     expect(sent[1]?.events.map((event) => event.source_seq)).toEqual([first.source_seq]);
 
@@ -512,7 +512,7 @@ describe("EventOutboxPump", () => {
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
 
-    const ready = pump.connect(async (batch) => sent.push(batch));
+    const ready = pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
     await expect(Promise.race([ready, Promise.resolve("pending")])).resolves.toBe("pending");
     await pump.handleAck({

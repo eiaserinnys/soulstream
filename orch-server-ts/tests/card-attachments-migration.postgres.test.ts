@@ -1,6 +1,5 @@
 import {expect,it} from "vitest";
 import {createPagePostgresHarness} from "./page/page_postgres_harness.js";
-// @ts-expect-error JavaScript operations boundary (same as r2-settings integration).
 import {loadMigrationManifest} from "../../packages/db-schema/scripts/migration-contract.mjs";
 // Same disposable, empty test database as card workflow integration tests.
 it("official attachments migration preserves old cards and defaults new cards to []",async()=>{

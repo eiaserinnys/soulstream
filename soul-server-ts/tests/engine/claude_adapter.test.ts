@@ -115,7 +115,7 @@ function makeAttemptClient(
       captured.push(options);
       const build = attempts[Math.min(attemptIndex, attempts.length - 1)];
       attemptIndex += 1;
-      yield* clientEvents(build());
+      yield* clientEvents(build!());
     },
     async interrupt() {
       return true;
@@ -137,7 +137,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     };
     const client: ClaudeClient = {
       ...makeClient([], []),
-      persistentRuntimeActivity: () => activity,
+      persistentRuntimeActivity: () => activity as unknown as NonNullable<ReturnType<NonNullable<ClaudeClient["persistentRuntimeActivity"]>>>,
     };
     const engine = new ClaudeEngineAdapter(
       {
@@ -148,7 +148,7 @@ describe("ClaudeEngineAdapter options parity", () => {
           acquire: () => client,
           close: async () => true,
           release: () => undefined,
-          reserve: () => undefined,
+          reserve: () => true,
         },
       },
       silentLogger,
@@ -895,7 +895,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     "handles a first turn without a Claude session ID when input delivery is %s",
     async (inputDelivery) => {
       const attempts: ClaudeRunOptions[] = [];
-      const decisions: Array<{ kind: string; options?: Partial<ClaudeRunOptions>; resetsAt?: string }> = [];
+      const decisions: import("../../src/engine/claude_adapter.js").ClaudeAccountRateLimitSwitchDecision[] = [];
       const client: ClaudeClient = {
         async *run() {},
         async *runPersistent(initialOptions, signal) {
@@ -1558,7 +1558,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         // drain
       }
 
-      expect(captured[0].env).toMatchObject({
+      expect(captured[0]!.env).toMatchObject({
         [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/right-claude-work",
         [SOULSTREAM_AGENT_ID_ENV]: "claude-agent",
         [AGENT_COMMON_FILES_DIR_ENV]: "/srv/agent-common",
@@ -1954,7 +1954,8 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     const onIntervention = vi.fn().mockResolvedValue("legacy callback intervention");
 
     const channel = new InProcessRunnerFrameChannel();
-    channel.start(() => engine.executeToFrameChannel({ prompt: "hi", onIntervention }, channel));
+    const execution = { prompt: "hi", onIntervention };
+    channel.start(() => engine.executeToFrameChannel(execution, channel));
     const iterator = channel[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({
       value: { kind: "engine_event", payload: { type: "session" } },
@@ -2388,7 +2389,7 @@ describe("Claude transient 429 retry", () => {
   });
 
   it("일반 오류와 구독 한도 오류는 429 재시도를 하지 않는다", async () => {
-    const failures: ClaudeClientEvent[] = [
+    const failures: Extract<ClaudeClientEvent, { type: "error" }>[] = [
       { type: "error", fatal: true, message: "400 invalid JSON" },
       { type: "error", fatal: true, message: "You've hit your usage limit. Try again later." },
       {

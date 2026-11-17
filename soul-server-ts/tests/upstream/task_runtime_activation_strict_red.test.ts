@@ -98,6 +98,7 @@ function makeHarness() {
       yield { type: "complete", timestamp: Date.now() / 1000 };
     },
     async interrupt() { return true; },
+    async intervene() { return { status: "not_delivered", mechanism: "unsupported", reason: "not_supported" }; },
     async close() {},
   });
   const taskExecutor = new TaskExecutor(

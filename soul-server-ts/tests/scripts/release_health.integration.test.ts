@@ -68,7 +68,7 @@ it.each([null, "health-folder"])("release health uses the live internal listener
   expect(result.status).toBe("ok");
   expect(result.mcp).toEqual({ ping: "ok", tool: folderId ? "get_folder" : "list_cards", folder_id: folderId });
   expect(forwarded).toHaveLength(1);
-  expect(forwarded[0].context).toEqual({ principal: "internal", caller_session_id: null, node_id: "health-node" });
+  expect(forwarded[0]!.context).toEqual({ principal: "internal", caller_session_id: null, node_id: "health-node" });
 });
 
 // The release script runs as plain Node JS and cannot import the bundled TS

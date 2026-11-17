@@ -103,7 +103,7 @@ describe("OpenCodeEngineAdapter", () => {
       const assistant = events.find((event) => event.type === "assistant_message");
       const complete = events.find((event) => event.type === "complete");
       expect(session).toMatchObject({ type: "session", session_id: "ses_adapter_398" });
-      expect(assistant?.type === "assistant_message" ? JSON.parse(assistant.content) : null).toMatchObject({
+      expect(assistant?.type === "assistant_message" ? JSON.parse(String(assistant.content)) : null).toMatchObject({
         sessionID: "ses_adapter_398",
         opencodeApiKey: null,
         xdgDataHome: join(paths.sessionDirectory, "xdg", "data"),
@@ -222,7 +222,7 @@ describe("OpenCodeEngineAdapter", () => {
       const events = await collect(engine, { ...input, systemPrompt: undefined, resumeSessionId: "ses_resume_398" });
       const assistant = events.find((event) => event.type === "assistant_message");
       expect(events.find((event) => event.type === "session")).toMatchObject({ session_id: "ses_resume_398" });
-      expect(assistant?.type === "assistant_message" ? JSON.parse(assistant.content) : null).toMatchObject({
+      expect(assistant?.type === "assistant_message" ? JSON.parse(String(assistant.content)) : null).toMatchObject({
         args: ["--print-logs", "--log-level", "ERROR", "run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free", "--session", "ses_resume_398"],
       });
       expect(readFileSync(join(paths.sessionDirectory, "opencode", "system-prompt.md"), "utf8")).toBe("adapter instructions");

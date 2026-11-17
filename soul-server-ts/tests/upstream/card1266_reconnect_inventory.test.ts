@@ -129,7 +129,7 @@ function createAdapter(
   orch: MockOrch,
   tasks: Task[],
   listLiveRunnerSessionIds: () => Promise<string[]>,
-  logger: ReturnType<typeof pino>,
+  logger: import("pino").Logger,
 ): UpstreamAdapter {
   const sessionDb = {
     listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),

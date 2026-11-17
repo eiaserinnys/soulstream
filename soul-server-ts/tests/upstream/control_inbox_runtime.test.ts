@@ -240,7 +240,7 @@ describe("ControlInboxRuntime", () => {
       postWork: (item) => work.push(item),
     });
     runtime.initialize();
-    await runtime.connect(async (frame) => frames.push(frame));
+    await runtime.connect(async (frame) => { frames.push(frame); });
     const command = {
       type: "rollback_agents_config",
       requestId: "req-rollback-agents-config",

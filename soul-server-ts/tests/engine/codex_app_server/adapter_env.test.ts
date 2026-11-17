@@ -86,7 +86,7 @@ describe("CodexAppServerEngineAdapter env", () => {
         pino({ level: "silent" }),
       );
 
-      const options = mockCreateTransport.mock.calls[0][0] as {
+      const options = mockCreateTransport.mock.calls[0]![0] as {
         env: Record<string, string>;
         cwd: string;
       };

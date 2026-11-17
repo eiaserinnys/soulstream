@@ -171,7 +171,7 @@ describe("worker control-plane host clients", () => {
   });
 
   it("sends schedule claims only to the explicit schedule host operation", async () => {
-    const fetchMock = vi.fn(async () => new Response("[]", { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("[]", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new ScheduleHostClient({ orch, logger });
 
@@ -187,7 +187,7 @@ describe("worker control-plane host clients", () => {
   });
 
   it("uses the create-if-absent schedule host operation for stable terminal resumes", async () => {
-    const fetchMock = vi.fn(async () => new Response("null", { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("null", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new ScheduleHostClient({ orch, logger });
 
@@ -263,7 +263,7 @@ describe("worker control-plane host clients", () => {
   });
 
   it("uses the folder host for session assignment", async () => {
-    const fetchMock = vi.fn(async () => new Response("null", { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("null", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new FolderHostClient({ orch, logger });
 
@@ -277,7 +277,7 @@ describe("worker control-plane host clients", () => {
   });
 
   it("reads a folder header from the canonical folder snapshot host operation", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({
       folder: {
         id: "folder-1", name: "Work", status: "open",
         version: 4, settings: { folderPrompt: "Guide" }, parentFolderId: null,

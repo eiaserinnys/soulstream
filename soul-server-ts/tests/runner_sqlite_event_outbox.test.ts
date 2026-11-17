@@ -1629,7 +1629,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const sent: EventOutboxBatch[] = [];
     const pump = new EventOutboxPump(outbox, vi.fn());
 
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await waitFor(() => sent.length === 1);
 
     expect(sent[0]).toMatchObject({
@@ -1691,7 +1691,7 @@ describe("RunnerSqliteEventOutbox", () => {
 
     try {
       const first = await writer.append(eventInput("one"));
-      pump.connect(async (batch) => sent.push(batch));
+      pump.connect(async (batch) => { sent.push(batch); });
       await waitFor(() => sent.length === 1);
       const acknowledged = pump.waitForAcknowledgement(first);
 
@@ -1726,7 +1726,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const sent: EventOutboxBatch[] = [];
     const onError = vi.fn();
     const pump = new EventOutboxPump(consumer, onError);
-    pump.connect(async (batch) => sent.push(batch));
+    pump.connect(async (batch) => { sent.push(batch); });
     await pump.drainScheduled();
 
     const writer = await RunnerSqliteEventOutbox.create(path);

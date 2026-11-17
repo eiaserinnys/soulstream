@@ -52,7 +52,7 @@ describe("Claude account pool wire contract", () => {
     for (const [definitionName, type, requiredFields, dataDefinition] of commandDefs) {
       expect(schema.$defs[definitionName]?.properties?.type?.const).toBe(type);
       expect(rootRefs).toContain(`#/$defs/${definitionName}`);
-      expect(schema.$defs[definitionName]?.required).toEqual(expect.arrayContaining(requiredFields));
+      expect(schema.$defs[definitionName]?.required).toEqual(expect.arrayContaining([...requiredFields]));
       expect(schema.$defs[definitionName]?.properties?.data?.$ref)
         .toBe(`#/$defs/${dataDefinition}`);
       expect(schema.$defs[definitionName]?.properties?.error?.$ref)
@@ -61,10 +61,10 @@ describe("Claude account pool wire contract", () => {
   });
 
   it("defines account usage, pools, and account-list mode as the shared contract", () => {
-    const accountList = schema.$defs.ClaudeAccountList;
-    const account = schema.$defs.ClaudeAccount;
-    const usageWindow = schema.$defs.ClaudeAccountUsageWindow;
-    const pool = schema.$defs.ClaudeAccountPool;
+    const accountList = schema.$defs.ClaudeAccountList!;
+    const account = schema.$defs.ClaudeAccount!;
+    const usageWindow = schema.$defs.ClaudeAccountUsageWindow!;
+    const pool = schema.$defs.ClaudeAccountPool!;
 
     expect(accountList.properties?.mode?.enum).toEqual(["legacy", "pool"]);
     expect(Object.keys(accountList.properties ?? {}).sort()).toEqual([
@@ -98,8 +98,8 @@ describe("Claude account pool wire contract", () => {
   });
 
   it("defines the LoginFlow state and error contracts", () => {
-    const loginFlow = schema.$defs.ClaudeAuthLoginFlow;
-    const loginError = schema.$defs.ClaudeAuthError;
+    const loginFlow = schema.$defs.ClaudeAuthLoginFlow!;
+    const loginError = schema.$defs.ClaudeAuthError!;
 
     expect(loginFlow.properties?.state?.enum).toEqual([
       "requested",
@@ -128,7 +128,7 @@ describe("Claude account pool wire contract", () => {
   });
 
   it("advertises the static account-pool capability as optional boolean", () => {
-    expect(schema.$defs.NodeRegister.properties?.capabilities?.properties
+    expect(schema.$defs.NodeRegister!.properties?.capabilities?.properties
       ?.claude_account_pool_v1).toMatchObject({ type: "boolean" });
   });
 });

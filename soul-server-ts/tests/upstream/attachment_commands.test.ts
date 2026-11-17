@@ -4,8 +4,8 @@ import {
   AttachmentError,
   FileNotFoundError,
   type AttachmentStore,
-  type ImportSessionFileParams,
 } from "../../src/attachments/file_manager.js";
+import type { ImportSessionFileParams } from "../../src/attachments/url_import.js";
 import {
   AttachmentCommandError,
   AttachmentCommands,

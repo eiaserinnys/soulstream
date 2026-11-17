@@ -37,6 +37,10 @@ class FakeEngineAdapter implements EnginePort {
     return true;
   }
 
+  async intervene(): Promise<import("../../src/engine/protocol.js").EngineInterventionResult> {
+    return { status: "not_delivered", mechanism: "unsupported", reason: "not_supported" };
+  }
+
   async close(): Promise<void> {
     this.closed = true;
   }
