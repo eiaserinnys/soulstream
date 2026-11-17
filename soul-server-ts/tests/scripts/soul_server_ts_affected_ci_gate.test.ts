@@ -166,7 +166,7 @@ describe("soul-server-ts affected CI gate", () => {
     expect(selectedFullSliceFiles).toEqual(expectedFullSliceFiles);
 
     const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
-    expect(packageJson.scripts.typecheck).toBe("tsc --noEmit");
+    expect(packageJson.scripts.typecheck).toBe("tsc -p tsconfig.typecheck.json");
     expect(packageJson.scripts.test).toBe("vitest run");
 
     const broadTestInclude = "tests/**/*.test.ts";
