@@ -106,6 +106,42 @@ describe("TaskDeliveryLedgerGate", () => {
     })).resolves.toEqual({ kind: "admitted", deliveryId: "delivery-1", row: claimed });
   });
 
+  it.each([
+    { intent: "durable_next_turn", user: "system" },
+    { intent: "human_live_steer", user: "alice" },
+  ] as const)("keeps queued re-entry for $intent from $user", async ({ intent, user }) => {
+    const existing = {
+      ...row("delivery-1", "queued"), aggregate_state: "pending",
+      target_session_id: "caller-1", intent,
+      relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const claimed = { ...existing, state: "claimed", attempt_token: "route:retry" };
+    const gate = new TaskDeliveryLedgerGate(true, {
+      get: vi.fn().mockResolvedValue(existing),
+      claimAttemptForTarget: vi.fn().mockResolvedValue(claimed),
+    } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user, deliveryId: "delivery-1",
+      deliveryIntent: intent, relationKey: "relation-1", completionId: "completion-1",
+    })).resolves.toEqual({ kind: "admitted", deliveryId: "delivery-1", row: claimed });
+  });
+
+  it.each([
+    { intent: "completion_notification", user: "agent" },
+    { intent: "human_live_steer", user: "user" },
+  ] as const)("keeps consumed suppression for $intent from $user", async ({ intent, user }) => {
+    const existing = {
+      ...row("delivery-1", "consumed"), aggregate_state: "consumed",
+      target_session_id: "caller-1", intent,
+      relation_key: "relation-1", completion_id: "completion-1",
+    };
+    const gate = new TaskDeliveryLedgerGate(true, { get: vi.fn().mockResolvedValue(existing) } as never);
+    await expect(gate.admit({
+      agentSessionId: "caller-1", text: "continue", user, deliveryId: "delivery-1",
+      deliveryIntent: intent, relationKey: "relation-1", completionId: "completion-1",
+    })).resolves.toEqual({ kind: "suppressed", deliveryId: "delivery-1", reason: "delivery_consumed" });
+  });
+
   it("records an Agent result as a pre-terminal tombstone for the exact generation", async () => {
     const recordRelationConsumed = vi.fn().mockResolvedValue({
       relation: {},

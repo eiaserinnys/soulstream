@@ -124,6 +124,13 @@ export class TaskDeliveryLedgerGate {
       };
     }
     if (registered.row.state === "claimed") {
+      if (!params.deliveryAttemptToken || registered.row.attempt_token !== params.deliveryAttemptToken) {
+        return {
+          kind: "suppressed",
+          deliveryId: registered.row.delivery_id,
+          reason: "delivery_claimed",
+        };
+      }
       return {
         kind: "admitted",
         deliveryId: registered.row.delivery_id,
@@ -474,6 +481,11 @@ function alreadyAccepted(
   row: SessionDeliveryRow,
   params: AddInterventionParams,
 ): Extract<DeliveryLedgerAdmission, { kind: "already_accepted" }> | undefined {
+  // send_message_to_session creates human-live-steer requests with user=agent.
+  // Other producers and explicit user retries retain their existing admission policy.
+  if (params.deliveryIntent !== "human_live_steer" || params.user !== "agent") {
+    return undefined;
+  }
   if (row.target_session_id !== params.agentSessionId || row.aggregate_state === "dead_letter") {
     return undefined;
   }
