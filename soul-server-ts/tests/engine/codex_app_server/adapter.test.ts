@@ -440,7 +440,7 @@ describe("CodexAppServerEngineAdapter", () => {
         resolvedMcpServers: [
           {
             type: "sse",
-            name: "eb-lore",
+            name: "example-sse-server",
             url: "http://127.0.0.1:3300/sse",
           },
           {
@@ -457,7 +457,7 @@ describe("CodexAppServerEngineAdapter", () => {
     expect(warn).toHaveBeenCalledWith(
       {
         agentId: "writer-seosoyoung-codex",
-        serverName: "eb-lore",
+        serverName: "example-sse-server",
         transport: "sse",
         reason:
           "Codex app-server supports stdio and streamable_http MCP transports only",

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { EventReadRepository } from "../src/control_plane/repositories/event_read_repository.js";
+import { readSubagentUsage } from "../src/control_plane/repositories/turn_usage_subagent_reader.js";
 
 const SINCE = new Date("2026-10-05T01:00:00.000Z");
 const UNTIL = new Date("2026-10-05T02:00:00.000Z");
@@ -436,6 +437,37 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
       subagent_output_tokens: 10,
       subagent_cost_usd: 0.125,
     });
+
+    // Adding other sessions must not change the selected session's anchor or rollup.
+    const one = await readSubagentUsage(h.sql, ["s-anchor"], { since: SINCE, until: UNTIL });
+    const many = await readSubagentUsage(h.sql, ["s-anchor", "s-sub", "s-codex"], { since: SINCE, until: UNTIL });
+    expect(many.get("s-anchor")).toEqual(one.get("s-anchor"));
+    expect(one.get("s-anchor")?.anchorEventIds).toEqual(new Set([2]));
+    expect(one.get("s-anchor")?.rollups.get(4)).toMatchObject({
+      subagent_input_tokens: 250, subagent_output_tokens: 10, subagent_cost_usd: 0.125,
+    });
+
+    const sessionIds = ["s-anchor", "s-sub"];
+    const before = await h.sql`
+      SELECT session_id, id, created_at, event_type FROM events
+      WHERE event_type IN ('complete', 'result', 'error')
+        AND session_id = ANY(${sessionIds}::text[])
+        AND created_at >= ${SINCE} AND created_at < ${UNTIL}
+      ORDER BY session_id, id
+    `;
+    const after = await h.sql`
+      WITH picked AS MATERIALIZED (
+        SELECT session_id, id, created_at, event_type FROM events
+        WHERE event_type IN ('complete', 'result', 'error')
+          AND created_at >= ${SINCE} AND created_at < ${UNTIL}
+      )
+      SELECT * FROM picked WHERE session_id = ANY(${sessionIds}::text[])
+      ORDER BY session_id, id
+    `;
+    expect(after).toEqual(before);
+    expect(after.map((row) => `${row.session_id}#${row.id}`)).toEqual([
+      "s-anchor#4", "s-sub#2", "s-sub#4", "s-sub#5",
+    ]);
   });
 
   it("resets the diff base when the CLI process restarts and cumulative usage drops", async () => {

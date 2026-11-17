@@ -216,7 +216,7 @@ describe("Codex app-server notification mapper", () => {
       },
       undefined,
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-5.6-terra",
         tokenUsage: {
           first: null,
           baseline: {
@@ -258,7 +258,7 @@ describe("Codex app-server notification mapper", () => {
         output_tokens: 5,
         reasoning_output_tokens: 0,
       },
-      model: "gpt-5.6-sol",
+      model: "gpt-5.6-terra",
     });
     expect(out[1]).not.toHaveProperty("turn_cost_usd");
   });

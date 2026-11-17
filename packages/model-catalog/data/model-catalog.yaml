@@ -319,6 +319,16 @@ models:
     rates: {input: 2, cache_read: 0.1, cache_write_5m: 2.5, cache_write_1h: 2.5, output: 10}
     source: https://developers.openai.com/api/docs/pricing?tab=suite
   - provider: codex
+    model: gpt-6.1-terra
+    display_name: GPT-6.1 Terra
+    rates: {input: 1, cache_read: 0.05, cache_write_5m: 1.25, cache_write_1h: 1.25, output: 5}
+    source: https://developers.openai.com/api/docs/pricing?tab=suite
+  - provider: codex
+    model: gpt-5.6-sol
+    display_name: GPT-5.6 Sol
+    rates: {input: 4, cache_read: 0.4, cache_write_5m: 5, cache_write_1h: 5, output: 20}
+    source: https://developers.openai.com/api/docs/pricing?tab=suite
+  - provider: codex
     model: gpt-6-astra
     rates: {input: 10, cache_read: 1, cache_write_5m: 12.5, cache_write_1h: 12.5, output: 50}
     source: https://developers.openai.com/api/docs/pricing?tab=suite
@@ -358,7 +368,7 @@ models:
     rates: null
 
 price_snapshot:
-  price_version: api-list-usd-2026-10-19-v1
+  price_version: api-list-usd-2026-11-17-v1
   as_of: "2026-10-19"
   checked_at: "2026-10-19"
   currency: USD
@@ -367,7 +377,7 @@ price_snapshot:
   legacy_rows_last_checked_at: "2026-10-05"
   refreshed_model_rows:
     claude: [claude-opus-5-5, claude-fable-5-2, claude-fable-5-1, claude-sonnet-5-5]
-    codex: [gpt-6-astra, gpt-6.1-sol, gpt-6-luna]
+    codex: [gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-5.6-sol, gpt-6-luna]
     antigravity: [gemini-4-carbon, gemini-4-hydrogen, gemini-4-argon, gemini-3.8-flash]
     deepseek:
       - deepseek-v4.1-flash-1017

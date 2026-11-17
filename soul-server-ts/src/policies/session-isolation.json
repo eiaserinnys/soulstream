@@ -472,19 +472,9 @@
         "port": 4002
       },
       {
-        "serverId": "eb-lore",
-        "nodeId": "eiaserinnys",
-        "port": 3109
-      },
-      {
         "serverId": "outline",
         "nodeId": "eiaserinnys",
         "port": 3103
-      },
-      {
-        "serverId": "eb-lore",
-        "nodeId": "eias-linegames-wsl",
-        "port": 3108
       },
       {
         "serverId": "outline",

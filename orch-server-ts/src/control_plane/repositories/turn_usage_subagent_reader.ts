@@ -125,7 +125,6 @@ function createSubagentUsageCtes(
       SELECT session_id, id, created_at, event_type
       FROM events
       WHERE event_type IN ('complete', 'result', 'error')
-        AND session_id = ANY(${sessionIds}::text[])
         ${scope.since ? sql`AND created_at >= ${scope.since}` : sql``}
         AND created_at < ${scope.until}
     ), usage_raw AS MATERIALIZED (
@@ -139,7 +138,8 @@ function createSubagentUsageCtes(
         e.payload->'model_usage' AS complete_model_usage
       FROM picked p
       JOIN events e ON e.session_id = p.session_id AND e.id = p.id
-      WHERE jsonb_typeof(e.payload->'usage') = 'object'
+      WHERE p.session_id = ANY(${sessionIds}::text[])
+        AND jsonb_typeof(e.payload->'usage') = 'object'
         AND (p.event_type <> 'result' OR e.payload->>'success' = 'false')
     ), usage_norm AS MATERIALIZED (
       SELECT
