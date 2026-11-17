@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpToolDefinition } from "./tool_definitions.js";
-import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
+import { AgentProfilePatchSchema } from "@soulstream/agent-profile-contract";
 import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 const ReasoningEffortToolSchema = z.enum(MODEL_REASONING_EFFORTS);
 const AgentAliasToolSchema = z.union([
@@ -66,10 +66,10 @@ export const clusterTools = {
     } },
   plan_remote_agent_profile_update: { name: "plan_remote_agent_profile_update", audience: "all", timeoutMs: 35000, config: {
       description:
-        "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",
+        "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 넘긴 최상위 필드만 바꾸고 생략한 필드는 보존하며 null은 삭제한다. 중첩 객체는 통째로 교체한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",
       inputSchema: {
         node_id: z.string().min(1),
-        profile: AgentProfileSchema,
+        profile: AgentProfilePatchSchema,
         create_if_missing: z.boolean().default(false),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),
@@ -77,10 +77,10 @@ export const clusterTools = {
     } },
   apply_remote_agent_profile_update: { name: "apply_remote_agent_profile_update", audience: "internal", timeoutMs: 35000, config: {
       description:
-        "오케스트레이터를 통해 대상 노드에 agent profile 변경을 실제 적용한다. 파일 write/snapshot/reload는 대상 노드에서 수행한다.",
+        "오케스트레이터를 통해 대상 노드에 agent profile 변경을 적용한다. 넘긴 최상위 필드만 바꾸고 생략한 필드는 보존하며 null은 삭제한다. 중첩 객체는 통째로 교체한다. 파일 write/snapshot/reload는 대상 노드에서 수행한다.",
       inputSchema: {
         node_id: z.string().min(1),
-        profile: AgentProfileSchema,
+        profile: AgentProfilePatchSchema,
         create_if_missing: z.boolean().default(false),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),

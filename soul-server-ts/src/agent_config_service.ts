@@ -2,8 +2,10 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import {
   AgentsConfigSchema,
+  AgentProfileSchema,
   type AgentAtomContext,
   type AgentProfile,
+  type AgentProfilePatch,
   type AgentsConfig,
   readAgentsConfig,
   type AgentRegistry,
@@ -132,7 +134,7 @@ export class AgentConfigService {
   }
 
   planProfileUpdate(
-    profile: AgentProfile,
+    profile: AgentProfilePatch,
     createIfMissing = false,
     options: AgentConfigPlanOptions = {},
   ): Promise<AgentConfigPlan> {
@@ -144,7 +146,7 @@ export class AgentConfigService {
   }
 
   replaceProfile(
-    profile: AgentProfile,
+    profile: AgentProfilePatch,
     createIfMissing = false,
     options: AgentConfigApplyOptions = {},
   ): Promise<AgentConfigApplyResult> {
@@ -314,20 +316,26 @@ function stringifyAgentsConfig(config: AgentsConfig): string {
 
 function replaceAgentProfile(
   current: AgentsConfig,
-  profile: AgentProfile,
+  profile: AgentProfilePatch,
   createIfMissing: boolean,
 ): AgentsConfig {
   const nextAgents = [...current.agents];
   const idx = nextAgents.findIndex((p) => p.id === profile.id);
+  if (idx === -1 && !createIfMissing) {
+    throw new Error(`agent not found: ${profile.id}`);
+  }
+  const merged: Record<string, unknown> = { ...(idx === -1 ? {} : nextAgents[idx]) };
+  for (const [key, value] of Object.entries(profile)) {
+    if (value === null) delete merged[key];
+    else if (value !== undefined) merged[key] = value;
+  }
+  const nextProfile = AgentProfileSchema.parse(merged);
   if (idx === -1) {
-    if (!createIfMissing) {
-      throw new Error(`agent not found: ${profile.id}`);
-    }
-    nextAgents.push(profile);
-  } else if (semanticEqual(nextAgents[idx], profile)) {
+    nextAgents.push(nextProfile);
+  } else if (semanticEqual(nextAgents[idx], nextProfile)) {
     return current;
   } else {
-    nextAgents[idx] = profile;
+    nextAgents[idx] = nextProfile;
   }
   return { ...current, agents: nextAgents };
 }
@@ -376,22 +384,20 @@ function setAgentMcpProfile(
 
 function profileUpdateSemanticChanges(
   current: AgentsConfig,
-  profile: AgentProfile,
+  profile: AgentProfilePatch,
   createIfMissing: boolean,
 ): AgentConfigSemanticChange[] {
   const existing = current.agents.find((p) => p.id === profile.id);
+  const next = replaceAgentProfile(current, profile, createIfMissing).agents.find((p) => p.id === profile.id)!;
   if (!existing) {
-    if (!createIfMissing) {
-      throw new Error(`agent not found: ${profile.id}`);
-    }
     return [{
       op: "add_agent",
       agentId: profile.id,
       before: null,
-      after: profile,
+      after: next,
     }];
   }
-  if (semanticEqual(existing, profile)) {
+  if (semanticEqual(existing, next)) {
     return [{
       op: "no_change",
       agentId: profile.id,
@@ -403,7 +409,7 @@ function profileUpdateSemanticChanges(
     op: "replace_agent",
     agentId: profile.id,
     before: existing,
-    after: profile,
+    after: next,
   }];
 }
 

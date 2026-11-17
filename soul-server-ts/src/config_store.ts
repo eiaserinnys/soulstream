@@ -76,7 +76,7 @@ export class ConfigStore<TConfig> {
   private readonly assertChange?: (current: TConfig, next: TConfig) => MaybePromise<void>;
 
   constructor(options: ConfigStoreOptions<TConfig>) {
-    this.displayConfigPath = options.configPath;
+    this.displayConfigPath = path.resolve(options.configPath);
     this.actualConfigPath = path.resolve(options.configPath);
     this.snapshotRoot = path.resolve(options.snapshotRoot ?? ".local/config-snapshots");
     this.parseRaw = options.parse;

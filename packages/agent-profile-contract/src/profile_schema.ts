@@ -271,3 +271,18 @@ export const AgentProfileSchema = z.object({
 });
 
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+
+const patchFields = Object.fromEntries(
+  Object.entries(AgentProfileSchema.shape)
+    .filter(([key]) => key !== "id")
+    .map(([key, schema]) => [key, schema.nullable().optional()]),
+) as {
+  [K in Exclude<keyof typeof AgentProfileSchema.shape, "id">]:
+    z.ZodOptional<z.ZodNullable<(typeof AgentProfileSchema.shape)[K]>>;
+};
+
+export const AgentProfilePatchSchema = z.object({
+  id: AgentProfileSchema.shape.id,
+  ...patchFields,
+});
+export type AgentProfilePatch = z.infer<typeof AgentProfilePatchSchema>;

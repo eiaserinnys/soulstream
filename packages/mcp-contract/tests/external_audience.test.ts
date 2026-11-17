@@ -4,6 +4,17 @@ import { z } from "zod";
 import { mcpToolDefinitions, type McpToolDefinition } from "../src/index.ts";
 import { cardTools } from "../src/card_tools.ts";
 import { sessionTools } from "../src/session_tools.ts";
+import { clusterTools } from "../src/multi_node.ts";
+
+test("remote profile plan and apply accept partial nullable fields and still require id", () => {
+  for (const tool of [clusterTools.plan_remote_agent_profile_update, clusterTools.apply_remote_agent_profile_update]) {
+    const input = z.object(tool.config.inputSchema);
+    assert.deepEqual(input.parse({ node_id: "node", profile: { id: "agent", name: "Changed", model: null } }).profile,
+      { id: "agent", name: "Changed", model: null });
+    assert.equal(input.safeParse({ node_id: "node", profile: { name: "Changed" } }).success, false);
+    assert.equal(input.safeParse({ node_id: "node", profile: { id: "agent", max_turns: 0 } }).success, false);
+  }
+});
 
 const mutations = new Set(["update_agent_profile", "set_agent_mcp_profile", "rollback_agents_config",
   "apply_remote_agent_profile_update", "rollback_remote_agents_config", "set_agent_atom_contexts", "set_folder_system_prompt"]);

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -360,7 +361,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...attachmentRuntime.mcpRuntime,
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
     nodeId: env.SOULSTREAM_NODE_ID,
-    agentsConfigPath: env.AGENTS_CONFIG_PATH,
+    agentsConfigPath: path.resolve(env.AGENTS_CONFIG_PATH),
     db,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,

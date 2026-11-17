@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stringify as stringifyYaml } from "yaml";
 
 import { AgentRegistry, readAgentsConfig } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
@@ -50,6 +51,51 @@ describe("AgentConfigService", () => {
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("plans and applies shallow patches without deleting omitted fields", async () => {
+    fs.appendFileSync(configPath, [
+      "    default_preset: codex-preset",
+      "    disallowed_tools: [shell]",
+      "    claude_permission_mode: plan",
+      "    env: { OLD: old, KEEP: keep }",
+      "",
+    ].join("\n"));
+    fs.writeFileSync(configPath, stringifyYaml(readAgentsConfig(configPath)));
+    const patch = { id: "codex-default", name: "Updated" };
+    const expected = {
+      id: "codex-default", name: "Updated", backend: "codex", workspace_dir: "/tmp/codex",
+      default_preset: "codex-preset", disallowed_tools: ["shell"],
+      claude_permission_mode: "plan", env: { OLD: "old", KEEP: "keep" },
+    };
+    const plan = await service.planProfileUpdate(patch, false, { includeTextDiff: true });
+    expect(plan.config.agents[0]).toEqual(expected);
+    expect(plan.semanticChanges[0]).toMatchObject({ op: "replace_agent", after: expected });
+    expect(plan.diff).not.toContain("-    default_preset");
+    const applied = await service.replaceProfile(patch, false, { includeTextDiff: true });
+    expect(applied.config.agents[0]).toEqual(expected);
+    expect(applied.semanticChanges).toEqual(plan.semanticChanges);
+    expect(applied.diff).toEqual(plan.diff);
+    expect(readAgentsConfig(configPath).agents[0]).toEqual(expected);
+    const replaced = await service.replaceProfile({ id: "codex-default", env: { NEW: "new" } });
+    expect(replaced.config.agents[0]?.env).toEqual({ NEW: "new" });
+  });
+
+  it("deletes null fields and validates merged and newly created profiles", async () => {
+    fs.appendFileSync(configPath, "    model: old-model\n");
+    const patch = { id: "codex-default", model: null };
+    const plan = await service.planProfileUpdate(patch);
+    expect(plan.config.agents[0]).not.toHaveProperty("model");
+    const applied = await service.replaceProfile(patch);
+    expect(applied.config.agents[0]).not.toHaveProperty("model");
+    for (const run of [service.planProfileUpdate.bind(service), service.replaceProfile.bind(service)]) {
+      await expect(run({ id: "codex-default", name: null })).rejects.toThrow();
+      await expect(run({ id: "new-agent" }, true)).rejects.toThrow();
+    }
+    const created = await service.replaceProfile({
+      id: "new-agent", name: "New", backend: "codex", workspace_dir: "/tmp/new", model: null,
+    }, true);
+    expect(created.config.agents[1]).not.toHaveProperty("model");
   });
 
   it("replaces one profile through ConfigStore and reloads the runtime registry", async () => {
@@ -156,6 +202,9 @@ describe("AgentConfigService", () => {
       name: "Codex",
       backend: "codex",
       workspace_dir: "/tmp/codex",
+      default_preset: null,
+      aliases: null,
+      atom_contexts: null,
     });
 
     expect(result.changed).toBe(true);

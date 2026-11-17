@@ -1,11 +1,16 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import fs from "node:fs";
+import path from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
 
-import type { AgentConfigService } from "../../src/agent_config_service.js";
-import type { AgentProfile } from "../../src/agent_registry.js";
+import { AgentConfigService } from "../../src/agent_config_service.js";
+import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerAgentConfigTools } from "../../src/mcp/tools/agent_config.js";
+import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 describe("get_agents_config", () => {
   it("overlays DB identity fields without returning resolved MCP secrets", async () => {
@@ -107,5 +112,41 @@ describe("get_agents_config", () => {
     const serialized = JSON.stringify(response.structuredContent);
     expect(serialized).not.toContain("header-secret-value");
     expect(serialized).not.toContain("env-secret-value");
+  });
+});
+
+describe("local agent profile patch tools", () => {
+  it("plans and applies partial patches and returns absolute config paths", async () => {
+    const dir = makeTempDirSync("agent-config-mcp-");
+    const configPath = path.join(dir, "agents.yaml");
+    const relativePath = path.relative(process.cwd(), configPath);
+    fs.writeFileSync(configPath, "agents:\n  - id: agent\n    name: Original\n    backend: codex\n    workspace_dir: /tmp/agent\n    default_preset: preset\n    model: old\n");
+    const registry = new AgentRegistry([]);
+    const agentConfigService = new AgentConfigService({ configPath: relativePath, snapshotRoot: path.join(dir, "snapshots"), agentRegistry: registry });
+    const runtime = { agentsConfigPath: path.resolve(relativePath), agentConfigService, agentRegistry: registry } as unknown as McpRuntime;
+    const server = new McpServer({ name: "agent-config-test", version: "1" });
+    const client = new Client({ name: "agent-config-client", version: "1" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    registerAgentConfigTools(server, runtime);
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const get = await client.callTool({ name: "get_agents_config", arguments: {} });
+      expect(get.structuredContent).toMatchObject({ config_path: configPath });
+      const args = { profile: { id: "agent", name: "Changed", model: null }, include_text_diff: true };
+      const plan = await client.callTool({ name: "plan_agent_profile_update", arguments: args });
+      const apply = await client.callTool({ name: "update_agent_profile", arguments: args });
+      expect(plan.structuredContent).toMatchObject({ ok: true, config_path: configPath,
+        semantic_changes: [{ after: { id: "agent", name: "Changed", default_preset: "preset" } }] });
+      expect(apply.structuredContent).toMatchObject({ ok: true, config_path: configPath,
+        agent: { id: "agent", name: "Changed", default_preset: "preset" } });
+      expect((apply.structuredContent as any).agent).not.toHaveProperty("model");
+      const invalid = await client.callTool({ name: "update_agent_profile", arguments: { profile: { id: "agent", name: null } } });
+      expect(invalid.isError).toBe(true);
+    } finally {
+      await client.close();
+      await server.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

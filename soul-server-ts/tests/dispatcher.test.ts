@@ -2107,6 +2107,26 @@ describe("CommandDispatcher.list_runner_inventory", () => {
 });
 
 describe("CommandDispatcher.plan_agent_profile_update", () => {
+  it("passes partial nullable patches to both node commands", async () => {
+    const planProfileUpdate = vi.fn().mockResolvedValue({ configPath: "/srv/agents.yaml", snapshotRoot: "/tmp",
+      configChecksum: "sum", baseConfigChecksum: "sum", changed: false, semanticChanges: [],
+      textDiffIncluded: false, diff: "", commentPreservation: "not_preserved" });
+    const replaceProfile = vi.fn().mockResolvedValue({ configPath: "/srv/agents.yaml", snapshotRoot: "/tmp",
+      configChecksum: "sum", baseConfigChecksum: "sum", changed: false, semanticChanges: [],
+      config: { agents: [] }, diff: "", commentPreservation: "not_preserved" });
+    const { dispatcher, sent } = createDispatcher({ agentConfigService: {
+      listSnapshots: vi.fn(), planProfileUpdate, replaceProfile, rollback: vi.fn(),
+    } });
+    const profile = { id: "codex-default", name: "Changed", model: null };
+    await dispatcher.dispatch({ type: "plan_agent_profile_update", requestId: "partial-plan", profile });
+    await dispatcher.dispatch({ type: "apply_agent_profile_update", requestId: "partial-apply", profile });
+    expect(planProfileUpdate).toHaveBeenCalledWith(profile, false, { includeTextDiff: false });
+    expect(replaceProfile).toHaveBeenCalledWith(profile, false, expect.any(Object));
+    expect(sent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: "partial-plan", ok: true }),
+      expect.objectContaining({ requestId: "partial-apply", ok: true }),
+    ]));
+  });
   it("delegates to AgentConfigService planProfileUpdate and returns semantic read-only plan", async () => {
     const planProfileUpdate = vi.fn().mockResolvedValue({
       configPath: "/srv/agents.yaml",

@@ -1,5 +1,5 @@
 import {
-  AgentProfileSchema,
+  AgentProfilePatchSchema,
   type AgentProfile,
   type AgentRegistry,
   type AgentsConfig,
@@ -60,7 +60,7 @@ export class AgentConfigCommands {
         "plan_agent_profile_update handler requires agent_config_service dependency",
       );
     }
-    const profile = AgentProfileSchema.safeParse(params.profile);
+    const profile = AgentProfilePatchSchema.safeParse(params.profile);
     if (!profile.success) {
       throw new AgentConfigCommandError(`invalid profile: ${profile.error.message}`);
     }
@@ -93,7 +93,7 @@ export class AgentConfigCommands {
         "apply_agent_profile_update handler requires agent_config_service dependency",
       );
     }
-    const profile = AgentProfileSchema.safeParse(params.profile);
+    const profile = AgentProfilePatchSchema.safeParse(params.profile);
     if (!profile.success) {
       throw new AgentConfigCommandError(`invalid profile: ${profile.error.message}`);
     }
