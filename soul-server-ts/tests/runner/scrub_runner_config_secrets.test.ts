@@ -29,9 +29,9 @@ async function fixture(root: string, name: string, secret: string, old = true) {
   if (old) { const date = new Date(Date.now() - 180_000); await utimes(paths.configPath, date, date); }
   return paths;
 }
-function run(root: string, mode: "--check" | "--apply") {
+function run(root: string, mode: "--check" | "--apply", extra: string[] = []) {
   return exec(process.execPath, ["--import", "tsx", join(process.cwd(), "scripts/scrub_runner_config_secrets.ts"),
-    "--", "--state-dir", root, "--agents-config-path", join(root, "ignored.yaml"), mode]);
+    "--", "--state-dir", root, "--agents-config-path", join(root, "ignored.yaml"), mode, ...extra]);
 }
 
 it("scrubs only old unlocked plaintext configs and checks without writes", async () => {
@@ -57,10 +57,10 @@ it("scrubs only old unlocked plaintext configs and checks without writes", async
     const checked = await run(root, "--check");
     expect(checked.stdout.includes(secret)).toBe(false);
     expect(await readdir(root)).toEqual(names);
-    expect(JSON.parse(checked.stdout)).toMatchObject({ configs: 5, withPlaintextSecrets: 4, plaintextWithLiveRunner: 1, rewritten: 0 });
+    expect(JSON.parse(checked.stdout)).toMatchObject({ configs: 5, heldLocks: 1, withPlaintextSecrets: 4, plaintextWithLiveRunner: 1, rewritten: 0 });
     const applied = await run(root, "--apply");
     expect(applied.stdout.includes(secret)).toBe(false);
-    expect(JSON.parse(applied.stdout)).toMatchObject({ configs: 5, rewritten: 1, skippedBusy: 1, skippedRecent: 1, claudeFilesRemoved: 1, claudeFiles: 4 });
+    expect(JSON.parse(applied.stdout)).toMatchObject({ configs: 5, heldLocks: 1, rewritten: 1, skippedBusy: 1, skippedRecent: 1, claudeFilesRemoved: 1, claudeFiles: 4 });
     const scrubbed = await readFile(dead.configPath, "utf8");
     expect(scrubbed.includes(secret)).toBe(false);
     expect(JSON.parse(scrubbed).mcpSecretRefs).toHaveLength(3);
@@ -70,13 +70,45 @@ it("scrubs only old unlocked plaintext configs and checks without writes", async
   } finally { await liveLock.release(); await busyLock.release(); }
 });
 
-it("refuses all writes when live pid evidence conflicts with free locks", async () => {
+it("refuses all writes when no runner lock is held", async () => {
+  const root = await mkdtemp(join(tmpdir(), "scrub-runner-")); directories.push(root);
+  const secret = `fake-${randomUUID()}`;
+  const path = await fixture(root, "dead", secret);
+  const before = await readFile(path.configPath);
+  const claudePath = join(path.sessionDirectory, "claude-mcp-config-test.json");
+  const beforeClaude = await readFile(claudePath);
+  const rootEntries = await readdir(root);
+  const sessionEntries = await readdir(path.sessionDirectory);
+  const result = await run(root, "--apply").then(() => null, (error) => error);
+  expect(result?.code).not.toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ heldLocks: 0 });
+  expect((await readFile(path.configPath)).equals(before)).toBe(true);
+  expect((await readFile(claudePath)).equals(beforeClaude)).toBe(true);
+  expect(await readdir(root)).toEqual(rootEntries);
+  expect(await readdir(path.sessionDirectory)).toEqual(sessionEntries);
+  expect(`${result.stdout}${result.stderr}`.includes(secret)).toBe(false);
+  const checked = await run(root, "--check");
+  expect(JSON.parse(checked.stdout).heldLocks).toBe(0);
+});
+
+it("allows an explicit no-lock override to scrub a dead runner", async () => {
+  const root = await mkdtemp(join(tmpdir(), "scrub-runner-")); directories.push(root);
+  const secret = `fake-${randomUUID()}`;
+  const path = await fixture(root, "dead", secret);
+  const result = await run(root, "--apply", ["--allow-no-held-lock"]);
+  expect(JSON.parse(result.stdout)).toMatchObject({ heldLocks: 0, rewritten: 1, claudeFilesRemoved: 1 });
+  expect((await readFile(path.configPath, "utf8")).includes(secret)).toBe(false);
+  await expect(readFile(join(path.sessionDirectory, "claude-mcp-config-test.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(result.stdout.includes(secret)).toBe(false);
+});
+
+it("refuses the override when live pid evidence conflicts with free locks", async () => {
   const root = await mkdtemp(join(tmpdir(), "scrub-runner-")); directories.push(root);
   const secret = `fake-${randomUUID()}`;
   const path = await fixture(root, "dead", secret);
   await writeFile(path.pidPath, String(process.pid));
   const before = await readFile(path.configPath);
-  const result = await run(root, "--apply").then(() => null, (error) => error);
+  const result = await run(root, "--apply", ["--allow-no-held-lock"]).then(() => null, (error) => error);
   expect(result?.code).not.toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ livePids: 1 });
   expect(`${result?.stdout}${result?.stderr}`.includes(secret)).toBe(false);

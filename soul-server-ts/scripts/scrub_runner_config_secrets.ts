@@ -1,6 +1,7 @@
 // Linux: corepack pnpm@10.32.1 -C /path/to/soul-server-ts runner-config:scrub-secrets --state-dir /path/to/runner-state --check
 // Windows PowerShell: corepack pnpm@10.32.1 -C C:\soulstream\soul-server-ts runner-config:scrub-secrets --state-dir C:\soulstream\runner-state --check
 // Without pnpm: node /path/to/soul-server-ts/node_modules/tsx/dist/cli.mjs /path/to/soul-server-ts/scripts/scrub_runner_config_secrets.ts --state-dir /path/to/runner-state --check
+// 에이전트 세션 안에서 돌릴 때는 full 세션에서, 먼저 --check로 heldLocks가 1 이상인지 본다.
 import { readFile, readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -14,6 +15,7 @@ import { inspectRunnerWriterLock, type RunnerWriterLockState } from "../src/runn
 const { values } = parseArgs({ args: process.argv.slice(2).filter((arg) => arg !== "--"), options: {
   "state-dir": { type: "string" },
   "agents-config-path": { type: "string" },
+  "allow-no-held-lock": { type: "boolean" },
   check: { type: "boolean" },
   apply: { type: "boolean" },
 } });
@@ -51,7 +53,13 @@ async function run(): Promise<void> {
     const config = await readConfig(directory);
     return { directory, config, lock: await lockState(directory, config), files: await claudeFiles(directory) };
   }));
-  if (values.apply && !entries.some((entry) => entry.lock.kind === "held")) {
+  const heldLocks = entries.filter((entry) => entry.lock.kind === "held").length;
+  if (values.apply && heldLocks === 0) {
+    if (!values["allow-no-held-lock"]) {
+      process.stdout.write(`${JSON.stringify({ heldLocks })}\n`);
+      process.exitCode = 1;
+      return;
+    }
     const livePids = (await Promise.all(entries.map((entry) => hasLivePid(entry.directory)))).filter(Boolean).length;
     if (livePids) {
       process.stdout.write(`${JSON.stringify({ livePids })}\n`);
@@ -59,7 +67,7 @@ async function run(): Promise<void> {
       return;
     }
   }
-  const counts = { configs: 0, withRefs: 0, withPlaintextSecrets: 0, plaintextWithLiveRunner: 0,
+  const counts = { configs: 0, heldLocks, withRefs: 0, withPlaintextSecrets: 0, plaintextWithLiveRunner: 0,
     rewritten: 0, skippedBusy: 0, skippedRecent: 0, claudeFiles: 0, claudeFilesRemoved: 0 };
   for (const entry of entries) {
     let files = entry.files;
