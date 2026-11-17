@@ -24,6 +24,19 @@ const runs = ['2026-11-16', '2026-11-09', '2026-11-02'].map((date, index) => ({
 }));
 const browser = await chromium.launch();
 const result = {};
+// 세라피엘의 flush.mjs와 같은 방식으로 실제 스크롤 조상을 찾고 칸의 보이는 끝과 견준다.
+async function measureInset(locator, operation = 'measure') {
+  return locator.evaluate((element, operation) => {
+    let scroller = element.parentElement;
+    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    if (!scroller) throw new Error('스크롤 칸을 찾지 못했습니다');
+    if (operation === 'end') scroller.scrollTop = scroller.scrollHeight;
+    if (operation === 'edge') scroller.scrollTop += element.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom + 4;
+    const box = element.getBoundingClientRect();
+    const pane = scroller.getBoundingClientRect();
+    return { inset: pane.bottom - box.bottom, topInset: box.top - pane.top, paneBottom: pane.bottom, bottom: box.bottom, scroller: scroller.className, scrollPadding: getComputedStyle(scroller).scrollPaddingBlockEnd };
+  }, operation);
+}
 try {
   for (const width of [1440, 360]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: 'dark', reducedMotion: 'reduce', serviceWorkers: 'block' });
@@ -58,16 +71,26 @@ try {
     const loading = { status: await tab.getByRole('status').count(), active: await tab.getByText('활성', { exact: true }).count(), empty: await tab.getByText('없음', { exact: true }).count() };
     await page.screenshot({ path: path.join(output, `loading-${width}.png`), animations: 'disabled' });
     release();
-    await tab.getByRole('button').filter({ hasText: job.name }).first().click();
-    await tab.getByText('최근 실행', { exact: true }).waitFor();
-    await tab.locator(':scope > div').evaluate(element => { element.scrollTop = element.scrollHeight; });
-    await page.locator('.config-dialog .config-detail').evaluate(element => { element.scrollTop = element.scrollHeight; });
-    const save = tab.getByRole('button', { name: '변경 저장', exact: true });
-    await save.scrollIntoViewIfNeeded();
-    await save.click();
+    await tab.getByText('활성', { exact: true }).waitFor();
+    await tab.getByLabel('작업 이름').fill('검수용 새 반복 작업');
+    const create = tab.getByRole('button', { name: '반복 작업 생성', exact: true });
+    await measureInset(create, 'end');
+    const rest = await measureInset(create.locator('..'));
+    await create.click();
     const alert = tab.getByRole('alert');
     await alert.waitFor({ state: 'attached' });
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(300);
+    const createAlert = await measureInset(alert);
+    await page.screenshot({ path: path.join(output, `create-error-${width}.png`), animations: 'disabled' });
+    await tab.getByRole('button').filter({ hasText: job.name }).first().click();
+    await tab.getByText('최근 실행', { exact: true }).waitFor();
+    const save = tab.getByRole('button', { name: '변경 저장', exact: true });
+    await measureInset(save, 'edge');
+    await save.click();
+    await alert.waitFor({ state: 'attached' });
+    await page.waitForTimeout(300);
+    const saveAlert = await measureInset(alert);
+    const saveButton = await measureInset(save);
     const geometry = await alert.evaluate(element => {
       const rect = element.getBoundingClientRect();
       const row = element.previousElementSibling.getBoundingClientRect();
@@ -93,8 +116,42 @@ try {
     await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     const closed = await dialog.isHidden();
     const restored = await opener.evaluate(element => element === document.activeElement);
-    result[width] = { loading, geometry, focusAfterSave, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
+    result[width] = { loading, rest, createAlert, saveAlert, saveButton, geometry, focusAfterSave, tabStops, resize, scrollBeforeResize, originalName, overflow, closed, restored };
     await context.close();
+
+    // 공용 틀을 쓰는 영구 세션의 배치와 scrollIntoView 오류도 같은 전후 조건에서 잰다.
+    const persistentContext = await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: 'dark', reducedMotion: 'reduce', serviceWorkers: 'block' });
+    const persistentPage = await persistentContext.newPage();
+    await persistentPage.addInitScript(() => localStorage.setItem('ls.webglGlass', '0'));
+    await installV3VisualQaRoutes(persistentPage, { unifiedFolderView: true, timelineEventCount: 1 });
+    await persistentPage.route('**/api/auth/config', route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
+    await persistentPage.route('**/api/auth/status', route => route.fulfill({ json: { authenticated: true, user: { email: 'qa@example.test', name: 'QA', isAdmin: true } } }));
+    const settings = { default_model: { model_preset: 'qa-standard', reasoning_effort: null }, fallback_models: [], show_generation_separator: true, show_character: true, animate_character: true, show_jev_candidates: true, show_turn_usage: true, turn_usage_mode: 'collapsed' };
+    const session = { session_id: 'operations-session', display_name: '운영 기록을 확인하는 영구 세션', node_id: 'eiaserinnys', folder_id: 'folder-amber', agent_id: 'seosoyoung', agent_name: '서소영', persistent: true, settings, runtime: { current_model: { model_preset: 'qa-standard', reasoning_effort: null, model: 'qa-standard' }, pending: null } };
+    await persistentPage.route('**/api/persistent-sessions**', route => route.fulfill({ json: { sessions: [session], total: 1, create_defaults: { node_id: 'eiaserinnys', preferred_agent_id: 'seosoyoung', settings, initial_instruction: '', unavailable_reason: null } } }));
+    await persistentPage.goto(base);
+    await persistentPage.getByRole('button', { name: '서버 설정', exact: true }).click();
+    await persistentPage.locator('.config-dialog').getByRole('button', { name: '영구 에이전트 세션', exact: true }).click();
+    const persistentTab = persistentPage.getByTestId('persistent-sessions-tab');
+    await persistentTab.getByRole('button').filter({ hasText: session.display_name }).first().click();
+    const persistentName = persistentTab.getByLabel('세션 이름');
+    await persistentName.waitFor();
+    const layout = await persistentTab.evaluate(element => {
+      const rect = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+      return { list: rect(element.querySelector('aside')), detail: rect(element.querySelector(':scope > div')), header: rect(element.querySelector('header')) };
+    });
+    await persistentPage.screenshot({ path: path.join(output, `persistent-layout-${width}.png`), animations: 'disabled' });
+    await persistentName.fill('');
+    const persistentSave = persistentTab.getByRole('button', { name: '변경 저장', exact: true });
+    await measureInset(persistentSave, 'edge');
+    await persistentSave.click();
+    const persistentAlert = persistentTab.getByRole('alert').filter({ hasText: '세션 이름을 입력하세요.' });
+    await persistentAlert.waitFor({ state: 'attached' });
+    await persistentPage.waitForTimeout(300);
+    const persistentError = await measureInset(persistentAlert);
+    await persistentPage.screenshot({ path: path.join(output, `persistent-error-${width}.png`), animations: 'disabled' });
+    result[width].persistent = { layout, error: persistentError };
+    await persistentContext.close();
   }
 } finally { await browser.close(); }
 await writeFile(path.join(output, 'measurements.json'), JSON.stringify(result, null, 2));
@@ -103,7 +160,8 @@ if (mode === 'after') {
   for (const entry of Object.values(result)) {
     if (entry.loading.status !== 1 || entry.loading.active || entry.loading.empty) throw new Error('첫 로딩 상태 실패');
     const g = entry.geometry;
-    if (g.top < g.rowBottom - 1 || g.top < 0 || g.bottom > g.viewportHeight) throw new Error('오류 안내 위치 실패');
+    if (g.top < g.rowBottom - 1 || Math.abs(entry.createAlert.inset - 24) > 1 || Math.abs(entry.saveAlert.inset - 24) > 1 || entry.saveButton.inset < 0 || entry.saveButton.topInset < 0) throw new Error('스크롤 칸 안의 오류 안내 위치 실패');
+    if (entry.persistent.error.inset < 23 || entry.persistent.error.topInset < 23) throw new Error('영구 세션 오류 안내가 스크롤 칸 끝에 닿습니다');
     if (!entry.tabStops.every(stop => stop.inDialog && stop.visible) || !entry.closed || !entry.restored) throw new Error('키보드 조작 실패');
     if (entry.resize.name !== entry.originalName || entry.overflow.documentScrollWidth > entry.overflow.clientWidth + 1) throw new Error('크기 변경 실패');
   }
