@@ -135,6 +135,9 @@ describe("CI maintenance contract", () => {
       "scripts/tests/verify_bundle_load.test.mjs",
       "scripts/verify-workspace-bundle.mjs",
       "scripts/verify-workspace-bundle.test.mjs",
+      "deploy/haniel/build-core.sh",
+      "deploy/haniel/pack_portable_node_release.sh",
+      "deploy/macos/check-macos-node.sh",
       "deploy/haniel/build_core_darwin.py",
       "deploy/haniel/test_build_core_darwin.py",
     ];
