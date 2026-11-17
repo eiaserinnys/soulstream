@@ -62,7 +62,7 @@ function StorageSection({ purpose, title, request }: { request: typeof fetch; pu
         value={draft[key]} onChange={value => setDraft(current => ({ ...current, [key]: value }))} />)}
     </div>
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-      <span>비밀키: {metadata?.secretAccessKeyConfigured ? "저장됨" : "미설정"}</span>
+      <span data-v3-selectable-content="true">비밀키: {metadata?.secretAccessKeyConfigured ? "저장됨" : "미설정"}</span>
       <label className="flex items-center gap-2"><input type="checkbox" checked={deleteSecret} disabled={busy || !metadata?.secretAccessKeyConfigured} onChange={event => setDeleteSecret(event.target.checked)} />저장된 비밀키 삭제</label>
     </div>
     <div className="flex flex-wrap gap-2">

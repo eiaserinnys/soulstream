@@ -219,8 +219,8 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
                 /> : <p className="break-words text-sm text-foreground" data-v3-selectable-content="true">{instruction.text}</p>}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    {instruction.source_turns.length > 0 ? <span>{instruction.source_turns.join(", ")}</span> : null}
-                    <time dateTime={instruction.updated_at}>{formatDate(instruction.updated_at)}</time>
+                    {instruction.source_turns.length > 0 ? <span data-v3-selectable-content="true">{instruction.source_turns.join(", ")}</span> : null}
+                    <time data-v3-selectable-content="true" dateTime={instruction.updated_at}>{formatDate(instruction.updated_at)}</time>
                   </div>
                   <div className="flex items-center gap-2">
                     {editing ? <>

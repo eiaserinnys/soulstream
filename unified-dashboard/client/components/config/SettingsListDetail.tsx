@@ -69,16 +69,17 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
   );
 }
 
-export function SettingsDetailHeader({ title, subtitle, actions }: {
+export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle = false }: {
   title: string;
+  selectableTitle?: boolean;
   subtitle?: string | null;
   actions?: ReactNode;
 }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-2">
       <div>
-        <h3 className="text-base font-semibold">{title}</h3>
-        {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
+        <h3 data-v3-selectable-content={selectableTitle ? "true" : undefined} className="text-base font-semibold">{title}</h3>
+        {subtitle ? <p data-v3-selectable-content="true" className="text-xs text-muted-foreground">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>

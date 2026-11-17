@@ -356,7 +356,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
                   const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
                   return (
                     <div key={bundleId} className="flex items-center gap-2 rounded border border-border bg-muted/10 px-3 py-2 text-sm">
-                      <span className="min-w-0 flex-1 truncate" title={bundle?.description}>
+                      <span className="min-w-0 flex-1 truncate" title={bundle?.description} data-v3-selectable-content="true">
                         <strong>{bundleId}</strong>{bundle?.description ? ` · ${bundle.description}` : ""}
                       </span>
                       <Button type="button" size="sm" variant="ghost" aria-label={`${bundleId} 위로`} disabled={index === 0} onClick={() => setDraft(moveBundleReference(draft, index, -1))}>위로</Button>
@@ -421,13 +421,13 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
                 {effectiveContexts.map(({ context, source }, index) => (
                   <div key={index} data-testid="effective-context-row" data-source={source} className="rounded border border-border/60 px-3 py-2 text-xs">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-mono">{context.node_id}</span>
-                      <span>mode: {context.mode ?? "full"}</span>
-                      <span>depth: {context.depth ?? "기본값"}</span>
+                      <span className="font-mono" data-v3-selectable-content="true">{context.node_id}</span>
+                      <span data-v3-selectable-content="true">mode: {context.mode ?? "full"}</span>
+                      <span data-v3-selectable-content="true">depth: {context.depth ?? "기본값"}</span>
                       <span className="ml-auto font-medium">{source}</span>
                     </div>
                     {conditionSummary(context.applies_when) && (
-                      <div className="mt-1 text-muted-foreground">{conditionSummary(context.applies_when)}</div>
+                      <div className="mt-1 text-muted-foreground" data-v3-selectable-content="true">{conditionSummary(context.applies_when)}</div>
                     )}
                   </div>
                 ))}
@@ -478,7 +478,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
                     <thead><tr className="border-b border-border"><th className="py-1">소스</th><th>상태</th><th>자수</th><th>예상 토큰</th></tr></thead>
                     <tbody>{previewSources.map((source) => (
                       <tr key={source.id} className="border-b border-border/50">
-                        <td className="py-1">{source.label || source.id}</td><td>{source.status}</td><td>{source.chars}</td><td>{source.token_estimate}</td>
+                        <td className="py-1" data-v3-selectable-content="true">{source.label || source.id}</td><td data-v3-selectable-content="true">{source.status}</td><td data-v3-selectable-content="true">{source.chars}</td><td data-v3-selectable-content="true">{source.token_estimate}</td>
                       </tr>
                     ))}</tbody>
                   </table>

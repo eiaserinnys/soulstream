@@ -244,7 +244,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         />)}
       </SettingsListSection> : loadError ? null : <p className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p>}
     </>}>
-      {selected || defaults ? <SettingsDetailHeader
+      {selected || defaults ? <SettingsDetailHeader selectableTitle={Boolean(selected)}
         title={selected ? selected.display_name ?? "이름 없음" : "새 영구 에이전트 세션"}
         actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || details.pending || nodeUnknown} onClick={() => void release()}>영구 세션 해제</Button> : null}
       /> : null}

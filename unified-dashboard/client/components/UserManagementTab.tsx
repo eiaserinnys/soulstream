@@ -224,9 +224,9 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
               <TableRow key={user.email}>
                 <TableCell>
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{user.email}</div>
+                    <div className="truncate text-sm font-medium" data-v3-selectable-content="true">{user.email}</div>
                     {user.displayName && (
-                      <div className="truncate text-xs text-muted-foreground">{user.displayName}</div>
+                      <div className="truncate text-xs text-muted-foreground" data-v3-selectable-content="true">{user.displayName}</div>
                     )}
                   </div>
                 </TableCell>

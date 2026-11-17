@@ -103,11 +103,11 @@ export function ClaudeAccountRow({
     <div className="c724-account-top">
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: statusColor(account) }} />
-        <span className="c724-account-email" data-selectable="true" title={account.email}>{account.email}</span>
+        <span className="c724-account-email" data-selectable="true" title={account.email} data-v3-selectable-content="true">{account.email}</span>
         {account.plan ? <span className="c724-badge c724-badge-neutral">{account.plan}</span> : null}
         {showPriority ? <span className="c724-badge c724-badge-accent">{index + 1}순위</span> : null}
         {status ? <span className={`c724-badge ${account.auth_state === "needs_relogin" ? "c724-badge-danger" : account.blocked ? "c724-badge-warn" : "c724-badge-neutral"}`}>{status}</span> : null}
-        {account.active_sessions > 0 ? <span className="c724-meta-inline">세션 {account.active_sessions}</span> : null}
+        {account.active_sessions > 0 ? <span className="c724-meta-inline" data-v3-selectable-content="true">세션 {account.active_sessions}</span> : null}
       </div>
 
       <div className="c724-account-actions">
@@ -133,7 +133,7 @@ export function ClaudeAccountRow({
 
     {hasUsage ? <ProviderQuotaGrid slots={slots} label={`${account.email} 사용량`} /> : <div className="c724-idle-row">
       <span className="c724-meta-inline">{account.auth_state === "needs_relogin" ? "인증 만료로 사용량 조회 중단" : "미측정 (실제 호출 시 갱신)"}</span>
-      <span className="c724-meta-inline">{observed ? `${observed} ${account.auth_state === "idle" ? "확인" : "갱신"}` : ""}</span>
+      <span className="c724-meta-inline" data-v3-selectable-content="true">{observed ? `${observed} ${account.auth_state === "idle" ? "확인" : "갱신"}` : ""}</span>
     </div>}
 
     {confirmingDelete ? <div className="c724-confirm-bar" data-testid={`delete-confirm-${account.id}`}>

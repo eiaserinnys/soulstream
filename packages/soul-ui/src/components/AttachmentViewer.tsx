@@ -273,7 +273,7 @@ export function AttachmentViewer({
         onKeyDown={handleKeyDown}
       >
         <DialogHeader className="chat-image-viewer-header">
-          <DialogTitle className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
+          <DialogTitle data-slot="attachment-name" className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
           {metadata && <p className="chat-image-viewer-metadata">{metadata}</p>}
         </DialogHeader>
         <DialogPanel

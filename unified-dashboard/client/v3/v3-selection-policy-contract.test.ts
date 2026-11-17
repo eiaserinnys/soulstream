@@ -11,7 +11,7 @@ const contentSelectors = [
   'input', 'textarea', '[contenteditable="true"]',
   ...[
     '[data-v3-selectable-content="true"]', '[data-slot="chat-body"]', '[data-slot="chat-tool-body"]',
-    '[data-slot="attachment-preview-body"]', '[data-slot="dialog-error-message"]',
+    '[data-slot="attachment-name"]', '[data-slot="attachment-preview-body"]', '[data-slot="dialog-error-message"]',
     '[data-slot="dialog-error-detail"]', '[data-slot="session-story-body"]', '[data-slot="inherited-prompt-body"]',
   ].flatMap(selector => [selector, `${selector} *`]),
 ];

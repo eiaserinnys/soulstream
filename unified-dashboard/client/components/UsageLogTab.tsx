@@ -165,15 +165,15 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
             <tbody>
               {events.map((event) => (
                 <tr key={event.eventId} className="border-t border-border/60">
-                  <td className="whitespace-nowrap px-2 py-1 tabular-nums">
+                  <td className="whitespace-nowrap px-2 py-1 tabular-nums" data-v3-selectable-content="true">
                     {clockTime(event.occurredAt)}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1" data-v3-selectable-content="true">
                     {CLIENT_LABELS[event.clientKind] ?? event.clientKind}
                   </td>
-                  <td className="px-2 py-1">{EVENT_LABELS[event.type] ?? event.type}</td>
-                  <td className="px-2 py-1 text-muted-foreground">{event.entry ?? "—"}</td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1" data-v3-selectable-content="true">{EVENT_LABELS[event.type] ?? event.type}</td>
+                  <td className="px-2 py-1 text-muted-foreground" data-v3-selectable-content="true">{event.entry ?? "—"}</td>
+                  <td className="px-2 py-1" data-v3-selectable-content="true">
                     {event.target === null ? (
                       <span className="text-muted-foreground">—</span>
                     ) : (

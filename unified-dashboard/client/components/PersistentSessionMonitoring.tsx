@@ -199,8 +199,8 @@ export function PersistentSessionMonitoringView({
         <h3 className="text-sm font-medium">최근 기록</h3>
         {visibleEvents.length > 0 ? <ol className="space-y-2" aria-label="최근 세션 기록">
           {visibleEvents.map(({ event, detail }) => <li key={String(event.id)} data-testid="persistent-session-history-row" data-event-id={String(event.id)} className="min-w-0">
-            <time dateTime={event.created_at} className="block text-xs text-muted-foreground">{displayTime(event.created_at)}</time>
-            <p className="break-words text-sm text-foreground">{detail}</p>
+            <time dateTime={event.created_at} className="block text-xs text-muted-foreground" data-v3-selectable-content="true">{displayTime(event.created_at)}</time>
+            <p className="break-words text-sm text-foreground" data-v3-selectable-content="true">{detail}</p>
           </li>)}
         </ol> : generation ? <p className="text-sm text-muted-foreground">기록 없음</p> : null}
         {history.nextCursor ? <Button type="button" size="sm" variant="outline" disabled={history.loadingMore} onClick={() => void loadMore()}>

@@ -33,7 +33,7 @@ export function UsageShareRow({
       {content}
     </button>
   ) : (
-    <div className="usage-stats-share-row" style={style}>
+    <div data-v3-selectable-content="true" className="usage-stats-share-row" style={style}>
       {content}
     </div>
   );

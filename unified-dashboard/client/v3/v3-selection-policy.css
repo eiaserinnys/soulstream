@@ -28,6 +28,8 @@
   [data-slot="chat-body"] *,
   [data-slot="chat-tool-body"],
   [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-name"],
+  [data-slot="attachment-name"] *,
   [data-slot="attachment-preview-body"],
   [data-slot="attachment-preview-body"] *,
   [data-slot="dialog-error-message"],
