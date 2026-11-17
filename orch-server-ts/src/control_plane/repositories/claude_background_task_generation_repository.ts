@@ -124,6 +124,7 @@ export class ClaudeBackgroundTaskGenerationRepository {
   private async observeWithSql(
     transaction: SqlClient,
     params: ObserveClaudeBackgroundTaskGenerationParams,
+    options?: { skipOwnerCheckWhenTerminal?: boolean },
   ): Promise<ClaudeBackgroundTaskGenerationRow> {
     await transaction`
       SELECT pg_advisory_xact_lock(
@@ -171,9 +172,19 @@ export class ClaudeBackgroundTaskGenerationRepository {
         AND claude_background_task_generations.completion_id = EXCLUDED.completion_id
       RETURNING *
     `;
-    const row = rows[0] ?? await this.require(transaction, params);
+    const written = rows[0];
+    const row = written ?? await this.require(transaction, params);
     this.assertIdentity(row, params);
-    this.assertExecutionOwner(row, params);
+    // The upsert returns a row only when it inserted a generation or updated a
+    // writable one, and identity already matched above, so a missing upsert row
+    // means the stored generation is terminal. The terminal UPDATE only touches
+    // writable rows as well and the legacy projection never rewrites this row,
+    // so comparing owners on a terminal row guards nothing and only turns a
+    // late terminal event from the next turn into a false conflict.
+    const skipOwnerCheck = options?.skipOwnerCheckWhenTerminal === true && !written;
+    if (!skipOwnerCheck) {
+      this.assertExecutionOwner(row, params);
+    }
     await this.projectLegacy(transaction, row);
     return row;
   }
@@ -214,7 +225,7 @@ export class ClaudeBackgroundTaskGenerationRepository {
       ...params,
       status: "running",
       observedAt,
-    });
+    }, { skipOwnerCheckWhenTerminal: true });
     const transitioned = await transaction<ClaudeBackgroundTaskGenerationRow[]>`
       UPDATE claude_background_task_generations
       SET
