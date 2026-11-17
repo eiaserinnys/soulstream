@@ -49,6 +49,8 @@ const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selecti
   for (const width of [1440, 360]) {
     const cases = { verify, documentReader, attachment, usageLog, statusPicker };
     for (const [name, run] of Object.entries(cases)) {
+      // Cross-column copying needs the table columns on screen; narrow coverage uses the other surfaces.
+      if (name === "usageLog" && width === 360) continue;
       if (!process.env.V3_SELECTION_QA_ONLY || process.env.V3_SELECTION_QA_ONLY === name) {
         console.log(`검수: ${name} ${width}`);
         results.push({ name, width, metrics: await run(browser, width) });
