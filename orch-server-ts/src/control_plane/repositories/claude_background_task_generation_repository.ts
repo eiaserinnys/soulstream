@@ -9,6 +9,21 @@ import type { SqlClient } from "../control_plane_types.js";
 import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";
 
+/**
+ * A request from another execution tried to mutate a generation this one owns.
+ * Permanent: the host route answers 409 with a domain code instead of 500, so
+ * the node does not spend the restart-window retry budget on it.
+ */
+export class ClaudeBackgroundExecutionOwnerConflictError extends Error {
+  readonly code = "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT";
+  readonly statusCode = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "ClaudeBackgroundExecutionOwnerConflictError";
+  }
+}
+
 /** Generation-aware sidecar owner. The legacy repository delegates here. */
 export class ClaudeBackgroundTaskGenerationRepository {
   constructor(private readonly sql: SqlClient) {}
@@ -182,7 +197,11 @@ export class ClaudeBackgroundTaskGenerationRepository {
         || row.execution_command_id !== commandId
       )
     ) {
-      throw new Error(`Claude background execution owner conflict: ${row.generation_key}`);
+      throw new ClaudeBackgroundExecutionOwnerConflictError(
+        `Claude background execution owner conflict: ${row.generation_key}`
+        + ` stored=${row.runner_registration_id}/${row.execution_command_id}`
+        + ` requested=${registrationId}/${commandId}`,
+      );
     }
   }
 

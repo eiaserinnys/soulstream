@@ -124,6 +124,41 @@ describe("ClaudeBackgroundGenerationHostClient retry policy", () => {
     );
   });
 
+  it("does not retry a terminalize owner conflict and rethrows its status and code", async () => {
+    const failure = new PersistenceHostRequestError(
+      "claude-runtime",
+      "terminalize_background_generation",
+      "claude-runtime host terminalize_background_generation failed: Claude background execution owner conflict: generation-a stored=registration-a/command-a requested=registration-b/command-b",
+      409,
+      { code: "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT" },
+    );
+    const request = vi.fn().mockRejectedValue(failure);
+    const client = clientWith(request, [1, 1]);
+    const params = {
+      sourceNode: "node-a",
+      sessionId: "session-a",
+      taskId: "task-a",
+      sdkSessionId: "sdk-a",
+      initiatingToolUseId: "toolu-a",
+      generationKey: "generation-a",
+      relationKey: "relation-a",
+      completionId: "completion-a",
+      runnerRegistrationId: "registration-b",
+      executionCommandId: "command-b",
+      status: "completed" as const,
+      closeReason: "sdk_completed",
+      terminalRevision: "1785081600000",
+    } as never;
+
+    const rejection = client.terminalize(params);
+    await expect(rejection).rejects.toBe(failure);
+    await expect(rejection).rejects.toMatchObject({
+      status: 409,
+      code: "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT",
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("does not retry a non-retryable 401 and rethrows it unchanged", async () => {
     const failure = transportError("resolve_background_generation", 401);
     const request = vi.fn().mockRejectedValue(failure);

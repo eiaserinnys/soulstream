@@ -322,11 +322,19 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     };
     await repository.observeGeneration(owned);
 
-    await expect(repository.observeGeneration({
+    const rejection = repository.observeGeneration({
       ...owned,
       runnerRegistrationId: "registration-b",
       executionCommandId: "command-b",
-    })).rejects.toThrow("Claude background execution owner conflict");
+    });
+    await expect(rejection).rejects.toThrow("Claude background execution owner conflict");
+    await expect(rejection).rejects.toMatchObject({
+      statusCode: 409,
+      code: "CLAUDE_BACKGROUND_EXECUTION_OWNER_CONFLICT",
+      message: expect.stringContaining(
+        "stored=registration-a/command-a requested=registration-b/command-b",
+      ),
+    });
     await expect(repository.getGeneration(
       owned.sourceNode,
       owned.sessionId,
