@@ -119,6 +119,7 @@ export function composeQueuedDeliveryRecovery(
       recoveryRepository: deliveryRepository.recovery,
       transcriptReceipt,
       instructionReceipt: { lookup: createInstructionReceiptLookup(params.getTask, params.logger) },
+      hasLiveRunner: row => !!row.target_session_id && !!params.getTask(row.target_session_id)?.runner,
       redeliverContent: params.redeliverContent,
       logger: params.logger,
     },

@@ -18,6 +18,7 @@ const OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS = new Set([...OPAQUE_ARGUMENT_KEYS, 
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
+const CLAUDE_RUNTIME_BODY_LIMIT = 48 * 1024 * 1024;
 const RETRY_DELAY_ARG_INDEX = new Map<string, number>([
   ["defer_pending", 2],
   ["retry_delivery_attempt", 3],
@@ -158,6 +159,7 @@ function registerDomain(
 ): void {
   app.post<{ Params: { operation: string } }>(
     `/api/${domain}/host/:operation`,
+    domain === "claude-runtime" ? { bodyLimit: CLAUDE_RUNTIME_BODY_LIMIT } : {},
     async (request, reply) => {
       const timing = beginHostTiming(request, domain, request.params.operation);
       const authorization = verifyServiceBearerAuthorization(

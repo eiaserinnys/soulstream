@@ -16,7 +16,6 @@ import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
   dispositionRequiresTask,
   heldExecutionSupersedesRegistration,
-  handleRecoveryWithFailureTracking,
   terminalizeFailedRunner,
   recoverRunnerByDisposition,
   terminalizeReapedRunner,
@@ -75,6 +74,7 @@ import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js
 import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 
+class SuccessorTurnStartedError extends Error {}
 /**
  * 릴리스 GC 스윕의 최소 시작 간격. 세션이 끝날 때마다 스윕이 돌아 공유 storage
  * worker를 붐비지 않게 한다. 릴리스 GC는 즉시성이 필요 없다.
@@ -830,29 +830,19 @@ export class RunnerRecoveryCoordinator {
     onRunnerAttached?: () => void,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
-    await handleRecoveryWithFailureTracking({
-      registration,
-      disposition,
-      ...(task ? { task } : {}),
-      handle: async (owned, ownedDisposition, recoveredTask) => {
-        // 복구 중 올린 종료가 거절되면 그 거절은 지금 복구하는 등록의 것이다.
-        if (recoveredTask) {
-          recoveredTask.runnerRecoveryRegistrationId = owned.registrationId ?? undefined;
-        }
-        try {
-          await this.handle(
-            owned,
-            ownedDisposition,
-            recoveredTask,
-            onRunnerAttached,
-            phaseObservation,
-          );
-        } finally {
-          if (recoveredTask) recoveredTask.runnerRecoveryRegistrationId = undefined;
-        }
-      },
-      recoveryLogger: this.recoveryLogger,
-    });
+    if (task) task.runnerRecoveryRegistrationId = registration.registrationId ?? undefined;
+    try {
+      await this.handle(registration, disposition, task, onRunnerAttached, phaseObservation);
+      this.recoveryLogger.clear(registration.config.sessionId);
+    } catch (error) {
+      if (error instanceof SuccessorTurnStartedError) {
+        this.options.logger.info({ sessionId: registration.config.sessionId, disposition }, "runner recovery action deferred: successor turn started");
+      } else {
+        this.recoveryLogger.failure(registration, disposition, error);
+      }
+    } finally {
+      if (task) task.runnerRecoveryRegistrationId = undefined;
+    }
   }
 
   /** 사라진 등록의 중앙 확인 상태를 버린다. */
@@ -1485,6 +1475,9 @@ export class RunnerRecoveryCoordinator {
         );
       }
       if (!hasRecordedTerminal(task)) {
+        if (!isTerminalTaskStatus(task.status)) {
+          throw new SuccessorTurnStartedError(`runner terminal retirement deferred: ${registration.config.sessionId}`);
+        }
         throw new Error(
           `runner terminal retirement did not record session terminal: ${registration.config.sessionId}`,
         );

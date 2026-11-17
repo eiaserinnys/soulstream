@@ -1840,6 +1840,34 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(closedTailDrainer.drain).not.toHaveBeenCalled();
   });
 
+  it.each(["running", "completed"] as const)("classifies a missing terminal after retirement while task is %s", async (status) => {
+    const admitted = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const subject = makeSubject([admitted]);
+    const execution = deferred<void>();
+    subject.task.status = "running";
+    subject.task.executionPromise = execution.promise;
+    const retireTerminalRegistration = vi.fn(async (before?: () => Promise<void>) => {
+      subject.task.status = status;
+      subject.task.executionPromise = undefined;
+      execution.resolve();
+      await before?.();
+    });
+    subject.task.runner = { dispatcher: {
+      registrationId: () => admitted.registrationId, activeExecutionCommandId: () => "execute-a",
+      hasActiveExecution: () => true, retireTerminalRegistration,
+    } } as never;
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.task.runner).toBeDefined();
+    if (status === "running") {
+      expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-a" }), "runner recovery action deferred: successor turn started");
+      expect(subject.logger.error).not.toHaveBeenCalled();
+    } else {
+      expect(subject.logger.error).toHaveBeenCalledWith(expect.objectContaining({ err: expect.objectContaining({ message: expect.stringContaining("did not record session terminal") }) }), "runner recovery action failed");
+    }
+  });
+
   it("retires an attached reaped admission with the matching command before invalidation", async () => {
     const admitted = registration({ pidAlive: false, lifecycleState: "reaped" });
     const subject = makeSubject([admitted]);

@@ -49,7 +49,7 @@ interface ClaudeBackgroundGenerationStartupRecoveryDeps {
   sessionStore: SessionStore;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
-  logger: Pick<Logger, "error">;
+  logger: Pick<Logger, "error" | "info">;
   getModelPresetBackend?(presetId: string): AgentProfile["backend"] | undefined;
   resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
   loadMessages?(
@@ -157,9 +157,18 @@ export class ClaudeBackgroundGenerationStartupRecovery {
       ? this.deps.getModelPresetBackend?.(session.model_preset)
       : profile.backend;
     if (backend !== "claude") return "skipped";
-    const workspaceDir = session.worktree_id
-      ? await this.resolveWorktreeWorkspace(session.worktree_id)
-      : profile.workspace_dir;
+    let workspaceDir = profile.workspace_dir;
+    if (session.worktree_id) {
+      try {
+        workspaceDir = await this.resolveWorktreeWorkspace(session.worktree_id);
+      } catch (error) {
+        if (isWorktreeUnavailable(error)) this.deps.logger.info(
+          { sessionId: legacy.session_id, worktreeId: session.worktree_id, taskId: legacy.task_id },
+          "background generation reconciliation skipped: worktree not ready",
+        );
+        throw error;
+      }
+    }
     const messages = await this.loadMessages(sdkSessionId, {
       dir: workspaceDir,
       sessionStore: this.deps.sessionStore,

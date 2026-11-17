@@ -860,7 +860,7 @@ describe("EventPersistence durable ingress", () => {
     );
 
     await expect(ep.waitForSessionAck("sess-1")).resolves.toBe(42);
-    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record);
+    expect(ingress.waitForAcknowledgement).toHaveBeenCalledWith(ingress.record, { timeoutMs: 300_000 });
     await expect(ep.waitForSessionAck("sess-1")).resolves.toBeNull();
   });
 });

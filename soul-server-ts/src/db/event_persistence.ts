@@ -61,7 +61,7 @@ import { omitInlineImageData } from "./omit_inline_image_data.js";
  * simply the difference between learning the truth late and asserting
  * something false on time.
  */
-const TRANSITION_ACK_TIMEOUT_MS = 5 * 60_000;
+export const TRANSITION_ACK_TIMEOUT_MS = 5 * 60_000;
 
 const LAST_MESSAGE_PREVIEW_LIMIT = 200;
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
@@ -198,7 +198,7 @@ export class EventPersistence extends EventTransitionPublisher {
   async waitForSessionAck(sessionId: string): Promise<number | null> {
     const record = this.latestPendingAckBySession.get(sessionId);
     if (!record) return null;
-    const eventId = await this.outboxPump.waitForAcknowledgement(record);
+    const eventId = await this.outboxPump.waitForAcknowledgement(record, { timeoutMs: TRANSITION_ACK_TIMEOUT_MS });
     this.clearPendingAckTarget(sessionId, record.source_seq);
     return eventId;
   }

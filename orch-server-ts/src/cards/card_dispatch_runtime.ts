@@ -199,6 +199,7 @@ export async function createCardDispatchRuntime(options: {
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,
+    isNodeConnected: nodeId => options.router.isNodeConnected(nodeId),
     cards: serviceProvider,
     deliveryExists: async id => !!await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).get(id),
     abandonDelivery: async (deliveryId, reason) => { await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).markUncertain(deliveryId, undefined, reason); },

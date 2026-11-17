@@ -53,8 +53,10 @@ export type CardDispatcherOptions = {
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
+    isNodeConnected?: (nodeId: string) => boolean;
     orchestration?: {enabled:()=>Promise<boolean>;kick:()=>Promise<void>;ownsSession:(id:string)=>Promise<boolean>;decisionEnded?:(id:string)=>Promise<void>};
 };
+const VERIFICATION_WAKE_GRACE_MS = 5 * 60_000;
 /** One selection seam; the director's global queue is the only scheduling policy. */
 export function pickNextCard(cards: readonly DispatchCard[], occupancy: Record<string, number>, concurrency: Record<string, number>, resolveNode: (card: DispatchCard) => string): DispatchCard | undefined {
     return cards.find(card => card.assignee_kind !== "human" && !!card.assignee_agent_id
@@ -296,16 +298,18 @@ export class CardDispatcher {
         const cards = await this.options.cards();
         for (const card of await this.options.repository.awaitingVerification(new Date(now))) {
             try {
-                await this.wakeAwaitingVerification(card, cards);
+                await this.wakeAwaitingVerification(card, cards, now);
             } catch (error) { this.options.warn(`card ${card.id} verification wake failed: ${String(error)}`); }
         }
     }
-    private async wakeAwaitingVerification(card: DispatchCard, cards: CardControlPlaneService): Promise<void> {
+    private async wakeAwaitingVerification(card: DispatchCard, cards: CardControlPlaneService, now: number): Promise<void> {
         const owner = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
         if (!owner) {
             await this.blockVerificationWake(card, cards, "담당 세션이 없습니다");
             return;
         }
+        if (owner.node_id && this.options.isNodeConnected && !this.options.isNodeConnected(owner.node_id)
+            && now - new Date(card.wake_at!).getTime() < VERIFICATION_WAKE_GRACE_MS) return;
         const wakeAt = new Date(card.wake_at!).toISOString();
         const deliveryId = `card-verify-wake:${card.id}:${wakeAt}`;
         try {
