@@ -2026,6 +2026,27 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.task.status).toBe("error");
   });
 
+  it("skips recovery if a runner attaches while registration hydrates", async () => {
+    const admitted = registration();
+    let subject!: ReturnType<typeof makeSubject>;
+    subject = makeSubject([admitted], undefined, [], {
+      hydrate: async (value) => {
+        subject.task.runner = { dispatcher: {} } as never;
+        return value;
+      },
+    });
+    const result = await (subject.coordinator as unknown as {
+      recoverRegistered: (registration: RunnerRegistration, task: Task, mode: "replay") => Promise<{ replayed: boolean }>;
+    }).recoverRegistered(admitted, subject.task, "replay");
+
+    expect(result.replayed).toBe(false);
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "replay", blockedBy: "runner" }),
+      "registered runner recovery skipped because the task still holds an execution",
+    );
+  });
+
   it("leaves a mismatched attached command for offline recovery to report blockedBy runner", async () => {
     const admitted = registration({ pidAlive: false, lifecycleState: "reaped" });
     const subject = makeSubject([admitted]);

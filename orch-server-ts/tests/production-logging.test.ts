@@ -1,8 +1,10 @@
+import WebSocket from "ws";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryNodeRegistry,
   createApp,
+  loadContractFixtures,
   parseOrchServerConfig,
 } from "../src/index.js";
 
@@ -20,6 +22,9 @@ const testConfig = parseOrchServerConfig({
 
 type TestWebSocket = {
   terminate: () => void;
+  close: (code: number, reason: string) => void;
+  send: (data: string) => void;
+  on: (event: "message", handler: () => void) => void;
 };
 
 type WebSocketInjectableApp = {
@@ -160,6 +165,45 @@ describe("production operations logging", () => {
     await app.close();
 
     expect(capture.raw()).toBe("");
+  });
+
+  it("records registered identity and handover close on both WebSocket lanes", async () => {
+    const capture = createLogCapture();
+    const registry = new InMemoryNodeRegistry();
+    const app = createApp({ config: productionConfig, logDestination: capture.stream,
+      nodeWsRoute: { nodeCredentials: {
+        resolve: (token) => token === "node-token" ? { credential_id: "cred", node_id: "fake-node", company_pc: false } : null,
+        onRevoked: () => () => {},
+      }, registry } });
+    const address = await app.listen({ port: 0, host: "127.0.0.1" });
+    const headers = { authorization: "Bearer node-token" };
+    const connect = async (path: string): Promise<WebSocket> => {
+      const socket = new WebSocket(address.replace("http:", "ws:") + path, { headers });
+      await new Promise<void>((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
+      return socket;
+    };
+    const data = await connect("/ws/node");
+    const registered = new Promise<void>((resolve) => data.once("message", () => resolve()));
+    const registration = loadContractFixtures().fakeNodeReconnect.registration as Record<string, unknown>;
+    data.send(JSON.stringify({ ...registration, capabilities: { ...(registration.capabilities as Record<string, unknown> | undefined), control_channel_v1: true } }));
+    await registered;
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    const connectionId = registry.getConnectedNode("fake-node")!.connectionId;
+    const control = await connect("/ws/node/control");
+    const controlRegistered = new Promise<void>((resolve) => control.once("message", () => resolve()));
+    control.send(JSON.stringify({ type: "node_control_register", node_id: "fake-node", connection_id: connectionId }));
+    await controlRegistered;
+    control.close(1012, "orchestrator_handover");
+    await waitFor(() => capture.records().some((r) => r.msg === "Node control WebSocket disconnected"));
+    data.close(1012, "orchestrator_handover");
+    await waitFor(() => capture.records().some((r) => r.msg === "Node WebSocket disconnected"), () => capture.raw());
+    await app.close();
+    const records = capture.records();
+    expect(records).toContainEqual(expect.objectContaining({ msg: "Node WebSocket connected", nodeId: "fake-node" }));
+    expect(records).toContainEqual(expect.objectContaining({ msg: "Node WebSocket registered", nodeId: "fake-node", connectionId }));
+    for (const msg of ["Node WebSocket disconnected", "Node control WebSocket disconnected"]) {
+      expect(records).toContainEqual(expect.objectContaining({ msg, reason: "websocket_close", nodeId: "fake-node", connectionId, closeCode: 1012, closeReason: "orchestrator_handover" }));
+    }
   });
 
   it("records node WebSocket connection and disconnection events", async () => {

@@ -1,3 +1,5 @@
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import pino from "pino";
@@ -21,6 +23,12 @@ import type { SessionIsolationSpec } from
 import type { Task } from "../../src/task/task_models.js";
 
 // 호스트 준비는 실제 bwrap/pasta/FS를 건드리지 않는다. 포트와 계획만 가짜로 둔다.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original, realpath: async (path: string) =>
+    path.startsWith("/projects/") ? path : original.realpath(path) };
+});
+
 const isolationModuleMocks = vi.hoisted(() => ({
   prepareIsolationPlan: vi.fn(async (input: Record<string, unknown>, _ports: unknown) => ({
     spec: { sessionId: input.sessionId },
@@ -738,6 +746,23 @@ describe("session isolation host preparation", () => {
       makeTask({ worktreeId: "wt-task" }),
     );
     expect(prepared.attachedWorktreeIds).toEqual(["wt-attached", "wt-owned", "wt-task"]);
+  });
+
+  it("passes a linked repository real path into isolation facts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "isolation-repo-"));
+    try {
+      const projects = join(root, "projects");
+      const target = join(root, "repository");
+      mkdirSync(projects);
+      mkdirSync(target);
+      symlinkSync(target, join(projects, "linked"), "dir");
+      const worktreeService = { listSessionAttachments: vi.fn(async () => []), listRepositoryIds: vi.fn(() => ["linked"]) };
+      const composition = makeComposition({ env: enforcementEnv({ WORKTREE_PROJECTS_ROOT: projects }), worktreeService });
+      const { captured } = await prepareAndCapture(composition, makeTask());
+      expect(captured.registeredRepositories).toEqual([{ repoId: "linked", canonicalPath: realpathSync(target) }]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("registers every repository the node knows even on a first turn without worktrees", async () => {

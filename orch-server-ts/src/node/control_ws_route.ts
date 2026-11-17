@@ -92,7 +92,7 @@ export function registerNodeControlWsRoute(
       pingTimer = undefined;
     };
 
-    const finalize = (reason: string): void => {
+    const finalize = (reason: string, closeCode?: number, closeReason?: string): void => {
       if (finalized) return;
       finalized = true;
       if (registrationTimer !== undefined) clearTimeout(registrationTimer);
@@ -108,6 +108,8 @@ export function registerNodeControlWsRoute(
         connectionId: source?.connectionId,
         path: "/ws/node/control",
         reason,
+        closeCode,
+        closeReason,
       }, "Node control WebSocket disconnected");
     };
     const closeAndFinalize = (code: number, reason: string): void => {
@@ -116,7 +118,7 @@ export function registerNodeControlWsRoute(
       } catch {
         // Canonical attachment cleanup still runs below.
       } finally {
-        finalize(reason);
+        finalize(reason, code, reason);
       }
     };
     /**
@@ -282,7 +284,7 @@ export function registerNodeControlWsRoute(
       }
       closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, "UNSUPPORTED_CONTROL_FRAME");
     });
-    socket.on("close", () => finalize("websocket_close"));
+    socket.on("close", (code, reason) => finalize("websocket_close", code, reason.toString()));
     socket.on("error", () => closeAndFinalize(
       INTERNAL_ERROR_CLOSE_CODE,
       "websocket error",

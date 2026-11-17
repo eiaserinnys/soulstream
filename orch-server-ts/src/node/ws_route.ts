@@ -160,17 +160,21 @@ export function registerNodeWsRoute(
 
       app.log.info({
         path: "/ws/node",
+        nodeId: principal?.node_id,
       }, "Node WebSocket connected");
 
-      const finalize = (reason: string): void => {
+      const finalize = (reason: string, closeCode?: number, closeReason?: string): void => {
         if (finalized) return;
         finalized = true;
         clearRegistrationTimer();
         clearHeartbeatTimer();
         app.log.info({
-          nodeId: attachment?.nodeId,
+          nodeId: registeredSource?.nodeId ?? attachment?.nodeId,
+          connectionId: registeredSource?.connectionId ?? attachment?.connectionId,
           path: "/ws/node",
           reason,
+          closeCode,
+          closeReason,
         }, "Node WebSocket disconnected");
         detachTransport(options.transportHub, attachment);
         attachment = undefined;
@@ -200,7 +204,7 @@ export function registerNodeWsRoute(
         } catch {
           // The socket may already be broken; canonical cleanup still runs below.
         } finally {
-          finalize(cleanupReason);
+          finalize(cleanupReason, code, reason);
         }
       };
       if (principal !== null) {
@@ -314,6 +318,7 @@ export function registerNodeWsRoute(
             nodeId: result.nodeId,
             connectionId: result.connectionId,
           };
+          app.log.info({ nodeId: result.nodeId, connectionId: result.connectionId }, "Node WebSocket registered");
           connectionIdentities.set(result.nodeId, {
             connectionId: result.connectionId,
             identity: connectionIdentity,
@@ -469,8 +474,8 @@ export function registerNodeWsRoute(
         handleFrame(parsed.frame);
       });
 
-      socket.on("close", () => {
-        finalize("websocket_close");
+      socket.on("close", (code, reason) => {
+        finalize("websocket_close", code, reason.toString());
       });
       socket.on("error", () => {
         closeAndFinalize(

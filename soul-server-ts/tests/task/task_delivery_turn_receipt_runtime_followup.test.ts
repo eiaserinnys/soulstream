@@ -269,6 +269,30 @@ describe("runtime_followup consumption proof", () => {
     expect(receipt.hasConsumptionReceipt(intervention)).toBe(true);
   });
 
+  it.each([
+    ["terminal", "completed", true, false, 1],
+    ["still running", "running", true, false, 0],
+    ["error", "completed", true, true, 0],
+    ["foreground task", "completed", false, false, 0],
+    ["ambiguous tasks", "completed", true, false, 2],
+    ["different tool", "completed", true, false, -1],
+  ] as const)("SendMessage %s records only one matching terminal background generation", async (_label, status, background, error, matches) => {
+    const { recorder, receipt } = makeHarness();
+    const task = makeTask();
+    const entry = { taskId: "child", status, updatedAt: 1, isBackgrounded: background, toolUseId: matches === -1 ? "other" : "send-1" };
+    task.claudeRuntime = { updatedAt: 1, tasks: { child: entry } };
+    if (matches === 2) task.claudeRuntime.tasks.other = { ...entry, taskId: "other" };
+    await receipt.observe(task, { type: "tool_start", tool_name: "SendMessage", tool_use_id: "send-1", tool_input: {}, timestamp: 1 } as SSEEventPayload);
+    await receipt.observe(task, { type: "tool_result", tool_name: "SendMessage", tool_use_id: "send-1", is_error: error, result: "report", timestamp: 2 } as SSEEventPayload);
+    if (matches === 1) {
+      expect(recorder.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(task, {
+        kind: "exact_generation", taskId: "child", initiatingToolUseId: "send-1",
+      }, "event:41");
+    } else {
+      expect(recorder.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+    }
+  });
+
   it("Agent final과 terminal TaskOutput만 pre-terminal relation proof로 기록한다", async () => {
     const { recorder, receipt } = makeHarness();
     const task = makeTask();
