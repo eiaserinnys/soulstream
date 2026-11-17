@@ -15,6 +15,7 @@ export {
   SSE_EVENT_TYPES,
 } from "./constants";
 export type { SystemFolderKey, SystemFolderId } from "./constants";
+export { exhaustiveList } from "./exhaustive";
 export { REASONING_EFFORT_LABELS, reasoningEffortLabel } from "./api-types";
 export { fetchNodeModelPresets } from "./model-presets";
 export { fetchSessionStory } from "./session-story-api";

@@ -450,7 +450,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       },
     };
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-      const token = ((init?.headers as Record<string, string>).Authorization).replace(/^Bearer\s+/i, "");
+      const token = ((init?.headers as Record<string, string>).Authorization ?? "").replace(/^Bearer\s+/i, "");
       return new Response(JSON.stringify(usageMap[token]), { status: 200 });
     });
     const options = { accountsDir, homeDir: fakeHomeDir, now: () => nowMs, fetchImpl: fetchImpl as unknown as typeof fetch };

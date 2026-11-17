@@ -47,7 +47,8 @@ import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { CardQuestionPartsSample, CardQuestionReviewSample, type CardQuestionScene } from './CardQuestionReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 import { ReportTimelineRow } from './ReportTimelineRow';
-import type { ReportTimelineRowLine } from '@seosoyoung/soul-ui';
+import type { ReportTimelineRowLine, ReportTimelineRowStatus } from '@seosoyoung/soul-ui';
+import { exhaustiveList } from '@shared/exhaustive';
 import { ClaudeAccountPoolReviewSample, ClaudePoolPasReviewSample } from './ClaudeAccountPoolReviewSample';
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
@@ -62,6 +63,11 @@ const sections = [
   { id: "controls", title: "선택·설정", icon: SquarePen },
   { id: "surfaces", title: "패널 표면", icon: SquarePen },
 ];
+
+const reportTimelineSampleStatuses = exhaustiveList<ReportTimelineRowStatus>()([
+  "todo", "queued", "running", "awaiting_verification", "review", "blocked", "question",
+  "done", "cancelled", "on_hold", "report", "answered", "withdrawn",
+]);
 
 const assignedCardPreview = formatAssignedCardContextSnapshot({
   total: 1, omitted: 0, capturedAt: "2026-10-02T01:00:00.000Z",
@@ -323,7 +329,7 @@ export function ComponentsReviewPage() {
             </Sample>
             <Sample name="ReportTimelineRow" state="13개 상태 · 카드 연결/없음 · content/avatar inset · 긴 글">
               <div>
-                {(["todo", "queued", "running", "awaiting_verification", "review", "blocked", "question", "done", "cancelled", "on_hold", "report", "answered", "withdrawn"] as const).map((status) => {
+                {reportTimelineSampleStatuses.map((status) => {
                   const line: ReportTimelineRowLine = {
                     line_key: `review-${status}`, status, title: "카드 상태가 갱신되었습니다.", detail: "상황판 또는 질문이 한 줄로 표시됩니다.",
                     card_id: "review-card-812", card_number: 812,
