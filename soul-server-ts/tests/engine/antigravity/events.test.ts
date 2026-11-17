@@ -158,6 +158,11 @@ describe("AntigravityEventMapper", () => {
     invalid.accept({ event: "result", result: { status: "ERROR", error: "failed to construct executor: bad_tool not found in registry" } });
     expect(invalid.terminal({ code: 3, signal: null }, false)).toMatchObject([{ type: "error", message: "안티그라비티 도구 구성이 현재 CLI와 맞지 않아 실행을 시작하지 못했습니다." }]);
   });
+  it("reports a fatal error when an interrupt was not signalled before exit", () => {
+    const mapper = new AntigravityEventMapper("turn");
+    expect(mapper.terminal({ code: 1, signal: null }, false))
+      .toMatchObject([{ type: "error", fatal: true, message: expect.stringContaining("Antigravity exited") }]);
+  });
   it("maps a quota error to a rejected credential alert and a coded error with reset time", () => {
     const startedAt = Date.now();
     const mapper = new AntigravityEventMapper("quota-turn");
