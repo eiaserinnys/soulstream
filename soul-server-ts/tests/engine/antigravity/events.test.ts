@@ -46,6 +46,27 @@ describe("AntigravityEventMapper", () => {
     expect(mapper.accept(tool(2, "other", "beta__ping"))[0]).toMatchObject({ tool_name: "mcp/other/beta__ping" });
     expect(mapper.accept(tool(3, "profile-test", "plain"))[0]).toMatchObject({ tool_name: "mcp/profile-test/plain" });
   });
+  it("unwraps an old profile name on a resumed conversation", () => {
+    const mapper = new AntigravityEventMapper("turn", true, "p-seosoyo-123456");
+    const event = step(1, { step_type: "tool", tool_info: { name: "call_mcp_tool",
+      parameters: { ServerName: "profile-seosoyoung", ToolName: "beta__ping", Arguments: {} }, output: "ok" } });
+    expect(mapper.accept(event)).toMatchObject([
+      { type: "tool_start", tool_name: "mcp/beta/ping" },
+      { type: "tool_result", tool_name: "mcp/beta/ping", result: "ok" },
+    ]);
+  });
+  it("emits one error result, preferring output and falling back to the error message", () => {
+    const mapper = new AntigravityEventMapper("turn");
+    const failed = (index: number, tool_info: object) => step(index, { state: "ERROR", step_type: "tool", tool_info });
+    const withOutput = failed(1, { name: "tool", output: "validation failed", error: { message: "fallback" } });
+    const events = mapper.accept(withOutput);
+    expect(events).toMatchObject([{ type: "tool_start" },
+      { type: "tool_result", result: "validation failed", is_error: true }]);
+    expect(events[0]?.tool_use_id).toBe(events[1]?.tool_use_id);
+    expect(mapper.accept(withOutput)).toEqual([]);
+    expect(mapper.accept(failed(2, { name: "tool", error: { message: "fallback" } })))
+      .toMatchObject([{ type: "tool_start" }, { type: "tool_result", result: "fallback", is_error: true }]);
+  });
   it("maps init, incremental text including DONE and one final assistant message", () => {
     const mapper = new AntigravityEventMapper("turn-a");
     expect(mapper.accept(init)).toMatchObject([{ type: "session", session_id: "conversation", model: "gemini-3.8-flash" }]);

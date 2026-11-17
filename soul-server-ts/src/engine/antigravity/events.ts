@@ -150,7 +150,9 @@ export class AntigravityEventMapper {
       const info = step.tool_info;
       const parameters = info.parameters as Record<string, unknown> | undefined;
       const mcp = info.name === "call_mcp_tool";
-      const gatewayTool = mcp && parameters?.ServerName === this.gatewayServerName && typeof parameters?.ToolName === "string"
+      const serverName = parameters?.ServerName;
+      const gatewayTool = mcp && this.gatewayServerName && typeof serverName === "string"
+        && (serverName === this.gatewayServerName || serverName.startsWith("profile-")) && typeof parameters?.ToolName === "string"
         ? splitAntigravityGatewayToolName(parameters.ToolName) : undefined;
       const tool_name = gatewayTool ? `mcp/${gatewayTool.server}/${gatewayTool.tool}`
         : mcp ? `mcp/${parameters?.ServerName}/${parameters?.ToolName}` : info.name;
@@ -160,11 +162,16 @@ export class AntigravityEventMapper {
         events.push({ type: "tool_start", tool_use_id, tool_name,
           tool_input: mcp ? parameters?.Arguments : info.parameters, timestamp });
       }
-      if (step.state === "DONE" && !this.finishedTools.has(index)) {
+      if ((step.state === "DONE" || step.state === "ERROR") && !this.finishedTools.has(index)) {
         this.finishedTools.add(index);
+        const errorMessage = info.error && typeof info.error === "object" && "message" in info.error
+          ? info.error.message : undefined;
+        const result = step.state === "ERROR"
+          ? (info.output !== undefined ? info.output : errorMessage)
+          : (info.error !== undefined ? info.error : info.output);
         events.push({ type: "tool_result", tool_use_id, tool_name,
-          ...(info.error !== undefined ? { result: info.error } : info.output !== undefined ? { result: info.output } : {}),
-          is_error: info.error !== undefined, timestamp });
+          ...(result !== undefined ? { result } : {}),
+          is_error: step.state === "ERROR" || info.error !== undefined, timestamp });
       }
     }
     return events;

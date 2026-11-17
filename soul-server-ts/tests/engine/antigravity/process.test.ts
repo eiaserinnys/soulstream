@@ -32,6 +32,23 @@ async function detachedSleep() {
 }
 
 describe("Antigravity process descendants", () => {
+  it.each(["result", "interrupt"] as const)("uses Windows tree termination after %s", async trigger => {
+    const terminateProcessTree = vi.fn(async (pid: number) => { process.kill(-pid, "SIGKILL"); });
+    const source = `const emit=x=>console.log(JSON.stringify(x));
+      emit({event:'init',conversation_id:'fixture'});
+      ${trigger === "result" ? "emit({event:'result',result:{status:'SUCCESS',response:'finished'}});" : ""}
+      setInterval(()=>{},1000); setTimeout(()=>process.exit(0),2000);`;
+    const child = launchAntigravityProcess({ executablePath: process.execPath, args: ["-e", source],
+      cwd: "/tmp", env: process.env, input: "", logger: pino({ level: "silent" }), exitGraceMs: 30,
+      platform: "win32", terminateProcessTree });
+    for await (const event of child.events) {
+      if (trigger === "interrupt" && event.event === "init") expect(child.interrupt()).toBe(true);
+    }
+    const exit = await child.done;
+    expect(terminateProcessTree).toHaveBeenCalledOnce();
+    expect(terminateProcessTree).toHaveBeenCalledWith(expect.any(Number));
+    if (trigger === "result") expect(exit.forcedAfterResult).toBe(true);
+  });
   it("snapshots a real sleep in a separate process group and cleans only matching starttime", async () => {
     const { parent, pid } = await detachedSleep();
     try {
