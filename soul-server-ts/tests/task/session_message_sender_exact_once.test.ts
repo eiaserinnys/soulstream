@@ -12,9 +12,9 @@ import type {
 } from "../../src/task/task_intervention_route.js";
 import { TaskInterventionRoute } from
   "../../src/task/task_intervention_route.js";
-import type {
-  DeliveryLedgerAdmission,
+import {
   TaskDeliveryLedgerGate,
+  type DeliveryLedgerAdmission,
 } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskOwnedByAnotherNodeError } from
   "../../src/task/task_hydration_errors.js";
@@ -253,7 +253,10 @@ function forbiddenRunningTransition(): Pick<
   } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
 }
 
-function makeOwnerNode(ledger: SharedDeliveryLedger) {
+function makeOwnerNode(
+  ledger: SharedDeliveryLedger,
+  gate = ledger.gate("owner-node"),
+) {
   const task = terminalTask();
   const execution: ExecutionObservation = {
     userMessages: 0,
@@ -289,7 +292,7 @@ function makeOwnerNode(ledger: SharedDeliveryLedger) {
     rememberTask: () => {},
     runningInterventionTransition: forbiddenRunningTransition(),
     autoResumeTransition,
-    deliveryLedgerGate: ledger.gate("owner-node"),
+    deliveryLedgerGate: gate,
   });
   const onResume = () => {
     const deliveryId = pendingDeliveryIds.shift();
@@ -382,6 +385,60 @@ function exactOnceDifferences(observation: ExactOnceObservation): string[] {
 }
 
 describe("sendMessageToSession cross-node exact-once", () => {
+  it("acknowledges a maintenance claim before the remote route and runs it once", async () => {
+    const clock = new FakeClock();
+    const ledger = new SharedDeliveryLedger(clock);
+    const repository = {
+      get: vi.fn(async (id: string) => ledger.rows.get(id)?.row ?? null),
+      claimAttemptForTarget: vi.fn(),
+      beginDispatch: vi.fn(async (id: string) => {
+        const stored = ledger.rows.get(id)!;
+        stored.row.state = "dispatching";
+        return stored.row;
+      }),
+      markQueued: vi.fn(async (id: string) => {
+        const stored = ledger.rows.get(id)!;
+        stored.row.state = "queued";
+        return stored.row;
+      }),
+    };
+    const gate = new TaskDeliveryLedgerGate(true, repository as never);
+    const owner = makeOwnerNode(ledger, gate);
+    const relay = relayFetch(owner);
+    let maintenanceRequest: AddInterventionParams | undefined;
+    const result = await sendMessageToSession({
+      taskManager: { addIntervention: async () => { throw new Error("unexpected local route"); } },
+      nodeId: "local-node",
+      ownerLookup: { getSessionOwnerNode: async () => ({ node_id: "owner-node" }) },
+      onResume: () => {}, logger: silentLogger(),
+      orch: { baseUrl: "http://orch.test", headers: {} },
+      fetchImpl: async (url, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, string>;
+        maintenanceRequest = {
+          agentSessionId: TARGET_SESSION_ID, text: body.text!, user: body.user!,
+          deliveryId: body.delivery_id!, deliveryIntent: "human_live_steer",
+          relationKey: body.relation_key!, completionId: body.completion_id!,
+          source: body.source!, deliveryAttemptToken: "maintenance:owner-node",
+        };
+        const claimed = makeDeliveryRow(maintenanceRequest, "owner-node", clock.now);
+        claimed.attempt_token = "maintenance:owner-node";
+        ledger.rows.set(claimed.delivery_id, { row: claimed, request: maintenanceRequest });
+        return relay(url, init);
+      },
+    }, { targetSessionId: TARGET_SESSION_ID, message: "single logical message" });
+
+    expect(result).toMatchObject({
+      ok: true,
+      detail: { relayed: true, delivered: true, outcome: "delivered", reason: "delivery_claimed" },
+    });
+    expect(owner.execution.executions).toBe(0);
+    expect(maintenanceRequest).toBeDefined();
+    await owner.route.addIntervention(maintenanceRequest!, owner.onResume);
+    expect(owner.execution.executions).toBe(1);
+    expect(ledger.rows.size).toBe(1);
+    expect(repository.claimAttemptForTarget).not.toHaveBeenCalled();
+  });
+
   it("one cross-node send owns one delivery and one turn after the retry horizon", async () => {
     const clock = new FakeClock();
     const ledger = new SharedDeliveryLedger(clock);

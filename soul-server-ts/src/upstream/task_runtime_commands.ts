@@ -118,6 +118,7 @@ export type InterveneAck =
       outcome: "delivered";
       agentSessionId: string;
       delivered: true;
+      reason?: string;
     }
   | {
       type: "intervene_ack";
@@ -416,6 +417,7 @@ export function buildInterveneAck(params: {
       outcome: "delivered",
       agentSessionId,
       delivered: true,
+      ...("reason" in result ? { reason: result.reason } : {}),
     };
   }
   if ("suppressed" in result) {
