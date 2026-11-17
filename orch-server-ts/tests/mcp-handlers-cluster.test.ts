@@ -98,7 +98,7 @@ function fixture() {
   const central = centralProfileStore();
   const readSession = vi.fn(async () => ({ folder_id: "caller-folder" }));
   const options = { cluster: {
-    sessions: { router: { createSession }, bridge: { sendPendingCommand: send }, createSessionLifecycle: { prepare } },
+    sessions: { router: { createSession, waitForNode: async () => {} }, bridge: { sendPendingCommand: send }, createSessionLifecycle: { prepare } },
     nodeAgentProfiles: { provider: profiles, modelPresetProvider: { listForNode: vi.fn(() => undefined) } },
     centralAgentProfiles: central.deps,
     readSession, logger: { warn: vi.fn() },
