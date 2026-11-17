@@ -310,7 +310,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
 
     {shownError ? <SettingsAlert>
       <div className="usage-stats-error-content">
-        <span>{state === "forbidden" ? "이 통계를 볼 권한이 없습니다." : "통계를 불러오지 못했습니다."}</span>
+        <span data-v3-selectable-content="true">{state === "forbidden" ? "이 통계를 볼 권한이 없습니다." : "통계를 불러오지 못했습니다."}</span>
         {state === "error" ? <Button size="sm" variant="ghost" onClick={retry}>다시 불러오기</Button> : null}
       </div>
     </SettingsAlert> : (

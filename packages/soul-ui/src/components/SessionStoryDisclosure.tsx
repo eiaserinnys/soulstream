@@ -82,7 +82,7 @@ export function SessionStoryDisclosure({
         {loading ? <LoadingState /> : null}
         {!loading && error ? (
           <div className="session-story-settings-error" role="alert">
-            <p>스토리를 불러오지 못했습니다.</p>
+            <p data-slot="dialog-error-message">스토리를 불러오지 못했습니다.</p>
             <Button
               type="button"
               size="sm"
@@ -191,7 +191,7 @@ function StoryContent({
           >
             하이라이트
           </h3>
-          <p className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap text-sm leading-relaxed text-foreground"}>
+          <p data-slot="session-story-body" className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap text-sm leading-relaxed text-foreground"}>
             {highlight}
           </p>
         </section>
@@ -206,11 +206,12 @@ function StoryContent({
             줄거리
           </h3>
           <div className={mode === "settings" ? "session-story-settings-copies" : "space-y-2 text-sm leading-relaxed text-foreground"}>
-            {narrative ? <p className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}>{narrative}</p> : null}
+            {narrative ? <p data-slot="session-story-body" className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}>{narrative}</p> : null}
             {summaries.map((summary) => (
               <p
                 key={summary.event_id}
                 className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}
+                data-slot="session-story-body"
                 data-turn-number={summary.turn_number}
               >
                 {summary.content}

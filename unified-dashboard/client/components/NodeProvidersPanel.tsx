@@ -158,7 +158,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
       </div>
     </div> : null}
 
-    {flow.error ? <p className="c724-pool-error" role="alert">{flow.error}</p> : null}
+    {flow.error ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{flow.error}</p> : null}
 
     {loading ? <ProviderQuotaSkeleton /> : hasAnySlot(slots)
       ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />

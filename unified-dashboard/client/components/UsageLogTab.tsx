@@ -141,7 +141,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
         </Button>
       </div>
 
-      {error && <div className="py-2 text-sm text-accent-red">❌ {error}</div>}
+      {error && <div className="py-2 text-sm text-accent-red" data-v3-selectable-content="true">❌ {error}</div>}
 
       {!loading && !error && events.length === 0 && (
         <div className="py-8 text-center text-sm text-muted-foreground">
@@ -186,7 +186,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
                       </button>
                     )}
                   </td>
-                  <td className="px-2 py-1 text-muted-foreground">{summarize(event.attrs)}</td>
+                  <td className="px-2 py-1 text-muted-foreground" data-v3-selectable-content="true">{summarize(event.attrs)}</td>
                 </tr>
               ))}
             </tbody>

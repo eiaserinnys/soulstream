@@ -189,7 +189,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       </div>
 
       {error && (
-        <div className="rounded border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
+        <div data-v3-selectable-content="true" className="rounded border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
           {error}
         </div>
       )}

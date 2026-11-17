@@ -250,7 +250,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           </> : null}
         />
 
-        {error ? <SettingsAlert>{error}</SettingsAlert> : null}
+        {error ? <SettingsAlert><span data-v3-selectable-content="true">{error}</span></SettingsAlert> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <SettingsField label="작업 이름"><Input className="min-w-0" aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
@@ -294,7 +294,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
           <Button type="button" size="sm" disabled={busy || selected?.archived_at != null} onClick={() => void save()}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
-        {actionError ? <SettingsAlert key={actionError.key} scrollIntoView>{actionError.message}</SettingsAlert> : null}
+        {actionError ? <SettingsAlert key={actionError.key} scrollIntoView><span data-v3-selectable-content="true">{actionError.message}</span></SettingsAlert> : null}
         {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}

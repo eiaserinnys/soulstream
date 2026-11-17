@@ -284,7 +284,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
 
     {expanded ? <div className="c724-pool-account-body">
       {notice ? <p className="c724-pool-notice" role="status">{notice}</p> : null}
-      {actionError ? <p className="c724-pool-error" role="alert">{actionError}</p> : null}
+      {actionError ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{actionError}</p> : null}
       <div className="c724-account-list">
         {accounts.map((account, index) => <div key={account.id} className="c724-pool-account-item">
           <ClaudeAccountRow

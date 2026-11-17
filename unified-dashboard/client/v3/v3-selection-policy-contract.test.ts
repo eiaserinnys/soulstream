@@ -23,8 +23,11 @@ describe("v3 text selection policy", () => {
     const content = rules.find(([, selectors, body]) => selectors.includes(`${boundary} :where(`) && /user-select:\s*text/.test(body));
     expect(content).toBeDefined();
     const exceptions = content?.[1].split(`${boundary} :where(`)[1]?.split(')')[0].split(',').map(s => s.trim());
-    for (const selector of ['input', 'textarea', '[contenteditable="true"]', '[data-slot="chat-body"]', '[data-slot="chat-tool-body"]', '[data-v3-selectable-content="true"]', '[data-slot="attachment-preview-body"]', '[data-slot="dialog-error-message"]']) {
+    for (const selector of ['input', 'textarea', '[contenteditable="true"]', '[data-slot="chat-body"]', '[data-slot="chat-tool-body"]', '[data-v3-selectable-content="true"]', '[data-slot="attachment-preview-body"]', '[data-slot="dialog-error-message"]', '[data-slot="dialog-error-detail"]', '[data-slot="session-story-body"]', '[data-slot="inherited-prompt-body"]']) {
       expect(exceptions).toContain(selector);
+    }
+    for (const selector of ['[data-slot="attachment-preview-body"]', '[data-slot="dialog-error-message"]', '[data-slot="dialog-error-detail"]', '[data-slot="session-story-body"]', '[data-slot="inherited-prompt-body"]']) {
+      expect(exceptions).toContain(`${selector} *`);
     }
   });
 });

@@ -104,7 +104,7 @@ export function CogitoNodeHealthNote({ state }: { state: CogitoNodeHealthNoteSta
       </div>
       {state.kind === "loading"
         ? <div className="c724-meta-inline">Checking...</div>
-        : <p className="c724-pool-error">{state.message}</p>}
+        : <p className="c724-pool-error" data-v3-selectable-content="true">{state.message}</p>}
     </div>
   );
 }
