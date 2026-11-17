@@ -262,7 +262,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-4">
-              {editorError && <div role="alert" className="text-sm text-accent-red">{editorError}</div>}
+              {editorError && <div role="alert" className="text-sm text-accent-red" data-v3-selectable-content="true">{editorError}</div>}
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-muted-foreground">이메일</span>
                 <Input

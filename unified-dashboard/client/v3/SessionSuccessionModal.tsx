@@ -261,9 +261,9 @@ export function SessionSuccessionModal({
 
   const effortNoticeId = useId();
   const effortNotice = effort.unsupported && selectedModelPresetInfo !== null ? <span data-testid="succession-effort-unsupported">
-    {effort.options.length > 0
+    <span data-v3-selectable-content="true">{effort.options.length > 0
       ? `이어받은 추론 강도 “${reasoningEffortLabel(effort.selected ?? "")}”를 이 모델에서는 쓸 수 없습니다. 다른 강도를 고르거나 기본값으로 시작하세요.`
-      : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}{" "}
+      : `이 모델이 광고한 추론 강도 목록이 없어 “${reasoningEffortLabel(effort.selected ?? "")}”를 그대로 쓸 수 없습니다. 기본값으로 시작하세요.`}</span>{" "}
     <Button type="button" variant="outline" size="xs" className="align-middle" data-testid="succession-effort-use-default" onClick={() => {
       (effortTrigger.current ?? textarea.current)?.focus();
       effort.setSelected(null);

@@ -190,7 +190,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
             </div>
           )}
           {error && !loading && (
-            <div className="text-accent-red text-sm py-4 text-center">
+            <div className="text-accent-red text-sm py-4 text-center" data-v3-selectable-content="true">
               ❌ {error}
             </div>
           )}
@@ -362,7 +362,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
         ))}
       </div>
       {error && (
-        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
+        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">
           {error}
         </div>
       )}

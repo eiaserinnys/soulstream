@@ -27,7 +27,7 @@ export function FolderDetailArchiveDialog({
           <DialogTitle>폴더를 보관할까요?</DialogTitle>
           <DialogDescription>‘{title}’ 폴더를 보관합니다. 내용과 세션은 보존됩니다.</DialogDescription>
         </DialogHeader>
-        {error ? <p role="alert">폴더 보관 실패 · {error}</p> : null}
+        {error ? <p role="alert" data-v3-selectable-content="true">폴더 보관 실패 · {error}</p> : null}
         <DialogFooter variant="bare">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             취소

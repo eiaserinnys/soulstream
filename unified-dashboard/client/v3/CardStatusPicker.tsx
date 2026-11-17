@@ -82,9 +82,9 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     </PopoverTrigger>
     <PopoverPopup align={trigger==="more"?"end":"start"} className="v3-surface v3-card-status-picker glass-strong glass-chrome min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()} initialFocus={view==="color"?initialColorFocus:undefined}>
       <div className="v3-card-status-picker-content">
-        {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
+        {execution && execution.phase!=='pending'?<><p data-v3-selectable-content="true" role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}
-        {error ? <><p role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
+        {error ? <><p data-v3-selectable-content="true" role={error.startsWith("실행 결과")?"status":"alert"}>{error}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>{detail ? "갱신 후 재시도" : "다시 불러오기"}</Button></> : null}
         {view==="status"?<>
           <div aria-label="카드 상태 목록">{cardStatusChoices.map(status => <Button key={status} variant="menu"
             aria-pressed={status === (detail?.card.status ?? card.status)} disabled={unavailable}

@@ -65,7 +65,7 @@ export function CardCreateDialog({folders,initialFolderId="",onClose,onCreated,o
    <DialogHeader className="v3-succession-head"><span aria-hidden="true">＋</span><DialogTitle>{executionSettings?"카드 실행 설정":"새 카드"}</DialogTitle></DialogHeader>
    <DialogPanel className="v3-succession-body" scrollFade={false}>
     {error||uploadError?<V3ErrorNotice className="v3-succession-error" message={error?(uncertain?"카드 저장 결과를 확인하지 못했습니다.":"카드를 저장하지 못했습니다."):"첨부를 업로드하지 못했습니다."} detail={error||uploadError}/>:null}
-    {uncertain?<p role="status" className="v3-form-intent">이미 저장되었을 수 있습니다. 같은 제출로 저장 결과를 확인할 때까지 입력과 첨부를 유지합니다.</p>:null}
+    {uncertain?<p role="status" className="v3-form-intent" data-v3-selectable-content="true">이미 저장되었을 수 있습니다. 같은 제출로 저장 결과를 확인할 때까지 입력과 첨부를 유지합니다.</p>:null}
     <div className="v3-succession-context-editor">
      <section><strong>폴더</strong><Popover open={folderOpen} onOpenChange={setFolderOpen}><PopoverTrigger render={<Button variant="outline" disabled={locked}/>} aria-label="폴더 선택">{folders.find(f=>f.id===folderId)?.name??"폴더 선택"}</PopoverTrigger>
       <PopoverPopup className="v3-surface v3-card-folder-picker" side="bottom" align="start"><FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={folderId} disabledFolderIds={new Set(["claude","llm"])} pending={locked} onSelect={folder=>{if(attempt.current)return;setFolderId(folder.id);setFolderOpen(false);}}/></PopoverPopup>

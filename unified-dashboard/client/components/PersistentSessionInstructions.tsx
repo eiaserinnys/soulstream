@@ -198,7 +198,7 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
     <div data-testid="persistent-session-instructions" className="space-y-3">
       {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
       {!state.loading && state.loadError ? <div className="space-y-2">
-        <SettingsAlert>조회 실패: {state.loadError}</SettingsAlert>
+        <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {state.loadError}</span></SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={actions.retry}>다시 시도</Button>
       </div> : null}
       {!state.loading && !state.loadError && state.instructions.length === 0 ? <p className="text-sm text-muted-foreground">지속 지시 없음</p> : null}
@@ -216,7 +216,7 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
                   nativeInput
                   onChange={(event) => actions.changeEditText(event.target.value)}
                   onKeyDown={(event) => actions.editKeyDown(event, instruction.id)}
-                /> : <p className="break-words text-sm text-foreground">{instruction.text}</p>}
+                /> : <p className="break-words text-sm text-foreground" data-v3-selectable-content="true">{instruction.text}</p>}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {instruction.source_turns.length > 0 ? <span>{instruction.source_turns.join(", ")}</span> : null}
@@ -237,7 +237,7 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
           </li>;
         })}
       </ol> : null}
-      {state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
+      {state.error ? <SettingsAlert><span data-v3-selectable-content="true">{state.error}</span></SettingsAlert> : null}
       <form className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" onSubmit={(event) => { void actions.add(event); }}>
         <Input
           aria-label="새 지속 지시"
@@ -248,7 +248,7 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
         />
         <Button type="submit" size="sm" disabled={mutationDisabled || !state.addText.trim()}>추가</Button>
       </form>
-      {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
+      {state.capReached ? <SettingsAlert><span data-v3-selectable-content="true">지속 지시 상한에 도달했습니다.</span></SettingsAlert> : null}
     </div>
   </SettingsGroupBox>;
 }
@@ -272,7 +272,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
     <p className="persistent-instructions-description">이 세션에 계속 적용됩니다.</p>
     {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
     {!state.loading && state.loadError ? <div className="space-y-2">
-      <SettingsAlert>조회 실패: {state.loadError}</SettingsAlert>
+      <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {state.loadError}</span></SettingsAlert>
       <Button type="button" size="sm" variant="outline" onClick={actions.retry}>다시 시도</Button>
     </div> : null}
     {!state.loading && !state.loadError && state.instructions.length === 0 ? <p className="text-sm text-muted-foreground">지속 지시 없음</p> : null}
@@ -291,8 +291,8 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
                 nativeInput
                 onChange={(event) => actions.changeEditText(event.target.value)}
                 onKeyDown={(event) => actions.editKeyDown(event, instruction.id)}
-              /> : <p className="persistent-instructions-pas-text">{instruction.text}</p>}
-              {editing && state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
+              /> : <p className="persistent-instructions-pas-text" data-v3-selectable-content="true">{instruction.text}</p>}
+              {editing && state.error ? <SettingsAlert><span data-v3-selectable-content="true">{state.error}</span></SettingsAlert> : null}
               <div className="persistent-instructions-pas-source">
                 {sourceTurns.length > 0 ? <span>{sourceTurns.join(", ")}</span> : instruction.origin === "user" ? <span>직접 추가</span> : null}
               </div>
@@ -310,8 +310,8 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
         </li>;
       })}
     </ol> : null}
-    {state.error && state.editingId === null ? <SettingsAlert>{state.error}</SettingsAlert> : null}
-    {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
+    {state.error && state.editingId === null ? <SettingsAlert><span data-v3-selectable-content="true">{state.error}</span></SettingsAlert> : null}
+    {state.capReached ? <SettingsAlert><span data-v3-selectable-content="true">지속 지시 상한에 도달했습니다.</span></SettingsAlert> : null}
     {!adding ? <Button type="button" size="sm" variant="outline" className="self-start" disabled={mutationDisabled || state.editingId !== null} onClick={() => { actions.changeAddText(state.addText); setAdding(true); }}>지시 추가</Button> : <form className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2" onSubmit={(event) => { void submitAdd(event); }}>
       <Input
         aria-label="새 지속 지시"

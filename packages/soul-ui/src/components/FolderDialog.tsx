@@ -124,8 +124,8 @@ function CreateFolderDialog({
               {...register("name")}
             />
             {error && <div className="dialog-error-notice" role="alert">
-              <p>폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요.</p>
-              <details><summary>기술 상세</summary><pre>{error}</pre></details>
+              <p data-slot="dialog-error-message">폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요.</p>
+              <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details>
             </div>}
           </DialogPanel>
           <DialogFooter variant="bare">

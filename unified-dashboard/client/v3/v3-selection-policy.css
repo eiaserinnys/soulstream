@@ -1,7 +1,10 @@
-/* v3 interaction chrome is not document content. Keep this policy at the shell boundary. */
-/* Portal-based interaction popups outside the shell share the boundary through v3-popup-chrome. */
+/* Dashboard chrome is not document content, including portaled surfaces. */
 .v3-shell,
-.v3-popup-chrome {
+.v3-popup-chrome,
+[data-slot="dialog-viewport"],
+[data-slot="dialog-popup"],
+[data-slot="alert-dialog-popup"],
+[data-slot="popover-popup"] {
   -webkit-user-select: none;
   user-select: none;
 }
@@ -15,7 +18,13 @@
   [data-slot="chat-body"],
   [data-slot="chat-body"] *,
   [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *
+  [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-preview-body"],
+  [data-slot="attachment-preview-body"] *,
+  [data-slot="dialog-error-message"],
+  [data-slot="dialog-error-message"] *,
+  [data-slot="dialog-error-detail"],
+  [data-slot="dialog-error-detail"] *
 ),
 .v3-popup-chrome :where(
   input,
@@ -26,8 +35,76 @@
   [data-slot="chat-body"],
   [data-slot="chat-body"] *,
   [data-slot="chat-tool-body"],
-  [data-slot="chat-tool-body"] *
+  [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-preview-body"],
+  [data-slot="attachment-preview-body"] *,
+  [data-slot="dialog-error-message"],
+  [data-slot="dialog-error-message"] *,
+  [data-slot="dialog-error-detail"],
+  [data-slot="dialog-error-detail"] *
+),
+[data-slot="dialog-popup"] :where(
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-v3-selectable-content="true"],
+  [data-v3-selectable-content="true"] *,
+  [data-slot="chat-body"],
+  [data-slot="chat-body"] *,
+  [data-slot="chat-tool-body"],
+  [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-preview-body"],
+  [data-slot="attachment-preview-body"] *,
+  [data-slot="dialog-error-message"],
+  [data-slot="dialog-error-message"] *,
+  [data-slot="dialog-error-detail"],
+  [data-slot="dialog-error-detail"] *
+),
+[data-slot="alert-dialog-popup"] :where(
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-v3-selectable-content="true"],
+  [data-v3-selectable-content="true"] *,
+  [data-slot="chat-body"],
+  [data-slot="chat-body"] *,
+  [data-slot="chat-tool-body"],
+  [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-preview-body"],
+  [data-slot="attachment-preview-body"] *,
+  [data-slot="dialog-error-message"],
+  [data-slot="dialog-error-message"] *,
+  [data-slot="dialog-error-detail"],
+  [data-slot="dialog-error-detail"] *
+),
+[data-slot="popover-popup"] :where(
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-v3-selectable-content="true"],
+  [data-v3-selectable-content="true"] *,
+  [data-slot="chat-body"],
+  [data-slot="chat-body"] *,
+  [data-slot="chat-tool-body"],
+  [data-slot="chat-tool-body"] *,
+  [data-slot="attachment-preview-body"],
+  [data-slot="attachment-preview-body"] *,
+  [data-slot="dialog-error-message"],
+  [data-slot="dialog-error-message"] *,
+  [data-slot="dialog-error-detail"],
+  [data-slot="dialog-error-detail"] *
 ) {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Document previews can contain copy controls alongside selectable prose. */
+:is([data-slot="dialog-popup"], [data-slot="alert-dialog-popup"], [data-slot="popover-popup"]) :where(
+  [data-v3-selectable-content="true"] button,
+  [data-v3-selectable-content="true"] button *,
+  [data-slot="attachment-preview-body"] button,
+  [data-slot="attachment-preview-body"] button *
+) {
+  -webkit-user-select: none;
+  user-select: none;
 }

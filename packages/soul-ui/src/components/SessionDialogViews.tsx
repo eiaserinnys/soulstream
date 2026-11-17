@@ -16,9 +16,9 @@ export function SessionContinueErrorDialog({ error, onClose }: { error: string |
         </DialogHeader>
         <DialogPanel>
           <div className="dialog-error-notice" role="alert">
-            <p>세션을 이어서 시작하지 못했습니다.</p>
+            <p data-slot="dialog-error-message">세션을 이어서 시작하지 못했습니다.</p>
             <p>노드 연결 상태와 실행 환경을 확인한 뒤 다시 시도하세요.</p>
-            <details><summary>기술 상세</summary><pre>{safeErrorDetail(error ?? "")}</pre></details>
+            <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{safeErrorDetail(error ?? "")}</pre></details>
           </div>
         </DialogPanel>
         <DialogFooter variant="bare">

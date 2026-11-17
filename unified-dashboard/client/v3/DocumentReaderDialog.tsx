@@ -37,9 +37,9 @@ export function DocumentReaderDialog({ documentId, onClose, request = globalThis
     <DialogPopup initialFocus={panelRef} className="v3-surface v3-document-reader-dialog max-w-3xl" closeProps={{ "aria-label": "문서 닫기" }} data-testid="internal-document-dialog">
       <DialogHeader className="pe-14"><DialogTitle className="min-h-7 leading-7">{document ? document.title : <span className="sr-only">문서</span>}</DialogTitle></DialogHeader>
       <DialogPanel ref={panelRef} tabIndex={0} role="region" aria-label="문서 본문">
-        {error ? <div className="v3-board-load-state"><p>{error}</p></div> : null}
+        {error ? <div className="v3-board-load-state"><p data-v3-selectable-content="true">{error}</p></div> : null}
         {!document && !error ? <div className="v3-board-load-state"><p>본문을 불러오는 중…</p></div> : null}
-        {document ? <div className="v3-folder-board-document-copy"><MarkdownContent content={removeOverlappingDocumentHeading(document.body, document.title)} codeBlockLayout="document"/></div> : null}
+        {document ? <div className="v3-folder-board-document-copy" data-v3-selectable-content="true"><MarkdownContent content={removeOverlappingDocumentHeading(document.body, document.title)} codeBlockLayout="document"/></div> : null}
       </DialogPanel>
     </DialogPopup>
   </Dialog>;

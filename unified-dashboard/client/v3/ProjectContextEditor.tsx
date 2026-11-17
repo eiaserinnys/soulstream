@@ -267,7 +267,7 @@ export function ProjectContextEditor({
       </div>
 
 
-      {message ? <p className={message.includes("실패") ? "v3-project-star-error" : undefined} role="status">{message}</p> : null}
+      {message ? <p className={message.includes("실패") ? "v3-project-star-error" : undefined} role="status" data-v3-selectable-content="true">{message}</p> : null}
     </section>
   );
 }

@@ -50,8 +50,8 @@ export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId
               folders={folders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={pending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
-          {stars.error ? <p className="v3-load-error" role="alert">별표 조회 실패 · {stars.error}</p> : null}
-          {error ? <p className="v3-load-error" role="alert">{error}</p> : null}
+          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">별표 조회 실패 · {stars.error}</p> : null}
+          {error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
         </DialogPanel>
         <DialogFooter className="v3-choice-footer">
           <p className="v3-form-submit-note">{selectedFolderId ? `${folders.find(folder => folder.id === selectedFolderId)?.name ?? "선택한 폴더"} 안으로 이동` : "목적지를 선택하세요"}</p>

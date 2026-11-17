@@ -43,7 +43,7 @@ export function MarkdownDeleteDialog({
         </DialogHeader>
         {error ? (
           <DialogPanel>
-            <p className="text-sm text-destructive" role="alert">{error}</p>
+            <p className="text-sm text-destructive" role="alert" data-slot="dialog-error-message">{error}</p>
           </DialogPanel>
         ) : null}
         <DialogFooter variant="bare">

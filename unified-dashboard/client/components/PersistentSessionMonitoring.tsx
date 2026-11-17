@@ -185,13 +185,13 @@ export function PersistentSessionMonitoringView({
   return <div data-testid="persistent-session-monitoring" className="space-y-4">
     {isLoading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
     {!isLoading && hasError ? <div className="space-y-2">
-      <SettingsAlert>조회 실패: {error ?? "기록을 불러오지 못했습니다."}</SettingsAlert>
+      <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {error ?? "기록을 불러오지 못했습니다."}</span></SettingsAlert>
       <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
     </div> : null}
     {!isLoading && !hasError ? <>
       {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
       {decisionError ? <div className="space-y-2">
-        <SettingsAlert>조회 실패: {decisionError}</SettingsAlert>
+        <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {decisionError}</span></SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
       </div> : null}
       {latestDecisionText ? <SettingFieldWidget field={readField("last-decision", "마지막 판단", latestDecisionText)} value={latestDecisionText} onChange={() => undefined} /> : null}
@@ -207,7 +207,7 @@ export function PersistentSessionMonitoringView({
           {history.loadingMore ? "불러오는 중…" : "더 읽기"}
         </Button> : null}
         {history.error ? <div className="space-y-2">
-          <SettingsAlert>조회 실패: {history.error}</SettingsAlert>
+          <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {history.error}</span></SettingsAlert>
         </div> : null}
       </section> : null}
     </> : null}
