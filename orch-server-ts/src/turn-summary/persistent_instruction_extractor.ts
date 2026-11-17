@@ -78,7 +78,7 @@ export function createPersistentInstructionExtractor(options: {
         buildPersistentInstructionPrompt(input),
         {
           ...config,
-          model: "gpt-6.1-sol",
+          model: "gpt-6.2-sol",
           reasoningEffort: "high",
         },
         {

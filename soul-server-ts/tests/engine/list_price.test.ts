@@ -23,7 +23,7 @@ const catalog = parseModelCatalogYaml(fs.readFileSync(
 
 describe("list price turn cost", () => {
   it("exposes the fixed pricing snapshot through the catalog", () => {
-    expect(catalog.price_snapshot.price_version).toBe("api-list-usd-2026-11-17-v2");
+    expect(catalog.price_snapshot.price_version).toBe("api-list-usd-2026-11-18-v1");
     expect(priceInferenceUsage(catalog, {
       provider: "claude",
       model: "claude-opus-5-5",
@@ -33,7 +33,7 @@ describe("list price turn cost", () => {
       cache_write_1h: 0,
       cache_write_unknown: 0,
       output_total: 0,
-    }).price_version).toBe("api-list-usd-2026-11-17-v2");
+    }).price_version).toBe("api-list-usd-2026-11-18-v1");
   });
 
   it("prices only explicitly timed Claude cache writes through the legacy wrapper", () => {
@@ -170,7 +170,7 @@ describe("fixed inference price reference", () => {
     const result = priceInferenceUsage(catalog, { provider, model, ...completeInput });
 
     expect(result.known_cost_usd).toBe(expectedCost);
-    expect(result.price_version).toBe("api-list-usd-2026-11-17-v2");
+    expect(result.price_version).toBe("api-list-usd-2026-11-18-v1");
     expect(result.as_of).toBe("2026-10-19");
     expect(result.priced_tokens).toBe(2_000);
     expect(result.unpriced_tokens).toBe(0);
@@ -303,7 +303,7 @@ describe("precise inference price components", () => {
     };
     const components = priceInferenceUsageComponents(catalog, input);
 
-    expect(components.price_version).toBe("api-list-usd-2026-11-17-v2");
+    expect(components.price_version).toBe("api-list-usd-2026-11-18-v1");
     expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.000006", is_partial: false });
     expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.00028", is_partial: false });
     expect(priceInferenceUsage(catalog, input).known_cost_usd).toBe(0.000286);

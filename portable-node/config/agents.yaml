@@ -8,6 +8,6 @@ agents:
   - id: codex-default
     name: Codex
     backend: codex
-    default_preset: codex-6.1-sol
+    default_preset: codex-6.2-sol
     workspace_dir: __STATE_ROOT__/workspace
     mcp_profile: portable-default
