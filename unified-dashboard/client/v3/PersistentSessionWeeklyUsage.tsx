@@ -1,4 +1,4 @@
-import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyRemainingPercent } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyUsedPercent, weeklyUsedPercent } from "@seosoyoung/soul-ui";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import type { UsageSummaryGauge } from "@seosoyoung/soul-ui";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
@@ -58,7 +58,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
   return <div
     className="persistent-session-weekly-usage"
     role="group"
-    aria-label="주간 남은 사용량"
+    aria-label="주간 사용량"
     title={stale && updatedLabel ? `갱신 지연, ${updatedLabel}` : undefined}
     data-testid="persistent-session-weekly-usage"
   >
@@ -73,8 +73,9 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
       const resetAt = gauge.id === "claude" && showPoolCount
         ? epochSeconds(claudePool?.best_weekly_resets_at ?? null) ?? gauge.resetAt
         : gauge.resetAt;
-      const percent = remaining === null ? "—" : formatWeeklyRemainingPercent(remaining);
-      const warning = remaining !== null && remaining < 20;
+      const used = weeklyUsedPercent(remaining);
+      const percent = used === null ? "—" : formatWeeklyUsedPercent(used);
+      const warning = used !== null && used >= 80;
       const fullCountdown = gauge.id === "claude" && fullyBlocked && releaseLabel
         ? `회복 예정 ${releaseLabel}`
         : remaining === null ? null : formatUsageResetCountdown(resetAt, evaluatedAtMs, false);
@@ -92,13 +93,13 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
           className={`persistent-session-weekly-usage-track${warning ? " is-warning" : ""}`}
           role={remaining === null ? undefined : "progressbar"}
           aria-hidden={remaining === null || undefined}
-          aria-label={remaining === null ? undefined : `${gauge.label} 주간 잔량`}
+          aria-label={remaining === null ? undefined : `${gauge.label} 주간 사용량`}
           aria-valuemin={remaining === null ? undefined : 0}
           aria-valuemax={remaining === null ? undefined : 100}
-          aria-valuenow={remaining ?? undefined}
+          aria-valuenow={used ?? undefined}
           aria-valuetext={remaining === null ? undefined : percent}
         >
-          {remaining === null ? null : <i style={{ width: `${remaining}%` }} />}
+          {used === null ? null : <i style={{ width: `${used}%` }} />}
         </div>
       </div>;
     }) : <div className="persistent-session-weekly-usage-row is-status">

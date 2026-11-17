@@ -295,7 +295,11 @@ export function sevenDayElapsedFraction(
   return Math.min(1, Math.max(0, 1 - remainingMs / SEVEN_DAY_MS));
 }
 
-export function formatWeeklyRemainingPercent(value: number): string {
+export function weeklyUsedPercent(remaining: number | null): number | null {
+  return remaining === null ? null : Math.min(100, Math.max(0, 100 - remaining));
+}
+
+export function formatWeeklyUsedPercent(value: number): string {
   const rounded = value < 0 ? Math.ceil(value - 0.5) : Math.floor(value + 0.5);
   return `${rounded}%`;
 }

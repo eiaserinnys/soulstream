@@ -283,15 +283,60 @@ def capture_loading(page: Page, base: str, out: Path, width: int, theme: str, fr
     return tops
 
 
+def capture_weekly_usage(base: str, out: Path) -> int:
+    """PAS 샘플과 리셋이 없는 계정 행을 같은 프레임에서 기록한다."""
+    results = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        try:
+            for width in (1280, 360):
+                context = browser.new_context(viewport={"width": width, "height": 1000},
+                                              color_scheme="dark", reduced_motion="reduce")
+                install_page(context, "dark")
+                page = context.new_page()
+                page.goto(f"{base}/components?sample=weekly-usage")
+                settle(page)
+                page.get_by_test_id("persistent-session-weekly-usage").wait_for(state="visible")
+                page.screenshot(path=str(out / f"web-pas-{width}.png"), animations="disabled")
+                if width == 360:
+                    page.goto(f"{base}/components?sample=claude-accounts&state=pool")
+                    settle(page)
+                    open_expanded_node(page, STATE_NODE["pool"])
+                    page.get_by_role("button", name="계정 펼치기").first.click()
+                    row = page.locator(".c724-pool-account-item").filter(has_text="eiaserinnys.sub@gmail.com")
+                    row.wait_for(state="visible")
+                    row.scroll_into_view_if_needed()
+                    page.screenshot(path=str(out / "web-accounts-360.png"), animations="disabled")
+                    cells = row.locator(".c724-quota-cell").evaluate_all("""cells => cells.map(cell => ({
+                      name: cell.querySelector('.c724-quota-name')?.textContent,
+                      reset: cell.querySelector('.c724-quota-reset')?.textContent,
+                      trackTop: cell.querySelector('.c724-quota-track')?.getBoundingClientRect().y
+                    }))""")
+                    if len(cells) != 3 or not any(cell["reset"] in ("", "—") for cell in cells):
+                        raise RuntimeError(f"초기화 시각이 없는 세 칸을 찾지 못했습니다: {cells}")
+                    tops = [cell["trackTop"] for cell in cells]
+                    spread = max(tops) - min(tops)
+                    results.append({"width": width, "cells": cells, "spreadPx": spread})
+                    print(f"계정 행 막대 위쪽: {tops}, 차이 {spread}px")
+                context.close()
+        finally:
+            browser.close()
+    (out / "web-measurements.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="노드 공급자 사용량 패널 시각 검수")
     parser.add_argument("base_url", help="대시보드 dev 서버 주소 (예: http://127.0.0.1:5173)")
     parser.add_argument("output_dir", help="캡처와 measurements.json 을 둘 폴더")
+    parser.add_argument("--weekly-usage", action="store_true", help="PAS와 초기화 시각 없는 계정 행을 캡처")
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
     out = Path(args.output_dir).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
+    if args.weekly_usage:
+        return capture_weekly_usage(base, out)
     rows_out: list[dict] = []
     frames_out: list[dict] = []
     loading_tops: dict[str, list[float]] = {}
