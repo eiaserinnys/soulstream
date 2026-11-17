@@ -3,8 +3,7 @@ import { spawnSync } from "node:child_process";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { startPostgresTestContainer } from
-  "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { provisionTestDatabase, type TestDatabaseLease } from "./database_test_harness.js";
 import {
   classifyLedgerReconciliation,
   inspectUserObjectInventory,
@@ -20,38 +19,28 @@ const USER = "release_inventory_test";
 const PASSWORD = "release_inventory_secret";
 const DATABASE = "release_inventory_test_db";
 let databaseUrl = "";
-let stopContainer: (() => void) | undefined;
+let databaseLease: TestDatabaseLease | undefined;
 
 describeWithTestDatabase.sequential("database release canonical PostgreSQL inventory", () => {
   beforeAll(async () => {
-    if (externalDatabaseUrl) {
-      databaseUrl = safeTestDatabaseUrl(externalDatabaseUrl);
-      await waitForPostgres(databaseUrl);
-      return;
-    }
-    const container = startPostgresTestContainer({
-      user: USER,
-      password: PASSWORD,
-      database: DATABASE,
+    databaseLease = await provisionTestDatabase({
+      prefix: "release_inventory",
+      dockerUser: USER,
+      dockerPassword: PASSWORD,
+      dockerDatabase: DATABASE,
     });
-    stopContainer = container.stop;
-    databaseUrl = safeTestDatabaseUrl(
-      `postgres://${USER}:${PASSWORD}@127.0.0.1:${container.port}/${DATABASE}`,
-    );
+    databaseUrl = safeTestDatabaseUrl(databaseLease.url);
     try {
       await waitForPostgres(databaseUrl);
     } catch (error) {
-      container.stop();
-      stopContainer = undefined;
+      await databaseLease.cleanup();
+      databaseLease = undefined;
       throw error;
     }
   }, 30_000);
 
-  afterAll(() => {
-    if (!externalDatabaseUrl && hasDocker) {
-      stopContainer?.();
-      stopContainer = undefined;
-    }
+  afterAll(async () => {
+    await databaseLease?.cleanup();
   });
 
   it("treats even one user schema as a non-fresh database", async () => {

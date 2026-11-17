@@ -38,6 +38,14 @@ describe("PostgreSQL test policy", () => {
     expect(() => requirePostgresBackendInCI("x.postgres.test.ts", { CI: "true", TEST_DATABASE_URL: "test" }, () => false)).not.toThrow();
   });
 
+  it("does not probe Docker from the CI guard outside CI", () => {
+    const docker = vi.fn(() => false);
+    for (const CI of ["", "0", "false"]) {
+      requirePostgresBackendInCI("x.postgres.test.ts", { CI }, docker);
+    }
+    expect(docker).not.toHaveBeenCalled();
+  });
+
   it("recognizes the four filename forms and only generated test schema names", () => {
     for (const name of ["x.postgres.test.ts", "x-postgres.test.ts", "x_postgres.test.ts", "x.postgres.integration.test.ts"]) {
       expect(isPostgresTestFile(name)).toBe(true);

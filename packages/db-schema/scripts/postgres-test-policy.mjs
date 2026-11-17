@@ -17,9 +17,13 @@ export function dockerAvailable() {
   return spawnSync("docker", ["info"], { stdio: "ignore", timeout: 5_000 }).status === 0;
 }
 
+function isCIEnvironment(env) {
+  const value = (env.CI ?? "").trim().toLowerCase();
+  return value !== "" && value !== "0" && value !== "false";
+}
+
 export function decidePostgresTests(env = process.env, probeDocker = dockerAvailable) {
-  const ciValue = (env.CI ?? "").trim().toLowerCase();
-  const isCI = ciValue !== "" && ciValue !== "0" && ciValue !== "false";
+  const isCI = isCIEnvironment(env);
   const backendAvailable = Boolean(env.TEST_DATABASE_URL?.trim()) || probeDocker();
   return {
     isCI,
@@ -30,9 +34,8 @@ export function decidePostgresTests(env = process.env, probeDocker = dockerAvail
 }
 
 export function requirePostgresBackendInCI(path, env = process.env, probeDocker = dockerAvailable) {
-  if (!isPostgresTestFile(path)) return;
-  const { isCI, backendAvailable } = decidePostgresTests(env, probeDocker);
-  if (isCI && !backendAvailable) {
+  if (!isPostgresTestFile(path) || !isCIEnvironment(env)) return;
+  if (!decidePostgresTests(env, probeDocker).backendAvailable) {
     throw new Error("PostgreSQL tests require TEST_DATABASE_URL or a running Docker daemon; set TEST_DATABASE_URL or start Docker.");
   }
 }

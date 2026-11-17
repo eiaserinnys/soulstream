@@ -144,6 +144,16 @@ describe("soul-server-ts affected CI gate", () => {
     expect(sharedStep.run).toContain("--minWorkers=1 --maxWorkers=2");
     expect(sharedStep.run).not.toContain("--no-file-parallelism");
 
+    const oauthStep = job.steps.find(
+      (step: { name?: string }) => step.name === "Test OAuth with shared PostgreSQL schemas and repeat",
+    );
+    expect(oauthStep.env.TEST_DATABASE_URL).toBe(sharedStep.env.TEST_DATABASE_URL);
+    expect(oauthStep.run.match(/tests\/oauth\/oauth-flow\.postgres\.test\.ts/g)).toHaveLength(2);
+    expect(oauthStep.run).toContain("tests/mcp-baselines/board-roundtrip.postgres.integration.test.ts");
+    expect(oauthStep.run).toContain("tests/page/page-repository.postgres.integration.test.ts");
+    expect(oauthStep.run).toContain("--maxWorkers=2");
+    expect(oauthStep.run).toContain('exit "$result"');
+
     const expectedFullSliceFiles = readdirSync(runnerTestsDirectory)
       .filter((name) => name.endsWith("_full_slice_postgres.test.ts"))
       .map((name) => `tests/runner/${name}`)

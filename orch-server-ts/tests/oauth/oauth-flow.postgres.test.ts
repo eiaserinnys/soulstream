@@ -18,6 +18,7 @@ import { registerFolderRoutes } from "../../src/folders/folder_routes.js";
 import type { CardControlPlaneService } from "../../src/cards/card_control_plane_service.js";
 import { fileURLToPath } from "node:url";
 import { startPostgresTestContainer } from "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { TEST_SCHEMA_PATTERN } from "../../../packages/db-schema/scripts/postgres-test-policy.mjs";
 import { waitForPostgres } from "../persistent-session-settings-world.js";
 
 const verifier = "v".repeat(43);
@@ -28,6 +29,8 @@ let app: ReturnType<typeof Fastify>;
 let issuer: string;
 let stopContainer: (() => void) | undefined;
 let ownsTestUrl = false;
+const schema = `oauth_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+let schemaCreated = false;
 
 async function freePort(): Promise<number> {
   const socket = createServer();
@@ -272,17 +275,31 @@ beforeAll(async () => {
   if (!url) throw new Error("TEST_DATABASE_URL is required");
   const parsed = new URL(url); const db = parsed.pathname.slice(1).toLowerCase();
   if (!db.includes("test") || ["atom_db", "reverie", "soulstream", "serendipity"].some(name => `${parsed.hostname}/${db}`.toLowerCase().includes(name))) throw new Error("unsafe test database");
-  sql = postgres(url, { max: 4, onnotice: () => {} });
+  sql = postgres(url, { max: 4, onnotice: () => {}, connection: { search_path: schema } });
   await waitForPostgres(sql);
-  const rows = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')`;
+  const rows = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM information_schema.tables
+    WHERE table_schema NOT IN ('pg_catalog','information_schema')
+      AND table_schema !~ ${TEST_SCHEMA_PATTERN}
+  `;
   if (rows[0]?.count !== 0) throw new Error("test database must be empty");
+  await sql.unsafe(`CREATE SCHEMA ${schema}`);
+  schemaCreated = true;
   await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/137_oauth_entities.sql", import.meta.url), "utf8"));
   issuer = `http://127.0.0.1:${await freePort()}`;
   await start();
 }, 60_000);
 afterAll(async () => {
-  try { await app?.close(); await sql?.end({ timeout: 2 }); }
-  finally { stopContainer?.(); if (ownsTestUrl) delete process.env.TEST_DATABASE_URL; }
+  try {
+    await app?.close();
+  } finally {
+    try {
+      if (schemaCreated) await sql.unsafe(`DROP SCHEMA ${schema} CASCADE`);
+    } finally {
+      try { await sql?.end({ timeout: 2 }); }
+      finally { stopContainer?.(); if (ownsTestUrl) delete process.env.TEST_DATABASE_URL; }
+    }
+  }
 });
 
 describe("OAuth authorization server", () => {
