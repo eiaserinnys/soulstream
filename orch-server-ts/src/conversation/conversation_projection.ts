@@ -16,6 +16,21 @@ export class ConversationProjection {
   private errorInTurn = false;
 
   constructor(private readonly firstInputIsInitial: boolean) {}
+  clone(): ConversationProjection {
+    const copy = new ConversationProjection(this.firstInputIsInitial);
+    copy.firstUserMessageSeen = this.firstUserMessageSeen;
+    copy.keepalive = this.keepalive;
+    copy.suppressed = this.suppressed;
+    for (const id of this.hiddenInputs) copy.hiddenInputs.add(id);
+    for (const id of this.turnHiddenInputs) copy.turnHiddenInputs.add(id);
+    copy.visibleInputInTurn = this.visibleInputInTurn;
+    copy.busy = this.busy;
+    copy.tool = this.tool;
+    copy.streamId = this.streamId;
+    copy.streamText = this.streamText;
+    copy.errorInTurn = this.errorInTurn;
+    return copy;
+  }
   activity() { return { busy: this.busy, tool: this.tool }; }
   hasErrorInTurn() { return this.errorInTurn; }
   allowsLive() { return !this.keepalive; }
