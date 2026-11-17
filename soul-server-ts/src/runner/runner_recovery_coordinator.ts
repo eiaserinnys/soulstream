@@ -254,8 +254,9 @@ export class RunnerRecoveryCoordinator {
       } else {
         observation.runSync("gcWait", {}, () => undefined);
       }
-      const scan = await observation.runAsync("registration", {}, async () =>
-        await (this.options.scan ?? scanRunnerRegistrations)(
+      const scan = await observation.runAsync("registration", {}, async () => {
+        this.scanCache.resetMissCounts();
+        return await (this.options.scan ?? scanRunnerRegistrations)(
           this.options.stateDirectory,
           {
             cache: this.scanCache,
@@ -264,7 +265,9 @@ export class RunnerRecoveryCoordinator {
               ? { recoveryStorage: this.options.recoveryStorage }
               : {}),
           },
-        ));
+        );
+      });
+      const registrationCacheMisses = this.scanCache.missCounts();
       scanRegistrations = scan.registrations;
       await observation.runAsync("unreadable", {}, async () => {
         await this.unreadableRegistrationHandler.handle(scan.errors);
@@ -428,6 +431,7 @@ export class RunnerRecoveryCoordinator {
           database: observation.databaseSummary(),
           databaseAndPhaseDurationsOverlap: true,
           nestedGcTimingOverlapsReleaseGc: true,
+          registrationCacheMisses,
         },
       );
     } catch (error) {
@@ -444,6 +448,7 @@ export class RunnerRecoveryCoordinator {
             phaseDurationsMs: observation.phaseDurationsMs(),
             database: observation.databaseSummary(),
             databaseAndPhaseDurationsOverlap: true,
+            registrationCacheMisses: this.scanCache.missCounts(),
           }, "runner recovery scan phase failed");
         } catch {
           // Preserve the original scan error if reporting also fails.

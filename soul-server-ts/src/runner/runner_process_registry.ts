@@ -127,7 +127,7 @@ export async function scanRunnerRegistrations(
   options.cache?.prune(new Set(entries
     .filter((entry) => entry.isDirectory() && isRunnerRegistrationDirectoryName(entry.name))
     .map((entry) => resolve(stateDirectory, entry.name))));
-  for (const entry of entries) {
+  for (const [scanPosition, entry] of entries.entries()) {
     if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
@@ -135,8 +135,9 @@ export async function scanRunnerRegistrations(
           ...options,
           verifyProcessIdentity: options.verifyProcessIdentity ?? true,
         });
+      // 스캔 안 순번을 넘겨 같은 때 기록된 항목의 전체 재확인 만료가 여러 스캔에 나뉘게 한다.
       registrations.push(options.cache
-        ? await options.cache.read(directory, readFresh)
+        ? await options.cache.read(directory, readFresh, scanPosition)
         : await readFresh());
     } catch (error) {
       const normalized = asError(error);

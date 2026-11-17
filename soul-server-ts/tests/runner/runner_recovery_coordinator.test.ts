@@ -2775,6 +2775,52 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
     }), "runner recovery scan completed");
   });
 
+  it("reports registration cache miss reasons in the scan log", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-cache-misses-"));
+    try {
+      const registrationDirectory = join(stateDirectory, "session-cached");
+      await mkdir(registrationDirectory, { recursive: true });
+      await writeFile(join(registrationDirectory, "runner-config.json"), "{}");
+      const cached: RunnerRegistration = {
+        ...registration({}),
+        pid: null,
+        pidAlive: false,
+        retiredAt: "2026-10-12T00:00:00.000Z",
+      };
+      const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+        now: () => RECOVERY_NOW_MS,
+        scan: async (_stateDirectory, options) => ({
+          registrations: [await options.cache!.read(
+            registrationDirectory,
+            async () => structuredClone(cached),
+          )],
+          errors: [],
+        }),
+      });
+
+      await subject.coordinator.scanOnce();
+      await subject.coordinator.scanOnce();
+
+      const completed = subject.logger.info.mock.calls.filter(
+        ([, message]) => message === "runner recovery scan completed",
+      );
+      expect(completed).toHaveLength(2);
+      expect(completed[0]![0]).toMatchObject({
+        registrationCacheMisses: {
+          uncacheable: 0, fingerprintChanged: 0, fullRecheckExpired: 0, notCached: 1,
+        },
+      });
+      // 두 번째 스캔은 캐시 항목을 그대로 쓴다.
+      expect(completed[1]![0]).toMatchObject({
+        registrationCacheMisses: {
+          uncacheable: 0, fingerprintChanged: 0, fullRecheckExpired: 0, notCached: 0,
+        },
+      });
+    } finally {
+      await rm(stateDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("records a failed phase and finishes its watchdog context without replacing the error", async () => {
     let now = 200;
     let activeOperations = 0;

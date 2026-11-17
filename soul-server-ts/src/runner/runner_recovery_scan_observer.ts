@@ -5,12 +5,14 @@ import {
   type RunnerRegistration,
 } from "./runner_process_registry.js";
 import type { RunnerDatabaseObservationSummary } from "./runner_phase_observation.js";
+import type { RunnerRegistrationCacheMissCounts } from "./runner_registration_scan_cache.js";
 
 export interface RunnerRecoveryScanObservationSummary {
   nodeId: string;
   scanId: string;
   phaseDurationsMs: Record<string, number>;
   database?: RunnerDatabaseObservationSummary;
+  registrationCacheMisses?: RunnerRegistrationCacheMissCounts;
   databaseAndPhaseDurationsOverlap: true;
   nestedGcTimingOverlapsReleaseGc?: true;
 }
@@ -47,6 +49,9 @@ export function logRunnerRecoveryScan(
       scanId: observation.scanId,
       phaseDurationsMs: observation.phaseDurationsMs,
       ...(observation.database ? { database: observation.database } : {}),
+      ...(observation.registrationCacheMisses
+        ? { registrationCacheMisses: observation.registrationCacheMisses }
+        : {}),
       databaseAndPhaseDurationsOverlap: observation.databaseAndPhaseDurationsOverlap,
       ...(observation.nestedGcTimingOverlapsReleaseGc
         ? { nestedGcTimingOverlapsReleaseGc: true }
