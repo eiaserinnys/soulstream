@@ -156,8 +156,8 @@ Recurring-job tools require a trusted Soulstream caller session with a verified 
 | `get_agents_config(include_raw)` | Read `agents.yaml`, optionally including raw YAML |
 | `list_mcp_registry()` | Read `mcp-registry.yaml` server definitions with sensitive header/env values redacted |
 | `list_mcp_profiles()` | Read `mcp-profiles.yaml` exposure presets |
-| `plan_agent_profile_update(profile, create_if_missing, include_text_diff)` | Plan a semantic `agents.yaml` profile replacement without writing |
-| `update_agent_profile(profile, create_if_missing, expected_config_checksum)` | Apply a full profile replacement with snapshot/checksum guard |
+| `plan_agent_profile_update(profile, create_if_missing, include_text_diff)` | Plan a top-level `agents.yaml` profile patch without writing: only supplied fields change, omitted fields are preserved, `null` deletes a field, nested objects are replaced rather than merged, and unknown top-level keys are rejected |
+| `update_agent_profile(profile, create_if_missing, expected_config_checksum)` | Apply the same top-level profile patch with snapshot/checksum guard: only supplied fields change, omitted fields are preserved, `null` deletes a field, nested objects are replaced rather than merged, and unknown top-level keys are rejected |
 | `plan_agent_mcp_profile_update(agent_id, mcp_profile)` | Plan only an agent's `mcp_profile` reference change without writing |
 | `set_agent_mcp_profile(agent_id, mcp_profile)` | Set or clear only an agent's `mcp_profile` reference |
 | `set_agent_atom_contexts(agent_id, atom_contexts)` | Set only an agent's atom contexts |

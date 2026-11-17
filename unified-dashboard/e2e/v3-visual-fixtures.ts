@@ -724,7 +724,8 @@ export async function installV3VisualQaRoutes(
         const folderSessions = folderId === "folder-amber"
           ? qaSessions.filter((session) => session.agentSessionId.startsWith("folder-history-")
             || session.agentSessionId === outsideTaskSession.agentSessionId)
-          : qaSessions.filter((session) => (runSessions[folderId] ?? []).includes(session.agentSessionId));
+          : qaSessions.filter((session) => (folderId === "rb-alpha" ? alphaRunIds() : (runSessions[folderId] ?? []))
+            .includes(session.agentSessionId));
         const alphaPaged = options.alphaRunHistoryPages && folderId === "rb-alpha";
         const sessionPage = alphaPaged
           ? (url.searchParams.get("cursor") ? folderSessions.slice(0, 1) : folderSessions.slice(1, 2))

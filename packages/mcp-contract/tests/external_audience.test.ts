@@ -13,6 +13,9 @@ test("remote profile plan and apply accept partial nullable fields and still req
       { id: "agent", name: "Changed", model: null });
     assert.equal(input.safeParse({ node_id: "node", profile: { name: "Changed" } }).success, false);
     assert.equal(input.safeParse({ node_id: "node", profile: { id: "agent", max_turns: 0 } }).success, false);
+    const unknown = input.safeParse({ node_id: "node", profile: { id: "agent", description: "unknown" } });
+    assert.equal(unknown.success, false);
+    if (!unknown.success) assert.match(unknown.error.message, /description/);
   }
 });
 

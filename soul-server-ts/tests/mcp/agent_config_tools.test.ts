@@ -143,6 +143,13 @@ describe("local agent profile patch tools", () => {
       expect((apply.structuredContent as any).agent).not.toHaveProperty("model");
       const invalid = await client.callTool({ name: "update_agent_profile", arguments: { profile: { id: "agent", name: null } } });
       expect(invalid.isError).toBe(true);
+      const beforeUnknown = fs.readFileSync(configPath, "utf8");
+      const unknown = await client.callTool({ name: "update_agent_profile", arguments: {
+        profile: { id: "agent", description: "unknown" },
+      } });
+      expect(unknown.isError).toBe(true);
+      expect(JSON.stringify(unknown.content)).toContain("description");
+      expect(fs.readFileSync(configPath, "utf8")).toBe(beforeUnknown);
     } finally {
       await client.close();
       await server.close();
