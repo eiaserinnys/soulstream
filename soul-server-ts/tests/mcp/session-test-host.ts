@@ -3,11 +3,15 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "../../../orch-server-ts/src/mcp/types.js";
 import type { PersistenceHostRepositories } from "../../../orch-server-ts/src/control_plane/persistence_host_runtime.js";
+import type { EventReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/event_read_repository.js";
+import type { SessionStoryReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_story_read_repository.js";
 
 /** Existing scenario doubles now sit behind the real orchestrator MCP HTTP boundary. */
 export async function startSessionTestHost(runtime: McpRuntime, searchProvider?: { search: (...args: any[]) => any }, repositories?: PersistenceHostRepositories) {
   runtime.nodeId ??= "test-node";
-  const db = runtime.db;
+  const db = runtime.db as typeof runtime.db
+    & Pick<EventReadRepository, "listUserMessages" | "listTurnUsage" | "summarizeTurnUsage">
+    & Pick<SessionStoryReadRepository, "loadTurnTranscript">;
   const scenarioRepositories = repositories ?? {
     sessionReads: {
       getSession: (id: string) => db.getSession?.(id) ?? Promise.resolve(null),
