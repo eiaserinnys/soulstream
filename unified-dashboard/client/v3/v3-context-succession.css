@@ -562,12 +562,14 @@
   grid-column: 1 / -1;
 }
 
-.v3-succession-assignment label {
+.v3-succession-assignment label,
+.v3-succession-previous .v3-assignment-field label {
   color: inherit;
   font: inherit;
 }
 
-.v3-succession-assignment .v3-catalog-select-trigger {
+.v3-succession-assignment .v3-catalog-select-trigger,
+.v3-succession-previous .v3-catalog-select-trigger {
   min-height: calc(var(--spacing) * 9);
   padding: var(--v3-space-2) var(--v3-space-3);
   font: var(--v3-type-body) var(--v3-font-family);

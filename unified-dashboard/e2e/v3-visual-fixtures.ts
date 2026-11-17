@@ -39,6 +39,7 @@ export interface V3VisualQaRouteOptions {
   legacyAtomContext?: boolean;
   outsideTaskSession?: boolean;
   sessionModelPresets?: Readonly<Record<string, string | null>>;
+  sessionReasoningEfforts?: Readonly<Record<string, string | null>>;
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
   excludeSessionIdsFromInitialStream?: readonly string[];
@@ -531,12 +532,12 @@ export async function installV3VisualQaRoutes(
       }))]
     : options.outsideTaskSession ? [...sessions, outsideTaskSession] : sessions;
   const qaSessions = baseQaSessions.map((session) => {
-    if (!Object.hasOwn(options.sessionModelPresets ?? {}, session.agentSessionId)) {
-      return session;
-    }
     return {
       ...session,
-      modelPreset: options.sessionModelPresets?.[session.agentSessionId] ?? null,
+      ...(Object.hasOwn(options.sessionModelPresets ?? {}, session.agentSessionId)
+        ? { modelPreset: options.sessionModelPresets?.[session.agentSessionId] ?? null } : {}),
+      ...(Object.hasOwn(options.sessionReasoningEfforts ?? {}, session.agentSessionId)
+        ? { reasoningEffort: options.sessionReasoningEfforts?.[session.agentSessionId] ?? null } : {}),
     };
   });
   const unifiedFolders = [
