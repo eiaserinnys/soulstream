@@ -91,8 +91,10 @@ async function main() {
             assert.equal(tabFocus, '작업 내용');
             await name.focus();
             await scroll.evaluate(el => { el.scrollTop = (el.scrollHeight - el.clientHeight) / 2; });
+            await page.waitForTimeout(700);
             const scrollBefore = await scroll.evaluate(el => el.scrollTop);
             await page.setViewportSize({ width: viewport.width === 390 ? 834 : 390, height: viewport.height });
+            await page.waitForTimeout(700);
             const scrollWideNarrow = await scroll.evaluate(el => el.scrollTop);
             assert.equal(await name.inputValue(), '매일 아침 프로젝트 진행 상황과 남은 작업 정리');
             assert.equal(await name.evaluate(el => document.activeElement === el), true, '폭 전환 뒤 입력 초점 유지');

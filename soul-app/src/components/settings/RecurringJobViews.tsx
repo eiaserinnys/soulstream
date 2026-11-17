@@ -153,6 +153,7 @@ export function RecurringJobEditor({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ message: string; key: number } | null>(null);
   const errorRevision = useRef(0);
+  const scrolledError = useRef<number | null>(null);
   const editorScroll = useRef<ScrollView>(null);
   const showActionError = (message: string) => setActionError({ message, key: ++errorRevision.current });
   useEffect(() => { setActionError(null); }, [serverUrl, jobId]);
@@ -338,7 +339,7 @@ export function RecurringJobEditor({
     {!workspace ? <Action label={saving ? '저장 중...' : '저장'} disabled={saving || loading || job?.archived_at != null || (Boolean(jobId) && !job)} primary onPress={() => void save()}/> : null}
     </Group></SettingsSection>
     {job ? <View style={styles.actions}><Action label="이력" disabled={saving} onPress={() => onOpenHistory(job.job_id)} testID="recurring-job-history" /><Action label={job.enabled ? '일시정지' : '재개'} disabled={saving || job.archived_at !== null} onPress={() => void updateEnabled()} testID="recurring-job-toggle-enabled" /><Action label="지금 실행" disabled={saving || job.archived_at !== null} primary onPress={() => void runNow()} testID="recurring-job-run-now" /><Action label="보관" disabled={saving || job.archived_at !== null} onPress={confirmArchive} testID="recurring-job-archive" /></View> : null}
-    {actionError ? <Text key={actionError.key} accessibilityRole="alert" style={styles.error} onLayout={() => { if (workspace) scrollToError?.(); else editorScroll.current?.scrollToEnd({ animated: true }); }}>{actionError.message}</Text> : null}
+    {actionError ? <Text key={actionError.key} accessibilityRole="alert" style={styles.error} onLayout={() => { if (scrolledError.current === actionError.key) return; scrolledError.current = actionError.key; if (workspace) scrollToError?.(); else editorScroll.current?.scrollToEnd({ animated: true }); }}>{actionError.message}</Text> : null}
   </Container></AppKeyboardAvoidingView>;
 }
 

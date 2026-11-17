@@ -93,6 +93,24 @@ test.each(['server', 'validation', 'conflict'])('폰 %s 저장 실패는 저장 
   }
 });
 
+test('같은 실패 안내의 재배치는 스크롤하지 않고 다음 실패는 다시 스크롤한다', async () => {
+  const api = makeApi();
+  jest.mocked(createApiClient).mockReturnValue(api as any);
+  const screen = render(editor());
+  const scroll = spyOnScroll(screen, 'recurring-job-editor');
+  await screen.findByDisplayValue(job.name);
+  fireEvent.press(screen.getByText('저장'));
+  const alert = await screen.findByText(/HTTP 503/);
+  fireEvent(alert, 'layout');
+  expect(scroll).toHaveBeenCalledTimes(1);
+  fireEvent(alert, 'layout');
+  expect(scroll).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByText('저장'));
+  const nextAlert = await screen.findByText(/HTTP 503/);
+  fireEvent(nextAlert, 'layout');
+  expect(scroll).toHaveBeenCalledTimes(2);
+});
+
 test('동작 실패는 아래, 불러오기 실패와 다시 불러오기는 위에 보인다', async () => {
   const api = makeApi();
   jest.mocked(createApiClient).mockReturnValue(api as any);
