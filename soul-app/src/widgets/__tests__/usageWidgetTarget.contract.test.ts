@@ -88,3 +88,18 @@ test('네 번째 Antigravity 주간 줄과 크기별 시안 계약을 보존한�
   expect(widget).toContain('showBars: false, showUpdated: false');
   expect(widget).toContain('Claude·Fable·Codex·Antigravity');
 });
+
+test('위젯 숫자와 막대와 경고는 쓴 비율을 표시한다', () => {
+  const models = read('targets/usage-widget/UsageWidgetModels.swift');
+  const widget = read('targets/usage-widget/UsageWidget.swift');
+
+  expect(models).toContain('var usedPercent: Double');
+  expect(models).toContain('min(100, max(0, 100 - remainingPercent))');
+  expect(widget).toContain('Int(gauge.usedPercent.rounded())');
+  expect(widget).toContain('ProgressView(value: gauge.usedPercent, total: 100)');
+  expect(widget).toContain('gauge.usedPercent >= 80 ? .orange : .accentColor');
+  expect(widget).toContain('gauge.id == "claude" && gauge.remainingPercent == 0');
+  expect(widget).not.toContain('remainingPercent < 20');
+  expect(widget).toContain('주간 사용량');
+  expect(widget).not.toContain('남은 양');
+});

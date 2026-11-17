@@ -175,14 +175,14 @@ struct UsageWidgetView: View {
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                Text("\(Int(gauge.remainingPercent.rounded()))%")
+                Text("\(Int(gauge.usedPercent.rounded()))%")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(blockedClaude ? .red : .primary)
                     .fixedSize(horizontal: true, vertical: false)
             }
             if showBar {
-                ProgressView(value: gauge.remainingPercent, total: 100)
-                    .tint(gauge.remainingPercent < 20 ? .orange : .accentColor)
+                ProgressView(value: gauge.usedPercent, total: 100)
+                    .tint(gauge.usedPercent >= 80 ? .orange : .accentColor)
             }
         }
     }
@@ -213,7 +213,7 @@ struct UsageWidget: Widget {
             UsageWidgetView(entry: entry)
         }
         .configurationDisplayName("주간 사용량")
-        .description("노드별 Claude·Fable·Codex·Antigravity 주간 남은 양을 표시합니다.")
+        .description("노드별 Claude·Fable·Codex·Antigravity 주간 사용량을 표시합니다.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

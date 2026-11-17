@@ -223,6 +223,10 @@ struct UsageGauge: Identifiable {
     let resetAt: Double?
     let resetLabel: String?
 
+    var usedPercent: Double {
+        min(100, max(0, 100 - remainingPercent))
+    }
+
     func resetCountdown(at date: Date, compact: Bool) -> String? {
         guard let resetAt else { return nil }
 
