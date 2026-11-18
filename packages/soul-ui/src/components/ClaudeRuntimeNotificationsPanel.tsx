@@ -98,7 +98,7 @@ export function ClaudeRuntimeNotificationsPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bell className="size-4 text-muted-foreground" />
-          <span>Runtime Signals</span>
+          <span className="break-keep">런타임 신호</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {signals.visibleCount}
           </span>
@@ -106,7 +106,7 @@ export function ClaudeRuntimeNotificationsPanel({
             <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              {signals.errorCount} error
+              오류 {signals.errorCount}
             </span>
           ) : null}
         </button>

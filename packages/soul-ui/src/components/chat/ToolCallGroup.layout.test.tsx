@@ -79,10 +79,10 @@ describe("ToolCallGroup compact header", () => {
   });
 
   it.each([
-    [0, "Tool Calls 0", "실행 중"],
-    [1, "Tool Calls 1", "실행 중"],
-    [14, "Tool Calls 14", "완료"],
-    [100, "Tool Calls 100", "실패"],
+    [0, "도구 호출 0", "실행 중"],
+    [1, "도구 호출 1", "실행 중"],
+    [14, "도구 호출 14", "완료"],
+    [100, "도구 호출 100", "실패"],
   ] as const)("renders %i calls with a one-line status", (count, countLabel, statusLabel) => {
     const state = statusLabel === "완료" ? "done" : statusLabel === "실패" ? "error" : "running";
     const view = renderGroup(Array.from({ length: count }, (_, index) => message(index, state)));

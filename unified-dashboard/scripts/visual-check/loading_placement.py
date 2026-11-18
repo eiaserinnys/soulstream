@@ -626,8 +626,8 @@ def open_search_modal(page: Page) -> None:
     page.goto("/")
     wait_shell(page)
     # 좁은 폭에서는 도구막대 검색 단추가 숨어 있다. 단추는 마운트돼 있으니 DOM 클릭으로 연다.
-    page.wait_for_selector('[aria-label="Open session search"]', state="attached", timeout=30000)
-    page.evaluate("""() => document.querySelector('[aria-label="Open session search"]').click()""")
+    page.wait_for_selector('[aria-label="세션 검색 열기"]', state="attached", timeout=30000)
+    page.evaluate("""() => document.querySelector('[aria-label="세션 검색 열기"]').click()""")
     page.get_by_placeholder("검색어를 입력하세요...").fill("검수")
 
 
@@ -1047,8 +1047,8 @@ def capture_search_states(browser, base: str, out: Path, scene: dict, width: int
     try:
         page.goto("/")
         wait_shell(page)
-        page.wait_for_selector('[aria-label="Open session search"]', state="attached", timeout=30000)
-        page.evaluate("() => document.querySelector('[aria-label=\"Open session search\"]').click()")
+        page.wait_for_selector('[aria-label="세션 검색 열기"]', state="attached", timeout=30000)
+        page.evaluate("() => document.querySelector('[aria-label=\"세션 검색 열기\"]').click()")
         field = page.get_by_placeholder("검색어를 입력하세요...")
         field.wait_for(state="visible")
         settle(page)

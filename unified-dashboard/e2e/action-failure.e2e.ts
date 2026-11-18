@@ -31,7 +31,7 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
     });
     await openChatUi(page, pas);
     const input = composer(page);
-    const stop = input.getByRole("button", { name: "Stop running conversation" });
+    const stop = input.getByRole("button", { name: "세션 중단" });
     await expect(stop).toBeEnabled();
     await expect(input.getByText(INTERRUPT_MESSAGE, { exact: true })).toHaveCount(0);
 

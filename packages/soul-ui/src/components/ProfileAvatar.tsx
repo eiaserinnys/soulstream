@@ -48,7 +48,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
   return (
     <img
       src={src}
-      alt={role}
+      alt={role === "user" ? "사용자" : "어시스턴트"}
       className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-lg'} shrink-0 object-cover`}
       onError={() => setImgError(true)}
       onLoad={(e) => {

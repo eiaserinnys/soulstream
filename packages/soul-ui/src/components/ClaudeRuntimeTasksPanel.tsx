@@ -147,7 +147,7 @@ export function ClaudeRuntimeTasksPanel({
           {planMode ? (
             <ModeBadge
               icon={<ListChecks className="size-3" />}
-              label={planMode.active ? "Plan mode" : "Plan off"}
+              label={planMode.active ? "계획 모드" : "계획 모드 꺼짐"}
               active={planMode.active}
               tone={tone}
             />
@@ -176,7 +176,7 @@ export function ClaudeRuntimeTasksPanel({
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={statusClassName(task.status, tone)}>{task.status}</span>
-                  <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="break-keep rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {taskKindLabel(task)}
                   </span>
                   <span className="truncate font-mono text-xs text-muted-foreground">
@@ -184,7 +184,7 @@ export function ClaudeRuntimeTasksPanel({
                   </span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK task"}
+                  {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK 작업"}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -258,7 +258,7 @@ export function ClaudeRuntimeTasksPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bot className="size-4 text-muted-foreground" />
-          <span>Claude Runtime Tasks</span>
+          <span className="break-keep">백그라운드 작업</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {tasks.length}
           </span>
@@ -268,14 +268,14 @@ export function ClaudeRuntimeTasksPanel({
                 ? "chat-tone-warning"
                 : "bg-amber-500/12 text-amber-700 dark:text-amber-300"
             }`}>
-              {runningCount} active
+              실행 중 {runningCount}
             </span>
           ) : null}
           {errorCount > 0 ? (
             <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              {errorCount} error
+              오류 {errorCount}
             </span>
           ) : null}
         </button>
@@ -316,18 +316,18 @@ function ModeBadge({
 
 function worktreeLabel(mode: ClaudeRuntimeModeView): string {
   if (!mode.active) {
-    return mode.worktreeAction ? `Worktree off (${mode.worktreeAction})` : "Worktree off";
+    return mode.worktreeAction ? `워크트리 모드 꺼짐 (${mode.worktreeAction === "keep" ? "유지" : mode.worktreeAction === "remove" ? "제거" : mode.worktreeAction})` : "워크트리 모드 꺼짐";
   }
-  return mode.worktreeName ?? mode.worktreePath ?? "Worktree mode";
+  return mode.worktreeName ?? mode.worktreePath ?? "워크트리 모드";
 }
 
 function taskKindLabel(task: ClaudeRuntimeTaskView): string {
-  if (task.taskType === "bash" && task.isBackgrounded) return "Background Bash";
+  if (task.taskType === "bash" && task.isBackgrounded) return "백그라운드 Bash";
   if (task.taskType === "bash") return "Bash";
-  if (task.isBackgrounded) return "Background Agent";
-  if (task.taskType === "agent") return "Agent";
-  if (task.subject) return "SDK Task";
-  return task.taskType ?? "Task";
+  if (task.isBackgrounded) return "백그라운드 에이전트";
+  if (task.taskType === "agent") return "에이전트";
+  if (task.subject) return "SDK 작업";
+  return task.taskType ?? "작업";
 }
 
 function statusClassName(status: ClaudeRuntimeTaskStatus, tone: "default" | "calm"): string {

@@ -181,4 +181,15 @@ describe("runtime panels first loading", () => {
     expect(container.textContent).toContain("백그라운드 작업 1");
     expect(refreshButton(container)?.querySelector(".animate-spin")).not.toBeNull();
   });
+
+  it.each([["keep", "유지"], ["remove", "제거"], ["custom", "custom"]])(
+    "shows the worktree action %s in the expanded panel",
+    async (action, expected) => {
+      vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+      const runtime = { ...runtimeWithTask, worktreeMode: { active: false, updatedAt: 0, worktreeAction: action } };
+      await act(async () => root.render(createElement(ClaudeRuntimeTasksPanel, { sessionId: "session-1", runtime })));
+      act(() => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+      expect(container.textContent).toContain(`워크트리 모드 꺼짐 (${expected})`);
+    },
+  );
 });

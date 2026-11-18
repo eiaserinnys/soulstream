@@ -723,7 +723,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
 
     case "input_request": {
       const n = node as InputRequestNodeDef;
-      const firstQuestion = n.questions[0]?.question ?? "Input requested";
+      const firstQuestion = n.questions[0]?.question ?? "입력 요청";
       return {
         id: n.id,
         role: "input_request",

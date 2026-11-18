@@ -41,7 +41,7 @@ for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
  await fileInput.setInputFiles({name:'첨부.png',mimeType:'image/png',buffer:readFileSync('public/icon-192.png')});
  await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeDisabled();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();
  await imageLoaded(page,'첨부.png');await capture(page,`attachment-${width}`);await dialog.locator('img[alt="첨부.png"]').click();await expect(page.getByRole('dialog',{name:'첨부.png',exact:true})).toBeVisible();await expect.poll(()=>page.getByRole('dialog',{name:'첨부.png',exact:true}).locator('img').evaluate((img:HTMLImageElement)=>img.naturalWidth)).toBeGreaterThan(0);await capture(page,`attachment-zoom-${width}`);await page.keyboard.press('Escape');
- await dialog.getByRole('button',{name:'Remove file'}).click();await expect(dialog.locator('img[alt="첨부.png"]')).toHaveCount(0);
+ await dialog.getByRole('button',{name:'첨부 제거'}).click();await expect(dialog.locator('img[alt="첨부.png"]')).toHaveCount(0);
  const encoded=readFileSync('public/icon-192.png').toString('base64');
  await dialog.getByRole('textbox',{name:'요청 원문'}).evaluate((element,encoded)=>{const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));const data=new DataTransfer();data.items.add(new File([bytes],'붙여넣기.png',{type:'image/png'}));element.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},encoded);
  await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();await imageLoaded(page,'붙여넣기.png');

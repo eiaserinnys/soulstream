@@ -77,7 +77,7 @@ export function computeInterventionDisplay(
   // ---- agent 분기 ----
   if (isAgent) {
     const agentInfo = msg.agentInfo!;
-    const agentName = agentInfo.agent_name ?? agentInfo.agent_id ?? "Agent";
+    const agentName = agentInfo.agent_name ?? agentInfo.agent_id ?? "에이전트";
     const displayId = `${agentName}@${agentInfo.agent_node}`;
     const portraitUrl = agentInfo.agent_id
       ? `/api/nodes/${agentInfo.agent_node}/agents/${agentInfo.agent_id}/portrait`
@@ -98,7 +98,7 @@ export function computeInterventionDisplay(
   const displayName =
     typeof callerName === "string" && callerName.length > 0
       ? callerName
-      : "Intervention";
+      : "개입";
   const portraitUrl = pickMessageAvatarUrl(
     msg.callerInfo,
     callerAvatarUrl ?? null,

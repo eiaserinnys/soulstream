@@ -49,8 +49,8 @@ describe("ClaudeRuntimeSchedulesPanel presentation", () => {
     expect(caption).toContain('aria-label="새로고침"');
 
     const defaultMarkup = render("default");
-    expect(defaultMarkup).toContain(`next ${new Date(nextRunAt).toLocaleString()}`);
-    expect(defaultMarkup).toContain("Schedules");
+    expect(defaultMarkup).toContain(`다음 ${new Date(nextRunAt).toLocaleString()}`);
+    expect(defaultMarkup).toContain("예약");
     expect(defaultMarkup).not.toContain("dashboard-icon-cap--small");
   });
 });

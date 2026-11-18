@@ -55,7 +55,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Approval
+          도구 승인
         </div>
         <div className="text-sm font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
         {msg.toolResult && (

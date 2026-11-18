@@ -70,13 +70,13 @@ export function BoardAssetCard({
           <a
             href={signedUrl}
             download={fileName}
-            title="Download"
+            title="다운로드"
             className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--lg-line)] text-muted-foreground transition-colors hover:bg-accent-blue/15 hover:text-foreground"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
             <Download className="h-3.5 w-3.5" />
-            <span className="sr-only">Download</span>
+            <span className="sr-only">다운로드</span>
           </a>
         )}
       </div>

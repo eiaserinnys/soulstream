@@ -102,7 +102,7 @@ export async function submitLlmContinuation(
   if (!response.ok) {
     const body = await response
       .json()
-      .catch(() => ({ detail: "Unknown error" }));
+      .catch(() => ({ detail: "알 수 없는 오류" }));
     throw new Error(extractErrorMessage(body, response.status));
   }
 

@@ -34,7 +34,7 @@ async function render() {
 }
 
 function interruptButton() {
-  return host.querySelector<HTMLButtonElement>('button[aria-label="Stop running conversation"]');
+  return host.querySelector<HTMLButtonElement>('button[aria-label="세션 중단"]');
 }
 
 beforeEach(async () => {

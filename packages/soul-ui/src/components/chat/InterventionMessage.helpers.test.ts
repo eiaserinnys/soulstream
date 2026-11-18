@@ -128,6 +128,6 @@ describe("computeInterventionDisplay — user 분기 (회귀 보존)", () => {
   it("callerInfo 부재 시 일반 사용자 라벨을 쓴다", () => {
     const msg = makeMsg({});
     const d = computeInterventionDisplay(msg, null);
-    expect(d.displayName).toBe("Intervention");
+    expect(d.displayName).toBe("개입");
   });
 });
