@@ -1,7 +1,7 @@
 import "./config/config-layout.css";
 import "../v3/v3-card-board.css";
 import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
 /**
@@ -192,7 +192,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
         <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
           {loading && <FrameLoading label="설정을 불러오는 중..." />}
           {error && !loading && (
-            <div className="text-accent-red text-sm py-4 text-center" data-v3-selectable-content="true">
+            <div className="text-destructive-foreground text-sm py-4 text-center" data-v3-selectable-content="true">
               ❌ {error}
             </div>
           )}
@@ -219,7 +219,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                     setPasDevicePreferences(next);
                   }}
                 /> : null}
-                <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
+                <details className="config-advanced"><summary><ChevronRight className="config-advanced-marker size-4 shrink-0" aria-hidden="true"/>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
               </div> : selectedTab === CHAT_TAB_NAME ? (
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
@@ -366,7 +366,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
         ))}
       </div>
       {error && (
-        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">
+        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">
           {error}
         </div>
       )}

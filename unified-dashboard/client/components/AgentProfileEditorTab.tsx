@@ -254,7 +254,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   // 첫 읽기 실패: 편집 영역 안의 오류 줄만 남기지 않고, 로더와 같은 자리에서
   // 실패 안내를 보여 준다. 프로필이 이미 있으면 종전처럼 편집기 안 오류 줄을 쓴다.
   if (error && profiles.length === 0 && !draft) {
-    return <FrameNotice><p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">{error}</p></FrameNotice>;
+    return <FrameNotice><p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p></FrameNotice>;
   }
 
   return (
@@ -491,7 +491,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               )}
             </section>
 
-            {error && <p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">{error}</p>}
+            {error && <p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
             {message && <p role="status" className="rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
             <div className="flex justify-end gap-2">
               {error === VERSION_CONFLICT_MESSAGE && (

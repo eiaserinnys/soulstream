@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { Button, Checkbox, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Input } from '@seosoyoung/soul-ui';
 import { accessLinkStatus, AccessLinksError, createAccessLinksApi, type AccessLink, type AccessLinkPermission } from '../lib/access-links-api';
 import { createPersistentSessionsApi, type PersistentSession } from '../lib/persistent-sessions';
@@ -117,7 +118,7 @@ export function AccessLinksTab({ request = fetch }: { request?: typeof fetch }) 
     return <div className={`owned-agents-block access-links-row${isPast ? ' is-past' : ''}`} key={link.id}>
       <div className="owned-agents-key-row"><div className="access-links-copy">
         <p className="access-links-label" title={link.label} data-v3-selectable-content="true">{link.label}</p>
-        <div className="owned-agents-meta access-links-meta" data-v3-selectable-content="true">
+        <div className="config-meta-row" data-v3-selectable-content="true">
           {isPast && <span>{shortDate(status === 'revoked' ? link.revoked_at! : link.expires_at)} {status === 'revoked' ? '폐기' : '만료'}</span>}
           <span>{names.get(link.target_session_id) ?? `세션 ${link.target_session_id.slice(0, 8)}`}</span>
           <span>{link.permissions.map(p => permissions.find(item => item.value === p)?.label ?? p).join(', ')}</span>
@@ -131,7 +132,7 @@ export function AccessLinksTab({ request = fetch }: { request?: typeof fetch }) 
     <div className="owned-agents-actions"><Button ref={createButton} onClick={openEditor}>링크 만들기</Button></div>
     {listError ? <div className="space-y-2"><SettingsAlert><span data-v3-selectable-content="true">링크 목록을 불러오지 못했습니다.</span></SettingsAlert><Button variant="outline" onClick={() => { setLinks(null); void load(); }}>다시 시도</Button></div>
       : links === null ? <div role="status" aria-label="불러오는 중">{[0, 1].map(i => <div className="owned-agents-block" key={i}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
-      : <>{links.length === 0 ? <p className="access-links-empty">아직 만든 링크가 없습니다.</p> : <>{active.length ? active.map(link => row(link, false)) : <p className="access-links-empty">쓸 수 있는 링크가 없습니다.</p>}{past.length > 0 && <details className="config-advanced"><summary>지난 링크 <span>{past.length}</span></summary>{past.map(link => row(link, true))}</details>}</>}</>}
+      : <>{links.length === 0 ? <p className="access-links-empty">아직 만든 링크가 없습니다.</p> : <>{active.length ? active.map(link => row(link, false)) : <p className="access-links-empty">쓸 수 있는 링크가 없습니다.</p>}{past.length > 0 && <details className="config-advanced"><summary><ChevronRight className="config-advanced-marker size-4 shrink-0" aria-hidden="true"/>지난 링크 <span>{past.length}</span></summary>{past.map(link => row(link, true))}</details>}</>}</>}
     <Dialog open={editor} onOpenChange={open => { if (!open && !busy) closeEditor(); }} onOpenChangeComplete={open => { if (!open && !editor) { setUrl(null); createButton.current?.focus(); } }}>
         <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton} finalFocus={createButton}>
         <DialogHeader><DialogTitle>{url ? '링크를 만들었습니다' : '새 접속 링크'}</DialogTitle><DialogDescription>{url ? '주소는 지금 한 번만 보입니다. 닫기 전에 복사하세요.' : '링크를 가진 쪽은 대상 세션이 가진 도구로 일을 시킬 수 있습니다. 폐기해도 이미 받은 요청의 작업은 이어집니다.'}</DialogDescription></DialogHeader>

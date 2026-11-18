@@ -102,7 +102,7 @@ export function SettingsAlert({ children, scrollIntoView = false }: { children: 
     if (scrollIntoView) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [scrollIntoView]);
   return (
-    <div ref={ref} role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-accent-red" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+    <div ref={ref} role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
       {children}
     </div>
   );

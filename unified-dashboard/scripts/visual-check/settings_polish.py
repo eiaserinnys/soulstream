@@ -1,0 +1,638 @@
+#!/usr/bin/env python3
+"""설정 창 내 에이전트 탭·펼침 표식·카탈로그 선택 상자·인라인 오류 대비 검수 (카드 #1691).
+
+`/dialogues?sample=settings`의 내 에이전트·화면과 읽기·접속 링크 탭, 그리고 설정 창 밖
+컴포넌트 검수 창(`/components`)에서 다음을 캡처와 좌표로 잰다.
+
+  - 내 에이전트 메타가 가운뎃점 없이 항목별 span 인 공용 줄(config-meta-row)로 서고,
+    360 폭에서 상세 머리 설명과 메타에 낱말 가운데 줄바꿈·가로 넘침이 없는지
+    (`access_links_tab.py`의 WORDS 검사 꼴),
+  - `details.config-advanced` 표식이 lucide ChevronRight(svg, aria-hidden)이고 표식 사각형의
+    세로 가운데와 머리 글자 줄 상자의 세로 가운데 차이가 1px 이하인지
+    (닫힘·열림, 1280·360, 화면과 읽기·접속 링크 두 사용처),
+  - 카탈로그 선택 상자의 트리거 값이 soul-ui SelectValue 이고, 처음 값이 첫 항목이 아닐 때
+    열면 고른 항목 글자와 트리거 값 글자의 위쪽 끝 차이가 1px 이하인지
+    (설정 창 접속 링크 + 설정 창 밖 컴포넌트 검수 창),
+  - 라이트·다크에서 인라인 오류 글의 계산된 글자색과 실제 바탕색(투명도 합성)의 대비가 4.5:1 이상인지
+    (내 에이전트 불러오기 실패, SettingsAlert, 접속 링크 폼 small[role=alert]),
+  - ui-design 0절 14~18번: 설정 창을 열 때·탭을 누른 뒤 초점, 선택 상자 Tab 과 Esc 의 초점,
+    360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
+
+검수 창이 부르는 API는 page.route 로 가로쓴 운영 꼴 견본이다. 내 에이전트와 접속 링크 응답은
+`ownedAgentsVisual`·`accessLinksVisual` 질의에서 실제 fetch 로 통과시킨다(dialogues-api 모듈을
+같은 주소에서 고쳐 쓴다). 불러오는 중 화면은 `ownedAgentsDelay` 질의에서 fetch 응답을 늦춰 만든다.
+
+실행
+
+    # 저장소 루트에서. --serve 면 빈 포트를 스스로 골라 Vite 를 띄우고 끝나면 내린다.
+    python3 -P unified-dashboard/scripts/visual-check/settings_polish.py \
+        --serve --output .local/card1691-settings-polish
+
+    # 이미 띄운 서버를 쓰려면 주소를 준다.
+    python3 -P unified-dashboard/scripts/visual-check/settings_polish.py \
+        http://127.0.0.1:5173 --output .local/card1691-settings-polish
+
+산출물
+
+    {출력}/owned-agents-{폭}-{테마}.png          내 에이전트 탭 첫 화면
+    {출력}/owned-agents-loading-{폭}-{테마}.png  불러오는 중(응답 지연)
+    {출력}/owned-agents-error-{폭}-{테마}.png    불러오기 실패
+    {출력}/details-{탭}-{폭}-{테마}-{closed,open}.png  접는 구역 표식
+    {출력}/catalog-open-{대상}-{폭}-{테마}.png   선택 상자 열림(고른 항목이 트리거 자리에 겹침)
+    {출력}/access-links-error-{폭}-{테마}.png    접속 링크 목록 실패(SettingsAlert)
+    {출력}/access-links-field-error-{폭}-{테마}.png  폼 필드 오류(small[role=alert])
+    {출력}/report.json                          측정값과 판정
+
+점검이 하나라도 어긋나면 종료 코드 1로 끝난다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import access_links_tab as alt  # noqa: E402  WORDS·focus 도우미
+import settings_nodes as sn  # noqa: E402  테마 문맥·정착 도우미
+import settings_nodes_layout as snl  # noqa: E402  대비 계산기(CONTRAST_JS)
+
+ROOT = Path(__file__).resolve().parents[3]
+WIDE, NARROW = sn.WIDE, sn.NARROW
+THEMES = ("light", "dark")
+TOLERANCE_PX = 1.0
+CONTRAST_MIN = snl.CONTRAST_MIN
+DELAY_MS = 2500
+SETTINGS_QUERY = "?sample=settings&ownedAgentsVisual=1&accessLinksVisual=1"
+
+SESSIONS = [
+    {"session_id": f"00000000-0000-4000-8000-{index + 1:012}", "display_name": name, "agent_name": "로젤린"}
+    for index, name in enumerate(["✨ 서소영 관제", "🌿 로젤린 작업", "🔍 조사 세션", "📝 글쓰기"])
+]
+OWNED_AGENTS = [
+    {
+        "id": "agent-rocket",
+        "name": "🚀 우주 정찰 에이전트 — 아주 길게 이어지는 이름의 내 에이전트",
+        "enabled": True,
+        "ownerEmail": "sample@example.invalid",
+        "createdAt": "2026-09-01T03:00:00Z",
+        "updatedAt": "2026-11-18T09:00:00Z",
+        "keys": [
+            {"id": "key-existing", "createdAt": "2026-10-05T09:12:00Z", "lastUsedAt": "2026-11-18T21:40:00Z", "revokedAt": None, "isExistingConnection": True},
+            {"id": "key-revoked", "createdAt": "2026-10-20T10:00:00Z", "lastUsedAt": None, "revokedAt": "2026-11-01T00:00:00Z", "isExistingConnection": False},
+        ],
+    },
+    {"id": "agent-observe", "name": "✨ 서소영 관제", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-02T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": []},
+    {"id": "agent-garden", "name": "🌿 로젤린 작업", "enabled": False, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-03T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-fresh", "createdAt": "2026-10-07T09:00:00Z", "lastUsedAt": None, "revokedAt": None, "isExistingConnection": False}]},
+    {"id": "agent-research", "name": "🔍 조사 세션", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-04T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-gone", "createdAt": "2026-10-08T09:00:00Z", "lastUsedAt": None, "revokedAt": "2026-11-02T00:00:00Z", "isExistingConnection": False}]},
+    {"id": "agent-writing", "name": "📝 글쓰기", "enabled": False, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-05T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": []},
+    {"id": "agent-long", "name": "🤖 아주 긴 영구 에이전트 세션 이름이 여기에서 계속 이어집니다", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-06T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-long", "createdAt": "2026-10-09T09:00:00Z", "lastUsedAt": "2026-11-10T09:00:00Z", "revokedAt": None, "isExistingConnection": False}]},
+]
+LINKS = [
+    {"id": "link-active", "label": "외부 조사 도우미", "target_session_id": SESSIONS[0]["session_id"], "permissions": ["send", "read_own"], "created_at": "2026-11-01T00:00:00Z", "expires_at": "2030-12-01T00:00:00Z", "revoked_at": None, "last_used_at": None},
+    {"id": "link-past", "label": "지난 연결", "target_session_id": SESSIONS[1]["session_id"], "permissions": ["send"], "created_at": "2020-10-01T00:00:00Z", "expires_at": "2020-10-15T00:00:00Z", "revoked_at": None, "last_used_at": "2020-10-10T00:00:00Z"},
+]
+
+owned_state = {"mode": "normal"}
+access_state = {"mode": "normal"}
+
+WORDS = alt.WORDS
+FOCUS = alt.focus
+
+DELAY_SCRIPT = """(() => {
+  const original = window.fetch;
+  window.fetch = async (...args) => {
+    const response = await original(...args);
+    if (new URLSearchParams(location.search).has('ownedAgentsDelay') &&
+        String(args[0]).endsWith('/api/owned-agents') && (!args[1]?.method || args[1].method === 'GET')) {
+      await new Promise(resolve => setTimeout(resolve, %d));
+    }
+    return response;
+  };
+})()""" % DELAY_MS
+
+META_PROBE = r"""
+() => {
+  const workspace = document.querySelector('.owned-agents');
+  if (!workspace) return {found: false};
+  const rows = [...workspace.querySelectorAll('.config-meta-row')];
+  const keyTexts = [...workspace.querySelectorAll('.owned-agents-key-row p')].map(p => p.textContent.trim());
+  return {
+    found: true,
+    rows: rows.map(row => ({
+      display: getComputedStyle(row).display,
+      wordBreak: getComputedStyle(row).wordBreak,
+      overflowWrap: getComputedStyle(row).overflowWrap,
+      children: [...row.children].map(child => child.tagName.toLowerCase()),
+      text: row.textContent.trim(),
+    })),
+    middleDots: keyTexts.filter(text => text.includes('·')),
+    keyTexts,
+  };
+}
+"""
+
+MARKER_PROBE = r"""
+() => [...document.querySelectorAll('.config-detail details.config-advanced')].map(detail => {
+  const summary = detail.querySelector('summary');
+  const marker = summary ? summary.querySelector('.config-advanced-marker') : null;
+  const textNode = summary ? [...summary.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()) : null;
+  const range = textNode ? document.createRange() : null;
+  if (range) range.selectNodeContents(textNode);
+  const textRect = range ? range.getBoundingClientRect() : null;
+  const markerRect = marker ? marker.getBoundingClientRect() : null;
+  return {
+    open: detail.open,
+    text: textNode ? textNode.textContent.trim() : null,
+    marker: marker ? marker.tagName.toLowerCase() : null,
+    markerHidden: marker ? marker.getAttribute('aria-hidden') : null,
+    markerRect: markerRect ? {top: markerRect.top, width: markerRect.width, height: markerRect.height} : null,
+    textRect: textRect ? {top: textRect.top, bottom: textRect.bottom, height: textRect.height} : null,
+    delta: markerRect && textRect ? (markerRect.top + markerRect.height / 2) - (textRect.top + textRect.bottom) / 2 : null,
+    transform: marker ? getComputedStyle(marker).transform : null,
+  };
+})
+"""
+
+SELECT_PROBE = r"""
+(label) => {
+  const combos = [...document.querySelectorAll('[role=combobox]')].filter(el => el.getAttribute('aria-label') === label);
+  const combo = combos[combos.length - 1];
+  const value = combo ? combo.querySelector('[data-slot=select-value]') : null;
+  const listbox = [...document.querySelectorAll('[role=listbox]')].find(el => el.getBoundingClientRect().width > 0);
+  const optionItems = listbox ? [...listbox.querySelectorAll('[role=option]')] : [];
+  const selected = optionItems.find(el => el.hasAttribute('data-selected')) ?? null;
+  const rectOfText = (el) => {
+    if (!el) return null;
+    const node = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+    if (!node) return null;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const rect = range.getBoundingClientRect();
+    return {top: rect.top, bottom: rect.bottom, height: rect.height, text: node.textContent.trim()};
+  };
+  const valueText = rectOfText(value);
+  const itemText = rectOfText(selected);
+  return {
+    valueFound: Boolean(value),
+    value: valueText,
+    item: itemText,
+    selectedIndex: selected ? optionItems.indexOf(selected) : -1,
+    optionCount: optionItems.length,
+    listboxVisible: Boolean(listbox),
+    delta: valueText && itemText ? itemText.top - valueText.top : null,
+  };
+}
+"""
+
+OVERFLOW_JS = r"""
+(selector) => {
+  const root = document.querySelector(selector);
+  if (!root) return {found: false};
+  const bounds = root.getBoundingClientRect();
+  const escaped = [...root.querySelectorAll('*')].filter(el => {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect();
+    if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) return false;
+    if (box.bottom <= bounds.top || box.top >= bounds.bottom) return false;
+    if (el.closest('[aria-hidden=true]') || style.position === 'fixed') return false;
+    const clipped = el.parentElement?.closest('[style*="overflow"], .truncate, .access-links-label, .owned-agents-name');
+    if (clipped && clipped !== root) return false;
+    return box.left < bounds.left - 1 || box.right > bounds.right + 1;
+  }).map(el => ({tag: el.tagName, cls: String(el.className).slice(0, 80)}));
+  return {found: true, scroll: root.scrollWidth, client: root.clientWidth, page: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth, escaped: escaped.slice(0, 20)};
+}
+"""
+
+LOADING_PROBE = r"""
+() => {
+  const loading = document.querySelector('.owned-agents [data-slot=frame-loading]');
+  const workspace = document.querySelector('.owned-agents');
+  const detail = document.querySelector('.config-detail');
+  if (!loading || !workspace || !detail) return {found: false};
+  const rect = loading.getBoundingClientRect();
+  const box = workspace.getBoundingClientRect();
+  const area = detail.getBoundingClientRect();
+  const actions = workspace.querySelector('.owned-agents-actions');
+  const actionRect = actions ? actions.getBoundingClientRect() : null;
+  return {
+    found: true,
+    label: (loading.textContent || '').trim(),
+    rect: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height},
+    insideWorkspace: rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1 && rect.left >= box.left - 1 && rect.right <= box.right + 1,
+    insideDetail: rect.left >= area.left - 1 && rect.right <= area.right + 1,
+    belowActions: actionRect ? rect.top >= actionRect.bottom - 1 : null,
+  };
+}
+"""
+
+
+def owned_route(route) -> None:
+    if owned_state["mode"] == "error":
+        route.fulfill(status=503, json={"detail": "공개 예시: 요청을 처리하지 못했습니다. 다시 시도해 주세요."})
+        return
+    route.fulfill(json={"agents": OWNED_AGENTS, "existingConnection": {"configured": True, "registered": False, "canRegister": True}})
+
+
+def access_route(route) -> None:
+    path = route.request.url.split("?")[0]
+    if path.endswith("/api/persistent-sessions"):
+        route.fulfill(json={"sessions": SESSIONS, "total": len(SESSIONS)})
+    elif access_state["mode"] == "error":
+        route.fulfill(status=503, json={"detail": "fixture failure"})
+    else:
+        route.fulfill(json=LINKS)
+
+
+def pass_owned_agents(route) -> None:
+    """샘플 응답 대신 실제 fetch 로 통과시켜 page.route 견본을 쓰게 dialogues-api 를 고쳐 쓴다."""
+    response = route.fetch()
+    lines = response.text().splitlines(keepends=True)
+    hits = [index for index, line in enumerate(lines) if "/api/owned-agents" in line and "return ownedAgents(input, init);" in line]
+    assert len(hits) == 1, "dialogues-api.ts 의 owned-agents 분기를 찾지 못했습니다"
+    lines[hits[0]] = (
+        '    if (path.startsWith("/api/owned-agents")) { if (new URLSearchParams(window.location.search)'
+        '.has("ownedAgentsVisual")) return fetch(input, init); return ownedAgents(input, init); }\n'
+    )
+    route.fulfill(response=response, body="".join(lines))
+
+
+def install_fixtures(context) -> None:
+    context.add_init_script(DELAY_SCRIPT)
+    context.route("**/client/v3/dialogues-api.ts*", pass_owned_agents)
+    context.route("**/api/owned-agents**", owned_route)
+    context.route("**/api/access-links**", access_route)
+    context.route("**/api/persistent-sessions", access_route)
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def wait_ready(base: str) -> None:
+    for _ in range(240):
+        try:
+            urllib.request.urlopen(base + "/", timeout=1)
+            return
+        except Exception:
+            time.sleep(0.5)
+    raise SystemExit("Vite 개발 서버가 뜨지 않았습니다: " + base)
+
+
+def shot(page, out: Path, name: str, captures: list[str]) -> None:
+    path = out / f"{name}.png"
+    page.screenshot(path=str(path), animations="disabled")
+    captures.append(path.name)
+
+
+def select_tab(page, label: str, width: int) -> None:
+    if width == NARROW:
+        back = page.get_by_role("button", name="모든 설정")
+        if back.count() and back.first.is_visible():
+            back.first.click()
+            page.wait_for_timeout(250)
+    page.get_by_role("button", name=label, exact=True).first.click()
+    page.wait_for_timeout(600)
+
+
+def open_settings(page, base: str, extra: str = "", wait_data: bool = True) -> None:
+    page.goto(base + "/dialogues" + SETTINGS_QUERY + extra, wait_until="domcontentloaded")
+    sn.settle(page)
+    page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
+    if wait_data:
+        page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+
+
+def open_issue(page) -> None:
+    page.get_by_role("button", name="링크 만들기", exact=True).first.click()
+    page.get_by_role("dialog").last.get_by_text("새 접속 링크").wait_for()
+    page.wait_for_timeout(300)
+
+
+def measure_marker(page, measurements: dict, problems: list[str], name: str) -> None:
+    data = page.evaluate(MARKER_PROBE)
+    measurements[name] = data
+    if not data:
+        problems.append(name + ": 접는 구역 없음")
+        return
+    for item in data:
+        if item["marker"] != "svg":
+            problems.append(name + ": 표식 아이콘 없음")
+        if item["markerHidden"] != "true":
+            problems.append(name + ": 표식 aria-hidden 아님")
+        if item["delta"] is None or abs(item["delta"]) > TOLERANCE_PX:
+            problems.append(name + ": 표식 세로 가운데와 글자 줄 세로 가운데 차이")
+        if item["open"] and item["transform"] == "none":
+            problems.append(name + ": 열림 회전 없음")
+        if not item["open"] and item["transform"] != "none":
+            problems.append(name + ": 닫힘 회전 남음")
+
+
+def check_marker(page, out: Path, width: int, theme: str, tab: str, captures: list[str], measurements: dict, problems: list[str]) -> None:
+    details = page.locator(".config-detail details.config-advanced").first
+    details.wait_for(state="visible")
+    if details.evaluate("(element) => element.open"):
+        details.locator("summary").click()
+        page.wait_for_timeout(250)
+    details.scroll_into_view_if_needed()
+    page.wait_for_timeout(200)
+    measure_marker(page, measurements, problems, f"marker-{tab}-{width}-{theme}-closed")
+    shot(page, out, f"details-{tab}-{width}-{theme}-closed", captures)
+    details.locator("summary").click()
+    page.wait_for_function("() => document.querySelector('.config-detail details.config-advanced')?.open", timeout=10000)
+    page.wait_for_timeout(250)
+    measure_marker(page, measurements, problems, f"marker-{tab}-{width}-{theme}-open")
+    shot(page, out, f"details-{tab}-{width}-{theme}-open", captures)
+    details.locator("summary").click()
+    page.wait_for_timeout(200)
+
+
+def check_overflow(page, measurements: dict, problems: list[str], name: str, selector: str = ".config-detail") -> None:
+    data = page.evaluate(OVERFLOW_JS, selector)
+    measurements[name] = data
+    if not data.get("found"):
+        problems.append(name + ": 영역 없음")
+        return
+    if data["page"] > data["viewport"] + 1 or data["scroll"] > data["client"] + 1 or data["escaped"]:
+        problems.append(name + ": 가로 넘침")
+
+
+def measure_contrast(page, locator, measurements: dict, problems: list[str], name: str) -> None:
+    locator.first.wait_for(state="visible")
+    locator.first.scroll_into_view_if_needed()
+    data = locator.first.evaluate(snl.CONTRAST_JS)
+    measurements[name] = data
+    if data["ratio"] < CONTRAST_MIN:
+        problems.append(f"{name}: 대비 {data['ratio']}:1")
+
+
+def check_owned_meta(page, measurements: dict, problems: list[str], name: str) -> None:
+    data = page.evaluate(META_PROBE)
+    measurements[name] = data
+    if not data.get("found"):
+        problems.append(name + ": 내 에이전트 영역 없음")
+        return
+    if data["middleDots"]:
+        problems.append(name + ": 가운뎃점 남음")
+    if len(data["rows"]) < 4:
+        problems.append(name + ": 공용 메타 줄 부족")
+    for row in data["rows"]:
+        if row["display"] != "flex":
+            problems.append(name + ": 메타 줄 flex 아님")
+        if not row["children"] or any(tag != "span" for tag in row["children"]):
+            problems.append(name + ": 메타 항목 span 아님")
+        if row["wordBreak"] != "keep-all":
+            problems.append(name + ": 메타 줄 keep-all 아님")
+
+
+def check_select_open(page, label: str, measurements: dict, problems: list[str], name: str, out: Path, shot_name: str, captures: list[str]) -> None:
+    trigger = page.get_by_role("combobox", name=label).last
+    trigger.scroll_into_view_if_needed()
+    trigger.click()
+    page.locator("[role=listbox]").last.wait_for()
+    page.wait_for_timeout(350)
+    data = page.evaluate(SELECT_PROBE, label)
+    measurements[name] = data
+    shot(page, out, shot_name, captures)
+    if not data["valueFound"]:
+        problems.append(name + ": 트리거 값이 SelectValue 아님")
+    if data["selectedIndex"] < 1:
+        problems.append(name + ": 처음 값이 첫 항목")
+    if data["delta"] is None or abs(data["delta"]) > TOLERANCE_PX:
+        problems.append(name + ": 고른 항목과 트리거 값 위쪽 끝 차이")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    try:
+        page.wait_for_function(
+            "(label) => document.activeElement?.getAttribute('aria-label') === label", arg=label, timeout=2000
+        )
+    except Exception:
+        pass
+
+
+def resize_state(page, label: str) -> dict:
+    state = page.evaluate(
+        """(label) => ({
+          visibleListboxes: [...document.querySelectorAll('[role=listbox]')].filter(el => el.getBoundingClientRect().width > 0).length,
+          expanded: [...document.querySelectorAll('[role=combobox]')].find(el => el.getAttribute('aria-label') === label)?.getAttribute('aria-expanded'),
+          page: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth,
+        })""",
+        label,
+    )
+    state["focus"] = FOCUS(page)
+    return state
+
+
+def run(browser, base: str, out: Path, captures: list[str], measurements: dict, problems: list[str]) -> None:
+    for width in (WIDE, NARROW):
+        for theme in THEMES:
+            key = f"{width}-{theme}"
+            owned_state.update(mode="normal")
+            access_state.update(mode="normal")
+            context = sn.new_context(browser, width, theme)
+            install_fixtures(context)
+            page = context.new_page()
+            page_errors: list[str] = []
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+
+            open_settings(page, base)
+            measurements[f"focus-open-{key}"] = FOCUS(page)
+            if not measurements[f"focus-open-{key}"]["dialog"]:
+                problems.append(f"{key}: 설정 창을 열었을 때 초점이 창 밖")
+            measurements[f"focus-after-tab-click-{key}"] = FOCUS(page)
+            check_owned_meta(page, measurements, problems, f"meta-{key}")
+            if width == NARROW:
+                split = page.evaluate(WORDS, ".config-detail-heading p") + page.evaluate(WORDS, ".owned-agents-key-row")
+                measurements[f"words-owned-{key}"] = split
+                if split:
+                    problems.append(f"{key}: 상세 머리·메타 낱말 가운데 줄바꿈")
+            check_overflow(page, measurements, problems, f"overflow-owned-{key}")
+            shot(page, out, f"owned-agents-{key}", captures)
+
+            select_tab(page, "화면과 읽기", width)
+            check_marker(page, out, width, theme, "appearance", captures, measurements, problems)
+
+            select_tab(page, "접속 링크", width)
+            page.get_by_text("외부 조사 도우미", exact=True).wait_for()
+            check_marker(page, out, width, theme, "access-links", captures, measurements, problems)
+            if width == NARROW:
+                split = page.evaluate(WORDS, ".access-links")
+                measurements[f"words-access-links-{key}"] = split
+                if split:
+                    problems.append(f"{key}: 접속 링크 낱말 가운데 줄바꿈")
+            check_overflow(page, measurements, problems, f"overflow-access-links-{key}")
+
+            if theme == "light":
+                open_issue(page)
+                page.get_by_role("combobox", name="대상 세션").click()
+                page.get_by_role("option", name=SESSIONS[1]["display_name"], exact=True).click()
+                page.wait_for_timeout(300)
+                check_select_open(page, "대상 세션", measurements, problems, f"select-access-links-{key}", out, f"catalog-open-access-links-{key}", captures)
+                measurements[f"select-escape-focus-{key}"] = FOCUS(page)
+                if measurements[f"select-escape-focus-{key}"]["label"] != "대상 세션":
+                    problems.append(f"{key}: 선택 상자 Esc 뒤 초점 복귀")
+                page.get_by_role("combobox", name="대상 세션").focus()
+                page.keyboard.press("Tab")
+                page.wait_for_timeout(200)
+                measurements[f"select-tab-focus-{key}"] = FOCUS(page)
+                if not measurements[f"select-tab-focus-{key}"]["dialog"]:
+                    problems.append(f"{key}: 선택 상자 Tab 초점이 창 밖")
+                # 18: 선택 상자를 연 채 창 크기를 바꾼다.
+                page.get_by_role("combobox", name="대상 세션").click()
+                page.locator("[role=listbox]").last.wait_for()
+                other = NARROW if width == WIDE else WIDE
+                page.set_viewport_size({"width": other, "height": 800 if other == NARROW else 1000})
+                page.wait_for_timeout(700)
+                resized = resize_state(page, "대상 세션")
+                measurements[f"resize-select-{key}-to-{other}"] = resized
+                if resized["page"] > resized["viewport"] + 1:
+                    problems.append(f"{key}→{other}: 창 크기 변경 뒤 가로 넘침")
+                if resized["visibleListboxes"] and resized["expanded"] != "true":
+                    problems.append(f"{key}→{other}: 목록이 보이는데 펼침 상태 아님")
+                if not resized["visibleListboxes"] and resized["focus"]["label"] != "대상 세션":
+                    problems.append(f"{key}→{other}: 목록이 닫혔는데 초점이 트리거로 돌아오지 않음")
+                if resized["visibleListboxes"]:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(300)
+                page.set_viewport_size({"width": width, "height": 900 if width == WIDE else 800})
+                page.wait_for_timeout(300)
+                page.get_by_role("dialog").last.get_by_role("button", name="취소").click()
+                page.wait_for_timeout(300)
+                # 18: 설정 창을 연 채 창 크기를 바꾼다.
+                page.set_viewport_size({"width": other, "height": 800 if other == NARROW else 1000})
+                page.wait_for_timeout(500)
+                check_overflow(page, measurements, problems, f"resize-settings-{key}-to-{other}", ".config-layout")
+                page.set_viewport_size({"width": width, "height": 900 if width == WIDE else 800})
+                page.wait_for_timeout(300)
+
+            if theme == "light":
+                open_settings(page, base, "&ownedAgentsDelay=1", wait_data=False)
+                loading = page.locator('.owned-agents [data-slot="frame-loading"]')
+                loading.wait_for(state="visible", timeout=10000)
+                loading.scroll_into_view_if_needed()
+                data = page.evaluate(LOADING_PROBE)
+                measurements[f"loading-{key}"] = data
+                shot(page, out, f"owned-agents-loading-{key}", captures)
+                if not data.get("found"):
+                    problems.append(f"{key}: 불러오는 중 표시 없음")
+                else:
+                    if not data["insideWorkspace"] or not data["insideDetail"]:
+                        problems.append(f"{key}: 불러오는 중 표시가 목록 틀 밖")
+                    if data["belowActions"] is False:
+                        problems.append(f"{key}: 불러오는 중 표시가 동작 줄 위")
+                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+
+            if width == NARROW:
+                owned_state.update(mode="error")
+                page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
+                sn.settle(page)
+                page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
+                page.get_by_text("공개 예시: 요청을 처리하지 못했습니다. 다시 시도해 주세요.", exact=True).wait_for(timeout=30000)
+                shot(page, out, f"owned-agents-error-{key}", captures)
+                measure_contrast(page, page.locator(".owned-agents [role=alert] p"), measurements, problems, f"contrast-owned-error-{key}")
+                check_overflow(page, measurements, problems, f"overflow-owned-error-{key}")
+                owned_state.update(mode="normal")
+                page.get_by_role("button", name="다시 시도").click()
+                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+                measurements[f"owned-retry-{key}"] = {"text": OWNED_AGENTS[0]["name"], "retried": True}
+
+                access_state.update(mode="error")
+                page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
+                sn.settle(page)
+                page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
+                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+                select_tab(page, "접속 링크", width)
+                page.get_by_text("링크 목록을 불러오지 못했습니다.", exact=True).wait_for(timeout=30000)
+                shot(page, out, f"access-links-error-{key}", captures)
+                measure_contrast(page, page.locator(".access-links [role=alert]"), measurements, problems, f"contrast-settings-alert-{key}")
+                access_state.update(mode="normal")
+                page.get_by_role("button", name="다시 시도").click()
+                page.get_by_text("외부 조사 도우미", exact=True).wait_for(timeout=30000)
+                open_issue(page)
+                page.get_by_role("combobox", name="대상 세션").click()
+                page.get_by_role("option", name="세션 ID 직접 입력", exact=True).click()
+                page.get_by_label("세션 ID").fill("bad")
+                page.get_by_label("세션 ID").blur()
+                page.get_by_text("세션 ID 형식이 아닙니다.", exact=True).wait_for()
+                shot(page, out, f"access-links-field-error-{key}", captures)
+                measure_contrast(page, page.locator(".access-links-form small[role=alert]"), measurements, problems, f"contrast-field-error-{key}")
+                check_overflow(page, measurements, problems, f"overflow-field-error-{key}")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
+
+            measurements[f"pageErrors-{key}"] = page_errors
+            context.close()
+
+
+def run_outside_settings(browser, base: str, out: Path, captures: list[str], measurements: dict, problems: list[str]) -> None:
+    """설정 창 밖 카탈로그 선택 상자: 컴포넌트 검수 창의 실행 모델(처음 값 Sol, 첫 항목 아님)."""
+    context = browser.new_context(viewport={"width": WIDE, "height": 1000}, color_scheme="light", reduced_motion="reduce")
+    sn.install_page(context, "light")
+    page = context.new_page()
+    page.goto(base + "/components", wait_until="domcontentloaded")
+    page.get_by_role("combobox", name="실행 모델").wait_for(timeout=90000)
+    page.wait_for_timeout(800)
+    check_select_open(page, "실행 모델", measurements, problems, "select-components-wide-light", out, "catalog-open-components-1280-light", captures)
+    context.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="설정 창 정비 시각 검수")
+    parser.add_argument("base", nargs="?", help="이미 띄운 개발 서버 주소")
+    parser.add_argument("--serve", action="store_true", help="빈 포트에 Vite 를 띄운다")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if not args.serve and not args.base:
+        parser.error("개발 서버 주소나 --serve 가 필요합니다")
+    args.output.mkdir(parents=True, exist_ok=True)
+    server = None
+    base = args.base or ""
+    try:
+        if args.serve:
+            port = free_port()
+            base = f"http://127.0.0.1:{port}"
+            env = {**os.environ, "VITE_API_BASE": "http://127.0.0.1:9"}
+            server = subprocess.Popen(
+                ["corepack", "pnpm", "--dir", str(ROOT / "unified-dashboard"), "exec", "vite", "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
+                cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            wait_ready(base)
+        captures: list[str] = []
+        measurements: dict = {}
+        problems: list[str] = []
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            run(browser, base, args.output, captures, measurements, problems)
+            run_outside_settings(browser, base, args.output, captures, measurements, problems)
+            browser.close()
+    finally:
+        if server:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
+    report = {
+        "result": "pass" if not problems else "fail",
+        "check_count": len(measurements),
+        "captures": captures,
+        "measurements": measurements,
+        "problems": problems,
+    }
+    (args.output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"result": report["result"], "check_count": report["check_count"], "problems": problems}, ensure_ascii=False))
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
