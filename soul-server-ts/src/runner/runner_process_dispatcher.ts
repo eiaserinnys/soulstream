@@ -13,6 +13,7 @@ import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import {
   newExecutionCommandId,
+  newRunnerExecuteCommandId,
   type RunnerExecutionIdentity,
 } from "../task/execution_registration.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
@@ -270,9 +271,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
-  executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+  executeFrames(params: EngineExecuteParams, registeredCommandId?: string): AsyncIterable<RunnerEventFrame> {
     this.closedEngineFailureRegistrationId = undefined;
-    const commandId = `execute:${randomUUID()}`;
+    const commandId = newRunnerExecuteCommandId(registeredCommandId);
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
     });

@@ -2,6 +2,10 @@ import { performance } from "node:perf_hooks";
 import { isActiveTaskStatus, isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
+  lifecycleCommandMatchesRegistration,
+  registrationCommandIdFromLifecycle,
+} from "../task/execution_registration.js";
+import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
   isTerminalRunnerExecutionState,
@@ -1438,7 +1442,10 @@ export class RunnerRecoveryCoordinator {
     if (!registrationId || !executionCommandId) return 0;
     return await this.options.terminalizeClaudeBackgroundTasks?.(
       registration.config.sessionId,
-      { registrationId, executionCommandId },
+      {
+        registrationId,
+        executionCommandId: registrationCommandIdFromLifecycle(executionCommandId) ?? executionCommandId,
+      },
     ) ?? 0;
   }
 
@@ -1643,8 +1650,7 @@ function executionIsSuccessorTurn(
   if (task.executionActivation !== undefined) return true;
   const registeredCommandId = task.executionRegistration?.executionCommandId;
   if (registeredCommandId === undefined) return false;
-  return terminalExecutionCommandId === undefined
-    || registeredCommandId !== terminalExecutionCommandId;
+  return !lifecycleCommandMatchesRegistration(terminalExecutionCommandId, registeredCommandId);
 }
 
 function registrationOwnsAttachedRunner(

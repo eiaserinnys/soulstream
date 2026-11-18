@@ -670,8 +670,10 @@ export class WorktreeGit {
     return entries;
   }
 
-  async inspectDirty(path: string, managedPaths: string[]): Promise<WorktreeDirtyState> {
-    this.assertPathInsideProjectsRoot(path);
+  async inspectDirty(path: string, managedPaths: string[], baseRepoId?: string): Promise<WorktreeDirtyState> {
+    if (baseRepoId === undefined || realpathSync(path) !== this.resolveRepository(baseRepoId)) {
+      this.assertPathInsideProjectsRoot(path);
+    }
     const privateGitDirectory = await this.privateGitDirectory(path);
     const exactWorktree = ["--git-dir", privateGitDirectory, "--work-tree", resolve(path)];
     const status = (await this.git(path, [

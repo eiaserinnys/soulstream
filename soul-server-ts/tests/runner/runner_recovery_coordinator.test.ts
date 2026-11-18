@@ -446,7 +446,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           },
         }),
       }),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
     ]);
   });
@@ -501,7 +501,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const recovered = task("session-a");
     recovered.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-current",
+      executionCommandId: "command:55555555-5555-4555-8555-555555555555",
     };
     recovered.runnerRetainedForDetachedWork = true;
     const detachHost = vi.fn(async () => {});
@@ -545,7 +545,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(recoverRegisteredRunner).toHaveBeenCalledWith(
       recovered,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.anything(),
@@ -572,7 +572,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "session-a",
       {
         registrationId: "registration-a",
-        executionCommandId: "execute-a",
+        executionCommandId: "command:11111111-1111-4111-8111-111111111111",
       },
     );
   });
@@ -642,6 +642,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     // reads.
     const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
     const strandedTask = task("session-a");
+    strandedTask.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
+    };
     let settleExecution!: () => void;
     const originalExecution = new Promise<void>((resolve) => {
       settleExecution = resolve;
@@ -674,6 +678,26 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(strandedTask.runner).toBeUndefined();
     expect(strandedTask.executionPromise).toBeUndefined();
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
+  it("defers terminal retirement when the pending turn belongs to another execution registration", async () => {
+    const finishedRegistration = registration({ lifecycleState: "completed", pidAlive: false });
+    const continuingTask = task("session-a");
+    continuingTask.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "command:22222222-2222-4222-8222-222222222222",
+    };
+    const { runner, retireTerminalRegistration } = finishedRunner();
+    continuingTask.runner = runner;
+    continuingTask.executionPromise = new Promise<void>(() => {});
+    const subject = makeSubject([finishedRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: { hydrateRunnerRecoveryTask: vi.fn(async () => continuingTask) } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(continuingTask.runner).toBe(runner);
   });
 
   it("does not detach a terminal command while its execution generation opens a successor", async () => {
@@ -738,7 +762,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     });
     const { runner, detachHost, retireTerminalRegistration } = finishedRunner(
       "registration-a",
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       async () => settleExecution(),
     );
     strandedTask.runner = runner;
@@ -772,7 +796,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     });
     const { runner, retireTerminalRegistration } = finishedRunner(
       "registration-a",
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       async () => {
         strandedTask.status = "error";
         strandedTask.terminationReason = "error_aborted";
@@ -868,7 +892,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: "session-healthy" }),
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -921,7 +945,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -950,7 +974,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -990,7 +1014,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       recoveredTask,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -1048,7 +1072,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       2,
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       undefined,
@@ -1254,7 +1278,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(recoverRegisteredRunner).toHaveBeenLastCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       undefined,
@@ -1270,7 +1294,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       undefined,
@@ -1303,7 +1327,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -1331,7 +1355,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -1367,7 +1391,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -1413,7 +1437,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -1518,7 +1542,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       registrationId: "registration-a",
       pid: 4123,
       startIdentity: "start-4123",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
 
     await subject.coordinator.scanOnce();
@@ -1785,7 +1809,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -1950,7 +1974,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         pidStartIdentity: "start-4123",
         pidAlive: true,
       }),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -1983,7 +2007,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -2009,7 +2033,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       subject.task,
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "offline",
       expect.any(Function),
       expect.objectContaining({
@@ -2117,7 +2141,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       await before?.();
     });
     subject.task.runner = { dispatcher: {
-      registrationId: () => admitted.registrationId, activeExecutionCommandId: () => "execute-a",
+      registrationId: () => admitted.registrationId, activeExecutionCommandId: () => "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       hasActiveExecution: () => true, retireTerminalRegistration,
     } } as never;
     await subject.coordinator.scanOnce();
@@ -2151,7 +2175,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     subject.task.runner = {
       dispatcher: {
         registrationId: () => admitted.registrationId,
-        activeExecutionCommandId: () => "execute-a",
+        activeExecutionCommandId: () => "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         hasActiveExecution: () => true,
         retireTerminalRegistration,
       } as never,
@@ -2208,7 +2232,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     subject.task.runner = {
       dispatcher: {
         registrationId: () => admitted.registrationId,
-        activeExecutionCommandId: () => "execute-new",
+        activeExecutionCommandId: () => "execute:33333333-3333-4333-8333-333333333333:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         hasActiveExecution: () => true,
         retireTerminalRegistration,
       } as never,
@@ -2616,7 +2640,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.recoverRegisteredRunner).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: "session-b" }),
       expect.anything(),
-      "execute-a",
+      "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "adopt",
       expect.any(Function),
       expect.objectContaining({
@@ -3239,11 +3263,11 @@ describe("RunnerRecoveryCoordinator central check", () => {
     detachHost: ReturnType<typeof vi.fn>;
   } {
     const target = task(sessionId);
-    const attached = finishedRunner("registration-a", "execute-a");
+    const attached = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     target.runner = attached.runner;
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
     return { task: target, runner: attached.runner, detachHost: attached.detachHost };
   }
@@ -3264,7 +3288,7 @@ describe("RunnerRecoveryCoordinator central check", () => {
 
   it("reaps a runner whose central session row is gone", async () => {
     const target = task("session-a");
-    const { runner, detachHost } = finishedRunner("registration-a", "execute-a");
+    const { runner, detachHost } = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     target.runner = runner;
     target.callerSessionId = "caller-session";
     const subject = makeCentralSubject({
@@ -3359,7 +3383,7 @@ describe("RunnerRecoveryCoordinator central check", () => {
     await settle(subject);
 
     expect(adopt).toHaveBeenCalledOnce();
-    expect(adopt).toHaveBeenCalledWith(target, "execute-a");
+    expect(adopt).toHaveBeenCalledWith(target, "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
     expect(detachHost).not.toHaveBeenCalled();
     expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
@@ -3486,9 +3510,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
     const target = task("session-a");
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
-    const runner = finishedRunner("registration-a", "execute-a").runner;
+    const runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     let nowMs = RECOVERY_NOW_MS;
     const adopt = vi.fn(async () => ({ applied: true }));
     const recoverRegisteredRunner = vi.fn(async (
@@ -3529,7 +3553,7 @@ describe("RunnerRecoveryCoordinator central check", () => {
     nowMs += 1;
     await settle(subject);
     expect(adopt).toHaveBeenCalledOnce();
-    expect(adopt).toHaveBeenCalledWith(target, "execute-a");
+    expect(adopt).toHaveBeenCalledWith(target, "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
   });
 
@@ -3541,14 +3565,14 @@ describe("RunnerRecoveryCoordinator central check", () => {
     ["has no execution registration at all", undefined, "worktree_not_ready"],
     ["carries another registration's execution", {
       registrationId: "registration-other",
-      executionCommandId: "execute-other",
+      executionCommandId: "command:44444444-4444-4444-8444-444444444444",
     }, undefined],
   ] as const)(
     "re-adopts after the interval when startup adoption was rejected (%s -> reason %s)",
     async (_name, executionRegistration, reason) => {
       const target = task("session-a");
       if (executionRegistration) target.executionRegistration = { ...executionRegistration };
-      const runner = finishedRunner("registration-a", "execute-a").runner;
+      const runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
       let nowMs = RECOVERY_NOW_MS;
       const adopt = vi.fn(async () => ({ applied: false, rejectionReason: reason }));
       const recoverRegisteredRunner = vi.fn(async (
@@ -3601,9 +3625,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
     const target = task("session-a");
     target.executionRegistration = {
       registrationId: "registration-other",
-      executionCommandId: "execute-other",
+      executionCommandId: "command:44444444-4444-4444-8444-444444444444",
     };
-    const runner = finishedRunner("registration-a", "execute-a").runner;
+    const runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     let nowMs = RECOVERY_NOW_MS;
     const adopt = vi.fn(async () => ({ applied: false, rejectionReason: "already_terminal" }));
     const recoverRegisteredRunner = vi.fn(async (
@@ -3653,7 +3677,7 @@ describe("RunnerRecoveryCoordinator central check", () => {
 
   it("does not send adoption for a runner without a rejection record when its registration was never applied", async () => {
     const target = task("session-a");
-    target.runner = finishedRunner("registration-a", "execute-a").runner;
+    target.runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     const adopt = vi.fn(async () => ({ applied: true }));
     const subject = makeCentralSubject({
       tasks: [target],
@@ -3672,9 +3696,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
     const target = task("session-a");
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
-    const runner = finishedRunner("registration-a", "execute-a").runner;
+    const runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     let nowMs = RECOVERY_NOW_MS;
     const adopt = vi.fn(async () => ({ applied: true }));
     const recoverRegisteredRunner = vi.fn(async (
@@ -3758,9 +3782,9 @@ describe("RunnerRecoveryCoordinator central check", () => {
     target.callerSessionId = "caller-session";
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
-    const attached = finishedRunner("registration-a", "execute-a");
+    const attached = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     let rejectTurn!: (error: unknown) => void;
     const turn = new Promise<void>((_resolve, reject) => { rejectTurn = reject; });
     let recoverySettled = false;
@@ -3856,11 +3880,11 @@ describe("RunnerRecoveryCoordinator central check card1400 execution boundary", 
 
   it("keeps the caller of a newer execution when an older registration is reaped", async () => {
     const target = task("session-a");
-    const attached = finishedRunner("registration-new", "execute-new");
+    const attached = finishedRunner("registration-new", "execute:33333333-3333-4333-8333-333333333333:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     target.runner = attached.runner;
     target.executionRegistration = {
       registrationId: "registration-new",
-      executionCommandId: "execute-new",
+      executionCommandId: "command:33333333-3333-4333-8333-333333333333",
     };
     target.callerSessionId = "caller-session";
     const forgetRunnerRecoveryTask = vi.fn();
@@ -3891,10 +3915,10 @@ describe("RunnerRecoveryCoordinator central check card1400 execution boundary", 
     let nowMs = RECOVERY_NOW_MS;
     const scanned: RunnerRegistration[] = [registration()];
     const target = task("session-a");
-    target.runner = finishedRunner("registration-a", "execute-a").runner;
+    target.runner = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
     const adopt = vi.fn(async (_task: Task, _commandId?: string) => ({
       applied: false,
@@ -3920,29 +3944,29 @@ describe("RunnerRecoveryCoordinator central check card1400 execution boundary", 
       registrationId: "registration-b",
       lifecycle: previous.lifecycle === null
         ? null
-        : { ...previous.lifecycle, execution_command_id: "execute-b" },
+        : { ...previous.lifecycle, execution_command_id: "execute:22222222-2222-4222-8222-222222222222:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
     };
     scanned.length = 0;
     scanned.push(next);
-    target.runner = finishedRunner("registration-b", "execute-b").runner;
+    target.runner = finishedRunner("registration-b", "execute:22222222-2222-4222-8222-222222222222:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").runner;
     target.executionRegistration = {
       registrationId: "registration-b",
-      executionCommandId: "execute-b",
+      executionCommandId: "command:22222222-2222-4222-8222-222222222222",
     };
     nowMs += 1_000;
     await settle(subject);
 
     expect(adopt).toHaveBeenCalledTimes(2);
-    expect(adopt.mock.calls.map((call) => call[1])).toEqual(["execute-a", "execute-b"]);
+    expect(adopt.mock.calls.map((call) => call[1])).toEqual(["execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "execute:22222222-2222-4222-8222-222222222222:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]);
   });
 
   it("forgets a task whose running execution the reap ended itself", async () => {
     const target = task("session-a");
-    const attached = finishedRunner("registration-a", "execute-a");
+    const attached = finishedRunner("registration-a", "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     target.runner = attached.runner;
     target.executionRegistration = {
       registrationId: "registration-a",
-      executionCommandId: "execute-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
     };
     target.executionPromise = new Promise<void>(() => undefined);
     target.callerSessionId = "caller-session";
@@ -4221,7 +4245,7 @@ function registration(options: {
     lifecycle: {
       session_id: sessionId,
       runner_pid: 4123,
-      execution_command_id: "execute-a",
+      execution_command_id: "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       execution_state: options.lifecycleState ?? "running",
       progress_seq: 3,
       progress_at: options.progressedAt ?? "2026-08-11T00:00:20.000Z",
@@ -4272,11 +4296,11 @@ async function releasedTerminalSidecarFixture(options: {
   const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath, config.sessionId);
   lifecycle.begin({
     pid: staleLifecyclePid,
-    commandId: "execute-a",
+    commandId: "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     progressedAt: "2026-08-11T00:00:20.000Z",
   });
   const completedLifecycle = lifecycle.finish(
-    "execute-a",
+    "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "completed",
     "2026-08-11T00:00:30.000Z",
   );

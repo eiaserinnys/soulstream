@@ -3440,13 +3440,13 @@ describe("TaskExecutor runner process boundary", () => {
   it.each([
     {
       name: "a different registered command",
-      registeredCommandId: "execute-new",
+      registeredCommandId: "command:22222222-2222-4222-8222-222222222222",
       expectedStatus: "error" as const,
       expectedReason: "error_aborted" as const,
     },
     {
       name: "the same registered command",
-      registeredCommandId: "execute-old",
+      registeredCommandId: "command:11111111-1111-4111-8111-111111111111",
       expectedStatus: "completed" as const,
       expectedReason: "completed_ok" as const,
     },
@@ -3481,7 +3481,7 @@ describe("TaskExecutor runner process boundary", () => {
       const registration = {
         config: { agent },
         lifecycle: {
-          execution_command_id: "execute-old",
+          execution_command_id: "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           execution_state: "completed",
           terminal_error: null,
         },
@@ -3490,7 +3490,7 @@ describe("TaskExecutor runner process boundary", () => {
       await executor.recoverRegisteredRunner(
         task,
         registration,
-        "execute-old",
+        "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "offline",
       );
 

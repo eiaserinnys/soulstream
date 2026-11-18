@@ -30,6 +30,30 @@ export function newExecutionCommandId(): string {
   return `command:${randomUUID()}`;
 }
 
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const REGISTERED_COMMAND_PATTERN = new RegExp(`^command:(${UUID_PATTERN})$`, "i");
+const LIFECYCLE_COMMAND_PATTERN = new RegExp(`^execute:(${UUID_PATTERN}):${UUID_PATTERN}$`, "i");
+
+export function newRunnerExecuteCommandId(registeredCommandId?: string): string {
+  const registeredUuid = registeredCommandId?.match(REGISTERED_COMMAND_PATTERN)?.[1];
+  return registeredUuid
+    ? `execute:${registeredUuid}:${randomUUID()}`
+    : `execute:${randomUUID()}`;
+}
+
+export function registrationCommandIdFromLifecycle(lifecycleCommandId: string): string | undefined {
+  const registeredUuid = lifecycleCommandId.match(LIFECYCLE_COMMAND_PATTERN)?.[1];
+  return registeredUuid === undefined ? undefined : `command:${registeredUuid}`;
+}
+
+export function lifecycleCommandMatchesRegistration(
+  lifecycleCommandId: string | undefined,
+  registeredCommandId: string,
+): boolean {
+  return lifecycleCommandId !== undefined
+    && registrationCommandIdFromLifecycle(lifecycleCommandId) === registeredCommandId;
+}
+
 export function isCompleteRunnerExecutionIdentity(
   value: Partial<RunnerExecutionIdentity>,
 ): value is RunnerExecutionIdentity {
