@@ -17,8 +17,8 @@ import {
   type TempModelCatalog,
 } from "./helpers/model_catalog.js";
 
-const OLD_PRICE_VERSION = "api-list-usd-2026-11-18-v1";
-const NEW_PRICE_VERSION = "api-list-usd-2026-11-18-v2";
+const OLD_PRICE_VERSION = "api-list-usd-2026-11-19-v1";
+const NEW_PRICE_VERSION = "api-list-usd-2026-11-19-v2";
 
 const OPUS_RATES = "rates: {input: 4, cache_read: 0.2, cache_write_5m: 5, cache_write_1h: 8, output: 20}";
 const OPUS_RATES_DOUBLED = "rates: {input: 8, cache_read: 0.2, cache_write_5m: 5, cache_write_1h: 8, output: 20}";

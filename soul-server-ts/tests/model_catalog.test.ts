@@ -45,6 +45,7 @@ const COMMON_PRESET_IDS = [
   "gemini-4-argon",
   "gemini-4-carbon",
   "gemini-4-hydrogen",
+  "gemini-4-neon",
 ];
 
 const CHINA_PRESET_IDS = [
@@ -112,10 +113,10 @@ describe("ModelCatalog", () => {
   it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
     const defaultView = openRepositoryCatalog();
     expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
-    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(26);
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(27);
 
     const chinaView = openRepositoryCatalog({ enabledGroups: ["china"] });
-    expect(chinaView.list()).toHaveLength(26);
+    expect(chinaView.list()).toHaveLength(27);
     expect(chinaView.list().map((preset) => preset.id)).toEqual(expect.arrayContaining([
       ...COMMON_PRESET_IDS,
       ...CHINA_PRESET_IDS,
@@ -373,13 +374,14 @@ describe("ModelCatalog", () => {
   });
 });
 
-it("advertises the Antigravity usage provider for all four account presets", () => {
+it("advertises the Antigravity usage provider for all five account presets", () => {
   const catalog = openRepositoryCatalog();
   expect(catalog.advertise({}).filter(p => p.backend === "antigravity")).toMatchObject([
     { id: "gemini-3.8-flash", usage_provider: "antigravity" },
     { id: "gemini-4-argon", usage_provider: "antigravity" },
     { id: "gemini-4-carbon", usage_provider: "antigravity" },
     { id: "gemini-4-hydrogen", usage_provider: "antigravity" },
+    { id: "gemini-4-neon", usage_provider: "antigravity" },
   ]);
 });
 
@@ -398,9 +400,10 @@ describe("model preset trusted execution", () => {
     "gemini-4-argon",
     "gemini-4-carbon",
     "gemini-4-hydrogen",
+    "gemini-4-neon",
   ];
 
-  it("marks exactly the thirteen trusted presets in the repository catalog", () => {
+  it("marks exactly the fourteen trusted presets in the repository catalog", () => {
     const catalog = openRepositoryCatalog();
     expect(
       catalog.list()

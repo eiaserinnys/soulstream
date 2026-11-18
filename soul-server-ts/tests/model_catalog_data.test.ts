@@ -58,6 +58,7 @@ const PRESET_IDS = [
   "gemini-4-argon",
   "gemini-4-carbon",
   "gemini-4-hydrogen",
+  "gemini-4-neon",
   "opencode-deepseek-v4.1-flash-free",
 ];
 
@@ -85,6 +86,7 @@ const EXPECTED_RATES: Record<string, readonly [number, number, number | null, nu
   "codex:gpt-6.2-sol": [2, 0.1, 2.5, 2.5, 10],
   "codex:gpt-6-astra": [10, 1, 12.5, 12.5, 50],
   "codex:gpt-6.2-astra": [8, 0.4, 10, 10, 40],
+  "antigravity:gemini-4-neon": [3, 0.15, null, null, 15],
   "antigravity:gemini-4-carbon": [2, 0.1, null, null, 10],
   "antigravity:gemini-4-hydrogen": [1.5, 0.075, null, null, 7.5],
   "antigravity:gemini-4-argon": [2, 0.1, null, null, 10],
@@ -343,6 +345,14 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     default_effort: "high",
     trusted_execution: true,
   },
+  "gemini-4-neon": {
+    label: "Gemini - 4 Neon",
+    backend: "antigravity",
+    model: "gemini-4-neon",
+    supported_efforts: ["low", "medium", "high", "xhigh"],
+    default_effort: "high",
+    trusted_execution: true,
+  },
   "opencode-deepseek-v4.1-flash-free": {
     label: "OpenCode - DeepSeek V4.1 Flash Free",
     backend: "opencode",
@@ -496,6 +506,7 @@ describe("repository model catalogue data", () => {
       "gemini-4-argon": "Gemini 4 Argon",
       "gemini-4-carbon": "Gemini 4 Carbon",
       "gemini-4-hydrogen": "Gemini 4 Hydrogen",
+      "gemini-4-neon": "Gemini 4 Neon",
       "kimi-for-coding/k3": "Kimi for Coding K3",
     };
     for (const [model, label] of Object.entries(displayNames)) {
@@ -521,8 +532,8 @@ describe("repository model catalogue data", () => {
   });
 
   it("keeps every legacy price row and alias at its previous rates", () => {
-    expect(catalog.models).toHaveLength(24);
-    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(23);
+    expect(catalog.models).toHaveLength(25);
+    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(24);
     for (const [key, rates] of Object.entries(EXPECTED_RATES)) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -553,12 +564,12 @@ describe("repository model catalogue data", () => {
     });
   });
 
-  it("prices all 24 legacy keys from the data file", () => {
+  it("prices all 25 legacy keys from the data file", () => {
     const keys = [
       ...Object.keys(EXPECTED_RATES),
       ...DEEPSEEK_ALIASES.map((alias) => `deepseek:${alias}`),
     ];
-    expect(keys).toHaveLength(24);
+    expect(keys).toHaveLength(25);
     for (const key of keys) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -568,7 +579,7 @@ describe("repository model catalogue data", () => {
         : key;
       const rates = EXPECTED_RATES[canonicalKey]!;
       const result = priceInferenceUsage(catalog, { provider, model, ...USAGE });
-      expect(result.price_version).toBe("api-list-usd-2026-11-18-v1");
+      expect(result.price_version).toBe("api-list-usd-2026-11-19-v1");
       expect(result.as_of).toBe("2026-10-19");
       expect(result.pricing_complete).toBe(true);
       expect(result.known_cost_usd).toBeCloseTo(rates[0] + rates[4], 10);
@@ -577,7 +588,7 @@ describe("repository model catalogue data", () => {
 
   it("keeps the price snapshot metadata", () => {
     expect(catalog.price_snapshot).toEqual({
-      price_version: "api-list-usd-2026-11-18-v1",
+      price_version: "api-list-usd-2026-11-19-v1",
       as_of: "2026-10-19",
       checked_at: "2026-10-19",
       currency: "USD",
@@ -587,7 +598,7 @@ describe("repository model catalogue data", () => {
       refreshed_model_rows: {
         claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
         codex: ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna"],
-        antigravity: ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
+        antigravity: ["gemini-4-neon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
         deepseek: [
           "deepseek-v4.1-flash-1017",
           "deepseek-v4.1-flash",
@@ -624,7 +635,7 @@ describe("repository model catalogue data", () => {
       cache_write_unknown: 0,
       output_total: 0,
     });
-    expect(components.price_version).toBe("api-list-usd-2026-11-18-v1");
+    expect(components.price_version).toBe("api-list-usd-2026-11-19-v1");
     expect(components.cache_read.known_cost_usd_decimal).toBe("0.006");
     expect(components.non_cache.known_cost_usd_decimal).toBe("0.3");
   });
