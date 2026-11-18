@@ -3,6 +3,7 @@ import type {
   RunnerRegistration,
 } from "./runner_process_registry.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { isRetiredWithoutLifecycleAndNotAlive } from "./runner_session_gc_predicates.js";
 import {
   readRunnerHostAcknowledgedThrough,
   runnerHostStatePath,
@@ -70,7 +71,12 @@ export async function probeRunnerDurableRetentionLocal(
     const lifecycle = registration.lifecycle;
     const hydrated = { ...registration, bootstrap, lifecycle };
     if (!lifecycle) {
-      return { registration: hydrated, localRetentionReason: "incomplete_bootstrap" };
+      return {
+        registration: hydrated,
+        localRetentionReason: isRetiredWithoutLifecycleAndNotAlive(hydrated)
+          ? null
+          : "incomplete_bootstrap",
+      };
     }
     if (!bootstrap) {
       const readEvidence = () => outbox!.inspectPendingDurableEvidence();
