@@ -183,7 +183,7 @@ test("long entry, wheel pagination, retention, rapid input and history end", asy
   await wheelToTop(page, h.scroller);
   await expect.poll(() => h.cursors.length).toBe(3);
   await wheelToTop(page, h.scroller);
-  await expect(h.root.getByText(/Beginning of conversation/)).toBeVisible();
+  await expect(h.root.getByText("대화의 시작", { exact: true })).toBeVisible();
   await page.mouse.wheel(0, -500);
   await page.waitForTimeout(400);
   expect(h.cursors).toEqual([null, "older-60", "older-20"]);

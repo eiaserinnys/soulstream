@@ -42,7 +42,7 @@ export function ChatHistoryStatus({
   if (reachedTop && showReachedTop) {
     return (
       <div className="px-3 py-2 text-center text-muted-foreground text-sm opacity-60">
-        {"\u2014"} Beginning of conversation {"\u2014"}
+        대화의 시작
       </div>
     );
   }

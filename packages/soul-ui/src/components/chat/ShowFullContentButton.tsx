@@ -27,7 +27,7 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
           {loading ? (
             <>
               <span className="inline-block w-3 h-3 border border-accent-blue/40 border-t-accent-blue rounded-full animate-spin" />
-              Loading...
+              불러오는 중
             </>
           ) : (
             label ?? "\u2026 전체 내용 보기"

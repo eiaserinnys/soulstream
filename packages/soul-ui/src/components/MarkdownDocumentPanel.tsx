@@ -452,9 +452,9 @@ export function MarkdownDocumentPanel({
         {!document ? (
           panelError?.kind === "load"
             ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
-            : <FrameLoading label="Loading..." />
+            : <FrameLoading label="불러오는 중" />
         ) : isEditingBody ? (
-          <Suspense fallback={<FrameLoading label="Loading editor..." />}>
+          <Suspense fallback={<FrameLoading label="편집기를 불러오는 중" />}>
             <MarkdownCodeMirrorEditor
               ref={editorRef}
               value={body}
