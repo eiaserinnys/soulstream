@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { errorText } from "./v3-dashboard-utils";
 import { useDashboardStore, appendAttachmentPathNotes, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { CardHandoffView } from "./CardHandoffView";
 import { useFileUpload } from "@seosoyoung/soul-ui/hooks/useFileUpload";
@@ -73,4 +74,3 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
   folderPicker={<FolderPicker folders={folders} starredFolderIds={stars.folderIds} selectedFolderId={selection.folderId} disabledFolderIds={new Set(["claude","llm"])} pending={pending} onSelect={f=>void selectFolder(f)}/>}
   executionPicker={<CardExecutionPickerView {...view}/>}/>;
 }
-import { errorText } from "./v3-dashboard-utils";

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "./v3-dashboard-utils";
 import { Button, FrameLoading, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -93,4 +94,3 @@ export function CardExecutionPickerView({selection,onChange,onCancel,onConfirm,c
   </div>
  </div>;
 }
-import { errorText } from "./v3-dashboard-utils";

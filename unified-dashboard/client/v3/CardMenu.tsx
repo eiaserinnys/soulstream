@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { errorText } from "./v3-dashboard-utils";
 import { Button, Dialog, DialogPopup, DialogHeader, DialogTitle, DialogFooter, type CatalogFolder } from "@seosoyoung/soul-ui";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
@@ -19,4 +20,3 @@ export function CardMenu({card,folders,target,onClose}:{card:CardRow;folders:rea
   </DialogPopup></Dialog>
  </>;
 }
-import { errorText } from "./v3-dashboard-utils";
