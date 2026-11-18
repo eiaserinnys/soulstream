@@ -18,7 +18,10 @@ describe("v3 task document board unification", () => {
 
     expect(inlineBoard).toContain("<DashboardIconCap");
     expect(inlineBoard).toContain('label="마크다운 추가"');
-    expect(inlineBoard).toContain("fetchFolderBoardItems");
+    // 보드 읽기는 폴더별 공유 읽기(folder-inline-board-api)를 거친다. 확인 읽기는
+    // 캐시 값을 바꾸지 않도록 refresh 경로를 쓴다(카드 #1651).
+    expect(inlineBoard).toContain("loadFolderBoardItems");
+    expect(inlineBoard).toContain("refreshFolderBoardItems");
     expect(inlineBoard).toContain("createMarkdownDocument");
     expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("deleteMarkdownDocument");

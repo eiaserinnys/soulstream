@@ -1,6 +1,10 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+
+// 이 파일의 효과는 목록 재조회를 비동기로 부르므로, 기본 1초 대기 대신 이 파일에서만
+// 넉넉한 asyncUtilTimeout을 쓴다. 전역 jest 설정은 바꾸지 않는다(카드 #1651).
+configure({ asyncUtilTimeout: 5000 });
 
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
@@ -88,7 +92,7 @@ test('lists every registered session, edits name and model, saves from the foote
   }));
   await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
   expect(screen.queryByTestId('settings-active-footer')).toBeNull();
-  expect(api.listPersistentSessions).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(api.listPersistentSessions).toHaveBeenCalledTimes(2));
 });
 
 test('keeps the recorded reasoning effort when the model choice is unchanged', async () => {
@@ -273,10 +277,12 @@ test('adds a session with the server defaults and no first message constant of i
   fireEvent.press(screen.getByTestId('persistent-session-create'));
   await screen.findByTestId('persistent-session-editor');
   expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
-  expect(screen.getByText('node-a')).toBeTruthy();
+  // 에이전트·모델 목록을 읽는 동안 저장 단추는 busy(「처리 중…」)다. 준비가 끝난
+  // 뒤의 라벨을 기다려야 12회차처럼 저장 단추 텍스트가 비는 순간을 밟지 않는다.
+  expect(await screen.findByText('node-a')).toBeTruthy();
   expect(api.listNodeAgents).toHaveBeenCalledWith('node-a');
   expect(api.listModelPresets).toHaveBeenCalledWith('node-a');
-  expect(screen.getByText('세션 추가')).toBeTruthy();
+  expect(await screen.findByText('세션 추가')).toBeTruthy();
   expect(await screen.findByText('5시간 한도 거부 중 · 1/2 12:04 해제')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('settings-scope-save'));
@@ -299,6 +305,8 @@ test('a registration failure keeps the created id and retries only the registrat
   fireEvent.press(screen.getByTestId('persistent-session-create'));
   await screen.findByTestId('persistent-session-editor');
   expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
+  // 목록 읽기가 끝나 저장 단추가 「세션 추가」로 돌아온 뒤에 고치고 저장한다.
+  expect(await screen.findByText('세션 추가')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '입력한 이름');
   fireEvent.press(await screen.findByText('폴더 A'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));
@@ -379,6 +387,8 @@ test('after a lost create answer the session is not created again; only re-readi
   fireEvent.press(screen.getByTestId('persistent-session-create'));
   await screen.findByTestId('persistent-session-editor');
   expect(await screen.findByText(/서버가 정한 첫 인사 문장/)).toBeTruthy();
+  // 목록 읽기가 끝나 저장 단추가 「세션 추가」로 돌아온 뒤에 고치고 저장한다.
+  expect(await screen.findByText('세션 추가')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '응답이 사라질 세션');
   fireEvent.press(await screen.findByText('폴더 A'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));

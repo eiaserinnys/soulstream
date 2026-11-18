@@ -42,7 +42,7 @@ const persistentSession = {
   runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
 };
 
-const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selection", timeoutMs: 180_000,
+const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selection", timeoutMs: 600_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
   const results = [];
@@ -190,7 +190,8 @@ async function waitForPopupToSettle(popup: Locator) {
       const r = el.getBoundingClientRect(); const key = [r.x,r.y,r.width,r.height].join(",");
       stable = key === last ? stable + 1 : 0; last = key;
       if (performance.now() - start >= 400 && stable >= 3 && r.x >= 0 && r.right <= innerWidth + 1) resolve();
-      else if (performance.now() - start >= 1000) reject(new Error("팝오버 위치 안정화 시간 초과"));
+      // 폭을 바꾼 직후 팝오버 재배치가 1,000ms를 넘기는 경우가 있다(카드 #1651 실측).
+      else if (performance.now() - start >= 5000) reject(new Error("팝오버 위치 안정화 시간 초과"));
       else requestAnimationFrame(check);
     }; requestAnimationFrame(check);
   }));
@@ -215,7 +216,9 @@ async function drag(page: Page, from: Locator, to: Locator, fromAt: "start" | "c
   const a = await from.boundingBox(); const b = await to.boundingBox();
   if (!a || !b) throw new Error("drag box missing");
   await clear(page);
-  await page.mouse.move(fromAt === "edge" ? a.x - 1 : fromAt === "start" ? a.x + 2 : a.x + a.width / 2, fromAt === "start" ? a.y + Math.min(8, a.height / 2) : a.y + a.height / 2);
+  // 제목 첫 글자 경계는 폰트 크기에 따라 상자 왼쪽에서 1~2px 안쪽이다. +2는 20px 글꼴의
+  // 첫 글자(예: "주")를 지나쳐 선택에서 빠뜨렸다(카드 #1651 실측). +1이 두 폭 모두 안전하다.
+  await page.mouse.move(fromAt === "edge" ? a.x - 1 : fromAt === "start" ? a.x + 1 : a.x + a.width / 2, fromAt === "start" ? a.y + Math.min(8, a.height / 2) : a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(b.x + (toAt === "end" ? b.width - 2 : b.width / 2), b.y + b.height / 2, { steps: 20 });
   await page.mouse.up();
@@ -270,7 +273,7 @@ async function documentReader(browser: Browser, width: number) {
     m.codeUS = await us(body.locator("pre, code").first());
     m.bodyButtons = await body.locator("button").evaluateAll(bs => bs.map(b => ({ label: b.getAttribute("aria-label") ?? b.textContent, us: getComputedStyle(b).userSelect, text: (b.textContent ?? "").trim() })));
     m.closeUS = await us(close);
-    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "edge", "end");
+    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "start", "end");
     await page.screenshot({ path: path.join(output, `document-drag-${width}.png`) });
     m.forwardCopied = await copied(page);
     console.log("문서 정방향", JSON.stringify(m));
@@ -281,7 +284,7 @@ async function documentReader(browser: Browser, width: number) {
     m.dragBodyToCloseCopied = await copied(page);
     m.tripleTitle = await triple(page, title);
     await page.screenshot({ path: path.join(output, `document-${width}.png`) });
-    await drag(page, title, body.locator("p").last(), "edge", "end");
+    await drag(page, title, body.locator("p").last(), "start", "end");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });

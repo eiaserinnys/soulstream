@@ -19,9 +19,11 @@ import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard"
 import { Check, FilePlus2, X } from "lucide-react";
 
 import {
+  discardFolderBoardItems,
   fetchInlineCustomView,
   fetchInlineMarkdown,
-  fetchFolderBoardItems,
+  loadFolderBoardItems,
+  refreshFolderBoardItems,
   saveInlineMarkdown,
 } from "./folder-inline-board-api";
 import { InlineMarkdownCard } from "./InlineMarkdownCard";
@@ -100,11 +102,16 @@ export function FolderInlineBoard({
       setItems([]);
       setStatus("loading");
     }
-    const load = () => fetchFolderBoardItems(
-      folderId,
-      globalThis.fetch.bind(globalThis),
-      controller.signal,
-    );
+    let confirmed = false;
+    const load = () => {
+      // 첫 읽기는 폴더별 공유 읽기(같은 열쇠의 다른 표면과 합류)를 쓰고,
+      // loadConfirmedResult의 확인 읽기는 새로 요청해 공유 결과를 바꾼다.
+      const shared = !confirmed;
+      confirmed = true;
+      return shared
+        ? loadFolderBoardItems(folderId, itemInvalidationKey, globalThis.fetch.bind(globalThis), controller.signal)
+        : refreshFolderBoardItems(folderId, itemInvalidationKey, globalThis.fetch.bind(globalThis), controller.signal);
+    };
     void loadConfirmedResult({
       previous,
       load,
@@ -135,6 +142,7 @@ export function FolderInlineBoard({
         title: "제목 없는 문서",
         body: "",
       });
+      discardFolderBoardItems(folderId);
       setItems((current) => retainEqualValue(current, [...current, result.boardItem]));
       addBoardItem(result.boardItem);
       setRenameState({
@@ -191,6 +199,7 @@ export function FolderInlineBoard({
         title,
         expectedVersion: version,
       });
+      discardFolderBoardItems(folderId);
       setItems((current) => patchBoardMarkdownTitle(current, item.itemId, updated.title, updated.version));
       setRenameState(null);
     } catch (error) {
@@ -210,6 +219,8 @@ export function FolderInlineBoard({
       folderId: target.folderId,
       idempotencyKey: createMoveIdempotencyKey(item.id, target.folderId),
     });
+    discardFolderBoardItems(folderId);
+    discardFolderBoardItems(target.folderId);
     departedItemIdsRef.current.add(item.id);
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);
@@ -219,6 +230,7 @@ export function FolderInlineBoard({
 
   const deleteMarkdown = async (item: CatalogBoardItem) => {
     await deleteMarkdownDocument(item.itemId);
+    discardFolderBoardItems(folderId);
     departedItemIdsRef.current.add(item.id);
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);

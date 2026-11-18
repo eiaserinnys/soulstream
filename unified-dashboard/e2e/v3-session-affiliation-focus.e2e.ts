@@ -13,6 +13,8 @@ test.describe.configure({ mode: "serial" });
 
 for (const theme of ["dark", "light"] as const) {
   test(`folder affiliation and session-row focus stay aligned in ${theme} mode`, async ({ browser }) => {
+    // 전체 화면 캡처 세 번과 왕복 클릭이 공유 호스트 부하에서 기본 60초를 넘긴다.
+    test.setTimeout(180_000);
     const context = await browser.newContext({
       colorScheme: theme,
       reducedMotion: "reduce",
@@ -39,21 +41,24 @@ for (const theme of ["dark", "light"] as const) {
       await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
       const panelRow = page.getByTestId("v3-session-row-run-alpha-2");
       await panelRow.waitFor({ state: "visible", timeout: 20_000 });
-      await expect(panelRow.locator(".v3-run-affiliation")).toHaveCount(0);
+      // 세션 행은 카탈로그 폴더와 별도 요청에서 먼저 도착할 수 있다. 열기 전 소속은
+      // 카드 제목이 아니라 폴더 이름이다(패널의 폴더 폴백). 열면 카드 제목으로 바뀐다.
+      await expect(panelRow.locator(".v3-run-affiliation")).toHaveText(fixtureTitles.primaryTask);
 
       await panelRow.locator(".v3-run-open").click();
       await assertFocusedSession(page);
-      await expect(panelRow.locator(".v3-run-affiliation"))
-        .toHaveText(`${fixtureTitles.primaryTask} · ${fixtureTitles.project}`);
+      // 이 fixture의 세션에는 카드가 붙지 않으므로 소속은 폴더 이름이다. 보드가 비어도
+      // 폴더 소속 표시가 사라지지 않는지가 이 시나리오의 핵심이다.
+      await expect(panelRow.locator(".v3-run-affiliation")).toHaveText(fixtureTitles.primaryTask);
       await capture(page, theme, "01-session-click-focus");
 
-      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+      // rb-alpha는 folder-amber의 자식이라 뒤로 가기는 부모 폴더로 간다. 플래너로
+      // 돌아가려면 워크스페이스를 닫는다(Escape).
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".v3-workspace")).toHaveCount(0);
       const affiliation = panelRow.locator(".v3-run-affiliation");
       await expect(affiliation).toBeVisible();
-      await expect(affiliation).toHaveAttribute(
-        "title",
-        `${fixtureTitles.primaryTask} · ${fixtureTitles.project}`,
-      );
+      await expect(affiliation).toHaveAttribute("title", fixtureTitles.primaryTask);
       const ellipsis = await affiliation.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -66,10 +71,14 @@ for (const theme of ["dark", "light"] as const) {
       await capture(page, theme, "02-panel-affiliation");
 
       const requestsBeforeCachedClick = boardItemRequests;
+      const sessionRequestsBeforeCachedClick = sessionRequests.length;
       await panelRow.locator(".v3-run-open").click();
       await assertFocusedSession(page);
       expect(boardItemRequests).toBe(requestsBeforeCachedClick);
-      expect(sessionRequests.every((query) => query.includes("session_id="))).toBe(true);
+      // 캐시된 재방문은 그 세션의 상세(session_id=)를 다시 요청하지 않는다. 패널의
+      // 목록 조회는 라이브 데이터 평면이 따로 하므로 여기 판정에 넣지 않는다.
+      expect(sessionRequests.slice(sessionRequestsBeforeCachedClick)
+        .filter((query) => query.includes("session_id="))).toEqual([]);
       expect(browserErrors).toEqual([]);
       await capture(page, theme, "03-cached-round-trip-focus");
     } finally {
@@ -97,10 +106,13 @@ async function preparePage(page: Page, theme: "dark" | "light") {
 async function assertFocusedSession(page: Page) {
   await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })
     .waitFor({ state: "visible" });
-  const navigation = page.getByRole("navigation", { name: "폴더 섹션" });
+  // 플래너의 인라인 폴더와 클릭으로 연 워크스페이스가 같은 폴더 상세를 함께 띄울 수 있다.
+  // 소속 초점은 클릭이 연 워크스페이스에서만 판정한다.
+  const workspace = page.locator(".v3-workspace");
+  const navigation = workspace.getByRole("navigation", { name: "폴더 섹션" });
   await expect(navigation.getByRole("button", { name: "세션 섹션으로 이동" }))
     .toHaveAttribute("aria-current", "location");
-  const activeRow = page.locator('.v3-detail-scroll [data-session-id="run-alpha-2"]');
+  const activeRow = workspace.locator('.v3-detail-scroll [data-session-id="run-alpha-2"]');
   await expect(activeRow).toHaveClass(/is-active/);
   const visibility = await activeRow.evaluate((row) => {
     const scroll = row.closest<HTMLElement>(".v3-detail-scroll");

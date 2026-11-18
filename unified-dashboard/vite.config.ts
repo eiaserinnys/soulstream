@@ -21,9 +21,12 @@ function requireDevProxyApiBase(env: Record<string, string | undefined>): string
   return apiBase;
 }
 
-export default defineConfig(({ command, mode }: ConfigEnv) => {
+export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
   const env = { ...loadEnv(mode, __dirname, ""), ...process.env };
-  const devProxyTarget = command === "serve" ? requireDevProxyApiBase(env) : undefined;
+  // 개발 서버(serve이고 preview가 아님)만 VITE_API_BASE를 요구한다. preview는
+  // 정적 미리보기라 값이 없어도 뜨고, 값이 있으면 모드와 무관하게 프록시 대상으로 쓴다.
+  if (command === "serve" && !isPreview) requireDevProxyApiBase(env);
+  const devProxyTarget = env.VITE_API_BASE?.trim() || undefined;
   const buildId=dashboardBuildIdentity(command,__dirname);
 
   return {
