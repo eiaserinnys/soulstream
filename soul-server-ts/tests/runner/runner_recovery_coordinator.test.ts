@@ -16,6 +16,7 @@ import {
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import { RunnerSessionGarbageCollector } from "../../src/runner/runner_session_gc.js";
 import { scanRunnerRegistrations, type RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
@@ -1822,31 +1823,85 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.stop();
   });
 
-  it("serializes later recovery scans behind runner session garbage collection", async () => {
-    let finishCollection!: () => void;
-    const collection = new Promise<{ removed: string[]; retained: [] }>((resolve) => {
-      finishCollection = () => resolve({ removed: [], retained: [] });
-    });
-    const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+  it("scans during central lookup and waits only while a session directory is removed", async () => {
+    const lookupStarted = deferred<void>();
+    const finishLookup = deferred<void>();
+    const removalStarted = deferred<void>();
+    const finishRemoval = deferred<void>();
+    const phases: string[] = [];
     const retired = registration({ pidAlive: false, lifecycleState: "completed" });
-    retired.retiredAt = "2026-08-11T00:00:25.000Z";
+    retired.retiredAt = "2026-08-01T00:00:00.000Z";
+    let lookupCount = 0;
+    const sessionGarbageCollector = new RunnerSessionGarbageCollector(
+      "/runner", 1_000, { info: vi.fn(), warn: vi.fn() }, {
+        now: () => RECOVERY_NOW_MS,
+        monotonicNow: () => 0,
+        withMutationLock: async (_path, operation) => await operation(),
+        refresh: async (item) => item,
+        probeRetention: async (item) => ({ registration: item, localRetentionReason: null }),
+        inspect: async (item) => ({
+          registration: item, acknowledgedThrough: 1, latestDurableSourceSeq: 1,
+          incompleteDurableWork: false, durableRecordCount: 1, unacknowledgedIpcFrameCount: 0,
+        }),
+        removeDirectory: async () => { removalStarted.resolve(); await finishRemoval.promise; },
+      },
+    );
+    const scan = vi.fn(async () => ({ registrations: [retired], errors: [] }));
     const subject = makeSubject(
       [retired],
-      Date.parse("2026-08-11T00:00:30.000Z"),
+      RECOVERY_NOW_MS,
       [],
-      { sessionGarbageCollector },
+      {
+        sessionGarbageCollector,
+        scan,
+        nodeStallMonitor: {
+          beginRunnerOperation: (context) => {
+            if (context.phase) phases.push(context.phase);
+            return () => {};
+          },
+        },
+        taskManager: {
+          hydrateRunnerRecoveryTask: async () => {
+            lookupCount++;
+            if (lookupCount === 1) { lookupStarted.resolve(); await finishLookup.promise; }
+            return null;
+          },
+        } as never,
+      },
     );
 
     await subject.coordinator.scanOnce();
-    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
+    await lookupStarted.promise;
+    const duringLookup = subject.coordinator.scanOnce().then(() => "scanned");
+    const lookupResult = await Promise.race([
+      duringLookup,
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ]);
+    finishLookup.resolve();
+    await removalStarted.promise;
+    if (lookupResult === "blocked") {
+      finishRemoval.resolve();
+      await duringLookup;
+      await subject.coordinator.stop();
+      expect(lookupResult).toBe("scanned");
+      return;
+    }
+    await duringLookup;
+    const scansBeforeRemoval = scan.mock.calls.length;
+    phases.length = 0;
     const laterScan = subject.coordinator.scanOnce().then(() => "scanned");
-    await expect(Promise.race([
+    const removalResult = await Promise.race([
       laterScan,
       new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
-    ])).resolves.toBe("blocked");
-
-    finishCollection();
+    ]);
+    const scansDuringRemoval = scan.mock.calls.length;
+    const phasesDuringRemoval = [...phases];
+    finishRemoval.resolve();
     await expect(laterScan).resolves.toBe("scanned");
+    expect(removalResult).toBe("blocked");
+    expect(scansDuringRemoval).toBe(scansBeforeRemoval);
+    expect(phasesDuringRemoval).toContain("gcWait");
+    expect(scan).toHaveBeenCalledTimes(scansBeforeRemoval + 1);
     await subject.coordinator.stop();
   });
 

@@ -16,6 +16,7 @@ export interface RunnerReleaseGarbageCollectorDependencies {
   scan(
     stateDirectory: string,
     phaseObservation?: RunnerPhaseObservation,
+    onlyCodeShas?: ReadonlySet<string>,
   ): ReturnType<typeof scanRunnerRegistrations>;
   inspect(
     registration: RunnerRegistration,
@@ -143,7 +144,7 @@ export class RunnerReleaseGarbageCollector {
       const fencedReleases = ordered.filter((release) => lockedIds.has(release.releaseId));
       // Registration and process ownership are re-read only after every
       // candidate release is fenced. The periodic scan is never deletion proof.
-      const readRegistry = () => this.deps.scan(this.stateDirectory, phaseObservation);
+      const readRegistry = () => this.deps.scan(this.stateDirectory, phaseObservation, lockedIds);
       const scan = phaseObservation
         ? await phaseObservation.runAsync("registry", {}, readRegistry)
         : await readRegistry();
@@ -291,10 +292,11 @@ function defaultDependencies(
   recoveryStorage?: RunnerRecoveryStorage,
 ): RunnerReleaseGarbageCollectorDependencies {
   return {
-    scan: async (stateDirectory, phaseObservation) => await scanRunnerRegistrations(
+    scan: async (stateDirectory, phaseObservation, onlyCodeShas) => await scanRunnerRegistrations(
       stateDirectory,
       {
         verifyProcessIdentity: true,
+        ...(onlyCodeShas ? { onlyCodeShas } : {}),
         ...(phaseObservation ? { phaseObservation } : {}),
         ...(recoveryStorage ? { recoveryStorage } : {}),
       },

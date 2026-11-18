@@ -149,13 +149,14 @@ export class RunnerRecoveryCoordinator {
       ...(options.sessionGarbageCollector
         ? {
           collector: {
-            collect: async (scan, policy, phaseObservation) => await options.sessionGarbageCollector!.collect(
+            collect: async (scan, policy, phaseObservation, runRemoval) => await options.sessionGarbageCollector!.collect(
               scan,
               {
                 centralSessionExists: async (sessionId) =>
                   await options.taskManager.hydrateRunnerRecoveryTask(sessionId) !== null,
               },
               phaseObservation,
+              runRemoval,
             ),
           },
         }
@@ -288,7 +289,7 @@ export class RunnerRecoveryCoordinator {
       disposition: RunnerRecoveryDisposition;
     }> = [];
     try {
-      const sessionGcInFlight = this.sessionGarbageCollectionScheduler.inFlight;
+      const sessionGcInFlight = this.sessionGarbageCollectionScheduler.removalInFlight;
       if (sessionGcInFlight) {
         await observation.runAsync("gcWait", {}, async () => await sessionGcInFlight);
       } else {
