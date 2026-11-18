@@ -41,6 +41,15 @@ function makeRow(overrides: Partial<SessionRow> = {}): SessionRow {
 }
 
 describe("hydrateEvictedTaskFromSessionRow", () => {
+  it.each([
+    [[{ type: "model_backend", value: { backend: "antigravity" } }], "antigravity"],
+    [null, undefined],
+  ])("restores only the recorded backend from metadata", (metadata, backend) => {
+    const task = hydrateEvictedTaskFromSessionRow(makeRow({ metadata }), makeLogger());
+    expect(task?.recordedModelBackend).toBe(backend);
+    expect(task?.modelPresetBackend).toBeUndefined();
+    expect(task?.modelPresetEnv).toBeUndefined();
+  });
   it.each([null, "", "invalid_status"] as const)(
     "returns null and warns for invalid status %j",
     (status) => {

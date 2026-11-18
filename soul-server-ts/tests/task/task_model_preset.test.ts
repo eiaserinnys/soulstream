@@ -54,6 +54,17 @@ const kimiPreset: ModelPreset = {
 };
 
 describe("task model preset runtime", () => {
+  it("uses the recorded backend when the preset is missing and the catalog backend when available", () => {
+    const claude = { ...agent, backend: "claude" as const };
+    const task = makeTask({ modelPreset: "gemini", model: "gemini", recordedModelBackend: "antigravity" });
+    const missing = { resolve: () => { throw new UnknownModelPresetError("gemini"); } };
+    expect(applyModelPresetRuntime(task, claude, missing)).toBe("preset_unavailable");
+    expect(effectiveTaskBackend(task, claude)).toBe("antigravity");
+    expect(task.modelPresetEnv).toBeUndefined();
+    expect(applyModelPresetRuntime(task, claude, { resolve: () => kimiPreset })).toBe("applied");
+    expect(effectiveTaskBackend(task, claude)).toBe("claude");
+    expect(task.modelPresetEnv).toEqual(kimiPreset.env);
+  });
   it("resolves the current agent allowlist only for an OpenCode backend", () => {
     const allowlist = { soulstream: ["get_session_name"], serendipity: [] };
     const resolve = vi.fn().mockReturnValue({

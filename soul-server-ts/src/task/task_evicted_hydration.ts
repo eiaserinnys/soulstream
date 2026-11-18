@@ -21,6 +21,7 @@ import {
   extractClaudeBackendRolloverState,
   extractClaudeContextUsageFromMetadata,
   extractClaudePermissionModeFromMetadata,
+  extractModelBackendFromMetadata,
   extractSessionCostFromMetadata,
   extractPersistentGeneration,
   extractPersistentSession,
@@ -178,6 +179,7 @@ export function hydrateEvictedTaskFromSessionRow(
       ? { pendingClaudeBackendRolloverFrom: rolloverCycleFrom }
       : {}),
     modelPreset: row.model_preset,
+    recordedModelBackend: extractModelBackendFromMetadata(metadata),
     model: row.model,
     // The column alone cannot decide the turn's effort: a pre-089 NULL needs the
     // effective backend, which a SessionRow does not carry. Keep the recorded /
