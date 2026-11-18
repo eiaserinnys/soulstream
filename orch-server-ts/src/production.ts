@@ -81,6 +81,12 @@ import {
   SessionForegroundObserverTracker,
 } from "./push/push_notifier.js";
 import { createProductionOutboundWebhook } from "./webhooks/production_wiring.js";
+import { ExternalAccessGrantRepository } from "./external_access/external_access_grant_repository.js";
+import {
+  createExternalInterventionDispatch,
+  ExternalInputService,
+} from "./external_access/external_input_service.js";
+import { ExternalAccessTokenBucket } from "./external_access/external_access_token_bucket.js";
 import type { OutboundWebhookService } from "./webhooks/outbound_service.js";
 import {
   createOrchestratorRuntimeServices,
@@ -908,6 +914,43 @@ export async function createLiveProductionApplication(
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildInfo,runtimeServices.sessionBroadcaster);
   const productionSql = await sqlResolver.resolveSql() as unknown as SqlClient;
+  // Shared with the future /x surface: one grant repository for the production pool.
+  // Fail closed: without the user authorizer, the session access provider, or the
+  // public origin, neither the store nor the management routes are created.
+  const accessLinkSessionAccess = providers.sessionCatalogRoutes.accessProvider;
+  const accessLinkAuthorizeUser = providers.authRoutes.authorizeUser;
+  const accessLinkPublicUrl = config.soulstream_public_url?.trim() ?? "";
+  const externalAccessGrants =
+    accessLinkSessionAccess !== undefined
+    && accessLinkAuthorizeUser !== undefined
+    && accessLinkPublicUrl.length > 0
+      ? new ExternalAccessGrantRepository({
+          sql: productionSql,
+          authorizeUser: accessLinkAuthorizeUser,
+          requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        })
+      : undefined;
+  // Shared with the #1457 /x surface: one token bucket and one admission
+  // service for every external sender. Inbound webhook routes are registered
+  // only when both the grant store and the intervention commands exist.
+  const externalAccessTokenBucket = externalAccessGrants === undefined
+    ? undefined
+    : new ExternalAccessTokenBucket();
+  const externalInputService = externalAccessGrants !== undefined
+    && externalAccessTokenBucket !== undefined
+    && providers.runtime.sessionActionCommandRoutes !== undefined
+    ? new ExternalInputService({
+        sql: productionSql,
+        grants: externalAccessGrants,
+        dispatch: createExternalInterventionDispatch(
+          providers.runtime.sessionActionCommandRoutes,
+        ),
+        tokenBucket: externalAccessTokenBucket,
+        logger: {
+          warn: (fields, message) => context.warn(`${message}: ${JSON.stringify(fields)}`),
+        },
+      })
+    : undefined;
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -920,6 +963,39 @@ export async function createLiveProductionApplication(
     },
     externalEvents,
     ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
+    ...(externalAccessGrants === undefined || accessLinkSessionAccess === undefined ? {} : {
+      accessLinkRoutes: {
+        currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+        grants: externalAccessGrants,
+        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        publicUrl: accessLinkPublicUrl,
+      },
+    }),
+    outboundWebhookRoutes: {
+      currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+      service: outboundWebhookService,
+      authorizeUser: outboundAuthorizeUser,
+      sessionAccess: outboundSessionAccess,
+    },
+    ...(externalAccessGrants === undefined || externalInputService === undefined ? {} : {
+      inboundHookRoutes: {
+        grants: externalAccessGrants,
+        service: externalInputService,
+      },
+    }),
+    // Same store, service and login identity as the receive routes; the
+    // management surface adds no new grant store, service or bucket instance.
+    ...(externalAccessGrants === undefined
+      || externalInputService === undefined
+      || accessLinkSessionAccess === undefined ? {} : {
+      inboundWebhookRoutes: {
+        currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+        grants: externalAccessGrants,
+        requests: externalInputService,
+        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        publicUrl: accessLinkPublicUrl,
+      },
+    }),
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
@@ -1138,8 +1214,11 @@ export async function createLiveProductionApplication(
       lifecycle.markReady();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
+        const startedAt = Date.now();
+        context.warn("session document index warmup started");
         void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0))
-          .catch((error: unknown) => context.warn(`session document index warmup failed: ${String(error)}`));
+          .then((count) => context.warn(`session document index warmup finished: count=${count} elapsed_ms=${Date.now() - startedAt}`))
+          .catch((error: unknown) => context.warn(`session document index warmup failed: elapsed_ms=${Date.now() - startedAt} error=${String(error)}`));
       }, SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS);
       documentIndexWarmupTimer.unref();
     };
@@ -1489,6 +1568,7 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
+        ...(conversationSql === undefined ? {} : { externalAccess: { sql: conversationSql } }),
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,

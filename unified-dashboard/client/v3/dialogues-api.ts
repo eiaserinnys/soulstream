@@ -1,5 +1,6 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
 import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
+import { accessLinkSessions, createAccessLinksFixture } from "./access-links-fixture";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { ClaudeAccount, ClaudeAccountList, SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
@@ -382,6 +383,7 @@ export function createDialoguesApi() {
       } satisfies RecurringJobRun;
     },
   };
+  const accessLinks = createAccessLinksFixture();
   const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
   const sample = new URLSearchParams(window.location.search).get("sample");
   const persistentState = new URLSearchParams(window.location.search).get("persistentState") ?? (
@@ -404,6 +406,17 @@ export function createDialoguesApi() {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
+    if (path.startsWith('/api/access-links') || (sample === 'settings' && path === '/api/persistent-sessions' && method === 'GET')) {
+      if (new URLSearchParams(window.location.search).has('accessLinksVisual')) return fetch(path, init);
+      if (path === '/api/persistent-sessions') {
+        const response = await persistentSessions(input, init);
+        if (!response.ok) return response;
+        const payload = await response.json();
+        const sessions = accessLinkSessions.map((session, index) => ({ ...payload.sessions[index % payload.sessions.length], ...session }));
+        return Response.json({ ...payload, sessions, total: sessions.length });
+      }
+      return accessLinks(input, init);
+    }
     if (path.startsWith('/api/owned-agents')) return ownedAgents(input, init);
     if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
     if (method === "GET" && /^\/api\/sessions\/[^/]+\/story$/.test(path) && sample?.startsWith("persistent-settings-window")) {

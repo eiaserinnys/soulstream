@@ -29,6 +29,7 @@ import {
   type RecurringScheduleDraft,
 } from "../lib/recurring-schedule";
 import { RecurringScheduleEditor } from "./RecurringScheduleEditor";
+import { busyButtonClassName } from "./config/busy-button";
 import {
   SettingsAlert,
   SettingsDetailHeader,
@@ -53,8 +54,6 @@ type Editor = {
   lateRunWindowSeconds: string;
   enabled: boolean;
 };
-
-const busyButtonClassName = "aria-disabled:opacity-64 aria-disabled:pointer-events-none aria-disabled:shadow-none aria-disabled:inset-shadow-none aria-disabled:before:shadow-none";
 
 const emptyEditor = (): Editor => ({
   name: "",

@@ -32,6 +32,8 @@ import {
   type RunnerProcessRuntimeFactory,
 } from "../../src/task/task_executor.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
+import { hydrateEvictedTaskFromSessionRow } from "../../src/task/task_evicted_hydration.js";
+import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
 import { TaskDeliveryLedgerGate } from
@@ -172,6 +174,56 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startNewExecution", () => {
+  it.each([undefined, "claude"])("syncs a resolved backend only when the record differs (%s)", async (recorded) => {
+    const mocks = makeMocks();
+    const executor = new TaskExecutor(
+      () => ({ ...makeFakeEngine([]), backendId: "claude" }),
+      mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+    );
+    const task = { ...makeTask(), modelPresetBackend: "claude" as const, recordedModelBackend: recorded };
+    await executor.startNewExecution(task, claudeAgent);
+    const writes = mocks.enqueueMetadataEffect.mock.calls.filter((call) => call[1].type === "model_backend");
+    expect(writes).toHaveLength(recorded === "claude" ? 0 : 1);
+    expect(task.recordedModelBackend).toBe("claude");
+    if (recorded === undefined) expect(task.metadata).toContainEqual({ type: "model_backend", value: { backend: "claude" } });
+  });
+
+  it.each(["fresh", "retained"] as const)("executes a hydrated unavailable preset on its recorded engine (%s)", async (kind) => {
+    const mocks = makeMocks();
+    const warningLogger = pino({ level: "silent" });
+    const warn = vi.spyOn(warningLogger, "warn");
+    const compact = vi.fn();
+    const execute = vi.fn(async function* (): AsyncIterable<SSEEventPayload> {
+      yield { type: "result", success: false, output: "Prompt is too long", terminal_reason: "prompt_too_long" } as SSEEventPayload;
+      yield { type: "error", message: "Prompt is too long", fatal: false, error_code: "claude_prompt_too_long" } as SSEEventPayload;
+    });
+    const engine: EnginePort = { ...makeFakeEngine([]), backendId: "antigravity", execute, compact };
+    const factory = vi.fn(() => engine);
+    const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, warningLogger,
+      undefined, undefined, undefined, undefined, undefined,
+      {
+        resolve: () => { throw new UnknownModelPresetError("gemini"); },
+        snapshot: () => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } }),
+      } as never);
+    const task = hydrateEvictedTaskFromSessionRow(sessionRow({
+      agent_id: claudeAgent.id, model_preset: "gemini", model: "gemini",
+      metadata: [{ type: "model_backend", value: { backend: "antigravity" } }],
+    }), warningLogger)!;
+    task.claudeContextUsage = { usedTokens: 900_000, maxTokens: 1_000_000 };
+    task.interventionQueue.push({ text: "continue", user: "browser" });
+    if (kind === "retained") {
+      task.runner = createInProcessTaskRunnerRuntime(engine);
+      task.runnerRetainedForDetachedWork = true;
+    }
+    await executor.startNewExecution(task, claudeAgent);
+    if (kind === "fresh") expect(factory).toHaveBeenCalledWith(claudeAgent, "antigravity", task.agentSessionId);
+    else expect(factory).not.toHaveBeenCalled();
+    expect(execute, `task status ${task.status}: ${task.error}`).toHaveBeenCalledOnce();
+    expect(compact).not.toHaveBeenCalled();
+    expect(mocks.enqueueMetadataEffect.mock.calls.some((call) => call[1].type === "claude_backend_rollover")).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ fallbackBackend: "antigravity" }),
+      expect.stringContaining("recorded"));
+  });
   it("records error_aborted when an EventAck timeout ends an active turn", async () => {
     const mocks = makeMocks();
     const error = new EventAcknowledgementTimeoutError(42, 300000);
@@ -427,7 +479,7 @@ describe("TaskExecutor.startNewExecution", () => {
     expect(prepareSessionRuntime).toHaveBeenCalledWith(task.agentSessionId);
   });
 
-  it("keeps the legacy factory call exact when no preset is selected", async () => {
+  it("passes the profile backend to the factory when no preset is selected", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([
       { type: "assistant_message", content: "legacy", timestamp: 1 },
@@ -445,7 +497,7 @@ describe("TaskExecutor.startNewExecution", () => {
     await task.executionPromise;
 
     expect(factory).toHaveBeenCalledTimes(1);
-    expect(factory.mock.calls[0]).toEqual([agent, undefined, task.agentSessionId]);
+    expect(factory.mock.calls[0]).toEqual([agent, "codex", task.agentSessionId]);
   });
 
   it("uses the preset backend while retaining the persisted resolved model", async () => {
@@ -488,6 +540,10 @@ describe("TaskExecutor.startNewExecution", () => {
 
     expect(factory).toHaveBeenCalledWith(agent, "claude", task.agentSessionId);
     expect(task.model).toBe("persisted-kimi-model");
+    expect(task.recordedModelBackend).toBe("claude");
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(task.agentSessionId,
+      { type: "model_backend", value: { backend: "claude" } },
+      expect.objectContaining({ replaceExistingType: "model_backend" }));
   });
 
   it("warns and resumes with the profile backend when a persisted preset was removed", async () => {
@@ -533,7 +589,7 @@ describe("TaskExecutor.startNewExecution", () => {
     executor.startNewExecution(task, fallbackAgent);
     await task.executionPromise;
 
-    expect(factory.mock.calls[0]).toEqual([fallbackAgent, undefined, task.agentSessionId]);
+    expect(factory.mock.calls[0]).toEqual([fallbackAgent, "claude", task.agentSessionId]);
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "sess-1",

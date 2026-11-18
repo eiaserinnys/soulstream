@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -20,8 +21,7 @@ for (const theme of ["dark", "light"] as const) {
     await preparePage(page, theme);
     await installV3VisualQaRoutes(page);
 
-    await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("오늘의 폴더")).toBeVisible();
+    await openV3Folder(page, BASE_URL);
     await expect(page.getByTestId("v3-starred-tasks")).toContainText(fixtureTitles.primaryTask);
     await capture(page, theme, "01-starred-folder-and-today");
 
@@ -32,9 +32,8 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByTestId("v3-starred-tasks")).toContainText(fixtureTitles.primaryTask);
     await capture(page, theme, "02-star-round-trip");
 
-    await page.getByTestId("v3-all-projects")
-      .getByRole("button", { name: fixtureTitles.project, exact: true }).click();
-    await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible();
+    // 폴더 제목 h1의 접근 이름은 편집 버튼 이름이다. 제목은 버튼 텍스트로 확인한다.
+    await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.project })).toBeVisible();
     await expect(page.getByTestId("v3-project-context")).toBeVisible();
     await expect(page.getByTestId("v3-child-folder-folder-dashboard")).toBeVisible();
     await capture(page, theme, "03-folder-context-and-children");

@@ -173,6 +173,7 @@ export class TaskManager {
             if (!(error instanceof UnknownModelPresetError)) throw error;
           }
         }
+        if (task.recordedModelBackend) return task.recordedModelBackend;
         const profile = task.agentProfileSnapshot
           ?? (task.profileId ? this.agentRegistry?.get(task.profileId) : undefined);
         return profile?.backend;

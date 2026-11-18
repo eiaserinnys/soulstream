@@ -18,6 +18,7 @@ import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerRecoveryStorage } from "./runner_recovery_storage.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
+import type { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
   nodeId: string;
@@ -53,12 +54,13 @@ export interface RunnerRecoveryCoordinatorOptions {
    */
   hasPendingRunnerSettlement?: RunnerSettlementPendingProbe;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain"> & Partial<Pick<ClosedRunnerTailDrainer, "hasActivePump">>;
-  logger: Pick<Logger, "error" | "info" | "warn">;
+  logger: Pick<Logger, "debug" | "error" | "info" | "warn">;
   spawner?: Pick<
     RunnerProcessSpawner,
     "invalidateRegistration" | "retireTerminalRegistration" | "terminate"
   >;
   scan?: typeof scanRunnerRegistrations;
+  scanCache?: RunnerRegistrationScanCache;
   hydrate?: typeof hydrateRunnerRegistration;
   refreshRegistration?: (
     registration: RunnerRegistration,

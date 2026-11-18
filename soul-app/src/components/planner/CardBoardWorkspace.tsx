@@ -35,6 +35,11 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
   const completed=useCompletedCards(api,folderId,cardDisplay.includeCompleted);
+  // 보일 카드가 하나도 없을 때만 보드 가운데 부품을 세운다. 완료 카드가 먼저 와 있으면
+  // 활성 목록이 아직 없어도 그 카드 위에 스피너를 겹치지 않는다.
+  const visibleCards = cards.length + (cardDisplay.includeCompleted ? completed.cards.length : 0);
+  const firstLoading = loading && visibleCards === 0;
+  const activePending = loading && cards.length === 0;
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<BoardPosition | null>(null);
   const position = useRef<BoardPosition>({ x: 0, lanes: {} });
@@ -70,7 +75,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     { id: 'completed', label: '완료·취소 숨김', menuLabel: cardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
   ]);
   const completedCount = completed.cards.length;
-  const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
+  const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed} firstLoading={firstLoading} activePending={activePending}
     railOverlayWidth={expandedBoard ? 0 : railOverlayWidth}
     reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
     includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}
@@ -109,7 +114,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       <GlassButton accessibilityLabel="보드 다시 조회" onPress={refresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></GlassButton>
     </View> : null}
     {board()}
-    {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: railOverlayWidth }} /> : null}
+    {loading && !firstLoading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: railOverlayWidth }} /> : null}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
     {expanded ? <AppModalSurface visible modalId="modal_card_detail" sideBand={duo ? <DuoRailOverride /> : undefined} sideBandWidth={duo ? insets.right : 0} {...(phone
       ? { variant: 'expanded' as const, presentationStyle: 'pageSheet' as const }
@@ -121,7 +126,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
           {heading(true)}{board(expanded, true)}
         </View>
-        {loading ? <AutomaticRefreshIndicator testID="card-board-expanded-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+        {loading && !firstLoading ? <AutomaticRefreshIndicator testID="card-board-expanded-auto-progress" style={{ top: 0, right: 0 }} /> : null}
         <FolderWorkspaceReadOverlay host="board" />
       </View></GestureHandlerRootView>
     </AppModalSurface> : null}

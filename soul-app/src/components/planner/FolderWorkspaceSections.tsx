@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerFolderDetail } from '../../api/plannerTypes';
 import type { Folder } from '../../api/types';
@@ -9,6 +9,7 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
+import { FrameLoading } from '../FrameLoading';
 import { NewFolderSheet } from './NewFolderSheet';
 import { PlannerFolderRow } from './PlannerFolderRow';
 import { ProjectContextEditor } from './ProjectContextEditor';
@@ -42,7 +43,7 @@ export function FolderWorkspaceSections({
     <>
       <ProjectContextEditor api={api} projectPageId={folder.projectPageId!} active={active} />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {!detail && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+      {!detail && loading ? <FrameLoading testID="folder-sections-loading" inline /> : null}
       <View style={styles.section}>
         <PlannerSectionHeader title="하위 폴더" testID="planner-section-header-subfolders"
           actionLabel="새 폴더"

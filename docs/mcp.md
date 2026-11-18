@@ -94,7 +94,7 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | Tool | Description |
 |------|-------------|
 | `list_event_ingress_dead_letters(state, since, until, node_id, limit, cursor)` | Read-only listing of the orchestrator's event ingress dead-letter files. `state` is `dead_lettered` (default), `retrying`, or `all`; `since`/`until` filter on the record time (inclusive start, exclusive end); `node_id` filters one sender; `limit` is 1–100 (default 20); `cursor` is the previous `next_cursor` and pages by `(recorded_at, id)`. Items carry envelope metadata, failure counters, `recorded_at`, and `delay_ms` — never the event payload, `searchable_text`, `semantic_dedupe_key`, `session_effect`, or raw `failures[]`. Unparseable files are skipped and counted in `unreadable_count`. A missing directory returns an empty list with `directory_exists: false`. The list reads the files directly, so it still works while a deployment handover has paused writes. `STALE_REGISTRATION` rejections never create a dead-letter file and do not appear here. |
-| `get_event_ingress_delivery_latency(since, until, node_id)` | Read-only delivery latency: `event_ingress_receipts.created_at` (orchestrator commit time) minus `events.created_at` (node-created time), joined on `session_id` and `event_id`. Defaults to the last hour; the window must be at most 7 days and `since < until`. Returns `overall` and `by_node[]` with `count`, `p50_ms`, `p90_ms`, `p99_ms`, `max_ms`, plus the 5 slowest events. Negative delays are reported unchanged when node clocks differ. The query runs under a transaction-local 10-second `statement_timeout`. |
+| `get_event_ingress_delivery_latency(since, until, node_id)` | Read-only delivery latency: `event_ingress_receipts.created_at` (orchestrator commit time) minus `events.created_at` (node-created time), joined on `session_id` and `event_id`. Defaults to the last hour; the window must be at most 7 days and `since < until`. Returns `overall` and `by_node[]` with `count`, `p50_ms`, `p90_ms`, `p99_ms`, `max_ms`, plus the 5 slowest events. Negative delays are reported unchanged when node clocks differ. The query runs under a transaction-local 55-second `statement_timeout`, with a 60-second tool timeout. |
 
 Both are `internal` cluster tools: the orchestrator reads its own dead-letter directory and database, and worker nodes
 reach them through the usual cluster forwarding. Node-local outbox backlog and quarantine JSONL are out of scope.
@@ -104,17 +104,19 @@ reach them through the usual cluster forwarding. Node-local outbox backlog and q
 | Tool | Description |
 |------|-------------|
 | `list_sessions(search, folder_name, node_id, ...)` | Paginated session list — lightweight fields only |
-| `get_session_summary(session_id)` | Legacy event-based turn reconstruction: user prompts, response previews, tools used, context usage |
+| `get_session_summary(session_id, max_response_chars)` | Legacy event-based turn reconstruction: user prompts, response previews, tools used, context usage |
 | `get_session_highlight(session_id)` | Stored highlight, or chronological stored turn summaries when no story exists; `source` is `story`, `turn_summaries`, or `empty` |
 | `get_session_story(session_id, include_highlight=false)` | Folded narrative plus all still-unfolded turn summaries; highlight body is opt-in and `source` is explicit |
 | `get_session_turn_summaries(session_id, mode, ...)` | Stored turn-summary count, single index, or chronological range |
+| `expand_session_turn(session_id, turn, to_turn, include_tools, max_chars)` | Read turn summaries and original events by turn number; original events include user input and responses by default |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
 | `list_user_messages(since, until, sources, cursor, limit, max_text_chars)` | Internal only. `user_message` events in a time range across sessions, oldest first, with text and `caller_info` fields only (no injected context). Without `sources`, `agent`, `api`, `channel_observer`, `execute-proxy`, `llm`, `system` and messages with no source are left out; text over `max_text_chars` is cut and flagged `truncated` (full text via `get_session_event`) |
+| `list_persistent_session_history(session_id, since, until, cursor, limit, max_text_chars)` | Internal only. Read persistent session inputs, final responses, notifications, and generation boundaries in time order; use `get_session_event` for truncated text |
 | `list_turn_usage(session_id, since, until, cursor, limit)` | Internal only. Reads per-turn token usage in time order for one session or a period; includes `complete`, failed usage, and closed turns without usage. Input tokens include cached tokens; cost is a list-price estimate. |
 | `summarize_turn_usage(since, until)` | Internal only. Returns period totals, agent/model groups, and the 20 most expensive sessions; new-session injection and first-call statistics use sessions created in the period. Use `list_turn_usage` for individual turns. |
 | `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; includes `created_at` and `updated_at` ISO timestamps; use `search_session_history` for exact event text |
-| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
+| `search_session_history(query, session_ids, event_types, search_session_id, include_turn_summaries, include_highlight, include_story, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 
 ### Chat UI publication
 

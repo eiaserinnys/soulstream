@@ -32,7 +32,6 @@ export interface V3VisualQaRouteOptions {
   timelineContentByEventId?: Readonly<Record<number, string>>;
   liveEventText?: string;
   contextMenuParity?: boolean;
-  contextChainPreview?: boolean;
   taskDefaultAssignment?: boolean;
   taskAssignmentModelPreset?: string;
   taskContextEditing?: boolean;
@@ -40,15 +39,12 @@ export interface V3VisualQaRouteOptions {
   outsideTaskSession?: boolean;
   sessionModelPresets?: Readonly<Record<string, string | null>>;
   sessionReasoningEfforts?: Readonly<Record<string, string | null>>;
-  emptyPlannerProjectsWhen?: () => boolean;
-  emptyProjectPlannerWhen?: () => boolean;
   excludeSessionIdsFromInitialStream?: readonly string[];
   includeAlphaThirdRunWhen?: () => boolean;
   includeCreatedTaskWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
-  onPlannerTodayRequest?: (requestNumber: number) => void;
   onPlannerProjectRequest?: (requestNumber: number) => void;
   onRunHistoryRequest?: (requestNumber: number) => void;
   abortUnknownApiRoutes?: boolean;
@@ -270,7 +266,7 @@ const sessions = [
     displayName: "밀도 기준 정리",
     awaySummary: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
       timestamp: "2026-07-13T11:20:00.000Z",
     },
@@ -288,7 +284,7 @@ const sessions = [
     updatedAt: NOW,
     displayName: "시각 QA 순회",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "다크·라이트 실제 픽셀 순회를 진행하고 있습니다.",
       timestamp: NOW,
     },
@@ -324,7 +320,7 @@ const sessions = [
     displayName: "대비 확인",
     awaySummary: "라이트 모드의 입력 영역 대비를 점검했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "라이트 모드의 입력 영역 대비를 점검했습니다.",
       timestamp: "2026-07-14T01:10:00.000Z",
     },
@@ -344,7 +340,7 @@ const sessions = [
     displayName: "모바일 탭 구현",
     awaySummary: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
       timestamp: "2026-07-13T13:15:00.000Z",
     },
@@ -394,7 +390,7 @@ const outsideTaskSession = {
   updatedAt: NOW,
   displayName: "데일리 밖 완료 폴더 세션",
   lastMessage: {
-    type: "assistant",
+    type: "assistant_message",
     preview: "완료 폴더의 소속을 canonical membership으로 찾습니다.",
     timestamp: NOW,
   },
@@ -521,7 +517,6 @@ export async function installV3VisualQaRoutes(
   }
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
-  let plannerTodayRequests = 0;
   const baseQaSessions = options.unifiedFolderView
     ? [...sessions, outsideTaskSession, ...Array.from({ length: 48 }, (_, index) => ({
         ...outsideTaskSession,
@@ -677,6 +672,18 @@ export async function installV3VisualQaRoutes(
     }
     {
       const unifiedFolderMatch = /^\/api\/folders\/([^/]+)$/.exec(path);
+      if (unifiedFolderMatch && request.method() === "PUT") {
+        // 상위 폴더 변경은 폴더 트리에 남아야 이동 뒤 화면에서 확인할 수 있다.
+        const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(unifiedFolderMatch[1]));
+        if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
+        const input = request.postDataJSON() as { parentFolderId?: string | null; expectedVersion?: number };
+        if (input.expectedVersion !== undefined && input.expectedVersion !== folder.version) {
+          return fulfillJson(route, { detail: "folder version conflict" }, 409);
+        }
+        if (input.parentFolderId !== undefined) folder.parentFolderId = input.parentFolderId;
+        folder.version += 1;
+        return fulfillJson(route, { folder, idempotent: false });
+      }
       if (unifiedFolderMatch && request.method() === "GET") {
         const folder = unifiedFolders.find((candidate) => candidate.id === decodeURIComponent(unifiedFolderMatch[1]));
         if (!folder) return fulfillJson(route, { detail: "folder not found" }, 404);
@@ -810,9 +817,15 @@ export async function installV3VisualQaRoutes(
       options.onSessionListRequest?.();
       const requestedIds = url.searchParams.getAll("session_id");
       if (requestedIds.length === 0) await delay(options.catalogDelayMs);
-      const selectedSessions = requestedIds.length > 0
-        ? qaSessions.filter((session) => requestedIds.includes(session.agentSessionId))
+      // 검토 대기 조회는 서버가 상태로 거른다. 전체 목록으로 답하면 카탈로그의
+      // 검토 큐 병합이 모든 세션을 검토 대상으로 끌어들인다.
+      const reviewState = url.searchParams.get("review_state");
+      const candidates = reviewState
+        ? qaSessions.filter((session) => session.reviewState === reviewState)
         : qaSessions;
+      const selectedSessions = requestedIds.length > 0
+        ? candidates.filter((session) => requestedIds.includes(session.agentSessionId))
+        : candidates;
       return fulfillJson(route, { sessions: selectedSessions, total: selectedSessions.length });
     }
     if (path === "/api/sessions" && request.method() === "POST") {
@@ -841,6 +854,22 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, { status: "ok" });
     }
     if (path === "/api/sessions/folder-counts") return fulfillJson(route, { counts: {} });
+    if (path === "/api/sessions/folder" && request.method() === "PATCH") {
+      // 세션 이동은 목록과 폴더 세션 조회가 함께 따라와야 왕복을 검증할 수 있다.
+      const input = request.postDataJSON() as { sessionIds?: string[]; folderId?: string };
+      const sessionIds = input.sessionIds ?? [];
+      for (const ids of Object.values(runSessions)) {
+        for (const id of sessionIds) {
+          const index = ids.indexOf(id);
+          if (index >= 0) ids.splice(index, 1);
+        }
+      }
+      if (input.folderId) (runSessions[input.folderId] ??= []).push(...sessionIds);
+      for (const session of qaSessions) {
+        if (sessionIds.includes(session.agentSessionId)) session.folderId = input.folderId ?? session.folderId;
+      }
+      return fulfillJson(route, { sessionIds });
+    }
     if (/^\/api\/nodes\/[^/]+\/agents$/.test(path)) {
       const nodeId = decodeURIComponent(path.split("/")[3] ?? "");
       options.onAgentListRequest?.(nodeId);

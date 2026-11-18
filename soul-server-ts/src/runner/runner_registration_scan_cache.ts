@@ -34,6 +34,10 @@ type Entry = {
   jitterMs: number;
 };
 
+export type RunnerRegistrationSnapshotEntry = Pick<Entry, "fingerprint" | "registration"> & {
+  directory: string;
+};
+
 /** Memory owned by a periodic scanner, never by destructive readers. */
 export class RunnerRegistrationScanCache {
   private readonly entries = new Map<string, Entry>();
@@ -44,6 +48,27 @@ export class RunnerRegistrationScanCache {
     notCached: 0,
   };
   constructor(private readonly now: () => number = Date.now) {}
+
+  snapshot(): RunnerRegistrationSnapshotEntry[] {
+    return [...this.entries.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([directory, { fingerprint, registration }]) => ({
+        directory, fingerprint, registration: structuredClone(registration),
+      }));
+  }
+
+  restore(entries: RunnerRegistrationSnapshotEntry[]): void {
+    this.entries.clear();
+    const checkedAt = this.now();
+    for (const [position, entry] of entries.entries()) {
+      this.entries.set(entry.directory, {
+        fingerprint: entry.fingerprint,
+        registration: structuredClone(entry.registration),
+        checkedAt,
+        jitterMs: recheckJitterMs(position),
+      });
+    }
+  }
 
   /**
    * scanPosition은 한 스캔 안에서 이 폴더를 읽는 순번이다. 같은 때 기록된 항목들이 한
@@ -111,7 +136,7 @@ function recheckJitterMs(scanPosition: number): number {
   return slot * RECHECK_JITTER_SLOT_MS;
 }
 
-function canCache(registration: RunnerRegistration): boolean {
+export function canCache(registration: RunnerRegistration): boolean {
   if (registration.pidAlive) return false;
   if (registration.retiredAt) return true;
   const state = registration.lifecycle?.execution_state;

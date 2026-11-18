@@ -303,7 +303,7 @@ describe("beginGenerationRolloverIfPending", () => {
       const event = call[1] as unknown as Record<string, unknown>;
       return event._dedupe_key;
     });
-    const applyingKeys = enqueueMetadataEffect.mock.calls.map((call) =>
+    const applyingKeys = enqueueMetadataEffect.mock.calls.filter((call) => call[1].type === "persistent_generation").map((call) =>
       call[2]?.semanticDedupeKey,
     );
     const selectionKeys = setModelSelection.mock.calls.map((call) => call[2]);
@@ -464,8 +464,8 @@ describe("beginGenerationRolloverIfPending", () => {
     beginGenerationRolloverIfPending(task, agent, makeCatalog());
     const calls: string[] = [];
     const persistence = {
-      enqueueMetadataEffect: vi.fn(async () => {
-        calls.push("metadata");
+      enqueueMetadataEffect: vi.fn(async (_id, entry) => {
+        calls.push(entry.type === "model_backend" ? "backend" : "metadata");
         return 25;
       }),
     } as unknown as EventPersistence;
@@ -480,9 +480,16 @@ describe("beginGenerationRolloverIfPending", () => {
     expect(calls).toEqual([
       "metadata",
       "selection:persistent_generation_model_selection:session-1:2:2026-10-05T00:00:00.000Z",
+      "backend",
     ]);
+    expect(persistence.enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId, { type: "model_backend", value: { backend: "codex" } },
+      expect.objectContaining({ replaceExistingType: "model_backend", waitForAck: true }),
+    );
+    expect(task.recordedModelBackend).toBe("codex");
+    expect(task.metadata).toContainEqual({ type: "model_backend", value: { backend: "codex" } });
     expect(task.persistentGeneration?.pending?.applyingFrom).toBe("native-old");
-    expect(task.metadata?.at(-1)).toMatchObject({
+    expect(task.metadata?.find((item) => item.type === "persistent_generation")).toMatchObject({
       type: "persistent_generation",
       value: {
         pending: {

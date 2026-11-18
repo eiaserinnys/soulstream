@@ -24,6 +24,7 @@ const expectedV3DialogConsumers = [
 ] as const;
 
 const sharedV3DialogConsumers = [
+  "../components/AccessLinksTab.tsx",
   "../components/ConfigModal.tsx",
   "../components/OwnedAgentsTab.tsx",
   "../components/PersistentSessionSettingsDialog.tsx",

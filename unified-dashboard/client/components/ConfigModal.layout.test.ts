@@ -124,7 +124,7 @@ describe("ConfigModal layout", () => {
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      const body = url.includes("session-review-policy")
+      const body = url === '/api/access-links' ? [] : url === '/api/persistent-sessions' ? { sessions: [] } : url.includes("session-review-policy")
         ? {
             policy: {
               key: "session_review_policy",
@@ -184,6 +184,18 @@ describe("ConfigModal layout", () => {
     expect(nav?.querySelectorAll("section")).toHaveLength(3);
     expect([...nav!.querySelectorAll("h3")].map(el => el.textContent)).toEqual(["개인 환경", "작업과 실행", "서버 관리"]);
     expect(nav?.querySelector('[aria-current="page"]')?.textContent).toBe("화면과 읽기");
+  });
+
+  it("places access links after owned agents in personal settings and uses the action footer", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+    const personal = document.querySelector('[data-testid="config-category-nav"] section')!;
+    const names = [...personal.querySelectorAll('button')].map(button => button.textContent);
+    expect(names.slice(0, 3)).toEqual(['화면과 읽기', '내 에이전트', '접속 링크']);
+    clickConfigTab('접속 링크');
+    await settleConfigModal();
+    expect(document.body.textContent).toContain('각 항목의 버튼으로 변경을 적용합니다');
+    expect(document.querySelector('[data-testid="config-save-button"]')).toBeNull();
   });
 
   it("lets config fields collapse to one column before using the two-column desktop layout", async () => {

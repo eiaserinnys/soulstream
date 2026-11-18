@@ -158,7 +158,7 @@ export class TaskEngineTurnRunner {
       effectiveTaskBackend(task, agent),
     );
     const effectiveModel = task.model ?? agent.model;
-    const backend = effectiveTaskBackend(task, agent);
+    const backend = engineBackendId;
     const provider = usageProviderForExecution(
       backend,
       effectiveModel ?? null,

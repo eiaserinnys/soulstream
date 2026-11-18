@@ -157,6 +157,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
   logger: Logger;
   nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">;
   recoveryStorage?: RunnerRecoveryStorage;
+  scanCache?: RunnerRegistrationScanCache;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
   if (!options.closedTailDrainer) {
@@ -175,6 +176,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     taskExecutor: options.taskExecutor,
     closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
+    ...(options.scanCache ? { scanCache: options.scanCache } : {}),
     ...(options.readCentralSession
       ? { readCentralSession: options.readCentralSession }
       : {}),
@@ -205,6 +207,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
       : {}),
     ...(options.recoveryStorage ? { recoveryStorage: options.recoveryStorage } : {}),
   });
+  await coordinator.restoreScanCache();
   return coordinator;
 }
 
@@ -215,13 +218,13 @@ export function composeRunnerReconciliationReporter(
   logger: Pick<Logger, "info" | "warn">,
   nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">,
   recoveryStorage?: RunnerRecoveryStorage,
+  cache: RunnerRegistrationScanCache = new RunnerRegistrationScanCache(),
 ): Partial<RunnerReconciliationReporter> {
   if (!runnerProcessFactory) return {};
   const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
   if (!stateDirectory || !coordinator) {
     throw new Error("runner inventory requires state directory and recovery coordinator");
   }
-  const cache = new RunnerRegistrationScanCache();
   let inventorySequence = 0;
   return {
     listLiveRunnerSessionIds: async () => {

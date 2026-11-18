@@ -24,6 +24,9 @@ jest.mock('../../useSessionCardAnimation', () => ({
 }));
 
 import { FolderSessionHistory } from '../FolderSessionHistory';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 test('첫 요청이 끝나기 전에 겹치는 세션이 노출되어도 새 ID만 요청하고 앞선 응답을 반영한다', async () => {
   useSessionStore.setState({ sessions: {} });
@@ -48,6 +51,7 @@ test('첫 요청이 끝나기 전에 겹치는 세션이 노출되어도 새 ID�
   await act(async () => resolveSecond(sessions.slice(2)));
   expect(screen.getByTestId('task-run-row-C')).toBeTruthy();
   expect(api.getSessionsByIds).toHaveBeenCalledTimes(2);
+  await settleTimers();
 });
 
 beforeEach(() => {

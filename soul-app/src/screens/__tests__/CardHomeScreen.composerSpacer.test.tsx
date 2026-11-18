@@ -58,6 +58,9 @@ import { cardFixture } from '../../test-support/cards';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useCardStore } from '../../store/cardStore';
 import { useUIStore } from '../../store/uiStore';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const mockApi = { listCards: jest.fn(), listCompletedCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
 const mockRenderCounts = { workspace: 0, board: 0, dragCard: 0, postIt: 0 };
@@ -94,6 +97,7 @@ test('home composer height updates only the spacer and does not render the board
   act(() => { fireEvent(dock, 'layout', { nativeEvent: { layout: { height: 120 } } }); });
   expect(mockRenderCounts).toEqual({ workspace: 0, board: 0, dragCard: 0, postIt: 0 });
   expect(screen.getByTestId('home-composer-spacer-review').props.style).toMatchObject({ height: 132, marginTop: -8 });
+  await settleTimers();
 });
 
 test('outer phone composer moves above keyboard and returns without rerendering the workspace', async () => {
@@ -125,4 +129,5 @@ test('outer phone composer moves above keyboard and returns without rerendering 
   expect(StyleSheet.flatten(screen.getByTestId('home-session-composer-dock').props.style).bottom).toBe(12);
   expect(mockRenderCounts.workspace).toBe(0);
   jest.restoreAllMocks();
+  await settleTimers();
 });

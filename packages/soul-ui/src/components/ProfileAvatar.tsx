@@ -12,6 +12,7 @@
  */
 
 import { useState } from "react";
+import { Link, Webhook } from "lucide-react";
 
 interface ProfileAvatarProps {
   role: "user" | "assistant";
@@ -19,12 +20,20 @@ interface ProfileAvatarProps {
   fallbackEmoji: string;
   /** 에이전트별 portrait URL. 있으면 role 기반 URL 대신 사용. */
   portraitUrl?: string | null;
+  external?: { icon: "link" | "webhook"; title: string };
   shape?: 'rounded' | 'circle';
 }
 
-export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, shape = 'rounded' }: ProfileAvatarProps) {
+export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, external, shape = 'rounded' }: ProfileAvatarProps) {
   const [imgError, setImgError] = useState(false);
 
+  if (external) {
+    const Icon = external.icon === "webhook" ? Webhook : Link;
+    return <span role="img" aria-label={`외부 연동 ${external.title}`} title={external.title}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--lg-line)] bg-[var(--control-surface)] text-muted-foreground">
+      <Icon size={16} aria-hidden="true" />
+    </span>;
+  }
   const showPortrait = !!portraitUrl;
   if (!showPortrait || imgError) {
     return (

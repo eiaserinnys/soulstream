@@ -435,6 +435,22 @@ function ReviewPersistentChatColumn({
   );
 }
 
+function ExternalSenderSamples({ presentation }: { presentation: 'default' | 'manuscript' }) {
+  const callers = [
+    { source: 'browser', display_name: '디렉터' },
+    { source: 'agent', display_name: '로젤린' },
+    { source: 'external', transport: 'access_link', display_name: '외부 작업자' },
+    { source: 'external', transport: 'webhook', display_name: '알림 서비스' },
+    { source: 'external', transport: 'access_link', display_name: '가'.repeat(80) },
+  ];
+  return <View testID={`external-sender-${presentation}`}>
+    {callers.map((caller, index) => <UserMessage key={index} presentation={presentation}
+      variant={index === 3 ? 'intervention' : 'normal'} event={{ id: String(index),
+        type: index === 3 ? 'intervention_sent' : 'user_message',
+        data: { text: ['이 내용을 확인해 주세요.', '조사 결과를 전합니다.', '접속 링크로 요청했습니다.', '웹훅에서 추가한 메시지입니다.', '긴 이름을 확인합니다.'][index], caller_info: caller } }} />)}
+  </View>;
+}
+
 export function ReviewChat() {
   const t = useTokens();
   const { width } = useWindowDimensions();
@@ -453,6 +469,7 @@ export function ReviewChat() {
     : null;
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n```ts\nconst answer = "코드 블록 복사";\n```\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
+  if (sample === 'external-sender') return <ExternalSenderSamples presentation={new URLSearchParams(window.location.search).get('presentation') === 'manuscript' ? 'manuscript' : 'default'} />;
   if (sample === 'pas-images') return <ReviewChatPasImageSample />;
   return <>
     <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">
@@ -502,6 +519,9 @@ export function ReviewChat() {
       <View testID="review-chat-composer-surface-none" style={{ padding: t.uiSpacing.md }}>
         <TodayCardComposer api={composerApi} />
       </View>
+    </ReviewSection>
+    <ReviewSection title="외부 발신자 기본과 원고">
+      <ExternalSenderSamples presentation="default" /><ExternalSenderSamples presentation="manuscript" />
     </ReviewSection>
     <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">
       <UserMessage event={message('user_message', '이 프로젝트의 화면을 검수해주세요. 긴 문장과 여러 줄을 확인합니다.')} />

@@ -7,6 +7,9 @@ import { registerConversationRoutes } from "../src/conversation/conversation_rou
 import { createSessionResourceAccessProvider } from "../src/session/session_resource_access.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
 import { ConversationHistory } from "../src/conversation/conversation_history.js";
+import { sourceEvent } from "../src/conversation/conversation_history_source.js";
+import { ConversationProjection } from "../src/conversation/conversation_projection.js";
+import type { Binding } from "../src/conversation/conversation_types.js";
 
 describe("conversation items and events", () => {
   let db: FullSchemaPostgresHarness;
@@ -79,6 +82,81 @@ describe("conversation items and events", () => {
   afterAll(async () => { await app?.close(); await db?.cleanup(); });
   const get = (path: string, headers: Record<string, string> = { authorization: "Bearer test" }) =>
     app.inject({ method: "GET", url: base + path, headers });
+  it("round trips a persisted history, resumes it and cascades on session deletion", async () => {
+    const id = "snapshot-history";
+    await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset) VALUES (${id},'allowed-folder','sol')`;
+    const binding: Binding = {
+      account_id:"person", namespace:"n", external_key:"snapshot", session_id:id, active_session_id:null,
+      selected_model:"sol", creation_request:null, phase:"complete", instruction_id:null, notices:[],
+      archived:false, first_input_is_initial_instruction:false,
+    };
+    await insertFor(id, 1, "user_message", {text:"질문", caller_info:{source:"browser"}});
+    await insertFor(id, 999, "user_message", {text:"숨김", purpose:"cache_keepalive", input_id:"hidden"});
+    await insertFor(id, 1000, "tool_start", {tool_name:"숨김", input_id:"hidden"});
+    await new ConversationHistory(db.sql as never).load(binding);
+    const [saved] = await db.sql`SELECT last_event_id FROM conversation_history_snapshots WHERE session_id=${id}`;
+    expect(saved?.last_event_id).toBe(1000);
+    await insertFor(id, 1001, "assistant_message", {content:"숨김", input_id:"hidden"});
+    await insertFor(id, 1002, "user_message", {text:"다음", caller_info:{source:"browser"}});
+    const queries: string[] = [];
+    const tracedSql = new Proxy(db.sql, { apply(target, receiver, args) {
+      if (Array.isArray(args[0])) queries.push((args[0] as string[]).join("?"));
+      return Reflect.apply(target, receiver, args);
+    } });
+    const resumed = await new ConversationHistory(tracedSql as never).load(binding);
+    const eventRead = queries.find(query => query.includes("FROM events") && !query.includes("MAX(id)"));
+    expect(eventRead).toContain("id >");
+    await db.sql`DELETE FROM conversation_history_snapshots WHERE session_id=${id}`;
+    const fresh = await new ConversationHistory(db.sql as never).load(binding);
+    expect({items:resumed.items,cursor:resumed.cursor,state:resumed.projection.snapshot()})
+      .toEqual({items:fresh.items,cursor:fresh.cursor,state:fresh.projection.snapshot()});
+    expect((await db.sql`SELECT session_id FROM conversation_history_snapshots WHERE session_id=${id}`)).toHaveLength(1);
+    await db.sql`DELETE FROM sessions WHERE session_id=${id}`;
+    expect((await db.sql`SELECT session_id FROM conversation_history_snapshots WHERE session_id=${id}`)).toHaveLength(0);
+  });
+  it("matches projection of original payloads on full and incremental history loads", async () => {
+    const id = "slim-history";
+    await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset) VALUES (${id},'allowed-folder','sol')`;
+    const binding: Binding = {
+      account_id:"person", namespace:"n", external_key:"slim", session_id:id, active_session_id:null,
+      selected_model:"sol", creation_request:null, phase:"complete", instruction_id:null, notices:[],
+      archived:false, first_input_is_initial_instruction:false,
+    };
+    const large = "내용".repeat(50_000);
+    const events: Array<[number, string, Record<string, unknown>]> = [
+      [1,"user_message",{text:"keepalive",purpose:"cache_keepalive",input_id:"hidden"}],
+      [2,"complete",{large}],
+      [3,"user_message",{text:"질문",caller_info:{source:"browser"}}],
+      [4,"assistant_message",{content:"답변"}],
+      [5,"tool_result",{result:large}],
+      [6,"tool_start",{tool_name:"숨긴 도구",preparedInputId:"hidden",tool_input:{large}}],
+    ];
+    for (const [eventId,type,payload] of events) await insertFor(id,eventId,type,payload);
+    const history = new ConversationHistory(db.sql as never);
+    const compare = async () => {
+      const rows = await db.sql<Array<{id:number; event_type:string; payload:Record<string, unknown>; created_at:Date}>>`
+        SELECT id,event_type,payload,created_at FROM events WHERE session_id=${id} ORDER BY id`;
+      const projection = new ConversationProjection(false);
+      const items = rows.flatMap(row => {
+        const item = projection.apply(sourceEvent(row)).item;
+        return item ? [{position:String(row.id),session:id,item}] : [];
+      });
+      const loaded = await history.load(binding);
+      expect(loaded.items).toEqual(items);
+      expect(loaded.projection.activity()).toEqual(projection.activity());
+      return loaded;
+    };
+    const full = await compare();
+    expect(full.items.map(({item}) => item.text)).toEqual(["질문", "답변"]);
+    expect(full.projection.activity()).toEqual({busy:true,tool:null});
+
+    await insertFor(id,7,"complete",{large});
+    await insertFor(id,8,"user_message",{text:"다음 질문",caller_info:{source:"browser"}});
+    await insertFor(id,9,"tool_start",{tool_name:"Read",inputId:"visible",tool_input:{large}});
+    const incremental = await compare();
+    expect(incremental.items.map(({item}) => item.text)).toEqual(["질문", "답변", "다음 질문"]);
+    expect(incremental.projection.activity()).toEqual({busy:true,tool:"Read"});
+  });
   it("hides old card notice turns in items and SSE while preserving mixed input replies", async () => {
     const id = "card-notice-history";
     await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset) VALUES (${id},'allowed-folder','sol')`;

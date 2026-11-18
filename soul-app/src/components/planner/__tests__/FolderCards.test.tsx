@@ -10,8 +10,11 @@ jest.mock('../CardDetailSheet', () => ({ CardDetailSheet: ({ cardId }: any) => c
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
 import { FolderCards, type FolderCardsHandle } from '../FolderCards';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
-test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가는 입력창을 연다', () => {
+test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가는 입력창을 연다', async () => {
   mockFolder.mockReturnValue({ data: { cards: [cardFixture({ status: 'review' }), cardFixture({ id: 'card-2', title: '진행 카드', status: 'running' })] }, loading: false, error: null });
   const screen = render(<FolderCards api={null} folderId="folder-1" />);
   expect(screen.getAllByText('검수 대기')).toHaveLength(1);
@@ -20,9 +23,10 @@ test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가�
   expect(screen.getByText('상세 card-1')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('카드 추가'));
   expect(screen.getByLabelText('맡길 일')).toBeTruthy();
+  await settleTimers();
 });
 
-test('듀오 폴더 카드 액션은 본문에서 숨기고 레일의 추가 동작으로 입력창을 토글한다', () => {
+test('듀오 폴더 카드 액션은 본문에서 숨기고 레일의 추가 동작으로 입력창을 토글한다', async () => {
   mockFolder.mockReturnValue({ data: { cards: [] }, loading: false, error: null });
   const ref = React.createRef<FolderCardsHandle>();
   const screen = render(<DuoSideBandContext.Provider value={true}><FolderCards ref={ref} api={null} folderId="folder-1" /></DuoSideBandContext.Provider>);
@@ -32,4 +36,5 @@ test('듀오 폴더 카드 액션은 본문에서 숨기고 레일의 추가 동
   expect(screen.getByLabelText('맡길 일')).toBeTruthy();
   act(() => { ref.current?.toggleCreate(); });
   expect(screen.queryByLabelText('맡길 일')).toBeNull();
+  await settleTimers();
 });

@@ -26,7 +26,7 @@ export const conversationRouteAuthRequirements = {
 } as const;
 export type ConversationRouteOptions = { messages?: ConversationMessageService; service: ConversationService; resolveAccount(request: FastifyRequest): Promise<string | null>; liveEvents?: SessionHistoryLiveEventSource; closeAfterHistorySync?: boolean };
 export function registerConversationRoutes(app: FastifyInstance, options: ConversationRouteOptions): void {
-  const history = new ConversationHistory(options.service.historySql);
+  const history = new ConversationHistory(options.service.historySql, app.log);
   const wrap = (handler: (request: FastifyRequest, account: string, reply: FastifyReply) => Promise<unknown> | unknown) =>
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {

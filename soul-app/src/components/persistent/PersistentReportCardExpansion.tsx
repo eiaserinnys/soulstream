@@ -1,9 +1,10 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Text, View, useWindowDimensions } from 'react-native';
+import { Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardCheckItem } from '../../api/cardTypes';
 import type { PersistentReportEntry } from '../../api/types';
 import { useCardActions } from '../../hooks/useCardActions';
+import { FrameLoading } from '../FrameLoading';
 import { useCardComments } from '../../hooks/useCardComments';
 import { useCardDetail } from '../../hooks/useCardDetail';
 import { useCardItems } from '../../hooks/useCardItems';
@@ -105,7 +106,7 @@ export function PersistentReportCardExpansion({ api, entry, onQuestionView }: {
 
   if (!api) return <Text style={styles.error}>카드를 불러오지 못했습니다.</Text>;
   if (number === null && !entry.card_id) return <Text style={styles.error}>카드 연결을 찾지 못했습니다.</Text>;
-  if (currentLookup?.loading || (!entry.card_id && !currentLookup)) return <ActivityIndicator color={t.colors.accent} />;
+  if (currentLookup?.loading || (!entry.card_id && !currentLookup)) return <FrameLoading testID="persistent-report-card-loading" inline />;
   if (currentLookup?.error || error) return <View testID={`persistent-report-card-error-${entry.key}`} style={{ gap: t.uiSpacing.sm }}>
     <SheetErrorNotice summary="카드를 불러오지 못했습니다." detail={sheetErrorDetail(currentLookup?.error ?? error)} />
     <GlassButton testID="persistent-report-card-retry" variant="paper" busy={detailRefreshing || currentLookup?.loading}
@@ -114,7 +115,7 @@ export function PersistentReportCardExpansion({ api, entry, onQuestionView }: {
     </GlassButton>
   </View>;
   if (!cardId) return <Text style={styles.error}>카드 연결을 찾지 못했습니다.</Text>;
-  if (!detail || detail.card.id !== cardId) return <ActivityIndicator color={t.colors.accent} />;
+  if (!detail || detail.card.id !== cardId) return <FrameLoading testID="persistent-report-card-detail-loading" inline />;
 
   return <View testID={`persistent-report-card-expansion-${entry.key}`} style={{ gap: t.uiSpacing.lg }}>
     {detail.card.now ? <CardNowPanel now={detail.card.now} history={detail.nowHistory ?? []} /> : null}

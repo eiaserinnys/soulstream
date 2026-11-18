@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type {
   CreateSubscriptionInput,
@@ -10,10 +10,7 @@ import type {
 
 const DEFAULT_DELIVERY_LIMIT = 50;
 const MAX_DELIVERY_LIMIT = 200;
-
-export function generateSigningSecret(): string {
-  return "whsec_" + randomBytes(32).toString("base64");
-}
+const RECENT_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export type OutboundWebhookRepositoryOptions = {
   resolveSql: () => Promise<SqlClient>;
@@ -61,12 +58,19 @@ export class OutboundWebhookRepository {
 
   async listSubscriptions(ownerEmail: string): Promise<WebhookSubscriptionSummary[]> {
     const sql = await this.sql();
-    const rows = await sql<WebhookSubscriptionRow[]>`
-      SELECT * FROM webhook_subscriptions
-      WHERE owner_email = ${ownerEmail}
-      ORDER BY created_at DESC, id
+    const since = new Date(this.now().getTime() - RECENT_FAILURE_WINDOW_MS);
+    const rows = await sql<Array<WebhookSubscriptionRow & { recent_failures: number }>>`
+      SELECT subscription.*, (
+        SELECT COUNT(*)::int FROM webhook_deliveries delivery
+        WHERE delivery.subscription_id = subscription.id
+          AND delivery.state = 'dead'
+          AND delivery.created_at >= ${since}
+      ) AS recent_failures
+      FROM webhook_subscriptions subscription
+      WHERE subscription.owner_email = ${ownerEmail}
+      ORDER BY subscription.created_at DESC, subscription.id
     `;
-    return rows.map((row) => summaryOf(row));
+    return rows.map((row) => summaryOf(row, row.recent_failures));
   }
 
   async getSubscription(
@@ -165,6 +169,7 @@ export class OutboundWebhookRepository {
 
   async resetForRedelivery(
     ownerEmail: string,
+    subscriptionId: string,
     deliveryId: string,
   ): Promise<RedeliveryReset> {
     const sql = await this.sql();
@@ -173,7 +178,9 @@ export class OutboundWebhookRepository {
         SELECT subscription.active
         FROM webhook_deliveries delivery
         JOIN webhook_subscriptions subscription ON subscription.id = delivery.subscription_id
-        WHERE delivery.id = ${deliveryId} AND subscription.owner_email = ${ownerEmail}
+        WHERE delivery.id = ${deliveryId}
+          AND delivery.subscription_id = ${subscriptionId}
+          AND subscription.owner_email = ${ownerEmail}
         FOR UPDATE OF subscription
       `;
       const row = rows[0];

@@ -1,5 +1,9 @@
 import { conversationRouteAuthRequirements } from "../conversation/conversation_routes.js";
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
+import { accessLinkRouteAuthRequirements } from "../external_access/access_link_routes.js";
+import { outboundWebhookRouteAuthRequirements } from "../webhooks/outbound_routes.js";
+import { inboundHookRouteAuthRequirements } from "../webhooks/inbound_hook_routes.js";
+import { inboundWebhookRouteAuthRequirements } from "../webhooks/inbound_webhook_routes.js";
 import { oauthRouteAuthRequirements } from "../oauth/oauth_routes.js";
 import { mcpHostRouteAuthRequirements } from "../mcp/mcp_host_routes.js";
 import { scheduleHostRouteAuthRequirements } from "../schedule/schedule_host_route.js";
@@ -59,6 +63,10 @@ export const routeCoverageOwners = [
   { owner: "conversation", authRequirements: conversationRouteAuthRequirements },
   { owner: "oauth", authRequirements: oauthRouteAuthRequirements },
   { owner: "owned.agents", authRequirements: ownedAgentRouteAuthRequirements },
+  { owner: "access.links", authRequirements: accessLinkRouteAuthRequirements },
+  { owner: "webhooks.outbound", authRequirements: outboundWebhookRouteAuthRequirements },
+  { owner: "webhooks.inbound", authRequirements: inboundHookRouteAuthRequirements },
+  { owner: "webhooks.inbound.manage", authRequirements: inboundWebhookRouteAuthRequirements },
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
   { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
@@ -127,6 +135,14 @@ export const tsOnlyRouteKeys = [
   ...Object.keys(oauthRouteAuthRequirements),
   "GET /api/owned-agents", "POST /api/owned-agents", "PATCH /api/owned-agents/{id}",
   "POST /api/owned-agents/{id}/keys", "DELETE /api/owned-agents/{id}/keys/{keyId}", "POST /api/owned-agents/register-existing",
+  "POST /api/access-links", "GET /api/access-links", "DELETE /api/access-links/{id}",
+  "POST /api/webhooks/outbound", "GET /api/webhooks/outbound",
+  "GET /api/webhooks/outbound/{id}/deliveries",
+  "POST /api/webhooks/outbound/{id}/deliveries/{delivery_id}/redeliver",
+  "PATCH /api/webhooks/outbound/{id}", "DELETE /api/webhooks/outbound/{id}",
+  "POST /api/hooks/{grant_id}", "GET /api/hooks/{grant_id}/requests/{request_id}",
+  "POST /api/webhooks/inbound", "GET /api/webhooks/inbound",
+  "GET /api/webhooks/inbound/{id}/requests", "DELETE /api/webhooks/inbound/{id}",
   "POST /api/mcp/host/{tool}",
   "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",

@@ -112,7 +112,7 @@ function freshTask(): Task {
 /** 노드 프로세스 하나다. 서버 쪽 세션은 이미 interrupted로 닫혀 있다. */
 function boot(disk: Disk, enqueue: ReturnType<typeof vi.fn>, options: { failFirstRetire?: boolean } = {}) {
   const task = freshTask();
-  const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+  const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() };
   let failRetire = options.failFirstRetire === true;
   const retireTerminalRegistration = vi.fn(async (_paths: unknown, registrationId: string | null) => {
     if (failRetire) {

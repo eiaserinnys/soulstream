@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 import { eventName, identitySchema, maxLeaseMs, subscribeSchema, type SubscriptionRecord } from "./contracts.js";
 import { SubscriptionStore } from "./store.js";
 import { postWebhook, WebhookError, type WebhookPost } from "./webhook_transport.js";
 import { standardWebhookHeaders } from "../webhooks/standard_webhook_signature.js";
+import { sendVerificationChallenge } from "../webhooks/verification_challenge.js";
 export { eventName } from "./contracts.js";
 
 export function credentialOwner(path: string, credential: string) {
@@ -62,12 +62,14 @@ export class ExternalEventsService {
     // Reuse only this owner's recent, still-active verification of the same URL and key.
     const cached = this.valid(previous) && previous.secret === request.delivery.secret && verifiedAt - previous.verifiedAt <= 300_000;
     if (!cached) {
-      const challenge = randomUUID(); const body = JSON.stringify({ type: "verification", challenge });
       try {
-        const response = await this.post(request.delivery.url, body, this.headers(request.delivery.secret, id, "verification_" + randomUUID(), body));
-        const echo: unknown = JSON.parse(response.body);
-        if (response.status < 200 || response.status >= 300 || !echo || typeof echo !== "object"
-          || !("challenge" in echo) || typeof echo.challenge !== "string" || !constantTimeStringEqual(challenge, echo.challenge)) throw new Error();
+        await sendVerificationChallenge({
+          post: this.post,
+          url: request.delivery.url,
+          secret: request.delivery.secret,
+          now: this.now,
+          extraHeaders: { "X-MCP-Subscription-Id": id },
+        });
       } catch { throw new WebhookError("verification_failed"); }
     }
     const expiresAt = this.now() + Math.min(request.ttlMs ?? maxLeaseMs, maxLeaseMs);

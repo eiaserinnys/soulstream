@@ -80,7 +80,7 @@ function resolveRequiredPreset(
 }
 
 export function resolveOpenCodeMcpToolAllowlist(
-  task: Pick<Task, "model" | "modelPreset" | "modelPresetBackend">,
+  task: Pick<Task, "model" | "modelPreset" | "modelPresetBackend" | "recordedModelBackend">,
   agent: AgentProfile,
   modelCatalog?: ModelPresetResolver,
 ): Record<string, string[]> | undefined {
@@ -93,8 +93,8 @@ export function resolveOpenCodeMcpToolAllowlist(
  * Rebuilds non-persisted preset runtime state for hydrated sessions.
  *
  * The resolved model stored with the session is authoritative across catalog
- * changes. Backend and env are deliberately reloaded from the node-local
- * catalog because they are runtime-only and secrets must never enter the DB.
+ * changes. The runtime backend and env are reloaded from the node-local catalog;
+ * only the backend is also recorded, never the env.
  */
 export function applyModelPresetRuntime(
   task: Task,
@@ -121,10 +121,10 @@ export function applyModelPresetRuntime(
 }
 
 export function effectiveTaskBackend(
-  task: Pick<Task, "modelPresetBackend">,
+  task: Pick<Task, "modelPresetBackend" | "recordedModelBackend">,
   agent: AgentProfile,
 ): AgentProfile["backend"] {
-  return task.modelPresetBackend ?? agent.backend;
+  return (task.modelPresetBackend ?? task.recordedModelBackend ?? agent.backend) as AgentProfile["backend"];
 }
 
 function normalizeOptionalString(value: string | null | undefined): string | undefined {

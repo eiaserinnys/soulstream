@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RunnerRegistrationScanCache } from "../../src/runner/runner_registration_scan_cache.js";
+import { RunnerRegistrationScanCacheSnapshot } from "../../src/runner/runner_registration_scan_cache_snapshot.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 
 const FULL_RECHECK_INTERVAL_MS = 300_000;
@@ -16,6 +17,74 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
+});
+
+describe("persistent registration scan cache", () => {
+  it("restores hits, rereads changed fingerprints, and spreads rechecks", async () => {
+    const root = await makeStateDirectory();
+    let now = START;
+    const first = new RunnerRegistrationScanCache(() => now);
+    const fresh = new Map<string, ReturnType<typeof vi.fn>>();
+    const directories = await Promise.all(Array.from({ length: 4 }, (_, i) =>
+      makeRegistrationDirectory(root, `persist-${i}`)));
+    for (const [i, directory] of directories.entries()) {
+      fresh.set(directory, vi.fn(async () => terminalRegistration(`persist-${i}`)));
+      await first.read(directory, fresh.get(directory)!, i);
+    }
+    const store = new RunnerRegistrationScanCacheSnapshot(root, first);
+    expect(await store.persist()).toBe(true);
+    now += 10_000;
+    const restored = new RunnerRegistrationScanCache(() => now);
+    expect(await new RunnerRegistrationScanCacheSnapshot(root, restored).restore())
+      .toEqual({ restored: 4, discarded: 0 });
+    await readAll(restored, directories, fresh);
+    expect(freshReads(fresh)).toBe(4);
+    await appendFile(join(directories[3]!, "runner-config.json"), " ");
+    await restored.read(directories[3]!, fresh.get(directories[3]!)!, 3);
+    expect(freshReads(fresh)).toBe(5);
+    now += FULL_RECHECK_INTERVAL_MS + SCAN_INTERVAL_MS;
+    await readAll(restored, directories, fresh);
+    expect(freshReads(fresh)).toBe(7);
+  });
+
+  it("starts empty for missing, incompatible, or broken snapshots and discards malformed entries", async () => {
+    const root = await makeStateDirectory();
+    const path = join(root, ".registration-scan-cache.json");
+    const cache = new RunnerRegistrationScanCache(() => START);
+    const store = new RunnerRegistrationScanCacheSnapshot(root, cache);
+    expect(await store.restore()).toEqual({ restored: 0, discarded: 0, reason: "missing" });
+    await writeFile(path, JSON.stringify({ version: -1, entries: [] }));
+    expect(await store.restore()).toEqual({ restored: 0, discarded: 0, reason: "version" });
+    await writeFile(path, "{");
+    expect(await store.restore()).toEqual({ restored: 0, discarded: 0, reason: "parse" });
+    const directory = await makeRegistrationDirectory(root, "valid");
+    await cache.read(directory, async () => terminalRegistration("valid"));
+    await store.persist();
+    const snapshot = JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8"));
+    snapshot.entries.push({ ...snapshot.entries[0], registration: { ...snapshot.entries[0].registration, config: {} } });
+    await writeFile(path, JSON.stringify(snapshot));
+    const fresh = new RunnerRegistrationScanCache(() => START);
+    expect(await new RunnerRegistrationScanCacheSnapshot(root, fresh).restore())
+      .toEqual({ restored: 1, discarded: 1 });
+  });
+
+  it("writes only when snapshot content changes, not after a full recheck alone", async () => {
+    const root = await makeStateDirectory();
+    const directory = await makeRegistrationDirectory(root, "unchanged");
+    let now = START;
+    let current = terminalRegistration("unchanged");
+    const cache = new RunnerRegistrationScanCache(() => now);
+    const store = new RunnerRegistrationScanCacheSnapshot(root, cache);
+    await cache.read(directory, async () => current);
+    expect(await store.persist()).toBe(true);
+    now += FULL_RECHECK_INTERVAL_MS;
+    await cache.read(directory, async () => current);
+    expect(await store.persist()).toBe(false);
+    now += FULL_RECHECK_INTERVAL_MS;
+    current = { ...current, retiredAt: "2026-11-17T00:00:00.000Z" };
+    await cache.read(directory, async () => current);
+    expect(await store.persist()).toBe(true);
+  });
 });
 
 async function makeStateDirectory(): Promise<string> {
@@ -33,7 +102,19 @@ async function makeRegistrationDirectory(root: string, name: string): Promise<st
 
 function terminalRegistration(sessionId: string): RunnerRegistration {
   return {
-    config: { sessionId, paths: { sessionDirectory: `/runner/${sessionId}` } },
+    config: {
+      schemaVersion: 1, sessionId, backend: "codex",
+      agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/workspace/a" },
+      paths: {
+        sessionDirectory: `/runner/${sessionId}`, databasePath: `/runner/${sessionId}/runner.sqlite`,
+        socketPath: `/runner/${sessionId}/runner.sock`, pidPath: `/runner/${sessionId}/runner.pid`,
+        lockPath: `/runner/${sessionId}/runner.lock`, configPath: `/runner/${sessionId}/runner-config.json`,
+      },
+      codeSha: "sha-a", snapshotPath: "/release/sha-a", codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: true, claudeRuntimeIdleTtlMs: 300_000, claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 600_000, internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexHome: null, rolloutRoot: null,
+    },
     pid: null,
     pidAlive: false,
     registeredAtMs: 0,

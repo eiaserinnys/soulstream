@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import type { ApiClient } from '../api/client';
 import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
+import { FrameLoading } from '../components/FrameLoading';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { StarredFolderList } from '../components/planner/StarredFolderList';
@@ -41,6 +42,7 @@ export function StarredFoldersWorkspace({ api, active = true, embedded = false, 
     try { await starred.refresh(); }
     finally { setPullRefreshing(false); }
   }, [pullRefreshing, starred.refresh]);
+  const firstLoading = starred.loading && starred.data.items.length === 0;
   const moveFolderOrder = useCallback(async (sourcePageId: string, beforePageId: string | null) => {
     try {
       await starred.moveFolderOrder(sourcePageId, beforePageId);
@@ -63,22 +65,25 @@ export function StarredFoldersWorkspace({ api, active = true, embedded = false, 
         <RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />
       )}
     >
-      <StarredFolderList
-        folders={starred.data.items}
-        loading={starred.loading}
-        error={starred.error}
-        hasMore={!!starred.data.nextCursor}
-        onLoadMore={starred.loadMore}
-        onRefresh={starred.refresh}
-        refreshRequired={starred.refreshRequired}
-        onSelect={(folder) => onOpenFolder?.(folder)}
-        onLongPress={(folder) => menus.openFolderMenu(folder, () => onOpenFolder?.(folder))}
-        onMove={moveFolderOrder}
-        onDragStateChange={setDragging}
-        reordering={starred.reordering}
-      />
+      {firstLoading ? null : (
+        <StarredFolderList
+          folders={starred.data.items}
+          loading={starred.loading}
+          error={starred.error}
+          hasMore={!!starred.data.nextCursor}
+          onLoadMore={starred.loadMore}
+          onRefresh={starred.refresh}
+          refreshRequired={starred.refreshRequired}
+          onSelect={(folder) => onOpenFolder?.(folder)}
+          onLongPress={(folder) => menus.openFolderMenu(folder, () => onOpenFolder?.(folder))}
+          onMove={moveFolderOrder}
+          onDragStateChange={setDragging}
+          reordering={starred.reordering}
+        />
+      )}
     </ScrollView>
-    {starred.loading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+    {starred.loading && !firstLoading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+    {firstLoading && !pullRefreshing ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="starred-loading" /></View> : null}
     </View>
   );
 }

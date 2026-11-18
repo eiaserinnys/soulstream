@@ -408,6 +408,19 @@ describe("event ingress observability tools", () => {
       since: "2026-11-17T00:00:00.000Z", cursor: "2026-11-17T00:00:00.000Z|dead",
     });
   });
+  it("forwards latency window and node filters and returns the host result", async () => {
+    const f = fixture();
+    const result = {
+      window: { since: "2026-11-15T00:00:00.000Z", until: "2026-11-17T00:00:00.000Z" },
+      overall: { count: 0, p50_ms: null, p90_ms: null, p99_ms: null, max_ms: null },
+      by_node: [], slowest: [],
+    };
+    const deliveryLatency = vi.fn(async () => result);
+    f.options.cluster.eventIngress = { listDeadLetters: vi.fn(), deliveryLatency } as never;
+    const input = { since: result.window.since, until: result.window.until, node_id: "node-a" };
+    expect(await f.call("get_event_ingress_delivery_latency", input)).toMatchObject({ structuredContent: result });
+    expect(deliveryLatency).toHaveBeenCalledWith(input);
+  });
   it("reports an unconfigured host instead of guessing", async () => {
     const f = fixture();
     expect(await f.call("get_event_ingress_delivery_latency", {}))

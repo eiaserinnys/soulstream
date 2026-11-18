@@ -24,9 +24,14 @@ function createDb() {
     rows.sort((a, b) => a.id - b.id);
     state.events.set(session, rows);
   };
-  const sql = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
-    const text = parts.join("?").replace(/\s+/g, " ").trim();
+  const sql = Object.assign(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+    const fragment = values[0] as { sqlFragment?: string } | undefined;
+    const text = (fragment?.sqlFragment
+      ? parts[0] + fragment.sqlFragment + parts.slice(1).join("?")
+      : parts.join("?")).replace(/\s+/g, " ").trim();
+    if (fragment?.sqlFragment) values.shift();
     queries.push({ text, values });
+    if (text.includes("FROM conversation_history_snapshots")) return [];
     if (text.includes("FROM conversation_executions")) return state.executions;
     if (text.includes("MAX(id)")) {
       const rows = state.events.get(values[0] as string) ?? [];
@@ -54,7 +59,7 @@ function createDb() {
         && asset.upload_status === "committed" && asset.garbage_collected_at === null);
     }
     throw new Error(`unexpected query: ${text}`);
-  }) as unknown as SqlClient;
+  }, { unsafe: (sqlFragment: string) => ({ sqlFragment }) }) as unknown as SqlClient;
   return { state, queries, add, sql };
 }
 
@@ -197,7 +202,7 @@ describe("conversation history incremental projection cache", () => {
     expect(eventQueries(db.queries)).toHaveLength(0);
   });
 
-  it("expires ten minutes after the cache entry was created, even when it is used", async () => {
+  it("keeps an active entry beyond ten minutes and expires it after ten idle minutes", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-17T00:00:00Z"));
     const db = createDb();
@@ -218,12 +223,38 @@ describe("conversation history incremental projection cache", () => {
 
     vi.setSystemTime(new Date("2026-11-17T00:10:00Z"));
     db.queries.length = 0;
+    await history.load(binding());
+    expect(eventQueries(db.queries)).toHaveLength(0);
+
+    vi.setSystemTime(new Date("2026-11-17T00:20:00Z"));
+    db.queries.length = 0;
     const expired = await history.load(binding());
     const cold = eventQueries(db.queries);
     expect(cold).toHaveLength(1);
     expect(cold[0]!.text).not.toContain("id >");
     expect(snapshot(expired)).toEqual(snapshot(await new ConversationHistory(db.sql).load(binding())));
     expect(snapshot(warm).items).toEqual(snapshot(expired).items);
+  });
+
+  it("expires an actively used entry sixty minutes after creation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-17T00:00:00Z"));
+    const db = createDb();
+    seedConversation(db);
+    const history = new ConversationHistory(db.sql);
+    await history.load(binding());
+
+    for (let minute = 5; minute < 60; minute += 5) {
+      vi.setSystemTime(new Date(`2026-11-17T00:${String(minute).padStart(2, "0")}:00Z`));
+      db.queries.length = 0;
+      await history.load(binding());
+      expect(eventQueries(db.queries)).toHaveLength(0);
+    }
+    vi.setSystemTime(new Date("2026-11-17T01:00:00Z"));
+    db.queries.length = 0;
+    await history.load(binding());
+    expect(eventQueries(db.queries)).toHaveLength(1);
+    expect(eventQueries(db.queries)[0]!.text).not.toContain("id >");
   });
 
   it("discards a partially applied entry when incremental enrichment fails", async () => {

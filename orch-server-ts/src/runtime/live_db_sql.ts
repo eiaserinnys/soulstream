@@ -30,6 +30,8 @@ export type LivePostgresFactory = (
 
 export type LivePostgresOptions = {
   readonly max: number;
+  // Runtime option omitted from the postgres.js 3.4.9 types.
+  readonly max_pipeline?: number;
   readonly pipeline?: boolean;
   readonly connect_timeout?: number;
   readonly connection: {
@@ -96,8 +98,8 @@ export type CreateLiveDbSqlResolverOptions = {
 };
 
 // postgres.js creates a separate max: 1 client for sql.listen(), so this keeps
-// ten request-query connections available while LISTEN raises the total ceiling to eleven.
-const DEFAULT_POSTGRES_MAX_CONNECTIONS = 10;
+// twenty request-query connections available while LISTEN raises the total ceiling to twenty-one.
+const DEFAULT_POSTGRES_MAX_CONNECTIONS = 20;
 // postgres.js has no asyncpg-style command_timeout; PostgreSQL statement_timeout
 // is the explicit server-side equivalent for executable commands.
 const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 30_000;
@@ -307,6 +309,9 @@ export function createLiveDbSqlResolver(
       const factory = options.postgresFactory ?? defaultLivePostgresFactory;
       sql = factory(databaseUrl, {
         max: maxConnections,
+        // Wait for the first free connection instead of queuing behind a slow
+        // query on a busy connection when the pool is full (card #1628).
+        max_pipeline: 1,
         connection: {
           statement_timeout: statementTimeoutMs,
           idle_in_transaction_session_timeout: idleInTransactionTimeoutMs,

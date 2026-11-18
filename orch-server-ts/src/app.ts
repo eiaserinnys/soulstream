@@ -1,5 +1,9 @@
 import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
 import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
+import { registerAccessLinkRoutes, type AccessLinkRouteOptions } from "./external_access/access_link_routes.js";
+import { registerOutboundWebhookRoutes, type OutboundWebhookRouteOptions } from "./webhooks/outbound_routes.js";
+import { registerInboundHookRoutes, type InboundHookRouteOptions } from "./webhooks/inbound_hook_routes.js";
+import { registerInboundWebhookRoutes, type InboundWebhookRouteOptions } from "./webhooks/inbound_webhook_routes.js";
 import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "./mcp/types.js";
@@ -255,6 +259,10 @@ export type CreateAppOptions = {
   recurringJobHostRoutes?: RecurringJobHostRouteOptions;
   externalIngress?: ExternalIngressConfig;
   ownedAgentRoutes?: OwnedAgentRouteOptions;
+  accessLinkRoutes?: AccessLinkRouteOptions;
+  outboundWebhookRoutes?: OutboundWebhookRouteOptions;
+  inboundHookRoutes?: InboundHookRouteOptions;
+  inboundWebhookRoutes?: InboundWebhookRouteOptions;
   resolveSessionOwner?: McpHostOptions["resolveSessionOwner"];
   externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
@@ -343,11 +351,6 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     ...(options.mcpHostRoutes.cluster?.readSession ? { externalLlm: {
       service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession,
     } } : {}),
-    // 앱이 받은 운영 DB 클라이언트는 oauthRoutes.sql 하나다. 외부 요청 회신 도구는
-    // 같은 클라이언트를 써서 배포 즉시 동작한다(테스트 호스트는 externalAccess를 직접 준다).
-    ...(options.mcpHostRoutes.externalAccess === undefined && options.oauthRoutes !== undefined
-      ? { externalAccess: { sql: options.oauthRoutes.sql } }
-      : {}),
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,
@@ -414,6 +417,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.r2SettingsRoutes) registerR2SettingsRoutes(app, options.r2SettingsRoutes);
   if (options.ownedAgentRoutes) registerOwnedAgentRoutes(app, options.ownedAgentRoutes);
+  if (options.accessLinkRoutes) registerAccessLinkRoutes(app, options.accessLinkRoutes);
+  if (options.outboundWebhookRoutes) registerOutboundWebhookRoutes(app, options.outboundWebhookRoutes);
+  if (options.inboundHookRoutes) registerInboundHookRoutes(app, options.inboundHookRoutes);
+  if (options.inboundWebhookRoutes) registerInboundWebhookRoutes(app, options.inboundWebhookRoutes);
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }

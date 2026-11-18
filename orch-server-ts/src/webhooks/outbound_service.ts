@@ -7,10 +7,8 @@ import {
   publishDueSubscriptions,
   publishSubscription,
 } from "./outbound_publisher.js";
-import {
-  generateSigningSecret,
-  OutboundWebhookRepository,
-} from "./outbound_repository.js";
+import { OutboundWebhookRepository } from "./outbound_repository.js";
+import { generateSigningSecret } from "./signing_secret.js";
 import {
   sendDelivery,
   sendNextDueDelivery,
@@ -24,6 +22,7 @@ import type {
   WebhookDeliveryRow,
   WebhookSubscriptionSummary,
 } from "./outbound_types.js";
+import { sendVerificationChallenge } from "./verification_challenge.js";
 
 export const OUTBOUND_SWEEP_INTERVAL_MS = 30_000;
 
@@ -108,6 +107,24 @@ export class OutboundWebhookService {
     return generateSigningSecret();
   }
 
+  /** Sends the registration challenge through the same transport as deliveries. */
+  async verifyChallenge(url: string, secret: string): Promise<void> {
+    await sendVerificationChallenge({
+      post: this.options.post ?? postWebhook,
+      url,
+      secret,
+      now: this.now,
+    });
+  }
+
+  async sessionExists(sessionId: string): Promise<boolean> {
+    const sql = await this.options.resolveSql();
+    const rows = await sql`
+      SELECT 1 FROM sessions WHERE session_id = ${sessionId} LIMIT 1
+    `;
+    return rows.length > 0;
+  }
+
   async createSubscription(input: CreateSubscriptionInput): Promise<WebhookSubscriptionSummary> {
     return await this.repository().createSubscription(input);
   }
@@ -143,8 +160,12 @@ export class OutboundWebhookService {
     return await this.repository().setActive(ownerEmail, subscriptionId, active);
   }
 
-  async redeliver(ownerEmail: string, deliveryId: string): Promise<RedeliverResult> {
-    const reset = await this.repository().resetForRedelivery(ownerEmail, deliveryId);
+  async redeliver(
+    ownerEmail: string,
+    subscriptionId: string,
+    deliveryId: string,
+  ): Promise<RedeliverResult> {
+    const reset = await this.repository().resetForRedelivery(ownerEmail, subscriptionId, deliveryId);
     if (!reset.ok) return reset;
     const sql = await this.options.resolveSql();
     const outcome: DeliveryAttemptOutcome = await sendDelivery(this.senderDependencies(sql), deliveryId);

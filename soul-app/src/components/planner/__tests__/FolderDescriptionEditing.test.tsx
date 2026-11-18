@@ -60,6 +60,9 @@ import { usePlannerStore } from '../../../store/plannerStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { TabletMarkdownEditor } from '../TabletMarkdownEditor';
 import { FolderWorkspace } from '../FolderWorkspace';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -266,6 +269,7 @@ test('FolderWorkspace는 성공 canonical prop을 한 번 수렴시키고 연속
   await waitFor(() => expect(mockSaveFolderDescription).toHaveBeenCalledTimes(2));
   expect(mockSaveFolderDescription).toHaveBeenLastCalledWith(expect.anything(), 'C');
   await waitFor(() => expect(screen.getByTestId('task-description-markdown')).toHaveTextContent('C'));
+  await settleTimers();
 });
 
 test('이전 owner canonical 응답은 새 owner draft를 덮지 않는다', async () => {
@@ -296,6 +300,7 @@ test('이전 owner canonical 응답은 새 owner draft를 덮지 않는다', asy
 
   await act(async () => { saveB.resolve(undefined); });
   await waitFor(() => expect(screen.getByTestId('task-description-markdown')).toHaveTextContent('B 제출'));
+  await settleTimers();
 });
 
 test('설명 편집 표면 inventory는 task 공통 경로와 runbook 제외 근거를 고정한다', () => {

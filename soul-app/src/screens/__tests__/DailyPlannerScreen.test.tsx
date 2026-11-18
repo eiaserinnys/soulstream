@@ -59,6 +59,12 @@ jest.mock('../../components/planner/CardAssignmentSheet', () => ({ CardAssignmen
 
 import { DailyPlannerScreen, type DailyPlannerScreenHandle } from '../DailyPlannerScreen';
 
+async function renderDaily(element: React.ReactElement) {
+  const screen = render(element);
+  await act(async () => {});
+  return screen;
+}
+
 beforeEach(() => {
   useCardStore.setState({ rows: {}, details: {} });
   mockUsePlannerDaily.mockReset();
@@ -71,7 +77,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·한국어 날짜·오른쪽 캡 두 개다', () => {
+test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·한국어 날짜·오른쪽 캡 두 개다', async () => {
   const data = parsePlannerToday(canonicalTodayFixture());
   data.attention.push(cardFixture({ id: 'held-today', title: '보류한 카드', status: 'on_hold' }));
   mockUsePlannerDaily.mockReturnValue({
@@ -81,7 +87,7 @@ test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·�
     refresh: jest.fn(),
   });
 
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
 
   expect(screen.getByText('확인할 것')).toBeTruthy();
   for (const kind of ['review', 'question', 'no_report', 'limit']) expect(screen.getByText(`카드 ${kind}`)).toBeTruthy();
@@ -107,10 +113,10 @@ test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·�
   }
 });
 
-test('본문 생성 action을 제거하고 root header handle이 기존 두 sheet 단일 경로를 연다', () => {
+test('본문 생성 action을 제거하고 root header handle이 기존 두 sheet 단일 경로를 연다', async () => {
   mockUsePlannerDaily.mockReturnValue({ data: undefined, loading: false, error: null, refresh: jest.fn() });
   const ref = React.createRef<DailyPlannerScreenHandle>();
-  const screen = render(<DailyPlannerScreen ref={ref} date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen ref={ref} date="2026-07-17" />);
   expect(screen.queryByText('새 업무')).toBeNull();
   act(() => ref.current?.openNewFolder());
   expect(screen.getByTestId('new-task-sheet-open')).toBeTruthy();
@@ -118,17 +124,17 @@ test('본문 생성 action을 제거하고 root header handle이 기존 두 shee
   expect(screen.getByTestId('morning-review-sheet-open')).toBeTruthy();
 });
 
-test.each(['phone', 'tabletPortrait'] as const)('%s 카드 묶음은 폴더 화면과 같은 섹션 간격을 쓴다', (device) => {
+test.each(['phone', 'tabletPortrait'] as const)('%s 카드 묶음은 폴더 화면과 같은 섹션 간격을 쓴다', async (device) => {
   mockDeviceType = device;
   mockUsePlannerDaily.mockReturnValue({ data: parsePlannerToday(canonicalTodayFixture()), loading: false, error: null, refresh: jest.fn() });
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
   expect(StyleSheet.flatten(screen.getByTestId('today-cards').props.style)).toMatchObject({ gap: 16 });
   expect(StyleSheet.flatten(screen.getByTestId('today-cards-attention').props.style)).toMatchObject({ gap: 8 });
 });
 
 test.each(['phone', 'tabletPortrait'] as const)(
   '%s cached 자동 로딩은 date/memo flow나 pull spinner를 바꾸지 않는다',
-  (device) => {
+  async (device) => {
     mockDeviceType = device;
     const state = {
       data: parsePlannerToday(canonicalTodayFixture()),
@@ -138,7 +144,7 @@ test.each(['phone', 'tabletPortrait'] as const)(
     };
     mockUsePlannerDaily.mockImplementation(() => state);
 
-    const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+    const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
     const dateStyleBefore = StyleSheet.flatten(screen.getByTestId('daily-date-row').props.style);
     const memoParentBefore = screen.getByTestId('daily-memo').parent;
 
@@ -157,6 +163,58 @@ test.each(['phone', 'tabletPortrait'] as const)(
   },
 );
 
+test.each(['phone', 'tabletPortrait'] as const)(
+  '%s 첫 로딩 부품은 날짜 줄 아래부터 입력창 위까지의 칸 가운데를 채운다',
+  async (device) => {
+    mockDeviceType = device;
+    mockUsePlannerDaily.mockReturnValue({ data: undefined, loading: true, error: null, refresh: jest.fn() });
+    const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
+
+    const scroll = screen.getByTestId('phone-daily-body');
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle)).toMatchObject({ gap: 0, paddingBottom: 0 });
+    const loaderStyle = StyleSheet.flatten(screen.getByTestId('daily-loading').props.style);
+    expect(loaderStyle.flex).toBe(1);
+    expect(loaderStyle.position).not.toBe('absolute');
+
+    const children = screen.UNSAFE_getByType(ScrollView).props.children.filter(Boolean);
+    const dateIndex = children.findIndex((node: any) => node.props?.testID === 'daily-date-row');
+    const loaderIndex = children.findIndex((node: any) => node.props?.testID === 'daily-loading');
+    expect(dateIndex).toBeGreaterThanOrEqual(0);
+    expect(loaderIndex).toBe(dateIndex + 1);
+    expect(scroll.findAll((node) => node.props.testID === 'daily-composer-dock')).toHaveLength(0);
+  },
+);
+
+test('data 없이 당겨 다시 시도하는 동안은 가운데 부품과 실패 글자 없이 당김 스피너만 남는다', async () => {
+  let rejectRefresh!: (cause: Error) => void;
+  const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => { rejectRefresh = reject; }));
+  const state: any = { data: undefined, loading: false, error: 'network', refresh };
+  mockUsePlannerDaily.mockImplementation(() => state);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.getByText('network')).toBeTruthy();
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+
+  let request!: Promise<void>;
+  await act(async () => { request = screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+
+  state.loading = true;
+  state.error = null;
+  screen.rerender(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.queryByText('network')).toBeNull();
+
+  await act(async () => {
+    state.loading = false;
+    state.error = 'network';
+    rejectRefresh(new Error('network'));
+    await expect(request).rejects.toThrow('network');
+  });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.getByText('network')).toBeTruthy();
+});
+
 test('manual pull만 refreshing을 켜고 reject 뒤에도 finally에서 해제한다', async () => {
   let rejectRefresh!: (cause: Error) => void;
   const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => {
@@ -168,7 +226,7 @@ test('manual pull만 refreshing을 켜고 reject 뒤에도 finally에서 해제�
     error: null,
     refresh,
   });
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
 
   let refreshPromise!: Promise<void>;
   await act(async () => {
@@ -183,7 +241,7 @@ test('manual pull만 refreshing을 켜고 reject 뒤에도 finally에서 해제�
   expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
 });
 
-test('날짜 action은 상태 변경 전에, inactive→active는 layout 경계에서 y0으로 한 번만 정렬한다', () => {
+test('날짜 action은 상태 변경 전에, inactive→active는 layout 경계에서 y0으로 한 번만 정렬한다', async () => {
   const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
   const state = {
     data: parsePlannerToday(canonicalTodayFixture()),
@@ -193,7 +251,7 @@ test('날짜 action은 상태 변경 전에, inactive→active는 layout 경계�
   };
   mockUsePlannerDaily.mockImplementation(() => state);
   const onDateChange = jest.fn();
-  const screen = render(
+  const screen = await renderDaily(
     <DailyPlannerScreen date="2026-07-17" active={false} onDateChange={onDateChange} />,
   );
 
@@ -261,12 +319,12 @@ function canonicalTodayFixture(): PlannerTodayWire {
   };
 }
 
-test.each(['phone', 'tabletPortrait'] as const)('%s 빈 묶음은 생략하고 메모 다음 목록, 스크롤 밖 입력창을 둔다', (device) => {
+test.each(['phone', 'tabletPortrait'] as const)('%s 빈 묶음은 생략하고 메모 다음 목록, 스크롤 밖 입력창을 둔다', async (device) => {
   mockDeviceType = device;
   const data = parsePlannerToday(canonicalTodayFixture());
   data.attention = []; data.running = []; data.queued = [];
   mockUsePlannerDaily.mockReturnValue({ data, loading: false, error: null, refresh: jest.fn() });
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
   expect(screen.getByTestId('today-cards-attention')).toBeTruthy();
   expect(screen.getByText('+ 카드')).toBeTruthy();
   expect(screen.queryByTestId('today-cards-running')).toBeNull();
@@ -281,12 +339,12 @@ test.each(['phone', 'tabletPortrait'] as const)('%s 빈 묶음은 생략하고 �
   expect(StyleSheet.flatten(screen.getByTestId('daily-composer-dock').props.style).paddingHorizontal).toBe(16);
 });
 
-test('날짜 요약 없이 묶음 제목 옆 개수가 실시간 카드 상태를 센다', () => {
+test('날짜 요약 없이 묶음 제목 옆 개수가 실시간 카드 상태를 센다', async () => {
   const data = parsePlannerToday(canonicalTodayFixture());
   data.running = [cardFixture({ id: 'running', status: 'running' })];
   data.queued = [cardFixture({ id: 'queued', status: 'queued' })];
   mockUsePlannerDaily.mockReturnValue({ data, loading: false, error: null, refresh: jest.fn() });
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
   expect(screen.queryByTestId('daily-card-summary')).toBeNull();
   expect(screen.getByText('4')).toBeTruthy();
   act(() => useCardStore.setState({ rows: { ...useCardStore.getState().rows, 'card-1': cardFixture({ id: 'card-1', status: 'done' }) } }));
@@ -295,10 +353,10 @@ test('날짜 요약 없이 묶음 제목 옆 개수가 실시간 카드 상태�
 });
 
 
-test.each(['phone', 'tabletPortrait'] as const)('%s 오늘 행은 세션 카드 프레임·제목·초상과 원형 동작을 쓴다', (device) => {
+test.each(['phone', 'tabletPortrait'] as const)('%s 오늘 행은 세션 카드 프레임·제목·초상과 원형 동작을 쓴다', async (device) => {
   mockDeviceType = device;
   mockUsePlannerDaily.mockReturnValue({ data: parsePlannerToday(canonicalTodayFixture()), loading: false, error: null, refresh: jest.fn() });
-  const screen = render(<DailyPlannerScreen date="2026-07-17" />);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
   expect(StyleSheet.flatten(screen.getByTestId('card-row-card-1-layout').props.style)).toMatchObject({ minHeight: 112, alignItems: 'center' });
   expect(StyleSheet.flatten(screen.getByTestId('card-card-1-avatar').props.style).width).toBe(44);
   expect(StyleSheet.flatten(screen.getByText('카드 review').props.style).fontSize).toBe(makeSessionCardStyles(renderHook(() => useTokens()).result.current, true).name.fontSize);

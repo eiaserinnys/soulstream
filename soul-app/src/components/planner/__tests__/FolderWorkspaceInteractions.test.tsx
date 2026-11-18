@@ -76,6 +76,9 @@ jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null
 import { FolderWorkspace } from '../FolderWorkspace';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -89,7 +92,7 @@ beforeEach(() => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
 });
 
-test('폴더 문맥은 남고 문서 동작 메뉴는 열리지 않는다', () => {
+test('폴더 문맥은 남고 문서 동작 메뉴는 열리지 않는다', async () => {
   const folder = plannerFolder();
   usePlannerStore.setState({ selectedFolderSnapshot: folder });
 
@@ -99,9 +102,10 @@ test('폴더 문맥은 남고 문서 동작 메뉴는 열리지 않는다', () =
   expect(screen.getByText('설계 문서')).toBeTruthy();
   expect(mockOpenProjectMenu).not.toHaveBeenCalled();
   expect(mockOpenChildFolderManagement).not.toHaveBeenCalled();
+  await settleTimers();
 });
 
-test('듀오 폴더 레일에서 카드 추가와 완료 표시를 제어한다', () => {
+test('듀오 폴더 레일에서 카드 추가와 완료 표시를 제어한다', async () => {
   usePlannerStore.setState({ selectedFolderSnapshot: plannerFolder() });
   const onChange = jest.fn();
   render(<DuoSideBandContext.Provider value={true}><FolderWorkspace api={null} folderPageId="task-1" cardDisplay={{ includeCompleted: false, onChange }} /></DuoSideBandContext.Provider>);
@@ -110,9 +114,10 @@ test('듀오 폴더 레일에서 카드 추가와 완료 표시를 제어한다'
   act(() => { actions.find(action => action.id === 'completed')!.onPress(); });
   expect(mockToggleFolderCardCreate).toHaveBeenCalledTimes(1);
   expect(onChange).toHaveBeenCalledWith(true);
+  await settleTimers();
 });
 
-test('듀오 인라인 폴더는 루트 이동을 유지하고 닫을 수 있는 상세만 닫기를 등록한다', () => {
+test('듀오 인라인 폴더는 루트 이동을 유지하고 닫을 수 있는 상세만 닫기를 등록한다', async () => {
   usePlannerStore.setState({ selectedFolderSnapshot: plannerFolder() });
   const inline = render(<DuoSideBandContext.Provider value={true}><FolderWorkspace api={null} folderPageId="task-1" /></DuoSideBandContext.Provider>);
   const inlineRail = usePhoneRailActions.getState().overrides.at(-1)!;
@@ -125,9 +130,10 @@ test('듀오 인라인 폴더는 루트 이동을 유지하고 닫을 수 있는
   const detailRail = usePhoneRailActions.getState().overrides.at(-1)!;
   expect(detailRail.mode).toBe('replace');
   expect(detailRail.actions[0].id).toBe('back');
+  await settleTimers();
 });
 
-test('하위 폴더도 기존 PlannerFolderRow로 열고 상위 폴더로 이동한다', () => {
+test('하위 폴더도 기존 PlannerFolderRow로 열고 상위 폴더로 이동한다', async () => {
   const onOpenFolder = jest.fn();
   useSessionStore.setState({ catalog: { folders: [
     { id: 'parent', name: '상위', projectPageId: 'parent-page', sortOrder: 0 },
@@ -160,9 +166,10 @@ test('하위 폴더도 기존 PlannerFolderRow로 열고 상위 폴더로 이동
   expect(screen.queryByText('새 업무')).toBeNull();
   fireEvent.press(screen.getByText('새 폴더'));
   expect(screen.getByTestId('new-folder-sheet')).toBeTruthy();
+  await settleTimers();
 });
 
-test('서버 필드가 없는 폴더에서도 카드 목록은 항상 렌더된다', () => {
+test('서버 필드가 없는 폴더에서도 카드 목록은 항상 렌더된다', async () => {
   useSessionStore.setState({ catalog: { folders: [
     { id: 'folder-1', name: '폴더', projectPageId: 'project-1', sortOrder: 0 },
   ], sessions: {} } });
@@ -172,6 +179,7 @@ test('서버 필드가 없는 폴더에서도 카드 목록은 항상 렌더된�
   expect(screen.getByTestId('folder-context-editor')).toBeTruthy();
   expect(screen.getByText('설명')).toBeTruthy();
   expect(screen.getByTestId('folder-checklist')).toBeTruthy();
+  await settleTimers();
 });
 
 function plannerFolder(): PlannerFolder {

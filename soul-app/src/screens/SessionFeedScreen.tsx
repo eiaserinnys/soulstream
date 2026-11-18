@@ -11,6 +11,7 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FrameLoading } from '../components/FrameLoading';
 import { createApiClient } from '../api/client';
 import type { Session } from '../api/types';
 import { SessionCardById } from '../components/SessionCardById';
@@ -135,12 +136,7 @@ export function SessionFeedScreen({
   }, [active, visibleSessionIds, handleLongPress, handleOpenSession, narrowFeed, styles.empty, styles.heading]);
   const renderEmpty = useCallback(() => {
     if (catalogLoadState === 'loading') {
-      return (
-        <View style={styles.loadState}>
-          <ActivityIndicator color={t.colors.accent} />
-          <Text style={styles.loadStateText}>세션을 불러오는 중입니다.</Text>
-        </View>
-      );
+      return <FrameLoading testID="session-feed-loading" text="세션을 불러오는 중입니다." />;
     }
     if (catalogLoadState === 'error') {
       return (
@@ -258,6 +254,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     container: { flex: 1, ...roles.canvas.tokenStyle },
     content: {
+      flexGrow: 1,
       paddingHorizontal: sessionRoles.feed.pageInset,
       paddingVertical: t.spacing.md,
     },
@@ -276,10 +273,6 @@ function makeStyles(t: DesignTokens) {
       alignItems: 'center',
       gap: t.spacing.sm,
       paddingVertical: t.spacing.xxl,
-    },
-    loadStateText: {
-      color: t.colors.textSecondary,
-      fontSize: t.fontSize.body,
     },
     errorText: {
       color: t.colors.errorText,

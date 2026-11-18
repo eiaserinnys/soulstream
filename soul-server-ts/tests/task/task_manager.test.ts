@@ -205,7 +205,7 @@ describe("TaskManager model preset defaults", () => {
       mocks.db,
       mocks.broadcaster,
       silentLogger,
-      undefined,
+      mocks.persistence,
       undefined,
       agentRegistry,
       undefined,
@@ -262,7 +262,7 @@ describe("TaskManager model preset defaults", () => {
       mocks.db,
       mocks.broadcaster,
       silentLogger,
-      undefined,
+      mocks.persistence,
       undefined,
       agentRegistry,
       undefined,
@@ -353,6 +353,12 @@ describe("TaskManager model preset defaults", () => {
     task.persistent = true;
     task.modelPreset = "removed-current-preset";
     task.modelPresetBackend = undefined;
+
+    task.recordedModelBackend = "opencode";
+    await expect(tm.persistentSessions.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-target", reason: "manual",
+    })).rejects.toThrow("does not support current backend: opencode");
+    task.recordedModelBackend = "antigravity";
 
     await expect(tm.persistentSessions.requestGenerationRollover(task.agentSessionId, {
       modelPreset: "codex-target",
@@ -2890,7 +2896,7 @@ describe("TaskManager.resolveExecutionSecurity", () => {
       mocks.db,
       mocks.broadcaster,
       silentLogger,
-      undefined, // persistence
+      mocks.persistence, // persistence
       undefined, // contextBuilder
       agentRegistry,
       undefined, // folderContentHost

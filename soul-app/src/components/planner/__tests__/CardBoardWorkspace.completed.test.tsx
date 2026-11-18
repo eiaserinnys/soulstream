@@ -2,8 +2,8 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
-jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: mockCards, loading: mockLoading, error: null, refresh: jest.fn() }) }));
-jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:false,error:null})}));
+jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: (mockActiveCards ?? mockCards).filter(card => card.status !== 'done'), loading: mockLoading, error: null, refresh: jest.fn() }) }));
+jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:null})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ActivityIndicator, StyleSheet } from 'react-native';
@@ -11,13 +11,62 @@ import { CardBoardWorkspace } from '../CardBoardWorkspace';
 import { AppModalSurface } from '../../AppModalSurface';
 import { cardFixture } from '../../../test-support/cards';
 import { useUIStore } from '../../../store/uiStore';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 jest.mock('../FolderWorkspaceReadOverlay', () => ({ FolderWorkspaceReadOverlay: () => require('react').createElement(require('react-native').View, { testID: 'board-detail-host' }) }));
 
 let mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
+let mockActiveCards: typeof mockCards | null = null;
 let mockDevice = 'tablet';
 let mockLoading = false;
-beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
-test('tablet panel uses phone lanes and inset, while expanded board keeps wide geometry and resets inset', () => {
+let mockCompletedLoading = false;
+beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
+test('보일 카드가 없는 첫 로딩은 보드 프레임 가운데 부품 하나만 세운다', async () => {
+  mockCards = []; mockLoading = true;
+  const screen = render(<CardBoardWorkspace api={null} cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={() => {}} />);
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
+  expect(screen.getByTestId('card-board-loading').props.accessibilityRole).toBe('progressbar');
+  expect(screen.queryByText('카드가 없습니다.')).toBeNull();
+  expect(screen.queryByTestId('card-board-empty')).toBeNull();
+  await settleTimers();
+});
+
+test('완료 칸만 첫 로딩이면 그 칸 안 가운데에 부품을 세운다', async () => {
+  mockCards = [cardFixture({ id: 'todo' })]; mockCompletedLoading = true;
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  act(() => ref.current!.openExpanded());
+  const expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.queryByLabelText('자동 갱신 중')).toBeNull();
+  expect(expanded.getByTestId('card-board-done-loading').props.accessibilityRole).toBe('progressbar');
+  expect(expanded.queryByText('완료 카드를 불러오는 중…')).toBeNull();
+  expect(expanded.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+  await settleTimers();
+});
+
+test('완료 카드가 먼저 보이고 활성 목록이 늦게 오면 보드 부품 없이 구석 표시만 하고 빈 칸 문구를 내지 않는다', async () => {
+  mockActiveCards = [];
+  mockCards = [cardFixture({ id: 'done', status: 'done' })];
+  mockLoading = true;
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  expect(screen.queryByTestId('card-board-loading')).toBeNull();
+  expect(screen.getByLabelText('자동 갱신 중')).toBeTruthy();
+  expect(screen.getByTestId('postit-card-done')).toBeTruthy();
+  expect(screen.queryByText('카드가 없습니다.')).toBeNull();
+
+  act(() => ref.current!.openExpanded());
+  const expanded = within(screen.getByTestId('card-board-expanded'));
+  expect(expanded.queryByTestId('card-board-loading')).toBeNull();
+  expect(expanded.getByLabelText('자동 갱신 중')).toBeTruthy();
+  expect(expanded.getByTestId('postit-card-done')).toBeTruthy();
+  expect(expanded.queryByText('카드가 없습니다.')).toBeNull();
+  expect(expanded.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+  await settleTimers();
+});
+
+test('tablet panel uses phone lanes and inset, while expanded board keeps wide geometry and resets inset', async () => {
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
   useUIStore.setState({ floatingComposerBottomInset: 120 });
   const screen = render(<CardBoardWorkspace ref={ref} api={null} reserveHomeComposerSpace cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
@@ -37,6 +86,7 @@ test('tablet panel uses phone lanes and inset, while expanded board keeps wide g
   expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(9);
   expect(screen.UNSAFE_getByType(AppModalSurface).props.variant).toBe('board');
   expect(screen.UNSAFE_getByType(AppModalSurface).props.presentationStyle).toBeUndefined();
+  await settleTimers();
 });
 function Sample({ folderId }: { folderId?: string }) {
   const [includeCompleted, onChange] = useState(false);
@@ -137,7 +187,7 @@ test('expanded tablet keeps the mounted board and its position underneath detail
   expect(useUIStore.getState().cardBoardExpanded).toBe(false);
 });
 
-test('completed lane vertical position survives expansion and reopens at the saved location', () => {
+test('completed lane vertical position survives expansion and reopens at the saved location', async () => {
   mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo', status: 'todo' })];
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
   const screen = render(<CardBoardWorkspace ref={ref} api={null}
@@ -146,6 +196,7 @@ test('completed lane vertical position survives expansion and reopens at the sav
   fireEvent.scroll(screen.getByTestId('card-board-scroll-done'), { nativeEvent: {
     contentOffset: { x: 0, y: 180 }, layoutMeasurement: { width: 800, height: 500 }, contentSize: { width: 800, height: 1000 }, timestamp: 1,
   } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
   act(() => ref.current!.openExpanded());
   let expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.getByTestId('card-board-scroll-done').props.contentOffset).toEqual({ x: 0, y: 180 });
@@ -153,10 +204,12 @@ test('completed lane vertical position survives expansion and reopens at the sav
   fireEvent.scroll(expanded.getByTestId('card-board-scroll-done'), { nativeEvent: {
     contentOffset: { x: 0, y: 260 }, layoutMeasurement: { width: 1200, height: 700 }, contentSize: { width: 1200, height: 1000 }, timestamp: 2,
   } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
   fireEvent.press(expanded.getByLabelText('보드 확대 닫기'));
   act(() => ref.current!.openExpanded());
   expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.getByTestId('card-board-scroll-done').props.contentOffset).toEqual({ x: 0, y: 260 });
+  await settleTimers();
 });
 
 test.each(['phone', 'tablet'])('확대 닫힘 %s은 선택적 콜백을 한 번 호출하고 공개 handle로 다시 열린다', device => {

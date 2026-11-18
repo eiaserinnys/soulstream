@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import type { FlatList } from 'react-native';
 import type { SessionEvent } from '../../../api/types';
 import type { ChatBodyStyles } from '../ChatBody.styles';
@@ -7,6 +7,9 @@ import type { ChatRenderItem } from '../groupChatEvents';
 import { ChatEventList } from '../ChatEventList';
 import { groupChatEvents } from '../groupChatEvents';
 import { projectPersistentTurnUsage } from '../persistentTurnUsageProjection';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 jest.mock('../../events/EventRenderer', () => ({ EventRenderer: () => null }));
 jest.mock('../../events/EventContextMenu', () => ({
@@ -75,7 +78,7 @@ test.each([
   expect(screen.getAllByText(expanded)).toHaveLength(1);
 });
 
-test('error usage follows mode updates without remounting the error row', () => {
+test('error usage follows mode updates without remounting the error row', async () => {
   const events: SessionEvent[] = [
     { id: '10', type: 'context_usage', data: { used_tokens: 41_500, max_tokens: 100_000, percent: 41.5 } },
     { id: '11', type: 'error', data: { message: '오류 본문 유지' } },
@@ -89,9 +92,10 @@ test('error usage follows mode updates without remounting the error row', () => 
 
   screen.rerender(chatList(events, 'collapsed'));
   expect(screen.getByRole('button', { name: '컨텍스트 41.5%' }).props.accessibilityState.expanded).toBe(false);
+  await settleTimers();
 });
 
-test('preserves summary and instruction expansion across usage mode changes', () => {
+test('preserves summary and instruction expansion across usage mode changes', async () => {
   const events: SessionEvent[] = [
     { id: '1', type: 'user_message', data: { input_id: 'input-1', text: '기억할 내용' } },
     { id: '2', type: 'assistant_message', data: { text: '기록했습니다.' } },
@@ -124,4 +128,5 @@ test('preserves summary and instruction expansion across usage mode changes', ()
   screen.rerender(chatList(events, 'collapsed'));
   expect(screen.getByRole('button', { name: '정가 $0.50' }).props.accessibilityState.expanded).toBe(false);
   assertOtherCaptionsExpanded();
+  await settleTimers();
 });

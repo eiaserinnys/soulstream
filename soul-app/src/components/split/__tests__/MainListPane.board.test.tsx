@@ -18,6 +18,9 @@ import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { cardFixture } from '../../../test-support/cards';
 import { DuoSideBandContext, DuoTopBandMainContext } from '../../../navigation/tabContract';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 const mockList = jest.fn();
 const mockCompleted=jest.fn();
 
@@ -42,6 +45,7 @@ test('듀오 프로젝트에서는 본문 탭 없이 레일의 보기 변경을 
   expect(screen.queryByLabelText('카드 보드')).toBeNull();
   await act(async () => useUIStore.getState().setMainPaneView('folder-1', 'board'));
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  await settleTimers();
 });
 
 beforeEach(() => {
@@ -70,6 +74,7 @@ test('카드 홈은 저장된 데일리 선택을 무시하고 전체 보드와 
   expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
   await act(async () => fireEvent.press(screen.getByLabelText('드래프트 카드 추가')));
   expect(screen.getByLabelText('카드 제목')).toBeTruthy();
+  await settleTimers();
 
 });
 
@@ -87,6 +92,7 @@ test('orientation remount keeps every previously selected folder board visible',
   }); });
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   expect(screen.queryByTestId('folder-existing')).toBeNull();
+  await settleTimers();
 });
 
 test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮겨도 폴더 옵션을 전파하지 않는다', async () => {
@@ -106,6 +112,7 @@ test('폴더 기존보기·보드는 완료 옵션을 공유하고 전체로 옮
   await act(async () => useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }));
   await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
   await waitFor(() => expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
+  await settleTimers();
 });
 
 test('보드 카드 탭은 기존 카드 오버레이를 열고 목록 오류는 재시도한다', async () => {
@@ -117,6 +124,7 @@ test('보드 카드 탭은 기존 카드 오버레이를 열고 목록 오류는
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getAllByLabelText('카드 제목 카드 상세')[0]));
   expect(useUIStore.getState().selectedCardId).toBeTruthy();
+  await settleTimers();
 });
 
 test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활동 본문을 유지한다', async () => {
@@ -131,6 +139,7 @@ test('상태 저장 후 상세 row가 합쳐져도 인증 목록의 최신 활�
   expect(screen.queryByText(/최신 보고 원문/)).toBeNull();
   await act(async () => fireEvent.press(screen.getByLabelText('완료·취소 숨김')));
   await waitFor(()=>expect(screen.getByText(/최신 보고 원문/)).toBeTruthy());
+  await settleTimers();
 });
 
 test('폴더 탭은 요청한 검색창과 기존 본문을 유지한다', () => {
@@ -159,6 +168,7 @@ test('좁은 목록 패널은 보드 액션을 오버플로 메뉴로 접는다'
   fireEvent.press(screen.getByTestId('board-header-overflow-hide-done'));
   expect(screen.queryByTestId('board-header-overflow-menu')).toBeNull();
   await waitFor(() => expect(Object.values(useSettingsStore.getState().cardIncludeCompleted)).toContain(true));
+  await settleTimers();
 });
 
 test('넓은 목록 패널은 기존 보드 액션을 그대로 노출한다', async () => {
@@ -167,6 +177,7 @@ test('넓은 목록 패널은 기존 보드 액션을 그대로 노출한다', a
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   expect(screen.getByLabelText('보드 확대')).toBeTruthy();
   expect(screen.queryByTestId('board-header-overflow-button')).toBeNull();
+  await settleTimers();
 });
 
 test('세로 목록 칸 보드 머리는 폴더 이름과 보드 단추 셋을 한 줄에 두고 머리에는 보드 단추가 없다', async () => {
@@ -202,4 +213,5 @@ test('세로 목록 칸 보드 머리는 폴더 이름과 보드 단추 셋을 �
   expect(screen.getByLabelText('카드 제목')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('보드 확대')));
   expect(screen.getByTestId('card-board-expanded')).toBeTruthy();
+  await settleTimers();
 });

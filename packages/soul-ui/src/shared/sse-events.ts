@@ -120,6 +120,7 @@ export interface CallerInfo {
    */
   source: CallerInfoSource;
   display_name?: string;
+  transport?: "access_link" | "webhook" | (string & {});
   user_id?: string;
   avatar_url?: string;
   email?: string;

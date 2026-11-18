@@ -37,7 +37,8 @@ export interface MessageCaller {
    * (graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내). soul-ui CallerInfo
    * union과 정합 (atom ed3a216d).
    */
-  source?: 'slack' | 'browser' | 'soul-app' | 'agent' | 'api' | 'system';
+  source?: 'slack' | 'browser' | 'soul-app' | 'agent' | 'api' | 'system' | 'external';
+  transport?: string;
   display_name?: string;
   /** 외부 CDN URL(slack image_192/google picture) 또는 노드 서버 상대 경로(/api/nodes/...). */
   avatar_url?: string;
@@ -73,6 +74,7 @@ export function extractMessageCaller(
   if (typeof src.source === 'string') {
     out.source = src.source as MessageCaller['source'];
   }
+  if (typeof src.transport === 'string') out.transport = src.transport;
   if (typeof src.display_name === 'string') out.display_name = src.display_name;
   if (typeof src.avatar_url === 'string') out.avatar_url = src.avatar_url;
   if (typeof src.user_id === 'string') out.user_id = src.user_id;
@@ -122,6 +124,7 @@ export function pickUserAvatarUri(
   fallbackPortraitUrl: string | null | undefined,
   serverUrl: string | null,
 ): UserAvatarUriResult {
+  if (caller?.source === 'external') return { uri: null, useBearer: false };
   // 1) 본인이 아닌 발신자 — caller.avatar_url만 신뢰
   if (caller) {
     const url = caller.avatar_url;

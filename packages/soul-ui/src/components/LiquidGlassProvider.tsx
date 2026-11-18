@@ -113,6 +113,12 @@ export function LiquidGlassProvider({
     };
   }, [glassSettings.tint]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.documentElement.setAttribute("data-webgl-glass", shouldMountCanvas ? "on" : "off");
+    return () => document.documentElement.removeAttribute("data-webgl-glass");
+  }, [shouldMountCanvas]);
+
   const register = useCallback((ref: GlassSurfaceRef) => {
     const id = ++nextIdRef.current;
     registrationsRef.current.set(id, { id, ref });

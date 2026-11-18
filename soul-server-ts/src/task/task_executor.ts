@@ -117,7 +117,7 @@ import {
   type Task,
   type TaskStatus,
 } from "./task_models.js";
-import { buildClaudeContextUsageMetadataEntry } from "./task_metadata.js";
+import { buildClaudeContextUsageMetadataEntry, buildModelBackendMetadataEntry } from "./task_metadata.js";
 import {
   dequeueInterventionsInLane,
   prependCarriedDeliveries,
@@ -708,7 +708,7 @@ export class TaskExecutor {
     const applyingFrom = task.persistentGeneration?.pending?.applyingFrom;
     const needsGenerationReconciliation = applyingFrom !== undefined
       && task.codexThreadId !== applyingFrom;
-    if (!shouldDecideArrival && !needsGenerationReconciliation) {
+    if (!shouldDecideArrival && !needsGenerationReconciliation && !prepared.backendSync) {
       beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
       return this.startPreparedExecution(
         task,
@@ -730,6 +730,7 @@ export class TaskExecutor {
 
     const execution = (async () => {
       try {
+        await prepared.backendSync;
         if (shouldDecideArrival) await this.decidePersistentArrival(task);
         await reconcileGenerationBeforeExecution(task, this.persistence);
         beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
@@ -805,7 +806,7 @@ export class TaskExecutor {
   private prepareExecution(
     task: Task,
     agent: AgentProfile,
-  ): { retainedRunner: TaskRunnerRuntime | undefined } {
+  ): { retainedRunner: TaskRunnerRuntime | undefined; backendSync?: Promise<void> } {
     const retainedRunner = task.runnerRetainedForDetachedWork === true
       ? task.runner
       : undefined;
@@ -820,13 +821,31 @@ export class TaskExecutor {
         {
           sessionId: task.agentSessionId,
           modelPreset: task.modelPreset,
-          fallbackBackend: agent.backend,
+          fallbackBackend: task.recordedModelBackend ?? agent.backend,
           profileEnvFallback: agent.env !== undefined,
         },
-        "Persisted model preset is unavailable; using the profile backend",
+        task.recordedModelBackend
+          ? "Persisted model preset is unavailable; using the recorded backend"
+          : "Persisted model preset is unavailable; using the profile backend",
       );
     }
-    return { retainedRunner };
+    let backendSync: Promise<void> | undefined;
+    if (presetRuntime === "applied" && task.modelPresetBackend !== undefined
+      && task.modelPresetBackend !== task.recordedModelBackend) {
+      const backend = task.modelPresetBackend;
+      const entry = buildModelBackendMetadataEntry(backend);
+      backendSync = this.persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+        replaceExistingType: "model_backend",
+        waitForAck: true,
+      }).then((eventId) => {
+        task.metadata = [...(task.metadata ?? []).filter((item) => item.type !== "model_backend"), entry];
+        task.recordedModelBackend = backend;
+        if (eventId !== null) task.lastEventId = eventId;
+      }).catch((err: unknown) => {
+        this.logger.warn({ err, sessionId: task.agentSessionId }, "model backend metadata persistence failed");
+      });
+    }
+    return { retainedRunner, backendSync };
   }
 
   private shouldDecidePersistentArrival(task: Task): boolean {
@@ -1081,9 +1100,7 @@ export class TaskExecutor {
     let runner = reusableRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
       : createInProcessTaskRunnerRuntime(
-          task.modelPresetBackend
-            ? this.engineFactory(agent, backend, task.agentSessionId)
-            : this.engineFactory(agent, undefined, task.agentSessionId),
+          this.engineFactory(agent, backend, task.agentSessionId),
         ));
     if (reusableRunner) releaseTaskRunner(task, reusableRunner);
     if (!runner.isolation && desiredIsolation.tier === "restricted") {

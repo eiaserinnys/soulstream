@@ -11,6 +11,37 @@ function readUiSource(fileName: string) {
 }
 
 describe("dialog liquid glass surfaces", () => {
+  it("densifies popup surfaces before the opaque WebGL-off override", () => {
+    const css = readFileSync(new URL("../../styles/globals.css", import.meta.url), "utf-8");
+    const rule = css.match(/\[data-slot="popover-popup"\][^{]+\{\s*background:\s*color-mix\(in srgb, var\(--lg-card\) 45%, var\(--background\)\);\s*\}/s)?.[0] ?? "";
+    expect(rule).toContain('[data-slot="menu-popup"]');
+    expect(rule).toContain('[data-slot="select-popup"] > .glass');
+    expect(rule).not.toContain('[data-slot="dialog-popup"]');
+    expect(rule).not.toContain('[data-slot="alert-dialog-popup"]');
+    expect(css.indexOf(rule)).toBeLessThan(css.indexOf('html[data-webgl-glass="off"] [data-slot="dialog-popup"]'));
+  });
+
+  it("uses the popup surface color for both select scroll arrows", () => {
+    const css = readFileSync(new URL("../../styles/globals.css", import.meta.url), "utf-8");
+    const select = readUiSource("select.tsx");
+    expect(select.match(/before:from-\[var\(--select-popup-surface\)\]/g)).toHaveLength(2);
+    expect(css).toMatch(/\[data-slot="select-popup"\]\s*\{\s*--select-popup-surface:\s*color-mix\(in srgb, var\(--lg-card\) 45%, var\(--background\)\);/);
+    expect(css).toMatch(/html\[data-webgl-glass="off"\]\s+\[data-slot="select-popup"\]\s*\{\s*--select-popup-surface:\s*var\(--popover\);/);
+  });
+
+  it("uses the opaque popover token on all five popup surfaces when WebGL is off", () => {
+    const css = readFileSync(new URL("../../styles/globals.css", import.meta.url), "utf-8");
+    const rule = css.match(/html\[data-webgl-glass="off"\][^{]+\{\s*background:\s*var\(--popover\);\s*\}/s)?.[0] ?? "";
+    for (const slot of ["dialog-popup", "alert-dialog-popup", "popover-popup", "menu-popup", "select-popup"]) {
+      expect(rule).toContain(`[data-slot="${slot}"]`);
+    }
+    expect(rule).toMatch(/\[data-slot="select-popup"\]\s*>\s*\.glass/);
+    const preceding = css.slice(0, css.indexOf(rule))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "");
+    const nestingDepth = [...preceding].reduce((depth, char) => depth + (char === "{" ? 1 : char === "}" ? -1 : 0), 0);
+    expect(nestingDepth).toBe(0);
+  });
   it.each(dialogSurfaceFiles)("%s uses the shared liquid glass modal surface", (fileName) => {
     const source = readUiSource(fileName);
 

@@ -21,9 +21,11 @@ function fakeSql(rows: {
     const text = strings.join(" ").replace(/\s+/g, " ");
     calls.push({ text, values });
     if (text.includes("set_config")) return [];
-    if (text.includes("GROUP BY")) return rows.byNode ?? [];
-    if (text.includes("LIMIT 5")) return rows.slowest ?? [];
-    return rows.overall ?? [];
+    return [
+      ...(rows.byNode ?? []).map((row) => ({ ...row, kind: "node" })),
+      ...(rows.overall ?? []).map((row) => ({ ...row, kind: "overall" })),
+      ...(rows.slowest ?? []).map((row) => ({ ...row, kind: "slowest" })),
+    ];
   }) as DeliveryLatencyQuery;
   sql = Object.assign(query, {
     begin: async <T>(callback: (tx: DeliveryLatencyQuery) => Promise<T>): Promise<T> => callback(query),
@@ -75,7 +77,7 @@ describe("get_event_ingress_delivery_latency query", () => {
     });
   });
 
-  it("sets a transaction-local statement_timeout and joins receipts to events", async () => {
+  it("sets transaction-local query options and fetches event details only for the five slowest", async () => {
     const { sql, calls } = fakeSql({ byNode: BY_NODE, overall: OVERALL });
 
     await queryEventIngressDeliveryLatency(
@@ -84,8 +86,16 @@ describe("get_event_ingress_delivery_latency query", () => {
       () => NOW,
     );
 
-    expect(calls[0]?.text).toContain("set_config('statement_timeout'");
-    expect(calls[0]?.values).toContain("10000ms");
+    expect(calls[0]?.text).toContain("set_config('statement_timeout', , true)");
+    expect(calls[0]?.values).toContain("55000ms");
+    expect(calls[0]?.text).toContain("set_config('enable_hashjoin', 'off', true)");
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.text).toContain("joined AS MATERIALIZED");
+    expect(calls[1]?.text).toContain("GROUP BY GROUPING SETS");
+    expect(calls[1]?.text).toContain("percentile_cont(ARRAY[0.5, 0.9, 0.99]) WITHIN GROUP (ORDER BY delay_ms)");
+    expect(calls[1]?.text).toContain("SELECT r.node_id, r.session_id, r.event_id, r.created_at - e.created_at AS delay");
+    expect(calls[1]?.text).toContain("ORDER BY delay DESC, event_id DESC LIMIT 5");
+    expect(calls[1]?.text).toContain("JOIN events e ON e.session_id = slowest.session_id AND e.id = slowest.event_id");
     for (const call of calls.slice(1)) {
       expect(call.text).toContain("event_ingress_receipts r");
       expect(call.text).toContain("JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id");

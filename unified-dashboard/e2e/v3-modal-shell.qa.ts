@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -40,20 +41,15 @@ async function verifyTheme(browser: Browser, theme: Theme) {
 
   try {
     await preparePage(page, theme);
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+    await openV3Folder(page, baseUrl);
 
-    await page.getByRole("button", { name: "새 폴더", exact: true }).click();
+    await page.getByTestId("v3-planner-scroll").getByRole("button", { name: "새 폴더", exact: true }).click();
     const newTaskDialog = page.getByRole("dialog", { name: "새 폴더", exact: true });
     await newTaskDialog.waitFor({ state: "visible" });
     const newTask = await readModalMetrics(page, newTaskDialog);
     await capture(page, theme, "new-task");
     await page.getByRole("button", { name: "취소", exact: true }).click();
 
-    await page.getByTestId("v3-all-projects")
-      .getByRole("button", { name: fixtureTitles.project, exact: true })
-      .click();
-    await page.getByRole("heading", { name: fixtureTitles.project }).waitFor({ state: "visible" });
     await page.getByTestId("v3-task-task-alpha").click();
     await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "새 세션", exact: true }).click();
@@ -116,14 +112,14 @@ async function readModalMetrics(page: Page, dialog: Locator) {
 
 async function readSuccessionMetrics(page: Page, dialog: Locator) {
   const text = await dialog.textContent() ?? "";
-  const labels = ["노드 / 에이전트", "컨텍스트", "초기 지시"];
+  const labels = ["시작할 폴더", "무엇을 시작할까요?", "실행 환경"];
   const positions = labels.map((label) => text.indexOf(label));
   const documents = dialog.locator(".v3-succession-document-options");
   const documentStyle = await documents.evaluate((element) => {
     const style = getComputedStyle(element);
     return { overflowY: style.overflowY, maxHeight: style.maxHeight };
   });
-  const primaryFontPx = Number.parseFloat(await dialog.locator(".v3-succession-context-editor > section > strong").first().evaluate(
+  const primaryFontPx = Number.parseFloat(await dialog.locator(".v3-succession-context-editor .v3-form-context strong").first().evaluate(
     (element) => getComputedStyle(element).fontSize,
   ));
   return {

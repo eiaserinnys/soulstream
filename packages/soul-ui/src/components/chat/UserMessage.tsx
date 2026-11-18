@@ -5,6 +5,7 @@ import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
+import { externalSenderDisplay, ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { MarkdownContent } from "../MarkdownContent";
 import { ContextBlock } from "./ContextBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
@@ -23,7 +24,8 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   const sessionNodeId = useChatStore((s) => s.activeSessionSummary?.nodeId);
 
   const isLlm = llmContext?.isLlm ?? false;
-  const isAgent = !!msg.agentInfo;
+  const external = externalSenderDisplay(msg.callerInfo);
+  const isAgent = !!msg.agentInfo && !external;
 
   // 에이전트 발신: agentInfo에서 이름 추출
   const agentDisplayName = isAgent
@@ -49,7 +51,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   // user 발신 portrait: 메시지 caller_info → 세션 caller_info.
   // 첫 history fetch 시점에도 메시지 단위 caller_info가 함께 도착하므로
   // 세션-수준 metadata propagation race로 인한 미표시 결함이 해소된다 (atom ed3a216d 통합 후속 fix).
-  const userPortraitUrl = portraitUrl ?? pickMessageAvatarUrl(
+  const userPortraitUrl = external ? null : portraitUrl ?? pickMessageAvatarUrl(
     msg.callerInfo,
     callerAvatarUrl,
   );
@@ -61,7 +63,8 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   return (
     <div className={manuscript ? MANUSCRIPT_USER_ROW_CLASS_NAME : "flex justify-end gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-chat-user={manuscript ? "true" : undefined} data-chat-manuscript-user-row={manuscript ? "true" : undefined} data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
       <div {...bubbleProps} data-slot="chat-message-bubble" data-chat-attachment-role={!manuscript && attachments ? "user" : undefined} className={cn(!manuscript && attachments && "chat-attachment-bubble", manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
-        {!manuscript && (header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
+        {manuscript && external && <ExternalSenderCaption sender={external} />}
+        {!manuscript && (external ? <><ExternalSenderHeading sender={external} />{header}</> : header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {displayName}
           </span>
@@ -94,6 +97,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
       </div>
       {!manuscript && <ProfileAvatar
         role="user"
+        external={external ?? undefined}
         hasPortrait={hasPortrait}
         fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
         portraitUrl={isAgent ? agentPortraitUrl : userPortraitUrl}

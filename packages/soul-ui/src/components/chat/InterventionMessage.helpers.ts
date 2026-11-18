@@ -13,9 +13,11 @@
  */
 
 import type { ChatMessage } from "../../lib/flatten-tree";
+import { externalSenderDisplay, type ExternalSender } from "./externalSender";
 import { pickMessageAvatarUrl } from "./userAvatarSelectors";
 
 export interface InterventionDisplay {
+  external?: ExternalSender;
   isSystem: boolean;
   isAgent: boolean;
   displayName: string;
@@ -64,6 +66,12 @@ export function computeInterventionDisplay(
       hasPortrait: true,
       fallbackEmoji: FALLBACK_SYSTEM,
     };
+  }
+
+  const external = externalSenderDisplay(msg.callerInfo);
+  if (external) {
+    return { isSystem: false, isAgent: false, displayName: external.name, displayId: null,
+      portraitUrl: null, hasPortrait: false, fallbackEmoji: "", external };
   }
 
   // ---- agent 분기 ----
