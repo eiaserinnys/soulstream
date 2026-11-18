@@ -30,6 +30,25 @@ test('보일 데이터가 없는 첫 로딩은 구석 표시 대신 프레임 �
   expect(StyleSheet.flatten(screen.getByTestId('starred-loading').props.style).flex).toBe(1);
   expect(screen.queryByText('별표 카드가 없습니다.')).toBeNull();
   expect(screen.queryByText('별표 목록을 불러오는 중입니다.')).toBeNull();
+  expect(screen.queryByTestId('starred-task-sheet')).toBeNull();
+});
+
+test('첫 로딩에는 빈 유리 시트를 그리지 않고, 데이터가 있는 갱신과 빈 상태에는 그대로 둔다', () => {
+  mockState.data = { items: [], nextCursor: null };
+  mockState.loading = true;
+  const screen = render(<StarredFoldersScreen />);
+  expect(screen.queryByTestId('starred-task-sheet')).toBeNull();
+
+  mockState.data = { items: [folder], nextCursor: null };
+  screen.rerender(<StarredFoldersScreen />);
+  expect(screen.getByTestId('starred-task-sheet')).toBeTruthy();
+  expect(screen.getByLabelText('자동 갱신 중')).toBeTruthy();
+
+  mockState.data = { items: [], nextCursor: null };
+  mockState.loading = false;
+  screen.rerender(<StarredFoldersScreen />);
+  expect(screen.getByTestId('starred-task-sheet')).toBeTruthy();
+  expect(screen.getByText('별표 카드가 없습니다.')).toBeTruthy();
 });
 
 test('자동 pending 전중후는 pull을 켜지 않고 스크롤을 유지한다', () => {

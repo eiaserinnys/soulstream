@@ -14,7 +14,7 @@ beforeEach(() => {
   (createApiClient as jest.Mock).mockReturnValue(api);
 });
 
-test('첫 로딩은 섹션 부품을, 새로고침은 행을 밀지 않는 작은 스피너를 세운다', async () => {
+test('첫 로딩은 섹션 부품을, 새로고침은 목록 위 같은 자리에서 스피너 한 줄 높이만큼 행을 내리며 작은 스피너를 세운다', async () => {
   api.listRecurringJobs.mockResolvedValueOnce({
     jobs: [{ job_id: 'job-1', name: '음악 추천', enabled: true, archived_at: null, next_run_at: '2026-09-22T00:00:00.000Z' }],
   });

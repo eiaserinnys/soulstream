@@ -65,20 +65,22 @@ export function StarredFoldersWorkspace({ api, active = true, embedded = false, 
         <RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />
       )}
     >
-      <StarredFolderList
-        folders={starred.data.items}
-        loading={starred.loading}
-        error={starred.error}
-        hasMore={!!starred.data.nextCursor}
-        onLoadMore={starred.loadMore}
-        onRefresh={starred.refresh}
-        refreshRequired={starred.refreshRequired}
-        onSelect={(folder) => onOpenFolder?.(folder)}
-        onLongPress={(folder) => menus.openFolderMenu(folder, () => onOpenFolder?.(folder))}
-        onMove={moveFolderOrder}
-        onDragStateChange={setDragging}
-        reordering={starred.reordering}
-      />
+      {firstLoading ? null : (
+        <StarredFolderList
+          folders={starred.data.items}
+          loading={starred.loading}
+          error={starred.error}
+          hasMore={!!starred.data.nextCursor}
+          onLoadMore={starred.loadMore}
+          onRefresh={starred.refresh}
+          refreshRequired={starred.refreshRequired}
+          onSelect={(folder) => onOpenFolder?.(folder)}
+          onLongPress={(folder) => menus.openFolderMenu(folder, () => onOpenFolder?.(folder))}
+          onMove={moveFolderOrder}
+          onDragStateChange={setDragging}
+          reordering={starred.reordering}
+        />
+      )}
     </ScrollView>
     {starred.loading && !firstLoading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: 0 }} /> : null}
     {firstLoading ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="starred-loading" /></View> : null}

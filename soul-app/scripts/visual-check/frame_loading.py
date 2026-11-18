@@ -15,10 +15,18 @@ walks every first-loading sample. For frame-filling samples it checks that the
 loader box centre and the spinner/text cluster centre both sit on the owning
 frame centre within 1px on both axes, and that no corner auto-refresh marker
 shows. A sample whose frame cannot be found fails instead of being compared
-with itself. For content-height boxes (settings section, folder cards list
-body) it measures the gap from the box border to the cluster above and below
-and the horizontal centre of the box against the cluster. Captures are taken
-at iPad landscape (1180x820) and narrow (390x844).
+with itself. Settings keeps the content-height check: the gap from the box
+border to the cluster above and below and the horizontal centre.
+
+The daily sample uses the empty area between the date row bottom and the
+composer dock top as its frame: the loader must fill that area and its centre
+must sit on the area midpoint. The starred sample fails if the empty glass
+sheet (`starred-task-sheet`) is drawn during the first load. Folder cards
+compares only the horizontal centre against the `folder-cards` section and
+records the header-to-loader top gap as a value: the inline loader is the
+whole visible body below the header, so there is no separate bordered box to
+balance against vertically. Captures are taken at iPad landscape (1180x820)
+and narrow (390x844).
 """
 from __future__ import annotations
 
@@ -40,15 +48,18 @@ SAMPLES = [
     {"mode": "settings", "name": "settings", "loader": "frame-loading-settings-loader", "kind": "inline", "box": "parent", "text": "불러오는 중…"},
     {"mode": "board", "name": "board", "loader": "card-board-loading", "frame": "card-board-frame", "kind": "center"},
     {"mode": "boardExpanded", "name": "board-expanded", "loader": "card-board-loading", "scope": "card-board-expanded", "frame": "card-board-frame", "kind": "center"},
-    {"mode": "daily", "name": "daily", "loader": "daily-loading", "frame": "daily-keyboard-frame", "kind": "center"},
-    {"mode": "starred", "name": "starred", "loader": "starred-loading", "frame": "starred-refresh-frame", "kind": "center"},
-    {"mode": "folderCards", "name": "folder-cards", "loader": "folder-cards-loading", "kind": "inline", "box": "folder-cards-list-box"},
+    {"mode": "daily", "name": "daily", "loader": "daily-loading", "frame": "phone-daily-body",
+     "kind": "dailyArea", "start": "daily-date-row", "end": "daily-composer-dock"},
+    {"mode": "starred", "name": "starred", "loader": "starred-loading", "frame": "starred-refresh-frame",
+     "kind": "center", "absent": ["starred-task-sheet"]},
+    {"mode": "folderCards", "name": "folder-cards", "loader": "folder-cards-loading",
+     "kind": "sectionCenter", "section": "folder-cards"},
     {"mode": "feed", "name": "feed", "loader": "session-feed-loading", "frame": None, "kind": "center", "text": "세션을 불러오는 중입니다."},
     {"mode": "cardDetail", "name": "card-detail", "loader": "card-detail-loading", "frame": "card-detail-scroll", "kind": "center"},
 ]
 
 METRICS_SCRIPT = r"""
-({ loaderId, frameId, scopeId, boxId }) => {
+({ loaderId, frameId, scopeId, boxId, startId, endId, sectionId, absentIds }) => {
   const round = (value) => Math.round(value * 100) / 100;
   const rect = (element) => {
     const bounds = element.getBoundingClientRect();
@@ -66,6 +77,10 @@ METRICS_SCRIPT = r"""
   };
   const find = (selector, from) => {
     try { return (from || document).querySelector(selector); } catch { return null; }
+  };
+  const findLastVisible = (id) => {
+    const matches = [...document.querySelectorAll(`[data-testid="${id}"]`)].filter(visible);
+    return matches.length ? matches[matches.length - 1] : null;
   };
   const scope = scopeId ? document.querySelector(`[data-testid="${scopeId}"]`) : document;
   let loaders = [...(scope || document).querySelectorAll(`[data-testid="${loaderId}"]`)].filter(visible);
@@ -108,6 +123,12 @@ METRICS_SCRIPT = r"""
     }
   }
 
+  const start = startId ? findLastVisible(startId) : null;
+  const end = endId ? findLastVisible(endId) : null;
+  const section = sectionId ? findLastVisible(sectionId) : null;
+  // The header row is the section's first element (title row with the add button).
+  const header = section ? section.firstElementChild : null;
+
   const style = getComputedStyle(loader);
   return {
     role: loader.getAttribute('role'),
@@ -117,6 +138,14 @@ METRICS_SCRIPT = r"""
     box: box ? rect(box) : null,
     frame: frame ? rect(frame) : null,
     frameTestId: frame ? frame.getAttribute('data-testid') : null,
+    start: start ? rect(start) : null,
+    end: end ? rect(end) : null,
+    section: section ? rect(section) : null,
+    header: header ? rect(header) : null,
+    headerGap: header ? round(union.top - header.getBoundingClientRect().bottom) : null,
+    absent: Object.fromEntries((absentIds || []).map((id) => [
+      id, [...document.querySelectorAll(`[data-testid="${id}"]`)].filter(visible).length,
+    ])),
     paddingTop: parseFloat(style.paddingTop) || 0,
     paddingBottom: parseFloat(style.paddingBottom) || 0,
     cornerMarkers: document.querySelectorAll('[aria-label="자동 갱신 중"]').length,
@@ -145,6 +174,11 @@ def failures_for(sample: dict, metrics: dict, label: str) -> list[dict]:
     if metrics.get("cornerMarkers"):
         failures.append({"check": "corner marker during first load", "label": label,
                          "actual": metrics["cornerMarkers"]})
+    for absent_id in sample.get("absent", []):
+        count = metrics.get("absent", {}).get(absent_id, 0)
+        if count:
+            failures.append({"check": "element must be absent during first load", "label": label,
+                             "testID": absent_id, "visibleCount": count})
     expected_text = sample.get("text")
     if expected_text is not None:
         actual_text = metrics.get("text", "").strip()
@@ -168,6 +202,46 @@ def failures_for(sample: dict, metrics: dict, label: str) -> list[dict]:
         delta = abs(cluster["centerX"] - box["centerX"])
         if delta > CENTRE_TOLERANCE_PX:
             failures.append({"check": "inline horizontal centre", "label": label, "delta": round(delta, 2)})
+        return failures
+    if sample["kind"] == "dailyArea":
+        frame, start, end = metrics.get("frame"), metrics.get("start"), metrics.get("end")
+        if not frame or not start or not end:
+            failures.append({"check": "missing daily area", "label": label,
+                             "frame": sample.get("frame"), "start": sample.get("start"),
+                             "end": sample.get("end")})
+            return failures
+        if start["bottom"] > end["top"]:
+            failures.append({"check": "daily area is inverted", "label": label,
+                             "dateRowBottom": start["bottom"], "composerTop": end["top"]})
+            return failures
+        area_center_y = round((start["bottom"] + end["top"]) / 2, 2)
+        for name in ("loader", "cluster"):
+            delta = abs(metrics[name]["centerY"] - area_center_y)
+            if delta > CENTRE_TOLERANCE_PX:
+                failures.append({"check": f"{name} centreY vs empty area", "label": label,
+                                 "delta": round(delta, 2), name: metrics[name]["centerY"],
+                                 "areaCenterY": area_center_y})
+        for name in ("loader", "cluster"):
+            delta = abs(metrics[name]["centerX"] - frame["centerX"])
+            if delta > CENTRE_TOLERANCE_PX:
+                failures.append({"check": f"{name} centerX vs body", "label": label,
+                                 "delta": round(delta, 2), name: metrics[name]["centerX"],
+                                 "frame": frame["centerX"]})
+        return failures
+    if sample["kind"] == "sectionCenter":
+        section, cluster = metrics.get("section"), metrics["cluster"]
+        if not section:
+            failures.append({"check": "missing section", "label": label,
+                             "section": sample.get("section")})
+            return failures
+        # The inline loader is the only visible body below the header row, so there is no
+        # separate bordered box underneath to balance against vertically. Judge only the
+        # horizontal centre against the section; headerGap stays a recorded value.
+        delta = abs(cluster["centerX"] - section["centerX"])
+        if delta > CENTRE_TOLERANCE_PX:
+            failures.append({"check": "section horizontal centre", "label": label,
+                             "delta": round(delta, 2), "cluster": cluster["centerX"],
+                             "section": section["centerX"]})
         return failures
     if not metrics.get("frame"):
         failures.append({"check": "missing frame", "label": label, "frame": sample.get("frame")})
@@ -265,6 +339,10 @@ def main() -> int:
                         "frameId": sample.get("frame"),
                         "scopeId": sample.get("scope"),
                         "boxId": sample.get("box"),
+                        "startId": sample.get("start"),
+                        "endId": sample.get("end"),
+                        "sectionId": sample.get("section"),
+                        "absentIds": sample.get("absent", []),
                     })
                     sample_failures = failures_for(sample, metrics, label)
                     failures.extend(sample_failures)

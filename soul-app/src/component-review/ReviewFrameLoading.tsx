@@ -105,7 +105,7 @@ export function ReviewFrameLoading() {
 
   return <View testID="review-frame-loading" style={{ flex: 1 }}>
     <View style={{ padding: t.cardLayout.padding, gap: t.uiSpacing.sm }}>
-      <SettingsSegmentedControl<Mode> id="frame-loading-mode" value={mode} options={modes} onChange={setMode} />
+      <SettingsSegmentedControl<Mode> wrap id="frame-loading-mode" value={mode} options={modes} onChange={setMode} />
       <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>스피너 왼쪽, 짧은 글자 오른쪽의 한 줄 묶음이 프레임 가운데에 섭니다. 응답을 붙잡아 둔 실제 컴포넌트로 첫 로딩을 재현합니다.</Text>
     </View>
     <View style={{ flex: 1, paddingHorizontal: t.cardLayout.padding, paddingBottom: t.cardLayout.padding }}>
