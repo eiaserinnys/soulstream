@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { parseChildSessionRelationKey } from
-  "../src/turn-summary/turn_summary_speaker.js";
+import {
+  formatTurnSummarySpeakerLabel,
+  parseChildSessionRelationKey,
+  resolveTurnSummarySpeaker,
+} from "../src/turn-summary/turn_summary_speaker.js";
+
+describe("resolveTurnSummarySpeaker", () => {
+  it("labels external callers with the grant label instead of system or user", () => {
+    const speaker = resolveTurnSummarySpeaker("user_message", {
+      caller_info: { source: "external", display_name: "빌드 봇" },
+    });
+    expect(speaker).toEqual({ kind: "external", label: "빌드 봇" });
+    expect(formatTurnSummarySpeakerLabel(speaker!)).toBe("[발화자: 외부 연동 「빌드 봇」]");
+  });
+
+  it("falls back to the external label when the display name is empty", () => {
+    const speaker = resolveTurnSummarySpeaker("intervention_sent", {
+      caller_info: { source: "external", display_name: " " },
+    });
+    expect(speaker).toEqual({ kind: "external", label: "외부 연동" });
+    expect(formatTurnSummarySpeakerLabel(speaker!)).toBe("[발화자: 외부 연동 「외부 연동」]");
+  });
+});
 
 describe("parseChildSessionRelationKey", () => {
   it("returns the child id and terminal revision from the shared grammar", () => {

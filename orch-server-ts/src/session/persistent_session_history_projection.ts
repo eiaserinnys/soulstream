@@ -86,6 +86,7 @@ export function projectPersistentSessionHistoryEntry(
 
 function inputKind(source: string | null): PersistentSessionHistoryInputKind {
   if (source === "slack" || source === "browser" || source === "soul-app") return "human";
+  if (source === "external") return "external";
   if (source === "agent") return "agent";
   if (source !== null && SYSTEM_SOURCES.has(source)) return "system";
   return "unknown";

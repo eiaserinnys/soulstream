@@ -81,6 +81,7 @@ describe("EventReadRepository.listUserMessages (real Postgres)", () => {
     await put("sess-a", 3, "user_message", at("01:30:00.000"), message("agent", "에이전트 발화"));
     await put("sess-b", 2, "user_message", at("01:35:00.000"), message("system", "시스템 안내"));
     await put("sess-b", 3, "user_message", at("01:40:00.000"), message(null, "발신 정보 없음"));
+    await put("sess-b", 9, "user_message", at("01:31:00.000"), message("external", "외부 연동 요청"));
     await put("sess-b", 4, "user_message", at("01:45:00.000"), message("browser", undefined));
     await put("sess-b", 8, "user_message", at("01:46:00.000"), message("browser", ""));
     await put("sess-a", 4, "user_message", at("00:59:59.999"), message("browser", "기간 이전"));
@@ -99,6 +100,15 @@ describe("EventReadRepository.listUserMessages (real Postgres)", () => {
     ]);
     expect(rows.find((r) => r.session_id === "sess-b" && r.event_id === 1)?.source).toBe("external-llm");
     expect(rows.find((r) => r.event_id === 9)?.source).toBe("future-source");
+  });
+
+  it("external 발신은 기본 조회에서 빼고 sources로 지목하면 돌려준다", async () => {
+    const { rows } = await repository.listUserMessages(query());
+    expect(ids(rows)).not.toContain("sess-b#9");
+    const external = await repository.listUserMessages(query({ sources: ["external"], excludedSources: [] }));
+    expect(ids(external.rows)).toEqual(["sess-b#9"]);
+    expect(external.rows[0]?.source).toBe("external");
+    expect(external.total).toBe(1);
   });
 
   it("sources를 주면 기본 제외를 적용하지 않고 그 값의 메시지만 돌려준다", async () => {

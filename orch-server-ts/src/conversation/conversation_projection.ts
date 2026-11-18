@@ -1,6 +1,7 @@
-import { isHumanInput, isInternalInput, isKeepalive, isHiddenConversationInput, isShortAcknowledgement, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { isExternalInput, isInternalInput, isKeepalive, isHiddenConversationInput, isShortAcknowledgement, isSilent, isVisibleConversationInput } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
-export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }> };
+export type ItemSender = { kind: "external"; label: string };
+export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }>; sender?: ItemSender };
 export type SourceEvent = { id: number; type: string; at: string; payload: Record<string, unknown> };
 export class ConversationProjection {
   private firstUserMessageSeen = false;
@@ -38,11 +39,12 @@ export class ConversationProjection {
   setStream(id: string, text: string) { this.streamId = id; this.streamText = text; }
   apply(event: SourceEvent): { item?: Item; activity?: { busy: boolean; tool: string | null } } {
     const { id, type, payload, at } = event;
-    const human = isHumanInput(type, payload);
+    const visible = isVisibleConversationInput(type, payload);
+    const external = isExternalInput(type, payload);
     const input = type === "user_message" || type === "intervention_sent";
     const internal = isInternalInput(type, payload);
     const hiddenInput = isHiddenConversationInput(type, payload);
-    if (human && !hiddenInput) this.errorInTurn = false;
+    if (visible && !hiddenInput) this.errorInTurn = false;
     const anchor = string(payload.input_id ?? payload.inputId ?? payload.prepared_input_id ?? payload.preparedInputId);
     const makeItem = (kind: Item["kind"], text: string, attachments: Item["attachments"] = []): Item => ({ id: String(id), kind, text, at, attachments });
     if (type === "notification" && typeof payload._conversation_notice === "string") return { item: makeItem("notice", payload._conversation_notice) };
@@ -63,13 +65,15 @@ export class ConversationProjection {
       }
       this.suppressed = internal || hasClosedContext(payload);
       if (input) { this.busy = true; this.tool = null; }
-      if (human) {
+      if (visible) {
         const firstUserMessage = type === "user_message" && !this.firstUserMessageSeen;
         if (type === "user_message") this.firstUserMessageSeen = true;
         if (firstUserMessage && this.firstInputIsInitial) return { activity: this.activity() };
         const attachments = attachmentsFor(payload);
         const text = stripInternal(string(payload._conversation_text) ?? string(payload.text) ?? "");
-        return text.trim() || attachments.length ? { item: makeItem("user", text, attachments), activity: this.activity() } : {};
+        if (!text.trim() && !attachments.length) return {};
+        const item = makeItem("user", text, attachments);
+        return { item: external ? { ...item, sender: externalSender(payload) } : item, activity: this.activity() };
       }
       return {};
     }
@@ -111,6 +115,13 @@ export class ConversationProjection {
   }
 }
 function string(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }
+function externalSender(payload: Record<string, unknown>): ItemSender {
+  const caller = payload.caller_info ?? payload.callerInfo;
+  const displayName = caller && typeof caller === "object" && !Array.isArray(caller)
+    ? string((caller as Record<string, unknown>).display_name)?.trim()
+    : undefined;
+  return { kind: "external", label: displayName || "외부 연동" };
+}
 function hasClosedContext(payload: Record<string, unknown>): boolean {
   const context = payload.context_items ?? payload.contextItems ?? payload.context;
   return Array.isArray(context) && context.some(x => x && typeof x === "object" && (x as Record<string, unknown>).key === "persistent_report_closed");

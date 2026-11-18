@@ -19,7 +19,7 @@ import {
 // real worker control and handlers, mocked model catalog and transport socket) lives in
 // persistent-session-settings-world.ts.
 
-const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
+const hasDocker = spawnSync("docker", ["info"], { stdio: "ignore", timeout: 5_000 }).status === 0;
 const describePostgres = hasDocker ? describe : describe.skip;
 
 type Json = Record<string, unknown>;

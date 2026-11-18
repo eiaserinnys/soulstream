@@ -55,6 +55,15 @@
       "serializedUser": { "userName": "Older browser", "userPortraitUrl": null }
     },
     {
+      "name": "external source alone is identity-bearing",
+      "metadata": [
+        { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },
+        { "type": "caller_info", "value": { "source": "external" } }
+      ],
+      "callerInfo": { "source": "external" },
+      "serializedUser": { "userName": null, "userPortraitUrl": null }
+    },
+    {
       "name": "llm source alone is identity-bearing",
       "metadata": [
         { "type": "caller_info", "value": { "source": "browser", "display_name": "Older browser" } },

@@ -327,7 +327,7 @@ describe("list_session_events", () => {
 });
 
 describe("list_user_messages", () => {
-  const EXCLUDED_SOURCES = ["agent", "api", "channel_observer", "execute-proxy", "llm", "system"];
+  const EXCLUDED_SOURCES = ["agent", "api", "channel_observer", "execute-proxy", "external", "llm", "system"];
   const row = (eventId: number, text: string, textChars: number) => ({
     session_id: "sess-1",
     event_id: eventId,

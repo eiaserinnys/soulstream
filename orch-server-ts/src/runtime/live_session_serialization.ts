@@ -97,6 +97,7 @@ const IDENTITY_BEARING_SOURCES = new Set([
   "soul-app",
   "channel_observer",
   "llm",
+  "external",
 ]);
 
 export function serializeSessionRow(

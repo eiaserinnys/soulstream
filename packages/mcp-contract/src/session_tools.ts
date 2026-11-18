@@ -7,7 +7,7 @@ export interface SessionReadPeriod {
   readonly until: string;
 }
 
-export type PersistentSessionHistoryInputKind = "human" | "agent" | "system" | "unknown";
+export type PersistentSessionHistoryInputKind = "human" | "agent" | "system" | "external" | "unknown";
 
 export interface PersistentSessionHistorySender {
   readonly display_name: string | null;

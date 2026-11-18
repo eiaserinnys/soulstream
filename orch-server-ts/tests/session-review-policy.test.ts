@@ -4,11 +4,21 @@ import {
   evaluateInitialSessionReview,
   normalizeSessionReviewSourceAllowlist,
   readSessionReviewPolicy,
+  SESSION_REVIEW_POLICY_SOURCE_CATALOG,
   updateSessionReviewPolicy,
 } from "../src/system/session_review_policy.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 
 describe("session review policy", () => {
+  it("lists external input in the source catalog as non-automatic", () => {
+    expect(SESSION_REVIEW_POLICY_SOURCE_CATALOG.find(entry => entry.source === "external")).toEqual({
+      source: "external",
+      label: "외부 연동",
+      description: "접속 링크나 웹훅으로 들어온 외부 요청",
+      automatic: false,
+    });
+  });
+
   it("normalizes source IDs but reserves browser for its qualified invariant", () => {
     expect(normalizeSessionReviewSourceAllowlist([
       " Slack ",

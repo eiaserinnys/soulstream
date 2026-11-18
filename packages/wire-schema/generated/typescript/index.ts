@@ -105,6 +105,7 @@ export type CallerInfoSource =
   | "browser"
   | "channel_observer"
   | "execute-proxy"
+  | "external"
   | "llm"
   | "slack"
   | "soul-app"
@@ -3539,6 +3540,7 @@ export const CALLER_INFO_SOURCES = [
   "browser",
   "channel_observer",
   "execute-proxy",
+  "external",
   "llm",
   "slack",
   "soul-app",

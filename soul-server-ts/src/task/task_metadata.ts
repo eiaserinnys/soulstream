@@ -321,6 +321,7 @@ const IDENTITY_BEARING_SOURCES: ReadonlySet<string> = new Set([
   "soul-app",
   "channel_observer",
   "llm",
+  "external",
 ]);
 
 export interface AgentsRunStateMetadata {

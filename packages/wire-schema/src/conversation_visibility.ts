@@ -13,8 +13,20 @@ export function isHumanInput(type: string, payload: Record<string, unknown>): bo
   const caller = record(payload.caller_info ?? payload.callerInfo);
   const agent = record(payload.agent_info ?? payload.agentInfo);
   const intent = payload.delivery_intent ?? payload.deliveryIntent;
-  return caller?.source !== "agent" && (caller !== undefined || agent?.source !== "agent")
+  return caller?.source !== "agent" && caller?.source !== "external" && (caller !== undefined || agent?.source !== "agent")
     && intent !== "completion_notification" && intent !== "runtime_followup";
+}
+/** 접속 링크·웹훅 같은 외부 연동이 만든 입력. 사람 사용자와 분류는 다르지만 대화에는 보인다. */
+export function isExternalInput(type: string, payload: Record<string, unknown>): boolean {
+  if (type !== "user_message" && type !== "intervention_sent") return false;
+  const caller = record(payload.caller_info ?? payload.callerInfo);
+  const intent = payload.delivery_intent ?? payload.deliveryIntent;
+  return caller?.source === "external"
+    && intent !== "completion_notification" && intent !== "runtime_followup";
+}
+/** 대화 투영에 사용자 항목으로 보이는 입력인지. 사람이거나 외부 연동이다. */
+export function isVisibleConversationInput(type: string, payload: Record<string, unknown>): boolean {
+  return isHumanInput(type, payload) || isExternalInput(type, payload);
 }
 export function isKeepalive(payload: Record<string, unknown>): boolean {
   return payload.purpose === "cache_keepalive" || (typeof payload.text === "string" && payload.text.trim() === LEGACY_CACHE_INPUT);

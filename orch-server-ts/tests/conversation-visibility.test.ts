@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isCardNoticeInput, isHiddenConversationInput } from "../../packages/wire-schema/src/conversation_visibility.js";
+import {
+  isCardNoticeInput,
+  isExternalInput,
+  isHiddenConversationInput,
+  isHumanInput,
+  isVisibleConversationInput,
+} from "../../packages/wire-schema/src/conversation_visibility.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice } from "../src/cards/card_board_notice.js";
 
 const card = {id:"card",number:953,title:"작업"};
@@ -9,6 +15,26 @@ const notices = [
   buildCardReviewNotice({...card,now:null,items:[]}),
   buildCardDoneNotice({...card,completed_kind:"user",completed_session_id:null,assignee_session_id:"owner"}),
 ];
+
+describe("caller source classification", () => {
+  it("keeps external inputs visible without calling them human", () => {
+    for (const type of ["user_message", "intervention_sent"]) {
+      const external = { caller_info: { source: "external" } };
+      expect(isHumanInput(type, external)).toBe(false);
+      expect(isExternalInput(type, external)).toBe(true);
+      expect(isVisibleConversationInput(type, external)).toBe(true);
+      for (const source of ["browser", "slack", "soul-app"]) {
+        expect(isHumanInput(type, { caller_info: { source } })).toBe(true);
+        expect(isExternalInput(type, { caller_info: { source } })).toBe(false);
+        expect(isVisibleConversationInput(type, { caller_info: { source } })).toBe(true);
+      }
+      expect(isHumanInput(type, { caller_info: { source: "agent" } })).toBe(false);
+      expect(isExternalInput(type, { caller_info: { source: "agent" } })).toBe(false);
+      expect(isVisibleConversationInput(type, { caller_info: { source: "agent" } })).toBe(false);
+    }
+    expect(isExternalInput("assistant_message", { caller_info: { source: "external" } })).toBe(false);
+  });
+});
 
 describe("card notice visibility", () => {
   it.each(notices)("recognizes the actual card notice for system inputs: %s", text => {

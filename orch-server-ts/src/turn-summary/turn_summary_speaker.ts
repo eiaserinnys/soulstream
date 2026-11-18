@@ -21,6 +21,10 @@ export type TurnSummarySpeaker =
     readonly agentName?: string;
   }
   | {
+    readonly kind: "external";
+    readonly label: string;
+  }
+  | {
     readonly kind: "system";
   };
 
@@ -54,6 +58,13 @@ export function resolveTurnSummarySpeaker(
         callerInfo.agent_id,
         callerInfo.user_id,
       ) ?? "위임 에이전트",
+    };
+  }
+
+  if (source === "external") {
+    return {
+      kind: "external",
+      label: firstNonEmptyString(callerInfo.display_name) ?? "외부 연동",
     };
   }
 
@@ -92,6 +103,9 @@ export function formatTurnSummarySpeakerLabel(
         ? ""
         : `, session_id: ${speaker.childSessionId}`;
     return `[발화자: ${identity} (위임 세션 완료 보고${sessionId})]`;
+  }
+  if (speaker.kind === "external") {
+    return `[발화자: 외부 연동 「${speaker.label}」]`;
   }
   if (speaker.kind === "system") {
     return "[발화자: 시스템]";
