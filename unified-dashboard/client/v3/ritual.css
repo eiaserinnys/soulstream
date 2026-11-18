@@ -185,6 +185,7 @@
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
 }
+.v3-ritual-message > .v3-error-notice { align-self: stretch; }
 
 .v3-ritual-done > span {
   display: grid;

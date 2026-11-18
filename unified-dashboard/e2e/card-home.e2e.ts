@@ -9,7 +9,7 @@ const emptyLanesOutput=path.resolve("../../../.local/artifacts/20261005-card-emp
 const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
-async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean}={}){
+async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean}={}){
  const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
  const completedAt=new Date().toISOString();
@@ -28,8 +28,9 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
    if(status==="done"){
     completedReads.push(url.search);
     if(completedOptions.delay)await new Promise(done=>setTimeout(done,completedOptions.delay));
-    if(completedFailure)return route.fulfill({status:500,json:{message:"완료 카드 조회 실패 fixture"}});
+    if(completedFailure)return route.fulfill({status:500,json:{message:completedOptions.detail??"완료 카드 조회 실패 fixture"}});
    }
+   if(status!=="done"&&folderId&&completedOptions.folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
    const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt}));
    const listed=[...cards,...completedSeeds].filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done")
     .filter(card=>!query||`${card.title} ${card.request}`.toLocaleLowerCase().includes(query));
@@ -651,3 +652,56 @@ test('visual1680 초점 키보드 최소 폭과 창 크기',async({page})=>{
  const afterScroll=await scroller.evaluate(el=>el.scrollTop);expect(afterScroll).toBe(beforeScroll);
  await visualShot(page,'interaction-1440');visualSave('interaction',{tab,openedFocus,focusRestored:true,escapeClosed:true,narrow,beforeScroll,afterScroll,value:await search.inputValue()});
 });
+
+const longCompletedError='카드 요청 실패 (500): GET https://soulstream.example/api/cards?status=done&completedFrom=2026-11-11T21%3A42%3A03.038Z\n'+
+ 'TypeError: Failed to fetch dynamically imported module https://soulstream.example/assets/use-completed-cards-Bx7d9QeR2kLmNoPqRsTuVwXyZ.js\n'+
+ Array.from({length:8},(_,i)=>`    at loadCompletedPage (https://soulstream.example/assets/index-${i}a8f3c2d1.js:${1200+i}:${17+i})`).join('\n');
+async function measureLongError(page:Page,width:number,height:number,folder=false,verify=true,name?:string){
+ await page.setViewportSize({width,height});await fixture(page,17,seed(),0,{fail:true,detail:longCompletedError});
+ let surface=page.getByTestId('card-home');if(folder){await openCompletedFolder(page);surface=page.getByTestId('folder-card-section');}
+ await surface.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const col=surface.locator('[data-board-column="done"]'),alert=col.getByRole('alert');await expect(alert).toBeVisible();
+ await col.scrollIntoViewIfNeeded();await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
+ const data=await col.evaluate(c=>{const rect=(selector:string)=>{const r=c.querySelector(selector)!.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};const pre=c.querySelector('pre')!;const viewport=c.querySelector('[data-testid="completed-viewport"]')!;
+  return {viewport:rect('[data-testid="completed-viewport"]'),notice:rect('.v3-error-notice'),button:rect('.v3-error-notice-actions button'),pre:rect('pre'),preScroll:{height:pre.scrollHeight,client:pre.clientHeight},viewportOverflow:getComputedStyle(viewport).overflow};});
+ if(name){await visualShot(page,name);visualSave(name,data);}
+ if(verify){expect(data.notice.bottom).toBeLessThanOrEqual(data.viewport.bottom+1);expect(data.button.bottom).toBeLessThanOrEqual(data.viewport.bottom+1);expect(data.pre.bottom).toBeLessThanOrEqual(data.button.top+1);expect(data.preScroll.height).toBeGreaterThan(data.preScroll.client);expect(data.viewportOverflow).toBe('hidden');}
+ return data;
+}
+async function measureFolderError(page:Page,width:number,verify=true,name?:string){
+ await page.setViewportSize({width,height:width===390?844:900});await fixture(page,17,seed(),0,{folderFailure:true});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section'),alert=folder.getByRole('alert').first();await expect(alert).toBeVisible();await alert.scrollIntoViewIfNeeded();
+ const board=await folder.evaluate(f=>{const notice=f.querySelector('.v3-error-notice')!.getBoundingClientRect(),head=f.querySelector('.v3-card-board-workspace > .v3-detail-section-head')!.getBoundingClientRect();return {noticeBottom:notice.bottom,headTop:head.top,gap:head.top-notice.bottom};});
+ if(name)await visualShot(page,`${name}-board`);
+ await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await alert.scrollIntoViewIfNeeded();
+ const list=await folder.evaluate(f=>{const notice=f.querySelector('.v3-error-notice')!.getBoundingClientRect(),head=f.querySelector(':scope > .v3-folder-card-head')!.getBoundingClientRect();return {noticeTop:notice.top,headBottom:head.bottom,gap:notice.top-head.bottom};});
+ if(name){await visualShot(page,`${name}-list`);visualSave(name,{board,list});}
+ if(verify){expect(board.gap).toBeGreaterThan(0);expect(Math.abs(board.gap-list.gap)).toBeLessThanOrEqual(1);}
+ return {board,list};
+}
+async function measureRitualError(page:Page,width:number,verify=true,name?:string){
+ await page.setViewportSize({width,height:width===390?844:900});await fixture(page);
+ await page.locator('.v3-card-inbox').getByRole('button',{name:'기록',exact:true}).click();await page.locator('.v3-date-head').waitFor({state:'visible'});
+ await page.route(url=>new URL(url).pathname==='/api/planner/daily-history',route=>route.fulfill({status:500,json:{message:'플래너 기록 조회 실패 (500): daily-history upstream timeout after 30000ms'}}));
+ await page.getByTestId('v3-planner-scroll').getByRole('button',{name:'아침 정리',exact:true}).click();
+ const alert=page.getByRole('dialog').getByRole('alert');await expect(alert).toBeVisible();await page.waitForTimeout(300);
+ await page.screenshot({animations:'disabled'});
+ const closed=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
+ if(name)await visualShot(page,`${name}-closed`);
+ await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
+ const opened=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
+ if(name){await visualShot(page,`${name}-open`);visualSave(name,{closed,opened});}
+ if(verify){expect(['start','left']).toContain(opened.align);expect(opened.width).toBeCloseTo(closed.width,0);expect(opened.width).toBeCloseTo(opened.containerWidth,0);}
+ return {closed,opened};
+}
+for(const [width,height] of [[390,844],[1366,768]])test(`card1680 긴 오류 상세가 완료 열 안에 유지 ${width}`,async({page})=>{await measureLongError(page,width,height);});
+test('card1680 폴더 오류와 머리 간격이 보기마다 같다',async({page})=>{await measureFolderError(page,390);});
+test('card1680 아침 정리 오류 정렬과 폭 유지',async({page})=>{await measureRitualError(page,390);});
+
+for(const theme of ['light','dark'] as const){
+ for(const width of [390,1440])test(`visual1680-review board-error-long ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,width,width===390?844:900,false,visualPhase==='review-after',`board-error-long-${theme}-${width}`);});
+ test(`visual1680-review board-error-size ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,1366,768,false,visualPhase==='review-after',`board-error-size-${theme}-1366`);});
+ test(`visual1680-review folder-board-long ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,390,844,true,visualPhase==='review-after',`folder-board-long-${theme}-390`);});
+ for(const width of [390,1440])test(`visual1680-review folder-error-board ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureFolderError(page,width,visualPhase==='review-after',`folder-error-board-${theme}-${width}`);});
+ for(const width of [390,1440])test(`visual1680-review ritual-error ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureRitualError(page,width,visualPhase==='review-after',`ritual-error-${theme}-${width}`);});
+}
