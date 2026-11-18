@@ -192,7 +192,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/cards/state/card_remaining_evidence.ts", comparisons: 0, lists: 1, sql: 0, note: "카드 결정 기계의 카드 상태 글자." },
   { file: "src/cards/state/card_server_evidence.ts", comparisons: 0, lists: 1, sql: 0, note: "카드 결정 기계의 카드 상태 글자." },
   { file: "src/cards/supervised_card_context.ts", comparisons: 0, lists: 3, sql: 2, note: "카드 흐름이 카드 상태나 연결 세션 상태를 읽는다." },
-  { file: "src/control_plane/repositories/claude_background_task_generation_repository.ts", comparisons: 0, lists: 0, sql: 4, note: "백그라운드 작업 생성 상태." },
+  { file: "src/control_plane/repositories/claude_background_task_generation_repository.ts", comparisons: 0, lists: 0, sql: 5, note: "백그라운드 작업 생성 상태." },
   { file: "src/control_plane/repositories/claude_background_task_repository.ts", comparisons: 0, lists: 0, sql: 5, note: "백그라운드 작업 상태." },
   { file: "src/control_plane/repositories/node_startup_reconciliation.ts", comparisons: 0, lists: 0, sql: 7, note: "세션 상태를 읽고 쓴다." },
   { file: "src/control_plane/repositories/session_delivery_repository.ts", comparisons: 0, lists: 0, sql: 1, note: "전달 원본 세션의 종료 여부." },

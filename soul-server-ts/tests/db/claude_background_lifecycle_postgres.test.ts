@@ -315,6 +315,30 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     await expect(repo.get("node-test", "caller-session", "old")).resolves.toMatchObject({ status: "killed", close_reason: "runner_missing", notification_delivery_id: null });
   });
 
+  it("closes an orphaned owned generation without changing its owner or creating a delivery", async () => {
+    const lifecycle = makeLifecycle(harness.sql);
+    await lifecycle.observe("caller-session", started("task-owned-orphan"), undefined, {
+      registrationId: "registration-orphan",
+      executionCommandId: "command-orphan",
+    });
+
+    await expect(lifecycle.terminalizeOrphanedForNode({
+      liveSessionIds: new Set(),
+      updatedBefore: new Date(Date.now() + 60_000),
+      limit: 100,
+    })).resolves.toEqual({ queried: 1, closed: 1, skippedLive: 0, failed: 0 });
+    await expect(background(harness.sql).getGeneration(
+      "node-test", "caller-session", "sdk-session", "task-owned-orphan", "toolu-task-owned-orphan",
+    )).resolves.toMatchObject({
+      status: "killed",
+      close_reason: "runner_missing",
+      runner_registration_id: "registration-orphan",
+      execution_command_id: "command-orphan",
+      notification_delivery_id: null,
+    });
+    expect(await harness.sql`SELECT delivery_id FROM session_deliveries`).toHaveLength(0);
+  });
+
   it("lets shutdown and dead-runner recovery race without duplicate terminal delivery", async () => {
     const shutdownWorker = makeLifecycle(harness.createPeer());
     const recoveryWorker = makeLifecycle(harness.createPeer());

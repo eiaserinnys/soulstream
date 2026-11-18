@@ -880,7 +880,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/cards/state/card_remaining_evidence.ts | 0 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
 | src/cards/state/card_server_evidence.ts | 0 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
 | src/cards/supervised_card_context.ts | 0 | 3 | 2 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
-| src/control_plane/repositories/claude_background_task_generation_repository.ts | 0 | 0 | 4 | 백그라운드 작업 생성 상태. |
+| src/control_plane/repositories/claude_background_task_generation_repository.ts | 0 | 0 | 5 | 백그라운드 작업 생성 상태. |
 | src/control_plane/repositories/claude_background_task_repository.ts | 0 | 0 | 5 | 백그라운드 작업 상태. |
 | src/control_plane/repositories/node_startup_reconciliation.ts | 0 | 0 | 7 | 세션 상태를 읽고 쓴다. |
 | src/control_plane/repositories/session_delivery_repository.ts | 0 | 0 | 1 | 전달 원본 세션의 종료 여부. |
@@ -940,7 +940,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 82개, 비교 85줄, 목록 29줄, SQL 59줄이다.
+파일 82개, 비교 85줄, 목록 29줄, SQL 60줄이다.
 
 ## 다시 만들기
 
