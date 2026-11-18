@@ -120,6 +120,11 @@ export function registerInboundWebhookRoutes(
         return {
           id: issued.grant.id,
           url: buildInboundWebhookUrl(options.publicUrl, issued.grant.id),
+          // The header-less receive URL exists only for key mode; the secret
+          // is still shown exactly once, in this response.
+          ...(issued.grant.auth_mode === "key"
+            ? { key_url: buildInboundWebhookKeyUrl(options.publicUrl, issued.secret) }
+            : {}),
           auth_mode: issued.grant.auth_mode,
           secret: issued.secret,
           label: issued.grant.label,
@@ -188,6 +193,11 @@ export function registerInboundWebhookRoutes(
 /** `${publicUrl}/api/hooks/${grantId}` with trailing slashes on the origin collapsed. */
 export function buildInboundWebhookUrl(publicUrl: string, grantId: string): string {
   return `${publicUrl.trim().replace(/\/+$/, "")}/api/hooks/${grantId}`;
+}
+
+/** `${publicUrl}/x/${key}/hook`: the header-less receive URL of a key webhook. */
+export function buildInboundWebhookKeyUrl(publicUrl: string, secret: string): string {
+  return `${publicUrl.trim().replace(/\/+$/, "")}/x/${secret}/hook`;
 }
 
 async function requireEmail(
