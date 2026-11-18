@@ -67,7 +67,8 @@ import {
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
 import { applyEventFeedProjection } from "./node/event_feed_projection_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
-import { runnerInventoryCommandType } from "./node/registry_helpers.js";
+import { isRecord, runnerInventoryCommandType } from "./node/registry_helpers.js";
+import { PendingNodeCommandRejectedError } from "./node/pending_commands.js";
 import { RUNNER_INVENTORY_COMMAND_TIMEOUT_MS } from "./node/node_timeouts.js";
 import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
 import { ReleaseActivationReceiptRepository } from "./node/release_activation_receipt_repository.js";
@@ -1318,31 +1319,51 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
     attemptToken,
   );
   for (const row of claimed) {
+    if (row.target_worktree_id !== null
+      && (row.target_worktree_state === null || row.target_worktree_state === "removed")) {
+      const failure = `target session worktree removed: ${row.target_worktree_id}`;
+      await input.deliveries.markUncertain(row.delivery_id, attemptToken, failure);
+      input.warn(failure);
+      continue;
+    }
     try {
       const parsed = sessionDeliveryInterventionPayload(row, attemptToken);
       if (!parsed.ok) throw new Error(parsed.message);
       const routed = await input.sessionRouter
         .routeExistingSessionPendingCommand(parsed.value);
       const response = await input.sessionBridge.sendPendingCommand(routed);
-      if (response.status === "error") {
-        throw new Error(String(response.message ?? response.code ?? "intervene failed"));
+      if (response.status === "error" || response.type === "error") {
+        throw new PendingNodeCommandRejectedError({
+          commandType: routed.command.commandType,
+          requestId: routed.command.requestId,
+          message: String(response.message ?? response.code ?? "intervene failed"),
+          response,
+        });
       }
     } catch (error) {
+      const rejection = error instanceof PendingNodeCommandRejectedError ? error : undefined;
+      const details = isRecord(rejection?.response?.details) ? rejection.response.details : undefined;
+      const suffix = details ? ` (reason=${String(details.reason ?? null)}, cell=${String(details.cell ?? null)})` : "";
       const failure = warningMessage(
         `${attemptTokenPrefix} delivery ${row.delivery_id} dispatch failed`,
         error,
-      );
+      ) + suffix;
       const current = await input.deliveries.get(row.delivery_id);
       if (
         current?.attempt_token === attemptToken
         && (current.state === "claimed" || current.state === "dispatching")
       ) {
-        await input.deliveries.retryDeliveryAttempt(
-          row.delivery_id,
-          attemptToken,
-          failure,
-          0,
-        );
+        if (rejection?.response?.code === "NODE_RESPONSE_REJECTED"
+          && (details?.cell === "permanent" || details?.cell === "no_retry")) {
+          await input.deliveries.markUncertain(row.delivery_id, attemptToken, failure);
+        } else {
+          await input.deliveries.retryDeliveryAttempt(
+            row.delivery_id,
+            attemptToken,
+            failure,
+            rejection?.response ? Math.min(600_000, 60_000 * 2 ** row.attempt_count) : 0,
+          );
+        }
       }
       input.warn(failure);
     }
