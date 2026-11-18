@@ -823,27 +823,27 @@ state "한도 재개 예약" as sessionReservation {
 
 | 함수 | 상태를 쓰는가 | 정의 | 호출지 | 뜻 |
 | :-- | :-- | :-- | :-- | :-- |
-| session_register | 예 | packages/db-schema/sql/schema.sql:1365 | 없음 | 정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다. |
-| session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1395 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
-| session_update | 예 | packages/db-schema/sql/schema.sql:1527 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
-| session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1434 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
-| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1604 | src/node/event_session_effect_applier.ts:196 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
-| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4179 | src/node/event_session_effect_applier.ts:77 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
-| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1745 | src/node/event_session_effect_applier.ts:254 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
+| session_register | 예 | packages/db-schema/sql/schema.sql | 없음 | 정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다. |
+| session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql | src/control_plane/repositories/session_mutation_repository.ts (2곳) | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
+| session_update | 예 | packages/db-schema/sql/schema.sql | src/control_plane/repositories/session_mutation_repository.ts (1곳) | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
+| session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql | src/control_plane/repositories/session_mutation_repository.ts (1곳)<br>src/runtime/live_session_review_repository.ts (1곳) | review_state만 쓴다. |
+| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql | src/node/event_session_effect_applier.ts (1곳) | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
+| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql | src/node/event_session_effect_applier.ts (1곳) | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
+| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql | src/node/event_session_effect_applier.ts (1곳) | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
 
 ### 직접 UPDATE
 
-| 파일:줄 | 상태를 쓰는가 | 뜻 |
+| 파일 (같은 파일은 소스 순서) | 상태를 쓰는가 | 뜻 |
 | :-- | :-- | :-- |
-| src/control_plane/repositories/node_startup_reconciliation.ts:31 | 예 | 시작 정리에서 사라진 세션을 interrupted로 쓴다. |
-| src/control_plane/repositories/node_startup_reconciliation.ts:68 | 예 | 시작 정리에서 살아 있는 세션을 running으로 되살린다. |
-| src/control_plane/repositories/session_mutation_repository.ts:359 | 예 | 노드 끊김 정리에서 interrupted와 검수 칸을 쓴다. |
-| src/control_plane/repositories/session_mutation_repository.ts:144 | 아니오 | card_id만 쓴다. |
-| src/control_plane/repositories/session_mutation_repository.ts:250 | 아니오 | worktree_id와 card_id만 쓴다. |
-| src/control_plane/repositories/session_mutation_repository.ts:341 | 아니오 | 모델 선택 칸만 쓴다. |
-| src/runtime/live_provider_factory.ts:633 | 아니오 | node_id, display_name, folder_id만 쓴다. |
-| src/node/event_feed_projection_applier.ts:49 | 아니오 | last_event_id, last_read_event_id, updated_at만 쓴다. |
-| src/control_plane/repositories/session_card_replacement.ts:44 | 아니오 | caller_session_id만 쓴다. |
+| src/control_plane/repositories/node_startup_reconciliation.ts | 예 | 시작 정리에서 사라진 세션을 interrupted로 쓴다. |
+| src/control_plane/repositories/node_startup_reconciliation.ts | 예 | 시작 정리에서 살아 있는 세션을 running으로 되살린다. |
+| src/control_plane/repositories/session_mutation_repository.ts | 아니오 | card_id만 쓴다. |
+| src/control_plane/repositories/session_mutation_repository.ts | 아니오 | worktree_id와 card_id만 쓴다. |
+| src/control_plane/repositories/session_mutation_repository.ts | 아니오 | 모델 선택 칸만 쓴다. |
+| src/control_plane/repositories/session_mutation_repository.ts | 예 | 노드 끊김 정리에서 interrupted와 검수 칸을 쓴다. |
+| src/runtime/live_provider_factory.ts | 아니오 | node_id, display_name, folder_id만 쓴다. |
+| src/node/event_feed_projection_applier.ts | 아니오 | last_event_id, last_read_event_id, updated_at만 쓴다. |
+| src/control_plane/repositories/session_card_replacement.ts | 아니오 | caller_session_id만 쓴다. |
 
 시험은 이 목록 밖의 UPDATE sessions, INSERT INTO sessions, SQL 함수 호출을 발견하면 실패한다.
 
@@ -945,5 +945,6 @@ state "한도 재개 예약" as sessionReservation {
 ## 다시 만들기
 
 ```bash
-corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/session-state-charts.ts docs/sessions/generated
+corepack pnpm -C orch-server-ts run gen:session-docs
+corepack pnpm -C orch-server-ts run check:session-machine
 ```
