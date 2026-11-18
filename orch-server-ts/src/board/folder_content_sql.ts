@@ -4,10 +4,10 @@ import type {
 } from "../runtime/live_db_sql.js";
 import {
   createPostgresQueryAdapter,
-  type PostgresQuerySql,
+  type PostgresQuerySqlWithUnsafe,
 } from "../runtime/postgres_query_adapter.js";
 
-export type FolderContentQuerySql = PostgresQuerySql;
+export type FolderContentQuerySql = PostgresQuerySqlWithUnsafe;
 
 export type FolderContentSql = FolderContentQuerySql & {
   readonly begin: <T>(callback: (sql: FolderContentQuerySql) => Promise<T>) => Promise<T>;

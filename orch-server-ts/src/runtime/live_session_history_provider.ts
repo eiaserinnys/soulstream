@@ -70,7 +70,7 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
       SELECT session_id, card_id, folder_id, display_name, node_id, agent_id, status,
         created_at, caller_session_id, updated_at FROM sessions WHERE session_id = ${sessionId}
     `;
-    return sessions[0] ? await readSessionConversation(sql as Parameters<typeof readSessionConversation>[0], sessionId, sessions[0], null, limit) : null;
+    return sessions[0] ? await readSessionConversation(sql, sessionId, sessions[0], null, limit) : null;
   }
 
   async readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {

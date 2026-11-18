@@ -2,7 +2,6 @@ import type { SqlClient } from "../cards/control_plane/card_types.js";
 import { HISTORY_PAYLOAD, TYPES, sourceEvent } from "../conversation/conversation_history.js";
 import { ConversationProjection, type Item } from "../conversation/conversation_projection.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
-import type { PostgresQuerySqlWithUnsafe } from "../runtime/postgres_query_adapter.js";
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
@@ -44,7 +43,7 @@ export type CardSessionMessages = {
 };
 
 export async function readSessionConversation(
-  sql: SqlClient & PostgresQuerySqlWithUnsafe, targetSessionId: string, sessionRow: Record<string, unknown> | null,
+  sql: SqlClient, targetSessionId: string, sessionRow: Record<string, unknown> | null,
   fallbackAgentId: string | null, limit?: number | string | null,
 ): Promise<CardSessionMessages> {
   const rows = await sql<Row[]>`SELECT id,event_type,${sql.unsafe(HISTORY_PAYLOAD)},created_at FROM events

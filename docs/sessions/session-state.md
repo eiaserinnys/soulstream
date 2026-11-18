@@ -922,7 +922,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/session/session_action_command_errors.ts | 1 | 0 | 0 | 노드 응답 상태. |
 | src/session/session_background_schedule_errors.ts | 1 | 0 | 0 | 노드 응답 상태. |
 | src/session/session_command_routes.ts | 2 | 0 | 0 | 노드 응답 상태. |
-| src/session/session_conversation_projection.ts | 1 | 1 | 0 | 대화 사건 종류. |
+| src/session/session_conversation_projection.ts | 1 | 0 | 0 | 대화 사건 종류. |
 | src/session/session_delete.ts | 1 | 1 | 0 | 활성 세션 판정과 노드 응답 상태. |
 | src/session/session_feed_state_repository.ts | 0 | 1 | 0 | 피드 상태 종류. |
 | src/session/session_limit_termination.ts | 1 | 0 | 0 | 한도 종료 판정. |
@@ -939,7 +939,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 81개, 비교 85줄, 목록 29줄, SQL 59줄이다.
+파일 81개, 비교 85줄, 목록 28줄, SQL 59줄이다.
 
 ## 다시 만들기
 

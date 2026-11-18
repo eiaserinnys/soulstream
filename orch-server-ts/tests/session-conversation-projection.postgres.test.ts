@@ -29,7 +29,7 @@ describe("session conversation payload projection", () => {
       ["tool_start", { tool_name: "Write", input_id: "visible", tool_input: { large } }],
       ["complete", { result: large }],
     ];
-    const slimSql = createFolderContentSqlAdapter(db.sql as never) as Parameters<typeof readSessionConversation>[0];
+    const slimSql = createFolderContentSqlAdapter(db.sql as never);
     for (const [index, [type, payload]] of events.entries()) {
       await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at)
         VALUES (${sessionId}, ${index + 1}, ${type}, ${db.sql.json(payload as never)}, '2026-11-18T00:00:00Z')`;
