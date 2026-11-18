@@ -36,7 +36,10 @@ describe("ProjectContextEditor", () => {
   });
 });
 
-it("enables saving and keeps the inline list closed after selecting a node", async () => {
+it.each([
+  { action: "selecting a node", initialEditor: "atom-add" },
+  { action: "pressing Escape", initialEditor: "atom-edit" },
+] as const)("keeps the editor open and enables saving after $action", async ({ initialEditor }) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -50,7 +53,7 @@ it("enables saving and keeps the inline list closed after selecting a node", asy
     sessionDefaults: [],
   } as unknown as ProjectPageSnapshot;
   try {
-    await act(async () => { root.render(<ProjectContextEditor pageId="project-1" snapshot={snapshot} request={request} initialEditor="atom-add" onChanged={vi.fn(async () => undefined)} />); });
+    await act(async () => { root.render(<ProjectContextEditor pageId="project-1" snapshot={snapshot} request={request} initialEditor={initialEditor} onChanged={vi.fn(async () => undefined)} />); });
     const popup = document.querySelector(".v3-project-context-popover")!;
     const save = [...popup.querySelectorAll("button")].find(button => button.textContent === "저장")!;
     const panel = popup.querySelector('[data-slot="atom-node-selector-panel"]')!;
@@ -58,10 +61,19 @@ it("enables saving and keeps the inline list closed after selecting a node", asy
     expect(save.disabled).toBe(true);
     const node = [...panel.querySelectorAll("button")].find(button => button.textContent === "선택할 지식")!;
     expect(node.closest("label")).toBeNull();
-    await act(async () => { node.click(); });
+    await act(async () => {
+      if (initialEditor === "atom-add") {
+        node.click();
+      } else {
+        node.focus();
+        const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        expect(node.dispatchEvent(escape)).toBe(false);
+      }
+    });
+    expect(popup.isConnected).toBe(true);
     expect(popup.querySelector('[data-slot="atom-node-selector-panel"]')).toBeNull();
     const trigger = popup.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
-    expect(trigger.textContent).toContain("선택할 지식");
+    expect(trigger.textContent).toContain(initialEditor === "atom-add" ? "선택할 지식" : "지식");
     expect(document.activeElement).toBe(trigger);
     expect(save.disabled).toBe(false);
   } finally {

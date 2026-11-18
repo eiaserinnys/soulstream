@@ -212,7 +212,7 @@ export function AtomNodeSelector({
 
   if (presentation === "inline") {
     return <div className="min-w-0 w-full">
-      <button ref={inlineTriggerRef} type="button" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
+      <button ref={inlineTriggerRef} type="button" data-slot="atom-node-selector-trigger" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
       {open && <div data-slot="atom-node-selector-panel" className="w-full min-w-0 rounded-lg border border-input bg-background dark:bg-input/32">{panel}</div>}
     </div>;
   }

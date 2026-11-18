@@ -18,10 +18,12 @@ export function ProjectAtomFields({
   value,
   disabled,
   onChange,
+  presentation = "popup",
   selectorOpen, onSelectorOpenChange, onSelectorStatusChange, supportsLimit = true,
 }: {
   request?: typeof fetch;
   supportsLimit?: boolean;
+  presentation?: "popup" | "inline";
   selectorOpen?: boolean;
   onSelectorOpenChange?(open: boolean): void;
   onSelectorStatusChange?(status: "loading" | "ready" | "error"): void;
@@ -30,6 +32,17 @@ export function ProjectAtomFields({
   onChange(value: ProjectAtomFieldValue): void;
 }) {
   const nodeLabelId = useId();
+  const selector = (
+    <AtomNodeSelector presentation={presentation} request={request}
+      value={value.nodeId}
+      selectedTitle={value.nodeTitle}
+      disabled={disabled || value.instance !== "atom"}
+      open={selectorOpen}
+      onOpenChange={onSelectorOpenChange}
+      onStatusChange={onSelectorStatusChange}
+      onChange={(nodeId, nodeTitle) => onChange({ ...value, nodeId, nodeTitle })}
+    />
+  );
   return (
     <div className="v3-project-context-fields">
       <label>
@@ -37,18 +50,12 @@ export function ProjectAtomFields({
         <span>{value.instance}</span>
         <small>현재 노드 탐색은 atom만 지원합니다. 기존 atom-nl 자료의 연결은 유지합니다.</small>
       </label>
-      <div className="v3-project-context-node-field" role="group" aria-labelledby={nodeLabelId}>
-        <span id={nodeLabelId}>atom 노드</span>
-        <AtomNodeSelector presentation="inline" request={request}
-          value={value.nodeId}
-          selectedTitle={value.nodeTitle}
-          disabled={disabled || value.instance !== "atom"}
-          open={selectorOpen}
-          onOpenChange={onSelectorOpenChange}
-          onStatusChange={onSelectorStatusChange}
-          onChange={(nodeId, nodeTitle) => onChange({ ...value, nodeId, nodeTitle })}
-        />
-      </div>
+      {presentation === "inline" ? (
+        <div className="v3-project-context-node-field" role="group" aria-labelledby={nodeLabelId}>
+          <span id={nodeLabelId}>atom 노드</span>
+          {selector}
+        </div>
+      ) : <label>atom 노드{selector}</label>}
       <label>
         깊이
         <input

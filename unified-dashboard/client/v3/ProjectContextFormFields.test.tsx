@@ -32,7 +32,7 @@ describe("ProjectAtomFields", () => {
 it("opens the node selector inline inside the atom fields", () => {
   const html = renderToStaticMarkup(<ProjectAtomFields
     value={{ instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false }}
-    disabled={false} selectorOpen onChange={vi.fn()} />);
+    disabled={false} presentation="inline" selectorOpen onChange={vi.fn()} />);
   expect(html).toContain('data-slot="atom-node-selector-panel"');
   expect(html.indexOf('data-slot="atom-node-selector-panel"')).toBeLessThan(html.indexOf("깊이"));
 });
@@ -40,6 +40,14 @@ it("opens the node selector inline inside the atom fields", () => {
 it("keeps a closed inline selector out of the tab order", () => {
   const html = renderToStaticMarkup(<ProjectAtomFields
     value={{ instance: "atom", nodeId: "node-1", nodeTitle: "지식", depth: 3, titlesOnly: false }}
-    disabled={false} selectorOpen={false} onChange={vi.fn()} />);
+    disabled={false} presentation="inline" selectorOpen={false} onChange={vi.fn()} />);
+  expect(html).not.toContain('data-slot="atom-node-selector-panel"');
+});
+
+it("defaults to a popup selector even when opened", () => {
+  const html = renderToStaticMarkup(<ProjectAtomFields
+    value={{ instance: "atom", nodeId: "", nodeTitle: "", depth: 3, titlesOnly: false }}
+    disabled={false} selectorOpen onChange={vi.fn()} />);
+  expect(html).toContain('data-slot="popover-trigger"');
   expect(html).not.toContain('data-slot="atom-node-selector-panel"');
 });

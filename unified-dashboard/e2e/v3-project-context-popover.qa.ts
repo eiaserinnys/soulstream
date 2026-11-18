@@ -1,4 +1,4 @@
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
@@ -108,8 +108,72 @@ async function openSample(page: Page, sample: string) {
   await page.waitForTimeout(1500);
   await page.locator(".v3-project-context-popover").waitFor({ state: "visible" });
 }
+
+async function checkRing(target: Locator, name: string) {
+  const style = await target.evaluate(el => {
+    const { outlineStyle, boxShadow } = getComputedStyle(el);
+    return { focused: document.activeElement === el, focusVisible: el.matches(":focus-visible"), outlineStyle, boxShadow };
+  });
+  check(`${name}: v3 focus ring`, style.focused && style.focusVisible && style.outlineStyle === "none" && style.boxShadow !== "none", style);
+}
 async function run(browser: Browser) {
   for (const [width, height] of [[390, 844], [1440, 900]]) {
+    for (const [sample, heading] of [["project-edit", "참고 자료"], ["succession", "함께 전달할 자료"]]) {
+      const name = `${sample}-${width}`;
+      await scenario(browser, name, width, height, "dark", true, async page => {
+        await page.goto(`${base}/dialogues?sample=${sample}`);
+        const dialog = page.locator('[data-slot="dialog-popup"]');
+        const add = dialog.locator("button", { hasText: /^atom에서 추가$/ });
+        const summary = dialog.locator("summary").filter({ has: page.getByText(heading, { exact: true }) });
+        await summary.waitFor();
+        // Let the review page finish its initial reload before interacting with the dialog.
+        await page.waitForTimeout(1500);
+        if (await summary.getAttribute("aria-expanded") !== "true") await summary.click();
+        await add.click();
+        const popup = page.locator('[data-slot="popover-popup"]').filter({ has: page.locator('[title="자식 보기"]') });
+        const row = popup.getByRole("button", { name: /^프로젝트 지식 노드 [012]-3$/ });
+        await row.waitFor();
+        check(`${name}: uses a portaled node list`, await popup.isVisible() && await dialog.locator('[title="자식 보기"]').count() === 0);
+        check(`${name}: no inline list`, await page.locator('[data-slot="atom-node-selector-panel"]').count() === 0);
+        await page.screenshot({ path: path.join(output!, `${name}-node-popup.png`), animations: "disabled" });
+        await row.focus();
+        await page.keyboard.press("Escape");
+        await popup.waitFor({ state: "hidden" });
+        check(`${name}: Escape keeps the dialog open`, await dialog.isVisible());
+      });
+    }
+    const sample = width === 390 ? "atom-add" : "atom-edit";
+    await scenario(browser, `${sample}-${width}-escape`, width, height, "dark", true, async page => {
+      await openSample(page, sample);
+      const popup = page.locator(".v3-project-context-popover");
+      const panel = popup.locator('[data-slot="atom-node-selector-panel"]');
+      const trigger = popup.locator('[data-slot="atom-node-selector-trigger"]');
+      const depth = popup.getByRole("spinbutton", { name: "깊이", exact: true });
+      const row = panel.getByRole("button", { name: "프로젝트 지식 노드 0-3", exact: true });
+      await row.waitFor();
+      await checkRing(trigger, `${sample}-${width} initial trigger`);
+      await depth.fill("5");
+      if (width === 390) {
+        await trigger.focus();
+        await page.keyboard.press("Tab");
+        check("atom-add-390: Tab reaches root", await panel.getByRole("button", { name: "루트" }).evaluate(el => el === document.activeElement));
+      } else {
+        await row.focus();
+      }
+      await page.keyboard.press("Escape");
+      await panel.waitFor({ state: "hidden" });
+      check(`${sample}-${width}: first Escape keeps editor open`, await popup.isVisible());
+      check(`${sample}-${width}: first Escape keeps depth`, await depth.inputValue() === "5");
+      check(`${sample}-${width}: first Escape focuses closed trigger`, await trigger.evaluate(el =>
+        el === document.activeElement && el.getAttribute("aria-expanded") === "false"));
+      await page.screenshot({ path: path.join(output!, `${sample}-${width}-first-escape.png`), animations: "disabled" });
+      await page.keyboard.press("Tab");
+      await checkRing(depth, `${sample}-${width} depth input`);
+      await page.screenshot({ path: path.join(output!, `${sample}-${width}-depth-ring.png`), animations: "disabled" });
+      await page.keyboard.press("Escape");
+      await popup.waitFor({ state: "hidden" });
+      check(`${sample}-${width}: second Escape closes editor`, await popup.isHidden());
+    });
     const variants = width === 390 ? [{ theme: "dark", glass: true }, { theme: "light", glass: true }, { theme: "dark", glass: false }] : [{ theme: "dark", glass: true }];
     for (const { theme, glass } of variants) {
       const suffix = `${width}-${theme}-${glass ? "glass" : "plain"}`;
