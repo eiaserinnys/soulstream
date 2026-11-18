@@ -983,6 +983,19 @@ export async function createLiveProductionApplication(
         service: externalInputService,
       },
     }),
+    // Same store, service and login identity as the receive routes; the
+    // management surface adds no new grant store, service or bucket instance.
+    ...(externalAccessGrants === undefined
+      || externalInputService === undefined
+      || accessLinkSessionAccess === undefined ? {} : {
+      inboundWebhookRoutes: {
+        currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+        grants: externalAccessGrants,
+        requests: externalInputService,
+        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        publicUrl: accessLinkPublicUrl,
+      },
+    }),
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
