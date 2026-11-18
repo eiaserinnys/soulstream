@@ -82,6 +82,11 @@ import {
 } from "./push/push_notifier.js";
 import { createProductionOutboundWebhook } from "./webhooks/production_wiring.js";
 import { ExternalAccessGrantRepository } from "./external_access/external_access_grant_repository.js";
+import {
+  createExternalInterventionDispatch,
+  ExternalInputService,
+} from "./external_access/external_input_service.js";
+import { ExternalAccessTokenBucket } from "./external_access/external_access_token_bucket.js";
 import type { OutboundWebhookService } from "./webhooks/outbound_service.js";
 import {
   createOrchestratorRuntimeServices,
@@ -925,6 +930,27 @@ export async function createLiveProductionApplication(
           requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
         })
       : undefined;
+  // Shared with the #1457 /x surface: one token bucket and one admission
+  // service for every external sender. Inbound webhook routes are registered
+  // only when both the grant store and the intervention commands exist.
+  const externalAccessTokenBucket = externalAccessGrants === undefined
+    ? undefined
+    : new ExternalAccessTokenBucket();
+  const externalInputService = externalAccessGrants !== undefined
+    && externalAccessTokenBucket !== undefined
+    && providers.runtime.sessionActionCommandRoutes !== undefined
+    ? new ExternalInputService({
+        sql: productionSql,
+        grants: externalAccessGrants,
+        dispatch: createExternalInterventionDispatch(
+          providers.runtime.sessionActionCommandRoutes,
+        ),
+        tokenBucket: externalAccessTokenBucket,
+        logger: {
+          warn: (fields, message) => context.warn(`${message}: ${JSON.stringify(fields)}`),
+        },
+      })
+    : undefined;
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -951,6 +977,12 @@ export async function createLiveProductionApplication(
       authorizeUser: outboundAuthorizeUser,
       sessionAccess: outboundSessionAccess,
     },
+    ...(externalAccessGrants === undefined || externalInputService === undefined ? {} : {
+      inboundHookRoutes: {
+        grants: externalAccessGrants,
+        service: externalInputService,
+      },
+    }),
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,

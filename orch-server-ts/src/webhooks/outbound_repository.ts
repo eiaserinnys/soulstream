@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type {
   CreateSubscriptionInput,
@@ -11,10 +11,6 @@ import type {
 const DEFAULT_DELIVERY_LIMIT = 50;
 const MAX_DELIVERY_LIMIT = 200;
 const RECENT_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-export function generateSigningSecret(): string {
-  return "whsec_" + randomBytes(32).toString("base64");
-}
 
 export type OutboundWebhookRepositoryOptions = {
   resolveSql: () => Promise<SqlClient>;
