@@ -1,6 +1,7 @@
 /* Approved settings shell. DialogPopup owns the outer frame and insets. */
 .config-dialog { height:min(var(--container-3xl), calc(100dvh - var(--v3-space-8) * 2)); }
 .config-dialog > [data-slot="dialog-header"] { border-bottom:1px solid var(--border); }
+.config-dialog [data-slot="dialog-description"] { word-break:keep-all; overflow-wrap:break-word; }
 .config-dialog .config-dialog-panel { padding:0; }
 .config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
 .config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
