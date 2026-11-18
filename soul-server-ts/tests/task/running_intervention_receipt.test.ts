@@ -99,6 +99,22 @@ describe("running intervention receipt id", () => {
     expect(message).toEqual({ text: "steer", user: "alice" });
   });
 
+  it("remembers that the delivery body was persisted as intervention_sent", async () => {
+    const intervene = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    const task = makeRunningTask(intervene);
+
+    await makeTransition().deliver(task, {
+      text: "steer",
+      user: "alice",
+      deliveryId: "delivery-a",
+    });
+
+    expect(task.sessionEventDeliveryEvidence?.has("delivery-a")).toBe(true);
+  });
+
   it("keeps the delivery input uuid separate from the receipt id", async () => {
     const intervene = vi.fn().mockResolvedValue({
       status: "delivered",

@@ -217,6 +217,8 @@ export async function requestHostOperationWithRetry<T>(
     signal?: AbortSignal;
     retryDelaysMs?: readonly number[];
     restartWindow?: RestartWindowRetryPolicy;
+    /** Argument keys the host persists verbatim; every attempt keeps them as-is. */
+    opaqueArgumentKeys?: readonly string[];
   },
 ): Promise<T> {
   const startedAtMs = Date.now();
@@ -236,6 +238,9 @@ export async function requestHostOperationWithRetry<T>(
       const result = await transport.request<T>(domain, operation, args, {
         timeoutMs: attemptTimeoutMs,
         signal: options.signal,
+        ...(options.opaqueArgumentKeys === undefined
+          ? {}
+          : { opaqueArgumentKeys: options.opaqueArgumentKeys }),
       });
       if (restartWindow !== undefined && attempt > 1) {
         restartWindow.onRecovered?.({

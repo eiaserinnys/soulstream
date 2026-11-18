@@ -10,6 +10,7 @@ import {
   buildDeliveryInputUuid,
 } from "./delivery_identity.js";
 import { dedupeAttachmentIds, inputAttachmentCount } from "./task_user_message_events.js";
+import { recordDeliverySessionEventEvidence } from "./task_delivery_turn_receipt.js";
 import { stripManagedAttachmentPathNotes } from "./prepare_attachment_input.js";
 
 export interface InterventionEventPublisherDeps {
@@ -67,6 +68,10 @@ export async function publishInterventionSent(
 ): Promise<void> {
   const interventionEvent = buildInterventionSentEvent(message);
   await persistIntervention(task, interventionEvent, deps);
+  // Acceptance is durable: this delivery's body is now in the session
+  // timeline, so a turn that ends without a consumption receipt must not call
+  // it lost (card #1604).
+  recordDeliverySessionEventEvidence(task, message.deliveryId);
 }
 
 async function persistIntervention(

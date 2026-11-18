@@ -223,6 +223,12 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.interactive("event_count", [sessionId]);
   }
 
+  /**
+   * Input preparation reads the original request from the session timeline
+   * (card #1604). It must outlast an orchestrator restart like the other
+   * session-start reads instead of failing the turn with
+   * INPUT_PREPARATION_FAILED; a busy host still costs latency, not the turn.
+   */
   readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod, metadataTypes?: string[], order?: SessionReadOrder): Promise<SessionEventRow[]> {
     const args: unknown[] = [sessionId, afterId, limit, eventTypes];
     if (order === "desc") {
@@ -232,7 +238,11 @@ export class SessionDataHostClient implements SessionDataHost {
     } else if (period !== undefined) {
       args.push(period);
     }
-    return this.interactive("event_read_page", args);
+    return this.restartWindowRead("session_events", "event_read_page", args, {
+      timeoutMs: 5_000,
+      attempts: 1,
+      attemptTimeoutMs: 5_000,
+    });
   }
 
   readOneEvent(sessionId: string, eventId: number): Promise<SessionEventDetailRow | null> {
@@ -280,8 +290,17 @@ export class SessionDataHostClient implements SessionDataHost {
       : this.interactive("digest_search", args, signal);
   }
 
+  /**
+   * Predecessor history is part of input preparation (card #1604): a
+   * restarting host must widen instead of ending the session before its first
+   * response. The read keeps its 2s attempt budget and two-attempt schedule.
+   */
   getSessionStory(sessionId: string): Promise<SessionStoryView> {
-    return this.background("story", [sessionId]);
+    return this.restartWindowRead("session_story", "story", [sessionId], {
+      timeoutMs: 2_000,
+      attempts: 2,
+      attemptTimeoutMs: 2_000,
+    });
   }
 
   getTurnExcerpt(sessionId: string, maxResponseChars = 500): Promise<SessionTurnExcerptResult> {
@@ -292,11 +311,21 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.turnCritical("resume_context", [sessionId, limit]);
   }
 
+  /**
+   * The composite material runs once at generation rollover, which is input
+   * preparation (card #1604). It keeps its 5s × 2 schedule and widens across an
+   * orchestrator restart.
+   */
   getGenerationCheckpointMaterial(
     sessionId: string,
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial> {
-    return this.generationCheckpoint("generation_checkpoint_material", [sessionId, limits]);
+    return this.restartWindowRead(
+      "generation_checkpoint",
+      "generation_checkpoint_material",
+      [sessionId, limits],
+      { timeoutMs: 5_000, attempts: 2, attemptTimeoutMs: 5_000 },
+    );
   }
 
   getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain> {
@@ -353,10 +382,19 @@ export class SessionDataHostClient implements SessionDataHost {
       timeoutMs: number;
       attempts: number;
       retryDelaysMs?: readonly number[];
+      /**
+       * Per-attempt limit to keep for this read. The restart-window policy's
+       * own attempt timeout replaces the caller's plain timeout, but a read
+       * that already had a deliberate attempt budget keeps it.
+       */
+      attemptTimeoutMs?: number;
     },
   ): Promise<T> {
     const restartWindow: RestartWindowRetryPolicy = {
       ...SESSION_START_RESTART_WINDOW,
+      ...(base.attemptTimeoutMs === undefined
+        ? {}
+        : { attemptTimeoutMs: base.attemptTimeoutMs }),
       onRetry: (event: RestartWindowRetryEvent) => {
         this.logger.warn(
           { read, operation, ...event },
@@ -379,11 +417,6 @@ export class SessionDataHostClient implements SessionDataHost {
       base.retryDelaysMs ?? [],
       restartWindow,
     );
-  }
-
-  private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {
-    // This composite read runs once at generation rollover, so it needs more than the turn hot-path budget.
-    return this.request(operation, args, 5_000, 2);
   }
 
   private async request<T>(

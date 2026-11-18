@@ -629,6 +629,14 @@ export interface Task {
   /** 현재 엔진 turn에 native-delivered 개입을 합류시키는 기존 receipt 경계. */
   activeDeliveryTurnReceipt?: ActiveDeliveryTurnReceipt;
 
+  /**
+   * 배달 본문이 세션 이벤트(intervention_sent, 또는 턴 입력 user_message)로
+   * 저장된 배달 id의 런타임 표시. settleEndedTurn은 이 표시가 있는 배달을
+   * 소비 영수증이 관찰되지 않았다는 이유로 dead_letter 처리하지 않고 소비로
+   * 닫는다(카드 #1604). DB·wire에 박지 않는다.
+   */
+  sessionEventDeliveryEvidence?: Set<string>;
+
   /** 후속 턴에 claude_session_id delta를 한 번만 주입하기 위한 런타임 마커. */
   lastInjectedClaudeSessionId?: string;
 

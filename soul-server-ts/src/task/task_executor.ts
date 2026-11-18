@@ -150,7 +150,10 @@ import {
 import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
-import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
+import {
+  recordDeliverySessionEventEvidence,
+  TaskDeliveryTurnReceipt,
+} from "./task_delivery_turn_receipt.js";
 import {
   decidePersistentGeneration,
   type DecisionTrigger,
@@ -2559,6 +2562,14 @@ export class TaskExecutor {
     task: Task,
     interventions: readonly InterventionMessage[],
   ): TaskDeliveryTurnReceipt | undefined {
+    // These deliveries are this turn's input, and their input event is already
+    // durable: live and queued deliveries persist intervention_sent before
+    // they are delivered or queued, and a resumed delivery persists its
+    // user_message before the executor starts. Remember that so settle does
+    // not call the delivery lost when the turn observes no receipt (card #1604).
+    for (const intervention of interventions) {
+      recordDeliverySessionEventEvidence(task, intervention.deliveryId);
+    }
     if (!this.deliveryConsumption) return undefined;
     const receipt = new TaskDeliveryTurnReceipt(
       this.deliveryConsumption,

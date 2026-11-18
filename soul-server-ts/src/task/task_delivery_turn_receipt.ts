@@ -217,6 +217,20 @@ export class TaskDeliveryTurnReceipt {
         continue;
       }
       if (queuedForNextTurn(task, receipt.intervention)) continue;
+      const deliveryId = receipt.intervention.deliveryId;
+      if (deliveryId !== undefined && hasDeliverySessionEventEvidence(task, deliveryId)) {
+        // The node already persisted this delivery's body as a session event
+        // (intervention_sent or the turn's input user_message); the turn just
+        // did not observe a receipt. Close it as consumed under a receipt id
+        // that ordinary turn consumption cannot produce (card #1604).
+        await this.consumption.recordConsumed(
+          task,
+          receipt.intervention,
+          sessionEventConsumptionReceiptId(deliveryId),
+        );
+        receipt.consumed = true;
+        continue;
+      }
       await this.consumption.recordAdmissionFailure(
         task,
         receipt.intervention,
@@ -224,6 +238,34 @@ export class TaskDeliveryTurnReceipt {
       );
     }
   }
+}
+
+/**
+ * Records that this node persisted the delivery's body as a session event.
+ * The fact stays in task memory for this execution only: a restart re-derives
+ * it from whatever the next turn's input event records (card #1604).
+ */
+export function recordDeliverySessionEventEvidence(
+  task: Task,
+  deliveryId: string | undefined,
+): void {
+  if (deliveryId === undefined || deliveryId.length === 0) return;
+  const evidence = task.sessionEventDeliveryEvidence ?? new Set<string>();
+  task.sessionEventDeliveryEvidence = evidence;
+  evidence.add(deliveryId);
+}
+
+export function hasDeliverySessionEventEvidence(
+  task: Task,
+  deliveryId: string | undefined,
+): boolean {
+  return deliveryId !== undefined
+    && task.sessionEventDeliveryEvidence?.has(deliveryId) === true;
+}
+
+/** Consumption receipt id for a delivery closed from its persisted session event. */
+export function sessionEventConsumptionReceiptId(deliveryId: string): string {
+  return `session-event:${buildDeliveryInputUuid(deliveryId)}`;
 }
 
 function queuedForNextTurn(
