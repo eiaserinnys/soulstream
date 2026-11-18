@@ -326,7 +326,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               <div className="usage-stats-summary-metric"><span>토큰</span><strong data-v3-selectable-content="true">{summaryValue("tokens")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadLine}</span></div>
               <div className="usage-stats-summary-metric"><span>정가</span><strong data-v3-selectable-content="true">{summaryValue("cost")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadCostLine}</span></div>
             </div>
-            <div className="usage-stats-summary-meta" aria-live="polite">
+            <div className="usage-stats-summary-meta" aria-live="polite" data-loading={overviewLoading || detailLoading || undefined}>
               {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span data-v3-selectable-content="true">미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
               {overviewLoading || detailLoading ? null : coverageLabel ? <span data-v3-selectable-content="true">{coverageLabel}</span> : null}
               {overview?.projection_status.state === "backfilling" ? <span>이전 기록 정리 중</span> : null}

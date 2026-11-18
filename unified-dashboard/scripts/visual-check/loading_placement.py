@@ -245,16 +245,19 @@ MEASURE_SCRIPT = """
   const probePad1 = document.createElement('span');
   probePad1.setAttribute('aria-hidden', 'true');
   probePad1.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;width:0;height:0;padding-block:var(--v3-space-1);';
-  slot.append(probe, probePad1);
+  const tokenRoot = document.querySelector('.v3-shell');
+  if (!tokenRoot) return fail('independent token root not found');
+  tokenRoot.append(probe, probePad1);
+  const rootStyle = getComputedStyle(tokenRoot);
   const probeStyle = getComputedStyle(probe);
   const probePad1Style = getComputedStyle(probePad1);
   const tokens = {
-    space1: slotStyle.getPropertyValue('--v3-space-1').trim(),
-    space2: slotStyle.getPropertyValue('--v3-space-2').trim(),
-    space4: slotStyle.getPropertyValue('--v3-space-4').trim(),
-    typeMeta: slotStyle.getPropertyValue('--v3-type-meta').trim(),
-    fontFamily: slotStyle.getPropertyValue('--v3-font-family').trim(),
-    textSecondary: slotStyle.getPropertyValue('--v3-text-secondary').trim(),
+    space1: rootStyle.getPropertyValue('--v3-space-1').trim(),
+    space2: rootStyle.getPropertyValue('--v3-space-2').trim(),
+    space4: rootStyle.getPropertyValue('--v3-space-4').trim(),
+    typeMeta: rootStyle.getPropertyValue('--v3-type-meta').trim(),
+    fontFamily: rootStyle.getPropertyValue('--v3-font-family').trim(),
+    textSecondary: rootStyle.getPropertyValue('--v3-text-secondary').trim(),
   };
   const metaMatch = tokens.typeMeta.match(/^(\\d+)\\s+([\\d.]+px)\\/([\\d.]+px)$/);
   const expected = {
@@ -299,8 +302,8 @@ MEASURE_SCRIPT = """
       && (actual.labelColor === null || actual.labelColor === expected.color),
     spinnerToLabel: spinnerToLabel !== null && Math.abs(spinnerToLabel - parseFloat(expected.gap)) <= 0.6,
   };
-  slot.removeChild(probe);
-  slot.removeChild(probePad1);
+  probe.remove();
+  probePad1.remove();
 
   const clusterCenter = {
     x: (cluster.left + cluster.right) / 2,
@@ -353,24 +356,60 @@ MEASURE_SCRIPT = """
 """
 
 NOTICE_SCRIPT = """
-() => {
+(scene) => {
   const round = (value) => Math.round(value * 10) / 10;
-  const seats = Array.from(document.querySelectorAll('[data-slot="frame-notice"]'))
-    .filter((element) => element.getClientRects().length > 0);
-  if (!seats.length) return { error: 'notice not found' };
-  const seat = seats[seats.length - 1];
-  const child = Array.from(seat.children)
-    .find((element) => element.getClientRects().length > 0);
+  const seat = Array.from(document.querySelectorAll('[data-slot="frame-notice"]'))
+    .filter((element) => element.getClientRects().length > 0).pop();
+  if (!seat) return { error: 'notice not found' };
+  const child = seat.firstElementChild;
   if (!child) return { error: 'notice content not found' };
   const rect = child.getBoundingClientRect();
-  return {
-    seatCount: seats.length,
-    text: (child.textContent || '').trim().slice(0, 120),
-    width: round(rect.width),
-    height: round(rect.height),
-    centerX: round((rect.left + rect.right) / 2),
-    centerY: round((rect.top + rect.bottom) / 2),
+  // 같은 화면의 자리 바깥에 복제하여 원래 상속과 컴포넌트 고유 스타일을 측정한다.
+  const reference = child.cloneNode(true);
+  reference.style.position = 'absolute';
+  reference.style.visibility = 'hidden';
+  reference.style.width = `${rect.width}px`;
+  seat.parentElement.appendChild(reference);
+  if (scene === 'document-reader') {
+    reference.style.font = 'var(--v3-type-body) var(--v3-font-family)';
+    reference.style.color = 'var(--muted-foreground)';
+    reference.style.textAlign = 'center';
+  }
+  const describe = (element) => {
+    const cs = getComputedStyle(element), box = element.getBoundingClientRect();
+    return { tag: element.tagName.toLowerCase(), text: (element.textContent || '').trim().slice(0, 80),
+      align: cs.textAlign, fontSize: cs.fontSize, lineHeight: cs.lineHeight,
+      fontWeight: cs.fontWeight, color: cs.color, left: round(box.left), right: round(box.right) };
   };
+  const elements = [child, ...child.querySelectorAll('strong, p, details, summary, button')];
+  const refs = [reference, ...reference.querySelectorAll('strong, p, details, summary, button')];
+  const nodes = elements.map((element, i) => {
+    const actual = describe(element), expected = describe(refs[i]);
+    return { ...actual, expected, sameStyle: ['align', 'fontSize', 'lineHeight', 'fontWeight', 'color']
+      .every((property) => actual[property] === expected[property]) };
+  });
+  const aligned = child.matches('.v3-error-notice')
+    ? ['strong', 'p', 'details', 'button'].every((selector) => {
+        const element = child.querySelector(selector);
+        return !element || Math.abs(element.getBoundingClientRect().left - child.querySelector('strong').getBoundingClientRect().left) <= 1;
+      })
+    : true;
+  let pasAligned = true;
+  if (scene === 'pas-screen') {
+    const text = Array.from(child.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+    const button = child.querySelector('button');
+    if (text && button) {
+      const range = document.createRange(); range.selectNodeContents(text);
+      pasAligned = Math.abs(range.getBoundingClientRect().left - button.getBoundingClientRect().left) <= 1;
+    } else pasAligned = false;
+  }
+  const planner = scene !== 'planner' || (child.matches('.v3-error-notice') &&
+    child.querySelector('strong')?.textContent === '플래너를 불러오지 못했습니다.' && !child.querySelector('h1'));
+  reference.remove();
+  return { text: (child.textContent || '').trim().slice(0, 120), width: round(rect.width),
+    height: round(rect.height), centerX: round((rect.left + rect.right) / 2),
+    centerY: round((rect.top + rect.bottom) / 2), nodes, aligned, pasAligned, planner,
+    stylePassed: nodes.every((node) => node.sameStyle) && aligned && pasAligned && planner };
 }
 """
 
@@ -395,6 +434,8 @@ STATS_SCRIPT = """
   return {
     loaderCount: loaders.length,
     chartLoader: Boolean(chart && chart.querySelector('[data-slot="frame-loading"]')),
+    chartTop: chart ? chart.getBoundingClientRect().top : null,
+    valueHeights: Array.from(document.querySelectorAll('.usage-stats-summary-metric > strong')).map(e => e.getBoundingClientRect().height),
     loadingTextCount: loadingTexts.length,
     summaryValues: Array.from(document.querySelectorAll('.usage-stats-summary-metric > strong'))
       .map((element) => (element.textContent || '').trim()),
@@ -653,10 +694,10 @@ def judge_notice(loading: dict, notice: dict) -> dict:
         return {"passed": False, "reason": notice["error"]}
     dx = round(notice["centerX"] - loading["cluster"]["centerX"], 3)
     dy = round(notice["centerY"] - loading["cluster"]["centerY"], 3)
-    passed = abs(dx) <= TOLERANCE_PX and abs(dy) <= TOLERANCE_PX
+    passed = abs(dx) <= TOLERANCE_PX and abs(dy) <= TOLERANCE_PX and notice["stylePassed"]
     return {
         "passed": passed,
-        "reason": "실패 안내 중심이 로더 중심과 같음" if passed else "실패 안내 중심이 로더 중심에서 벗어남",
+        "reason": "실패 안내 중심과 글자 모양 일치" if passed else "실패 안내 중심 또는 글자 모양 불일치",
         "dx": dx,
         "dy": dy,
         **notice,
@@ -708,6 +749,15 @@ def capture_scene(browser, base: str, out: Path, scene: dict, width: int, theme:
         entry.update(measurement)
         verdict = judge_loading(measurement, scene["mode"])
         entry.update(verdict)
+        expected_text = scene.get("expectText")
+        if expected_text and measurement.get("text") != expected_text:
+            entry["passed"] = False
+            entry["reason"] = "로딩 문구가 다름"
+        if scene["key"] in ("dashboard-chat-empty", "pas-older"):
+            entry["visibleMessages"] = page.locator('text=검수 요청 1').count()
+            if scene["key"] == "pas-older" and not entry["visibleMessages"]:
+                entry["passed"] = False
+                entry["reason"] = "이전 대화 로딩의 기존 대화가 보이지 않음"
         page.screenshot(path=str(screenshot_path(out, scene, width, theme)), animations="disabled")
 
         extra = scene.get("extra")
@@ -719,6 +769,28 @@ def capture_scene(browser, base: str, out: Path, scene: dict, width: int, theme:
             if not extra_passed:
                 entry["reason"] = extra_result.get("reason", "추가 단언 실패")
 
+        if scene["key"] == "atom-selector":
+            if held is None or not held.release(status=200, body=ATOM_NODES):
+                raise RuntimeError("atom request was not held")
+            page.get_by_text("소울스트림 아키텍처", exact=True).wait_for(state="visible", timeout=30000)
+            entry["atomLoaded"] = True
+            page.screenshot(path=str(screenshot_path(out, scene, width, theme, "-after")), animations="disabled")
+
+        if scene["key"] == "session-stats":
+            before = entry["extra"]
+            if held is None or not held.release(status=200, body=stats_overview()):
+                raise RuntimeError("statistics request was not held")
+            page.wait_for_function("() => !document.querySelector('.usage-stats-chart [data-slot=frame-loading]')", timeout=30000)
+            page.wait_for_timeout(300)
+            after = page.evaluate(STATS_SCRIPT)
+            delta = round(after["chartTop"] - before["chartTop"], 2)
+            entry["statsTransition"] = {"before": before, "after": after, "deltaTop": delta,
+                                        "passed": abs(delta) <= TOLERANCE_PX}
+            page.screenshot(path=str(screenshot_path(out, scene, width, theme, "-after")), animations="disabled")
+            if abs(delta) > TOLERANCE_PX:
+                entry["passed"] = False
+                entry["reason"] = "세션 통계 차트 위 끝 이동"
+
         if scene.get("fail") and "cluster" in measurement:
             anchor_text = scene.get("anchorText")
             anchor_before = page.evaluate(ANCHOR_SCRIPT, anchor_text) if anchor_text else None
@@ -727,7 +799,7 @@ def capture_scene(browser, base: str, out: Path, scene: dict, width: int, theme:
             held.release(status=500, body={"error": "boom"})
             page.wait_for_selector('[data-slot="frame-notice"]', state="visible", timeout=30000)
             page.wait_for_timeout(500)
-            notice = page.evaluate(NOTICE_SCRIPT)
+            notice = page.evaluate(NOTICE_SCRIPT, scene["key"])
             notice_verdict = judge_notice(measurement, notice)
             anchor_after = page.evaluate(ANCHOR_SCRIPT, anchor_text) if anchor_text else None
             anchor_verdict = {"passed": True}
@@ -825,6 +897,42 @@ def capture_runtime(browser, base: str, out: Path, scene: dict, width: int, them
         context.close()
 
 
+def metrics(total):
+    return {
+        "input_total": 110, "cache_read": 60, "cache_write": 10, "output_total": 50, "reasoning_output": None,
+        "total_tokens": total, "provider_total_tokens": total + 60, "ordinary_input": 40, "reference_cost_usd": 123.45,
+        "reference_cost_breakdown": {"cache_read": {"known_cost_usd": 45, "is_partial": False},
+                                     "non_cache": {"known_cost_usd": 78.45, "is_partial": False}},
+    }
+
+
+def aggregate(total):
+    return {"metrics": metrics(total), "coverage": {
+        "usage_complete_events": 1, "usage_partial_events": 0, "terminal_missing_usage": 0, "ended_input_without_usage": 0,
+        "missing_usage_turns": 0, "pending_inputs": 0, "priced_events": 1, "unpriced_events": 0,
+        "priced_total_tokens": total, "unpriced_total_tokens": None, "unknown_total_token_events": 0,
+        "unattributed_missing_usage": False,
+        "token_partials": {"total_tokens": False, "provider_total_tokens": False, "ordinary_input": False, "cache_read": False}},
+        "is_partial": False}
+
+
+def stats_overview():
+    return {
+        "schema_version": 1, "generated_at": "2026-11-18T03:00:00.000Z", "as_of": "2026-11-18T03:00:00.000Z",
+        "range": {"period": "week", "since": "2026-11-16", "until": "2026-11-23", "effective_until": "2026-11-19",
+                  "timezone": "Asia/Seoul", "bucket": "day"},
+        "policies": {"date_attribution": "recorded_terminal", "project_attribution": "current_folder",
+                     "price_version": "api-list-usd-2026-10-19-v1"},
+        "projection_status": {"state": "ready", "covered_since": "2026-10-01"},
+        "totals": aggregate(1_234_567), "by_model": [], "by_project": [],
+        "series": [],
+        "options": {"providers": [{"provider": "anthropic", "label": "Anthropic"}],
+                    "models": [{"provider": "anthropic", "model": "claude-opus", "backend": "claude", "label": "Opus"}],
+                    "projects": [], "project_roster": [], "model_rosters": [{"provider": "anthropic", "models": ["claude-opus"]}]},
+    }
+
+
+
 def stats_extra(page: Page) -> dict:
     result = page.evaluate(STATS_SCRIPT)
     passed = (
@@ -840,6 +948,129 @@ def stats_extra(page: Page) -> dict:
         "reason": "막대 프레임 로더 하나 · 값 자리 비움 · 점유 목록 없음"
         if passed else "세션 통계 로딩 표시가 하나가 아님",
     }
+
+
+ATOM_NODES = {"children": [
+    {"id": f"node-{i}", "card_id": f"card-{i}", "card": {"title": title, "card_type": "structure"}}
+    for i, title in enumerate(["에이전트", "프로젝트", "소울스트림 아키텍처"])
+]}
+
+
+def open_atom_selector(context, page: Page) -> None:
+    page.goto("/")
+    wait_shell(page)
+    open_folder(page)
+    page.wait_for_selector('[aria-label="atom 추가"]', state="visible", timeout=30000)
+    page.evaluate("() => document.querySelector('[aria-label=\"atom 추가\"]').click()")
+    page.get_by_text("노드 선택...", exact=True).first.wait_for(state="visible", timeout=15000)
+
+
+def session_summary(session_id: str) -> dict:
+    return {"agent_session_id": session_id, "status": "completed", "session_type": "claude",
+            "node_id": "eiaserinnys", "folder_id": "folder-1", "agent_id": "default", "event_count": 20,
+            "display_name": "검수 세션", "created_at": "2026-11-17T00:00:00.000Z", "updated_at": "2026-11-18T03:00:00.000Z"}
+
+
+def session_routes(context, session_id: str) -> None:
+    load_json(context, re.compile(r"/api/sessions\?.*" + session_id), {"sessions": [session_summary(session_id)], "total": 1})
+    context.route(re.compile(r"/api/sessions/" + session_id + r"/events"), lambda route: route.fulfill(
+        status=200, content_type="text/event-stream",
+        body='event: history_sync\nid: 30\ndata: {"type":"history_sync","last_event_id":30}\n\n'))
+
+
+def open_dashboard_chat(context, page: Page) -> None:
+    session_routes(context, "dash-1")
+    page.goto("/?session=dash-1")
+    wait_shell(page)
+    if page.viewport_size["width"] <= 760:
+        page.click('[data-testid="v3-mobile-tab-chat"]')
+
+
+def open_pas_older(context, page: Page) -> None:
+    load_json(context, "**/api/persistent-sessions", {**PAS_LIST, "sessions": [PAS_CHAT_SESSION], "total": 1})
+    session_routes(context, "pas-1")
+    held = Held()
+    messages = []
+    for i in range(3):
+        eid = 10 + i * 2
+        messages.extend([
+            {"id": eid, "parent_event_id": None, "event_type": "user_message",
+             "payload": {"type": "user_message", "text": f"검수 요청 {i + 1}", "user": "qa"},
+             "created_at": f"2026-11-18T0{i}:00:00.000Z"},
+            {"id": eid + 1, "parent_event_id": eid, "event_type": "assistant_message",
+             "payload": {"type": "assistant_message", "content": f"확인 {i + 1}"},
+             "created_at": f"2026-11-18T0{i}:00:05.000Z"},
+        ])
+    def timeline(route):
+        if "before=" in route.request.url:
+            held(route)
+        else:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(
+                {"messages": messages, "next_cursor": "2026-11-17T00:00:00.000Z"}))
+    context.route(re.compile(r"/api/sessions/pas-1/timeline"), timeline)
+    page.goto("/persistent/pas-1")
+    wait_shell(page)
+    page.wait_for_timeout(4000)
+    page.evaluate("() => document.querySelectorAll('[data-virtuoso-scroller], .persistent-session-main *').forEach(e => { if (e.scrollHeight > e.clientHeight) e.scrollTop = 0; })")
+
+
+def search_payload(count: int) -> dict:
+    return {"results": [{"session_id": f"sess-{i}", "event_id": 100 + i, "score": 1.0 - i * 0.1,
+                         "preview": f"검수 대상 메시지 미리보기 {i}", "event_type": "user_message",
+                         "match_source": "message"} for i in range(count)],
+            "navigation_results": [], "session_results": [], "search_status": None, "total": count}
+
+
+def capture_search_states(browser, base: str, out: Path, scene: dict, width: int, theme: str) -> dict:
+    context = browser.new_context(base_url=base, viewport={"width": width, "height": VIEWPORT_HEIGHTS[width]},
+                                  color_scheme=theme, reduced_motion="reduce")
+    install_page(context, theme)
+    load_json(context, re.compile(r"/cogito/search\?"), search_payload(2))
+    page = context.new_page()
+    try:
+        page.goto("/")
+        wait_shell(page)
+        page.wait_for_selector('[aria-label="Open session search"]', state="attached", timeout=30000)
+        page.evaluate("() => document.querySelector('[aria-label=\"Open session search\"]').click()")
+        field = page.get_by_placeholder("검색어를 입력하세요...")
+        field.wait_for(state="visible")
+        settle(page)
+        focus_on_open = field.evaluate("e => document.activeElement === e")
+        region = page.locator('[data-slot="search-results-region"]')
+        initial_height = region.bounding_box()["height"]
+        field.fill("검수")
+        page.wait_for_timeout(1300)
+        results_height = region.bounding_box()["height"]
+        has_results = "검수 대상 메시지" in region.inner_text()
+        page.screenshot(path=str(screenshot_path(out, scene, width, theme, "-results")), animations="disabled")
+        load_json(context, re.compile(r"/cogito/search\?"), search_payload(0))
+        field.fill("빈 결과")
+        page.wait_for_timeout(1300)
+        empty_height = region.bounding_box()["height"]
+        has_empty = "검색 결과" in region.inner_text()
+        page.set_viewport_size({"width": 360, "height": 844})
+        page.wait_for_timeout(200)
+        narrow_overflow = page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth")
+        page.keyboard.press("Tab")
+        tab_inside = page.evaluate("() => !!document.activeElement.closest('[role=dialog]')")
+        field.fill("유지할 입력")
+        other_width = 390 if width == 1440 else 1440
+        page.set_viewport_size({"width": other_width, "height": VIEWPORT_HEIGHTS[other_width]})
+        page.wait_for_timeout(300)
+        resize = page.evaluate("""() => ({overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          value: document.querySelector('[placeholder="검색어를 입력하세요..."]').value,
+          dialog: !!document.querySelector('[role=dialog]')})""")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+        esc_closed = page.locator('[role="dialog"]').count() == 0
+        passed = (has_results and has_empty and focus_on_open and tab_inside and esc_closed and not resize["overflow"] and resize["dialog"]
+                  and not narrow_overflow and resize["value"] == "유지할 입력" and min(initial_height, results_height, empty_height) >= 159)
+        return {"scene": scene["key"], "width": width, "theme": theme, "passed": passed,
+                "reason": "검색 상태와 키보드·크기 변경" if passed else "검색 상태 또는 조작 실패",
+                "initialHeight": initial_height, "resultsHeight": results_height, "emptyHeight": empty_height,
+                "hasResults": has_results, "hasEmpty": has_empty, "narrow360Overflow": narrow_overflow, "focusOnOpen": focus_on_open, "tabInside": tab_inside, "escapeClosed": esc_closed, "resize": resize}
+    finally:
+        context.close()
 
 
 SCENES = [
@@ -932,12 +1163,21 @@ SCENES = [
         "wait": '[data-slot="frame-loading"]',
         "extra": stats_extra,
     },
+    {"key": "atom-selector", "frame": "div.max-h-48", "mode": "content", "open": open_atom_selector,
+     "hold": re.compile(r"/api/atom/nodes")},
+    {"key": "pas-older", "frame": '[data-slot="chat-manuscript-list-header"]', "mode": "content",
+     "open": open_pas_older, "expectText": "이전 대화를 불러오는 중"},
+    {"key": "dashboard-chat-empty", "frame": '[data-slot="chat-transcript-fill"]', "mode": "fill",
+     "open": open_dashboard_chat, "hold": re.compile(r"/api/sessions/dash-1/timeline"),
+     "expectText": "대화를 불러오는 중"},
+    {"key": "search-states", "mode": "search-behavior"},
     {
         "key": "runtime-strips",
         "mode": "behavior",
         "open": open_runtime_sample,
     },
 ]
+
 
 
 def open_folder_after_home(page: Page) -> None:
@@ -969,10 +1209,16 @@ def main() -> int:
                     themes = scene.get("themes", ("dark",))
                     if args.theme not in themes:
                         continue
-                    if scene.get("mode") == "behavior":
-                        captures.append(capture_runtime(browser, base, out, scene, width, args.theme))
-                    else:
-                        captures.append(capture_scene(browser, base, out, scene, width, args.theme))
+                    try:
+                        if scene.get("mode") == "search-behavior":
+                            captures.append(capture_search_states(browser, base, out, scene, width, args.theme))
+                        elif scene.get("mode") == "behavior":
+                            captures.append(capture_runtime(browser, base, out, scene, width, args.theme))
+                        else:
+                            captures.append(capture_scene(browser, base, out, scene, width, args.theme))
+                    except Exception as error:  # noqa: BLE001 — 장면별 실패를 기록하고 나머지를 계속 잰다.
+                        captures.append({"scene": scene["key"], "width": width, "theme": args.theme,
+                                         "passed": False, "reason": str(error)})
         finally:
             browser.close()
 

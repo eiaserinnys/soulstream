@@ -106,6 +106,7 @@
 }
 
 .config-dialog .usage-stats-summary-metric > strong {
+  min-height: 1lh;
   overflow-wrap: anywhere;
   font: var(--v3-type-section) var(--v3-font-family);
   font-variant-numeric: tabular-nums;
@@ -117,7 +118,11 @@
   gap: var(--v3-space-3);
 }
 
-.config-dialog .usage-stats-summary-meta:empty {
+.config-dialog .usage-stats-summary-meta[data-loading] {
+  min-height: 1lh;
+}
+
+.config-dialog .usage-stats-summary-meta:empty:not([data-loading]) {
   display: none;
 }
 
