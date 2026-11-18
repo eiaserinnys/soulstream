@@ -46,6 +46,8 @@ import {
   buildDeliveryInputUuid,
 } from "./delivery_identity.js";
 
+const persistedResumeInputs = new WeakMap<Task, Set<string>>();
+
 export type AutoResumeCallback = (
   task: Task,
   activation?: ExecutionActivation,
@@ -142,6 +144,9 @@ export class AutoResumeTransition {
       await this.closeStaleEngine(task);
       await this.promoteCallerInfo(task, message.callerInfo);
 
+      const dedupeKey = message.deliveryId
+        ? buildDeliveryInputDedupeKey(message.deliveryId)
+        : undefined;
       const userMessageEvent = options.publishUserMessage === false
         ? null
         : buildUserMessageEvent({
@@ -150,9 +155,7 @@ export class AutoResumeTransition {
           inputId: message.deliveryId
             ? buildDeliveryInputUuid(message.deliveryId)
             : undefined,
-          dedupeKey: message.deliveryId
-            ? buildDeliveryInputDedupeKey(message.deliveryId)
-            : undefined,
+          dedupeKey,
           user: message.user,
           callerInfo: message.callerInfo ?? task.callerInfo,
           attachmentPaths: message.attachmentPaths,
@@ -164,8 +167,13 @@ export class AutoResumeTransition {
       const resumedReviewState = reviewStateAfterFollowup(
         task.reviewState ?? "not_required",
       );
-      if (userMessageEvent) {
+      if (userMessageEvent && (!dedupeKey || !persistedResumeInputs.get(task)?.has(dedupeKey))) {
         await persistUserMessageEvent(task, userMessageEvent, this.deps);
+        if (dedupeKey) {
+          const persisted = persistedResumeInputs.get(task) ?? new Set<string>();
+          persisted.add(dedupeKey);
+          persistedResumeInputs.set(task, persisted);
+        }
       }
       if (!this.deps.persistence) {
         throw new Error("running transition durable event persistence is required");
@@ -202,6 +210,7 @@ export class AutoResumeTransition {
           `auto-resume running transition rejected for ${task.agentSessionId}`,
         );
       }
+      if (dedupeKey) persistedResumeInputs.get(task)?.delete(dedupeKey);
       if (terminalSnapshot) {
         activation.setFailureCompensation?.(async (error) => {
           // The restored terminal repeats the previous detail, so this line is
