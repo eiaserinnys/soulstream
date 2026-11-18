@@ -79,7 +79,8 @@ describe("live Postgres SQL resolver", () => {
     expect(postgresFactory).toHaveBeenCalledWith(
       "postgres://orch@localhost/orch",
       {
-        max: 10,
+        max: 20,
+        max_pipeline: 1,
         connection: {
           statement_timeout: 30_000,
           idle_in_transaction_session_timeout: 60_000,
