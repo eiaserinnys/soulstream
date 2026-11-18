@@ -92,6 +92,7 @@ describe("session isolation contract", () => {
       sanitizeMcpServers: vi.fn(async (servers) => servers),
       lstatPath: vi.fn(async () => null),
       listDirectory: vi.fn(async () => []),
+      listDirectorySync: vi.fn(() => []),
       readSymlink: vi.fn(async () => null),
       detectWsl: vi.fn(async () => false),
       ensureLockFile: vi.fn(async () => {}),

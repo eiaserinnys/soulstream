@@ -2,7 +2,7 @@
 
 ## 문서 지위
 
-이 문서는 재설계 목표이며 현재 구현의 보장이 아니다. 현재 동작의 정본은 [전달 원장 상태 전이](pathmaps/delivery-ledger.md)와 `orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.ts`다. 재시도 예산(16회 또는 24시간)을 소진한 delivery는 현재 `uncertain`/`dead_letter`로 종결되고 자동 경로는 그 행을 다시 잡지 않으며, 출구는 보낸 쪽이 같은 `relation_key`로 재등록해 `reviveDeadLetter`로 되살리는 하나다. 아래 불변식이 서술하는 회수 가능성은 현재 구현이 아니라 재설계가 만족해야 할 계약이다.
+이 문서는 재설계 목표이며 현재 구현의 보장이 아니다. 현재 동작의 정본은 [전달 원장 상태 전이](pathmaps/delivery-ledger.md)와 `orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.ts`다. 재시도 예산(16회 또는 24시간)을 소진한 delivery는 현재 `uncertain`/`dead_letter`로 종결되고 자동 경로는 그 행을 다시 잡지 않으며, 출구는 보낸 쪽이 같은 `relation_key`로 재등록해 `reviveDeadLetter`로 되살리는 하나다. 아래 불변식이 서술하는 회수 가능성은 현재 구현이 아니라 재설계가 만족해야 할 계약이다. 특히 「재시도 횟수 소진은 폐기 사유가 아니다」·「`uncertain`은 종착지가 아니다」 같은 조항은 현행 정책과 정반대다. 현행 재시도 정책의 정본은 위의 [전달 원장 상태 전이](pathmaps/delivery-ledger.md)와 `session_delivery_retry_policy.ts`이며, 이 문서는 횟수·간격 같은 정책 수치를 새로 싣지 않는다.
 
 기준 커밋은 `9a0cb300`이다. 이 문서는 A(유실), B(중복), C(순서 역전), D(접수 성공의 거짓 실패)를 네 개의 독립 패치로 다루지 않는다. 공통 원인은 delivery가 대상 세션만 알 뿐, 그 메시지를 받기로 한 **구체적인 실행 턴**과 연결되지 않는다는 점이다.
 
@@ -75,20 +75,20 @@
 
 ## 현재 구조가 불변식을 보장할 수 없는 지점
 
-아래 줄은 기준 커밋 `9a0cb300`의 파일 위치다.
+아래는 현행 `main`의 파일 경로와 함수 이름이다. 기준 커밋 `9a0cb300` 대비 (8)·(10)·(11)은 PR #847 이후 동작이 바뀌었다.
 
-1. `packages/db-schema/sql/schema.sql:330-380`의 `session_deliveries`에는 대상 세션과 enqueue 순서는 있지만 실행 명령·실행 generation·실행 receipt를 가리키는 필드가 없다. 반면 실행 정본인 `session_execution_ownerships.execution_command_id`는 같은 파일 `2470-2518`에 별도로 존재한다. 두 aggregate 사이의 관계를 질의할 수 없다.
-2. `orch-server-ts/src/control_plane/control_plane_types.ts:25-80`의 row와 등록 입력 타입도 실행 턴 identity를 표현하지 않는다. 타입 수준에서 “어느 실행이 이 delivery를 받았는가”를 답할 수 없다.
-3. `orch-server-ts/src/control_plane/repositories/session_delivery_relation_repository.ts:55-80`은 target session과 논리 identity만 등록한다. 실행 턴 귀속은 생성 시점에도 남지 않는다.
-4. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts:104-127`의 claim은 target session 존재만 확인한다. 현재 실행 명령과 연결하거나 선행 delivery를 fence하지 않는다.
-5. `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts:90-145`의 pending scan은 `state='pending'`과 due time만 보고 claim한다. `uncertain`은 스캔 대상이 아니며, 정렬도 `next_attempt_at`이 enqueue 순서보다 앞서 C를 보장하지 못한다.
-6. 같은 파일 `244-315`의 queued recovery는 node startup, heartbeat, queued age로 회수 여부를 정한다. 새 실행 턴 활성화와 delivery 사이의 관계를 확인하지 않으므로 살아난 실행이 기존 queued delivery를 반드시 회수한다는 증명이 없다.
-7. `orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.ts:74-93`은 횟수·나이 소진을 `state='uncertain'`과 `aggregate_state='dead_letter'`로 동시에 만든다. “결과를 아직 모름”과 “활성 cadence를 멈춤”이 한 표현에 섞이고, recovery 정본에서 제거된다.
-8. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts:282-305`는 durable admission을 기록하지만, `soul-server-ts/src/task/task_delivery_ledger_gate.ts:218-241`은 동일 row가 이미 queued로 전진한 CAS miss를 재조회하지 않고 예외로 보고한다. 접수 성공이 503으로 바뀌어 호출자 재전송을 유발한다.
-9. `soul-server-ts/src/task/task_delivery_ledger_gate.ts:248-274`와 `283-320`은 실행 receipt를 화해하지 않은 채 attempt 수로 retry와 `uncertain` 종결을 가른다.
-10. `soul-server-ts/src/task/completion_delivery_coordinator.ts:228-273`은 dispatch 예외가 난 실행 턴의 실제 접수 여부를 확인하지 않고 재시도하거나 terminal `uncertain`으로 보낸다. B와 A 중 어느 쪽을 택했는지 증명할 정보가 없다.
-11. `soul-server-ts/src/task/task_intervention_route.ts:343-380`은 retry 예산 소진을 HTTP 실패로 승격한다. durable 접수 여부와 분리되지 않아 D가 B의 재전송 방아쇠가 된다.
-12. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts:308-351`의 delivered·consumed receipt는 caller turn 문자열만 남긴다. 그 turn이 어떤 execution command의 결과인지 연결되지 않아 재시작 경계의 화해 근거가 불완전하다.
+1. `packages/db-schema/sql/schema.sql`의 `session_deliveries`에는 대상 세션과 enqueue 순서는 있지만 실행 명령·실행 generation·실행 receipt를 가리키는 필드가 없다. 실행 소유는 `sessions.execution_command_id`(`execution_registration_id` 짝)에 별도로 남으므로 두 aggregate 사이의 관계를 질의할 수 없다.
+2. `orch-server-ts/src/control_plane/control_plane_types.ts`의 `SessionDeliveryRow`와 `RegisterSessionDeliveryParams`도 실행 턴 identity를 표현하지 않는다. 타입 수준에서 “어느 실행이 이 delivery를 받았는가”를 답할 수 없다.
+3. `orch-server-ts/src/control_plane/repositories/session_delivery_relation_repository.ts`의 `registerSessionDelivery`는 target session과 논리 identity만 등록한다. 실행 턴 귀속은 생성 시점에도 남지 않는다.
+4. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts`의 `claimAttemptForTarget`은 target 세션 행 존재만 확인한다. 현재 실행 명령과 연결하거나 선행 delivery를 fence하지 않는다.
+5. `orch-server-ts/src/control_plane/repositories/session_delivery_recovery_repository.ts`의 `claimRecoverableCompletionDeliveries`는 `state='pending'`과 due time만 보고 claim한다. `uncertain`은 스캔 대상이 아니며, 정렬도 `next_attempt_at`이 enqueue 순서보다 앞서 C를 보장하지 못한다.
+6. 같은 파일의 `claimQueuedAfterNodeRestart`·`claimRecoverableQueued`·`markDeliveredFromTranscript`·`deferQueuedTranscriptCheck`는 node startup, heartbeat, queued age, transcript 확인으로 회수 여부를 정한다. 새 실행 턴 활성화와 delivery 사이의 관계를 확인하지 않으므로 살아난 실행이 기존 queued delivery를 반드시 회수한다는 증명이 없다.
+7. `orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.ts`의 `deliveryRetryOrDeadLetterSet`은 횟수·나이 소진을 `state='uncertain'`과 `aggregate_state='dead_letter'`로 동시에 만든다. “결과를 아직 모름”과 “활성 cadence를 멈춤”이 한 표현에 섞이고, recovery 정본에서 제거된다.
+8. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts`의 `markQueued`는 durable admission을 기록하고, `soul-server-ts/src/task/task_delivery_ledger_gate.ts`의 `recordResult`는 `markQueued` CAS miss 뒤 같은 배달의 `queued` 행을 재조회해 통과시킨다(PR #847). 그래도 같은 `queued` 행임이 증명되지 않으면 예외로 보고한다. 접수 성공 판정이 마지막 CAS 반환값이 아니라 행 재조회에 기대므로 D는 줄었지만, 그 행이 어느 실행 턴에 소비됐는지는 여전히 화해하지 않는다.
+9. 같은 파일 `recordResult`의 나머지 분기는 결과 종류(성공·`queued`·auto-resume, 수용되지 않은 결과)로 `markQueued`와 `markUncertain`을 가르고, retry 일정은 coordinator(`deferFailureToCoordinator`)가 맡는다. 어느 경우든 실행 receipt와 화해하지 않고 결과 종류만으로 종결하므로, 결과가 불명확한 delivery가 어느 실행 턴에 남았는지 증명할 정보가 없다.
+10. `soul-server-ts/src/task/completion_delivery_coordinator.ts`의 `dispatchClaimed`는 dispatch 예외 뒤 원장을 다시 읽어 같은 배달이 `queued`로 전진했으면 durable acceptance로 보고 재시도나 `uncertain` 종결을 하지 않는다. `queued`가 아니면 예산 소진 시 `markUncertain`으로 보내고, 남았으면 `retryDeliveryAttempt`로 backoff 재시도를 건다. 다만 이 확인은 원장 접수 사실만 보며, 그 delivery를 실제로 소비한 실행 턴의 receipt는 화해하지 않는다.
+11. `soul-server-ts/src/task/task_intervention_route.ts`의 `addIntervention`은 예외를 호출자에게 그대로 던진다. 원장 결과를 기록하기 전(`ledgerResultRecorded`가 false)의 예외에는 `deferFailureToCoordinator`를 불러 시도 토큰만 남기고 retry 일정은 coordinator에 맡기지만, 원장 결과를 기록한 뒤의 예외에는 그 호출도 없이 던진다. 어느 쪽이든 durable 접수 뒤의 실패가 호출자에게 나가 D가 B의 재전송 방아쇠가 될 수 있다. retry 예산 소진을 HTTP 실패로 승격하던 `recordReservationRetry`(`task_delivery_ledger_gate.ts`)는 지금 호출자가 없다.
+12. `orch-server-ts/src/control_plane/repositories/session_delivery_repository.ts`의 `markDelivered`·`markConsumed` receipt는 caller turn 문자열만 남긴다. 그 turn이 어떤 execution command의 결과인지 연결되지 않아 재시작 경계의 화해 근거가 불완전하다.
 
 ## 회귀 게이트 판정
 
