@@ -8,6 +8,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  FrameLoading,
   type CatalogFolder,
 } from "@seosoyoung/soul-ui";
 
@@ -184,7 +185,7 @@ export function ProjectDialog({
               onModelPresetValidityChange={setEditorValid} onError={setError} />
           ) : null}
           <div hidden={editor !== null}>
-          {loading ? <p aria-busy="true">프로젝트 설정을 불러오는 중…</p> : loadFailed ? null : (
+          {loading ? <FrameLoading label="프로젝트 설정을 불러오는 중…" /> : loadFailed ? null : (
             <ProjectFormFields key={target?.mode === "edit" ? target.folder.id : "create"}
               value={value} disabled={pending} defaultsInvalid={!assignmentValid} onChange={setValue} onEdit={openEditor} />
           )}

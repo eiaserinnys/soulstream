@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Input } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, Input } from "@seosoyoung/soul-ui";
 import { CardApiError, cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import {
   parseOrchestrationPolicy,
@@ -115,7 +115,7 @@ export function CardOrchestrationSettingsForm({
         </p>
       </div>
       {!policy ? (
-        <p>불러오는 중…</p>
+        <FrameLoading inline label="불러오는 중…" />
       ) : (
         <>
           <Button

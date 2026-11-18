@@ -3,6 +3,7 @@ import {
   CustomViewIframe,
   DashboardIconCap,
   DisclosureActionIcon,
+  FrameLoading,
   deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
@@ -247,7 +248,7 @@ export function FolderInlineBoard({
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
-      {status === "loading" ? <p className="v3-detail-empty">보드 항목을 불러오는 중…</p> : null}
+      {status === "loading" ? <FrameLoading label="보드 항목을 불러오는 중…" /> : null}
       {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
       {createError ? <p className="v3-inline-board-error" role="alert">{createError}</p> : null}
       {status === "ready" && items.length === 0 ? <p className="v3-detail-empty">보드에 표시할 문서가 없습니다.</p> : null}
@@ -374,7 +375,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
     return () => controller.abort();
   }, [documentId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
-  if (!document) return <p className="v3-detail-empty">본문을 불러오는 중…</p>;
+  if (!document) return <FrameLoading label="본문을 불러오는 중…" />;
   return (
     <div className="v3-inline-markdown" data-testid="v3-inline-markdown">
       <FolderDescriptionPanel
@@ -410,7 +411,7 @@ function InlineCustomView({ customViewId, invalidationKey }: { customViewId: str
     return () => controller.abort();
   }, [customViewId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">커스텀 뷰를 불러오지 못했습니다.</p>;
-  if (!document) return <p className="v3-detail-empty">커스텀 뷰를 불러오는 중…</p>;
+  if (!document) return <FrameLoading label="커스텀 뷰를 불러오는 중…" />;
   return (
     <CustomViewIframe
       html={document.html}

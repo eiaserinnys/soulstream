@@ -7,7 +7,7 @@ import { CardWorkspace } from "./CardWorkspace";
 import type { CardSessionSelection } from "./CardSessionHistory";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type InternalLinkTarget, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, FrameLoading, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type InternalLinkTarget, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 import { V3_MAIN_COLUMNS_OUTER_MARGIN_PX } from "./v3-main-columns";
@@ -733,11 +733,11 @@ function V3DashboardContent() {
               onFolderBlocksChanged={applyFolderBlocks}
               onArchiveFolder={() => projectNavigationMutations.onDeleteProject(selectedFolder)}
             /> : !workspaceFolderEntry && !activeSession ? (
-              <section className="v3-load-error" aria-busy={resolution.status === "loading"}>
-                <h1>{selectedFolderName}</h1>
-                {resolution.status === "error" || project.status === "error" ? (
+              <section className={resolution.status === "error" || project.status === "error" ? "v3-load-error" : "v3-planner-loading"} aria-busy={resolution.status === "loading"}>
+                {resolution.status === "error" || project.status === "error" ? (<>
+                  <h1>{selectedFolderName}</h1>
                   <p>{resolution.status === "error" ? resolution.message : project.message}</p>
-                ) : <p>불러오는 중…</p>}
+                </>) : <FrameLoading label="불러오는 중…" />}
               </section>
             ) : null) : !showRecord ? <CardHome folders={catalog?.folders??[]} onOpenRecord={()=>setShowRecord(true)}/> : (
               <DailyPlannerView state={daily} folders={catalog?.folders ?? []} selectedDate={selectedDate} isTodayView={selectedDate === today} todayFolderIds={todayFolderIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(folderId) => { void selectFolder(catalog?.folders.find((folder) => folder.id === folderId) ?? null); }} onOpenFolder={openFolder} onCompleteFolder={plannerActions.completeFolder} onToggleFolderToday={plannerActions.toggleFolderToday} onMoveFolderToParent={folderParentMove.openFolder} onOpenRitual={() => setRitualOpen(true)} onCreateFolder={() => setChildFolderDialog({ mode: "create", parentFolderId: null, parentName: null })} />

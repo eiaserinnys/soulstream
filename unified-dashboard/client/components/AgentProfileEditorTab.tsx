@@ -2,7 +2,7 @@
 // and preview workflows stay together in one tab. Bundle rows and CRUD live
 // in separate components; another split would change the planned boundary.
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import {
@@ -250,7 +250,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     }
   };
 
-  if (loading) return <div className="py-8 text-center text-sm text-muted-foreground">프로필을 불러오는 중...</div>;
+  if (loading) return <FrameLoading label="프로필을 불러오는 중..." />;
 
   return (
     <div>

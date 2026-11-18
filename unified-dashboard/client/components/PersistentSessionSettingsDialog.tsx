@@ -8,6 +8,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  FrameLoading,
   SessionStoryDisclosure,
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
@@ -132,7 +133,7 @@ export function PersistentSessionSettingsDialog({
             </div>
           </section>
         </div> : <div className="config-detail">
-          {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+          {loading ? <FrameLoading inline label="불러오는 중…" /> : null}
           {loadError ? <div className="space-y-2"><SettingsAlert><span data-v3-selectable-content="true">{loadError}</span></SettingsAlert><Button type="button" size="sm" variant="outline" onClick={() => void load()}>다시 시도</Button></div> : null}
         </div>}
       </DialogPanel>

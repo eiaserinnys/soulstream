@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FrameLoading } from "@seosoyoung/soul-ui";
 import type { CardCheckItem, CardDetail, CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
 import { attachmentContentUrl } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import { CardCheckItems } from "./CardCheckItems";
@@ -140,6 +141,6 @@ export function CardAttachmentReviewSamples() {
     {fixture ? <div className="v3-components-samples">
       <CardCheckItems items={fixture.items} onConfirmChange={noAction} onTargetItem={noAction} />
       <CardTimeline card={fixture.card} detail={fixture.detail} portraitUrl="/system-portrait.png" pending={false} onAnswer={noAction} />
-    </div> : <p className="v3-components-label" role="status">{failed ? "표본을 불러오지 못했습니다." : "불러오는 중…"}</p>}
+    </div> : failed ? <p className="v3-components-label" role="status">표본을 불러오지 못했습니다.</p> : <FrameLoading label="불러오는 중…" />}
   </main>;
 }

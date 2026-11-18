@@ -27,7 +27,7 @@ it("shows the title and read-only body without a duplicate leading heading", asy
 it("opens a loading dialog before the response arrives", async () => {
   await mount(vi.fn(() => new Promise<Response>(() => {})));
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("본문을 불러오는 중…");
+  expect(document.querySelector('[data-slot="frame-loading"]')?.textContent).toBe("본문을 불러오는 중…");
   expect(document.querySelector('[data-slot="dialog-header"]')).not.toBeNull();
   expect(document.querySelector('[data-slot="dialog-title"]')?.classList.contains("min-h-7")).toBe(true);
   expect(document.querySelector('[data-slot="dialog-title"]')?.classList.contains("leading-7")).toBe(true);
@@ -48,7 +48,7 @@ it("does not paint the previous document before loading a different document", a
   }
   await act(async () => root.render(<><DocumentReaderDialog documentId="doc-2" request={() => new Promise<Response>(() => {})} onClose={() => {}}/><ObserveCommit/></>));
   expect(commits).not.toContain("이전 문서");
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("본문을 불러오는 중…");
+  expect(document.querySelector('[data-slot="frame-loading"]')?.textContent).toBe("본문을 불러오는 중…");
 });
 it("keeps a successful document visible when reopening and replaces it with the refreshed response", async () => {
   let resolveRefresh!: (response: Response) => void;
@@ -81,7 +81,7 @@ it("starts loading again when reopening a document whose previous request failed
   await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
   await act(async () => root.render(<DocumentReaderDialog documentId="doc-1" request={request} onClose={() => {}}/>));
   expect(request).toHaveBeenCalledTimes(2);
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("본문을 불러오는 중…");
+  expect(document.querySelector('[data-slot="frame-loading"]')?.textContent).toBe("본문을 불러오는 중…");
   await act(async () => resolveRefresh(new Response(null, { status: 404 })));
   expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("문서를 찾을 수 없습니다");
 });

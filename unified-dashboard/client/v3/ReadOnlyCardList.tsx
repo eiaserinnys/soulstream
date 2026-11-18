@@ -1,4 +1,5 @@
 import {useState} from 'react';
+import {FrameLoading} from '../../../packages/soul-ui/src/components/FrameLoading';
 import {Button} from '../../../packages/soul-ui/src/components/ui/button';
 import {DEFAULT_CHAT_FONT_SIZE} from '../../../packages/soul-ui/src/lib/chat-typography';
 import {CatalogSelectionField} from '../components/CatalogSelectionField';
@@ -23,7 +24,9 @@ export function ReadOnlyCardList({cards,total,hasData,disabled=false,refresh,not
     {refresh?<Button id="refresh" className="v3-catalog-select-trigger h-auto sm:h-auto" variant="outline" disabled={disabled||refresh.pending} onClick={refresh.onRefresh}>새로고침</Button>:null}
    </div>
   </header>
-  <p id="summary" aria-live="polite" className="widget-meta">{summaryOverride??(hasData?(total>cards.length?`${total}개 중 ${cards.length}개 불러옴 · ${count}개 표시`:`${cards.length}개 불러옴 · ${count}개 표시`):'카드를 불러오는 중…')}</p>
+  {summaryOverride||hasData
+   ?<p id="summary" aria-live="polite" className="widget-meta">{summaryOverride??(total>cards.length?`${total}개 중 ${cards.length}개 불러옴 · ${count}개 표시`:`${cards.length}개 불러옴 · ${count}개 표시`)}</p>
+   :<FrameLoading inline label="카드를 불러오는 중…"/>}
   <div id="cards" className="v3-card-inbox">{groups.map(group=><section key={group.id} data-card-group={group.id}>
    <div className="v3-detail-section-head"><h3>{group.label}</h3><span>{group.cards.length}개</span></div>
    <PostItGrid fontSize={DEFAULT_CHAT_FONT_SIZE}>{group.cards.map(card=><PostItCardView key={card.id} id={card.id} title={card.title} status={card.status}

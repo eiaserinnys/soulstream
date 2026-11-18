@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
+  FrameLoading,
   NewSessionFolderSelector,
   useDashboardStore,
   type AgentInfo,
@@ -242,7 +243,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
           selected={selected?.session_id === session.session_id}
           onSelect={() => choose(session)}
         />)}
-      </SettingsListSection> : loadError ? null : <p className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p>}
+      </SettingsListSection> : loadError ? null : <FrameLoading inline label="불러오는 중…" />}
     </>}>
       {selected || defaults ? <SettingsDetailHeader selectableTitle={Boolean(selected)}
         title={selected ? selected.display_name ?? "이름 없음" : "새 영구 에이전트 세션"}

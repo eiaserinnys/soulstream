@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading } from "@seosoyoung/soul-ui";
 
 type Policy = {
   key: string;
@@ -120,7 +120,7 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
   }
 
   if (loading && !payload) {
-    return <div className="py-8 text-center text-sm text-muted-foreground">검수 정책을 불러오는 중...</div>;
+    return <FrameLoading label="검수 정책을 불러오는 중..." />;
   }
 
   return (

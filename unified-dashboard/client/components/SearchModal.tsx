@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogPanel,
+  FrameLoading,
   useDashboardStore,
   useUiEventEntryMarker,
   useUiEventTracker,
@@ -526,12 +527,7 @@ export function SearchModal({
           </div>
 
           {/* 상태 표시 */}
-          {loading && (
-            <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
-              <span className="inline-block w-4 h-4 border border-muted-foreground/40 border-t-muted-foreground rounded-full animate-spin mr-2" />
-              검색 중...
-            </div>
-          )}
+          {loading && <FrameLoading label="검색 중..." />}
 
           {error && !loading && (
             <div className="py-4 text-center text-sm text-accent-red" data-v3-selectable-content="true">

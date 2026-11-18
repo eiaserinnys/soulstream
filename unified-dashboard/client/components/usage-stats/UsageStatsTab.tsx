@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Button,
   DashboardIconCap,
+  FrameLoading,
   buildUsageStatsModelOptions,
   formatUsageStatsCacheSplit,
   formatUsageStatsCoverage,
@@ -367,7 +368,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             onSelect={chooseBucket}
           />
           {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : view === "model" ? displayedModels.map(row => {
+            {overviewLoading || detailLoading ? <FrameLoading inline label="불러오는 중…" /> : view === "model" ? displayedModels.map(row => {
               const value = usageStatsMetricValue(row.metrics, metric, includeCacheRead);
               const name = row.attribution === "provider"
                 ? formatUsageStatsProviderLabel(row.provider)
@@ -400,7 +401,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
         </SettingsGroupBox>
 
         {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords && !unknownEmptyRange ? <SettingsGroupBox title="입력 자료 구성">
-          {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
+          {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <FrameLoading inline label="불러오는 중…" /> : detail ? <InputMaterial detail={detail} /> : null}
         </SettingsGroupBox> : null}
       </>
     )}

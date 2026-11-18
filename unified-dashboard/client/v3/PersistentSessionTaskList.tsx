@@ -1,5 +1,5 @@
 import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import { Button, DisclosureActionIcon } from "@seosoyoung/soul-ui";
+import { Button, DisclosureActionIcon, FrameLoading } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect, useState, type CSSProperties, type ReactElement, type RefObject } from "react";
@@ -174,7 +174,7 @@ function TaskListContent({cards,loading,error,retry,onOpenCard}: {
   const summaryNumberTemplate=widestNumber===null?undefined:`#${widestNumber}`;
   return <Tooltip.Provider delay={300}><div className="v3-persistent-task-list" data-testid="persistent-session-task-list" aria-busy={loading&&!error||undefined}>
     {error?<div className="v3-persistent-task-list-error" role="alert"><span className="v3-card-error">작업 목록을 불러오지 못했습니다.</span>{retry?<Button size="sm" variant="outline" className="v3-persistent-task-paper-button" onClick={retry}>다시 시도</Button>:null}</div>:null}
-    {!error&&loading?<p className="v3-card-board-empty" role="status">불러오는 중…</p>:null}
+    {!error&&loading?<FrameLoading label="불러오는 중…"/>:null}
     {!error&&!loading&&groups.length===0?<p className="v3-card-board-empty">카드가 없습니다.</p>:null}
     {!error?groups.map(group=>{
       const expanded=!collapsedGroups.includes(group.status);

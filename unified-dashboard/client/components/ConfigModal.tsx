@@ -26,6 +26,7 @@ import {
   DialogDescription,
   DialogPanel,
   Button,
+  FrameLoading,
   DEFAULT_LIQUID_GLASS_SETTINGS,
   useAuth,
   useDashboardStore,
@@ -184,11 +185,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
         </DialogHeader>
 
         <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
-          {loading && (
-            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-              설정을 불러오는 중...
-            </div>
-          )}
+          {loading && <FrameLoading label="설정을 불러오는 중..." />}
           {error && !loading && (
             <div className="text-accent-red text-sm py-4 text-center" data-v3-selectable-content="true">
               ❌ {error}

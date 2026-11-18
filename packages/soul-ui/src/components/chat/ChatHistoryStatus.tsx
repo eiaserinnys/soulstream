@@ -1,3 +1,4 @@
+import { FrameLoading } from "../FrameLoading";
 import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 
 interface ChatHistoryStatusProps {
@@ -35,11 +36,7 @@ export function ChatHistoryStatus({
   }
 
   if (loading) {
-    return (
-      <div className="p-2 text-center text-muted-foreground text-sm">
-        Loading earlier messages...
-      </div>
-    );
+    return <FrameLoading inline label="이전 대화를 불러오는 중" />;
   }
 
   if (reachedTop && showReachedTop) {

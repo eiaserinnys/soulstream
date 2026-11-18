@@ -13,6 +13,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
     cn: (...parts: unknown[]) => parts.filter(Boolean).join(" "),
     Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement("button", props, children),
     Input: ({ nativeInput: _native, ...props }: any) => React.createElement("input", props),
+    FrameLoading: ({ label }: any) => React.createElement("p", { role: "status" }, label),
     NewSessionFolderSelector: ({ folders, selectedFolderId, onFolderChange, label }: any) => React.createElement(
       "label",
       null,

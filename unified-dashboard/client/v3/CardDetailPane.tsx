@@ -2,7 +2,7 @@ import {dialoguesAssignment} from "./dialogues-api";
 import {CardExecutionSettings} from "./CardExecutionSettings";
 import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { DashboardIconCap, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, FrameLoading, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
@@ -154,7 +154,8 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   try {await useCardStore.getState().mutate(cardId,"/status",{status:"done",expectedVersion:card.version});onClose();}
   catch {} finally {setPending(false);}
  };
- if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
+ if(!card)return error ? <div className="v3-detail-section" role="alert">{error}</div>
+  : <div className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim"><FrameLoading label="카드를 불러오는 중…"/></div>;
  const statusControl:CardStatusControl={pending,
   assignment:sampleDetail?dialoguesAssignment:undefined,folders,
   saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined,

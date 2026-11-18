@@ -16,6 +16,7 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { FrameLoading } from "./FrameLoading";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
 import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
 
@@ -115,6 +116,12 @@ export function ClaudeRuntimeTasksPanel({
 
   if (tasks.length === 0 && !hasModeState && !loading && !error) return null;
 
+  // 첫 로딩에는 헤더 단추를 돌리지 않고 본문에서 기다린다. 자료가 있는 채로
+  // 새로고침할 때만 헤더 단추가 돈다.
+  const firstLoading = loading && tasks.length === 0 && !hasModeState && !error;
+  const spinRefreshButton = loading && !firstLoading;
+  const showBody = expanded || firstLoading;
+
   const refreshButton = (
     <Button
       variant="ghost"
@@ -123,7 +130,7 @@ export function ClaudeRuntimeTasksPanel({
       disabled={loading}
       onClick={() => void refresh()}
     >
-      {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+      {spinRefreshButton ? <Loader2 className="animate-spin" /> : <RefreshCw />}
     </Button>
   );
 
@@ -134,6 +141,8 @@ export function ClaudeRuntimeTasksPanel({
           {error}
         </div>
       ) : null}
+
+      {firstLoading ? <FrameLoading label="불러오는 중…" /> : null}
 
       {hasModeState ? (
         <div className="flex flex-wrap gap-1.5">
@@ -235,7 +244,7 @@ export function ClaudeRuntimeTasksPanel({
           />
           {refreshButton}
         </div>
-        {expanded ? expandedBody : null}
+        {showBody ? expandedBody : null}
       </section>
     );
   }
@@ -275,7 +284,7 @@ export function ClaudeRuntimeTasksPanel({
         {refreshButton}
       </div>
 
-      {expanded ? expandedBody : null}
+      {showBody ? expandedBody : null}
     </section>
   );
 }
