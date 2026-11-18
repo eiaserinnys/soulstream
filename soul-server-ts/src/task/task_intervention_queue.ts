@@ -181,3 +181,34 @@ export function isRuntimeFollowup(message: InterventionMessage): boolean {
   return message.deliveryIntent === "runtime_followup" ||
     message.source === LEGACY_RUNTIME_FOLLOWUP_SOURCE;
 }
+
+/**
+ * The same delivery across receipts: a delivery id identifies it, and messages
+ * without one are matched by identity.
+ */
+export function matchesIntervention(
+  candidate: InterventionMessage,
+  intervention: InterventionMessage,
+): boolean {
+  return intervention.deliveryId !== undefined
+    ? candidate.deliveryId === intervention.deliveryId
+    : candidate === intervention;
+}
+
+/**
+ * Carried deliveries from the ended turn go before the new batch in arrival
+ * order, and a delivery the new batch already contains is not repeated.
+ */
+export function prependCarriedDeliveries(
+  carried: readonly InterventionMessage[],
+  next: readonly InterventionMessage[],
+): InterventionMessage[] {
+  const merged: InterventionMessage[] = [];
+  const add = (message: InterventionMessage): void => {
+    if (merged.some((existing) => matchesIntervention(existing, message))) return;
+    merged.push(message);
+  };
+  for (const message of carried) add(message);
+  for (const message of next) add(message);
+  return merged;
+}

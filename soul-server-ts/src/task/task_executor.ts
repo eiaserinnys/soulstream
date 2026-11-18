@@ -120,6 +120,7 @@ import {
 import { buildClaudeContextUsageMetadataEntry } from "./task_metadata.js";
 import {
   dequeueInterventionsInLane,
+  prependCarriedDeliveries,
   requeueAfterHandoffAttempt,
   isRuntimeFollowup,
   rejoinUnstartedInterventions,
@@ -2376,7 +2377,7 @@ export class TaskExecutor {
             turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
               task,
               agent,
-              transition.interventions,
+              this.withCarriedDeliveries(task, turnReceipt, transition.interventions),
             );
             continue;
           }
@@ -2546,7 +2547,7 @@ export class TaskExecutor {
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          transition.interventions,
+          this.withCarriedDeliveries(task, turnReceipt, transition.interventions),
         );
       } finally {
         if (turnReceipt) endedTurnReceipts.push(turnReceipt);
@@ -2576,6 +2577,23 @@ export class TaskExecutor {
     event: SSEEventPayload,
   ): Promise<void> {
     await receipt?.observe(task, event);
+  }
+
+  /**
+   * A continue turn opens with the deliveries the previous turn could not
+   * confirm. The turn was interrupted before any observed event confirmed
+   * them, so its body must ride into the next turn's input; otherwise the
+   * previous receipt settles it as an admission failure (card #1604).
+   */
+  private withCarriedDeliveries(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    interventions: InterventionMessage[],
+  ): InterventionMessage[] {
+    const carried = receipt?.carryUnrecordedDeliveries(task) ?? [];
+    return carried.length === 0
+      ? interventions
+      : prependCarriedDeliveries(carried, interventions);
   }
 
   private async settleDeliveryTurn(

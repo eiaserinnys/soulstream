@@ -10,12 +10,23 @@ import {
 } from "./claude_background_result_consumption.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
+import {
+  isRuntimeFollowup,
+  matchesIntervention,
+} from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 interface DeliveryReceipt {
   intervention: InterventionMessage;
   /** Set only after an active runner acknowledged delivery through register(). */
   activeDelivery: boolean;
+  /**
+   * True once this turn asked the ledger to confirm a turn-start receipt.
+   * A failed confirmation keeps the transcript-recovery contract (card #1604).
+   */
+  recordAttempted: boolean;
+  /** Set when the next turn takes this delivery over as its input. */
+  carried: boolean;
   recorded: boolean;
   consumed: boolean;
   consumedTurnId?: string;
@@ -72,6 +83,8 @@ export class TaskDeliveryTurnReceipt {
     const receipt: DeliveryReceipt = {
       intervention,
       activeDelivery: false,
+      recordAttempted: false,
+      carried: false,
       recorded: false,
       consumed: false,
     };
@@ -161,6 +174,7 @@ export class TaskDeliveryTurnReceipt {
       return;
     }
     const recording = (async () => {
+      receipt.recordAttempted = true;
       receipt.recorded = await this.consumption.recordTurnStarted(
         task,
         receipt.intervention,
@@ -207,6 +221,8 @@ export class TaskDeliveryTurnReceipt {
   async settleEndedTurn(task: Task): Promise<void> {
     for (const receipt of this.receipts) {
       if (receipt.consumed) continue;
+      // A delivery the next turn took over is settled by that turn's receipt.
+      if (receipt.carried) continue;
       if (receipt.recorded) {
         await this.consumption.recordConsumed(
           task,
@@ -224,6 +240,27 @@ export class TaskDeliveryTurnReceipt {
       );
     }
   }
+
+  /**
+   * Deliveries this ended turn leaves open, in arrival order. The turn was
+   * interrupted before any observed event confirmed them, so the next turn
+   * re-sends their bodies as its input and its receipt owns them; this receipt
+   * must not settle them (card #1604). Runtime follow-ups keep their exact
+   * Result proof, and a delivery whose turn-start receipt was attempted stays
+   * with transcript recovery.
+   */
+  carryUnrecordedDeliveries(task: Task): InterventionMessage[] {
+    const carried: InterventionMessage[] = [];
+    for (const receipt of this.receipts) {
+      if (receipt.carried || receipt.consumed || receipt.recorded) continue;
+      if (receipt.recordAttempted) continue;
+      if (isRuntimeFollowup(receipt.intervention)) continue;
+      if (queuedForNextTurn(task, receipt.intervention)) continue;
+      receipt.carried = true;
+      carried.push(receipt.intervention);
+    }
+    return carried;
+  }
 }
 
 function queuedForNextTurn(
@@ -235,11 +272,6 @@ function queuedForNextTurn(
   );
 }
 
-function isRuntimeFollowup(intervention: InterventionMessage): boolean {
-  return intervention.deliveryIntent === "runtime_followup" ||
-    intervention.source === "claude_runtime_task_followup";
-}
-
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -248,15 +280,6 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
-}
-
-function matchesIntervention(
-  candidate: InterventionMessage,
-  intervention: InterventionMessage,
-): boolean {
-  return intervention.deliveryId !== undefined
-    ? candidate.deliveryId === intervention.deliveryId
-    : candidate === intervention;
 }
 
 function turnReceiptId(task: Task): string {

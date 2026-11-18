@@ -20,8 +20,11 @@ import type {
 } from "../db/session_db_types.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
 import {
+  ORCH_HOST_REQUEST_TIMEOUT_MS,
   PersistenceHostTransport,
+  requestHostOperationWithRetry,
   type HostClientConfig,
+  type RestartWindowRetryPolicy,
 } from "./persistence_host_transport.js";
 import { ClaudeBackgroundGenerationHostClient } from
   "./claude_background_generation_host_client.js";
@@ -436,6 +439,19 @@ export class SessionDeliveryHostClient {
   }
 }
 
+/**
+ * An orchestrator restart lasts about a minute. The appends that ride it out
+ * keep the caller's 10s per-attempt limit and widen only for failures the
+ * classifier already reads as a restart window; 4xx answers are not resent.
+ * The whole call stays under 50s because the SDK abandons a store append that
+ * takes 60s (card #1604).
+ */
+export const APPEND_TRANSCRIPT_RESTART_WINDOW: RestartWindowRetryPolicy = {
+  totalBudgetMs: 50_000,
+  attemptTimeoutMs: ORCH_HOST_REQUEST_TIMEOUT_MS,
+  retryDelaysMs: [250, 1_000, 2_000, 4_000],
+};
+
 export class ClaudeRuntimeHostClient {
   private readonly transport: PersistenceHostTransport;
   private readonly generations: ClaudeBackgroundGenerationHostClient;
@@ -533,11 +549,21 @@ export class ClaudeRuntimeHostClient {
     key: ClaudeTranscriptKey;
     entries: ClaudeTranscriptEntry[];
   }): Promise<number> {
-    return this.transport.request(
+    // The SDK retries a transcript batch only three times (~1s) before it
+    // abandons the frame, which is shorter than an orchestrator restart. Every
+    // attempt resends the very same payload: the idempotency key lives inside
+    // args[0] and only the per-request correlation id changes (card #1604).
+    return requestHostOperationWithRetry<number>(
+      this.transport,
       "claude-runtime",
       "append_transcript_entries_idempotent",
       [input],
-      { opaqueArgumentKeys: ["entries"] },
+      {
+        timeoutMs: ORCH_HOST_REQUEST_TIMEOUT_MS,
+        attempts: 1,
+        restartWindow: APPEND_TRANSCRIPT_RESTART_WINDOW,
+        opaqueArgumentKeys: ["entries"],
+      },
     );
   }
   loadClaudeTranscriptEntries(key: ClaudeTranscriptKey): Promise<ClaudeTranscriptEntry[] | null> {
