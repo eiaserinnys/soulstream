@@ -112,7 +112,8 @@ it("reserves three provider slots before the first usage summary arrives", () =>
     loadState: "idle",
   });
 
-  expect(host.querySelector('[role="status"]')?.textContent).toBe("불러오는 중");
+  expect(host.querySelector('[role="status"]')).toBeNull();
+  expect(host.textContent).not.toContain("불러오는 중");
   expect(host.querySelectorAll(".persistent-session-weekly-usage-row.is-placeholder")).toHaveLength(2);
   expect(host.querySelector(".persistent-session-weekly-usage-node.is-placeholder")).not.toBeNull();
 });

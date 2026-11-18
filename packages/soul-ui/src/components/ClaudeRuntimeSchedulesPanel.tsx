@@ -100,6 +100,13 @@ export function ClaudeRuntimeSchedulesPanel({
 
   if (schedules.length === 0 && !loading && !error) return null;
 
+  // 첫 로딩에는 헤더 단추를 돌리지 않고 본문에서 기다린다. 자료가 있는 채로
+  // 새로고침할 때만 헤더 단추가 돈다.
+  const firstLoading = loading && schedules.length === 0 && !error;
+  if (firstLoading) return null;
+  const spinRefreshButton = loading && schedules.length > 0;
+  const showBody = expanded;
+
   const refreshButton = (
     <Button
       variant="ghost"
@@ -108,7 +115,7 @@ export function ClaudeRuntimeSchedulesPanel({
       disabled={loading}
       onClick={() => void refresh()}
     >
-      {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+      {spinRefreshButton ? <Loader2 className="animate-spin" /> : <RefreshCw />}
     </Button>
   );
 
@@ -122,7 +129,7 @@ export function ClaudeRuntimeSchedulesPanel({
       className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
       data-testid="schedule-refresh-button"
     >
-      {loading
+      {spinRefreshButton
         ? <Loader2 className="size-5 animate-spin" strokeWidth={1.4} aria-hidden="true" />
         : <RefreshCw className="size-5" strokeWidth={1.4} aria-hidden="true" />}
     </DashboardIconCap>
@@ -203,7 +210,7 @@ export function ClaudeRuntimeSchedulesPanel({
           />
           {captionRefreshButton}
         </div>
-        {expanded ? expandedBody : null}
+        {showBody ? expandedBody : null}
       </section>
     );
   }
@@ -239,7 +246,7 @@ export function ClaudeRuntimeSchedulesPanel({
         {refreshButton}
       </div>
 
-      {expanded ? expandedBody : null}
+      {showBody ? expandedBody : null}
     </section>
   );
 }

@@ -157,8 +157,17 @@ async function captureDocument(page: Page, name: string, screenshot = true) {
   const geometry = await page.getByTestId("internal-document-dialog").evaluate((element) => {
     const rect = (node: Element) => node.getBoundingClientRect().toJSON();
     const title = element.querySelector('[data-slot="dialog-title"]')!;
-    const status = element.querySelector('.v3-board-load-state p');
+    const status = element.querySelector('[data-slot="frame-loading"], [data-slot="frame-notice"] p');
     const reader = element.querySelector('.v3-folder-board-document-copy');
+    const content = element.querySelector<HTMLElement>('[data-slot="dialog-panel"]')!;
+    const contentRect = content.getBoundingClientRect(), contentStyle = getComputedStyle(content);
+    const left = parseFloat(contentStyle.paddingLeft), right = parseFloat(contentStyle.paddingRight);
+    const top = parseFloat(contentStyle.paddingTop), bottom = parseFloat(contentStyle.paddingBottom);
+    const colorProbe = document.createElement('span');
+    colorProbe.style.color = status?.matches('[data-slot="frame-loading"]') ? 'var(--v3-text-secondary)' : 'var(--muted-foreground)';
+    content.appendChild(colorProbe);
+    const expectedStatusColor = getComputedStyle(colorProbe).color;
+    colorProbe.remove();
     const titleRange = document.createRange(); titleRange.selectNodeContents(title);
     const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d')!;
     const luminance = (color: string) => { context.clearRect(0,0,1,1); context.fillStyle=color; context.fillRect(0,0,1,1); return Array.from(context.getImageData(0,0,1,1).data).slice(0,3).map(value=>{const channel=value/255; return channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[0.2126,0.7152,0.0722][index],0); };
@@ -168,7 +177,10 @@ async function captureDocument(page: Page, name: string, screenshot = true) {
       titleLines: Array.from(titleRange.getClientRects()).map(line => line.toJSON()),
       close: rect(element.querySelector('button[aria-label="문서 닫기"]')!),
       status: status ? rect(status) : null,
-      statusStyle: status ? {fontSize: getComputedStyle(status).fontSize, lineHeight: getComputedStyle(status).lineHeight, color: getComputedStyle(status).color} : null,
+      statusFrame: {x: contentRect.x + left, y: contentRect.y + top,
+        width: content.clientWidth - left - right, height: content.clientHeight - top - bottom},
+      statusStyle: status ? {fontSize: getComputedStyle(status).fontSize, lineHeight: getComputedStyle(status).lineHeight, fontWeight: getComputedStyle(status).fontWeight, color: getComputedStyle(status).color} : null,
+      expectedStatusColor,
       first: reader?.firstElementChild ? rect(reader.firstElementChild) : null,
       last: reader?.lastElementChild ? rect(reader.lastElementChild) : null,
       scroll: {top: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollTop, height: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollHeight},
@@ -221,7 +233,7 @@ test("document reader keeps its frame across states and captures the proposed la
     let frame: unknown;
     for (const state of scenario.states) {
       await page.getByRole('link',{name:'시안 '+state,exact:true}).click();
-      await expect(dialog.locator(state==='loading'||state==='missing'||state==='failure'?'.v3-board-load-state':'.v3-folder-board-document-copy')).toBeVisible();
+      await expect(dialog.locator(state==='loading'?'[data-slot="frame-loading"]':state==='missing'||state==='failure'?'[data-slot="frame-notice"]':'.v3-folder-board-document-copy')).toBeVisible();
       const name = `${scenario.screen}-${scenario.width}-${scenario.theme}-${state}`;
       const geometry = await captureDocument(page,name,scenario.captures.includes(state));
       measurements.push(geometry);
@@ -230,9 +242,11 @@ test("document reader keeps its frame across states and captures the proposed la
       expect({width:geometry.dialog.width,height:geometry.dialog.height}).toEqual({width:Math.min(768,scenario.width-32),height:expectedHeight});
       expect([geometry.dialog.top,scenario.height-geometry.dialog.bottom]).toEqual([(scenario.height-expectedHeight)/2,(scenario.height-expectedHeight)/2]);
       if(geometry.status) {
-        expect(Math.abs(geometry.status.x+geometry.status.width/2-geometry.panel.x-geometry.panel.width/2)).toBeLessThanOrEqual(2);
-        expect(Math.abs(geometry.status.y+geometry.status.height/2-geometry.panel.y-geometry.panel.height/2)).toBeLessThanOrEqual(2);
-        expect(geometry.statusStyle!.fontSize).toBe('14px'); expect(geometry.statusStyle!.lineHeight).toBe('22px');
+        expect(Math.abs(geometry.status.x+geometry.status.width/2-geometry.statusFrame.x-geometry.statusFrame.width/2)).toBeLessThanOrEqual(2);
+        expect(Math.abs(geometry.status.y+geometry.status.height/2-geometry.statusFrame.y-geometry.statusFrame.height/2)).toBeLessThanOrEqual(2);
+        expect(geometry.statusStyle!.fontSize).toBe(state==='loading'?'12px':'14px'); expect(geometry.statusStyle!.lineHeight).toBe(state==='loading'?'18px':'22px');
+        expect(geometry.statusStyle!.fontWeight).toBe(state==='loading'?'500':'450');
+        expect(geometry.statusStyle!.color).toBe(geometry.expectedStatusColor);
       }
       if(state==='title') for(const line of geometry.titleLines) expect(geometry.close.x-line.right).toBeGreaterThanOrEqual(8);
       if(state==='short') expect(geometry.first!.y-geometry.panel.y).toBe(20);
@@ -246,8 +260,6 @@ test("document reader keeps its frame across states and captures the proposed la
       await dialog.getByRole('button',{name:'문서 닫기',exact:true}).click(); await expect(dialog).toBeHidden();
     }
   }
-  const states=measurements.filter(item=>item.statusStyle);
-  for(const geometry of states) expect(geometry.statusStyle).toEqual(states[0].statusStyle);
 });
 
 test("document reader scrolls with native keys from the focused body", async ({page}) => {
@@ -297,7 +309,7 @@ test("document reader retains content throughout close and Escape", async ({page
     await page.evaluate(()=>{
       const state={done:false,frames:[] as {title:string|null;body:boolean;loading:boolean}[]}; Object.assign(window,{readerClosing:state});
       const popup=document.querySelector('[data-testid="internal-document-dialog"]')!;
-      const record=()=>{if(popup.isConnected) state.frames.push({title:popup.querySelector('[data-slot="dialog-title"]')!.textContent,body:!!popup.querySelector('.v3-folder-board-document-copy'),loading:!!popup.querySelector('.v3-board-load-state')});};
+      const record=()=>{if(popup.isConnected) state.frames.push({title:popup.querySelector('[data-slot="dialog-title"]')!.textContent,body:!!popup.querySelector('.v3-folder-board-document-copy'),loading:!!popup.querySelector('[data-slot="frame-loading"], [data-slot="frame-notice"]')});};
       const observer=new MutationObserver(record); observer.observe(popup,{subtree:true,childList:true,characterData:true,attributes:true}); record();
       const frame=()=>{if(!popup.isConnected){observer.disconnect();state.done=true;return;} record();requestAnimationFrame(frame);}; requestAnimationFrame(frame);
     });

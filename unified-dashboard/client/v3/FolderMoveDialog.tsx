@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Dialog, DialogFooter, DialogHeader, DialogDescription, DialogPanel, DialogPopup, DialogTitle, useDashboardStore } from "@seosoyoung/soul-ui";
+import { Button, Dialog, DialogFooter, DialogHeader, DialogDescription, DialogPanel, DialogPopup, DialogTitle, FrameLoading, useDashboardStore } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { FolderMoveTarget } from "./folder-move-targets";
 import { FolderPicker } from "./FolderPicker";
@@ -52,7 +52,7 @@ export function FolderMoveDialog({
         <DialogPanel>
           <div className="dialog-selection-context">현재 위치 <strong>{pickerFolders.find(folder => folder.id === currentFolderId)?.name ?? "현재 폴더"}</strong></div>
           <div data-testid="v3-run-move-targets">
-            {stars.loading ? <p>폴더를 불러오는 중…</p> : open ? <FolderPicker
+            {stars.loading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : open ? <FolderPicker
               folders={pickerFolders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={movePending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>

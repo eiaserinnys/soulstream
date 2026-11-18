@@ -19,6 +19,7 @@ const expectedV3DialogConsumers = [
   "SessionSuccessionModal.tsx",
   "FolderMoveDialog.tsx",
   "FolderParentMoveDialog.tsx",
+  "FrameLoadingReviewSample.tsx",
   "V3ContextMenu.tsx",
 ] as const;
 

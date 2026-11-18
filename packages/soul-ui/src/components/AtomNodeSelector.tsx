@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from "react";
 
+import { FrameLoading } from "./FrameLoading";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
 
 interface AtomNode {
@@ -170,11 +171,7 @@ export function AtomNodeSelector({
 
         {/* 노드 목록 */}
         <div className="max-h-48 overflow-y-auto">
-          {loading && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">
-              불러오는 중...
-            </div>
-          )}
+          {loading && <FrameLoading inline label="불러오는 중" />}
           {error && (
             <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>
           )}

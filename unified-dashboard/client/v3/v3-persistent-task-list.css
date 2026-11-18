@@ -140,3 +140,6 @@
   border: 0;
   background: transparent;
 }
+
+/* 작업 패널 스크롤 상자 안에서 첫 로딩이 프레임 가운데에 서도록 높이를 채운다. */
+.persistent-session-task-scroll > .v3-persistent-task-list { min-height: 100%; }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, useAuth, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { Button, FrameLoading, useAuth, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
@@ -77,7 +77,7 @@ export function PasCardExpansion({ entry, lookupCards, samplePortraitUrl }: Prop
 
   // Store mutations also publish errors; their local alert owns those messages.
   const errorAlert = error && error !== lastSendError.current ? <p role="alert" className="v3-card-error">{error}</p> : null;
-  if (!card) return errorAlert ?? <div className="v3-detail-section">카드를 불러오는 중…</div>;
+  if (!card) return errorAlert ?? <FrameLoading label="카드를 불러오는 중…" />;
 
   const questions = detail?.questions ?? [];
   const question = (entry.question_id ? questions.find(item => item.id === entry.question_id && isOpenCardQuestion(item)) : undefined)

@@ -12,6 +12,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  FrameLoading,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
@@ -123,7 +124,7 @@ export function RitualModal({
           </div>
         </DialogHeader>
         <DialogPanel className="v3-ritual-body" scrollFade={false}>
-          {loadState.status === "loading" ? <RitualMessage text="이월할 항목을 모으는 중…" /> : null}
+          {loadState.status === "loading" ? <div className="v3-ritual-message"><FrameLoading label="이월할 항목을 모으는 중…" /></div> : null}
           {loadState.status === "error" ? (
             <RitualMessage>
               <V3ErrorNotice message="아침 정리를 불러오지 못했습니다." detail={loadState.message}>

@@ -11,6 +11,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  FrameLoading,
   Input,
   ScrollArea,
   Switch,
@@ -210,8 +211,8 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                  불러오는 중...
+                <TableCell colSpan={4}>
+                  <FrameLoading inline label="불러오는 중..." />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Button, Input } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, Input } from "@seosoyoung/soul-ui";
 import "./PersistentSessionInstructions.css";
 
 import {
@@ -196,7 +196,7 @@ export function PersistentSessionInstructionsView({ state, actions, variant = "d
   const mutationDisabled = state.loading || state.pending;
   return <SettingsGroupBox title="지속 지시">
     <div data-testid="persistent-session-instructions" className="space-y-3">
-      {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+      {state.loading ? <FrameLoading inline label="불러오는 중…" /> : null}
       {!state.loading && state.loadError ? <div className="space-y-2">
         <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {state.loadError}</span></SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={actions.retry}>다시 시도</Button>
@@ -270,7 +270,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
 
   return <div data-testid="persistent-session-instructions" className="persistent-instructions-pas">
     <p className="persistent-instructions-description">이 세션에 계속 적용됩니다.</p>
-    {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+    {state.loading ? <FrameLoading inline label="불러오는 중…" /> : null}
     {!state.loading && state.loadError ? <div className="space-y-2">
       <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {state.loadError}</span></SettingsAlert>
       <Button type="button" size="sm" variant="outline" onClick={actions.retry}>다시 시도</Button>

@@ -4,6 +4,7 @@ import { Check, Pencil, Trash2 } from "lucide-react";
 import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
+import { FrameLoading } from "./FrameLoading";
 import {
   getMetadataNumber,
   getMetadataText,
@@ -451,9 +452,9 @@ export function MarkdownDocumentPanel({
         {!document ? (
           panelError?.kind === "load"
             ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
-            : <div className="text-sm text-muted-foreground">Loading...</div>
+            : <FrameLoading label="Loading..." />
         ) : isEditingBody ? (
-          <Suspense fallback={<div className="text-sm text-muted-foreground">Loading editor...</div>}>
+          <Suspense fallback={<FrameLoading label="Loading editor..." />}>
             <MarkdownCodeMirrorEditor
               ref={editorRef}
               value={body}

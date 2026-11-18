@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, Input, Switch } from '@seosoyoung/soul-ui';
+import { Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, FrameLoading, Input, Switch } from '@seosoyoung/soul-ui';
 import { createOwnedAgentsApi, type OwnedAgent, type OwnedAgentKey, type OwnedAgentsResponse } from '../lib/owned-agents-api';
 import './config/owned-agents.css';
 
@@ -54,7 +54,7 @@ export function OwnedAgentsTab({ request = fetch }: { request?: typeof fetch }) 
   const existing = data?.existingConnection;
   return <div className="owned-agents">
     <div className="owned-agents-actions"><Button onClick={() => { setEditorError(null); setEditor({ id: null, name: '' }); }} disabled={busy}>에이전트 추가</Button></div>
-    {loading && <p role="status">불러오는 중…</p>}
+    {loading && <FrameLoading inline label="불러오는 중…" />}
     {error && <div role="alert"><p data-v3-selectable-content="true">{error}</p><Button variant="outline" disabled={busy} onClick={() => void load()}>다시 시도</Button></div>}
     {existing && <div className="owned-agents-block">
       {existing.canRegister ? <><p>현재 연결의 주소와 키를 그대로 사용해 내 에이전트로 등록합니다.</p><Button variant="outline" disabled={busy} onClick={() => void mutate(async () => { await api.registerExisting(); await load(); })}>기존 연결 등록</Button></> : <p>{existing.registered ? '기존 연결이 등록되어 있습니다.' : existing.configured ? '기존 연결 등록은 관리자에게 요청해 주세요.' : '등록할 기존 연결이 없습니다.'}</p>}

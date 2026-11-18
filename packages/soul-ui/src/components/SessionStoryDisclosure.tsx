@@ -1,7 +1,8 @@
-import { BookOpenText, ChevronDown, LoaderCircle } from "lucide-react";
+import { BookOpenText, ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { cn } from "../lib/cn";
+import { FrameLoading } from "./FrameLoading";
 import {
   fetchSessionStory,
   type SessionStory,
@@ -146,15 +147,7 @@ export function SessionStoryDisclosure({
 }
 
 function LoadingState() {
-  return (
-    <div
-      role="status"
-      className="flex items-center gap-2 text-sm text-muted-foreground"
-    >
-      <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-      스토리를 불러오는 중입니다.
-    </div>
-  );
+  return <FrameLoading inline label="스토리를 불러오는 중입니다." />;
 }
 
 function StoryContent({

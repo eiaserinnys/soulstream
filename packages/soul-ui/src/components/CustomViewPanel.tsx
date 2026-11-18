@@ -1,6 +1,5 @@
-import { Loader2 } from "lucide-react";
-
 import { CustomViewIframe } from "../custom-view/CustomViewRenderer";
+import { FrameLoading } from "./FrameLoading";
 import {
   useCustomViewBindings,
   useCustomViewDocument,
@@ -37,12 +36,7 @@ export function CustomViewPanel({ customViewId }: CustomViewPanelProps = {}) {
         )}
       </div>
       <div className="min-h-0 flex-1">
-        {isLoading && (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            Loading
-          </div>
-        )}
+        {isLoading && <FrameLoading label="불러오는 중" />}
         {status === "error" && (
           <div className="flex h-full items-center justify-center px-4 text-center text-sm text-destructive">
             {customViewProjection?.error ?? "Custom view load failed"}

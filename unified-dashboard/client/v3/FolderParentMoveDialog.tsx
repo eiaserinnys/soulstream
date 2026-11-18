@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, type CatalogFolder,
+  Button, Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, FrameLoading, type CatalogFolder,
 } from "@seosoyoung/soul-ui";
 import type { PlannerFolder } from "./planner-data";
 import { folderParentOptions } from "./folder-parent-targets";
@@ -46,7 +46,7 @@ export function FolderParentMoveDialog({ starredFolderIds, task, currentFolderId
         <DialogPanel>
           <div className="v3-form-context"><span>이동할 폴더</span><strong>{task?.page.title}</strong></div>
           <div data-testid="v3-folder-parent-targets">
-            {stars.loading ? <p>폴더를 불러오는 중…</p> : task ? <FolderPicker key={task.folderId}
+            {stars.loading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : task ? <FolderPicker key={task.folderId}
               folders={folders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={pending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>

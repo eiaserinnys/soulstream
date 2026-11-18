@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogPanel,
+  FrameLoading,
   useDashboardStore,
   useUiEventEntryMarker,
   useUiEventTracker,
@@ -525,20 +526,6 @@ export function SearchModal({
             ))}
           </div>
 
-          {/* 상태 표시 */}
-          {loading && (
-            <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
-              <span className="inline-block w-4 h-4 border border-muted-foreground/40 border-t-muted-foreground rounded-full animate-spin mr-2" />
-              검색 중...
-            </div>
-          )}
-
-          {error && !loading && (
-            <div className="py-4 text-center text-sm text-accent-red" data-v3-selectable-content="true">
-              ❌ {error}
-            </div>
-          )}
-
           {showPartialSearchBanner && (
             <div role="status" className="mb-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-v3-selectable-content="true">
               {partialSearchMessage}
@@ -551,52 +538,67 @@ export function SearchModal({
             </div>
           )}
 
-          {!loading && !error && resultCount === 0 && query.trim() && (
-            <div className="py-6 text-center text-sm text-muted-foreground">
-              {expansionPending
-                ? "추가 검색 중…"
-                : searchIncomplete
-                ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
-                : "검색 결과가 없습니다"}
-            </div>
-          )}
+          {/* 결과가 들어올 영역 — 로딩·실패·빈 상태·결과가 같은 높이에서 시작한다.
+              로더는 이 영역(대화상자 본문 아래)의 가운데에서 기다린다. */}
+          <div
+            data-slot="search-results-region"
+            className="flex min-h-40 min-w-0 flex-col"
+          >
+            {loading && <FrameLoading label="검색 중..." />}
 
-          {!loading && !error && resultCount === 0 && !query.trim() && (
-            <div className="py-6 text-center text-sm text-muted-foreground">
-              위 필터를 선택하여 세션 기록을 검색합니다
-            </div>
-          )}
-
-          {/* 결과 목록 */}
-          {!loading && resultCount > 0 && (
-            <div className="space-y-1 max-h-[400px] overflow-y-auto">
-              <div className="text-xs text-muted-foreground mb-2 px-1">
-                {resultCount}개 결과
+            {error && !loading && (
+              <div className="flex flex-1 items-center justify-center px-2 py-4 text-center text-sm text-accent-red" data-v3-selectable-content="true">
+                ❌ {error}
               </div>
-              {navigationResults.map((result, index) => (
-                <NavigationResultRow
-                  key={`${result.kind}-${result.id}`}
-                  result={result}
-                  onClick={() => handleNavigationClick(result, index)}
-                />
-              ))}
-              {sessionResults.map((result, index) => (
-                <SearchSessionResultRow
-                  key={result.session_id}
-                  result={result}
-                  onClick={() => void handleSessionResultClick(result, navigationResults.length + index)}
-                />
-              ))}
-              {remainingEventResults.map((result, index) => (
-                <SearchResultRow
-                  key={`${result.session_id}-${result.event_id}-${result.match_source}`}
-                  result={result}
-                  onClick={() =>
-                    handleResultClick(result, navigationResults.length + sessionResults.length + index)}
-                />
-              ))}
-            </div>
-          )}
+            )}
+
+            {!loading && !error && resultCount === 0 && query.trim() && (
+              <div className="flex flex-1 items-center justify-center px-2 text-center text-sm text-muted-foreground">
+                {expansionPending
+                  ? "추가 검색 중…"
+                  : searchIncomplete
+                  ? "검색을 완료하지 못했습니다. 다시 검색해 주세요."
+                  : "검색 결과가 없습니다"}
+              </div>
+            )}
+
+            {!loading && !error && resultCount === 0 && !query.trim() && (
+              <div className="flex flex-1 items-center justify-center px-2 text-center text-sm text-muted-foreground">
+                위 필터를 선택하여 세션 기록을 검색합니다
+              </div>
+            )}
+
+            {/* 결과 목록 */}
+            {!loading && resultCount > 0 && (
+              <div className="max-h-[400px] space-y-1 overflow-y-auto">
+                <div className="mb-2 px-1 text-xs text-muted-foreground">
+                  {resultCount}개 결과
+                </div>
+                {navigationResults.map((result, index) => (
+                  <NavigationResultRow
+                    key={`${result.kind}-${result.id}`}
+                    result={result}
+                    onClick={() => handleNavigationClick(result, index)}
+                  />
+                ))}
+                {sessionResults.map((result, index) => (
+                  <SearchSessionResultRow
+                    key={result.session_id}
+                    result={result}
+                    onClick={() => void handleSessionResultClick(result, navigationResults.length + index)}
+                  />
+                ))}
+                {remainingEventResults.map((result, index) => (
+                  <SearchResultRow
+                    key={`${result.session_id}-${result.event_id}-${result.match_source}`}
+                    result={result}
+                    onClick={() =>
+                      handleResultClick(result, navigationResults.length + sessionResults.length + index)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </DialogPanel>
       </DialogPopup>
     </Dialog>

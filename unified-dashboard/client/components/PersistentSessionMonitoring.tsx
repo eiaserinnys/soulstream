@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
 import { pairTurnUsage } from "@seosoyoung/soul-ui/lib/persistent-turn-usage";
 import { formatTurnUsageCaptionTitle } from "@seosoyoung/soul-ui/lib/turn-usage-format";
 import { HISTORY_PAGE_SIZE } from "@seosoyoung/soul-ui/components/chat/useMessageHistoryBuffer";
@@ -183,7 +183,7 @@ export function PersistentSessionMonitoringView({
   const hasAnyDisplayedRecord = Boolean(generation) || visibleEvents.length > 0;
 
   return <div data-testid="persistent-session-monitoring" className="space-y-4">
-    {isLoading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+    {isLoading ? <FrameLoading inline label="불러오는 중…" /> : null}
     {!isLoading && hasError ? <div className="space-y-2">
       <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {error ?? "기록을 불러오지 못했습니다."}</span></SettingsAlert>
       <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>

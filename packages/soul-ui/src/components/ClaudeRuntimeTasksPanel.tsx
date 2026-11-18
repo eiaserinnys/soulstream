@@ -115,6 +115,13 @@ export function ClaudeRuntimeTasksPanel({
 
   if (tasks.length === 0 && !hasModeState && !loading && !error) return null;
 
+  // 첫 로딩에는 헤더 단추를 돌리지 않고 본문에서 기다린다. 자료가 있는 채로
+  // 새로고침할 때만 헤더 단추가 돈다.
+  const firstLoading = loading && tasks.length === 0 && !hasModeState && !error;
+  if (firstLoading) return null;
+  const spinRefreshButton = loading && !firstLoading;
+  const showBody = expanded;
+
   const refreshButton = (
     <Button
       variant="ghost"
@@ -123,7 +130,7 @@ export function ClaudeRuntimeTasksPanel({
       disabled={loading}
       onClick={() => void refresh()}
     >
-      {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+      {spinRefreshButton ? <Loader2 className="animate-spin" /> : <RefreshCw />}
     </Button>
   );
 
@@ -235,7 +242,7 @@ export function ClaudeRuntimeTasksPanel({
           />
           {refreshButton}
         </div>
-        {expanded ? expandedBody : null}
+        {showBody ? expandedBody : null}
       </section>
     );
   }
@@ -275,7 +282,7 @@ export function ClaudeRuntimeTasksPanel({
         {refreshButton}
       </div>
 
-      {expanded ? expandedBody : null}
+      {showBody ? expandedBody : null}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
+import { FrameLoading, usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
 import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "@seosoyoung/soul-ui";
 import { formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS } from "@seosoyoung/soul-ui";
 
@@ -131,7 +131,7 @@ export function UsageStackedBars({
 
   return <div className="usage-stats-chart" aria-label={label}>
     {hasKnownValue && !emptyMessage && !loading ? <div className="usage-stats-axis-label" aria-hidden="true">{valueLabel(maximum, metric)}</div> : null}
-    {loading ? <div className="usage-stats-chart-message" role="status">불러오는 중…</div> : emptyMessage ? (
+    {loading ? <div className="usage-stats-chart-message"><FrameLoading inline label="불러오는 중…" /></div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
     ) : !hasKnownValue ? (
       <div className="usage-stats-chart-message">{unknownLabel(metric)}</div>

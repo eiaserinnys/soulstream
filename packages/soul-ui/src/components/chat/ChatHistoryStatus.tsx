@@ -1,3 +1,4 @@
+import { FrameLoading } from "../FrameLoading";
 import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 
 interface ChatHistoryStatusProps {
@@ -28,18 +29,14 @@ export function ChatHistoryStatus({
           onClick={onRetry}
           className="rounded-md border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
         >
-          {loading ? "이전 대화 불러오는 중..." : "이전 대화를 불러오지 못했습니다. 다시 시도"}
+          {loading ? "이전 대화를 불러오는 중" : "이전 대화를 불러오지 못했습니다. 다시 시도"}
         </button>
       </div>
     );
   }
 
   if (loading) {
-    return (
-      <div className="p-2 text-center text-muted-foreground text-sm">
-        Loading earlier messages...
-      </div>
-    );
+    return <FrameLoading inline label="이전 대화를 불러오는 중" />;
   }
 
   if (reachedTop && showReachedTop) {

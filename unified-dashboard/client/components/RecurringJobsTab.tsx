@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Button,
+  FrameLoading,
   Input,
   NewSessionFolderSelector,
   useDashboardStore,
@@ -257,7 +258,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           jobs={archivedJobs}
           selectedId={selected?.job_id ?? null}
           onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
-        /> : null}</> : !listFailed ? <p role="status" className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p> : null}
+        /> : null}</> : !listFailed ? <FrameLoading inline label="불러오는 중…" /> : null}
     </>}>
         <SettingsDetailHeader selectableTitle={Boolean(selected)}
           title={selected ? selected.name : "새 반복 작업"}

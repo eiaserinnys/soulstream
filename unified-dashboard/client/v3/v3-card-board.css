@@ -72,7 +72,7 @@
 .v3-completed-periods button { font: var(--v3-type-body) var(--v3-font-family); }
 .v3-completed-periods button[aria-pressed="true"] { background: color-mix(in srgb, var(--v3-accent) 16%, transparent); color: var(--v3-accent); }
 .v3-completed-dates > input { flex: 1; min-width: 0; }
-.v3-card-board-lane.v3-completed-viewport { display: block; overflow: hidden; }
+.v3-card-board-lane.v3-completed-viewport { display: flex; flex-direction: column; overflow: hidden; }
 .v3-completed-grid { display: grid; grid-template-columns: repeat(auto-fill,var(--postit-width)); gap: calc(var(--v3-space-6) * var(--postit-scale)); padding-block: var(--v3-space-1); }
 .v3-completed-grid-item { width: var(--postit-width); }
 .v3-completed-viewport > div { scrollbar-width: none; }
