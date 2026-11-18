@@ -263,6 +263,7 @@ def main():
                 choose('서명 (Standard Webhooks)', '인증 방식')
                 choose('1년', '기간')
                 page.get_by_text('앞에 붙일 글', exact=False).first.click()
+                shot(f'inbound-create-{width}-preamble-empty')
                 page.get_by_label('앞에 붙일 글').fill('외부에서 온 자료입니다.')
                 shot(f'inbound-create-{width}-filled')
                 if width == 360:
@@ -286,6 +287,13 @@ def main():
                 shot(f'inbound-secret-{width}-signature')
                 if width == 360:
                     overflow(f'inbound-secret-{width}')
+                page.evaluate("() => { window.__reviewCopy = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = () => Promise.reject(new Error('fixture')); }")
+                dialog().get_by_role('button', name='서명 비밀 복사').click()
+                page.get_by_text('복사하지 못했습니다. 값을 직접 골라 복사하세요.').wait_for()
+                shot(f'inbound-secret-{width}-copy-error')
+                if width == 360:
+                    overflow(f'inbound-secret-{width}-copy-error')
+                page.evaluate("() => { navigator.clipboard.writeText = window.__reviewCopy; }")
                 dialog().get_by_role('button', name='서명 비밀 복사').click()
                 dialog().get_by_role('button', name='복사됨').wait_for()
                 shot(f'inbound-secret-{width}-copied')
@@ -366,6 +374,13 @@ def main():
                 if checked != ['true', 'true', 'true', 'false']:
                     problems.append(f'{width}: 처음 소식 선택 {checked}')
                 shot(f'outbound-create-{width}-empty')
+                for box in page.get_by_role('checkbox').all():
+                    if box.get_attribute('aria-checked') == 'true':
+                        box.click()
+                page.get_by_text('하나 이상 고르세요.').wait_for()
+                shot(f'outbound-create-{width}-events-off')
+                for box in page.get_by_role('checkbox').all()[:3]:
+                    box.click()
                 fill_outbound()
                 state['outboundCreate'] = 422
                 state['challengeReason'] = 'timeout'
@@ -378,6 +393,10 @@ def main():
                 dialog().get_by_role('button', name='등록', exact=True).click()
                 page.get_by_text('이 세션을 찾지 못했거나 열 수 없습니다.').first.wait_for()
                 shot(f'outbound-create-{width}-403')
+                state['outboundCreate'] = 404
+                dialog().get_by_role('button', name='등록', exact=True).click()
+                page.wait_for_timeout(400)
+                shot(f'outbound-create-{width}-404')
                 state['outboundCreate'] = 201
                 dialog().get_by_role('button', name='등록', exact=True).click()
                 dialog().locator('.owned-agents-token').first.wait_for()
@@ -410,7 +429,9 @@ def main():
                 page.wait_for_function("() => document.querySelector('[role=dialog][data-open] [role=switch][aria-label=\"소식 보내기\"]')?.getAttribute('aria-checked') === 'false'", timeout=10000)
                 shot(f'outbound-detail-{width}-off')
                 dialog().get_by_role('switch', name='소식 보내기').click()
+                page.wait_for_function("() => document.querySelector('[role=dialog][data-open] [role=switch][aria-label=\"소식 보내기\"]')?.getAttribute('aria-checked') === 'true'", timeout=10000)
                 page.wait_for_timeout(300)
+                shot(f'outbound-detail-{width}-re-enabled')
                 close_detail()
 
                 open_row('꺼진 수집기')
