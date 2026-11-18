@@ -34,6 +34,11 @@ function message(
 }
 
 describe("projectManuscriptMessages", () => {
+  it("keeps external user and intervention messages visible", () => {
+    const rows = [message("external-user", "user", "external"), message("external-intervention", "intervention", "external")];
+    expect(projectManuscriptMessages(rows)).toEqual(rows);
+  });
+
   it("hides automatic notices by intent regardless of disposition or producer source", () => {
     const queuedCompletion = {
       ...message("queued-completion", "notification"),
