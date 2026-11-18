@@ -1042,6 +1042,16 @@ pre[data-markdown-code-layout="document"] {
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
 
+  [data-slot="popover-popup"],
+  [data-slot="menu-popup"],
+  [data-slot="select-popup"] > .glass {
+    background: color-mix(in srgb, var(--lg-card) 45%, var(--background));
+  }
+
+  [data-slot="select-popup"] {
+    --select-popup-surface: color-mix(in srgb, var(--lg-card) 45%, var(--background));
+  }
+
   .glass-strong {
     background: var(--glass-surface-strong);
   }
@@ -1103,6 +1113,10 @@ html[data-webgl-glass="off"] [data-slot="popover-popup"],
 html[data-webgl-glass="off"] [data-slot="menu-popup"],
 html[data-webgl-glass="off"] [data-slot="select-popup"] > .glass {
   background: var(--popover);
+}
+
+html[data-webgl-glass="off"] [data-slot="select-popup"] {
+  --select-popup-surface: var(--popover);
 }
 
 @utility glass-chrome {

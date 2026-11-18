@@ -14,9 +14,10 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:43183";
 const baseline = process.env.V3_POPUP_BASELINE === "1";
 const folderBefore = process.env.V3_POPUP_FOLDER_BEFORE === "1";
-const output = path.resolve(`.local/card1619/${folderBefore ? "before-layer" : baseline ? "before" : "after"}`);
+const checkboxBefore = process.env.V3_CHECKBOX_BEFORE === "1";
+const output = path.resolve(`.local/card1619/${checkboxBefore ? "before-2" : folderBefore ? "before-layer" : baseline ? "before" : "after-2"}`);
 const beforePath = path.resolve(".local/card1619/before/metrics.json");
-const before = baseline || folderBefore ? null : JSON.parse(readFileSync(beforePath, "utf8"));
+const before = baseline || folderBefore || checkboxBefore ? null : JSON.parse(readFileSync(beforePath, "utf8"));
 mkdirSync(output, { recursive: true });
 
 type Surface = { background: string; backdrop: string; alpha: number };
@@ -32,9 +33,11 @@ const results = await runPlaywrightLifecycle({
     return [{ theme: "dark", glass: "0", width: 1440, canvas: false, surfaces, interactions: {} }];
   }
   const rows: Entry[] = [];
-  const cases = baseline
+  const cases = checkboxBefore
+    ? [["dark", "1", 1440], ["dark", "1", 390]] as const
+    : baseline
     ? [["dark", "0", 390], ["dark", "1", 1440], ["light", "1", 1440], ["dark", "0", 1440]] as const
-    : [["dark", "1", 1440], ["dark", "1", 390], ["light", "1", 1440], ["dark", "0", 1440], ["dark", "0", 390], ["light", "0", 1440], ["light", "0", 390]] as const;
+    : [["dark", "1", 1440], ["dark", "1", 390], ["light", "1", 1440], ["light", "1", 390], ["dark", "0", 1440], ["dark", "0", 390], ["light", "0", 1440], ["light", "0", 390]] as const;
   for (const [theme, glass, width] of cases) {
     console.log(`검수 ${theme} glass=${glass} ${width}`);
     rows.push(await runCase(browser, theme, glass, width));
@@ -42,14 +45,16 @@ const results = await runPlaywrightLifecycle({
   return rows;
 });
 writeFileSync(path.join(output, "metrics.json"), JSON.stringify(results, null, 2));
-if (!baseline && !folderBefore) {
+if (!baseline && !folderBefore && !checkboxBefore) {
   for (const row of results) {
-    if (row.glass === "1" && row.width === 1440) {
+    if (row.glass === "1") {
       const reference = before.find((item: Entry) => item.theme === row.theme && item.glass === "1" && item.width === 1440);
       assert(reference, `기준값 없음 ${row.theme}`);
       for (const [name, surface] of Object.entries(row.surfaces)) {
         const previous = reference.surfaces[name];
-        assert(previous && surface.background === previous.background && surface.backdrop === previous.backdrop, `켬 표면 불일치 ${name}: ${JSON.stringify({ previous, surface })}`);
+        assert(previous && surface.backdrop === previous.backdrop, `켬 블러 불일치 ${name}`);
+        if (["succession", "document", "alert"].includes(name)) assert(surface.background === previous.background, `대화상자 바탕 불일치 ${name}`);
+        else assert(surface.alpha >= 0.85, `켬 팝업이 너무 투명함 ${name}: ${surface.alpha}`);
       }
     } else if (row.glass === "0") {
       for (const [name, surface] of Object.entries(row.surfaces)) assert(surface.alpha === 1, `불투명하지 않음 ${name}: ${JSON.stringify(surface)}`);
@@ -105,6 +110,25 @@ async function runCase(browser: Browser, theme: string, glass: string, width: nu
     console.log("컨텍스트 열기");
     const popover = page.locator('[data-slot="popover-popup"]:visible').filter({ hasText: "atom 노드" });
     await capture(page, popover, "project-context", theme, glass, width, height, surfaces);
+    const checkbox = popover.getByRole("checkbox", { name: "제목만 포함" });
+    const label = checkbox.locator("..");
+    interactions.checkboxDelta = await label.evaluate(el => {
+      const input = el.querySelector('input[type="checkbox"]')!;
+      const text = [...el.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+      if (!text) throw new Error("체크박스 라벨 글을 찾지 못했습니다.");
+      const range = document.createRange(); range.selectNodeContents(text);
+      const a = input.getBoundingClientRect(); const b = range.getBoundingClientRect();
+      return Math.abs((a.top + a.height / 2) - (b.top + b.height / 2));
+    });
+    await label.scrollIntoViewIfNeeded();
+    const box = await label.boundingBox();
+    if (!box) throw new Error("체크박스 라벨 좌표가 없습니다.");
+    const cdp = await context.newCDPSession(page);
+    const closeup = await cdp.send("Page.captureScreenshot", { clip: { ...box, scale: 3 } });
+    writeFileSync(path.join(output, `${theme}-${glass}-${width}-checkbox.png`), Buffer.from(closeup.data, "base64"));
+    await cdp.detach();
+    if (checkboxBefore) return { theme, glass, width, canvas, surfaces, interactions };
+    assert(Number(interactions.checkboxDelta) <= 2, `체크박스 정렬 불일치 ${theme} ${glass} ${width}: ${interactions.checkboxDelta}`);
     await page.keyboard.press("Escape");
     if (await popover.isVisible()) await page.keyboard.press("Escape");
     await popover.waitFor({ state: "hidden" });
@@ -117,7 +141,7 @@ async function runCase(browser: Browser, theme: string, glass: string, width: nu
     await capture(page, modal, "succession", theme, glass, width, height, surfaces);
     interactions.overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     assert(!interactions.overflow, `${theme} ${glass} ${width}: 가로 스크롤`);
-    if (width === 1440) {
+    {
       const disclosure = modal.locator("details").filter({ hasText: "실행 환경" });
       if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").click();
       await modal.getByRole("combobox", { name: "추론 강도 선택" }).click();
@@ -136,7 +160,7 @@ async function runCase(browser: Browser, theme: string, glass: string, width: nu
       await alert.waitFor({ state: "hidden" });
     }
     await captureDocument(browser, theme, glass, width, height, surfaces);
-    if (!baseline && glass === "0" && width === 1440) await captureFolderPicker(browser, theme, surfaces);
+    if (!baseline && !checkboxBefore && glass === "0" && width === 1440) await captureFolderPicker(browser, theme, surfaces);
     console.log("문서 열기 완료");
     return { theme, glass, width, canvas, surfaces, interactions };
   } finally { await context.close(); }
