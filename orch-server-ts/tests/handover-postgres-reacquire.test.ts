@@ -26,15 +26,18 @@ class FakeLockClient {
       return [];
     }) as unknown as LockSql;
     const client = query as unknown as {
-      listen: (channel: string, onnotify: (value: string) => void) => Promise<unknown>;
+      unsafe: (text: string) => Promise<unknown>;
       end: () => Promise<void>;
     };
-    client.listen = async (_channel, onnotify) => { this.notify = onnotify; return {}; };
+    client.unsafe = async text => { this.calls.push(text); return []; };
     client.end = async () => {};
     this.sql = query;
   }
 
-  attach(onclose: () => void): void { this.onclose = onclose; }
+  attach(onclose: () => void, notify?: (payload: string) => void): void {
+    this.onclose = onclose;
+    this.notify = notify;
+  }
   closeConnection(): void { this.onclose?.(); }
   deliver(payload: string): void { this.notify?.(payload); }
   get tryCount(): number { return this.calls.filter(call => call.includes("pg_try_advisory_lock")).length; }
@@ -55,9 +58,9 @@ function createLocks(
   const clients = [owner, page];
   let created = 0;
   const locks = new HandoverPostgres("postgres://fake", gate, {
-    clientFactory: (_url, onclose) => {
+    clientFactory: (_url, onclose, onnotify) => {
       const client = clients[created++]!;
-      client.attach(onclose);
+      client.attach(onclose, onnotify);
       return client.sql;
     },
     exit: code => exits.push(code),
@@ -100,6 +103,38 @@ it("reacquires both locks and reopens the page gate after the lock connections c
   } finally { await locks.close(); }
 });
 
+it("reacquires only the owner lock when the owner connection closes", async () => {
+  const owner = new FakeLockClient(), page = new FakeLockClient();
+  const { locks, gate, exits } = createLocks(owner, page);
+  try {
+    expect(await locks.tryOwner()).toBe(true);
+    await locks.acquirePage();
+
+    owner.closeConnection();
+    await vi.waitFor(() => expect(owner.tryCount).toBe(2));
+    await vi.waitFor(async () => { await expect(gate.run(async () => "open")).resolves.toBe("open"); });
+    // The page session still holds its advisory lock. Locking again on that
+    // session would take it twice and one release would leave it held.
+    expect(page.tryCount).toBe(1);
+    expect(exits).toEqual([]);
+  } finally { await locks.close(); }
+});
+
+it("reacquires only the page lock when the page connection closes", async () => {
+  const owner = new FakeLockClient(), page = new FakeLockClient();
+  const { locks, gate, exits } = createLocks(owner, page);
+  try {
+    expect(await locks.tryOwner()).toBe(true);
+    await locks.acquirePage();
+
+    page.closeConnection();
+    await vi.waitFor(() => expect(page.tryCount).toBe(2));
+    await vi.waitFor(async () => { await expect(gate.run(async () => "open")).resolves.toBe("open"); });
+    expect(owner.tryCount).toBe(1);
+    expect(exits).toEqual([]);
+  } finally { await locks.close(); }
+});
+
 it("ends the process when another instance holds the owner lock", async () => {
   const owner = new FakeLockClient(), page = new FakeLockClient();
   const { locks, gate, exits } = createLocks(owner, page);
@@ -124,6 +159,48 @@ it("ends the process when the reacquisition budget runs out", async () => {
     await vi.waitFor(() => expect(exits).toEqual([1]), { timeout: 2_000 });
     expect(owner.tryCount).toBeGreaterThan(1);
   } finally { await locks.close(); }
+});
+
+it("counts a stuck background stop against the reacquisition budget", async () => {
+  const owner = new FakeLockClient(), page = new FakeLockClient();
+  const { locks, exits } = createLocks(owner, page, {
+    reacquireBudgetMs: 50,
+    reacquireRetryMs: 5,
+    stopBackground: () => new Promise<void>(() => {}),
+  });
+  try {
+    expect(await locks.tryOwner()).toBe(true);
+    await locks.acquirePage();
+    owner.closeConnection();
+    await vi.waitFor(() => expect(exits).toEqual([1]), { timeout: 2_000 });
+    // No reacquisition was attempted: the budget ran out while waiting.
+    expect(owner.tryCount).toBe(1);
+  } finally { await locks.close(); }
+});
+
+it("counts a stuck page gate drain against the reacquisition budget", async () => {
+  const owner = new FakeLockClient(), page = new FakeLockClient();
+  const { locks, gate, exits } = createLocks(owner, page, { reacquireBudgetMs: 50, reacquireRetryMs: 5 });
+  let started!: () => void;
+  const running = new Promise<void>(resolve => { started = resolve; });
+  let release!: () => void;
+  const inFlight = gate.run(async () => {
+    started();
+    await new Promise<void>(resolve => { release = resolve; });
+    return "done";
+  });
+  try {
+    expect(await locks.tryOwner()).toBe(true);
+    await locks.acquirePage();
+    await running;
+    owner.closeConnection();
+    await vi.waitFor(() => expect(exits).toEqual([1]), { timeout: 2_000 });
+    expect(owner.tryCount).toBe(1);
+  } finally {
+    release?.();
+    await inFlight;
+    await locks.close();
+  }
 });
 
 it("ignores lock connection closes during shutdown", async () => {
