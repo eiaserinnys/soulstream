@@ -1204,7 +1204,7 @@ export class RunnerRecoveryCoordinator {
       // reads exactly like a live execution, so every later scan
       // skipped the offline replay without saying so. An offline replay that
       // cannot run is a stranded terminal fact, never routine.
-      this.options.logger[mode === "offline" ? "warn" : "info"](
+      this.options.logger[mode === "offline" ? "warn" : "debug"](
         {
           sessionId: registration.config.sessionId,
           mode,
