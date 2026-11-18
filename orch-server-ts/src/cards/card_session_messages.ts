@@ -22,7 +22,7 @@ export async function readCardSessionMessages(
   if (targetSessionId === null) return { sessionId: null, session: null, busy: false, tool: null, items: [] };
 
   const sessionRow = detail.sessions.find(session => session.session_id === targetSessionId) ?? null;
-  return await readSessionConversation(sql, targetSessionId, sessionRow, detail.card.assignee_agent_id, query?.limit);
+  return await readSessionConversation(sql as Parameters<typeof readSessionConversation>[0], targetSessionId, sessionRow, detail.card.assignee_agent_id, query?.limit);
 }
 function firstSessionId(detail: CardDetail): string | null {
   const value = detail.sessions[0]?.session_id;

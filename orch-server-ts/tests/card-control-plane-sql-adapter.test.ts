@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { createPostgresQueryAdapter } from "../src/runtime/postgres_query_adapter.js";
@@ -113,6 +113,17 @@ describe("card control-plane postgres.js adapter", () => {
 
     expect(result).toBeInstanceOf(Promise);
     await expect(result).resolves.toBe(rows);
+  });
+
+  it("forwards unsafe fragments without executing or wrapping them", () => {
+    const fragment = { fragment: true };
+    const unsafe = vi.fn(() => fragment);
+    const rawSql = Object.assign(() => [], {
+      array: (values: readonly unknown[]) => values, json: (value: unknown) => value, unsafe,
+    });
+    const sql = createPostgresQueryAdapter(rawSql as unknown as Parameters<typeof createPostgresQueryAdapter>[0]);
+    expect(sql.unsafe("CASE WHEN true THEN 1 END")).toBe(fragment);
+    expect(unsafe).toHaveBeenCalledWith("CASE WHEN true THEN 1 END");
   });
 
   it("executes patchFolderTx with a synchronous SET helper", async () => {

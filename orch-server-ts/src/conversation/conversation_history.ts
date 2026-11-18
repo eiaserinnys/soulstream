@@ -7,14 +7,14 @@ type Row = { id: number; event_type: string; payload: Record<string, unknown> | 
 type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
 type CachedItem = { eventId: number; item: Item };
 type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; createdAt: number; lastUsedAt: number };
-const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
+export const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
 const CACHE_EXECUTIONS = 64;
 const CACHE_IDLE_MS = 10 * 60_000;
 const CACHE_MAX_AGE_MS = 60 * 60_000;
 
 // complete는 항목 없이 턴을 끝내고, tool_result는 본문 없이 활동 상태만 바꾼다.
 // tool_result의 키를 읽지 않아야 큰 TOAST payload를 불러오지 않는다.
-const HISTORY_PAYLOAD = `CASE
+export const HISTORY_PAYLOAD = `CASE
   WHEN event_type IN ('complete', 'tool_result') THEN '{}'::jsonb
   WHEN event_type = 'tool_start' THEN jsonb_strip_nulls(jsonb_build_object(
     'tool_name', payload->'tool_name', 'input_id', payload->'input_id', 'inputId', payload->'inputId',

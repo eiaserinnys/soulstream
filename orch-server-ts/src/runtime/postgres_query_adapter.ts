@@ -13,13 +13,17 @@ export type PostgresQuerySql = {
   readonly array: (values: readonly unknown[]) => unknown;
 };
 
+export type PostgresQuerySqlWithUnsafe = PostgresQuerySql & {
+  readonly unsafe: (query: string) => unknown;
+};
+
 type PostgresQueryCapableLiveSql = LivePostgresSql & {
   readonly array: (values: readonly unknown[]) => unknown;
 };
 
 export function createPostgresQueryAdapter(
   sql: PostgresQueryCapableLiveSql,
-): PostgresQuerySql {
+): PostgresQuerySqlWithUnsafe {
   function query<T extends readonly Record<string, unknown>[]>(
     strings: TemplateStringsArray,
     ...values: unknown[]
@@ -54,6 +58,7 @@ export function createPostgresQueryAdapter(
   return Object.assign(query, {
     json: (value: unknown) => sql.json(value),
     array: (values: readonly unknown[]) => sql.array(values),
+    unsafe: (query: string) => (sql as PostgresQueryCapableLiveSql & { unsafe: (query: string) => unknown }).unsafe(query),
   });
 }
 
