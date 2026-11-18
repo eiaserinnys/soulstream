@@ -1,27 +1,28 @@
-import { useId, type ReactNode, type Ref } from "react";
-import { Select, SelectItem, SelectPopup, SelectTrigger } from "../../../packages/soul-ui/src/components/ui/select";
+import { Fragment, useId, type ReactNode, type Ref } from "react";
+import { Select, SelectItem, SelectPopup, SelectSeparator, SelectTrigger } from "../../../packages/soul-ui/src/components/ui/select";
 
 /** Agent and model catalogs share the trigger, keyboard handling and option surface. */
 export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, options, disabled,
-  invalid, className, triggerClassName, triggerRef, adornment, message, onValueChange }: {
+  invalid, className, triggerClassName, triggerRef, adornment, message, onValueChange, onOpenChangeComplete }: {
   label: string; ariaLabel: string; value: string; selectedLabel: ReactNode;
-  options: readonly { value: string; label: ReactNode; disabled?: boolean }[];
+  options: readonly { value: string; label: ReactNode; disabled?: boolean; separatorBefore?: boolean }[];
   disabled?: boolean; invalid?: boolean; className?: string; triggerClassName?: string;
   triggerRef?: Ref<HTMLButtonElement>;
   adornment?: ReactNode; message?: ReactNode; onValueChange(value: string): void;
+  onOpenChangeComplete?(open: boolean): void;
 }) {
   const id = useId();
   return <div className={className}>
     <label htmlFor={id}>{label}</label>
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <Select value={value} disabled={disabled} modal={false} onValueChange={next => onValueChange(next ?? "")}>
+      <Select value={value} disabled={disabled} modal={false} onValueChange={next => onValueChange(next ?? "")} onOpenChangeComplete={onOpenChangeComplete}>
         <SelectTrigger ref={triggerRef} id={id} className={`v3-catalog-select-trigger ${triggerClassName ?? ""}`}
           aria-label={ariaLabel} aria-invalid={invalid || undefined}>
           <span className="flex-1 truncate">{selectedLabel}</span>
         </SelectTrigger>
-        <SelectPopup>{options.map(option => <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+        <SelectPopup>{options.map(option => <Fragment key={option.value}>{option.separatorBefore && <SelectSeparator/>}<SelectItem value={option.value} disabled={option.disabled}>
           {option.label}
-        </SelectItem>)}</SelectPopup>
+        </SelectItem></Fragment>)}</SelectPopup>
       </Select>
       {adornment}
     </div>
