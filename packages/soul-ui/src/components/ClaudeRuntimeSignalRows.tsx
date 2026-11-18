@@ -37,7 +37,7 @@ export function ClaudeRuntimeSignalRows({
             <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              mirror
+              미러
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {signals.mirror.transcriptSessionId
@@ -93,7 +93,7 @@ function RemoteTriggerRow({ trigger }: { trigger: ClaudeRuntimeRemoteTriggerView
       <div className="flex min-w-0 items-center gap-2">
         <Radio className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          remote
+          원격
         </span>
         <span className="truncate text-xs font-medium">{label}</span>
       </div>

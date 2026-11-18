@@ -879,7 +879,7 @@ function ChatViewContent({
   if (!activeSessionKey) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Select a session to view chat
+        세션을 선택하세요
       </div>
     );
   }
@@ -929,7 +929,7 @@ function ChatViewContent({
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
-              Waiting for events...
+              대화를 기다리는 중
             </div>
           )}
         </>

@@ -49,7 +49,7 @@ export function SessionModelPresetBadge({
       size="sm"
       className={cn("max-w-32 text-muted-foreground", className)}
       title={label}
-      aria-label={`Selected model: ${label}`}
+      aria-label={`선택한 모델: ${label}`}
     >
       <span className="truncate">{label}</span>
     </Badge>

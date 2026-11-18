@@ -292,7 +292,7 @@ export function createNodeFromEvent(
       return makeNode(
         `complete-${eventId}`,
         "complete",
-        e.result ?? "Session completed",
+        e.result ?? "세션이 끝났습니다",
         {
           completed: true,
           usage: e.usage,
@@ -339,7 +339,7 @@ export function createNodeFromEvent(
       return makeNode(
         `result-${eventId}`,
         "result",
-        e.output ?? "Session completed",
+        e.output ?? "세션이 끝났습니다",
         {
           completed: true,
           timestamp: e.timestamp,
@@ -358,14 +358,14 @@ export function createNodeFromEvent(
       return makeNode(
         `compact-${eventId}`,
         "compact",
-        e.message ?? "Context compaction occurred",
+        e.message ?? "맥락을 압축했습니다",
         { completed: true },
       );
     }
 
     case "input_request": {
       const e = event as InputRequestEvent;
-      const firstQuestion = e.questions[0]?.question ?? "Input requested";
+      const firstQuestion = e.questions[0]?.question ?? "입력 요청";
       return makeNode(`input-request-${eventId}`, "input_request", firstQuestion, {
         requestId: e.request_id,
         toolUseId: e.tool_use_id,
@@ -393,7 +393,7 @@ export function createNodeFromEvent(
 
     case "agent_updated": {
       const e = event as AgentUpdatedEvent;
-      return makeNode(`agent-updated-${eventId}`, "system_message", `Active agent: ${e.agent_name}`, {
+      return makeNode(`agent-updated-${eventId}`, "system_message", `활성 에이전트: ${e.agent_name}`, {
         completed: true,
         timestamp: e.timestamp,
       });
@@ -404,7 +404,7 @@ export function createNodeFromEvent(
       return makeNode(
         `handoff-requested-${eventId}`,
         "system_message",
-        `Handoff requested: ${e.source_agent} -> ${e.target_agent}`,
+        `인계 요청: ${e.source_agent} -> ${e.target_agent}`,
         { completed: true, timestamp: e.timestamp },
       );
     }

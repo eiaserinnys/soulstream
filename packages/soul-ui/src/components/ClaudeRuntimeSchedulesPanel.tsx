@@ -89,7 +89,7 @@ export function ClaudeRuntimeSchedulesPanel({
         setDeletedScheduleIds((current) => new Set([...current, scheduleId]));
         await refresh();
       } else {
-        setError(`Schedule not found: ${scheduleId}`);
+        setError(`예약을 찾을 수 없습니다: ${scheduleId}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -165,10 +165,10 @@ export function ClaudeRuntimeSchedulesPanel({
                   </span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {schedule.prompt ?? schedule.cronExpression ?? "scheduled prompt"}
+                  {schedule.prompt ?? schedule.cronExpression ?? "예약된 프롬프트"}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "no next run"}
+                  {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "다음 실행 없음"}
                 </div>
               </div>
               <Button
@@ -226,20 +226,20 @@ export function ClaudeRuntimeSchedulesPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <CalendarClock className="size-4 text-muted-foreground" />
-          <span>Schedules</span>
+          <span>예약</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {schedules.length}
           </span>
           {nextRunAt ? (
             <span className="truncate text-xs font-normal text-muted-foreground">
-              next {formatDateTime(nextRunAt)}
+              다음 {formatDateTime(nextRunAt)}
             </span>
           ) : null}
           {errorCount > 0 ? (
             <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
-              {errorCount} error
+              오류 {errorCount}
             </span>
           ) : null}
         </button>

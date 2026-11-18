@@ -76,6 +76,6 @@ it("leaves the default toolbar brand, search, and actions intact", () => {
   ));
 
   expect(host.querySelector(".dashboard-floating-toolbar .dashboard-toolbar-brand")?.textContent).toContain("Soulstream");
-  expect(host.querySelector('[aria-label="Open session search"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="세션 검색 열기"]')).not.toBeNull();
   expect(host.querySelector(".persistent-session-weekly-usage-toggle")).toBeNull();
 });

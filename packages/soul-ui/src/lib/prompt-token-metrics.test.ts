@@ -35,7 +35,7 @@ describe("prompt-token-metrics", () => {
   });
 
   it("formats approximate token labels", () => {
-    expect(formatPromptTokenCount(1234)).toBe("~1,234 tokens");
+    expect(formatPromptTokenCount(1234)).toBe("토큰 ~1,234");
   });
 
   it("codex system prompt is displayed as prompt tokens", () => {

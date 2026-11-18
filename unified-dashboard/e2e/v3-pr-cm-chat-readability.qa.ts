@@ -335,7 +335,7 @@ function assertMetrics(metrics: {
 }) {
   const { theme, gaps, collapsed, expanded, large, mobile, responsive } = metrics;
   assert(gaps.task === 4 && gaps.session === 8, `${theme}: 카드 gap ${gaps.task}/${gaps.session}px`);
-  assert(collapsed.toolHeight === 32, `${theme}: Tool Calls 접힘 높이 ${collapsed.toolHeight}px`);
+  assert(collapsed.toolHeight === 32, `${theme}: 도구 호출 접힘 높이 ${collapsed.toolHeight}px`);
   assert(collapsed.body.size === "14px" && collapsed.body.line === "22px", `${theme}: 14px 본문 ${JSON.stringify(collapsed.body)}`);
   assert(collapsed.input.size === "14px", `${theme}: 14px 입력 미적용 ${JSON.stringify(collapsed.input)}`);
   assert(collapsed.code.size === "12px" && collapsed.code.line === "16px", `${theme}: 코드 블록 고정 타이포 ${JSON.stringify(collapsed.code)}`);
@@ -343,8 +343,8 @@ function assertMetrics(metrics: {
   assert(large.body.size === "18px" && large.body.line === "26px", `${theme}: 18px 본문 ${JSON.stringify(large.body)}`);
   assert(large.input.size === "18px" && large.toolBody?.size === "18px", `${theme}: 18px 도구/입력 미적용`);
   assert(large.code.size === "12px" && large.code.line === "16px", `${theme}: 코드 블록 고정 타이포 ${JSON.stringify(large.code)}`);
-  assert(collapsed.toolHeader.size === "12px" && collapsed.toolHeader.line === "18px", `${theme}: Tool Calls 헤더가 가변됐습니다.`);
-  assert(collapsed.toolIcons.length === 2 && collapsed.toolIcons.every((icon) => icon.width === 14 && icon.height === 14), `${theme}: Tool Calls 아이콘이 14px이 아닙니다.`);
+  assert(collapsed.toolHeader.size === "12px" && collapsed.toolHeader.line === "18px", `${theme}: 도구 호출 헤더가 가변됐습니다.`);
+  assert(collapsed.toolIcons.length === 2 && collapsed.toolIcons.every((icon) => icon.width === 14 && icon.height === 14), `${theme}: 도구 호출 아이콘이 14px이 아닙니다.`);
   assert(collapsed.meta.size === large.meta.size && collapsed.meta.line === large.meta.line, `${theme}: 메타 타이포가 가변됐습니다.`);
   assert(responsive.every((viewport) => viewport.overflow <= 0), `${theme}: 반응형 overflow ${JSON.stringify(responsive)}`);
   assert(mobile.body.size === "18px" && mobile.viewportOverflow <= 0, `${theme}: 모바일 18px/overflow ${JSON.stringify(mobile)}`);

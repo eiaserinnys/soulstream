@@ -393,7 +393,7 @@ export function ChatInput({
           <DashboardIconCap
             size="small"
             appearance="bare"
-            label="Stop running conversation"
+            label="세션 중단"
             disabled={interruptDisabled}
             onClick={() => void interruptSession()}
             className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
@@ -410,8 +410,8 @@ export function ChatInput({
             size="icon"
             onClick={() => void interruptSession()}
             disabled={interruptDisabled}
-            title="Stop running conversation"
-            aria-label="Stop running conversation"
+            title="세션 중단"
+            aria-label="세션 중단"
             className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
           >
             {interrupting ? (

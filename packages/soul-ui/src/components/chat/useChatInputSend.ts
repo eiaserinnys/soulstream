@@ -131,7 +131,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
 
       const trimmed = rawText.trim();
       if (trimmed.length > MAX_MESSAGE_LENGTH) {
-        setError(`Message too long (${trimmed.length}/${MAX_MESSAGE_LENGTH})`);
+        setError(`메시지가 너무 깁니다 (${trimmed.length}/${MAX_MESSAGE_LENGTH})`);
         return;
       }
 
@@ -164,7 +164,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
           if (requestError instanceof DOMException && requestError.name === "AbortError") return;
           args.onSendFailure?.();
           args.onSendError?.(trimmed);
-          setError(requestError instanceof Error ? requestError.message : "Failed to send");
+          setError(requestError instanceof Error ? requestError.message : "보내지 못했습니다");
         } finally {
           if (llmSendingSessionRef.current === sessionId) {
             llmSendingSessionRef.current = null;

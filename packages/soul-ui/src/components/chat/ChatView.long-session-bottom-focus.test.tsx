@@ -1414,7 +1414,7 @@ describe("ChatView long-session initial bottom focus", () => {
     ({ container, root } = await renderChatView());
 
     expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
-    expect(container.textContent).toContain("Waiting for events...");
+    expect(container.textContent).toContain("대화를 기다리는 중");
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
   });
 

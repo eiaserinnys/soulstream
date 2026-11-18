@@ -29,7 +29,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
 
   // 에이전트 발신: agentInfo에서 이름 추출
   const agentDisplayName = isAgent
-    ? msg.agentInfo!.agent_name ?? msg.agentInfo!.agent_id ?? "Agent"
+    ? msg.agentInfo!.agent_name ?? msg.agentInfo!.agent_id ?? "에이전트"
     : null;
   const agentDisplayId = isAgent
     ? `${agentDisplayName}@${msg.agentInfo!.agent_node}`
@@ -41,12 +41,12 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   // user 분기 displayName: 메시지 단위 caller_info.display_name 우선 (멀티-소스 세션 정확도 향상).
   const msgCallerDisplayName = msg.callerInfo?.display_name;
   const displayName = isAgent
-    ? agentDisplayName ?? "Agent"
+    ? agentDisplayName ?? "에이전트"
     : isLlm
-      ? "USER"
+      ? "사용자"
       : (typeof msgCallerDisplayName === "string" && msgCallerDisplayName.length > 0)
         ? msgCallerDisplayName
-        : "User";
+        : "사용자";
   const displayId = isAgent ? agentDisplayId : null;
   // user 발신 portrait: 메시지 caller_info → 세션 caller_info.
   // 첫 history fetch 시점에도 메시지 단위 caller_info가 함께 도착하므로

@@ -236,7 +236,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
           <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate font-medium">
-            Tool Calls {messages.length} · <span className={statusClassName}>{statusLabel}</span>
+            도구 호출 {messages.length} · <span className={statusClassName}>{statusLabel}</span>
           </span>
         </button>
         {expanded && (

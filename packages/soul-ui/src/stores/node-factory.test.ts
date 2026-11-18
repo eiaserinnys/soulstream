@@ -895,7 +895,7 @@ describe("createNodeFromEvent", () => {
       const node = createNodeFromEvent(event, 71);
 
       expect(node).not.toBeNull();
-      expect(node!.content).toBe("Input requested");
+      expect(node!.content).toBe("입력 요청");
     });
 
     it("should create node for tool_approval_requested", () => {

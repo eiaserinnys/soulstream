@@ -17,8 +17,8 @@ export function NewSessionFolderSelector({
   folders,
   selectedFolderId,
   onFolderChange,
-  label = "Folder",
-  placeholder = "Select a folder...",
+  label = "폴더",
+  placeholder = "폴더 선택",
 }: NewSessionFolderSelectorProps) {
   const options = useMemo(() => buildFolderTreeOptions(folders), [folders]);
   const selectedFolder = selectedFolderId
