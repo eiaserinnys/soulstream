@@ -176,7 +176,7 @@ export function ClaudeRuntimeTasksPanel({
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={statusClassName(task.status, tone)}>{task.status}</span>
-                  <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="break-keep rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {taskKindLabel(task)}
                   </span>
                   <span className="truncate font-mono text-xs text-muted-foreground">
@@ -258,7 +258,7 @@ export function ClaudeRuntimeTasksPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bot className="size-4 text-muted-foreground" />
-          <span>백그라운드 작업</span>
+          <span className="break-keep">백그라운드 작업</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {tasks.length}
           </span>

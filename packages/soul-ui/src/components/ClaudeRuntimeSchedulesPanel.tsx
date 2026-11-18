@@ -226,7 +226,7 @@ export function ClaudeRuntimeSchedulesPanel({
         >
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <CalendarClock className="size-4 text-muted-foreground" />
-          <span>예약</span>
+          <span className="break-keep">예약</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {schedules.length}
           </span>

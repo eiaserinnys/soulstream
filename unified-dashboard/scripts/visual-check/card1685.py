@@ -39,9 +39,26 @@ def main():
                         page.locator("textarea").fill("가" * 50001)
                         page.locator('[data-testid="send-button"]').click()
                         page.locator('[role="alert"]').wait_for()
+                    if scene == "waiting":
+                        page.get_by_text("대화를 기다리는 중", exact=True).wait_for(timeout=4000)
                     page.evaluate("document.fonts.ready")
                     page.screenshot(path=str(args.output / f"{scene}-{width}.png"), full_page=True, animations="disabled")
-                    metrics = page.evaluate("""() => ({ viewport: document.documentElement.clientWidth,
+                    metrics = page.evaluate("""() => {
+                      const titles = [...document.querySelectorAll('section > div > button > span')]
+                        .filter(e => ['런타임 신호', '예약', '백그라운드 작업'].includes(e.textContent.trim()));
+                      const kinds = [...document.querySelectorAll('section span.rounded.bg-background')];
+                      const wordTargets = [...titles, ...kinds].map(element => element.textContent.trim());
+                      const wordBreaks = [...titles, ...kinds].flatMap(element => {
+                        const node = [...element.childNodes].find(child => child.nodeType === Node.TEXT_NODE);
+                        if (!node) return [];
+                        return [...node.textContent.matchAll(/[^\\s]+/gu)].flatMap(match => {
+                          const range = document.createRange();
+                          range.setStart(node, match.index); range.setEnd(node, match.index + match[0].length);
+                          const lines = new Set([...range.getClientRects()].map(rect => Math.round(rect.top)));
+                          return lines.size > 1 ? [match[0]] : [];
+                        });
+                      });
+                      return { viewport: document.documentElement.clientWidth,
                       scroll: document.documentElement.scrollWidth,
                       outside: [...document.querySelectorAll('button')].filter(e => {
                         const r = e.getBoundingClientRect(); return r.width && (r.left < -1 || r.right > innerWidth + 1);
@@ -52,10 +69,14 @@ def main():
                           const x = a.getBoundingClientRect(), y = b.getBoundingClientRect();
                           return x.width && x.height && y.width && y.height && Math.min(x.right, y.right) - Math.max(x.left, y.left) > 1 && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 1;
                         }).map(b => [a.innerText || a.getAttribute('aria-label'), b.innerText || b.getAttribute('aria-label')])),
-                      wrappedHeaders: [...document.querySelectorAll('section > div > button > span')].filter(e => {
+                      wordTargets, wordBreaks,
+                      wrappedCounts: [...document.querySelectorAll('section > div > button > span')].filter(e => {
+                        if (!/^(오류|실행 중)\\s+\\d+$/.test(e.textContent.trim())) return false;
                         const line = parseFloat(getComputedStyle(e).lineHeight), rect = e.getBoundingClientRect();
                         return line && rect.height > line * 1.5;
-                      }).map(e => e.innerText) })""")
+                      }).map(e => e.innerText) }; }""")
+                    if scene == "runtime" and not all(text in metrics["wordTargets"] for text in ("런타임 신호", "예약", "백그라운드 작업", "백그라운드 에이전트")):
+                        raise RuntimeError("런타임 제목 또는 작업 종류가 표시되지 않았습니다")
                     report.append({"scene": scene, "width": width, **metrics, "errors": errors})
                     print(scene, width, metrics, errors, flush=True)
                 except Exception as error:
@@ -66,7 +87,7 @@ def main():
         browser.close()
     report_name = "measurements.json" if not args.scene else "measurements-" + "-".join(args.scene) + ".json"
     (args.output / report_name).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    return int(any(entry.get("failure") or entry["errors"] or entry.get("scroll", 0) > entry.get("viewport", 0) + 1 or entry.get("outside") or entry.get("overlaps") or entry.get("wrappedHeaders") for entry in report))
+    return int(any(entry.get("failure") or entry["errors"] or entry.get("scroll", 0) > entry.get("viewport", 0) + 1 or entry.get("outside") or entry.get("overlaps") or entry.get("wordBreaks") for entry in report))
 
 
 if __name__ == "__main__":
