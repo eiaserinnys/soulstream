@@ -1116,6 +1116,46 @@ describe("control-plane host routes", () => {
     });
   });
 
+  it("logs domain conflicts as warnings without the error and server failures as errors", async () => {
+    const lines: string[] = [];
+    const conflict = Object.assign(new Error("worktree unavailable"), {
+      statusCode: 409,
+      code: "WORKTREE_UNAVAILABLE",
+    });
+    const failure = new Error("repository failed");
+    const resolveExecution = vi.fn()
+      .mockRejectedValueOnce(conflict)
+      .mockRejectedValueOnce(failure);
+    const app = Fastify({ logger: { level: "info", stream: { write: (line: string) => { lines.push(line); } } } });
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
+      authBearerToken: token,
+      repositoryProvider: async () => ({ worktrees: { resolveExecution } }) as unknown as PersistenceHostRepositories,
+    });
+
+    const inject = () => app.inject({
+      method: "POST",
+      url: "/api/worktrees/host/resolve_execution",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { args: [] },
+    });
+    const conflictResponse = await inject();
+    const failureResponse = await inject();
+    expect(conflictResponse.statusCode).toBe(409);
+    expect(conflictResponse.json().detail.error).toEqual({ code: "WORKTREE_UNAVAILABLE", message: "worktree unavailable" });
+    expect(failureResponse.statusCode).toBe(500);
+    expect(failureResponse.json().detail.error).toEqual({ code: "HOST_OPERATION_FAILED", message: "repository failed" });
+
+    const records = lines.map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((record) => record.msg === "Persistence host operation failed");
+    expect(records).toHaveLength(2);
+    const { level, time, pid, hostname, reqId, msg, ...conflictFields } = records[0]!;
+    expect(level).toBe(40);
+    expect(conflictFields).toEqual({ domain: "worktrees", operation: "resolve_execution", statusCode: 409, code: "WORKTREE_UNAVAILABLE" });
+    expect(records[1]).toMatchObject({ level: 50, domain: "worktrees", operation: "resolve_execution", err: { message: "repository failed", stack: expect.any(String) } });
+  });
+
   it("rejects persistence operations outside the explicit whitelist", async () => {
     const app = Fastify();
     apps.push(app);

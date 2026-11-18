@@ -66,9 +66,12 @@ async function run(fn: () => Promise<unknown>) {
   try { return jsonResult(await fn()); }
   catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
 }
-const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback", suffix: string, method: "GET" | "POST", body: (a: Args) => Args = () => ({})): Handler => (o, a) => run(() => request(method,
-  `/api/nodes/${encodeURIComponent(String(a.node_id))}/${suffix}`,
-  () => executeNodeAgentProfileRoute(o.cluster.nodeAgentProfiles, operation, String(a.node_id), JSON.parse(JSON.stringify(body(a))))));
+const node = (operation: "agents" | "model-presets" | "plan" | "apply" | "snapshots" | "rollback", suffix: string, method: "GET" | "POST", body: (a: Args) => Args = () => ({})): Handler => (o, a) => run(async () => {
+  await o.cluster.sessions.router.waitForNode(String(a.node_id));
+  return request(method,
+    `/api/nodes/${encodeURIComponent(String(a.node_id))}/${suffix}`,
+    () => executeNodeAgentProfileRoute(o.cluster.nodeAgentProfiles, operation, String(a.node_id), JSON.parse(JSON.stringify(body(a)))));
+});
 const profileBody = (a: Args) => ({ profile: a.profile, create_if_missing: a.create_if_missing ?? false, include_text_diff: a.include_text_diff ?? a.includeTextDiff ?? false });
 
 function projectCentralAgentProfile(profile: AgentProfileRecord): Record<string, unknown> {

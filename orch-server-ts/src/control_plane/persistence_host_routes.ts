@@ -223,15 +223,20 @@ function registerDomain(
           reply.type("application/json").send(JSON.stringify(result ?? null)));
       } catch (error) {
         if (request.raw.aborted || reply.raw.destroyed) return reply;
-        request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
         const statusCode = (error as { statusCode?: unknown } | undefined)?.statusCode;
         const status = typeof statusCode === "number" ? statusCode : 500;
         const domainCode = (error as { code?: unknown } | undefined)?.code;
+        const code = typeof domainCode === "string" ? domainCode : "HOST_OPERATION_FAILED";
+        if (status < 500) {
+          request.log.warn({ domain, operation: request.params.operation, statusCode: status, code }, "Persistence host operation failed");
+        } else {
+          request.log.error({ err: error, domain, operation: request.params.operation }, "Persistence host operation failed");
+        }
         return sendTimed(request, reply, timing, status, () =>
           errorReply(
             reply,
             status,
-            typeof domainCode === "string" ? domainCode : "HOST_OPERATION_FAILED",
+            code,
             error instanceof Error ? error.message : "Persistence host operation failed",
           ));
       } finally {

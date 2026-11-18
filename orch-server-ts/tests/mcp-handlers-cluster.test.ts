@@ -97,14 +97,15 @@ function fixture() {
   };
   const central = centralProfileStore();
   const readSession = vi.fn(async () => ({ folder_id: "caller-folder" }));
+  const waitForNode = vi.fn(async (_nodeId: string) => {});
   const options = { cluster: {
-    sessions: { router: { createSession, waitForNode: async () => {} }, bridge: { sendPendingCommand: send }, createSessionLifecycle: { prepare } },
+    sessions: { router: { createSession, waitForNode }, bridge: { sendPendingCommand: send }, createSessionLifecycle: { prepare } },
     nodeAgentProfiles: { provider: profiles, modelPresetProvider: { listForNode: vi.fn(() => undefined) } },
     centralAgentProfiles: central.deps,
     readSession, logger: { warn: vi.fn() },
   } } as unknown as McpHostOptions;
   const call = (name: McpToolName, args: Record<string, unknown>, c = context) => executeMcpTool(options, name, args, c);
-  return { options, call, prepare, createSession, send, profiles, readSession, central };
+  return { options, call, prepare, createSession, waitForNode, send, profiles, readSession, central };
 }
 
 describe("list_node_model_presets", () => {
@@ -119,6 +120,26 @@ describe("list_node_model_presets", () => {
   });
   it("미연결 노드는 오케스트레이터 404를 MCP 오류로 반환", async () => {
     expect(await fixture().call("list_node_model_presets", { node_id: "missing-node" })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("Node missing-node not connected") } });
+  });
+  it("노드 등록을 기다린 뒤 모델 프리셋을 조회한다", async () => {
+    const f = fixture();
+    let registerNode!: () => void;
+    let connected = false;
+    const presets = [{ id: "late-preset" }];
+    const listForNode = vi.fn(() => connected ? presets as never : undefined);
+    f.options.cluster.nodeAgentProfiles.modelPresetProvider = { listForNode };
+    f.waitForNode.mockImplementation(() => new Promise<void>((resolve) => {
+      registerNode = () => { connected = true; resolve(); };
+    }));
+
+    const result = f.call("list_node_model_presets", { node_id: "node-late" });
+    expect(f.waitForNode).toHaveBeenCalledOnce();
+    expect(f.waitForNode).toHaveBeenCalledWith("node-late");
+    expect(listForNode).not.toHaveBeenCalled();
+    registerNode();
+    expect(await result).toMatchObject({ structuredContent: { model_presets: presets } });
+    expect(listForNode).toHaveBeenCalledOnce();
+    expect(listForNode).toHaveBeenCalledWith("node-late");
   });
 });
 
