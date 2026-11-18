@@ -480,7 +480,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     await addLiveUserMessage(1001);
 
-    expect(container.textContent).not.toContain("New Messages");
+    expect(container.textContent).not.toContain("새 메시지");
     expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
     expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
     expect(geometry.scroller.scrollTop).toBe(820);
@@ -509,7 +509,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     await addLiveUserMessage(1001);
 
-    expect(container.textContent).not.toContain("New Messages");
+    expect(container.textContent).not.toContain("새 메시지");
     expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
     expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
     expect(geometry.scroller.scrollTop).toBe(820);
@@ -638,7 +638,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
       await addLiveUserMessage(1001);
 
-      expect(container.textContent).toContain("New Messages");
+      expect(container.textContent).toContain("새 메시지");
       expect(virtuosoMock.props?.followOutput).toBe(false);
       expect(geometry.scrollTo).not.toHaveBeenCalled();
     },

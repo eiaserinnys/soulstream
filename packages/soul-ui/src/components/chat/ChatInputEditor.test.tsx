@@ -67,7 +67,7 @@ describe("ChatInputEditor send button presentation", () => {
     let button = container.querySelector<HTMLButtonElement>("button");
     expect(button?.className).toContain("dashboard-icon-cap--bare");
     expect(button?.className).toContain("dashboard-icon-cap--small");
-    expect(button?.getAttribute("aria-label")).toBe("Attach files");
+    expect(button?.getAttribute("aria-label")).toBe("파일 첨부");
     expect(button?.querySelector("svg")?.classList.contains("size-5")).toBe(true);
 
     flushSync(() => root.render(<PaperclipButton onClick={vi.fn()} />));

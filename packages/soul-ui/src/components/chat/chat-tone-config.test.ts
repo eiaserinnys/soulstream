@@ -28,7 +28,7 @@ describe("chat tone config", () => {
       sending: false,
       ctxCount: 2,
     })).toMatchObject({
-      modeLabel: "LLM (2 ctx)",
+      modeLabel: "LLM (맥락 2개)",
       borderColor: "chat-focus-success",
       buttonVariant: "success",
     });
@@ -39,7 +39,7 @@ describe("chat tone config", () => {
       sending: false,
       ctxCount: 0,
     })).toMatchObject({
-      modeLabel: "Intervention",
+      modeLabel: "개입",
       borderColor: "chat-focus-warning",
       buttonVariant: "warning",
     });

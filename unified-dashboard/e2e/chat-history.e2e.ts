@@ -284,7 +284,7 @@ test("live SSE while reading history preserves the visible row", async ({ page }
     response.url().includes("/events") && (await response.text()).includes("id: 1001\n"));
   h.sendLive();
   await liveResponse;
-  await expect(h.root.getByRole("button", { name: /New Messages/ })).toBeVisible();
+  await expect(h.root.getByRole("button", { name: /새 메시지/ })).toBeVisible();
   await page.waitForTimeout(300);
   const afterPosition = await keyPosition(h.scroller, before.key);
   const after = await anchor(h.scroller).catch(() => null);

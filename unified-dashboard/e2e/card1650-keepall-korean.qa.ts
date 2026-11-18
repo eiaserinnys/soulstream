@@ -13,6 +13,10 @@
  *    삭제 단추 툴팁/접근 이름 「문서 삭제」·제목/본문 접근 이름.
  * 6. 문서 패널 로딩 「불러오는 중」, 편집기 로딩 「편집기를 불러오는 중」.
  * 7. 전체 내용 보기 단추 로딩 「불러오는 중」(전문 요청 지연).
+ * 8. 입력창 단추 이름(1440/390): 「보내기」·모드 「새 대화」·첨부 「파일 첨부」의
+ *    접근 이름/툴팁. 좁은 폭에서 단추가 입력창 밖으로 밀리거나 내용이 잘리지 않는지 잰다.
+ * 9. 새 메시지 배너(1440/390): 실행 중 위로 스크롤한 뒤 새 이벤트가 도착하면
+ *    「↓ 새 메시지」 배너가 뜨고, 실행 중 입력창 이름이 「개입」인지 확인한다.
  *
  * 실행:
  *   VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43184 --strictPort
@@ -454,6 +458,249 @@ async function chatKorean(browser: Browser, width: number) {
   }
 }
 
+async function chatButtons(browser: Browser, width: number) {
+  const { context, page } = await ctx(browser, width, width < 500 ? 844 : 1000);
+  try {
+    await installV3VisualQaRoutes(page, {});
+    await installSessionRoutes(page);
+    const synced = new Set<string>();
+    await page.route("**/api/sessions/*/events*", async route => {
+      const session = new URL(route.request().url()).pathname.split("/")[3];
+      if (!synced.has(session)) {
+        synced.add(session);
+        return route.fulfill({
+          contentType: "text/event-stream",
+          body: `event: history_sync\ndata: ${JSON.stringify({ type: "history_sync", last_event_id: 2, is_live: true, status: "completed" })}\n\n`,
+        });
+      }
+      return route.fulfill({ contentType: "text/event-stream", body: ": keepalive\n\n" });
+    });
+    await page.route((url: URL) => /^\/api\/sessions\/[^/]+\/timeline$/.test(url.pathname), route => route.fulfill({
+      json: {
+        messages: [
+          {
+            id: 2,
+            parent_event_id: null,
+            event_type: "assistant_message",
+            payload: { timestamp: 2, content: "입력창 단추 이름 검수 응답입니다.", tool_use_id: "card1650-buttons-2", _final_for_live_stream: true },
+            created_at: "2026-07-27T10:00:02.000Z",
+          },
+          {
+            id: 1,
+            parent_event_id: null,
+            event_type: "thinking",
+            payload: { timestamp: 1, thinking: "입력창 단추 이름 검수 생각입니다." },
+            created_at: "2026-07-27T10:00:01.000Z",
+          },
+        ],
+        next_cursor: null,
+      },
+    }));
+    await page.goto(`${baseUrl}/?session=run-alpha-1`, { waitUntil: "domcontentloaded" });
+    if (width < 500) {
+      await page.waitForTimeout(1_500);
+      await page.getByTestId("v3-mobile-tab-chat").click();
+    }
+    const root = page.locator('[data-slot="chat-root"]').filter({ visible: true });
+    await root.waitFor({ state: "visible", timeout: 30_000 });
+    // 이력이 실제로 그려진 뒤 잰다. 빈 상태에서는 입력창이 대화 영역 위쪽에 붙는다.
+    await root.getByText("입력창 단추 이름 검수 응답입니다.", { exact: false }).first()
+      .waitFor({ state: "visible", timeout: 30_000 });
+    const send = page.getByTestId("send-button").first();
+    await send.waitFor({ state: "visible", timeout: 30_000 });
+    const sendLabel = await send.getAttribute("aria-label");
+    const sendTitle = await send.getAttribute("title");
+    const mode = page.locator('[data-slot="chat-input-mode"]').first();
+    const modeLabel = await mode.getAttribute("title");
+    const attach = page.locator('button[aria-label="파일 첨부"]').first();
+    await attach.waitFor({ state: "visible", timeout: 10_000 });
+    const attachLabel = await attach.getAttribute("aria-label");
+    const attachTitle = await attach.getAttribute("title");
+    const layout = await root.evaluate(el => {
+      const pick = (selector: string) => {
+        const nodes = Array.from(el.querySelectorAll<HTMLElement>(selector));
+        return nodes.find(node => {
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        }) ?? null;
+      };
+      const box = (selector: string) => {
+        const node = pick(selector);
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return {
+          x: Math.round(rect.x * 10) / 10,
+          y: Math.round(rect.y * 10) / 10,
+          width: Math.round(rect.width * 10) / 10,
+          height: Math.round(rect.height * 10) / 10,
+          right: Math.round(rect.right * 10) / 10,
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth,
+        };
+      };
+      const composer = pick('[data-slot="chat-input-composer"]');
+      return {
+        composer: box('[data-slot="chat-input-composer"]'),
+        send: box('[data-testid="send-button"]'),
+        attach: box('button[aria-label="파일 첨부"]'),
+        mode: box('[data-slot="chat-input-mode"]'),
+        body: box('[data-slot="chat-input-body"]'),
+        documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        composerOverflow: composer ? composer.scrollWidth - composer.clientWidth : null,
+      };
+    });
+    await page.screenshot({ path: path.join(output, `chat-buttons-${width}-${suffix}.png`), animations: "disabled" });
+    const composerBox = layout.composer;
+    if (composerBox) {
+      await page.screenshot({
+        path: path.join(output, `chat-input-${width}-${suffix}.png`),
+        animations: "disabled",
+        clip: {
+          x: Math.max(0, composerBox.x - 8),
+          y: Math.max(0, composerBox.y - 8),
+          width: Math.min(width - Math.max(0, composerBox.x - 8), composerBox.width + 16),
+          height: composerBox.height + 16,
+        },
+      });
+    }
+    if (!baseline) {
+      assert(sendLabel === "보내기", `보내기 단추 접근 이름 불일치: ${sendLabel}`);
+      assert(sendTitle === "보내기", `보내기 단추 툴팁 불일치: ${sendTitle}`);
+      assert(modeLabel === "새 대화", `입력 모드 이름 불일치: ${modeLabel}`);
+      assert(attachLabel === "파일 첨부", `첨부 단추 접근 이름 불일치: ${attachLabel}`);
+      assert(attachTitle === "파일 첨부", `첨부 단추 툴팁 불일치: ${attachTitle}`);
+      const { composer, send: sendBox, attach: attachBox, mode: modeBox, body } = layout;
+      assert(composer && sendBox && attachBox && modeBox && body, "입력창 구성 요소를 찾지 못했습니다.");
+      assert(sendBox.x >= composer.x && sendBox.right <= composer.right + 0.5, `보내기 단추가 입력창 밖으로 밀림: ${JSON.stringify({ composer, sendBox })}`);
+      assert(attachBox.x >= composer.x - 0.5 && attachBox.right <= composer.right + 0.5, `첨부 단추가 입력창 밖으로 밀림: ${JSON.stringify({ composer, attachBox })}`);
+      assert(modeBox.x >= composer.x - 0.5, `입력 모드 아이콘이 입력창 밖으로 밀림: ${JSON.stringify({ composer, modeBox })}`);
+      assert(body.right <= sendBox.x + 0.5, `본문 칸이 보내기 단추를 침범: ${JSON.stringify({ body, sendBox })}`);
+      assert(sendBox.scrollWidth <= sendBox.clientWidth, `보내기 단추 내용 잘림: ${JSON.stringify(sendBox)}`);
+      assert(attachBox.scrollWidth <= attachBox.clientWidth, `첨부 단추 내용 잘림: ${JSON.stringify(attachBox)}`);
+      assert(layout.composerOverflow !== null && layout.composerOverflow <= 0, `입력창 내용 가로 넘침 ${layout.composerOverflow}px`);
+      assert(layout.documentOverflow <= 0, `문서 가로 넘침 ${layout.documentOverflow}px`);
+    }
+    return { sendLabel, sendTitle, modeLabel, attachLabel, attachTitle, layout };
+  } finally {
+    await context.close();
+  }
+}
+
+async function newMessagesBanner(browser: Browser, width: number) {
+  const { context, page } = await ctx(browser, width, width < 500 ? 844 : 1000);
+  try {
+    await installV3VisualQaRoutes(page, {});
+    await installSessionRoutes(page);
+    const synced = new Set<string>();
+    let releaseLive!: () => void;
+    const liveGate = new Promise<void>(resolve => { releaseLive = resolve; });
+    let liveServed = false;
+    await page.route("**/api/sessions/*/events*", async route => {
+      const session = new URL(route.request().url()).pathname.split("/")[3];
+      if (!synced.has(session)) {
+        synced.add(session);
+        return route.fulfill({
+          contentType: "text/event-stream",
+          body: `event: history_sync\ndata: ${JSON.stringify({ type: "history_sync", last_event_id: 80, is_live: true, status: "running" })}\n\n`,
+        });
+      }
+      await liveGate;
+      if (!liveServed) {
+        liveServed = true;
+        return route.fulfill({
+          contentType: "text/event-stream; charset=utf-8",
+          body: `id: 101\nevent: assistant_message\ndata: ${JSON.stringify({ type: "assistant_message", content: "위로 올린 뒤 도착한 새 응답", timestamp: 101, tool_use_id: "live-101", _final_for_live_stream: true })}\n\n`,
+        });
+      }
+      return route.fulfill({ contentType: "text/event-stream", body: ": keepalive\n\n" });
+    });
+    const messages = Array.from({ length: 80 }, (_, index) => {
+      const id = 80 - index;
+      return {
+        id,
+        parent_event_id: null,
+        event_type: "user_message",
+        payload: { text: `새 메시지 배너 검수 ${id}\n위로 스크롤한 상태를 확인합니다.\n새 이벤트가 오면 배너가 뜹니다.`, timestamp: id },
+        created_at: new Date(id * 1_000).toISOString(),
+      };
+    });
+    await page.route((url: URL) => /^\/api\/sessions\/[^/]+\/timeline$/.test(url.pathname), route => {
+      const cursor = new URL(route.request().url()).searchParams.get("before");
+      return route.fulfill({ json: cursor === null ? { messages, next_cursor: null } : { messages: [], next_cursor: null } });
+    });
+    await page.goto(`${baseUrl}/?session=run-alpha-2`, { waitUntil: "domcontentloaded" });
+    if (width < 500) {
+      await page.waitForTimeout(1_500);
+      await page.getByTestId("v3-mobile-tab-chat").click();
+    }
+    const root = page.locator('[data-slot="chat-root"]').filter({ visible: true });
+    await root.waitFor({ state: "visible", timeout: 30_000 });
+    const scroller = root.locator('[data-virtuoso-scroller="true"]');
+    await scroller.waitFor({ state: "visible", timeout: 30_000 });
+    for (let poll = 0; poll < 100; poll += 1) {
+      const ready = await scroller.evaluate(el => el.scrollHeight > el.clientHeight + 100
+        && el.scrollHeight - el.clientHeight - el.scrollTop <= 48);
+      if (ready) break;
+      await page.waitForTimeout(200);
+    }
+    const scrollState = await scroller.evaluate(el => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }));
+    assert(scrollState.height > scrollState.client + 100, `대화 이력이 로드되지 않음: ${JSON.stringify(scrollState)}`);
+    await page.waitForTimeout(600);
+    const send = page.getByTestId("send-button").first();
+    await send.waitFor({ state: "visible", timeout: 30_000 });
+    const sendLabel = await send.getAttribute("aria-label");
+    const modeLabel = await page.locator('[data-slot="chat-input-mode"]').first().getAttribute("title");
+    await movePointer(page, scroller);
+    const viewportHeight = await scroller.evaluate(el => el.clientHeight);
+    await page.mouse.wheel(0, -900);
+    await page.waitForTimeout(800);
+    const distance = await scroller.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop);
+    releaseLive();
+    const banner = root.getByRole("button", { name: /새 메시지/ }).first();
+    await banner.waitFor({ state: "visible", timeout: 20_000 });
+    const bannerText = (await banner.textContent())?.trim() ?? null;
+    const oldBannerCount = await root.getByText("New Messages", { exact: false }).count();
+    const layout = await banner.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        x: Math.round(rect.x * 10) / 10,
+        y: Math.round(rect.y * 10) / 10,
+        width: Math.round(rect.width * 10) / 10,
+        height: Math.round(rect.height * 10) / 10,
+        right: Math.round(rect.right * 10) / 10,
+        fontSize: style.fontSize,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    await page.screenshot({ path: path.join(output, `new-messages-${width}-${suffix}.png`), animations: "disabled" });
+    await page.screenshot({
+      path: path.join(output, `new-messages-banner-${width}-${suffix}.png`),
+      animations: "disabled",
+      clip: {
+        x: Math.max(0, layout.x - 120),
+        y: Math.max(0, layout.y - 140),
+        width: Math.min(width - Math.max(0, layout.x - 120), layout.width + 240),
+        height: layout.height + 180,
+      },
+    });
+    if (!baseline) {
+      assert(distance > viewportHeight, `위로 스크롤이 충분하지 않음: 거리 ${distance}px, 보이는 높이 ${viewportHeight}px`);
+      assert(bannerText?.includes("새 메시지") === true, `새 메시지 배너 문구 불일치: ${bannerText}`);
+      assert(oldBannerCount === 0, `옛 영어 배너가 남아 있음: ${oldBannerCount}개`);
+      assert(sendLabel === "개입", `실행 중 보내기 단추 접근 이름 불일치: ${sendLabel}`);
+      assert(modeLabel === "개입", `실행 중 입력 모드 이름 불일치: ${modeLabel}`);
+      assert(layout.scrollWidth <= layout.clientWidth, `배너 내용 잘림: ${JSON.stringify(layout)}`);
+      assert(layout.documentOverflow <= 0, `배너 문서 가로 넘침 ${layout.documentOverflow}px`);
+    }
+    return { width, scrollState, viewportHeight, distance, bannerText, oldBannerCount, sendLabel, modeLabel, layout };
+  } finally {
+    await context.close();
+  }
+}
+
 async function documentPanel(browser: Browser) {
   const { context, page } = await ctx(browser, 1440, 1000);
   try {
@@ -665,6 +912,10 @@ const result = await runPlaywrightLifecycle({
   measured.chatTop390 = await chatTop(browser, 390);
   measured.chatKorean1440 = await chatKorean(browser, 1440);
   measured.chatKorean390 = await chatKorean(browser, 390);
+  measured.chatButtons1440 = await chatButtons(browser, 1440);
+  measured.chatButtons390 = await chatButtons(browser, 390);
+  measured.newMessages1440 = await newMessagesBanner(browser, 1440);
+  measured.newMessages390 = await newMessagesBanner(browser, 390);
   measured.documentPanel = await documentPanel(browser);
   measured.documentLoading = await documentLoading(browser);
   measured.editorLoading = await editorLoading(browser);

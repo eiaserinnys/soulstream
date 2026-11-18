@@ -459,7 +459,10 @@
         "older-60",
         "older-20"
       ],
-      "beforeRelease": null,
+      "beforeRelease": {
+        "key": "user-msg-67",
+        "offset": -42
+      },
       "firstRow": {
         "key": "user-msg-1",
         "offset": 0
@@ -487,8 +490,8 @@
         "older-20"
       ],
       "beforeRelease": {
-        "key": "user-msg-21",
-        "offset": 26
+        "key": "user-msg-35",
+        "offset": -113
       },
       "firstRow": {
         "key": "user-msg-1",
@@ -518,6 +521,168 @@
       "placeholder": "대화를 이어서 입력하세요",
       "followText": "↓ 맨 아래로",
       "thinkingText": "💭 생각"
+    },
+    "chatButtons1440": {
+      "sendLabel": "보내기",
+      "sendTitle": "보내기",
+      "modeLabel": "새 대화",
+      "attachLabel": "파일 첨부",
+      "attachTitle": "파일 첨부",
+      "layout": {
+        "composer": {
+          "x": 1016.2,
+          "y": 921,
+          "width": 394.8,
+          "height": 50,
+          "right": 1411,
+          "scrollWidth": 393,
+          "clientWidth": 393
+        },
+        "send": {
+          "x": 1370,
+          "y": 930,
+          "width": 32,
+          "height": 32,
+          "right": 1402,
+          "scrollWidth": 30,
+          "clientWidth": 30
+        },
+        "attach": {
+          "x": 1025.2,
+          "y": 930,
+          "width": 32,
+          "height": 32,
+          "right": 1057.2,
+          "scrollWidth": 30,
+          "clientWidth": 30
+        },
+        "mode": {
+          "x": 1065.2,
+          "y": 930,
+          "width": 20,
+          "height": 32,
+          "right": 1085.2,
+          "scrollWidth": 20,
+          "clientWidth": 20
+        },
+        "body": {
+          "x": 1093.2,
+          "y": 930,
+          "width": 268.8,
+          "height": 32,
+          "right": 1362,
+          "scrollWidth": 269,
+          "clientWidth": 269
+        },
+        "documentOverflow": 0,
+        "composerOverflow": 0
+      }
+    },
+    "chatButtons390": {
+      "sendLabel": "보내기",
+      "sendTitle": "보내기",
+      "modeLabel": "새 대화",
+      "attachLabel": "파일 첨부",
+      "attachTitle": "파일 첨부",
+      "layout": {
+        "composer": {
+          "x": 12,
+          "y": 724,
+          "width": 366,
+          "height": 50,
+          "right": 378,
+          "scrollWidth": 364,
+          "clientWidth": 364
+        },
+        "send": {
+          "x": 337,
+          "y": 733,
+          "width": 32,
+          "height": 32,
+          "right": 369,
+          "scrollWidth": 30,
+          "clientWidth": 30
+        },
+        "attach": {
+          "x": 21,
+          "y": 733,
+          "width": 32,
+          "height": 32,
+          "right": 53,
+          "scrollWidth": 30,
+          "clientWidth": 30
+        },
+        "mode": {
+          "x": 61,
+          "y": 733,
+          "width": 20,
+          "height": 32,
+          "right": 81,
+          "scrollWidth": 20,
+          "clientWidth": 20
+        },
+        "body": {
+          "x": 89,
+          "y": 733,
+          "width": 240,
+          "height": 32,
+          "right": 329,
+          "scrollWidth": 240,
+          "clientWidth": 240
+        },
+        "documentOverflow": 0,
+        "composerOverflow": 0
+      }
+    },
+    "newMessages1440": {
+      "width": 1440,
+      "scrollState": {
+        "top": 4095,
+        "height": 4860,
+        "client": 765
+      },
+      "viewportHeight": 765,
+      "distance": 1470,
+      "bannerText": "↓ 새 메시지",
+      "oldBannerCount": 0,
+      "sendLabel": "개입",
+      "modeLabel": "개입",
+      "layout": {
+        "x": 1161.1,
+        "y": 818,
+        "width": 105,
+        "height": 34,
+        "right": 1266.1,
+        "fontSize": "16px",
+        "scrollWidth": 103,
+        "clientWidth": 103,
+        "documentOverflow": 0
+      }
+    },
+    "newMessages390": {
+      "width": 390,
+      "scrollState": {
+        "top": 4305,
+        "height": 4860,
+        "client": 555
+      },
+      "viewportHeight": 555,
+      "distance": 900,
+      "bannerText": "↓ 새 메시지",
+      "oldBannerCount": 0,
+      "sendLabel": "개입",
+      "modeLabel": "개입",
+      "layout": {
+        "x": 142.5,
+        "y": 621,
+        "width": 105,
+        "height": 34,
+        "right": 247.5,
+        "fontSize": "16px",
+        "scrollWidth": 103,
+        "clientWidth": 103,
+        "documentOverflow": 0
+      }
     },
     "documentPanel": {
       "titleValue": "제목 없는 문서",

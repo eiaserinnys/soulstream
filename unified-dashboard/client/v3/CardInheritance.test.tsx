@@ -84,7 +84,7 @@ it("comments inherit chat input, attachment and send controls",async()=>{
   await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}/>));
   expect(container.querySelector('[data-slot="chat-input-composer"]')).not.toBeNull();
   expect(container.querySelector<HTMLTextAreaElement>('textarea[data-slot="chat-input-body"]')?.rows).toBe(1);
-  expect(container.querySelector('button[title="Attach files"]')).not.toBeNull();
+  expect(container.querySelector('button[title="파일 첨부"]')).not.toBeNull();
   expect(container.querySelector('[data-testid="send-button"]')).not.toBeNull();
 });
 

@@ -38,17 +38,17 @@ export function resolveChatInputMode(input: ChatInputModeInput): ChatInputModeVi
   const buttonLabel = sending
     ? "..."
     : isLlmFinished
-      ? "Send"
+      ? "보내기"
       : isFinished
-        ? "Send"
-        : "Intervene";
+        ? "보내기"
+        : "개입";
 
   const modeIcon = isLlmFinished ? "\u{1F916}" : isFinished ? "\u{1F4AC}" : "\u270B";
   const modeLabel = isLlmFinished
-    ? `LLM (${ctxCount} ctx)`
+    ? `LLM (맥락 ${ctxCount}개)`
     : isFinished
-      ? "New Chat"
-      : "Intervention";
+      ? "새 대화"
+      : "개입";
 
   // 색상 의미는 유지하되 Button variant 정본만 호출한다.
   const borderColor = isLlmFinished
