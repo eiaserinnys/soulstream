@@ -4288,6 +4288,7 @@ CREATE TABLE IF NOT EXISTS recurring_jobs (
     node_id                     TEXT NOT NULL,
     agent_id                    TEXT NOT NULL,
     model_preset                TEXT,
+    model_preset_fallbacks      JSONB,
     folder_id                   TEXT NOT NULL,
     enabled                     BOOLEAN NOT NULL DEFAULT TRUE,
     archived_at                 TIMESTAMPTZ,

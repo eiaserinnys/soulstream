@@ -18,12 +18,12 @@ import { RecurringJobError, type RecurringJob, type RecurringJobActor } from "./
 
 type RecurringJobTarget = Pick<
   RecurringJob,
-  "nodeId" | "agentId" | "modelPreset" | "folderId"
+  "nodeId" | "agentId" | "modelPreset" | "modelPresetFallbacks" | "folderId"
 >;
 
 export type RecurringJobTargetValidatorOptions = {
   readonly registry: InMemoryNodeRegistry;
-  readonly modelPresetAvailability: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  readonly modelPresetAvailability: Pick<ModelPresetAvailabilityService, "requireAvailable" | "chooseUsablePreset">;
   readonly listFolders: () =>
     | readonly (BoardAccessFolderRecord & { archived?: boolean })[]
     | Promise<readonly (BoardAccessFolderRecord & { archived?: boolean })[]>;
@@ -54,10 +54,22 @@ export function createRecurringJobTargetValidator(
           profileId: target.agentId,
           ...(target.modelPreset === null ? {} : { modelPresetId: target.modelPreset }),
         });
+        const fallbacks = target.modelPresetFallbacks ?? [];
+        if (purpose === "settings") {
+          for (const presetId of fallbacks) {
+            selectNodeForSessionCreate(options.registry, {
+              nodeId: target.nodeId, profileId: target.agentId, modelPresetId: presetId,
+            });
+            options.modelPresetAvailability.requireAvailable(selection.node.nodeId, presetId, { allowLimitRejected: true });
+          }
+        }
         if (selection.modelPresetId) {
+          const presetId = purpose === "execution" && fallbacks.length > 0
+            ? options.modelPresetAvailability.chooseUsablePreset(selection.node.nodeId, [selection.modelPresetId, ...fallbacks])
+            : selection.modelPresetId;
           options.modelPresetAvailability.requireAvailable(
             selection.node.nodeId,
-            selection.modelPresetId,
+            presetId,
             purpose === "settings" ? { allowLimitRejected: true } : undefined,
           );
         }

@@ -9,6 +9,7 @@ import {
   assertRecurringJobActor,
   compileSchedule,
   normalizedModelPreset,
+  normalizedModelPresetFallbacks,
   onceTimezone,
   parseRunAt,
   positiveLateRunWindowSeconds,
@@ -447,6 +448,7 @@ export class RecurringJobService {
         if (runAtDate.getTime() <= now.getTime()) throw validation("run_at must be in the future");
         nextRunAt = runAt;
       }
+      const modelPreset = input.modelPreset === undefined ? current.modelPreset : normalizedModelPreset(input.modelPreset);
       const candidate = {
         ...current,
         name: input.name === undefined ? current.name : requiredText(input.name, "name"),
@@ -457,9 +459,8 @@ export class RecurringJobService {
         runAt,
         nodeId: input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id"),
         agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
-        modelPreset: input.modelPreset === undefined
-          ? current.modelPreset
-          : normalizedModelPreset(input.modelPreset),
+        modelPreset,
+        modelPresetFallbacks: normalizedModelPresetFallbacks(input.modelPresetFallbacks ?? current.modelPresetFallbacks ?? [], modelPreset),
 
         folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
         lateRunWindowSeconds: positiveLateRunWindowSeconds(
@@ -474,7 +475,8 @@ export class RecurringJobService {
         target: candidate,
         requireAvailableTarget: candidate.nodeId !== current.nodeId ||
           candidate.agentId !== current.agentId ||
-          candidate.modelPreset !== current.modelPreset,
+          candidate.modelPreset !== current.modelPreset ||
+          JSON.stringify(candidate.modelPresetFallbacks) !== JSON.stringify(current.modelPresetFallbacks ?? []),
         purpose: "settings",
       });
       return candidate;

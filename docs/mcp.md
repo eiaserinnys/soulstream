@@ -145,6 +145,8 @@ Recurring-job tools require a trusted Soulstream caller session with a verified 
 | `archive_recurring_job(job_id, expected_version)` | Archive a job without terminating an already running session |
 | `list_recurring_job_runs(job_id, limit)` | Read run history and its linked session IDs |
 
+`model_preset_fallbacks` on create or update lists ordered preset IDs advertised by the job's node for dispatch and runtime limit fallback. Omit it on update to retain the list, or pass `[]` to clear it.
+
 ### Folder management
 
 | Tool | Description |

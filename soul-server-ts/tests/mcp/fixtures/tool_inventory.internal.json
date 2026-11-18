@@ -2324,6 +2324,14 @@
             }
           ]
         },
+        "model_preset_fallbacks": {
+          "description": "만들 때와 실행 중 한도에서 차례로 쓸 대체 모델 preset id. 같은 노드 안에서만 쓴다",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
         "name": {
           "minLength": 1,
           "type": "string"
@@ -9939,6 +9947,14 @@
               "type": "null"
             }
           ]
+        },
+        "model_preset_fallbacks": {
+          "description": "만들 때와 실행 중 한도에서 차례로 쓸 대체 모델 preset id. 같은 노드 안에서만 쓴다",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
         },
         "name": {
           "minLength": 1,

@@ -1377,7 +1377,7 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
 export function recurringSessionCreateInput(
   job: Pick<
     RecurringJob,
-    "jobId" | "prompt" | "nodeId" | "agentId" | "modelPreset" | "folderId" | "executionCaller"
+    "jobId" | "prompt" | "nodeId" | "agentId" | "modelPreset" | "modelPresetFallbacks" | "folderId" | "executionCaller"
   >,
   run: Pick<RecurringJobRun, "runId" | "sessionId">,
 ): CreateRecurringSessionInput {
@@ -1387,6 +1387,7 @@ export function recurringSessionCreateInput(
     nodeId: job.nodeId,
     agentId: job.agentId,
     modelPreset: job.modelPreset,
+    modelPresetFallbacks: job.modelPresetFallbacks,
     folderId: job.folderId,
     callerInfo: {
       ...job.executionCaller,

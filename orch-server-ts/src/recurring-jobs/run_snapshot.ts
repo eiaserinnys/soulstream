@@ -30,6 +30,7 @@ export function jobForRun(job: RecurringJob, run: RecurringJobRun): RecurringJob
     nodeId: snapshotText(snapshot, "nodeId"),
     agentId: snapshotText(snapshot, "agentId"),
     modelPreset: snapshotNullableText(snapshot, "modelPreset"),
+    modelPresetFallbacks: snapshot.modelPresetFallbacks === undefined ? [] : snapshotStrings(snapshot, "modelPresetFallbacks", true),
     folderId: snapshotText(snapshot, "folderId"),
     executionCaller: snapshotRecord(snapshot.executionCaller, "executionCaller"),
     lateRunWindowSeconds: snapshotPositiveInteger(snapshot.lateRunWindowSeconds, "lateRunWindowSeconds"),

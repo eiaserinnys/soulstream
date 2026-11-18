@@ -237,7 +237,7 @@ describe("recurring job routes", () => {
         method: "POST",
         url: "/api/recurring-jobs/host/create",
         headers: { authorization: "Bearer service-token" },
-        payload: { ...createBody("trusted-agent-create"), actor: agentActor },
+        payload: { ...createBody("trusted-agent-create"), model_preset_fallbacks: ["fallback"], actor: agentActor },
       });
       expect(created.statusCode).toBe(200);
       expect(created.json()).toMatchObject({
@@ -245,6 +245,7 @@ describe("recurring job routes", () => {
           owner_email: agentActor.ownerEmail,
           node_id: "node-a",
           agent_id: "roselin",
+          model_preset_fallbacks: ["fallback"],
           version: 1,
         },
       });
@@ -264,8 +265,8 @@ describe("recurring job routes", () => {
       });
 
       expect(updated.statusCode).toBe(200);
-      expect(updated.json()).toMatchObject({ job: { enabled: false, version: 2 } });
-      expect(listed.json()).toMatchObject({ jobs: [{ job_id: jobId, enabled: false }] });
+      expect(updated.json()).toMatchObject({ job: { enabled: false, version: 2, model_preset_fallbacks: ["fallback"] } });
+      expect(listed.json()).toMatchObject({ jobs: [{ job_id: jobId, enabled: false, model_preset_fallbacks: ["fallback"] }] });
       expect(validateTarget).toHaveBeenNthCalledWith(1, {
         actor: agentActor,
         target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
@@ -278,6 +279,10 @@ describe("recurring job routes", () => {
         requireAvailableTarget: false,
         purpose: "settings",
       });
+      const cleared = await app.inject({ method: "POST", url: "/api/recurring-jobs/host/update",
+        headers: { authorization: "Bearer service-token" },
+        payload: { job_id: jobId, expected_version: 2, model_preset_fallbacks: [], actor: agentActor } });
+      expect(cleared.json()).toMatchObject({ job: { model_preset_fallbacks: [] } });
     } finally {
       await app.close();
     }
@@ -430,7 +435,7 @@ function job(): RecurringJob {
     name: "music recommendation", prompt: "recommend music", timezone: "Asia/Seoul",
     scheduleKind: "recurring", runAt: null, eventTrigger: null, eventLastFiredAt: null,
     scheduleExpressions: ["0 9,12 * * 1-5"], nodeId: "node-a", agentId: "roselin",
-    modelPreset: null,  folderId: "folder-a",
+    modelPreset: null, modelPresetFallbacks: [], folderId: "folder-a",
     enabled: true, archivedAt: null, lateRunWindowSeconds: 1800, nextRunAt: "2026-09-22T00:00:00.000Z",
     version: 1, createdIdempotencyKey: "create", createdBy: "owner", updatedBy: "owner",
     createdAt: "2026-09-21T00:00:00.000Z", updatedAt: "2026-09-21T00:00:00.000Z",
