@@ -1,7 +1,8 @@
 import { cn } from "@seosoyoung/soul-ui";
-import { ChartNoAxesColumnIncreasing, ChevronRight, Monitor, Server, Workflow, Users, ShieldCheck, HardDrive, CalendarClock, Activity, Bot, Infinity as InfinityIcon, SlidersHorizontal } from "lucide-react";
+import { ChartNoAxesColumnIncreasing, ChevronRight, Monitor, Server, Workflow, Users, ShieldCheck, HardDrive, CalendarClock, Activity, Bot, Infinity as InfinityIcon, SlidersHorizontal, Link } from "lucide-react";
 export interface ConfigCategoryNavItem { name: string; label: string }
-const icons: Record<string, typeof Monitor> = { appearance: Monitor, account: Users, display: Monitor, record: Activity, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, persistent: InfinityIcon, usage_log: Activity, usage_stats: ChartNoAxesColumnIncreasing, agents: Bot };
+const icons: Record<string, typeof Monitor> = { appearance: Monitor, access_links: Link, account: Users, display: Monitor, record: Activity, nodes: Server, card_dispatch: Workflow, users: Users, session_review: ShieldCheck, file_storage: HardDrive, recurring_jobs: CalendarClock, persistent: InfinityIcon, usage_log: Activity, usage_stats: ChartNoAxesColumnIncreasing, agents: Bot };
+const personal = new Set(["appearance", "owned_agents", "access_links", "webhooks"]);
 const execution = new Set(["nodes", "agents", "card_dispatch", "recurring_jobs", "persistent"]);
 export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, onSelect, showGroupLabels = true, variant = "default" }: {
   categories: ConfigCategoryNavItem[]; extraTabs?: ConfigCategoryNavItem[];
@@ -20,9 +21,9 @@ export function ConfigCategoryNav({ categories, extraTabs = [], activeCategory, 
     </div>
   </nav>;
   const groups = [
-    { label: "개인 환경", items: all.filter(item => item.name === "appearance" || item.name === "owned_agents") },
+    { label: "개인 환경", items: all.filter(item => personal.has(item.name)) },
     { label: "작업과 실행", items: all.filter(item => execution.has(item.name)) },
-    { label: "서버 관리", items: all.filter(item => item.name !== "appearance" && item.name !== "owned_agents" && !execution.has(item.name)) },
+    { label: "서버 관리", items: all.filter(item => !personal.has(item.name) && !execution.has(item.name)) },
   ];
   return <nav aria-label="설정 카테고리" data-testid="config-category-nav" className="config-category-nav">
     {groups.filter(group => group.items.length).map(group => <section key={group.label}>
