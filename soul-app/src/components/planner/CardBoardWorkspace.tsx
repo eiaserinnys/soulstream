@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Text, View } from 'react-native';
-import { AutomaticRefreshIndicator, AutomaticRefreshSlot } from '../AutomaticRefreshIndicator';
+import { AutomaticRefreshSlot } from '../AutomaticRefreshIndicator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { ApiClient } from '../../api/client';
 import { useCardList } from '../../hooks/useCardList';
@@ -51,8 +51,8 @@ export function CardBoardHeaderActions({ cardDisplay, refreshing, onCreate, onEx
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   api: ApiClient | null; folderId?: string; title?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void; railOverlayWidth?: number;
-  onAutoRefreshChange?(refreshing: boolean): void; externalHeaderHidden?: boolean;
-}>(function CardBoardWorkspace({ api, folderId, title, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose, railOverlayWidth = 0, onAutoRefreshChange, externalHeaderHidden = false }, ref) {
+  onAutoRefreshChange?(refreshing: boolean): void;
+}>(function CardBoardWorkspace({ api, folderId, title, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose, railOverlayWidth = 0, onAutoRefreshChange }, ref) {
   const t = useTokens();
   const duo = useDuoSideBand();
   const insets = useSafeAreaInsets();
@@ -123,7 +123,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     return <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: titled ? 'nowrap' : 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
       <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}><PlannerSectionHeader testID="card-board-heading-title" variant={titled ? 'board' : 'default'} title={headingTitle} /></View>
-      {!(duo && expandedBoard) ? <AutomaticRefreshSlot active={autoRefreshing && (expandedBoard || !expanded)} testID={expandedBoard ? 'card-board-expanded-refresh-slot' : 'card-board-refresh-slot'} indicatorTestID={expandedBoard ? 'card-board-expanded-auto-progress' : 'card-board-auto-progress'} /> : null}
+      <AutomaticRefreshSlot active={autoRefreshing && (expandedBoard || !expanded)} testID={expandedBoard ? 'card-board-expanded-refresh-slot' : 'card-board-refresh-slot'} indicatorTestID={expandedBoard ? 'card-board-expanded-auto-progress' : 'card-board-auto-progress'} />
     </View>
     {!(duo && expandedBoard) ? <><LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
       surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
@@ -137,8 +137,6 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   };
   return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading()}
-    {externalHeader && (externalHeaderHidden || !onAutoRefreshChange) && autoRefreshing && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress"
-      style={{ top: 0, right: railOverlayWidth + t.cardLayout.padding }} /> : null}
     {error ? <View style={{ gap: t.uiSpacing.sm, paddingRight: railOverlayWidth }}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.error }}>{error}</Text>
       <GlassButton accessibilityLabel="보드 다시 조회" onPress={refresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></GlassButton>
@@ -155,7 +153,6 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
         <View style={{ flex: 1, gap: t.uiSpacing.md }} pointerEvents={detailVisible ? 'none' : 'auto'} accessibilityElementsHidden={detailVisible} importantForAccessibility={detailVisible ? 'no-hide-descendants' : 'auto'}>
           {heading(true)}{board(expanded, true)}
         </View>
-        {duo && autoRefreshing ? <AutomaticRefreshIndicator testID="card-board-expanded-auto-progress" style={{ top: 0, right: t.cardLayout.padding }} /> : null}
         <FolderWorkspaceReadOverlay host="board" />
       </View></GestureHandlerRootView>
     </AppModalSurface> : null}

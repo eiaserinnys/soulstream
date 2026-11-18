@@ -362,9 +362,11 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
             metrics = page.evaluate('''mode => {
               const ids = {boardInternal:'card-board-auto-progress', boardExternal:'card-board-auto-progress',
                 boardExpanded:'card-board-expanded-auto-progress', starred:'starred-auto-progress', daily:'daily-auto-progress'};
-              const element = ids[mode] && document.querySelector(`[data-testid="${ids[mode]}"]`);
+              const elements = [...document.querySelectorAll('[data-testid="card-board-auto-progress"],[data-testid="card-board-expanded-auto-progress"],[data-testid="starred-auto-progress"],[data-testid="daily-auto-progress"]')];
+              const element = elements[0];
               const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
               const marker = element && rect(element);
+              const expectedId = ids[mode];
               const frameId = mode === 'boardExpanded' ? 'card-board-expanded' : mode.startsWith('board') ? 'card-board-workspace' : mode === 'starred' ? 'starred-refresh-frame' : 'phone-daily-body';
               const frameElement = element && (mode === 'boardExternal'
                 ? element.closest('[data-testid="review-phone-card-header"],[data-testid="review-tablet-card-header"]')
@@ -381,7 +383,7 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
                 const r=rect(e), s=getComputedStyle(e); return r.width && r.height && s.display!=='none' && s.visibility!=='hidden' && marker.left < r.right && marker.right > r.left && marker.top < r.bottom && marker.bottom > r.top;
               }).map(e=>e.getAttribute('data-testid') || e.getAttribute('aria-label')) : [];
               const phase = document.querySelector('[data-testid="refresh-phase"]');
-              return {scrollWidth:document.documentElement.scrollWidth, viewport:innerWidth, marker, frame, rounded, overlaps,
+              return {scrollWidth:document.documentElement.scrollWidth, viewport:innerWidth, marker, markerCount:elements.length, markerId:element && element.dataset.testid, expectedId, frame, rounded, overlaps,
                 phase:phase && phase.textContent,
                 overflow:element && getComputedStyle(element).overflow};
             }''', mode)
@@ -389,6 +391,12 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
                 failures.append({'check': 'refresh did not start', 'label': label, 'metrics': metrics})
             metrics['before'] = before
             metrics['during'] = during
+            expected = {'boardInternal': 4 if width >= 768 else 3,
+                        'boardExternal': 4 if width >= 768 else 3,
+                        'boardExpanded': 4 if width >= 768 else 3,
+                        'daily': 2}.get(mode, 0)
+            if len(before['positions']) != expected or len(during['positions']) != expected:
+                failures.append({'check': 'expected control count', 'label': label, 'expected': expected, 'before': before, 'during': during})
             if before['positions'].keys() != during['positions'].keys():
                 failures.append({'check': 'controls changed during refresh', 'label': label, 'before': before, 'during': during})
             else:
@@ -400,7 +408,15 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
                 failures.append({'check': 'external board top padding', 'label': label, 'actual': before['paddingTop']})
             if metrics['scrollWidth'] != metrics['viewport']:
                 failures.append({'check': 'document overflow', 'label': label, 'metrics': metrics})
-            expected_marker = mode in ('boardInternal', 'boardExternal', 'boardExpanded', 'starred', 'daily')
+            expected_marker = mode in ('boardInternal', 'boardExpanded', 'starred', 'daily') or (mode == 'boardExternal' and width >= 768)
+            if metrics['markerCount'] != (1 if expected_marker else 0):
+                failures.append({'check': 'refresh marker count', 'label': label, 'actual': metrics['markerCount'], 'expected': 1 if expected_marker else 0})
+            if expected_marker and metrics['markerId'] != metrics['expectedId']:
+                failures.append({'check': 'refresh marker owner', 'label': label, 'actual': metrics['markerId'], 'expected': metrics['expectedId']})
+            if mode == 'boardExternal' and width < 768:
+                header = page.get_by_test_id('review-phone-card-header')
+                if header.locator('[role="button"]').count() != 2 or page.locator('[data-testid="card-board-auto-progress"],[data-testid="review-external-refresh-slot"]').count() != 0:
+                    failures.append({'check': 'phone header buttons and no marker', 'label': label})
             if expected_marker and (not metrics['marker'] or not metrics['frame']):
                 failures.append({'check': 'refresh marker missing', 'label': label, 'metrics': metrics})
             if metrics['marker'] and metrics['frame']:
@@ -422,6 +438,80 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
             results.append({'mode': mode, 'metrics': metrics})
         except Exception as error:
             failures.append({'check': 'refresh state', 'label': label, 'error': str(error).splitlines()[0]})
+    return results
+
+
+def check_duo(browser, base: str, output: Path, failures: list) -> list:
+    results = []
+    for name, width, height in (('outer-portrait', 466, 678), ('inner-landscape', 951, 669)):
+        context = browser.new_context(viewport={'width': width, 'height': height}, device_scale_factor=1)
+        page = context.new_page()
+        netloc = urllib.parse.urlsplit(base).netloc
+        def route_request(route):
+            url = urllib.parse.urlsplit(route.request.url)
+            if url.path == '/api/auth/status':
+                route.fulfill(status=200, content_type='application/json', body='{"authenticated":true}')
+            elif url.netloc == netloc or route.request.url.startswith(('data:', 'blob:')):
+                route.continue_()
+            else:
+                route.abort()
+        context.route('**/*', route_request)
+        try:
+            page.goto(section_url(base, 'autoRefresh') + '&duoFrame=' + name, wait_until='networkidle')
+            page.get_by_test_id('review-duo-refresh').wait_for(state='visible')
+            page.wait_for_timeout(700)
+            page.get_by_test_id('duo-refresh-begin').click(force=True)
+            page.wait_for_timeout(500)
+            if page.get_by_test_id('duo-refresh-phase').inner_text() != 'pending':
+                failures.append({'check': 'duo refresh did not start', 'label': name})
+            if page.get_by_test_id('card-board-frame').count() != 1 or page.locator('[data-testid="duo-rail-override-host"] [data-testid^="duo-rail-action-"]').count() != 2:
+                failures.append({'check': 'duo inline board and rail count', 'label': name})
+            if page.locator('[data-testid="card-board-auto-progress"],[data-testid="card-board-refresh-slot"]').count() != 0:
+                failures.append({'check': 'duo inline marker must be absent', 'label': name})
+            page.screenshot(path=str(output / f'duo-inline-{name}.png'))
+            page.get_by_test_id('duo-refresh-finish').click(force=True)
+            page.wait_for_timeout(500)
+            page.get_by_test_id('duo-refresh-expand').click(force=True)
+            page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+            page.wait_for_timeout(700)
+            rail = page.locator('[data-testid="app-modal-viewport"] [data-testid^="duo-rail-action-"]')
+            before = [item.bounding_box() for item in rail.all()]
+            page.get_by_test_id('duo-refresh-begin').evaluate('(e) => e.click()')
+            page.wait_for_timeout(700)
+            after = [item.bounding_box() for item in rail.all()]
+            metrics = page.evaluate('''() => {
+              const modal=document.querySelector('[data-testid="card-board-expanded"]');
+              const marker=modal.querySelectorAll('[data-testid="card-board-expanded-auto-progress"]');
+              const title=modal.querySelectorAll('[data-testid="card-board-heading-title"]');
+              const slots=modal.querySelectorAll('[data-testid="card-board-expanded-refresh-slot"]');
+              const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,centerY:r.top+r.height/2}};
+              let rounded=null;
+              for(let p=marker[0]?.parentElement;p;p=p.parentElement){const radius=parseFloat(getComputedStyle(p).borderTopRightRadius)||0;if(radius){rounded={rect:rect(p),radius};break;}}
+              return {markerCount:marker.length,titleCount:title.length,slotCount:slots.length,marker:marker[0]&&rect(marker[0]),title:title[0]&&rect(title[0]),frame:rect(modal),rounded,scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};
+            }''')
+            if len(before) != 3 or len(after) != 3 or any(not a or not b or any(abs(a[k]-b[k])>1 for k in ('x','y','width','height')) for a,b in zip(before,after)):
+                failures.append({'check':'duo rail count or movement','label':name,'before':before,'after':after})
+            if any(metrics[k] != 1 for k in ('markerCount','titleCount','slotCount')):
+                failures.append({'check':'duo marker/title/slot count','label':name,'metrics':metrics})
+            else:
+                m,f=metrics['marker'],metrics['frame']
+                if abs(m['centerY']-metrics['title']['centerY'])>1 or m['left']<f['left'] or m['right']>f['right'] or m['top']<f['top'] or m['bottom']>f['bottom']:
+                    failures.append({'check':'duo marker alignment or frame','label':name,'metrics':metrics})
+                rounded=metrics['rounded']
+                if name == 'inner-landscape' and not rounded:
+                    failures.append({'check':'duo rounded frame missing','label':name,'metrics':metrics})
+                if rounded:
+                    r,rad=rounded['rect'],rounded['radius']
+                    if m['right']>r['right']-rad and m['top']<r['top']+rad and (m['right']-(r['right']-rad))**2+(m['top']-(r['top']+rad))**2>rad**2:
+                        failures.append({'check':'duo rounded corner','label':name,'metrics':metrics})
+            if metrics['scrollWidth'] != width:
+                failures.append({'check':'duo document overflow','label':name,'metrics':metrics})
+            page.screenshot(path=str(output / f'duo-expanded-{name}.png'))
+            results.append({'frame':name,'metrics':metrics,'railBefore':before,'railAfter':after})
+        except Exception as error:
+            failures.append({'check':'duo sample','label':name,'error':str(error).splitlines()[0]})
+        finally:
+            context.close()
     return results
 
 
@@ -554,6 +644,7 @@ def main() -> int:
                     viewport_result['resize'] = check_resize(page, args.base_url, output, failures)
                 result["viewports"].append(viewport_result)
                 context.close()
+            result['duo'] = check_duo(browser, args.base_url, output, failures)
         finally:
             browser.close()
 

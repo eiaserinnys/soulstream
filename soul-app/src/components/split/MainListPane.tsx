@@ -151,7 +151,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
           <CardBoardWorkspace ref={boardRef} externalHeader={!effectiveShowSearch} key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
             title={effectiveShowSearch ? title : undefined}
-            cardDisplay={cardDisplay} reserveHomeComposerSpace onAutoRefreshChange={setBoardRefreshing} externalHeaderHidden={duo} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
+            cardDisplay={cardDisplay} reserveHomeComposerSpace onAutoRefreshChange={duo ? undefined : setBoardRefreshing} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen

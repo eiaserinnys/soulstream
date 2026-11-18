@@ -28,8 +28,7 @@ function PhoneHomeComposerHost({ api, bottomOffset, railOverlayWidth, onCoveredH
 export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   onOpen(id: string): void; onSessionCreated?(id: string): void;
   externalHeader?: boolean; cardDisplay?: FolderCardDisplay; api?: ApiClient | null; railOverlayWidth?: number;
-  onAutoRefreshChange?(refreshing: boolean): void; externalHeaderHidden?: boolean;
-}>(function CardHomeScreen({ onOpen, onSessionCreated, externalHeader, cardDisplay: controlledDisplay, api: injectedApi, railOverlayWidth = 0, onAutoRefreshChange, externalHeaderHidden }, ref) {
+}>(function CardHomeScreen({ onOpen, onSessionCreated, externalHeader, cardDisplay: controlledDisplay, api: injectedApi, railOverlayWidth = 0 }, ref) {
   const t = useTokens();
   const railMode = usePhoneRailMode();
   const insets = useSafeAreaInsets();
@@ -44,7 +43,7 @@ export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   return <View testID="card-home-content" collapsable={false}
     style={{ flex: 1, minHeight: 0, position: 'relative', isolation: 'isolate', backgroundColor: t.colors.background }}>
     <View style={{ flex: 1, minHeight: 0 }}>
-      <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} reserveHomeComposerSpace railOverlayWidth={railOverlayWidth} onAutoRefreshChange={onAutoRefreshChange} externalHeaderHidden={externalHeaderHidden} />
+      <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} reserveHomeComposerSpace railOverlayWidth={railOverlayWidth} />
     </View>
     <PhoneHomeComposerHost api={api} bottomOffset={bottomOffset} railOverlayWidth={railOverlayWidth} onCoveredHeightChange={onCoveredHeightChange} onSessionCreated={onSessionCreated} />
   </View>;

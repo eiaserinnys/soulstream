@@ -47,19 +47,18 @@ test('머리 갱신 자리는 쉬는 동안에도 남는다', () => {
   expect(within(slot).getByTestId('card-board-auto-progress')).toBeTruthy();
 });
 
-test('듀오에서 갱신 중 확대하고 닫아도 표시가 한 곳에만 있다', () => {
+test('듀오 외부 보드는 표시를 숨기고 확대 머리에서만 고정 칸에 표시한다', () => {
   mockLoading = true;
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
-  const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><CardBoardWorkspace ref={ref} api={null} externalHeader externalHeaderHidden
+  const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><CardBoardWorkspace ref={ref} api={null} externalHeader
     onAutoRefreshChange={jest.fn()} cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={() => {}} /></DuoSideBandContext.Provider></ThemeProvider>);
-  expect(screen.getAllByLabelText('자동 갱신 중')).toHaveLength(1);
-  expect(screen.getByTestId('card-board-auto-progress')).toBeTruthy();
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
   act(() => ref.current!.openExpanded());
   expect(screen.getAllByLabelText('자동 갱신 중')).toHaveLength(1);
   expect(screen.getByTestId('card-board-expanded-auto-progress')).toBeTruthy();
+  expect(within(screen.getByTestId('card-board-expanded-refresh-slot')).getByTestId('card-board-expanded-auto-progress')).toBeTruthy();
   act(() => screen.UNSAFE_getByType(AppModalSurface).props.onRequestClose());
-  expect(screen.getAllByLabelText('자동 갱신 중')).toHaveLength(1);
-  expect(screen.getByTestId('card-board-auto-progress')).toBeTruthy();
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
 });
 test('보일 카드가 없는 첫 로딩은 보드 프레임 가운데 부품 하나만 세운다', async () => {
   mockCards = []; mockLoading = true;
@@ -152,10 +151,14 @@ test.each([
   const frameStyle = StyleSheet.flatten(host.getByTestId('card-board-frame').props.style);
   mockLoading = true;
   screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
-  const spinner = host.getByLabelText('자동 갱신 중');
-  expect(StyleSheet.flatten(spinner.props.style)).toMatchObject({ position: 'absolute', overflow: 'hidden' });
-  expect(spinner.props.pointerEvents).toBe('none');
-  expect(spinner.props.accessibilityRole).toBe('progressbar');
+  const spinner = host.queryByLabelText('자동 갱신 중');
+  if (externalHeader && !expanded) expect(spinner).toBeNull();
+  else {
+    expect(spinner).toBeTruthy();
+    expect(StyleSheet.flatten(spinner!.props.style)).toMatchObject({ position: 'absolute', overflow: 'hidden' });
+    expect(spinner!.props.pointerEvents).toBe('none');
+    expect(spinner!.props.accessibilityRole).toBe('progressbar');
+  }
   expect(host.getByTestId('card-board')).toBe(board);
   expect(board.parent).toBe(parent);
   expect(StyleSheet.flatten(host.getByTestId('card-board-frame').props.style)).toEqual(frameStyle);

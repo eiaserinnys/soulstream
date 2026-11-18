@@ -3,6 +3,14 @@ import { Text, View } from 'react-native';
 import type { ApiClient } from '../api/client';
 import { CardBoardHeaderActions, CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { TabletPaneHeader } from '../components/split/TabletPaneHeader';
+import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { SafeAreaFrameContext, SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { DuoSideBandContext, DuoTopBandContext } from '../navigation/tabContract';
+import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
+import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
 import { FolderSelectionSheet } from '../components/planner/FolderSelectionSheet';
 import { SidebarPane } from '../components/split/SidebarPane';
 import { GlassButton } from '../components/GlassSurface';
@@ -20,6 +28,29 @@ const modes = [
   { value: 'picker', label: '폴더 선택기' }, { value: 'daily', label: '데일리 불변' },
 ] as const;
 type Mode = typeof modes[number]['value'];
+
+function DuoRefreshReview({ api, board, begin, finish, phase, frame }: { api: ApiClient; board: React.RefObject<CardBoardWorkspaceHandle | null>; begin(): void; finish(): void; phase: string; frame: 'outer-portrait' | 'inner-landscape' }) {
+  const t = useTokens();
+  const size = frame === 'outer-portrait' ? { width: 466, height: 678 } : { width: 951, height: 669 };
+  const insets = { top: 24, right: 84, bottom: 24, left: 0 };
+  useRegisterDuoRailOverride('review-board', true, [
+    { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => board.current?.openCreate() },
+    { id: 'completed', label: '완료·취소 숨김', icon: 'eye-off-outline', onPress: () => {} },
+  ]);
+  return <DuoTopBandContext.Provider value={false}><SafeAreaFrameContext.Provider value={{ x: 0, y: 0, ...size }}>
+    <SafeAreaInsetsContext.Provider value={insets}><DuoSideBandContext.Provider value={true}><ThemeProvider value={DefaultTheme}>
+      <View testID="review-duo-refresh" style={{ width: size.width, height: size.height, overflow: 'hidden', backgroundColor: t.colors.background }}>
+        <View style={{ flexDirection: 'row', gap: t.uiSpacing.sm }}>
+          <GlassButton testID="duo-refresh-begin" onPress={begin}><Text>갱신 시작</Text></GlassButton>
+          <GlassButton testID="duo-refresh-finish" onPress={finish}><Text>갱신 완료</Text></GlassButton>
+          <GlassButton testID="duo-refresh-expand" onPress={() => board.current?.openExpanded()}><Text>보드 확대</Text></GlassButton>
+          <Text testID="duo-refresh-phase">{phase}</Text>
+        </View>
+        <View style={{ flex: 1, paddingRight: insets.right }}><CardBoardWorkspace ref={board} api={api} externalHeader cardDisplay={{ includeCompleted: false, onChange: () => {} }} onOpen={() => {}} /></View>
+        <DuoRailOverride />
+      </View>
+    </ThemeProvider></DuoSideBandContext.Provider></SafeAreaInsetsContext.Provider></SafeAreaFrameContext.Provider></DuoTopBandContext.Provider>;
+}
 
 /** Local deferred reads exercise the real owners; no shared fixture defaults or live transport. */
 export function ReviewAutoRefresh() {
@@ -68,6 +99,8 @@ export function ReviewAutoRefresh() {
     usePlannerStore.getState().setLoading('daily:2026-10-02', false);
     setPhase('after'); setCycles(value => value + 1);
   }, []);
+  const frame = new URLSearchParams(window.location.search).get('duoFrame');
+  if (frame === 'outer-portrait' || frame === 'inner-landscape') return <DuoRefreshReview api={api} board={board} begin={begin} finish={finish} phase={phase} frame={frame} />;
   return <View testID="review-auto-refresh" style={{ flex: 1 }}>
     <View style={{ padding: t.cardLayout.padding, gap: t.uiSpacing.sm }}>
       <SettingsSegmentedControl<Mode> id="refresh-owner" value={mode} options={modes} onChange={setMode} />
@@ -83,10 +116,13 @@ export function ReviewAutoRefresh() {
     </View>
     {mode === 'boardExternal' ? <TabletPaneHeader testID={phone ? 'review-phone-card-header' : 'review-tablet-card-header'}>
       <Text testID="review-external-title" style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드</Text>
-      <CardBoardHeaderActions cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} refreshing={refreshing}
-        slotTestID="review-external-refresh-slot" onCreate={() => board.current?.openCreate()} onExpand={!phone ? () => board.current?.openExpanded() : undefined} />
+      {phone ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+        <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => board.current?.openCreate()}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton>
+        <CompletedCardsToggle includeCompleted={includeCompleted} onChange={setIncludeCompleted} />
+      </View> : <CardBoardHeaderActions cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} refreshing={refreshing}
+        slotTestID="review-external-refresh-slot" onCreate={() => board.current?.openCreate()} onExpand={() => board.current?.openExpanded()} />}
     </TabletPaneHeader> : null}
-    {mode.startsWith('board') ? <CardBoardWorkspace ref={board} api={api} externalHeader={mode === 'boardExternal'} onAutoRefreshChange={setRefreshing} cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} onOpen={() => {}} />
+    {mode.startsWith('board') ? <CardBoardWorkspace ref={board} api={api} externalHeader={mode === 'boardExternal'} onAutoRefreshChange={phone ? undefined : setRefreshing} cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} onOpen={() => {}} />
       : mode === 'starred' ? <StarredFoldersWorkspace api={api} />
         : mode === 'sidebar' ? <SidebarPane active={false} />
           : mode === 'daily' ? <DailyPlannerScreen active={false} date="2026-10-02" />
