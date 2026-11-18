@@ -33,7 +33,7 @@ import {
   readRunnerRegistrationIdentity,
   recoverRunnerDirectoryIdentity,
 } from "./runner_registration_identity.js";
-import type { RunnerRegistration } from "./runner_process_registry.js";
+import { isTerminalRunnerExecutionState, type RunnerRegistration } from "./runner_process_registry.js";
 
 type RegistrationStage = "config" | "summary" | "identity" | "sqlite";
 const UNAVAILABLE_LOCK_SCAN_LIMIT = 3;
@@ -110,7 +110,7 @@ export async function readRunnerRegistrationSummary(
     if (lifecycle && lifecycle.session_id !== config.sessionId) {
       throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }
-    closedTailState = lifecycle?.execution_state === "closed"
+    closedTailState = lifecycle && isTerminalRunnerExecutionState(lifecycle.execution_state)
       ? await readClosedRunnerTailState(
         config.paths.databasePath,
         config.sessionId,
