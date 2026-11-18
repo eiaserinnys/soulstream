@@ -7,7 +7,7 @@
  * 포지셔닝/포털/바깥 클릭/포커스 복원은 Base UI Popover 래퍼(`./ui/popover`)에 위임한다.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import { FrameLoading } from "./FrameLoading";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
@@ -51,6 +51,7 @@ export function AtomNodeSelector({
   open: controlledOpen, onOpenChange, onStatusChange,
 }: AtomNodeSelectorProps) {
   const [localOpen, setLocalOpen] = useState(false);
+  const inlineTriggerRef = useRef<HTMLButtonElement>(null);
   const open = controlledOpen ?? localOpen;
   const setOpen = (next: boolean) => { setLocalOpen(next); onOpenChange?.(next); };
   const [nodes, setNodes] = useState<AtomNode[]>([]);
@@ -108,11 +109,13 @@ export function AtomNodeSelector({
   const selectNode = (node: AtomNode) => {
     onChange(node.id, node.card.title);
     setOpen(false);
+    inlineTriggerRef.current?.focus();
   };
 
   const clearSelection = () => {
     onChange("", "");
     setOpen(false);
+    inlineTriggerRef.current?.focus();
   };
 
   const displayLabel = value
@@ -209,7 +212,7 @@ export function AtomNodeSelector({
 
   if (presentation === "inline") {
     return <div className="min-w-0 w-full">
-      <button type="button" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
+      <button ref={inlineTriggerRef} type="button" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
       {open && <div data-slot="atom-node-selector-panel" className="w-full min-w-0 rounded-lg border border-input bg-background dark:bg-input/32">{panel}</div>}
     </div>;
   }

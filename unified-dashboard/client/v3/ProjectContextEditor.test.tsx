@@ -36,26 +36,33 @@ describe("ProjectContextEditor", () => {
   });
 });
 
-it("prevents saving while the inline node selector is open", async () => {
+it("enables saving and keeps the inline list closed after selecting a node", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  const request = vi.fn(async () => Response.json({ children: [] })) as unknown as typeof fetch;
+  const request = vi.fn(async () => Response.json({
+    children: [{ id: "node-2", card_id: "card-2", card: { title: "선택할 지식", card_type: "knowledge" } }],
+  })) as unknown as typeof fetch;
   const snapshot = {
     page: { id: "project-1", title: "프로젝트", version: 1 }, blocks: [], stateVector: "AA==", guidance: [],
     atomReferences: [{ blockId: "atom-1", instance: "atom", nodeId: "node-1", nodeTitle: "지식", depth: 3, titlesOnly: false }],
     sessionDefaults: [],
   } as unknown as ProjectPageSnapshot;
   try {
-    await act(async () => { root.render(<ProjectContextEditor pageId="project-1" snapshot={snapshot} request={request} initialEditor="atom-edit" onChanged={vi.fn(async () => undefined)} />); });
+    await act(async () => { root.render(<ProjectContextEditor pageId="project-1" snapshot={snapshot} request={request} initialEditor="atom-add" onChanged={vi.fn(async () => undefined)} />); });
     const popup = document.querySelector(".v3-project-context-popover")!;
     const save = [...popup.querySelectorAll("button")].find(button => button.textContent === "저장")!;
-    expect(popup.querySelector('[data-slot="atom-node-selector-panel"]')).not.toBeNull();
+    const panel = popup.querySelector('[data-slot="atom-node-selector-panel"]')!;
+    expect(panel).not.toBeNull();
     expect(save.disabled).toBe(true);
-    const trigger = popup.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
-    await act(async () => { trigger.click(); });
+    const node = [...panel.querySelectorAll("button")].find(button => button.textContent === "선택할 지식")!;
+    expect(node.closest("label")).toBeNull();
+    await act(async () => { node.click(); });
     expect(popup.querySelector('[data-slot="atom-node-selector-panel"]')).toBeNull();
+    const trigger = popup.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
+    expect(trigger.textContent).toContain("선택할 지식");
+    expect(document.activeElement).toBe(trigger);
     expect(save.disabled).toBe(false);
   } finally {
     await act(async () => root.unmount());

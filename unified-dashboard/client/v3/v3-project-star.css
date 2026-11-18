@@ -260,8 +260,6 @@
 
 .v3-project-context-popover .v3-project-context-editor-actions {
   flex: none;
-  padding-top: var(--v3-space-3);
-  border-top: thin solid var(--v3-stroke-default);
 }
 
 .v3-project-context-actions > button {
@@ -290,11 +288,20 @@
   gap: 10px;
 }
 
-.v3-project-context-editor label {
+.v3-project-context-editor label,
+.v3-project-context-editor .v3-project-context-node-field {
   display: grid;
   gap: 5px;
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
+}
+
+[data-slot="dialog-popup"] .v3-project-context-fields > .v3-project-context-node-field {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-2);
+  color: var(--foreground);
+  font: var(--v3-type-body) var(--v3-font-family);
 }
 
 .v3-project-context-editor label:has(> input[type="checkbox"]) {

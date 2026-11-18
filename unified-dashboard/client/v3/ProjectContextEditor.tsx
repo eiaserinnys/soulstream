@@ -274,7 +274,7 @@ export function ProjectContextEditor({
 
 function ContextPopover({ children }: { children: ReactNode }) {
   return (
-    <PopoverPopup align="start" side="bottom" sideOffset={6} collisionPadding={12} initialFocus finalFocus className="v3-surface v3-project-context-popover">
+    <PopoverPopup align="start" side="bottom" sideOffset={6} collisionPadding={12} initialFocus finalFocus className="v3-project-context-popover">
       {children}
     </PopoverPopup>
   );

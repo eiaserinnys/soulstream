@@ -124,15 +124,17 @@ async function run(browser: Browser) {
         const popup = page.locator(".v3-project-context-popover");
         await popup.waitFor({ state: "visible" });
         await page.getByText(/프로젝트 지식 노드 [012]-1/, { exact: true }).first().waitFor();
-        check(`${suffix}: initial focus`, await popup.evaluate(el => el.contains(document.activeElement)));
+        const group = popup.getByRole("group", { name: "atom 노드" });
+        const selector = group.locator("button[aria-expanded]");
+        check(`${suffix}: initial focus`, await selector.evaluate(el => el === document.activeElement));
         const save = popup.locator(".v3-project-context-editor-actions").getByRole("button", { name: "저장" });
         check(`${suffix}: save disabled while open`, await save.isDisabled());
         await measure(page, `atom-add-open-${suffix}`);
-        await page.getByText(/프로젝트 지식 노드 [012]-1/, { exact: true }).first().click({ force: true });
+        await popup.getByRole("button", { name: /^프로젝트 지식 노드 [012]-1$/ }).click();
         await measure(page, `atom-add-selected-${suffix}`);
+        check(`${suffix}: panel closed after selection`, await group.locator('[data-slot="atom-node-selector-panel"]').count() === 0);
         check(`${suffix}: save enabled after selection`, await save.isEnabled());
-        const selector = popup.locator('button[aria-expanded="false"]').first();
-        await selector.focus();
+        check(`${suffix}: selection restores selector focus`, await selector.evaluate(el => el === document.activeElement));
         const targets = [
           'button[aria-expanded="false"]', 'input[type="number"]:not([aria-label])',
           '[aria-label="atom 최근 자식 수"]', '[aria-label="atom 렌더 방식"]',
@@ -153,10 +155,16 @@ async function run(browser: Browser) {
     await scenario(browser, `atom-edit-${width}`, width, height, "dark", true, async page => {
       await openSample(page, "atom-edit");
       await measure(page, `atom-edit-${width}-dark-glass`);
+      await page.getByRole("group", { name: "atom 노드" }).locator("button[aria-expanded]").click();
+      await measure(page, `atom-edit-closed-${width}-dark-glass`);
     });
     await scenario(browser, `defaults-add-${width}`, width, height, "dark", true, async page => {
       await openSample(page, "defaults-add");
       await measure(page, `defaults-add-${width}`);
+    });
+    await scenario(browser, `defaults-edit-${width}`, width, height, "dark", true, async page => {
+      await openSample(page, "defaults-edit");
+      await measure(page, `defaults-edit-${width}`);
     });
   }
   await scenario(browser, "minimum-360", 360, 844, "dark", true, async page => {
@@ -174,6 +182,13 @@ async function run(browser: Browser) {
             super(JSON.stringify({detail: "오류"}), { status: 503 });
           } else super(body, init);
         }
+        async json() {
+          const result = await super.json();
+          if (result.children?.[0]?.id === "0-0") {
+            await new Promise(resolve => window.addEventListener("qa-release-node-load", resolve, { once: true }));
+          }
+          return result;
+        }
       };
     ` });
     await openSample(page, "atom-add");
@@ -182,16 +197,35 @@ async function run(browser: Browser) {
     await error.waitFor();
     await page.screenshot({ path: path.join(output!, "node-load-error-390.png"), animations: "disabled" });
     check("node load error: visible", await error.isVisible());
-    const selector = popup.locator('button[aria-expanded="true"]');
+    const selector = popup.getByRole("group", { name: "atom 노드" }).locator("button[aria-expanded]");
     await selector.click();
     await selector.click();
+    const loading = popup.getByText("불러오는 중", { exact: true });
+    await loading.waitFor();
+    await page.screenshot({ path: path.join(output!, "node-load-pending-390.png"), animations: "disabled" });
+    await page.evaluate(() => window.dispatchEvent(new Event("qa-release-node-load")));
     await popup.getByText(/프로젝트 지식 노드 [012]-1/, { exact: true }).first().waitFor();
     check("node load error: retry", await error.count() === 0);
   });
   await scenario(browser, "resize", 1440, 900, "dark", true, async page => {
     await openSample(page, "atom-add");
+    const popup = page.locator(".v3-project-context-popover");
+    const fields = popup.locator(".v3-project-context-fields");
+    const limit = popup.getByRole("spinbutton", { name: "atom 최근 자식 수" });
+    await limit.fill("7");
+    const anchor = popup.getByRole("button", { name: "프로젝트 지식 노드 0-12", exact: true });
+    const relativeTop = () => anchor.evaluate(el =>
+      el.getBoundingClientRect().top - el.closest(".v3-project-context-fields")!.getBoundingClientRect().top);
+    await fields.evaluate(el => { el.scrollTop = (el.scrollHeight - el.clientHeight) / 2; });
+    const before = await relativeTop();
+    const scrollBefore = await fields.evaluate(el => el.scrollTop);
+    check("resize: list row visible before resize", before >= 0 && before < await fields.evaluate(el => el.clientHeight), before);
     await page.setViewportSize({ width: 390, height: 844 });
     await measure(page, "resize-1440-to-390");
+    const after = await relativeTop();
+    const scrollAfter = await fields.evaluate(el => el.scrollTop);
+    check("resize: scroll retained", Math.abs(scrollAfter - scrollBefore) <= 1 && after >= 0 && after < await fields.evaluate(el => el.clientHeight), { scrollBefore, scrollAfter, before, after });
+    check("resize: draft retained", await limit.inputValue() === "7");
   });
   await scenario(browser, "folder-settings", 1440, 900, "dark", true, async page => {
     await page.goto(`${base}/dialogues?sample=folder-settings`);

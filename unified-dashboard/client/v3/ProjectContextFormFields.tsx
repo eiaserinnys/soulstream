@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { AtomNodeSelector } from "@seosoyoung/soul-ui";
 
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
@@ -28,6 +29,7 @@ export function ProjectAtomFields({
   disabled: boolean;
   onChange(value: ProjectAtomFieldValue): void;
 }) {
+  const nodeLabelId = useId();
   return (
     <div className="v3-project-context-fields">
       <label>
@@ -35,8 +37,8 @@ export function ProjectAtomFields({
         <span>{value.instance}</span>
         <small>현재 노드 탐색은 atom만 지원합니다. 기존 atom-nl 자료의 연결은 유지합니다.</small>
       </label>
-      <label>
-        atom 노드
+      <div className="v3-project-context-node-field" role="group" aria-labelledby={nodeLabelId}>
+        <span id={nodeLabelId}>atom 노드</span>
         <AtomNodeSelector presentation="inline" request={request}
           value={value.nodeId}
           selectedTitle={value.nodeTitle}
@@ -46,7 +48,7 @@ export function ProjectAtomFields({
           onStatusChange={onSelectorStatusChange}
           onChange={(nodeId, nodeTitle) => onChange({ ...value, nodeId, nodeTitle })}
         />
-      </label>
+      </div>
       <label>
         깊이
         <input
