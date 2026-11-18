@@ -210,8 +210,19 @@ export class WorktreeGit {
   listRepositoryIds(): string[] {
     return readdirSync(this.projectsRoot, { withFileTypes: true })
       .filter((entry) => {
+        const entryPath = join(this.projectsRoot, entry.name);
+        if (entry.isSymbolicLink()) {
+          try {
+            const target = realpathSync(entryPath);
+            if (!statSync(target).isDirectory() || isPathInside(target, this.projectsRoot)) return false;
+            const gitPath = join(target, ".git");
+            return lstatSync(gitPath).isDirectory() && !existsSync(join(gitPath, "commondir"));
+          } catch {
+            return false;
+          }
+        }
         if (!entry.isDirectory()) return false;
-        const gitPath = join(this.projectsRoot, entry.name, ".git");
+        const gitPath = join(entryPath, ".git");
         return existsSync(gitPath) && lstatSync(gitPath).isDirectory();
       })
       .map((entry) => entry.name)

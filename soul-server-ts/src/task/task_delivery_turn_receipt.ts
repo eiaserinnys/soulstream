@@ -153,7 +153,9 @@ export class TaskDeliveryTurnReceipt {
     if (!toolUseId) return;
     const start = this.toolStarts.get(toolUseId);
     if (!start) return;
-    const proof = classifyClaudeBackgroundConsumptionProof(start, event);
+    const proof = classifyClaudeBackgroundConsumptionProof(
+      start, event, Object.values(task.claudeRuntime?.tasks ?? {}),
+    );
     if (!proof) return;
     const consumed = await this.consumption.recordRuntimeFollowupRelationConsumed(
       task,

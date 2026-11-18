@@ -1197,7 +1197,8 @@ export class RunnerRecoveryCoordinator {
       );
       releaseTaskRunner(task, task.runner);
     }
-    if (task.runner || task.executionPromise) {
+    const hasHeldExecution = (): boolean => {
+      if (!task.runner && !task.executionPromise) return false;
       // This guard returned in silence for three hours during the 260822
       // outage: a settled execution promise left behind by failed startup
       // reads exactly like a live execution, so every later scan
@@ -1218,8 +1219,9 @@ export class RunnerRecoveryCoordinator {
         },
         "registered runner recovery skipped because the task still holds an execution",
       );
-      return { task, replayed: false };
-    }
+      return true;
+    };
+    if (hasHeldExecution()) return { task, replayed: false };
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
     }
@@ -1228,6 +1230,7 @@ export class RunnerRecoveryCoordinator {
       phaseObservation,
       this.options.recoveryStorage,
     );
+    if (hasHeldExecution()) return { task, replayed: false };
     const lifecycle = hydrated.lifecycle;
     const sessionId = registration.config.sessionId;
     prepareRecoveredTask(task, hydrated);

@@ -1,6 +1,7 @@
 import { readClaudeToolResultReceiptMetadata } from
   "../engine/claude_tool_result_receipt_metadata.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
+import type { ClaudeRuntimeTaskState } from "./task_models.js";
 
 export type ClaudeBackgroundConsumptionProof =
   | {
@@ -26,15 +27,25 @@ const TERMINAL_TASK_OUTPUT_STATUSES = new Set([
   "killed",
 ]);
 
-/** Classifies only the typed tool-result envelope; rendered output is never input. */
+/** Classifies runtime facts or the typed tool-result envelope, never rendered output. */
 export function classifyClaudeBackgroundConsumptionProof(
   start: ClaudeToolStartObservation,
   event: SSEEventPayload,
+  runtimeTasks: readonly ClaudeRuntimeTaskState[],
 ): ClaudeBackgroundConsumptionProof | undefined {
   if (event.type !== "tool_result") return undefined;
   const payload = event as Record<string, unknown>;
   if (payload.is_error === true || payload.tool_use_id !== start.toolUseId) {
     return undefined;
+  }
+  if (start.toolName === "SendMessage") {
+    const matches = runtimeTasks.filter((task) =>
+      task.toolUseId === start.toolUseId && task.isBackgrounded === true &&
+      TERMINAL_TASK_OUTPUT_STATUSES.has(task.status)
+    );
+    return matches.length === 1
+      ? { kind: "exact_generation", taskId: matches[0]!.taskId, initiatingToolUseId: start.toolUseId }
+      : undefined;
   }
   const envelope = readClaudeToolResultReceiptMetadata(event)?.envelope;
   if (!envelope) return undefined;

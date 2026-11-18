@@ -14,6 +14,8 @@ import {
 } from "../../src/task/claude_runtime_task_followup.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
+import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
+import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -87,6 +89,90 @@ function makeMocks() {
 }
 
 describe("TaskExecutor Claude runtime task follow-up", () => {
+  it.each(["foreground", "result-before-terminal", "error"] as const)(
+    "SendMessage %s reaches the ledger at turn end", async (scenario) => {
+      const mocks = makeMocks();
+      const task = makeTask();
+      task.codexThreadId = "sdk-session-1";
+      task.claudeRuntime = { updatedAt: 1, tasks: { child: {
+        taskId: "child", status: "running", updatedAt: 1,
+        isBackgrounded: true, toolUseId: "send-1",
+      } } };
+      let tombstone: { relationKey: string; completionId: string } | undefined;
+      let row: Record<string, unknown> | undefined;
+      const repository = {
+        recordRelationConsumed: vi.fn(async (relation) => { tombstone = relation; return {}; }),
+        get: vi.fn(async () => row ?? null),
+        register: vi.fn(async (params) => {
+          const consumed = tombstone?.relationKey === params.relationKey && tombstone?.completionId === params.completionId;
+          row = { delivery_id: params.deliveryId, relation_key: params.relationKey,
+            completion_id: params.completionId, intent: params.intent, target_session_id: params.targetSessionId,
+            payload: params.payload, payload_hash: params.payloadHash, created_at: params.createdAt ?? new Date(),
+            state: consumed ? "consumed" : "pending", aggregate_state: consumed ? "consumed" : "pending" };
+          return { row, inserted: true, conflict: false };
+        }),
+        claimAttemptForTarget: vi.fn(async (_id, _target, token) => {
+          row = { ...row, state: "claimed", attempt_token: token };
+          return row;
+        }),
+      };
+      const gate = new TaskDeliveryLedgerGate(true, repository as never, { resolveGeneration: vi.fn() } as never, "node-1");
+      const resume = vi.fn();
+      const queue = vi.fn(async (_task, message) => {
+        task.interventionQueue.push(message);
+        return { delivered: false as const, queued: true as const, queuePosition: 1, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const };
+      });
+      const route = new TaskInterventionRoute({
+        getTask: () => task, loadEvictedTask: async () => null, rememberTask: () => {},
+        runningInterventionTransition: { deliver: queue, queueOnly: queue },
+        autoResumeTransition: { resume: vi.fn() } as never,
+        deliveryLedgerGate: {
+          admit: gate.admit.bind(gate), beginDispatch: async (admission) => admission,
+          recordResult: async () => {}, deferFailureToCoordinator: async () => {},
+          recordNotificationPublished: async () => {}, recordNotificationFailure: async () => {},
+        },
+      });
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: { addIntervention: (params, onResume) => route.addIntervention(params, onResume) },
+        onResume: resume, releaseRetainedRunner: async () => undefined,
+        logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+      });
+      let turns = 0;
+      const engine: EnginePort = {
+        backendId: "claude", workspaceDir: "/tmp/claude-roselin",
+        async *execute(params) {
+          turns++;
+          if (turns === 1) {
+            yield { type: "tool_start", tool_name: "SendMessage", tool_use_id: "send-1", tool_input: {}, timestamp: 1 } as SSEEventPayload;
+            const result = { type: "tool_result", tool_name: "SendMessage", tool_use_id: "send-1", is_error: scenario === "error", result: "report", timestamp: 2 } as SSEEventPayload;
+            if (scenario === "result-before-terminal") yield result;
+            task.claudeRuntime!.tasks.child!.status = "completed";
+            yield { type: "claude_runtime_task_updated", task_id: "child", session_id: "sdk-session-1", patch: { status: "completed", is_backgrounded: true, tool_use_id: "send-1" } } as unknown as SSEEventPayload;
+            if (scenario !== "result-before-terminal") yield result;
+          } else {
+            yield exactResult(params.inputUuid);
+          }
+          yield { type: "complete", result: "done", timestamp: 3 } as SSEEventPayload;
+        },
+        async intervene() { return { status: "not_delivered", mechanism: "interrupt_then_next_turn", reason: "next_turn_required" }; },
+        async interrupt() { return true; }, async close() {},
+      };
+      const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger,
+        undefined, undefined, undefined, controller, {
+          recordTurnStarted: vi.fn(async () => {}), recordConsumed: vi.fn(async () => {}),
+          discardIfConsumed: vi.fn(async () => false),
+          recordConsumptionFailure: vi.fn(async () => {}), recordAdmissionFailure: vi.fn(async () => {}),
+          recordRuntimeFollowupRelationConsumed: gate.recordRuntimeFollowupRelationConsumed.bind(gate),
+        });
+      executor.startNewExecution(task, claudeAgent);
+      await task.executionPromise;
+      expect(turns).toBe(scenario === "foreground" ? 1 : 2);
+      expect(repository.recordRelationConsumed).toHaveBeenCalledTimes(scenario === "foreground" ? 1 : 0);
+      expect(queue).toHaveBeenCalledTimes(scenario === "foreground" ? 0 : 1);
+      expect(resume).not.toHaveBeenCalled();
+    },
+  );
+
   it("background runtime notification flush 후 다음 turn을 자동 시작한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();

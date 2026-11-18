@@ -265,6 +265,33 @@ describe("WorktreeGit", () => {
     })).rejects.toMatchObject({ code: "INVALID_BRANCH" });
   });
 
+  it("discovers safe linked primary repositories and excludes invalid link targets", () => {
+    const external = mkdtempSync(join(tmpdir(), "worktree-linked-"));
+    roots.push(external);
+    const projectsRoot = join(external, "projects");
+    const repo = join(projectsRoot, "demo");
+    mkdirSync(repo, { recursive: true });
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(external, ".git"));
+    const linkedRepo = join(external, "actual-repo");
+    mkdirSync(join(linkedRepo, ".git"), { recursive: true });
+    const fileGit = join(external, "file-git");
+    const linkedGit = join(external, "linked-git");
+    mkdirSync(fileGit);
+    mkdirSync(linkedGit);
+    writeFileSync(join(fileGit, ".git"), "gitdir: elsewhere");
+    mkdirSync(join(linkedGit, ".git"));
+    writeFileSync(join(linkedGit, ".git", "commondir"), "..");
+    symlinkSync(linkedRepo, join(projectsRoot, "linked-repo"), "dir");
+    symlinkSync(join(external, "missing"), join(projectsRoot, "broken"), "dir");
+    symlinkSync(fileGit, join(projectsRoot, "file-git"), "dir");
+    symlinkSync(linkedGit, join(projectsRoot, "linked-git"), "dir");
+    symlinkSync(external, join(projectsRoot, "parent"), "dir");
+    symlinkSync(projectsRoot, join(projectsRoot, "self"), "dir");
+    expect(new WorktreeGit({ projectsRoot, timeoutMs: 5_000 }).listRepositoryIds())
+      .toEqual(["demo", "linked-repo"]);
+  });
+
   it("discovers only primary repositories and classifies out-of-root worktrees as external", async () => {
     const { projectsRoot, repo } = makeRepository();
     const externalRoot = mkdtempSync(join(tmpdir(), "worktree-external-"));

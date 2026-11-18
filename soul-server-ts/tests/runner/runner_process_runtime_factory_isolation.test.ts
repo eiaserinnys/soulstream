@@ -1,3 +1,5 @@
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import pino from "pino";
@@ -738,6 +740,23 @@ describe("session isolation host preparation", () => {
       makeTask({ worktreeId: "wt-task" }),
     );
     expect(prepared.attachedWorktreeIds).toEqual(["wt-attached", "wt-owned", "wt-task"]);
+  });
+
+  it("passes a linked repository real path into isolation facts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "isolation-repo-"));
+    try {
+      const projects = join(root, "projects");
+      const target = join(root, "repository");
+      mkdirSync(projects);
+      mkdirSync(target);
+      symlinkSync(target, join(projects, "linked"), "dir");
+      const worktreeService = { listSessionAttachments: vi.fn(async () => []), listRepositoryIds: vi.fn(() => ["linked"]) };
+      const composition = makeComposition({ env: enforcementEnv({ WORKTREE_PROJECTS_ROOT: projects }), worktreeService });
+      const { captured } = await prepareAndCapture(composition, makeTask());
+      expect(captured.registeredRepositories).toEqual([{ repoId: "linked", canonicalPath: realpathSync(target) }]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("registers every repository the node knows even on a first turn without worktrees", async () => {
