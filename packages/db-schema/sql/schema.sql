@@ -862,7 +862,7 @@ CREATE TABLE IF NOT EXISTS event_ingress_receipts (
     PRIMARY KEY (node_id, stream_id, source_seq),
     FOREIGN KEY (session_id, event_id)
         REFERENCES events(session_id, id) ON DELETE CASCADE
-);
+) WITH (autovacuum_analyze_scale_factor = 0, autovacuum_analyze_threshold = 50000);
 
 CREATE INDEX IF NOT EXISTS idx_event_ingress_receipts_event
     ON event_ingress_receipts (session_id, event_id);
