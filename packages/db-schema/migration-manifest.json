@@ -680,6 +680,10 @@
     {
       "id": "168_events_id_created_at_cover_index.sql",
       "sha256": "a72854279895eb40de7d0d176dda8b4471a1eaf46e193bfa88843d5c5386a173"
+    },
+    {
+      "id": "169_event_ingress_receipts_analyze_threshold.sql",
+      "sha256": "b9920e4a46da8673c20ad415cc6523ba7af5d611a57b4f9df0706711d529e140"
     }
   ]
 }
