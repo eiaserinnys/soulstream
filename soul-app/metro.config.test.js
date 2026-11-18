@@ -101,6 +101,26 @@ function resolveMetroRequest(metroConfig, originModulePath, moduleName) {
 }
 
 describe('Metro resolver compatibility', () => {
+  it('uses the production client and storage unless native review is explicitly enabled', () => {
+    const resolved = { type: 'sourceFile', filePath: path.join(appRoot, 'src/api/client.ts') };
+    const context = { resolveRequest: jest.fn(() => resolved) };
+    expect(config.resolver.resolveRequest(context, '../api/client', 'ios')).toBe(resolved);
+    expect(config.resolver.resolveRequest(context, '@react-native-async-storage/async-storage', 'ios')).toBe(resolved);
+  });
+
+  it('uses isolated native fixtures only in native review mode', () => {
+    let nativeConfig;
+    jest.isolateModules(() => {
+      process.env.SOUL_APP_NATIVE_REVIEW = '1';
+      nativeConfig = require('./metro.config');
+      delete process.env.SOUL_APP_NATIVE_REVIEW;
+    });
+    const context = { resolveRequest: jest.fn(() => ({ type: 'sourceFile', filePath: path.join(appRoot, 'src/api/client.ts') })) };
+    expect(nativeConfig.resolver.resolveRequest(context, '../api/client', 'ios').filePath)
+      .toBe(path.join(appRoot, 'native-review/fixture-client.ts'));
+    expect(nativeConfig.resolver.resolveRequest(context, '@react-native-async-storage/async-storage', 'ios').filePath)
+      .toBe(path.join(appRoot, 'src/component-review/fixture-async-storage.ts'));
+  });
   it.each([
     ['../components/events/EventContextMenu', 'events/EventContextMenu.tsx', 'fixture-chat-ui-menu.tsx'],
     ['../components/chat-ui/ChatUiNodes', 'chat-ui/ChatUiNodes.tsx', 'fixture-chat-ui-nodes.tsx'],

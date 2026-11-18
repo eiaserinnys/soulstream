@@ -15,11 +15,28 @@ config.watchFolders = [
 // event-target-shim@6 only exports its package root. Resolve that one legacy
 // specifier to the public root; keep package-exports enforcement enabled for
 // every other dependency.
-config.resolver.resolveRequest = (context, moduleName, platform) =>
+const defaultResolveRequest = (context, moduleName, platform) =>
   resolveChatUiSourceRequest(
     context,
     moduleName === "event-target-shim/index" ? "event-target-shim" : moduleName,
     platform,
   );
+config.resolver.resolveRequest = process.env.SOUL_APP_NATIVE_REVIEW === '1'
+  ? (context, moduleName, platform) => {
+    const fixtures = {
+      '@react-native-async-storage/async-storage': 'src/component-review/fixture-async-storage.ts',
+      'expo-secure-store': 'src/component-review/fixture-secure-store.ts',
+    };
+    if (fixtures[moduleName]) return { type: 'sourceFile', filePath: path.resolve(__dirname, fixtures[moduleName]) };
+    const resolved = defaultResolveRequest(context, moduleName, platform);
+    if (resolved.filePath === path.resolve(__dirname, 'src/api/client.ts')) {
+      return { type: 'sourceFile', filePath: path.resolve(__dirname, 'native-review/fixture-client.ts') };
+    }
+    if (resolved.filePath === path.resolve(__dirname, 'src/hooks/attachmentPickers.ts')) {
+      return { type: 'sourceFile', filePath: path.resolve(__dirname, 'src/component-review/fixture-attachment-pickers.ts') };
+    }
+    return resolved;
+  }
+  : defaultResolveRequest;
 
 module.exports = config;
