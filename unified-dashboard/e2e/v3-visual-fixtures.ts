@@ -26,8 +26,6 @@ export interface V3VisualQaRouteOptions {
   failTaskTitleRenameOnce?: boolean;
   successionPickerRuns?: boolean;
   plannerDelayMs?: number;
-  projectResolutionDelayMs?: number;
-  projectResolutionMode?: "delayed" | "fail-once" | "unlinked";
   timelineEventCount?: number;
   timelineContentByEventId?: Readonly<Record<number, string>>;
   liveEventText?: string;
@@ -516,7 +514,6 @@ export async function installV3VisualQaRoutes(
     }));
   }
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
-  let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   const baseQaSessions = options.unifiedFolderView
     ? [...sessions, outsideTaskSession, ...Array.from({ length: 48 }, (_, index) => ({
         ...outsideTaskSession,
@@ -957,13 +954,6 @@ export async function installV3VisualQaRoutes(
     const pageMatch = /^\/api\/pages\/([^/]+)$/.exec(path);
     if (pageMatch && request.method() === "GET") {
       const pageId = decodeURIComponent(pageMatch[1]);
-      if (pageId === pages.project.id) {
-        await delay(options.projectResolutionDelayMs);
-        if (shouldFailProjectResolution) {
-          shouldFailProjectResolution = false;
-          return fulfillJson(route, { detail: "fixture project resolution failure" }, 500);
-        }
-      }
       const result = pageReads[pageId];
       if (!result) return fulfillJson(route, { detail: "page not found" }, 404);
       const response = pageId === pages.project.id && options.taskAssignmentModelPreset
