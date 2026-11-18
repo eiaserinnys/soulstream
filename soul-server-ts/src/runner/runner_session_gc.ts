@@ -19,6 +19,7 @@ import {
   countRetainedReasons,
   hasCentralDeletionOverride,
   hasProvenEmptyPrebootstrapEvidence,
+  isRetiredWithoutLifecycleAndNotAlive,
   sameRegistrationGeneration,
   terminalCandidateReason,
 } from "./runner_session_gc_predicates.js";
@@ -266,14 +267,15 @@ export class RunnerSessionGarbageCollector {
               );
             }
             if (!deletedSessionEvidence) {
-              if (!hydrated.lifecycle) {
+              const retiredWithoutLifecycle = isRetiredWithoutLifecycleAndNotAlive(hydrated);
+              if (!hydrated.lifecycle && !retiredWithoutLifecycle) {
                 result.retained.push({
                   sessionId: registration.config.sessionId,
                   reason: "incomplete_bootstrap",
                 });
                 return;
               }
-              if (!hydrated.bootstrap) {
+              if (!hydrated.bootstrap || retiredWithoutLifecycle) {
                 if (!hasProvenEmptyPrebootstrapEvidence(inspection)) {
                   result.retained.push({
                     sessionId: registration.config.sessionId,

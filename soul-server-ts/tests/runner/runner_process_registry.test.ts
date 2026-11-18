@@ -825,6 +825,33 @@ describe("runner process registry", () => {
     recovered.close();
   });
 
+  it("sends a retired runner with no lifecycle and an empty SQLite outbox to full inspection", async () => {
+    const stateDirectory = await temporaryDirectory("retired-prebootstrap-empty");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    const current = {
+      ...registration({ pidAlive: false }),
+      pid: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+      lifecycle: null,
+    };
+    current.config = { ...current.config, paths };
+
+    await expect(probeRunnerDurableRetention(current)).resolves.toMatchObject({
+      localRetentionReason: null,
+      registration: { lifecycle: null, bootstrap: null },
+    });
+    await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
+      durableRecordCount: 0,
+      unacknowledgedIpcFrameCount: 0,
+      registration: { lifecycle: null, bootstrap: null },
+    });
+    await expect(probeRunnerDurableRetention({ ...current, retiredAt: null }))
+      .resolves.toMatchObject({ localRetentionReason: "incomplete_bootstrap" });
+  });
+
   it("proves a terminal pre-bootstrap runner has no durable discard blockers", async () => {
     const stateDirectory = await temporaryDirectory("terminal-prebootstrap-empty");
     const paths = runnerProcessPaths(stateDirectory, "session-a");
