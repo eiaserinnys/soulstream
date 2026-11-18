@@ -19,7 +19,7 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
 
 test("build stages and verifies output before promotion", () => {
-  assert.equal(packageJson.scripts.build, "node scripts/build_dist.mjs");
+  assert.equal(packageJson.scripts.build, "node scripts/build_dist.mjs --target node22");
 });
 
 test("a failed staged verification leaves the current dist untouched", async () => {
@@ -33,6 +33,7 @@ test("a failed staged verification leaves the current dist untouched", async () 
       packageRoot: root,
       run: async (args, options) => {
         calls.push(args[0]);
+        if (args.includes("--target")) assert.equal(args[args.indexOf("--target") + 1], "node22");
         assert.equal(options.env.SOUL_DIST_DIR, "dist.next");
         assert.equal(readFileSync(join(root, "dist", "current"), "utf8"), "running");
         if (args[0].endsWith("verify_bundle.mjs")) throw new Error("verification failed");

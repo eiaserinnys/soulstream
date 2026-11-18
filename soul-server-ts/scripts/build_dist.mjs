@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const defaultPackageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function buildDist({ packageRoot = defaultPackageRoot, run = runNode } = {}) {
+export async function buildDist({ packageRoot = defaultPackageRoot, run = runNode, target = "node22" } = {}) {
   const dist = join(packageRoot, "dist");
   const next = join(packageRoot, "dist.next");
   const old = join(packageRoot, "dist.old");
@@ -15,8 +15,8 @@ export async function buildDist({ packageRoot = defaultPackageRoot, run = runNod
 
   const env = { ...process.env, SOUL_DIST_DIR: "dist.next" };
   const steps = [
-    [join(packageRoot, "node_modules/tsup/dist/cli-default.js"), "--config", "tsup.config.ts", "--target", "node22"],
-    [join(packageRoot, "node_modules/tsup/dist/cli-default.js"), "--config", "tsup.runner.config.ts", "--target", "node22"],
+    [join(packageRoot, "node_modules/tsup/dist/cli-default.js"), "--config", "tsup.config.ts", "--target", target],
+    [join(packageRoot, "node_modules/tsup/dist/cli-default.js"), "--config", "tsup.runner.config.ts", "--target", target],
     [join(packageRoot, "scripts/write_runner_release_package.mjs")],
     [join(packageRoot, "node_modules/tsx/dist/cli.mjs"), "scripts/write_release_manifest.ts"],
     [join(packageRoot, "scripts/verify_bundle.mjs")],
@@ -52,5 +52,8 @@ async function renameWithRetry(from, to) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await buildDist();
+  if (process.argv[2] !== "--target" || !process.argv[3]) {
+    throw new Error("build requires --target");
+  }
+  await buildDist({ target: process.argv[3] });
 }
