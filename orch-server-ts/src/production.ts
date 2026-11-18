@@ -80,6 +80,8 @@ import {
   PushNotifier,
   SessionForegroundObserverTracker,
 } from "./push/push_notifier.js";
+import { createProductionOutboundWebhook } from "./webhooks/production_wiring.js";
+import type { OutboundWebhookService } from "./webhooks/outbound_service.js";
 import {
   createOrchestratorRuntimeServices,
   type OrchestratorRuntimeServices,
@@ -512,6 +514,7 @@ export async function createLiveProductionApplication(
   let cardDispatcher: CardDispatcher | undefined;
   let childSessionCheckService: ChildSessionCheckService | undefined;
   let usageSummaryService: UsageSummaryService | undefined;
+  let outboundWebhookService: OutboundWebhookService | undefined;
   const nodeCredentialRepository = new SqlNodeCredentialRepository(
     async () => await sqlResolver.resolveSql(),
   );
@@ -555,6 +558,7 @@ export async function createLiveProductionApplication(
       (events) => { if (backgroundActive) cardDispatcher?.accept(events); },
       async (events) => (await persistenceRepositoryProvider()).persistentReports!.acceptNodeEvents(events),
       (events) => childSessionCheckService?.acceptNodeEvents(events),
+      (events) => { if (backgroundActive) outboundWebhookService?.accept(events); },
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
@@ -717,6 +721,17 @@ export async function createLiveProductionApplication(
     await dbCatalogRepository.close();
     throw error;
   }
+  const outboundSessionAccess = providers.sessionCatalogRoutes.accessProvider;
+  const outboundAuthorizeUser = providers.authRoutes.authorizeUser;
+  if (outboundSessionAccess === undefined || outboundAuthorizeUser === undefined) {
+    throw new Error("session access provider and user authorizer are required for outbound webhooks");
+  }
+  outboundWebhookService = createProductionOutboundWebhook({
+    resolveSql: async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+    authorizeUser: outboundAuthorizeUser,
+    sessionAccess: outboundSessionAccess,
+    warn: context.warn,
+  });
   const nodePairingService = new NodePairingService({
     store: nodeCredentialStore,
     isNodeConnected: (nodeId) =>
@@ -1108,6 +1123,7 @@ export async function createLiveProductionApplication(
     deadLetterStore.resumeWrites();
     cardDispatchRuntime.dispatcher.resume();
     backgroundActive = true;
+    outboundWebhookService?.start();
     await sessionReconciliation.start();
     const startRemaining = async () => {
       if (!backgroundActive) return;
@@ -1133,6 +1149,7 @@ export async function createLiveProductionApplication(
   };
   const stopBackground = async () => {
     backgroundActive = false;
+    await outboundWebhookService?.stop();
     await sessionReconciliation.close();
     await Promise.allSettled([...nodeRecoveryTasks]);
     await backgroundStart;

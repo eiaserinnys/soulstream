@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { Webhook } from "standardwebhooks";
 import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 import { eventName, identitySchema, maxLeaseMs, subscribeSchema, type SubscriptionRecord } from "./contracts.js";
 import { SubscriptionStore } from "./store.js";
 import { postWebhook, WebhookError, type WebhookPost } from "./webhook_transport.js";
+import { standardWebhookHeaders } from "../webhooks/standard_webhook_signature.js";
 export { eventName } from "./contracts.js";
 
 export function credentialOwner(path: string, credential: string) {
@@ -42,12 +42,16 @@ export class ExternalEventsService {
   }
 
   private headers(secret: string, id: string, eventId: string, body: string, previous?: SubscriptionRecord["previousSecret"]) {
-    const signedAt = new Date();
-    const signatures = [new Webhook(secret).sign(eventId, signedAt, body)];
-    if (previous && previous.until > this.now()) signatures.push(new Webhook(previous.secret).sign(eventId, signedAt, body));
-    return { "Content-Type": "application/json", "webhook-id": eventId,
-      "webhook-timestamp": String(Math.floor(signedAt.getTime() / 1000)),
-      "webhook-signature": signatures.join(" "), "X-MCP-Subscription-Id": id };
+    return {
+      ...standardWebhookHeaders({
+        secret,
+        webhookId: eventId,
+        body,
+        now: this.now(),
+        ...(previous === undefined ? {} : { previousSecret: previous }),
+      }),
+      "X-MCP-Subscription-Id": id,
+    };
   }
   async subscribe(input: unknown) { return await this.store.runMutation(() => this.subscribeImpl(input)); }
   private async subscribeImpl(input: unknown) {
