@@ -418,7 +418,7 @@ export function useTokens(): DesignTokens {
 function useSystemColorScheme(): ColorSchemeName | null {
   const observedScheme = useColorScheme();
   const [scheme, setScheme] = useState<ColorSchemeName | null>(() =>
-    readNativeColorScheme(),
+    observedScheme ?? readNativeColorScheme(),
   );
 
   useEffect(() => {

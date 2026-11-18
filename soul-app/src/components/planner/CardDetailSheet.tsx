@@ -303,13 +303,13 @@ export function CardDetailContent(props: CardDetailContentProps) {
           </CompactTouchTarget>
           {card ? <View style={styles.headerActions}>
             <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} variant="secondary"
-              accessibilityLabel="상태 변경 메뉴" disabled={locked || !api} surfaceTestID="card-detail-status-menu-visual"
+              accessibilityLabel="상태 변경 메뉴" disabled={!api} busy={locked} surfaceTestID="card-detail-status-menu-visual"
               onPress={() => setStatusMenuOpen(true)}>
               <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textSecondary} />
             </GlassButton>
             <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
               variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
-              disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
+              disabled={!api} busy={locked || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
               onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
               <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
             </GlassButton>

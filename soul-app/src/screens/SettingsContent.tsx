@@ -37,7 +37,6 @@ interface Props {
   flattened?: boolean;
   category?: SettingsCategory;
   showAdmin?: boolean;
-  onOpenRecurringJobs?: () => void;
   connectionOnly?: boolean;
 }
 
@@ -46,7 +45,6 @@ export function SettingsContent({
   flattened = false,
   category,
   showAdmin,
-  onOpenRecurringJobs,
   connectionOnly = false,
 }: Props = {}) {
   const t = useTokens();
@@ -316,7 +314,6 @@ export function SettingsContent({
             <RecurringJobsSettingsSection
               flattened={flattened}
               serverUrl={serverUrl}
-              onOpenRecurringJobs={onOpenRecurringJobs}
             />
             </View>
           ) : null}

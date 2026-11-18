@@ -57,8 +57,8 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
     finally { inFlight.current = false; if (alive.current) setBusy(false); }
   }
   function closeKey() { setToken(null); setCopied(false); setCopyError(false); }
-  function action(label: string, onPress: () => void, disabled = busy, primary = false) {
-    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} variant={primary ? 'primary' : 'secondary'} tone={primary ? undefined : 'link'} contentStyle={s.buttonContent}>
+  function action(label: string, onPress: () => void, disabled = false, primary = false, isBusy = busy) {
+    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} busy={isBusy} variant={primary ? 'primary' : 'secondary'} tone={primary ? undefined : 'link'} contentStyle={s.buttonContent}>
       {({ contentColor }: { contentColor: string }) =>
         primary
           ? <Text style={[s.primary, { color: contentColor }]}>{label}</Text>
@@ -69,7 +69,7 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
   return <SettingsSection id="owned-agents" title="내 에이전트" flattened={flattened}>
     <View style={s.block}>
       <Text style={s.body}>내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.</Text>
-      {action('에이전트 추가', () => { setEditorError(null); setEditor({ id: null, name: '' }); }, busy || !api)}
+      {action('에이전트 추가', () => { setEditorError(null); setEditor({ id: null, name: '' }); }, !api)}
       {loading && <ActivityIndicator accessibilityLabel="불러오는 중" color={t.colors.accent} />}
       {error && <><Text accessibilityRole="alert" style={s.error}>{error}</Text>{action('다시 시도', () => void load())}</>}
       {existing?.canRegister ? <><Text style={s.body}>현재 연결의 주소와 키를 그대로 사용해 내 에이전트로 등록합니다.</Text>{action('기존 연결 등록', () => void mutate(async () => { await api!.registerExistingOwnedAgent(); await load(); }))}</> : existing ? <Text style={s.body}>{existing.registered ? '기존 연결이 등록되어 있습니다.' : existing.configured ? '기존 연결 등록은 관리자에게 요청해 주세요.' : '등록할 기존 연결이 없습니다.'}</Text> : null}
@@ -116,7 +116,7 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
         <Text style={s.heading}>새 연결 키</Text><Text style={s.body}>닫으면 다시 볼 수 없습니다. 지금 복사해 안전한 곳에 보관하세요.</Text>
         <Text selectable testID="owned-agent-token" style={s.body}>{token}</Text>
         {copyError && <Text accessibilityRole="alert" style={s.error}>복사하지 못했습니다. 다시 복사해 주세요.</Text>}
-        <View style={s.actions}>{action('닫기', closeKey, false)}{action(copied ? '복사됨' : '복사', () => { const value = token; void Clipboard.setStringAsync(value).then(() => setCopied(true)).catch(() => setCopyError(true)); }, false, true)}</View>
+        <View style={s.actions}>{action('닫기', closeKey, false, false, false)}{action(copied ? '복사됨' : '복사', () => { const value = token; void Clipboard.setStringAsync(value).then(() => setCopied(true)).catch(() => setCopyError(true)); }, false, true, false)}</View>
       </View></ScrollView>
     </AppModalSurface>}
     {revoking && <AppModalSurface visible modalId="modal_settings" variant="compact" onRequestClose={() => { if (!busy) setRevoking(null); }}>

@@ -108,7 +108,7 @@ export function PersistentReportCardExpansion({ api, entry, onQuestionView }: {
   if (currentLookup?.loading || (!entry.card_id && !currentLookup)) return <ActivityIndicator color={t.colors.accent} />;
   if (currentLookup?.error || error) return <View testID={`persistent-report-card-error-${entry.key}`} style={{ gap: t.uiSpacing.sm }}>
     <SheetErrorNotice summary="카드를 불러오지 못했습니다." detail={sheetErrorDetail(currentLookup?.error ?? error)} />
-    <GlassButton testID="persistent-report-card-retry" variant="paper" disabled={detailRefreshing || currentLookup?.loading}
+    <GlassButton testID="persistent-report-card-retry" variant="paper" busy={detailRefreshing || currentLookup?.loading}
       accessibilityLabel="카드 다시 읽기" onPress={() => void handleRetry()}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 읽기</Text>
     </GlassButton>

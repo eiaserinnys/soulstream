@@ -21,12 +21,9 @@ type WidePanel =
 export function RecurringJobsSettingsSection({
   flattened,
   serverUrl,
-  onOpenRecurringJobs,
 }: {
   flattened: boolean;
   serverUrl: string;
-  /** Phone navigation owns the three concrete stack routes. */
-  onOpenRecurringJobs?: () => void;
 }) {
   const t = useTokens();
   const duo = useDuoSideBand();
@@ -54,25 +51,6 @@ export function RecurringJobsSettingsSection({
       {showEditor ? <ScrollView {...page('editor')} ref={editorScroll} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={activeEditorId ?? 'new'} serverUrl={serverUrl} jobId={activeEditorId} scrollToError={() => editorScroll.current?.scrollToEnd({ animated: true })} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
       {activeHistoryId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={activeHistoryId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
     </View>;
-  }
-  if (onOpenRecurringJobs) {
-    return <SettingsSection id="recurring-jobs" title="반복 작업" flattened={flattened}>
-      <View style={{ gap: t.spacing.sm, padding: t.cardLayout.padding }}>
-        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>
-          정해진 시간에 새 에이전트 세션을 실행하고 이력을 관리합니다.
-        </Text>
-        <TouchableOpacity
-          testID="open-recurring-jobs"
-          accessibilityRole="button"
-          onPress={onOpenRecurringJobs}
-          style={{ alignSelf: 'stretch', minHeight: t.hitTarget.min, justifyContent: 'center' }}
-        >
-          <Text style={{ ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '700' }}>
-            반복 작업 관리
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SettingsSection>;
   }
   return <SettingsSection id="recurring-jobs" title="반복 작업" flattened={flattened}>
     <View testID="wide-recurring-jobs-panel" style={{ padding: t.cardLayout.padding }}>

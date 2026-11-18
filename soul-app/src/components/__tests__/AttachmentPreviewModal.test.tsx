@@ -151,17 +151,18 @@ test('long text scrolls inside a fixed frame with the save action outside', asyn
   expect(screen.getByLabelText('원본 저장')).toBeTruthy();
 });
 
-test('saving is disabled until settlement and rejection is shown without HTTP codes', async () => {
+test('saving stays busy until settlement and rejection is shown without HTTP codes', async () => {
   let reject!: (error: Error) => void;
   const save = jest.fn(() => new Promise<void>((_, fail) => { reject = fail; }));
   const screen = render(<AttachmentPreviewModal item={makeView({ previewKind: 'info' })} onClose={jest.fn()} onSaveOriginal={save} />);
   fireEvent.press(screen.getByLabelText('원본 저장'));
-  expect(screen.getByLabelText('원본 저장').props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByLabelText('원본 저장').props.accessibilityState.busy).toBe(true);
+  expect(screen.getByLabelText('원본 저장').props.disabled).toBeFalsy();
   fireEvent.press(screen.getByLabelText('원본 저장'));
   expect(save).toHaveBeenCalledTimes(1);
   await act(async () => reject(new Error('저장 실패 (403)')));
   expect(screen.getByText('저장 실패')).toBeTruthy();
-  expect(screen.getByLabelText('원본 저장').props.accessibilityState.disabled).toBe(false);
+  expect(screen.getByLabelText('원본 저장').props.accessibilityState.busy).toBeFalsy();
 });
 
 test('info files show only their extension mark and unavailable files have no save action', () => {

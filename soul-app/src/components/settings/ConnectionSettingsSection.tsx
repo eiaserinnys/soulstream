@@ -100,7 +100,7 @@ export function ConnectionSettingsSection({
             style={styles.action}
             contentStyle={styles.secondaryButtonContent}
             onPress={onTest}
-            disabled={testing || !url.trim()}
+            disabled={!url.trim()} busy={testing}
           >
             {({ contentColor }) => (testing ? (
               <ActivityIndicator size="small" color={contentColor} />

@@ -256,6 +256,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
             index={i} count={count} current compact={false} showNav={false} width={width || undefined} styles={styles}
             cardSurface hidePageIndicator bubble={false} surfaceHeight={undefined}
             busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy}
+            disabled={reviewCard ? !completion : false}
             canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)} acknowledgeLabel={reviewCard ? '완료' : undefined}
             holdAction={reviewCard ? { label: '보류', onPress: () => {
               if (!completion) return;
@@ -333,7 +334,8 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineHeight}
-        busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy}
+        disabled={reviewCard ? !completion : false} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         acknowledgeLabel={reviewCard ? '완료' : undefined} undo={undo}
         holdAction={reviewCard ? { label: '보류', onPress: () => {
           if (!completion) return;

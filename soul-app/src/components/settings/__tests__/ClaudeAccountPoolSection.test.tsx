@@ -429,6 +429,20 @@ test('single-account pools keep the legacy weekly summary and omit rank controls
   expect(view.queryByTestId('claude-priority-up-solo')).toBeNull();
 });
 
+test('처리 중인 계정 추가 단추는 busy로 남아 초점을 잃지 않고 두 번째 로그인을 막는다', async () => {
+  const api = createApi();
+  api.startClaudeAuthLogin.mockImplementationOnce(() => new Promise(() => undefined) as never);
+  const { view } = renderPool(api);
+  await waitFor(() => expect(view.getByTestId('claude-account-add')).toBeTruthy());
+  await act(async () => { fireEvent.press(view.getByTestId('claude-account-add')); });
+  const button = view.getByTestId('claude-account-add');
+  expect(api.startClaudeAuthLogin).toHaveBeenCalledTimes(1);
+  expect(button.props.disabled).toBeFalsy();
+  expect(button.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+  await act(async () => { fireEvent.press(button); });
+  expect(api.startClaudeAuthLogin).toHaveBeenCalledTimes(1);
+});
+
 test('disabled accounts do not extend the enabled priority range', () => {
   const list = { ...initial, accounts: [...initial.accounts.slice(0, 2), account('off', 3, false)] };
   const view = render(<ClaudeAccountPoolSection nodeId="node-a" initialList={list} api={createApi()} />);

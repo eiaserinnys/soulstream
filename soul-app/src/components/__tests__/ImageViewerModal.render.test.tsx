@@ -119,6 +119,26 @@ test('원고형 뷰어는 스와이프와 버튼이 같은 페이지를 바꾸�
   expect(onSaveOriginal).toHaveBeenCalledWith(1, undefined);
 });
 
+test('처리 중인 원본 저장은 누름을 무시하고 초점을 잃지 않는다', async () => {
+  const onSaveOriginal = jest.fn(() => new Promise<void>(() => undefined));
+  const screen = render(<ImageViewerModal
+    variant="chatRefined"
+    sources={[{ uri: 'https://test/one.png' }]}
+    items={[{ key: 'one', name: 'one.png', source: { kind: 'ready' } }] as any}
+    initialIndex={0}
+    onClose={jest.fn()}
+    filenames={['one.png']}
+    onSaveOriginal={onSaveOriginal}
+  />);
+  await act(async () => { fireEvent.press(screen.getByTestId('chat-image-viewer-save-original')); });
+  const button = screen.getByTestId('chat-image-viewer-save-original');
+  expect(onSaveOriginal).toHaveBeenCalledTimes(1);
+  expect(button.props.disabled).toBeFalsy();
+  expect(button.props.accessibilityState).toMatchObject({ busy: true });
+  await act(async () => { fireEvent.press(button); });
+  expect(onSaveOriginal).toHaveBeenCalledTimes(1);
+});
+
 test('closing an attachment leaves its original thumbnail available', () => {
   const screen = render(<AttachmentImage source={{ uri: 'https://test/photo.png' }} accessibilityLabel="첨부 사진" />);
   fireEvent.press(screen.getByLabelText('첨부 사진'));

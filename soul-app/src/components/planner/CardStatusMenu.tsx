@@ -93,7 +93,7 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
       onLayout={event => setViewHeight(event.nativeEvent.layout.height)} onContentSizeChange={(_, height) => setContentHeight(height)}>
       <Text style={styles.heading} numberOfLines={2}>{`${card.title} (${colorSelection ? '카드 색상' : '상태 이동'})`}</Text>
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
-      {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton disabled={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}
+      {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton busy={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
       {readError || error ? <GlassButton accessibilityLabel="카드 다시 조회" onPress={() => { void read(); }}><Text style={styles.body}>다시 조회</Text></GlassButton> : null}
       {colorSelection ? <>
@@ -109,19 +109,19 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
             {color === currentColor ? <Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.accent} /> : null}
           </GroupedGlassRow>)}
         </GroupedGlassSheet> : null}
-        <GlassButton testID="card-color-back" accessibilityLabel="색상 선택 뒤로" disabled={colorAction.pending}
+        <GlassButton testID="card-color-back" accessibilityLabel="색상 선택 뒤로" busy={colorAction.pending}
           onPress={() => {
             setReadError(null);
             if (entry === 'color') { onBack ? onBack() : onClose(); }
             else setColorSelection(false);
           }}><Text style={styles.body}>돌아가기</Text></GlassButton>
       </> : <>
-        {detail ? <GlassButton accessibilityLabel={`카드 색상: ${CARD_COLORS[currentColor].name}`} disabled={mutationPending}
+        {detail ? <GlassButton accessibilityLabel={`카드 색상: ${CARD_COLORS[currentColor].name}`} busy={mutationPending}
           onPress={() => setColorSelection(true)}><Text style={styles.body}>카드 색상: {CARD_COLORS[currentColor].name}</Text></GlassButton> : null}
         {detail ? MANUAL_STATUS_COLUMNS.map(([next, label]) => {
           const problem = cardTransitionProblem(detail, next);
           return <View key={next} style={{ gap: t.uiSpacing.xs }}>
-            <GlassButton accessibilityLabel={`${label}로 이동`} disabled={mutationPending || !!problem} onPress={() => { void move(next); }}>
+            <GlassButton accessibilityLabel={`${label}로 이동`} disabled={!!problem} busy={mutationPending} onPress={() => { void move(next); }}>
               <Text style={styles.body}>{label}</Text>
             </GlassButton>
           </View>;

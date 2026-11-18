@@ -60,7 +60,6 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       folderOverlayVisible: ui.folderOverlayVisible, selectedCardId: ui.selectedCardId,
       activeSessionId: effectiveActiveSessionId, settingsVisible: ui.settingsVisible,
       settingsCategory: workspace?.category,
-      // Both platforms use SettingsScreen's workspace, including recurring jobs.
       selectedFolder: ui.selectedFolderPageId ? {
         folderPageId: ui.selectedFolderPageId,
         folderTitle: folder?.name ?? selectedFolder?.page.title ?? (previousFolder?.folderPageId === ui.selectedFolderPageId ? previousFolder.folderTitle : ''),
@@ -132,10 +131,7 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
     } else host.store.getState().leave();
 
     if (family === 'phone') {
-      // SettingsScreen restores its workspace; legacy stack routes remain supported.
-      const phoneLocation: NormalizedNavigationLocation = location.kind === 'recurringJobs'
-        ? { originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' } : location;
-      const initialState = buildPhoneState(phoneLocation, continuity.getPhoneStateSnapshot());
+      const initialState = buildPhoneState(location, continuity.getPhoneStateSnapshot());
       const ui = useUIStore.getState();
       ui.closeFolderOverlay();
       ui.clearCardOverlay();
@@ -173,12 +169,6 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
         void openFeedSessionCardWorkspace(overlay.sessionId, overlay.focusEventId, overlay.storyOpenRequestId);
       }
       if (effects.settingsVisible) ui.openSettings();
-      if (effects.recurringJobsPanel) {
-        const saved = continuity.getViewState<SettingsWorkspaceContinuityState>(SETTINGS_WORKSPACE_CONTINUITY_KEY);
-        continuity.setViewState<SettingsWorkspaceContinuityState>(SETTINGS_WORKSPACE_CONTINUITY_KEY, {
-          category: 'recurring-jobs', jobs: effects.recurringJobsPanel, persistent: saved?.persistent ?? { kind: 'list' },
-        });
-      }
       const search = useSearchStore.getState();
       if (effects.searchActive) { search.setQuery(effects.searchQuery ?? ''); search.openTabletSearch(); }
       else search.closeTabletSearch();

@@ -53,7 +53,6 @@ const tabletContextFromEffects = (
   activeSessionId: effects.folderOverlay?.sessionId ?? effects.cardOverlay?.sessionId ?? effects.sessionOverlay?.sessionId ?? null,
   settingsVisible: effects.settingsVisible,
   settingsCategory: effects.settingsCategory,
-  recurringJobsPanel: effects.recurringJobsPanel ?? null,
   searchActive: effects.searchActive,
   searchQuery: effects.searchQuery,
   pasSelectedCardId: effects.pasSelectedCardId,
@@ -117,7 +116,7 @@ describe('readPhoneLocation', () => {
     expect((fromCardDetail as Extract<NormalizedNavigationLocation, { kind: 'chat' }>).cardId).toBeUndefined();
   });
 
-  test('카드 상세·문서·PAS·설정·반복 작업 경로를 읽는다', () => {
+  test('카드 상세·문서·PAS·설정 경로를 읽는다', () => {
     expect(readPhoneLocation(phoneState('FolderTab', [
       { name: 'FolderList' },
       { name: 'FolderWorkspace', params: folder },
@@ -146,18 +145,6 @@ describe('readPhoneLocation', () => {
 
     expect(readPhoneLocation(phoneState('SettingsTab', [{ name: 'Settings' }]), { settingsCategory: 'recurring-jobs' }))
       .toEqual({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
-    expect(readPhoneLocation(phoneState('SettingsTab', [{ name: 'Settings' }, { name: 'RecurringJobs' }])))
-      .toEqual({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } });
-    expect(readPhoneLocation(phoneState('SettingsTab', [
-      { name: 'Settings' },
-      { name: 'RecurringJobs' },
-      { name: 'RecurringJobEditor', params: { jobId: 'job-1' } },
-    ]))).toEqual({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor', jobId: 'job-1' } });
-    expect(readPhoneLocation(phoneState('SettingsTab', [
-      { name: 'Settings' },
-      { name: 'RecurringJobs' },
-      { name: 'RecurringJobHistory', params: { jobId: 'job-2' } },
-    ]))).toEqual({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } });
   });
 });
 
@@ -205,18 +192,10 @@ describe('buildPhoneState', () => {
     expect(tabStack(persistent, 'PersistentTab').map(route => route.name)).toEqual(['PersistentSession', 'MarkdownDocument']);
   });
 
-  test('설정과 반복 작업 패널을 실제 route로 만든다', () => {
+  test('설정을 실제 route로 만든다', () => {
     const settings = buildPhoneState({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
     expect(tabIndex(settings)).toBe('SettingsTab');
     expect(tabStack(settings, 'SettingsTab').map(route => route.name)).toEqual(['Settings']);
-
-    const editor = buildPhoneState({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor', jobId: 'job-1' } });
-    expect(tabStack(editor, 'SettingsTab').map(route => route.name)).toEqual(['Settings', 'RecurringJobs', 'RecurringJobEditor']);
-    expect(topRoute(editor).params).toEqual({ jobId: 'job-1' });
-
-    const history = buildPhoneState({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } });
-    expect(tabStack(history, 'SettingsTab').map(route => route.name)).toEqual(['Settings', 'RecurringJobs', 'RecurringJobHistory']);
-    expect(topRoute(history).params).toEqual({ jobId: 'job-2' });
   });
 
   test.each<[string, NormalizedNavigationLocation]>([
@@ -237,9 +216,6 @@ describe('buildPhoneState', () => {
     ['chat with daily folder', { originTab: 'DailyTab', kind: 'chat', sessionId: 'session-2', folder, returnTab: 'DailyTab' }],
     ['chat with PAS card', { originTab: 'FeedTab', kind: 'chat', sessionId: 'session-3', cardId: 'card-5', returnTab: 'PersistentTab' }],
     ['settings', { originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' }],
-    ['recurring list', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } }],
-    ['recurring editor', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor' } }],
-    ['recurring history', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } }],
   ])('%s 위치는 phone 상태 왕복에서 보존된다', (_label, location) => {
     const expected = location.kind === 'settings'
       ? { originTab: 'SettingsTab', kind: 'settings', category: null }
@@ -286,16 +262,9 @@ describe('buildTabletState', () => {
     expect(plain.initialState.routes.map(route => route.name)).toEqual(['Main', 'MarkdownDocument']);
   });
 
-  test('설정·반복 작업은 설정 효과로 표현한다', () => {
+  test('설정은 설정 효과로 표현한다', () => {
     const settings = buildTabletState({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
     expect(settings.tabletEffects).toMatchObject({ settingsVisible: true, settingsCategory: 'recurring-jobs' });
-
-    const editor = buildTabletState({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor', jobId: 'job-1' } });
-    expect(editor.tabletEffects).toMatchObject({
-      settingsVisible: true,
-      settingsCategory: 'recurring-jobs',
-      recurringJobsPanel: { kind: 'editor', jobId: 'job-1' },
-    });
   });
 
   test.each<[string, NormalizedNavigationLocation]>([
@@ -314,17 +283,13 @@ describe('buildTabletState', () => {
     ['PAS cardDetail', { originTab: 'PersistentTab', kind: 'cardDetail', cardId: 'card-2', pasCard: true }],
     ['Persistent markdown', { originTab: 'PersistentTab', kind: 'markdownDocument', documentId: 'doc-2', fromPersistent: true }],
     ['settings', { originTab: 'SettingsTab', kind: 'settings', category: 'work' }],
-    ['recurring list', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } }],
-    ['recurring history', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } }],
   ])('%s 위치는 tablet 효과 왕복에서 보존된다', (_label, location) => {
     const built = buildTabletState(location);
     const restored = readTabletLocation(
       built.initialState,
       tabletContextFromEffects(built.tabletEffects, location),
     );
-    const expected = location.kind === 'recurringJobs'
-      ? { ...location, originTab: 'SettingsTab', panel: location.panel }
-      : location.kind === 'chat'
+    const expected = location.kind === 'chat'
         ? {
           ...location,
           originTab: 'FeedTab',
@@ -436,8 +401,6 @@ describe('readTabletLocation', () => {
 
     expect(readTabletLocation(main, { settingsVisible: true }))
       .toEqual({ originTab: 'SettingsTab', kind: 'settings', category: null });
-    expect(readTabletLocation(main, { settingsVisible: true, recurringJobsPanel: { kind: 'list' } }))
-      .toEqual({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } });
     expect(readTabletLocation(main, {
       folderOverlayVisible: true,
       selectedFolder: folder,
@@ -501,10 +464,10 @@ describe('readTabletLocation', () => {
 });
 
 test('inactive phone stacks keep their routes and index while explicitly written chat context wins', () => {
-  const previous = phoneState('SettingsTab', [{ name: 'Settings' }, { name: 'RecurringJobHistory', params: { jobId: 'old' } }]);
+  const previous = phoneState('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }]);
   const next = buildPhoneState({ originTab: 'FeedTab', kind: 'chat', sessionId: 'new', returnTab: 'FolderTab', folder }, previous);
-  expect(tabStack(next, 'SettingsTab')).toEqual(tabStack(previous, 'SettingsTab'));
-  expect(next.routes.find(route => route.name === 'SettingsTab')!.state!.index).toBe(1);
+  expect(tabStack(next, 'DailyTab')).toEqual(tabStack(previous, 'DailyTab'));
+  expect(next.routes.find(route => route.name === 'DailyTab')!.state!.index).toBe(1);
   expect(tabStack(next, 'FeedTab').map(route => route.name)).toEqual(['Feed', 'Chat']);
   expect(tabStack(next, 'FolderTab').map(route => route.name)).toEqual(['FolderList', 'FolderWorkspace']);
   expect(buildPhoneState({ originTab: 'FeedTab', kind: 'feed' }, null)).toEqual(buildPhoneState({ originTab: 'FeedTab', kind: 'feed' }));

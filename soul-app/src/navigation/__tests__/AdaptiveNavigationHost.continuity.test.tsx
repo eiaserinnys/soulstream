@@ -15,9 +15,6 @@ jest.mock('../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => r
 jest.mock('../../screens/SearchScreen', () => ({ SearchScreen: () => null }));
 jest.mock('../../screens/ChatScreen', () => ({ ChatScreen: () => require('react').createElement(require('react-native').View, { testID: 'real-chat' }) }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
-jest.mock('../../screens/RecurringJobsScreen', () => ({ RecurringJobsScreen: () => null }));
-jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorScreen: () => null }));
-jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
 jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownDocumentContent: () => null }));
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ cardId, onOpenSession }: { cardId: string; onOpenSession?: (id: string) => void }) => {

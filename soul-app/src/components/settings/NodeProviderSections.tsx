@@ -166,7 +166,7 @@ export function NodeProviderSections({
         borderRadius={t.foundation.radius.round}
         accessibilityLabel="사용량 새로고침"
         onPress={() => void refreshSummary()}
-        disabled={refreshing}
+        busy={refreshing}
       >
         {refreshing
           ? <ActivityIndicator size="small" color={t.colors.accent} />

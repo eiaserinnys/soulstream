@@ -66,7 +66,7 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
           style={{ opacity: saveAvailable ? 1 : 0 }} pointerEvents={saveAvailable ? 'auto' : 'none'}
           accessibilityElementsHidden={!saveAvailable} importantForAccessibility={saveAvailable ? 'auto' : 'no-hide-descendants'}
           aria-hidden={!saveAvailable}>
-          <GlassButton iconOnly={phone} size="card" disabled={saving || !saveAvailable}
+          <GlassButton iconOnly={phone} size="card" disabled={!saveAvailable} busy={saving}
             borderRadius={phone ? t.foundation.radius.round : undefined}
             accessibilityLabel="원본 저장" testID="chat-image-viewer-save-original" onPress={() => { void save(); }}>
             <Ionicons name="download-outline" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />

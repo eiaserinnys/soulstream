@@ -27,7 +27,6 @@ interface Props {
   category?: SettingsCategory;
   preserveSections?: boolean;
   showAdmin?: boolean;
-  onOpenRecurringJobs?: () => void;
   onClose?: () => void;
   connectionOnly?: boolean;
   registerCloseRequest?: (close: () => void) => void;

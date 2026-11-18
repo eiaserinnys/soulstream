@@ -144,7 +144,8 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
           variant="primary"
           testID="persistent-pas-settings-save"
           accessibilityLabel="저장"
-          disabled={saveStatus.disabled}
+          disabled={saveStatus.disabled && !saveStatus.busy}
+          busy={saveStatus.busy}
           onPress={() => savePasRef.current()}
           style={styles.footerAction}
         >

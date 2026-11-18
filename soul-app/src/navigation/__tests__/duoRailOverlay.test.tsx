@@ -34,9 +34,6 @@ jest.mock('../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => n
 jest.mock('../../screens/SearchScreen', () => ({ SearchScreen: () => null }));
 jest.mock('../../screens/ChatScreen', () => ({ ChatScreen: () => null }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null, FirstConnectionSettingsScreen: () => null }));
-jest.mock('../../screens/RecurringJobsScreen', () => ({ RecurringJobsScreen: () => null }));
-jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorScreen: () => null }));
-jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
 jest.mock('../phonePanelHistory', () => ({
   PhonePanelHistoryProvider: ({ children }: { children: unknown }) => children,

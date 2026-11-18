@@ -15,13 +15,13 @@ export function CardQuestionView({ api, question }: { api: ApiClient | null; que
   return <View style={styles.section}>
     <Text style={styles.body}>{question.text}</Text>
     {question.answer !== null ? <Text style={styles.body}>{question.answer}</Text> : <>
-      {question.options?.map((option) => <GlassButton key={option} onPress={() => setAnswer(option)} disabled={pending}
+      {question.options?.map((option) => <GlassButton key={option} onPress={() => setAnswer(option)} busy={pending}
         accessibilityLabel={option}>
         <Text style={answer === option ? styles.actionText : styles.body}>{option}</Text>
       </GlassButton>)}
       <TextInput accessibilityLabel="질문 답변" placeholder="답변 입력" placeholderTextColor={t.colors.textPlaceholder} style={styles.input}
         value={answer} onChangeText={setAnswer} editable={!pending} multiline />
-      <GlassButton accessibilityLabel="답변 확인" disabled={!api || !answer.trim() || pending}
+      <GlassButton accessibilityLabel="답변 확인" disabled={!api || !answer.trim()} busy={pending}
         onPress={() => { if (api) void run(() => api.answerCardQuestion(question.cardId, question.id,
           { mode: 'text', answer: answer.trim(), idempotencyKey: cardOperationId() })); }}>
         <Text style={styles.actionText}>확인</Text>
