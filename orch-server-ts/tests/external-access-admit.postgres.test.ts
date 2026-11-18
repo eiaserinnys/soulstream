@@ -255,9 +255,8 @@ describe("ExternalInputService.admit", () => {
     vi.spyOn(router, "routeExistingSessionPendingCommand").mockImplementation(
       async (payload: unknown) => payload as never,
     );
-    vi.spyOn(bridge, "sendPendingCommand").mockResolvedValue(
-      { type: "intervene_ack", status: "ok" } as never,
-    );
+    const sendPendingCommand = vi.spyOn(bridge, "sendPendingCommand")
+      .mockResolvedValue({ type: "intervene_ack", status: "ok" } as never);
     const commands = {
       router,
       bridge,
@@ -277,13 +276,17 @@ describe("ExternalInputService.admit", () => {
 
     expect(result).toMatchObject({ ok: true, status: "accepted" });
     const deliveries = await harness.sql<
-      Array<{ state: string; aggregate_state: string }>
-    >`SELECT state, aggregate_state FROM session_deliveries`;
+      Array<{ delivery_id: string; state: string; aggregate_state: string }>
+    >`SELECT delivery_id, state, aggregate_state FROM session_deliveries`;
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0]).toMatchObject({
       state: "pending",
       aggregate_state: "pending",
     });
+    // 커밋 뒤 재등록이 끝까지 갔다는 증거: 노드로 나간 명령이 그 전달 하나다.
+    expect(sendPendingCommand).toHaveBeenCalledTimes(1);
+    const routed = sendPendingCommand.mock.calls[0]![0] as { delivery_id?: string };
+    expect(routed.delivery_id).toBe(deliveries[0]!.delivery_id);
     const attempts = await harness.sql`SELECT 1 FROM session_delivery_attempts`;
     expect(attempts).toHaveLength(0);
   });

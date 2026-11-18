@@ -74,10 +74,16 @@ export type ExternalInputDispatch = (
   body: Record<string, unknown>,
 ) => Promise<unknown>;
 
+/** Warning sink for a dispatch that failed after the admission committed. */
+export type ExternalInputDispatchLogger = {
+  warn(fields: Record<string, unknown>, message: string): void;
+};
+
 export interface ExternalInputServiceOptions {
   sql: SqlClient;
   grants: { touchLastUsedAt(grantId: string): Promise<void> };
   dispatch: ExternalInputDispatch;
+  logger?: ExternalInputDispatchLogger;
   tokenBucket?: ExternalAccessTokenBucket;
   newRequestId?: () => string;
   now?: () => Date;
@@ -215,13 +221,30 @@ export class ExternalInputService {
     if (admitted.conflict) return { ok: false, reason: "conflict" };
 
     await this.options.grants.touchLastUsedAt(grant.id);
+    // Admission is the durable point: whatever the dispatch outcome, the
+    // caller keeps the accepted answer and the ledger owns the retry. The
+    // warning is the only trace, so it carries no key material.
     try {
-      await this.options.dispatch(admitted.receipt.target_session_id, {
-        ...admitted.receipt.payload,
-        caller_info: admitted.receipt.caller_info,
-      });
+      const response = await this.options.dispatch(
+        admitted.receipt.target_session_id,
+        {
+          ...admitted.receipt.payload,
+          caller_info: admitted.receipt.caller_info,
+        },
+      );
+      const status = responseStatus(response);
+      if (status !== undefined && (status < 200 || status >= 300)) {
+        this.warnDispatchFailure(
+          admitted.receipt.grant_id,
+          admitted.receipt.request_id,
+          status,
+        );
+      }
     } catch {
-      // Admission is the durable point. A send failure is the ledger's retry.
+      this.warnDispatchFailure(
+        admitted.receipt.grant_id,
+        admitted.receipt.request_id,
+      );
     }
     return {
       ok: true,
@@ -274,6 +297,19 @@ export class ExternalInputService {
     const row = rows[0];
     if (row === undefined) return { ok: false, reason: "not_found" };
     return { ok: true, status: externalRequestStatus(row) };
+  }
+
+  private warnDispatchFailure(
+    grantId: string,
+    requestId: string,
+    status?: number,
+  ): void {
+    this.options.logger?.warn(
+      status === undefined
+        ? { grant_id: grantId, request_id: requestId }
+        : { grant_id: grantId, request_id: requestId, status },
+      "External input dispatch failed",
+    );
   }
 }
 
@@ -391,6 +427,13 @@ function observedSessionState(
   if (row.session_status === "error") return "error";
   if (row.session_status === "interrupted") return "stopped";
   return "running";
+}
+
+/** A dispatch answers like the intervention route: `{status, body}`. */
+function responseStatus(value: unknown): number | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const status = (value as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }
 
 function sha256(value: string): string {
