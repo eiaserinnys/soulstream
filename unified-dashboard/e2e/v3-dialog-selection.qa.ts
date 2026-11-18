@@ -215,7 +215,9 @@ async function drag(page: Page, from: Locator, to: Locator, fromAt: "start" | "c
   const a = await from.boundingBox(); const b = await to.boundingBox();
   if (!a || !b) throw new Error("drag box missing");
   await clear(page);
-  await page.mouse.move(fromAt === "edge" ? a.x - 1 : fromAt === "start" ? a.x + 2 : a.x + a.width / 2, fromAt === "start" ? a.y + Math.min(8, a.height / 2) : a.y + a.height / 2);
+  // 제목 첫 글자 경계는 폰트 크기에 따라 상자 왼쪽에서 1~2px 안쪽이다. +2는 20px 글꼴의
+  // 첫 글자(예: "주")를 지나쳐 선택에서 빠뜨렸다(카드 #1651 실측). +1이 두 폭 모두 안전하다.
+  await page.mouse.move(fromAt === "edge" ? a.x - 1 : fromAt === "start" ? a.x + 1 : a.x + a.width / 2, fromAt === "start" ? a.y + Math.min(8, a.height / 2) : a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(b.x + (toAt === "end" ? b.width - 2 : b.width / 2), b.y + b.height / 2, { steps: 20 });
   await page.mouse.up();

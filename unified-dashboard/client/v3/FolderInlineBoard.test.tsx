@@ -10,6 +10,7 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 import { FolderInlineBoard } from "./FolderInlineBoard";
+import { discardFolderBoardItems } from "./folder-inline-board-api";
 import type { FolderMoveTarget } from "./folder-move-targets";
 
 const documentItem = {
@@ -29,6 +30,8 @@ describe("FolderInlineBoard document context menu", () => {
   let originalMatchMedia: typeof window.matchMedia;
 
   beforeEach(() => {
+    // 폴더별 공유 읽기는 모듈 전역이므로 테스트마다 갈아 끼우는 fetch와 섞이지 않게 비운다.
+    discardFolderBoardItems("task-1");
     originalFetch = globalThis.fetch;
     originalMatchMedia = window.matchMedia;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
