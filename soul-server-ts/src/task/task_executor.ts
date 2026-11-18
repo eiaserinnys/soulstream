@@ -120,6 +120,7 @@ import {
 import { buildClaudeContextUsageMetadataEntry } from "./task_metadata.js";
 import {
   dequeueInterventionsInLane,
+  prependCarriedDeliveries,
   requeueAfterHandoffAttempt,
   isRuntimeFollowup,
   rejoinUnstartedInterventions,
@@ -150,10 +151,7 @@ import {
 import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
-import {
-  recordTurnInputSessionEventEvidence,
-  TaskDeliveryTurnReceipt,
-} from "./task_delivery_turn_receipt.js";
+import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
 import {
   decidePersistentGeneration,
   type DecisionTrigger,
@@ -2379,7 +2377,7 @@ export class TaskExecutor {
             turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
               task,
               agent,
-              transition.interventions,
+              this.withCarriedDeliveries(task, turnReceipt, transition.interventions),
             );
             continue;
           }
@@ -2549,7 +2547,7 @@ export class TaskExecutor {
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
           task,
           agent,
-          transition.interventions,
+          this.withCarriedDeliveries(task, turnReceipt, transition.interventions),
         );
       } finally {
         if (turnReceipt) endedTurnReceipts.push(turnReceipt);
@@ -2562,12 +2560,6 @@ export class TaskExecutor {
     task: Task,
     interventions: readonly InterventionMessage[],
   ): TaskDeliveryTurnReceipt | undefined {
-    // These deliveries are this turn's input, and their input event is already
-    // durable: live and queued deliveries persist intervention_sent before
-    // they are delivered or queued, and a resumed delivery persists its
-    // user_message before the executor starts. Remember that so settle does
-    // not call the delivery lost when the turn observes no receipt (card #1604).
-    recordTurnInputSessionEventEvidence(task, interventions);
     if (!this.deliveryConsumption) return undefined;
     const receipt = new TaskDeliveryTurnReceipt(
       this.deliveryConsumption,
@@ -2585,6 +2577,23 @@ export class TaskExecutor {
     event: SSEEventPayload,
   ): Promise<void> {
     await receipt?.observe(task, event);
+  }
+
+  /**
+   * A continue turn opens with the deliveries the previous turn could not
+   * confirm. The turn was interrupted before any observed event confirmed
+   * them, so its body must ride into the next turn's input; otherwise the
+   * previous receipt settles it as an admission failure (card #1604).
+   */
+  private withCarriedDeliveries(
+    task: Task,
+    receipt: TaskDeliveryTurnReceipt | undefined,
+    interventions: InterventionMessage[],
+  ): InterventionMessage[] {
+    const carried = receipt?.carryUnrecordedDeliveries(task) ?? [];
+    return carried.length === 0
+      ? interventions
+      : prependCarriedDeliveries(carried, interventions);
   }
 
   private async settleDeliveryTurn(

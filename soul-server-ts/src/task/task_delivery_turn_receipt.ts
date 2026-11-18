@@ -10,6 +10,10 @@ import {
 } from "./claude_background_result_consumption.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
+import {
+  isRuntimeFollowup,
+  matchesIntervention,
+} from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 interface DeliveryReceipt {
@@ -21,6 +25,8 @@ interface DeliveryReceipt {
    * A failed confirmation keeps the transcript-recovery contract (card #1604).
    */
   recordAttempted: boolean;
+  /** Set when the next turn takes this delivery over as its input. */
+  carried: boolean;
   recorded: boolean;
   consumed: boolean;
   consumedTurnId?: string;
@@ -78,6 +84,7 @@ export class TaskDeliveryTurnReceipt {
       intervention,
       activeDelivery: false,
       recordAttempted: false,
+      carried: false,
       recorded: false,
       consumed: false,
     };
@@ -201,7 +208,6 @@ export class TaskDeliveryTurnReceipt {
         receipt.consumedTurnId,
       );
       receipt.consumed = true;
-      clearDeliverySessionEventEvidence(task, receipt.intervention.deliveryId);
     }
   }
 
@@ -215,6 +221,8 @@ export class TaskDeliveryTurnReceipt {
   async settleEndedTurn(task: Task): Promise<void> {
     for (const receipt of this.receipts) {
       if (receipt.consumed) continue;
+      // A delivery the next turn took over is settled by that turn's receipt.
+      if (receipt.carried) continue;
       if (receipt.recorded) {
         await this.consumption.recordConsumed(
           task,
@@ -222,101 +230,37 @@ export class TaskDeliveryTurnReceipt {
           receipt.consumedTurnId,
         );
         receipt.consumed = true;
-        clearDeliverySessionEventEvidence(task, receipt.intervention.deliveryId);
         continue;
       }
       if (queuedForNextTurn(task, receipt.intervention)) continue;
-      const deliveryId = receipt.intervention.deliveryId;
-      if (
-        !receipt.recordAttempted
-        && turnEndedWithoutFailure(task)
-        && deliveryId !== undefined
-        && hasDeliverySessionEventEvidence(task, deliveryId)
-      ) {
-        // The body already reached the session as an event, the turn ended
-        // normally, and no receipt was ever attempted for it: no observation
-        // event arrived after the delivery joined the turn. Close it through
-        // the ordinary confirmation path under a receipt id that ordinary turn
-        // consumption cannot produce (card #1604).
-        receipt.recordAttempted = true;
-        const started = await this.consumption.recordTurnStarted(
-          task,
-          receipt.intervention,
-        );
-        if (started) {
-          await this.consumption.recordConsumed(
-            task,
-            receipt.intervention,
-            sessionEventConsumptionReceiptId(deliveryId),
-          );
-          receipt.recorded = true;
-          receipt.consumed = true;
-          clearDeliverySessionEventEvidence(task, deliveryId);
-          continue;
-        }
-        // A failed turn-start confirmation keeps the transcript-recovery
-        // contract and closes below as an admission failure.
-      }
       await this.consumption.recordAdmissionFailure(
         task,
         receipt.intervention,
         "delivery turn ended without a consumption receipt",
       );
-      clearDeliverySessionEventEvidence(task, deliveryId);
     }
   }
-}
 
-/**
- * Records that this node persisted the delivery's body as a session event.
- * The fact stays in task memory for this execution only: a restart re-derives
- * it from whatever the next turn's input event records (card #1604).
- */
-export function recordDeliverySessionEventEvidence(
-  task: Task,
-  deliveryId: string | undefined,
-): void {
-  if (deliveryId === undefined || deliveryId.length === 0) return;
-  const evidence = task.sessionEventDeliveryEvidence ?? new Set<string>();
-  task.sessionEventDeliveryEvidence = evidence;
-  evidence.add(deliveryId);
-}
-
-/** Drops the evidence once the delivery is closed, consumed or failed. */
-export function clearDeliverySessionEventEvidence(
-  task: Task,
-  deliveryId: string | undefined,
-): void {
-  if (deliveryId === undefined || deliveryId.length === 0) return;
-  task.sessionEventDeliveryEvidence?.delete(deliveryId);
-}
-
-/**
- * Marks the deliveries that entered this turn whose body was already persisted
- * as a session event. Runtime follow-ups are engine-internal prompts that are
- * never written to the session timeline, so they carry no evidence.
- */
-export function recordTurnInputSessionEventEvidence(
-  task: Task,
-  interventions: readonly InterventionMessage[],
-): void {
-  for (const intervention of interventions) {
-    if (isRuntimeFollowup(intervention)) continue;
-    recordDeliverySessionEventEvidence(task, intervention.deliveryId);
+  /**
+   * Deliveries this ended turn leaves open, in arrival order. The turn was
+   * interrupted before any observed event confirmed them, so the next turn
+   * re-sends their bodies as its input and its receipt owns them; this receipt
+   * must not settle them (card #1604). Runtime follow-ups keep their exact
+   * Result proof, and a delivery whose turn-start receipt was attempted stays
+   * with transcript recovery.
+   */
+  carryUnrecordedDeliveries(task: Task): InterventionMessage[] {
+    const carried: InterventionMessage[] = [];
+    for (const receipt of this.receipts) {
+      if (receipt.carried || receipt.consumed || receipt.recorded) continue;
+      if (receipt.recordAttempted) continue;
+      if (isRuntimeFollowup(receipt.intervention)) continue;
+      if (queuedForNextTurn(task, receipt.intervention)) continue;
+      receipt.carried = true;
+      carried.push(receipt.intervention);
+    }
+    return carried;
   }
-}
-
-export function hasDeliverySessionEventEvidence(
-  task: Task,
-  deliveryId: string | undefined,
-): boolean {
-  return deliveryId !== undefined
-    && task.sessionEventDeliveryEvidence?.has(deliveryId) === true;
-}
-
-/** Consumption receipt id for a delivery closed from its persisted session event. */
-export function sessionEventConsumptionReceiptId(deliveryId: string): string {
-  return `session-event:${buildDeliveryInputUuid(deliveryId)}`;
 }
 
 function queuedForNextTurn(
@@ -328,24 +272,6 @@ function queuedForNextTurn(
   );
 }
 
-/**
- * Whether the turn ended without an engine fatal error, an interrupt/abort, or
- * a start failure. Settle runs after the executor persisted the final state,
- * so the task status and termination reason carry the turn's last word:
- * a fatal engine error or a start failure ends in "error", an interrupt in
- * "interrupted", and a kill is stamped on the reason.
- */
-function turnEndedWithoutFailure(task: Task): boolean {
-  if (task.status !== "completed") return false;
-  return task.terminationReason !== "killed"
-    && task.terminationReason !== "error_aborted";
-}
-
-export function isRuntimeFollowup(intervention: InterventionMessage): boolean {
-  return intervention.deliveryIntent === "runtime_followup" ||
-    intervention.source === "claude_runtime_task_followup";
-}
-
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -354,15 +280,6 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
-}
-
-function matchesIntervention(
-  candidate: InterventionMessage,
-  intervention: InterventionMessage,
-): boolean {
-  return intervention.deliveryId !== undefined
-    ? candidate.deliveryId === intervention.deliveryId
-    : candidate === intervention;
 }
 
 function turnReceiptId(task: Task): string {
