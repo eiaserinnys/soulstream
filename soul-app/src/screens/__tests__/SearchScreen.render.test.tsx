@@ -5,6 +5,9 @@ import { SearchScreen } from '../SearchScreen';
 import { useSearchStore } from '../../store/searchStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const mockUseSessionSearch = jest.fn();
 const originalFetch = global.fetch;
@@ -237,6 +240,7 @@ test('최근 세션은 캐시에 없는 id만 한 번에 받아 오고 피드 �
   expect(url.searchParams.getAll('session_id')).toEqual(['recent-missing-1', 'recent-missing-2']);
   expect(useSessionStore.getState().feedMembership).toEqual({});
   expect(useSessionStore.getState().feedSessionIds).toEqual([]);
+  await settleTimers();
 });
 
 test('인증 범위가 바뀌면 최근 세션의 늦은 응답은 버리고 같은 id를 다시 조회한다', async () => {
@@ -447,4 +451,5 @@ test('세션 수화 전에도 lexical projection을 열고 확장 순위 변경 
     useSearchStore.getState().requestActivateSelection();
   });
   expect(onOpenSession).toHaveBeenCalledWith('session-b', 82);
+  await settleTimers();
 });

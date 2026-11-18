@@ -29,10 +29,13 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUIStore } from '../../store/uiStore';
 import { StyleSheet } from 'react-native';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const originalFetch = global.fetch;
 
-test('phone feed reserves composer space only when explicitly enabled', () => {
+test('phone feed reserves composer space only when explicitly enabled', async () => {
   useUIStore.setState({ floatingComposerBottomInset: 0 });
   const screen = render(<SessionFeedScreen />);
   const baseline = StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom;
@@ -45,11 +48,12 @@ test('phone feed reserves composer space only when explicitly enabled', () => {
   act(() => { useUIStore.getState().setFloatingComposerBottomInset(0); });
   expect(StyleSheet.flatten(screen.getByTestId('phone-feed-body').props.contentContainerStyle).paddingBottom).toBe(baseline);
   expect(screen.queryByTestId('feed-home-composer-spacer')).toBeNull();
+  await settleTimers();
 });
 
 const mockSessionCard = SessionCard as jest.Mock;
 
-test('only visible rows in the active feed animate, with stable callbacks and unchanged rows preserved', () => {
+test('only visible rows in the active feed animate, with stable callbacks and unchanged rows preserved', async () => {
   seed([session('first', '2026-07-25T11:00:00Z'), session('second', '2026-07-25T10:00:00Z')]);
   const view = render(<SessionFeedScreen active />);
   const list = () => view.getByTestId('phone-feed-body').props;
@@ -80,6 +84,7 @@ test('only visible rows in the active feed animate, with stable callbacks and un
   expect(latest('first').animationActive).toBe(false);
   expect(list().onViewableItemsChanged).toBe(callback);
   expect(list().viewabilityConfig).toBe(config);
+  await settleTimers();
 });
 
 function session(
@@ -140,7 +145,7 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-test('catalog loading·failure·empty를 구분하고 실패 화면의 재시도는 새 요청을 시작한다', () => {
+test('catalog loading·failure·empty를 구분하고 실패 화면의 재시도는 새 요청을 시작한다', async () => {
   useSessionStore.setState({
     catalogLoadState: 'loading',
     catalogRetryRequest: 0,
@@ -165,6 +170,7 @@ test('catalog loading·failure·empty를 구분하고 실패 화면의 재시도
   expect(view.queryByText('세션을 불러오는 중입니다.')).toBeNull();
   expect(view.queryByText('세션 목록을 불러오지 못했습니다.')).toBeNull();
   expect(view.getAllByText('해당 세션이 없습니다.')).toHaveLength(3);
+  await settleTimers();
 });
 
 test('raw session_updated가 updatedAt만 바꿔도 메시지 활동 순서는 흔들리지 않는다', () => {
@@ -185,7 +191,7 @@ test('raw session_updated가 updatedAt만 바꿔도 메시지 활동 순서는 �
   expect(renderedSessionIds(view)).toEqual(['new', 'old']);
 });
 
-test('session_created 신규 세션은 Record 삽입 위치와 무관하게 피드 맨 위에 온다', () => {
+test('session_created 신규 세션은 Record 삽입 위치와 무관하게 피드 맨 위에 온다', async () => {
   seed([session('existing', '2026-07-25T10:00:00Z')]);
   const view = render(<SessionFeedScreen />);
 
@@ -197,9 +203,10 @@ test('session_created 신규 세션은 Record 삽입 위치와 무관하게 피�
   });
 
   expect(renderedSessionIds(view)).toEqual(['created', 'existing']);
+  await settleTimers();
 });
 
-test('복귀 snapshot의 최신 유효 메시지로 활동순을 회복한다', () => {
+test('복귀 snapshot의 최신 유효 메시지로 활동순을 회복한다', async () => {
   seed([
     session('new', '2026-07-25T11:00:00Z'),
     session('old', '2026-07-25T10:00:00Z'),
@@ -220,9 +227,10 @@ test('복귀 snapshot의 최신 유효 메시지로 활동순을 회복한다', 
   });
 
   expect(renderedSessionIds(view)).toEqual(['old', 'new']);
+  await settleTimers();
 });
 
-test('/api/sessions/stream의 live resume 갱신 뒤 running 한 행만 렌더한다', () => {
+test('/api/sessions/stream의 live resume 갱신 뒤 running 한 행만 렌더한다', async () => {
   seed([
     session('resumed', '2026-08-11T10:00:00Z', {
       status: 'completed',
@@ -242,6 +250,7 @@ test('/api/sessions/stream의 live resume 갱신 뒤 running 한 행만 렌더�
   });
 
   expect(renderedSessionIds(view)).toEqual(['resumed']);
+  await settleTimers();
 });
 
 test('불법 running+needs_review 입력도 running 한 행만 렌더한다', () => {
@@ -301,7 +310,7 @@ test('유효한 메시지·createdAt·legacy updatedAt이 모두 없으면 피�
   expect(renderedSessionIds(view)).toEqual(['valid']);
 });
 
-test('한 세션의 유효 메시지 순서가 바뀌어도 변경되지 않은 카드는 다시 렌더하지 않는다', () => {
+test('한 세션의 유효 메시지 순서가 바뀌어도 변경되지 않은 카드는 다시 렌더하지 않는다', async () => {
   seed([
     session('old', '2026-07-25T10:00:00Z'),
     session('new', '2026-07-25T11:00:00Z'),
@@ -325,6 +334,7 @@ test('한 세션의 유효 메시지 순서가 바뀌어도 변경되지 않은 
   );
   expect(renderedIds).toContain('old');
   expect(renderedIds).not.toContain('new');
+  await settleTimers();
 });
 
 test.each([1, 5, 10])(
@@ -441,4 +451,5 @@ test('다음 쪽 실패는 피드 오류와 다시 시도 동작을 보여 주�
   expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('cursor')).toBe('30');
   expect(useSessionStore.getState().feedSessionIds).toEqual(expect.arrayContaining(['visible', 'next-page-row']));
   expect(renderedSessionIds(view)).toEqual(expect.arrayContaining(['visible', 'next-page-row']));
+  await settleTimers();
 });

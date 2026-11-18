@@ -126,6 +126,7 @@ test.each(['success', 'failure'] as const)(
     const screen = render(
       <FolderWorkspace api={mockScopedApi as ApiClient} folderPageId={folderA.page.id} />,
     );
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
     fireEvent.press(screen.getByTestId('task-description-edit-action'));
     fireEvent.changeText(screen.getByTestId('task-description-input'), 'A 제출');
@@ -138,12 +139,14 @@ test.each(['success', 'failure'] as const)(
       );
       await Promise.resolve();
     });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
     fireEvent.press(screen.getByTestId('task-description-edit-action'));
     fireEvent.changeText(screen.getByTestId('task-description-input'), 'B 제출');
     fireEvent.press(screen.getByTestId('task-description-save-action'));
     await act(async () => {
       saveB.resolve({ page: folderB.page, blocks: [descriptionBlock(folderB.page.id, 'B 제출')] });
     });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
     await waitFor(() => expect(
       screen.getByTestId('task-description-markdown'),
     ).toHaveTextContent('B 제출'));
@@ -155,6 +158,7 @@ test.each(['success', 'failure'] as const)(
         saveA.reject(new Error('A failed late'));
       }
     });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
     expect(useAuthStore.getState().jwt).toBe('same-scope-jwt');
     expect(usePlannerStore.getState().selectedFolderSnapshot?.page.id).toBe(folderB.page.id);
@@ -178,11 +182,13 @@ test.each(['success', 'failure'] as const)(
       );
       await Promise.resolve();
     });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
     expect(screen.getByTestId('task-description-markdown')).toHaveTextContent(
       aOutcome === 'success' ? 'A 제출' : 'A 서버',
     );
     expect(getPage).toHaveBeenCalledTimes(aOutcome === 'failure' ? 1 : 0);
     if (aOutcome === 'failure') expect(getPage).toHaveBeenCalledWith(folderA.page.id);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
   },
 );
 

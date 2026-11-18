@@ -36,6 +36,9 @@ import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 import { useUIStore } from '../../../store/uiStore';
 import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
 import { setCardQuestionTarget } from '../CardQuestionBlock';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 // Count the real component boundaries without memoizing the test wrappers.
 const mockRenders = { detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] as string[] };
@@ -254,6 +257,7 @@ test.each(['phone', 'tabletLandscape'])('%s 듀오 카드 상세 레일은 현�
   expect(onClose).toHaveBeenCalledTimes(1);
   await act(async () => fireEvent.press(screen.getByLabelText('상태 변경 메뉴')));
   await waitFor(() => expect(screen.getByTestId('card-status-menu')).toBeTruthy());
+  await settleTimers();
 });
 test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
   const colored = { ...detail, card: { ...card, color: 'blue' } };
@@ -311,6 +315,7 @@ test('질문 선택지는 누르면 바로 답을 보내고 덧붙이기 대상�
   expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
   fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
   expect(screen.getByText('실행 세션')).toBeTruthy();
+  await settleTimers();
 });
 
 test('철회 질문을 표시하고 답 선택에서 건너뛴다', async () => {
@@ -353,6 +358,7 @@ test('탭 밖에서 보낸 뒤 안내는 불투명한 알약 표면으로 목록
   expect(surface.borderWidth).toBe(StyleSheet.hairlineWidth);
   expect(surface.borderRadius).toBe(tokens.foundation.radius.round);
   expect(surface.height).toBe(tokens.controlHeight.chip + tokens.uiSpacing.xs + tokens.uiSpacing.xxs);
+  await settleTimers();
 });
 
 test('탭을 오가도 이 상세에서 새로 확인한 항목은 확인함 묶음으로 옮기지 않는다', async () => {
@@ -532,6 +538,7 @@ test('assigned settings disappear while native status/complete and sessions rema
  expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
  expect(screen.getByTestId('card-sessions')).toBeTruthy();
+ await settleTimers();
 });
 
 test('상세 헤더 상태 메뉴를 열어 기존 상태 선택기를 표시한다',async()=>{
@@ -805,4 +812,5 @@ test('PAS 위에서 기본 카드 상세와 연결 세션 탭을 읽어도 활�
   expect(useChatStore.getState()).toBe(chatBefore);
   fireEvent.press(screen.getByTestId('task-run-row-s1'));
   expect(onOpenSession).toHaveBeenCalledWith('s1');
+  await settleTimers();
 });

@@ -64,6 +64,9 @@ import { useUIStore } from '../../../store/uiStore';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
 import { TABLET_SHELL_LAYOUT, useTokens } from '../../../theme';
 import type { ApiClient } from '../../../api/client';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const plannerFolder = {
   page: {
@@ -132,7 +135,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', () => {
+test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', async () => {
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
   const header = StyleSheet.flatten(
     screen.getByTestId('task-workspace-tablet-header').props.style,
@@ -145,9 +148,10 @@ test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', () => {
     alignItems: 'flex-start',
   }));
   expect(header.height).toBeUndefined();
+  await settleTimers();
 });
 
-test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세 줄 제한 없이 자라는 입력을 연다', () => {
+test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세 줄 제한 없이 자라는 입력을 연다', async () => {
   // fireEvent는 마지막 render의 트리에서만 동작하므로 토큰을 먼저 읽고 화면을 나중에 그린다.
   const { result: t } = renderHook(useTokens);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
@@ -189,14 +193,16 @@ test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세
   expect(inputStyle.height).toBeUndefined();
   expect(input.props.multiline).toBe(true);
   expect(input.props.autoFocus).toBe(true);
+  await settleTimers();
 });
 
-test('빈 폴더 제목의 읽기 단추는 기본 접근성 이름을 쓴다', () => {
+test('빈 폴더 제목의 읽기 단추는 기본 접근성 이름을 쓴다', async () => {
   usePlannerStore.getState().setSelectedFolderSnapshot({
     ...plannerFolder, page: { ...plannerFolder.page, title: '' },
   });
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
   expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목');
+  await settleTimers();
 });
 
 test('편집 중 다른 폴더로 바꾸면 이전 초안을 저장하고 새 폴더는 읽기 상태로 연다', async () => {
@@ -212,9 +218,10 @@ test('편집 중 다른 폴더로 바꾸면 이전 초안을 저장하고 새 �
   expect(screen.queryByTestId('task-workspace-tablet-title')).toBeNull();
   expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목 두 번째 폴더');
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 폴더 초안'));
+  await settleTimers();
 });
 
-test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 배치를 쓴다', () => {
+test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 배치를 쓴다', async () => {
   mockDeviceType = 'phone';
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
   const names = ['description', 'context', 'subfolders', 'cards', 'sessions'];
@@ -245,9 +252,10 @@ test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 
   const labels = ['상태', '담당', '컨텍스트', '기본 담당'];
   const widths = labels.map((label) => StyleSheet.flatten(screen.getByText(label).props.style).width);
   expect(new Set(widths).size).toBe(1);
+  await settleTimers();
 });
 
-test('업무 기본 담당 편집은 노드·에이전트와 같은 표면에서 모델을 선택한다', () => {
+test('업무 기본 담당 편집은 노드·에이전트와 같은 표면에서 모델을 선택한다', async () => {
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
 
   fireEvent.press(screen.getByLabelText('기본 담당 수정'));
@@ -255,9 +263,10 @@ test('업무 기본 담당 편집은 노드·에이전트와 같은 표면에서
   expect(screen.getByText('노드')).toBeTruthy();
   expect(screen.getByText('에이전트')).toBeTruthy();
   expect(screen.getByText('모델')).toBeTruthy();
+  await settleTimers();
 });
 
-test('모델 목록 준비가 매달려도 기존 업무 기본 담당 저장 버튼은 활성 상태를 유지한다', () => {
+test('모델 목록 준비가 매달려도 기존 업무 기본 담당 저장 버튼은 활성 상태를 유지한다', async () => {
   const assignedFolder = {
     ...plannerFolder,
     blocks: [{
@@ -278,6 +287,7 @@ test('모델 목록 준비가 매달려도 기존 업무 기본 담당 저장 �
 
   expect(screen.getByTestId('task-default-assignment-save').props.accessibilityState.disabled)
     .toBe(false);
+  await settleTimers();
 });
 
 test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본을 사용한다', async () => {
@@ -330,6 +340,7 @@ test('태블릿 header와 phone content가 같은 중요·오늘 토글 정본�
   await waitFor(() => expect(
     phoneScreen.getByLabelText('오늘 데일리에서 제거').props.accessibilityState.disabled,
   ).toBe(false));
+  await settleTimers();
 });
 
 test.each([
@@ -369,6 +380,7 @@ test.each([
 
   await waitFor(() => expect(screen.getByLabelText(label).props.accessibilityState)
     .toMatchObject({ selected, disabled: false, busy: false }));
+  await settleTimers();
 });
 
 test('phone 기본 읽기는 native title만 소유하고 명시적 편집에서 취소·저장한다', async () => {
@@ -412,6 +424,7 @@ test('phone 기본 읽기는 native title만 소유하고 명시적 편집에서
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '저장할 제목'));
   expect(onTitleSaved).toHaveBeenCalledWith('저장할 제목');
   expect(screen.queryByTestId('task-workspace-title-heading')).toBeNull();
+  await settleTimers();
 });
 
 test.each([
@@ -439,6 +452,7 @@ test.each([
     expect(alert).toHaveBeenCalledWith('폴더 제목을 입력해 주세요.');
     expect(screen.getByTestId('task-workspace-title-heading')).toBeTruthy();
   }
+  await settleTimers();
 });
 
 test.each([
@@ -446,7 +460,7 @@ test.each([
   ['phone', 2, 44],
   ['tabletPortrait', 1, 48],
   ['tabletPortrait', 2, 48],
-] as const)('%s fontScale %s 업무 chrome은 grouped detail·context52·action%i·자연 확장을 유지한다', (
+] as const)('%s fontScale %s 업무 chrome은 grouped detail·context52·action%i·자연 확장을 유지한다', async (
   device,
   fontScale,
   actionSize,
@@ -510,6 +524,7 @@ test.each([
     expect(StyleSheet.flatten(item.props.style)).toMatchObject({ minHeight: 52 });
     expect(StyleSheet.flatten(item.props.style)).not.toHaveProperty('height');
   }
+  await settleTimers();
 });
 
 test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에서 승계하지 않는다', async () => {
@@ -523,6 +538,7 @@ test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에�
   } as PlannerFolder;
   usePlannerStore.getState().setSelectedFolderSnapshot(described);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
   fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), 'A 미저장 제목');
@@ -545,6 +561,7 @@ test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에�
   fireEvent.press(screen.getByTestId('task-description-edit-action'));
   expect(screen.getByDisplayValue('B 서버 설명')).toBeTruthy();
   expect(screen.queryByDisplayValue('A 미저장 설명')).toBeNull();
+  await settleTimers();
 });
 
 test('iPad 제목 focus 상태에서 헤더를 닫아도 최신 snapshot을 먼저 저장한다', async () => {
@@ -558,6 +575,7 @@ test('iPad 제목 focus 상태에서 헤더를 닫아도 최신 snapshot을 먼�
 
   expect(close).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', 'focus 상태 최신 제목'));
+  await settleTimers();
 });
 
 test('dirty 저장이 없으면 외부 큐가 서버 제목 갱신을 가리지 않는다', async () => {
@@ -572,6 +590,7 @@ test('dirty 저장이 없으면 외부 큐가 서버 제목 갱신을 가리지 
 
   await waitFor(() => expect(screen.getByText('서버에서 갱신된 제목')).toBeTruthy());
   expect(mockRenameFolder).not.toHaveBeenCalled();
+  await settleTimers();
 });
 
 test('iPad 업무 오버레이는 실제 제목 하나만 frameless 편집 헤더로 표시한다', async () => {
@@ -595,9 +614,10 @@ test('iPad 업무 오버레이는 실제 제목 하나만 frameless 편집 헤�
 
   fireEvent.press(screen.getByTestId('task-workspace-close'));
   expect(close).toHaveBeenCalledTimes(1);
+  await settleTimers();
 });
 
-test('iPad 업무 설명은 markdown read에서만 보이고 편집 중 plain multiline으로 바뀐다', () => {
+test('iPad 업무 설명은 markdown read에서만 보이고 편집 중 plain multiline으로 바뀐다', async () => {
   const described = {
     ...plannerFolder,
     blocks: [{
@@ -618,6 +638,7 @@ test('iPad 업무 설명은 markdown read에서만 보이고 편집 중 plain mu
   fireEvent.press(screen.getByTestId('task-description-edit-action'));
   expect(screen.getByTestId('task-description-input').props.multiline).toBe(true);
   expect(screen.queryByTestId('task-description-markdown')).toBeNull();
+  await settleTimers();
 });
 
 test('iPad 제목 저장 중 추가 입력은 제출 snapshot과 분리해 다음 dirty 값으로 보존한다', async () => {
@@ -635,6 +656,7 @@ test('iPad 제목 저장 중 추가 입력은 제출 snapshot과 분리해 다�
 
   expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 제출 제목');
   expect(screen.getByDisplayValue('저장 중 추가 제목')).toBeTruthy();
+  await settleTimers();
 });
 
 test('iPad 제목은 저장 중 재입력·재blur한 최신 snapshot을 직렬 후속 저장한다', async () => {
@@ -662,6 +684,7 @@ test('iPad 제목은 저장 중 재입력·재blur한 최신 snapshot을 직렬 
   expect(screen.getByText('최신 제출 제목')).toBeTruthy();
 
   await act(async () => { releaseSecond(); });
+  await settleTimers();
 });
 
 test('iPad 제목 저장 실패는 최신 draft를 dirty로 남겨 다음 blur에서 재시도한다', async () => {
@@ -679,6 +702,7 @@ test('iPad 제목 저장 실패는 최신 draft를 dirty로 남겨 다음 blur�
   await act(async () => { fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur'); });
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledTimes(2));
   expect(mockRenameFolder).toHaveBeenNthCalledWith(2, 'task-1', '실패 후 남을 제목');
+  await settleTimers();
 });
 
 test('iPad 제목 큐는 패널이 닫혀도 응답 역전을 막고 대기 중 최신 저장을 완주한다', async () => {
@@ -753,6 +777,7 @@ test('닫은 직후 다른 업무를 열어도 두 업무의 제목 큐가 서�
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-2', '둘째 업무 최신'));
   await act(async () => { releaseFirst(); });
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 업무 최신'));
+  await settleTimers();
 });
 
 test('닫기 저장 실패는 remount 뒤 최신 draft와 재시도 상태를 보존한다', async () => {
@@ -770,6 +795,7 @@ test('닫기 저장 실패는 remount 뒤 최신 draft와 재시도 상태를 �
 
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledTimes(2));
   expect(mockRenameFolder).toHaveBeenLastCalledWith('task-1', '실패한 닫기 제목');
+  await settleTimers();
 });
 
 test('iPad 설명 저장 중 추가 입력은 편집기를 닫지 않고 dirty로 유지한다', async () => {
@@ -800,6 +826,7 @@ test('iPad 설명 저장 중 추가 입력은 편집기를 닫지 않고 dirty�
   expect(screen.getByDisplayValue('저장 중 추가 설명')).toBeTruthy();
   expect(screen.getByTestId('task-description-save-action')).toBeTruthy();
   expect(screen.queryByTestId('task-description-markdown')).toBeNull();
+  await settleTimers();
 });
 
 function findJsonByTestId(tree: any, testID: string): any {
@@ -857,4 +884,5 @@ test('폰에서 닫은 설명 초안은 태블릿 편집에 복원되고 취소�
   expect(useDraftStore.getState().drafts).toEqual({});
   fireEvent.press(tablet.getByTestId('task-description-edit-action'));
   expect(tablet.getByTestId('task-description-input').props.value).toBe('');
+  await settleTimers();
 });

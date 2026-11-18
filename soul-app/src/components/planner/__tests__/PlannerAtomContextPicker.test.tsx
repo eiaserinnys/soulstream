@@ -1,6 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { PlannerAtomContextPicker } from '../PlannerAtomContextPicker';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 test('노드 선택 화면 안에서 depth와 titlesOnly를 정해 한 번에 반환한다', async () => {
   const onPicked = jest.fn();
@@ -33,6 +36,7 @@ test('노드 선택 화면 안에서 depth와 titlesOnly를 정해 한 번에 �
     depth: 5,
     titlesOnly: true,
   });
+  await settleTimers();
 });
 
 test('노드 행은 드릴다운하고 현재 노드도 같은 옵션으로 선택할 수 있다', async () => {
@@ -58,6 +62,7 @@ test('노드 행은 드릴다운하고 현재 노드도 같은 옵션으로 선�
     depth: 3,
     titlesOnly: false,
   }));
+  await settleTimers();
 });
 
 test('확인 연타는 부모 반영과 닫기를 한 번만 실행한다', async () => {
@@ -68,7 +73,7 @@ test('확인 연타는 부모 반영과 닫기를 한 번만 실행한다', asyn
   fireEvent.press(screen.getByTestId('atom-picker-select-a'));
   const confirm = screen.getByTestId('atom-picker-add-selected');
   act(() => { fireEvent.press(confirm); fireEvent.press(confirm); });
-  expect(onPicked).toHaveBeenCalledTimes(1); expect(onClose).toHaveBeenCalledTimes(1);
+  expect(onPicked).toHaveBeenCalledTimes(1); expect(onClose).toHaveBeenCalledTimes(1); await settleTimers();
 });
 
 test('탐색 중이거나 조회 실패면 이전 선택을 확인할 수 없다', async () => {

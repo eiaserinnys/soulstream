@@ -5,6 +5,9 @@ import {act,render,waitFor} from '@testing-library/react-native';
 import type {ApiClient} from '../../../api/client';
 import {cardFixture} from '../../../test-support/cards';
 import {FolderWorkspaceList, isListNearEnd} from '../FolderWorkspaceList';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 jest.mock('../CardDetailSheet',()=>({CardDetailSheet:()=>null}));
 jest.mock('../PostItCard',()=>({PostItCard:({card}:{card:{id:string}})=>require('react').createElement(require('react-native').Text,null,card.id)}));
 test('loads the next completed page at its last visible row before a long folder footer',async()=>{
@@ -16,6 +19,7 @@ test('loads the next completed page at its last visible row before a long folder
  await act(async()=>onViewableItemsChanged({viewableItems:[{item:cards[59],isViewable:true,index:59,key:cards[59].id}],changed:[]}));
  await waitFor(()=>expect(screen.UNSAFE_getByType(FlatList).props.data).toHaveLength(61));
  expect(listCompletedCards.mock.calls[1][0]).toMatchObject({folderId:'folder-1',cursor:'next'});
+ await settleTimers();
 });
 
 test('near-end 계산은 화면 높이의 절반 경계와 높이 미측정을 구분한다',()=>{
@@ -24,7 +28,7 @@ test('near-end 계산은 화면 높이의 절반 경계와 높이 미측정을 �
  expect(isListNearEnd(1000,0,0)).toBe(false);
 });
 
-test('폴더 목록 스크롤·레이아웃·콘텐츠 높이 변화가 끝 근처 신호를 갱신한다',()=>{
+test('폴더 목록 스크롤·레이아웃·콘텐츠 높이 변화가 끝 근처 신호를 갱신한다',async ()=>{
  const onNearEnd=jest.fn();
  const screen=render(<FolderWorkspaceList api={null} folderId="folder-1" active cardDisplay={{includeCompleted:false,onChange:()=>{}}} header={<Text>폴더 카드 머리</Text>} footer={<Text>세션</Text>} contentContainerStyle={{padding:16}} onNearEnd={onNearEnd}/>);
  const getList=()=>screen.UNSAFE_getByType(FlatList);
@@ -46,4 +50,5 @@ test('폴더 목록 스크롤·레이아웃·콘텐츠 높이 변화가 끝 근�
  onNearEnd.mockClear();
  act(()=>getList().props.onContentSizeChange(390,1200));
  expect(onNearEnd).not.toHaveBeenCalled();
+ await settleTimers();
 });

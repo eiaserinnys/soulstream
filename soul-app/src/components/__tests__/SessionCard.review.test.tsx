@@ -8,6 +8,9 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { usePlannerStore } from '../../store/plannerStore';
 import { useAppNoticeStore } from '../../store/appNoticeStore';
 import type { PlannerFolder } from '../../api/plannerTypes';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 jest.spyOn(Animated, 'loop').mockImplementation(() => ({
   start: jest.fn(),
@@ -67,7 +70,7 @@ afterEach(() => {
 });
 
 describe('SessionCard review acknowledge', () => {
-  it('캐시 세션의 folderId로 폴더 이름을 그리고 명시 null 배정은 미분류로 둔다', () => {
+  it('캐시 세션의 folderId로 폴더 이름을 그리고 명시 null 배정은 미분류로 둔다', async () => {
     const row = session({ folderId: 'folder-1' });
     useSessionStore.getState().setSessions([row]);
     useSessionStore.setState({
@@ -88,6 +91,7 @@ describe('SessionCard review acknowledge', () => {
       });
     });
     expect(view.queryByText('작업 폴더')).toBeNull();
+    await settleTimers();
   });
 
   it('needs_review는 완료 badge와 중복 없이 식별 가능한 액션 하나만 표시한다', async () => {
