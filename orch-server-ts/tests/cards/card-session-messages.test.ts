@@ -70,6 +70,25 @@ it("projects the linked session conversation with the card agent label", async (
   expect(result.items[0]?.at).toBe("2026-11-07T10:00:00.000Z");
 });
 
+it("labels external inputs with the grant label and carries the sender", async () => {
+  const rows: EventRow[] = [
+    {
+      id: 1,
+      event_type: "user_message",
+      payload: { text: "빌드 로그를 봐 주세요", caller_info: { source: "external", display_name: "빌드 봇" } },
+      created_at: new Date("2026-11-07T10:00:00Z"),
+    },
+  ];
+  const result = await readSessionConversation(sqlWithEvents(rows).sql, "session-1", { session_id: "session-1", display_name: "담당" }, null);
+  expect(result.items[0]).toMatchObject({
+    kind: "user",
+    role: "user",
+    author: "외부 연동 「빌드 봇」",
+    text: "빌드 로그를 봐 주세요",
+    sender: { kind: "external", label: "빌드 봇" },
+  });
+});
+
 it("falls back to the card assignee agent id when the session row has no name", async () => {
   const { sql } = sqlWithEvents(events);
   const result = await readCardSessionMessages(sql, detailOf(

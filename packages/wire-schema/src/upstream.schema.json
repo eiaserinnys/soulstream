@@ -111,6 +111,7 @@
     "browser",
     "channel_observer",
     "execute-proxy",
+    "external",
     "llm",
     "slack",
     "soul-app",
@@ -205,7 +206,7 @@
     },
     "CallerInfoSource": {
       "type": "string",
-      "enum": ["agent", "api", "browser", "channel_observer", "execute-proxy", "llm", "slack", "soul-app", "system", "trello_watcher"]
+      "enum": ["agent", "api", "browser", "channel_observer", "execute-proxy", "external", "llm", "slack", "soul-app", "system", "trello_watcher"]
     },
     "CallerInfo": {
       "type": "object",

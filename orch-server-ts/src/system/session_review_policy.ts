@@ -44,6 +44,12 @@ export const SESSION_REVIEW_POLICY_SOURCE_CATALOG: readonly SessionReviewPolicyS
     automatic: false,
   },
   {
+    source: "external",
+    label: "외부 연동",
+    description: "접속 링크나 웹훅으로 들어온 외부 요청",
+    automatic: false,
+  },
+  {
     source: "clipper",
     label: "Clipper",
     description: "Clipper에서 명시적으로 생성한 요청",

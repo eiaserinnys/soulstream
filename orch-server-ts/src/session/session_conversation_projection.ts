@@ -32,6 +32,7 @@ export type CardSessionMessage = {
   text: string;
   at: string;
   attachments?: Item["attachments"];
+  sender?: Item["sender"];
 };
 
 export type CardSessionMessages = {
@@ -61,10 +62,11 @@ export async function readSessionConversation(
       id: String(row.id),
       kind: result.item.kind,
       role: result.item.kind === "user" ? "user" : "assistant",
-      author: authorOf(result.item.kind, agentLabel),
+      author: authorOf(result.item.kind, agentLabel, result.item.sender),
       text: result.item.text,
       at: result.item.at,
       ...(attachments.length ? { attachments } : {}),
+      ...(result.item.sender ? { sender: result.item.sender } : {}),
     });
   }
   const activity = projection.activity();
@@ -197,8 +199,8 @@ function labelOf(sessionRow: Record<string, unknown> | null, fallback: string | 
   return displayName || agentId || fallback?.trim() || "에이전트";
 }
 
-function authorOf(kind: Item["kind"], agentLabel: string): string {
-  if (kind === "user") return "사용자";
+function authorOf(kind: Item["kind"], agentLabel: string, sender: Item["sender"]): string {
+  if (kind === "user") return sender ? `외부 연동 「${sender.label}」` : "사용자";
   if (kind === "error") return "오류";
   if (kind === "notice") return "알림";
   return agentLabel;

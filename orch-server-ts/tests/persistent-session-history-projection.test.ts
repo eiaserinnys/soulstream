@@ -22,6 +22,7 @@ describe("projectPersistentSessionHistoryEntry", () => {
     ["slack", "human"],
     ["browser", "human"],
     ["soul-app", "human"],
+    ["external", "external"],
     ["agent", "agent"],
     ["api", "system"],
     ["channel_observer", "system"],

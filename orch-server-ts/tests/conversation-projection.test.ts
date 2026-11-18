@@ -109,6 +109,21 @@ describe("conversation projection", () => {
     expect(p.apply(event(2, "intervention_sent", { text: "follow-up", caller_info: { source: "browser" } })).item)
       .toMatchObject({ kind: "user", text: "follow-up" });
   });
+  it("shows external inputs as user items with the external sender label", () => {
+    const p = new ConversationProjection(false);
+    expect(p.apply(event(1, "user_message", { text: "빌드 로그를 봐 주세요", caller_info: { source: "external", display_name: "빌드 봇" } })).item)
+      .toMatchObject({ kind: "user", text: "빌드 로그를 봐 주세요", sender: { kind: "external", label: "빌드 봇" } });
+    expect(p.apply(event(2, "assistant_message", { content: "확인했습니다." })).item).toMatchObject({ text: "확인했습니다." });
+    const human = p.apply(event(3, "intervention_sent", { text: "사람 입력", caller_info: { source: "browser" } }));
+    expect(human.item).toMatchObject({ kind: "user", text: "사람 입력" });
+    expect(human.item).not.toHaveProperty("sender");
+    expect(p.apply(event(4, "user_message", { text: "이름 없는 연동", caller_info: { source: "external" } })).item)
+      .toMatchObject({ sender: { kind: "external", label: "외부 연동" } });
+    p.apply(event(5, "error", { message: "실패" }));
+    expect(p.hasErrorInTurn()).toBe(true);
+    p.apply(event(6, "user_message", { text: "다시", caller_info: { source: "external" } }));
+    expect(p.hasErrorInTurn()).toBe(false);
+  });
   it("keeps busy through session_ended and clears it on complete and error", () => {
     const p = new ConversationProjection(false);
     p.apply(event(1, "user_message", { text: "hello" }));

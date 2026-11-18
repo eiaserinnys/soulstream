@@ -46,6 +46,7 @@ export const DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES = [
   "api",
   "channel_observer",
   "execute-proxy",
+  "external",
   "llm",
   "system",
 ] as const;
