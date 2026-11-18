@@ -894,6 +894,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/conversation/conversation_projection.ts | 1 | 0 | 0 | 대화 사건 종류와 수신 상태. |
 | src/conversation/conversation_service.ts | 1 | 0 | 0 | 대화 사건 종류와 수신 상태. |
 | src/execute/execute_proxy_routes.ts | 1 | 0 | 0 | 실행 프록시 프레임 종류. |
+| src/external_access/external_input_service.ts | 3 | 0 | 0 | 대상 세션의 관측 상태를 외부 응답에 싣는다. |
 | src/folders/folder_operations.ts | 0 | 1 | 0 | 폴더 운영 상태. |
 | src/mcp/session_consumption_boundary.ts | 0 | 1 | 0 | 세션 종료 여부를 읽는다. |
 | src/model/model_preset_availability.ts | 1 | 0 | 0 | 모델 공급자 상태. |
@@ -938,7 +939,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 80개, 비교 82줄, 목록 29줄, SQL 59줄이다.
+파일 81개, 비교 85줄, 목록 29줄, SQL 59줄이다.
 
 ## 다시 만들기
 
