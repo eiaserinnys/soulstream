@@ -1199,7 +1199,6 @@ export async function createLiveProductionApplication(
       await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
-      await runShutdownStep("outbound_webhook_stop", () => outboundWebhookService?.stop());
     }
     await runShutdownStep("push_notifier_close", () => pushNotifier.close());
     await runShutdownStep("db_catalog_close", () => dbCatalogRepository.close());
