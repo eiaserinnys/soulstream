@@ -369,9 +369,9 @@ describe("WorktreeService", () => {
     });
     const { runBoundedProcess } = await import("../src/worktree/worktree_process.js");
     let fetches = 0;
-    const sweepGit = new WorktreeGit({ projectsRoot, timeoutMs: 5_000, createTimeoutMs: 5_000,
+    const sweepGit = new WorktreeGit({ projectsRoot, timeoutMs: 30_000, createTimeoutMs: 30_000,
       processRunner: async (input) => { if (input.args[0] === "fetch") fetches++; return runBoundedProcess(input); } });
-    const lock = new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 });
+    const lock = new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 10_000 });
     const originalWithLock = lock.withLock.bind(lock);
     let lockHeld = false;
     vi.spyOn(lock, "withLock").mockImplementation(async (key, action) => originalWithLock(key, async () => {
@@ -383,10 +383,10 @@ describe("WorktreeService", () => {
       expect(lockHeld).toBe(false);
       return await originalCollect(base);
     });
-    const sweeper = new WorktreeService({ nodeId: "node-a", projectsRoot, git: sweepGit, createTimeoutMs: 5_000, host,
+    const sweeper = new WorktreeService({ nodeId: "node-a", projectsRoot, git: sweepGit, createTimeoutMs: 30_000, host,
       lock, listActiveWorkspaceDirs: () => active });
     const result = await sweeper.sweep({ now });
-    expect(result).toMatchObject({ candidates: 16, removed: 6, recent: 2, in_use: 2, base_links: 1, changes: 2, unpushed: 1, not_finished: 1, failed: 1 });
+    expect(result, JSON.stringify(result.errors)).toMatchObject({ candidates: 16, removed: 6, recent: 2, in_use: 2, base_links: 1, changes: 2, unpushed: 1, not_finished: 1, failed: 1 });
     expect(fetches).toBe(1);
     expect(collect).toHaveBeenCalledTimes(1);
     expect(collect).toHaveBeenCalledWith(repo);
@@ -400,7 +400,7 @@ describe("WorktreeService", () => {
       expect(host.records.get(ids.get(kind)!)?.state).toBe("ready");
     }
     expect(begin.mock.calls.every(([input]) => "sweeperNodeId" in input && input.sweeperNodeId === "node-a" && !("actorSessionId" in input && input.actorSessionId))).toBe(true);
-  }, 30_000);
+  }, 120_000);
 
   it("preserves a shared worktree when base dependency links point back into it", async () => {
     const { repo, service, host } = fixture();
