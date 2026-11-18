@@ -113,37 +113,31 @@ async function checkRing(target: Locator, name: string) {
   const style = await target.evaluate(el => {
     const { outlineStyle, boxShadow } = getComputedStyle(el);
     const spread = Number(boxShadow.match(/0px 0px 0px ([\d.]+)px/)?.[1] ?? 0);
-    const clipping = ["auto", "scroll", "hidden", "clip"];
-    let clip = el.parentElement;
-    while (clip) {
-      const { overflowX, overflowY } = getComputedStyle(clip);
-      if (clipping.includes(overflowX) || clipping.includes(overflowY)) break;
-      clip = clip.parentElement;
-    }
     const rect = el.getBoundingClientRect();
-    const clipRect = clip?.getBoundingClientRect();
-    const clipBox = clip && clipRect && {
-      left: clipRect.left + clip.clientLeft,
-      top: clipRect.top + clip.clientTop,
-      right: clipRect.left + clip.clientLeft + clip.clientWidth,
-      bottom: clipRect.top + clip.clientTop + clip.clientHeight,
-    };
-    const clearance = clipBox && {
-      left: rect.left - clipBox.left,
-      top: rect.top - clipBox.top,
-      right: clipBox.right - rect.right,
-      bottom: clipBox.bottom - rect.bottom,
-    };
-    return { focused: document.activeElement === el, focusVisible: el.matches(":focus-visible"), outlineStyle, boxShadow, spread, rect: rect.toJSON(), clipBox, clearance };
+    const clips = [];
+    for (let clip = el.parentElement; clip; clip = clip.parentElement) {
+      const { overflowX, overflowY } = getComputedStyle(clip);
+      if (overflowX === "visible" && overflowY === "visible") continue;
+      const clipRect = clip.getBoundingClientRect();
+      const left = clipRect.left + clip.clientLeft;
+      const top = clipRect.top + clip.clientTop;
+      clips.push({
+        ancestor: clip.getAttribute("data-slot") ?? clip.className,
+        horizontal: overflowX === "visible" ? [] : [rect.left - left, left + clip.clientWidth - rect.right],
+        vertical: overflowY === "visible" ? [] : [rect.top - top, top + clip.clientHeight - rect.bottom],
+      });
+    }
+    return { focused: document.activeElement === el, focusVisible: el.matches(":focus-visible"), outlineStyle, boxShadow, spread, rect: rect.toJSON(), clips };
   });
   // clientWidth and clientHeight are rounded to whole pixels.
   check(`${name}: unclipped v3 focus ring`, style.focused && style.focusVisible && style.outlineStyle === "none" &&
-    style.spread > 0 && !!style.clearance && Object.values(style.clearance).every(gap => gap + 0.5 >= style.spread), style);
+    style.spread > 0 && style.clips.length > 0 &&
+    style.clips.every(({ horizontal, vertical }) => [...horizontal, ...vertical].every(gap => gap + 0.5 >= style.spread)), style);
 }
 
 async function checkRingAlignment(popup: Locator, name: string, width: number) {
   const edges = await popup.locator(".v3-project-context-fields").evaluate(fields =>
-    [...fields.querySelectorAll(':scope > label, :scope > [role="group"], [data-slot="atom-node-selector-trigger"], [data-slot="atom-node-selector-panel"]')]
+    [...fields.querySelectorAll(':scope > label, :scope > [role="group"], input[type="number"], select, [data-slot="atom-node-selector-trigger"], [data-slot="atom-node-selector-panel"]')]
       .map(el => {
         const { left, right } = el.getBoundingClientRect();
         return { label: el.getAttribute("data-slot") ?? el.firstChild?.textContent, left, right };
@@ -195,6 +189,14 @@ async function run(browser: Browser) {
       await row.waitFor();
       const name = `${sample}-${width}`;
       await checkRingAlignment(popup, `${name} open`, width);
+      const modeStyle = await popup.locator(".v3-project-context-fields").evaluate(fields => {
+        const number = getComputedStyle(fields.querySelector('input[type="number"]')!);
+        const mode = getComputedStyle(fields.querySelector('select[aria-label="atom 렌더 방식"]')!);
+        const properties = ["border-top-width", "border-top-style", "border-top-color", "border-top-left-radius", "padding", "color", "background-color"];
+        return properties.map(property => ({ property, number: number.getPropertyValue(property), mode: mode.getPropertyValue(property) }));
+      });
+      check(`${name}: render mode matches the number input`, modeStyle.every(value => value.number === value.mode) &&
+        modeStyle.some(({ property, mode }) => property === "border-top-left-radius" && parseFloat(mode) > 0), modeStyle);
       await checkRing(trigger, `${name} open trigger`);
       const listTabStops = await panel.locator("button:enabled").count();
       for (let i = 0; i < listTabStops; i++) await page.keyboard.press("Tab");
@@ -222,8 +224,8 @@ async function run(browser: Browser) {
       for (const [field, locator] of fields) {
         await page.keyboard.press("Tab");
         await checkRing(locator, `${name} closed ${field}`);
-        if (field === "depth") {
-          await page.screenshot({ path: path.join(output!, `${sample}-${width}-depth-ring.png`), animations: "disabled" });
+        if (field === "depth" || field === "mode") {
+          await page.screenshot({ path: path.join(output!, `${sample}-${width}-${field}-ring.png`), animations: "disabled" });
         }
       }
       await page.keyboard.press("Escape");
@@ -358,8 +360,31 @@ async function run(browser: Browser) {
     await page.screenshot({ path: path.join(output!, "folder-settings-1440.png"), animations: "disabled", timeout: 15_000 });
   });
 }
+async function runWithScrollbars(browser: Browser) {
+  for (const [width, height] of [[390, 844], [1440, 900]]) {
+    for (const sample of ["defaults-add", "defaults-edit", "atom-add", "atom-edit"]) {
+      const name = `scrollbars-${sample}-${width}`;
+      await scenario(browser, name, width, height, "dark", true, async page => {
+        await openSample(page, sample);
+        const fields = page.locator(".v3-project-context-popover .v3-project-context-fields");
+        const size = await fields.evaluate(el => {
+          const field = el as HTMLElement;
+          return { offsetHeight: field.offsetHeight, clientHeight: field.clientHeight, overflowX: getComputedStyle(field).overflowX };
+        });
+        check(`${name}: no horizontal scrollbar`, size.offsetHeight === size.clientHeight && size.overflowX === "hidden", size);
+        await page.screenshot({ path: path.join(output!, `${name}.png`), animations: "disabled" });
+      });
+    }
+  }
+}
+
+const launchOptions = { headless: true, args: ["--disable-webgl"], executablePath: existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE };
 try {
-  await runPlaywrightLifecycle({ lockName: "card1643-context-popover", timeoutMs: 480_000, launchOptions: { headless: true, args: ["--disable-webgl"], executablePath: existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } }, async ({ browser }: { browser: Browser }) => run(browser));
+  await runPlaywrightLifecycle({ lockName: "card1643-context-popover", timeoutMs: 480_000, launchOptions }, ({ browser }: { browser: Browser }) => run(browser));
+  await runPlaywrightLifecycle({
+    lockName: "card1643-context-popover", timeoutMs: 480_000,
+    launchOptions: { ...launchOptions, ignoreDefaultArgs: ["--hide-scrollbars"] },
+  }, ({ browser }: { browser: Browser }) => runWithScrollbars(browser));
 } catch (error) { check("script execution", false, String(error)); }
 writeFileSync(path.join(output, "metrics.json"), JSON.stringify({ checks, metrics }, null, 2));
 console.table(checks.filter(c => !c.ok));

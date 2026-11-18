@@ -255,6 +255,7 @@
 .v3-project-context-popover .v3-project-context-fields {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   /* Give the focus ring room inside the scroll clip without moving the fields. */
   padding-inline: calc(var(--spacing) / 2);
@@ -313,7 +314,8 @@
 }
 
 .v3-project-context-editor textarea,
-.v3-project-context-editor input[type="number"] {
+.v3-project-context-editor input[type="number"],
+.v3-project-context-popover select[aria-label="atom 렌더 방식"] {
   border: 1px solid var(--glass-border);
   border-radius: 9px;
   padding: 8px;
