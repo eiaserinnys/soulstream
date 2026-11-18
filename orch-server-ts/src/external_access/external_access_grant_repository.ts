@@ -216,12 +216,17 @@ export class ExternalAccessGrantRepository {
     throw new Error("Inbound webhook grant has no credential");
   }
 
-  async list(ownerEmail: string): Promise<ExternalAccessGrantSummary[]> {
+  async list(
+    ownerEmail: string,
+    kind?: ExternalAccessKind,
+  ): Promise<ExternalAccessGrantSummary[]> {
+    const kindFilter = kind ?? null;
     return await this.options.sql<ExternalAccessGrantSummary[]>`
       SELECT id, kind, owner_email, label, target_session_id, permissions,
-             auth_mode, expires_at, revoked_at, created_at, last_used_at
+             auth_mode, preamble, expires_at, revoked_at, created_at, last_used_at
       FROM external_access_grants
       WHERE owner_email = ${ownerEmail}
+        AND (${kindFilter}::TEXT IS NULL OR kind = ${kindFilter})
       ORDER BY created_at DESC
     `;
   }
@@ -229,15 +234,39 @@ export class ExternalAccessGrantRepository {
   async revoke(
     ownerEmail: string,
     grantId: string,
+    kind?: ExternalAccessKind,
   ): Promise<ExternalAccessGrantSummary | null> {
+    const kindFilter = kind ?? null;
     const rows = await this.options.sql<ExternalAccessGrantSummary[]>`
       UPDATE external_access_grants
       SET revoked_at = NOW()
       WHERE id = ${grantId}
         AND owner_email = ${ownerEmail}
+        AND (${kindFilter}::TEXT IS NULL OR kind = ${kindFilter})
         AND revoked_at IS NULL
       RETURNING id, kind, owner_email, label, target_session_id, permissions,
-                auth_mode, expires_at, revoked_at, created_at, last_used_at
+                auth_mode, preamble, expires_at, revoked_at, created_at, last_used_at
+    `;
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Reads one of the owner's grants of a given kind, including revoked and
+   * expired rows: management reads still see a webhook after it was closed.
+   * The result never carries key material.
+   */
+  async findOwned(
+    ownerEmail: string,
+    grantId: string,
+    kind: ExternalAccessKind,
+  ): Promise<ExternalAccessGrantSummary | null> {
+    const rows = await this.options.sql<ExternalAccessGrantSummary[]>`
+      SELECT id, kind, owner_email, label, target_session_id, permissions,
+             auth_mode, preamble, expires_at, revoked_at, created_at, last_used_at
+      FROM external_access_grants
+      WHERE id = ${grantId}
+        AND owner_email = ${ownerEmail}
+        AND kind = ${kind}
     `;
     return rows[0] ?? null;
   }

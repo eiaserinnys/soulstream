@@ -3,6 +3,7 @@ import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-a
 import { registerAccessLinkRoutes, type AccessLinkRouteOptions } from "./external_access/access_link_routes.js";
 import { registerOutboundWebhookRoutes, type OutboundWebhookRouteOptions } from "./webhooks/outbound_routes.js";
 import { registerInboundHookRoutes, type InboundHookRouteOptions } from "./webhooks/inbound_hook_routes.js";
+import { registerInboundWebhookRoutes, type InboundWebhookRouteOptions } from "./webhooks/inbound_webhook_routes.js";
 import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "./mcp/types.js";
@@ -261,6 +262,7 @@ export type CreateAppOptions = {
   accessLinkRoutes?: AccessLinkRouteOptions;
   outboundWebhookRoutes?: OutboundWebhookRouteOptions;
   inboundHookRoutes?: InboundHookRouteOptions;
+  inboundWebhookRoutes?: InboundWebhookRouteOptions;
   resolveSessionOwner?: McpHostOptions["resolveSessionOwner"];
   externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
@@ -418,6 +420,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.accessLinkRoutes) registerAccessLinkRoutes(app, options.accessLinkRoutes);
   if (options.outboundWebhookRoutes) registerOutboundWebhookRoutes(app, options.outboundWebhookRoutes);
   if (options.inboundHookRoutes) registerInboundHookRoutes(app, options.inboundHookRoutes);
+  if (options.inboundWebhookRoutes) registerInboundWebhookRoutes(app, options.inboundWebhookRoutes);
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }
