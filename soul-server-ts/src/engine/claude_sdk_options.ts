@@ -19,6 +19,7 @@ import { isolationError, launchIsolatedChild } from "./isolated_session_launch.j
 import { spawnClaudeSessionEngine } from "./session_engine_oom_score.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
+const CLAUDE_ALWAYS_DISALLOWED_TOOLS = ["Monitor"];
 
 export interface ClaudeIsolationWiring {
   /** SDK 옵션으로 펼칠 격리 배선. off면 빈 객체다. */
@@ -148,7 +149,10 @@ export function buildClaudeSdkOptions({
     ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
     ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
     ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
-    ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
+    disallowedTools: [...new Set([
+      ...(options.disallowedTools ?? []),
+      ...CLAUDE_ALWAYS_DISALLOWED_TOOLS,
+    ])],
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
     ...(options.sessionStore !== undefined ? { sessionStore: options.sessionStore } : {}),
     ...(options.sessionStoreFlush !== undefined
