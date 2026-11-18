@@ -97,6 +97,60 @@ describe("session document search index", () => {
     expect(index.get("b")).toBeUndefined();
   });
 
+  it("builds the same index asynchronously, including repeated session IDs", async () => {
+    const records = Array.from({ length: 205 }, (_, i) =>
+      record(`session-${i}`, `제목 ${i}`, `공통 요청 ${i}`, i % 2 ? "요약" : null));
+    records.push(record("session-2", "바뀐 제목", "공통 요청 갱신", "긴 요약입니다"));
+    const synchronous = new SessionDocumentSearchIndex();
+    const asynchronous = new SessionDocumentSearchIndex();
+    synchronous.initialize(records);
+
+    await asynchronous.initializeAsync(records);
+
+    expect(asynchronous.size).toBe(synchronous.size);
+    expect(asynchronous.get("session-2")).toEqual(synchronous.get("session-2"));
+    expect(asynchronous.search("공통 요청 갱신", 20)).toEqual(synchronous.search("공통 요청 갱신", 20));
+  });
+
+  it("yields to the event loop before asynchronous initialization completes", async () => {
+    const index = new SessionDocumentSearchIndex();
+    const records = Array.from({ length: 101 }, (_, i) => record(`${i}`, "제목", "요청", null));
+    let finished = false;
+    let finishedAtImmediate: boolean | undefined;
+    const immediate = new Promise<void>((resolve) => setImmediate(() => {
+      finishedAtImmediate = finished;
+      resolve();
+    }));
+
+    await index.initializeAsync(records);
+    finished = true;
+    await immediate;
+
+    expect(finishedAtImmediate).toBe(false);
+  });
+
+  it("keeps the old index visible until asynchronous initialization finishes", async () => {
+    const index = new SessionDocumentSearchIndex();
+    index.initialize([record("old", "이전 문서", "이전 요청", null)]);
+    const oldResults = index.search("이전 요청", 10);
+    const records = Array.from({ length: 101 }, (_, i) => record(`new-${i}`, "새 문서", "새 요청", null));
+    const duringBuild = new Promise<{ size: number; results: ReturnType<typeof index.search>; newVisible: boolean }>(
+      (resolve) => setImmediate(() => resolve({
+        size: index.size,
+        results: index.search("이전 요청", 10),
+        newVisible: index.has("new-0"),
+      })),
+    );
+
+    const initialization = index.initializeAsync(records);
+    expect(await duringBuild).toEqual({ size: 1, results: oldResults, newVisible: false });
+    await initialization;
+
+    expect(index.size).toBe(101);
+    expect(index.has("old")).toBe(false);
+    expect(index.search("새 요청", 1)[0]?.session_id).toBe("new-0");
+  });
+
   it("returns stored document references instead of copying documents for top-k", () => {
     const index = new SessionDocumentSearchIndex();
     index.initialize([record("a", "제목", "요청", "요약")]);

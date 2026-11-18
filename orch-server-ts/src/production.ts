@@ -1214,8 +1214,11 @@ export async function createLiveProductionApplication(
       lifecycle.markReady();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
+        const startedAt = Date.now();
+        context.warn("session document index warmup started");
         void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0))
-          .catch((error: unknown) => context.warn(`session document index warmup failed: ${String(error)}`));
+          .then((count) => context.warn(`session document index warmup finished: count=${count} elapsed_ms=${Date.now() - startedAt}`))
+          .catch((error: unknown) => context.warn(`session document index warmup failed: elapsed_ms=${Date.now() - startedAt} error=${String(error)}`));
       }, SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS);
       documentIndexWarmupTimer.unref();
     };

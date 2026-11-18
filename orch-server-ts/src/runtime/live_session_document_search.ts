@@ -77,7 +77,7 @@ export class LiveSessionDocumentSearch {
         WHERE event_type = 'turn_summary'
         ORDER BY session_id, id
       `, signal, deadlineAt, connection.sql, deadlineAt - Date.now()) as readonly SessionSummarySourceRow[];
-      this.index.initialize(assembleSessionDocumentRecords(sessions, digests, events));
+      await this.index.initializeAsync(assembleSessionDocumentRecords(sessions, digests, events));
       this.initialized = true;
       this.watermarkMs = startedAt;
     } finally {

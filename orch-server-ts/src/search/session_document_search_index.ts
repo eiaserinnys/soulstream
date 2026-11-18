@@ -109,13 +109,32 @@ export function assembleSessionDocument(row: SessionDocumentRecord): SessionDocu
 }
 
 export class SessionDocumentSearchIndex {
-  private readonly documents = new Map<string, SessionDocument>();
+  private documents = new Map<string, SessionDocument>();
   private totalBigramLength = 0;
 
   initialize(records: readonly SessionDocumentRecord[]): void {
     this.documents.clear();
     this.totalBigramLength = 0;
     for (const record of records) this.replace(record);
+  }
+
+  async initializeAsync(records: readonly SessionDocumentRecord[]): Promise<void> {
+    const documents = new Map<string, SessionDocument>();
+    let totalBigramLength = 0;
+    for (let i = 0; i < records.length; i += 1) {
+      const record = records[i]!;
+      const previous = documents.get(record.session_id);
+      if (previous) {
+        totalBigramLength -= previous.bigramLength;
+        documents.delete(record.session_id);
+      }
+      const document = assembleSessionDocument(record);
+      documents.set(record.session_id, document);
+      totalBigramLength += document.bigramLength;
+      if ((i + 1) % 100 === 0) await yieldToEventLoop();
+    }
+    this.documents = documents;
+    this.totalBigramLength = totalBigramLength;
   }
 
   applyRefresh(
@@ -246,6 +265,10 @@ export class SessionDocumentSearchIndex {
     this.totalBigramLength -= document.bigramLength;
     this.documents.delete(sessionId);
   }
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 class SparseTermFrequencyBuffer {
