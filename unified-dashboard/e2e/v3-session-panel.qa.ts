@@ -33,7 +33,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname === "/api/sessions") sessionRequests.push(url.search);
-    if (url.pathname === "/api/board-items" && url.searchParams.has("folder_id")) {
+    // 보드 항목 조회 쿼리 정본은 folderId다(client/v3/folder-inline-board-api.ts:32).
+    if (url.pathname === "/api/board-items" && url.searchParams.has("folderId")) {
       folderBoardRequests += 1;
     }
   });
@@ -93,10 +94,14 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(scrollbarContract.rightColor === scrollbarContract.leftColor, "좌우 스크롤바 색상 정본이 다릅니다.");
 
     const layoutCombinations = [];
+    // 폭 한도 정본은 client/v3/v3-main-columns.ts다(상수 7·9·11·13줄, 예산식 25-29줄,
+    // 해석 36-55줄). 1600px에서 예산 = 1600 - 2·22 - 2·16 - 384 = 1140이고
+    // (패널 갭 16은 v3-layout-metrics.ts:6), 좌 220/우 240 선호는 220/300,
+    // 264/300은 그대로, 900/900은 좌 840·우 300으로 잘린다.
     for (const widths of [
-      { navigation: 220, session: 240, expectedNavigation: 220, expectedSession: 240 },
+      { navigation: 220, session: 240, expectedNavigation: 220, expectedSession: 300 },
       { navigation: 264, session: 300, expectedNavigation: 264, expectedSession: 300 },
-      { navigation: 900, session: 900, expectedNavigation: 420, expectedSession: 560 },
+      { navigation: 900, session: 900, expectedNavigation: 840, expectedSession: 300 },
     ]) {
       await page.evaluate(({ navigation, session }) => {
         localStorage.setItem("soul-ui.dashboard.leftSidebarWidth", String(navigation));
@@ -135,9 +140,15 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       assert(measured.viewportOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 viewport 가로 넘침 ${measured.viewportOverflow}px`);
       assert(measured.panelOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 우측 패널 가로 넘침 ${measured.panelOverflow}px`);
       assert(measured.rowOverflow.every((value) => value <= 0), `${widths.navigation}/${widths.session}px 조합에서 행 가로 넘침 ${measured.rowOverflow.join(",")}px`);
-      assert(Math.abs(measured.leftGap - 22) <= 1, `${widths.navigation}/${widths.session}px 조합의 좌측 gap이 ${measured.leftGap}px입니다.`);
-      assert(Math.abs(measured.rightGap - 22) <= 1, `${widths.navigation}/${widths.session}px 조합의 우측 gap이 ${measured.rightGap}px입니다.`);
-      assert(measured.contentWidth <= 893, `${widths.navigation}/${widths.session}px 조합의 중앙 콘텐츠가 ${measured.contentWidth}px로 과도하게 확장됐습니다.`);
+      // 열 사이 gap 정본은 v3-layout-metrics.ts:6의 V3_PANEL_GAP_PX=16이고,
+      // v3-planner.css:5-12의 .v3-shell 그리드가 그 값을 두 열 사이에 쓴다.
+      // 22px는 바깥 여백(v3-main-columns.ts:13)이라 열 사이 gap과 다르다.
+      assert(Math.abs(measured.leftGap - 16) <= 1, `${widths.navigation}/${widths.session}px 조합의 좌측 gap이 ${measured.leftGap}px입니다.`);
+      assert(Math.abs(measured.rightGap - 16) <= 1, `${widths.navigation}/${widths.session}px 조합의 우측 gap이 ${measured.rightGap}px입니다.`);
+      // 중앙 콘텐츠 상한 정본은 v3-layout-metrics.ts:9의 V3_CONTENT_MAX_WIDTH_PX=960이다.
+      // V3DashboardLayout.tsx:615가 --v3-content-max-width로 내려주고
+      // v3-visual-system.css:26-28의 .v3-planner-scroll > *가 그 값을 쓴다.
+      assert(measured.contentWidth <= 961, `${widths.navigation}/${widths.session}px 조합의 중앙 콘텐츠가 ${measured.contentWidth}px로 과도하게 확장됐습니다.`);
       layoutCombinations.push({ ...widths, ...measured });
     }
 
@@ -187,8 +198,16 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       .waitFor({ state: "visible" });
     await page.locator('.v3-chat-pane[aria-label="세션 채팅"]').waitFor({ state: "visible" });
     assert(await page.getByTestId("v3-standalone-task-empty").count() === 0, "폴더 소속 세션이 단독 모드로 열렸습니다.");
+    // 폴더 소속 세션을 열면 그 폴더의 보드 항목을 읽는다(쿼리 정본 folderId,
+    // client/v3/folder-inline-board-api.ts:32). 플래너와 워크스페이스가 각각
+    // 마운트되므로 총 요청 수는 표면 수를 따르고, 여기서는 0이 아님만 본다.
+    assert(folderBoardRequests >= 1, "폴더 소속 세션을 열었는데 보드 항목 요청이 없습니다.");
     await capture(page, theme, "02-task-session-active-chat");
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    // run-alpha-2의 폴더(rb-alpha)는 fixture에서 folder-amber의 자식이다. 현행
+    // 헤더는 부모가 있으면 「상위 폴더로 이동」을 쓴다(client/v3/FolderDetailPane.tsx:209).
+    // 플래너 뒤에도 같은 헤더가 있으므로 워크스페이스 툴바로 범위를 좁힌다.
+    await page.locator(".v3-workspace .v3-workspace-toolbar")
+      .getByRole("button", { name: "상위 폴더로 이동" }).click();
 
     await page.locator('[data-session-id="review-session"]').click();
     await page.getByTestId("v3-standalone-task-empty").waitFor({ state: "visible" });
@@ -200,15 +219,25 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const untouched = page.getByTestId("v3-session-row-review-session-3");
     await removed.waitFor({ state: "visible" });
     await startReviewMutationObserver(page, "review-session-3");
-    await removed.getByRole("button", { name: "추가 검수 세션 2 확인 처리" }).click();
+    // 검수 확인은 행만 지워야 한다. 폴더 보드 항목을 다시 읽으면 안 된다.
+    const boardRequestsBeforeAcknowledge = folderBoardRequests;
+    // 행 전체도 role=button이고 그 접근 이름에 안쪽 라벨이 섞여 두 개가 잡힌다.
+    // 확인 처리 아이콘 캡의 aria-label만 정확히 누른다(DashboardIconCap).
+    await removed.locator('button[aria-label="추가 검수 세션 2 확인 처리"]').click();
     await removed.waitFor({ state: "detached" });
     const mutations = await stopReviewMutationObserver(page);
     assert(await panel.isVisible(), "검수 확인 뒤 우측 세션 패널이 닫혔습니다.");
     assert(await untouched.isVisible(), "검수 확인이 다른 행을 제거했습니다.");
     assert(mutations.untouched === 0, `검수 확인이 다른 행을 ${mutations.untouched}회 변경했습니다.`);
     assert(mutations.listChild === 1, `검수 확인이 목록 구조를 ${mutations.listChild}회 변경했습니다.`);
-    assert(folderBoardRequests === 1, `세션 폴더 해석이 ${folderBoardRequests}회 요청되었습니다.`);
-    assert(sessionRequests.every((query) => query.includes("session_id=")), `우측 패널이 전체 세션 조회를 만들었습니다: ${sessionRequests.join(", ")}`);
+    assert(folderBoardRequests === boardRequestsBeforeAcknowledge,
+      `검수 확인이 폴더 보드 항목을 ${folderBoardRequests - boardRequestsBeforeAcknowledge}회 더 요청했습니다.`);
+    // 우측 패널의 행 조회는 session_id로 좁혀야 한다. 검수 큐 개수 조회
+    // (review_state=needs_review&limit=0)는 항목을 싣지 않는 별도 쿼리다
+    // (client/v3/use-v3-live-data-plane.ts:32-35).
+    assert(sessionRequests.every((query) =>
+      query.includes("session_id=") || (query.includes("review_state=needs_review") && query.includes("limit=0"))),
+      `우측 패널이 전체 세션 조회를 만들었습니다: ${sessionRequests.join(", ")}`);
     assert(pageErrors.length === 0, `브라우저 오류가 발생했습니다: ${pageErrors.join(" | ")}`);
     await capture(page, theme, "04-review-row-removed");
 

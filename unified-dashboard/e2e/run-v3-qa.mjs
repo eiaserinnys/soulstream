@@ -11,6 +11,10 @@
  * 넘긴다. `.qa.ts`는 tsx로, `.e2e.ts`는 playwright test로 돌린다. 실행기는
  * PLAYWRIGHT_MODULE과 PLAYWRIGHT_CHROMIUM_EXECUTABLE을 스스로 해결해 넘기므로
  * 쓰는 사람이 추가 환경변수를 줄 필요가 없다.
+ *
+ * dev 서버 전용 QA(e2e/v3-askquestion-input-row.qa.ts)는 목록에서 뺐다. dist
+ * preview는 dist에 없는 e2e fixture html을 서빙하지 못한다. 이렇게 돌린다(한 줄):
+ *   corepack pnpm@10.32.1 --dir unified-dashboard dev --host 127.0.0.1 --port 5173 & sleep 5; V3_QA_BASE_URL=http://127.0.0.1:5173 corepack pnpm@10.32.1 --dir unified-dashboard exec tsx e2e/v3-askquestion-input-row.qa.ts
  */
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";

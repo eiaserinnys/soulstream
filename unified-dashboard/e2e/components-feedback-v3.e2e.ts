@@ -12,8 +12,10 @@ mkdirSync(output, { recursive: true });
 
 for (const width of [1440, 390]) for (const webgl of [false, true]) {
 test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ page }) => {
-  // 실시간 유리(WebGL) 화면은 공유 호스트에서 표면 측정이 느리다.
-  test.setTimeout(780_000);
+  // 실측(2026-11-18, 공유 호스트): 1440 fallback 35.2s, 1440 webgl 11.1m,
+  // 390 fallback 31.2s, 390 webgl 3.4m. 소프트웨어 WebGL 두 조합만 상한을
+  // 크게 두고 나머지는 실측에 맞춰 줄인다.
+  test.setTimeout(width === 1440 && webgl ? 720_000 : width === 390 && webgl ? 300_000 : 120_000);
   const name = `${phase}-${width}-${webgl ? "webgl" : "fallback"}`;
   const errors: string[] = [];
   page.on("pageerror", error => { errors.push(error.stack ?? error.message); writeFileSync(path.join(output, `${name}-page-errors.json`), JSON.stringify(errors, null, 2)); });
@@ -222,14 +224,16 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   const liveInput = page.locator('[data-testid="card-composer"] textarea').first();
   await expect(liveInput).toBeVisible({ timeout: 30_000 }); await liveInput.fill("샘플 메시지");
   const operationalInput = await readComposer(liveInput); await capture("operational-input");
-  // 연결 복구 모달이 떠 있으면 실제 포인터 입력이 막힌다. 화면 전환이 목적이므로
-  // 클릭 이벤트를 직접 보낸다.
+  // 연결 감시 모달은 위에서 헬스 응답을 직접 돌려줘 더 이상 뜨지 않는다.
+  // 화면 전환은 실제 클릭으로 한다.
   if (width < 760) {
-    await page.getByTestId("v3-mobile-tab-projects").dispatchEvent("click");
-    await page.getByTestId("v3-mobile-project-list").getByRole("button", { name: "소울스트림", exact: true }).dispatchEvent("click");
-  } else await page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true }).dispatchEvent("click");
-  // 폴더 화면이 열렸는지는 이 검수가 재는 설명 표면으로 확인한다. 프로젝트
-  // 컨텍스트 조회는 유리 화면에서 오래 걸릴 수 있고 측정 대상이 아니다.
+    await page.getByTestId("v3-mobile-tab-projects").click();
+    await page.getByTestId("v3-mobile-project-list").getByRole("button", { name: "소울스트림", exact: true }).click();
+  } else await page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true }).click();
+  // 폴더 화면 진입은 프로젝트 컨텍스트 표면의 가시성으로 확인한다
+  // (client/v3/ProjectContextEditor.tsx:157).
+  const context = page.getByTestId("v3-project-context");
+  await expect(context).toBeVisible({ timeout: 30_000 });
   await page.locator(".v3-description-shell").first().waitFor({ state: "visible", timeout: 30_000 });
   await capture("operational-context");
   expect(errors).toEqual([]);
@@ -238,30 +242,21 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   const operationalPanel = await readSurface(livePanel);
   expect.soft(operationalPanel.background).toBe(reference.background);
   await capture("operational-folder");
-  // 폴더 상세는 비동기 로드가 끝날 때 다시 마운트되고, 편집기는 레이아웃 전
-  // 잠시 크기가 0이다. 그래서 "보임"이 아니라 "붙어 있음"으로 확인한다. 편집기가
-  // 이미 열려 있으면 캡은 없다. 없는 캡을 기다리면 테스트 상한까지 매달린다.
+  // 편집기를 열고 실제로 보이는지 확인한다. 편집기는 포커스를 잃으면 닫히므로
+  // 열자마자 표면을 읽고 캡처한다.
   const editCap = page.locator(".v3-description-shell").first().getByRole("button", { name: "폴더 설명 편집", exact: true }).first();
   const operationalEditor = page.locator(".v3-description-editor").first();
-  let operationalEditorAttached = (await operationalEditor.count()) > 0;
-  for (let attempt = 0; attempt < 3 && !operationalEditorAttached; attempt += 1) {
-    if ((await editCap.count()) === 0) break;
-    await editCap.first().dispatchEvent("click");
-    operationalEditorAttached = await operationalEditor.waitFor({ state: "attached", timeout: 10_000 }).then(() => true).catch(() => false);
-  }
+  await editCap.click();
+  await expect(operationalEditor).toBeVisible({ timeout: 30_000 });
+  const operationalEditorSurface = await readSurface(operationalEditor);
   await capture("operational-folder-edit");
-  expect.soft(operationalEditorAttached).toBe(true);
-  if (operationalEditorAttached) {
-    expect.soft((await readSurface(operationalEditor)).background).toBe(reference.background);
-  }
+  expect(operationalEditorSurface.background).toBe(reference.background);
   await page.keyboard.press('Escape');
-  // 유리 툴바는 WebGL 렌더 중 포인터 파이프라인이 멈추고, 남아 있던 모달의 포털이
-  // 클릭을 가로챈다. 설정 화면 전환이 목적이므로 클릭 이벤트를 직접 보낸다.
-  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).dispatchEvent("click");
+  await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).click();
   await expect(page.getByRole("heading", { name: "설정", exact: true })).toBeVisible({ timeout: 30_000 }); await capture("operational-settings");
   // 설정은 카테고리 목록에서 고른다. 모의 카테고리의 필드 3개를 연다.
   const configDialog = page.getByRole("dialog").filter({ has: page.getByTestId("config-category-nav") });
-  await configDialog.getByTestId("config-category-nav").getByRole("button", { name: "설정 표면 검수" }).dispatchEvent("click");
+  await configDialog.getByTestId("config-category-nav").getByRole("button", { name: "설정 표면 검수" }).click();
   await expect(configDialog.getByTestId("config-field-row")).toHaveCount(3, { timeout: 30_000 });
   const operationalSettings = [];
   for (const input of await configDialog.getByTestId('config-field-row').locator('input').all()) {

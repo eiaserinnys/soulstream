@@ -16,7 +16,10 @@ test.use({ serviceWorkers: "allow", timezoneId: "Asia/Seoul" });
 
 for (const theme of ["dark", "light"] as const) {
   test(`v3 polish round 2 · ${theme} · desktop`, async ({ page }) => {
-    test.setTimeout(180_000);
+    // 공유 호스트 부하에서 캡처·표면 측정이 180초를 넘겨 이 테스트만 실패했다
+    // (2026-11-18 실측: 같은 테스트가 156초 통과, 부하 시 180초 초과). 단언은
+    // 그대로 두고 테스트 상한만 늘린다.
+    test.setTimeout(300_000);
     await preparePage(page, theme, false);
     await openV3DailyPlanner(page, BASE_URL);
 

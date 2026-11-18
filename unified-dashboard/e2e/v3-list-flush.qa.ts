@@ -72,6 +72,7 @@ async function verify(browser: Browser) {
     const stableWindow = {
       durationMs: Date.now() - observationStartedAt,
       mutations,
+      projectRecords: summarizeProjectRecords(mutations.projectRecords),
       plannerRequestDelta: plannerDelta(before, after),
       projectRequestDelta: projectRequests - beforeProjectRequests,
       runHistoryRequestDelta: runHistoryRequests - beforeRunHistoryRequests,
@@ -81,6 +82,10 @@ async function verify(browser: Browser) {
 
     if (baselineMode) return { stableWindow };
 
+    // observer는 attributes·characterData·subtree까지 보지만 위의 통과 판정은
+    // childList만 센다. 실시간 session_updated·catalog_updated는 키가 있는 행의
+    // 텍스트와 data-* 속성만 바꾸고(FolderWorkspaceSections.tsx의 .v3-task-list),
+    // 목록이 비워졌다 다시 붙는 플러시만 childList 교체로 드러나기 때문이다.
     const projectChildList = mutations.projectRecords.filter((record) => record.type === "childList").length;
     assert(
       projectChildList === 0,
@@ -390,6 +395,22 @@ function plannerDelta(before: Record<string, number>, after: Record<string, numb
   return Object.keys(after)
     .filter((path) => path.startsWith("/api/planner/"))
     .reduce((total, path) => total + (after[path] ?? 0) - (before[path] ?? 0), 0);
+}
+
+function summarizeProjectRecords(
+  records: Array<{ type: string; attributeName: string | null; target: string }>,
+) {
+  const byType: Record<string, number> = {};
+  const byAttributeName: Record<string, number> = {};
+  const byTarget: Record<string, number> = {};
+  for (const record of records) {
+    byType[record.type] = (byType[record.type] ?? 0) + 1;
+    if (record.attributeName) {
+      byAttributeName[record.attributeName] = (byAttributeName[record.attributeName] ?? 0) + 1;
+    }
+    byTarget[record.target] = (byTarget[record.target] ?? 0) + 1;
+  }
+  return { total: records.length, byType, byAttributeName, byTarget };
 }
 
 async function waitUntil(predicate: () => boolean | Promise<boolean>, label: string) {

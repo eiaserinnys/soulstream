@@ -266,7 +266,7 @@ const sessions = [
     displayName: "밀도 기준 정리",
     awaySummary: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
       timestamp: "2026-07-13T11:20:00.000Z",
     },
@@ -284,7 +284,7 @@ const sessions = [
     updatedAt: NOW,
     displayName: "시각 QA 순회",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "다크·라이트 실제 픽셀 순회를 진행하고 있습니다.",
       timestamp: NOW,
     },
@@ -320,7 +320,7 @@ const sessions = [
     displayName: "대비 확인",
     awaySummary: "라이트 모드의 입력 영역 대비를 점검했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "라이트 모드의 입력 영역 대비를 점검했습니다.",
       timestamp: "2026-07-14T01:10:00.000Z",
     },
@@ -340,7 +340,7 @@ const sessions = [
     displayName: "모바일 탭 구현",
     awaySummary: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
     lastMessage: {
-      type: "assistant",
+      type: "assistant_message",
       preview: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
       timestamp: "2026-07-13T13:15:00.000Z",
     },
@@ -390,7 +390,7 @@ const outsideTaskSession = {
   updatedAt: NOW,
   displayName: "데일리 밖 완료 폴더 세션",
   lastMessage: {
-    type: "assistant",
+    type: "assistant_message",
     preview: "완료 폴더의 소속을 canonical membership으로 찾습니다.",
     timestamp: NOW,
   },
