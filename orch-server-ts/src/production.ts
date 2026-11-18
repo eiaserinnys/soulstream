@@ -945,6 +945,12 @@ export async function createLiveProductionApplication(
         publicUrl: accessLinkPublicUrl,
       },
     }),
+    outboundWebhookRoutes: {
+      currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+      service: outboundWebhookService,
+      authorizeUser: outboundAuthorizeUser,
+      sessionAccess: outboundSessionAccess,
+    },
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,

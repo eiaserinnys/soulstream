@@ -165,6 +165,7 @@ function createAllOptInRouteApp() {
     agentProfileRoutes: inert,
     ownedAgentRoutes: inert,
     accessLinkRoutes: inert,
+    outboundWebhookRoutes: inert,
     persistentSessionRoutes: { service: inert, reports: inert, requireSessionAccess: async () => undefined },
     conversationRoutes: { service: inert, resolveAccount: async () => "test-account" },
     persistentContextRoutes: { service: inert, authBearerToken: "test-token" },

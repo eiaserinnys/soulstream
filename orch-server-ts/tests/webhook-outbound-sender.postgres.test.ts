@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Webhook } from "standardwebhooks";
+import { SERVICE_CALLER } from "../src/auth/service_caller.js";
 import type { WebhookPost } from "../src/external_events/webhook_transport.js";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { publishSubscription } from "../src/webhooks/outbound_publisher.js";
@@ -228,6 +229,34 @@ describe("outbound webhook sender", () => {
     expect(row.last_error).toBe("access_revoked");
   });
 
+  it("dies with access_revoked when issuer authorization returns a denial", async () => {
+    const { deliveryId } = await seedPendingDelivery();
+    const sender = makeSender({ authorizeUser: () => "user_disabled" });
+
+    expect(await sendNextDueDelivery(sender)).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    const row = await deliveryRow(deliveryId);
+    expect(row.state).toBe("dead");
+    expect(row.last_error).toBe("access_revoked");
+  });
+
+  it("checks the issuer and the target session through the service caller", async () => {
+    const { deliveryId } = await seedPendingDelivery();
+    const authorizeUser = vi.fn(() => null);
+    const requireSessionAccess = vi.fn(async () => undefined);
+    const sender = makeSender({ authorizeUser, requireSessionAccess });
+
+    expect(await sendNextDueDelivery(sender)).toBe(true);
+
+    expect(authorizeUser).toHaveBeenCalledWith({ email: OWNER });
+    expect(requireSessionAccess).toHaveBeenCalledWith({
+      request: SERVICE_CALLER,
+      sessionId: "s1",
+      accessEmail: OWNER,
+    });
+    expect((await deliveryRow(deliveryId)).state).toBe("delivered");
+  });
+
   it("never posts when the target session was deleted", async () => {
     const { deliveryId } = await seedPendingDelivery();
     await harness.sql`DELETE FROM sessions WHERE session_id = 's1'`;
@@ -259,14 +288,14 @@ describe("outbound webhook sender", () => {
   });
 
   it("manual redelivery keeps the same webhook-id", async () => {
-    const { deliveryId } = await seedPendingDelivery();
+    const { subscriptionId, deliveryId } = await seedPendingDelivery();
     const service = makeService();
 
     expect(await sendNextDueDelivery(makeSender())).toBe(true);
     expect(post).toHaveBeenCalledTimes(1);
 
     clock += 1_000;
-    const result = await service.redeliver(OWNER, deliveryId);
+    const result = await service.redeliver(OWNER, subscriptionId, deliveryId);
 
     expect(result).toMatchObject({ ok: true, outcome: "delivered" });
     expect(post).toHaveBeenCalledTimes(2);
@@ -279,7 +308,7 @@ describe("outbound webhook sender", () => {
     const service = makeService();
     await service.setActive(OWNER, subscriptionId, false);
 
-    expect(await service.redeliver(OWNER, deliveryId)).toEqual({
+    expect(await service.redeliver(OWNER, subscriptionId, deliveryId)).toEqual({
       ok: false,
       reason: "subscription_inactive",
     });
