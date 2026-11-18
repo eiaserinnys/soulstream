@@ -635,6 +635,27 @@ describe("control-plane host routes", () => {
     expect(terminalForNode).toHaveBeenCalledWith("node-1", 1_000);
   });
 
+  it("routes node generation inventory and terminalization without a delivery", async () => {
+    const activeGenerationsForNode = vi.fn(async () => []);
+    const terminalizeGeneration = vi.fn(async () => ({ accepted: true }));
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null, authBearerToken: token,
+      repositoryProvider: async () => ({ claudeBackgroundTasks: {
+        activeGenerationsForNode, terminalizeGeneration,
+      } }) as unknown as PersistenceHostRepositories,
+    });
+    const query = { sourceNode: "node-1", updatedBefore: "2026-11-18T00:00:00.000Z", limit: 27 };
+    const terminal = { sourceNode: "node-1", sessionId: "session-1", status: "killed" };
+    const inventory = await app.inject({ method: "POST", url: "/api/claude-runtime/host/active_background_generations_for_node", headers: { authorization: `Bearer ${token}` }, payload: { args: [query] } });
+    const closed = await app.inject({ method: "POST", url: "/api/claude-runtime/host/terminalize_background_generation", headers: { authorization: `Bearer ${token}` }, payload: { args: [terminal] } });
+    expect(inventory.statusCode).toBe(200);
+    expect(closed.statusCode).toBe(200);
+    expect(activeGenerationsForNode).toHaveBeenCalledWith({ ...query, updatedBefore: new Date(query.updatedBefore) });
+    expect(terminalizeGeneration).toHaveBeenCalledWith(terminal);
+  });
+
   it("round-trips an opaque payload from the soul client through the route into the repository", async () => {
     const {
       PersistenceHostTransport,

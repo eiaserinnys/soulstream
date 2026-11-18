@@ -354,6 +354,34 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
 });
 
 describe("ClaudeBackgroundTaskLifecycle dead-runner recovery", () => {
+  it("closes orphaned rows without deliveries and continues after a row fails", async () => {
+    const live = row("live-session", "live");
+    const failed = row("gone-session", "failed");
+    const orphan = { ...row("gone-session", "orphan"), runner_registration_id: null, execution_command_id: null };
+    const activeGenerationsForNode = vi.fn(async () => [live, failed, orphan]);
+    const terminalizeGeneration = vi.fn()
+      .mockRejectedValueOnce(new Error("write failed"))
+      .mockResolvedValueOnce({ accepted: true, row: orphan });
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { activeGenerationsForNode, terminalizeGeneration } as never,
+      sourceNode: "node-a", logger,
+    });
+    const updatedBefore = new Date("2026-09-03T05:36:28.000Z");
+
+    await expect(lifecycle.terminalizeOrphanedForNode({
+      liveSessionIds: new Set(["live-session"]), updatedBefore, limit: 100,
+    })).resolves.toEqual({ queried: 3, closed: 1, skippedLive: 1, failed: 1 });
+    expect(activeGenerationsForNode).toHaveBeenCalledWith({ sourceNode: "node-a", updatedBefore, limit: 100 });
+    expect(terminalizeGeneration).toHaveBeenCalledTimes(2);
+    expect(terminalizeGeneration).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: "gone-session", taskId: "orphan", status: "killed",
+      closeReason: "runner_missing", terminalRevision: "runner-missing:generation-orphan",
+    }));
+    expect(terminalizeGeneration.mock.calls[1]![0]).not.toHaveProperty("delivery");
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+
   it("terminalizes only rows owned by the exact dead execution and is re-entry idempotent", async () => {
     const target = row("session-shared", "task-a", "registration-dead", "command-dead");
     const successor = row("session-shared", "task-b", "registration-live", "command-live");

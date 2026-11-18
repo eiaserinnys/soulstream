@@ -48,6 +48,67 @@ function deferred<T>() {
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
 
+  it("sweeps once after the initial scan with every live and unreadable session protected", async () => {
+    const waiting = { ...registration({ sessionId: "waiting" }), bootstrap: null, lifecycle: null };
+    const retired = { ...registration({ sessionId: "retired", lifecycleState: "completed" }), retiredAt: "2026-08-11T00:00:00Z" };
+    const replay = registration({ sessionId: "replay", lifecycleState: "completed" });
+    const dead = registration({ sessionId: "dead", pidAlive: false, lifecycleState: "completed" });
+    const sweep = vi.fn(async () => ({ queried: 0, closed: 0, skippedLive: 0, failed: 0 }));
+    let now = RECOVERY_NOW_MS;
+    const scan = vi.fn(async () => { now += 5_000; return ({
+      registrations: [waiting, retired, replay, dead],
+      errors: [{ directory: "/unreadable", error: new Error("unreadable"), sessionId: "uncertain" }],
+    }); });
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      scan, now: () => now, quarantineFailure: vi.fn(async () => ({ status: "missing" as const })),
+      terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    await subject.coordinator.start();
+    expect(sweep).toHaveBeenCalledOnce();
+    expect(sweep).toHaveBeenCalledWith({
+      liveSessionIds: new Set(["waiting", "retired", "replay", "uncertain"]),
+      updatedBefore: new Date(RECOVERY_NOW_MS), limit: 1_000,
+    });
+    expect(scan.mock.invocationCallOrder[0]).toBeLessThan(sweep.mock.invocationCallOrder[0]!);
+    await subject.coordinator.scanOnce();
+    expect(sweep).toHaveBeenCalledOnce();
+    await subject.coordinator.stop();
+  });
+
+  it("skips the sweep when a scan error has no session id", async () => {
+    const sweep = vi.fn();
+    const subject = makeSubject([], RECOVERY_NOW_MS, [{ directory: "/unreadable", error: new Error("unreadable") }], {
+      quarantineFailure: vi.fn(async () => ({ status: "missing" as const })),
+      terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    await subject.coordinator.start();
+    expect(sweep).not.toHaveBeenCalled();
+    expect(subject.logger.warn).toHaveBeenCalled();
+    await subject.coordinator.stop();
+  });
+
+  it("keeps the periodic scan running when the sweep rejects", async () => {
+    const sweep = vi.fn(async () => { throw new Error("sweep failed"); });
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      scanIntervalMs: 10, terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    const scanOnce = vi.spyOn(subject.coordinator, "scanOnce");
+    await expect(subject.coordinator.start()).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(scanOnce.mock.calls.length).toBeGreaterThan(1));
+    expect(subject.logger.error).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(Error) }), expect.stringContaining("orphan"));
+    await subject.coordinator.stop();
+  });
+
+  it("does not wait for the orphan sweep before returning from start", async () => {
+    const pending = deferred<{ queried: number; closed: number; skippedLive: number; failed: number }>();
+    const sweep = vi.fn(() => pending.promise);
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], { terminalizeOrphanedClaudeBackgroundTasks: sweep });
+    await expect(withinBudget(subject.coordinator.start(), 1_000)).resolves.toBeUndefined();
+    expect(sweep).toHaveBeenCalledOnce();
+    pending.resolve({ queried: 0, closed: 0, skippedLive: 0, failed: 0 });
+    await subject.coordinator.stop();
+  });
+
   it("persists a scan and restores it before the next coordinator's first scan", async () => {
     const fixture = await releasedTerminalSidecarFixture();
     try {
