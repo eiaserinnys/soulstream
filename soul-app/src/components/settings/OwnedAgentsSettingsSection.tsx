@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { createApiClient } from '../../api/client';
 import type { OwnedAgent, OwnedAgentKey, OwnedAgentsApi, OwnedAgentsResponse } from '../../api/ownedAgentsEndpoints';
 import { useTokens, type DesignTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';
+import { FrameLoading } from '../FrameLoading';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { GlassButton } from '../GlassSurface';
 import { SettingsDivider, SettingsSection } from './SettingsSection';
@@ -70,7 +71,7 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
     <View style={s.block}>
       <Text style={s.body}>내 에이전트의 이름과 활성 상태, 연결 키를 관리합니다.</Text>
       {action('에이전트 추가', () => { setEditorError(null); setEditor({ id: null, name: '' }); }, !api)}
-      {loading && <ActivityIndicator accessibilityLabel="불러오는 중" color={t.colors.accent} />}
+      {loading && <FrameLoading testID="owned-agents-loading" accessibilityLabel="불러오는 중" inline />}
       {error && <><Text accessibilityRole="alert" style={s.error}>{error}</Text>{action('다시 시도', () => void load())}</>}
       {existing?.canRegister ? <><Text style={s.body}>현재 연결의 주소와 키를 그대로 사용해 내 에이전트로 등록합니다.</Text>{action('기존 연결 등록', () => void mutate(async () => { await api!.registerExistingOwnedAgent(); await load(); }))}</> : existing ? <Text style={s.body}>{existing.registered ? '기존 연결이 등록되어 있습니다.' : existing.configured ? '기존 연결 등록은 관리자에게 요청해 주세요.' : '등록할 기존 연결이 없습니다.'}</Text> : null}
       {data?.agents.length === 0 && <Text style={s.body}>아직 등록한 에이전트가 없습니다.</Text>}

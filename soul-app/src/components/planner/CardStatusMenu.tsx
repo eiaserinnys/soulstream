@@ -1,6 +1,7 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { FrameLoading } from '../FrameLoading';
 import type { ApiClient } from '../../api/client';
 import type { CardDetail, CardDto, CardStatus } from '../../api/cardTypes';
 import { captureAuthScope } from '../../lib/auth-scope';
@@ -92,7 +93,7 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
     <ScrollView ref={scroll} testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator
       onLayout={event => setViewHeight(event.nativeEvent.layout.height)} onContentSizeChange={(_, height) => setContentHeight(height)}>
       <Text style={styles.heading} numberOfLines={2}>{`${card.title} (${colorSelection ? '카드 색상' : '상태 이동'})`}</Text>
-      {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
+      {!detail && !readError ? <FrameLoading testID="card-status-loading" inline /> : null}
       {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton busy={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
       {readError || error ? <GlassButton accessibilityLabel="카드 다시 조회" onPress={() => { void read(); }}><Text style={styles.body}>다시 조회</Text></GlassButton> : null}

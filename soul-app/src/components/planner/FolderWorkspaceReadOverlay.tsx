@@ -1,7 +1,7 @@
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
+import { FrameLoading } from '../FrameLoading';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Platform,
@@ -151,10 +151,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
           </TabletPaneHeader>
           <ScrollView contentContainerStyle={styles.folderContent}>
             {resolution?.status === 'loading' ? (
-              <View testID="session-task-loading" style={styles.stateRow}>
-                <ActivityIndicator color={t.colors.accent} />
-                <Text style={styles.sessionOnlyHint}>폴더 연결을 확인하는 중입니다.</Text>
-              </View>
+              <FrameLoading testID="session-task-loading" text="폴더 연결을 확인하는 중입니다." inline />
             ) : resolution?.status === 'error' ? (
               <View testID="session-task-error" style={styles.errorState}>
                 <Text style={styles.sessionOnlyHint}>
@@ -529,7 +526,6 @@ function makeStyles(t: DesignTokens) {
     },
     folderContent: { padding: planner.pageInset, gap: t.spacing.lg },
     sessionOnlyHint: { color: t.colors.textTertiary, ...planner.typography.meta },
-    stateRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
     errorState: { gap: t.spacing.sm, alignItems: 'flex-start' },
     retryButton: {
       minWidth: planner.actionColumn,

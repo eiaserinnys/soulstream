@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
+import { FrameLoading } from '../components/FrameLoading';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { DailyMemo } from '../components/planner/DailyMemo';
@@ -97,6 +98,7 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
   const [newFolderVisible, setNewFolderVisible] = useState(false);
   const [reviewVisible, setReviewVisible] = useState(false);
   const { data, loading, error, refresh } = usePlannerDaily(api, date, active);
+  const firstLoading = !data && loading;
   const handlePullRefresh = useCallback(async () => {
     if (pullRefreshing) return;
     setPullRefreshing(true);
@@ -124,7 +126,7 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
       testID="phone-daily-body"
       scrollEnabled={!draggingCards}
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, firstLoading && styles.contentFirstLoading]}
       contentInset={{ top: 0, right: 0, bottom: 0, left: 0 }}
       refreshControl={(
         <RefreshControl refreshing={pullRefreshing} onRefresh={handlePullRefresh} />
@@ -147,14 +149,15 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           <Text style={styles.dateButton}>›</Text>
         </GlassButton>
         </View>
-        {loading && !pullRefreshing ? (
+        {loading && !!data && !pullRefreshing ? (
           <AutomaticRefreshIndicator
             testID="daily-auto-progress"
             style={styles.autoProgress}
           />
         ) : null}
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {firstLoading && !pullRefreshing ? <FrameLoading testID="daily-loading" /> : null}
+      {error && !pullRefreshing ? <Text style={styles.error}>{error}</Text> : null}
       {data ? (
         <DailyMemo
           date={date}
@@ -174,7 +177,7 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           })}
         />
       ) : null}
-      <TodayCards api={api} data={data} onOpenSession={onOpenSession} onDragStateChange={setDraggingCards} />
+      {data || !loading ? <TodayCards api={api} data={data} onOpenSession={onOpenSession} onDragStateChange={setDraggingCards} /> : null}
     </ScrollView>
     <View testID="daily-composer-dock" style={styles.dock}><CardComposer today api={api} onSessionCreated={onOpenSession} /></View>
       <NewFolderSheet
@@ -218,10 +221,15 @@ function makeStyles(t: DesignTokens, layout: 'phone' | 'tablet') {
   return StyleSheet.create({
     container: { flex: 1, ...roles.canvas.tokenStyle },
     content: {
+      flexGrow: 1,
       paddingHorizontal: t.uiSpacing.lg,
       paddingVertical: t.spacing.lg,
       gap: t.uiSpacing.lg,
     },
+    // 첫 로딩에는 로더가 날짜 줄 아래부터 입력창 위까지의 칸 전체를 차지한다. 아래 여백과
+    // 항목 간격을 걷어 내야 그 칸의 가운데가 곧 로더의 가운데가 된다. 데이터가 있는
+    // 화면은 content의 여백을 그대로 쓴다.
+    contentFirstLoading: { paddingBottom: 0, gap: 0 },
     dock: { paddingHorizontal: t.uiSpacing.lg, paddingTop: t.uiSpacing.sm + t.uiSpacing.xxs,
       paddingBottom: t.uiSpacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.colors.border },
     dateRow: {

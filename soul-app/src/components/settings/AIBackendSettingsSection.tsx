@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTokens, type DesignTokens } from '../../theme';
+import { FrameLoading } from '../FrameLoading';
 import { NodeProviderSections, type NodeProviderSectionsApi } from './NodeProviderSections';
 import { SettingsOptionRow } from './SettingsOptionRow';
 import { GlassButton } from '../GlassSurface';
@@ -47,12 +48,12 @@ export function AIBackendSettingsSection({
           {!serverUrl ? (
             <Text style={styles.notice}>연결 설정을 저장하면 노드를 표시합니다.</Text>
           ) : (
-            <ActivityIndicator size="small" color={t.colors.accent} />
+            <FrameLoading testID="ai-backend-mode-loading" inline />
           )}
         </View>
       ) : loadingNodes ? (
         <View style={styles.state}>
-          <ActivityIndicator size="small" color={t.colors.accent} />
+          <FrameLoading testID="ai-backend-nodes-loading" inline />
         </View>
       ) : visibleNodes.length === 0 ? (
         <View style={styles.state}>
