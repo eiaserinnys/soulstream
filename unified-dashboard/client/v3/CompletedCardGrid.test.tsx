@@ -3,7 +3,7 @@ import {act,forwardRef,useImperativeHandle} from "react";
 import {createRoot,type Root} from "react-dom/client";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {reviewCard} from "./components-review-fixtures";
-import {CompletedCardGrid} from "./CompletedCardGrid";
+import {CompletedCardGrid,CompletedCardBrowserFeedback} from "./CompletedCardGrid";
 import type {CompletedGridSnapshot} from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
 import type {CompletedBrowser} from "./use-completed-cards";
 
@@ -20,7 +20,7 @@ afterEach(async()=>{await act(()=>root.unmount());element.remove();});
 it("restores measurements first and applies the saved top once after the public ready event",async()=>{
  const snapshot=Object.freeze({scrollTop:720,viewport:{height:400,width:800},item:{height:180,width:256},gap:{row:24,column:24}}) satisfies CompletedGridSnapshot;
  const changed=vi.fn();
- const browser={cards:[{...reviewCard,id:"done",status:"done"}],loading:false,error:null,resetKey:"period-7",period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false} as CompletedBrowser;
+ const browser={cards:[{...reviewCard,id:"done",status:"done"}],loading:false,loaded:true,invalidRange:false,error:null,resetKey:"period-7",period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false} as CompletedBrowser;
  await act(()=>root.render(<CompletedCardGrid browser={browser} renderCard={()=>null} snapshot={snapshot} onSnapshotChange={changed}/>));
  expect(virtualGridHarness.props?.restoreStateFrom).toEqual({...snapshot,scrollTop:0});
  expect(snapshot.scrollTop).toBe(720);
@@ -39,4 +39,18 @@ it("restores measurements first and applies the saved top once after the public 
  expect(changed).toHaveBeenLastCalledWith({...snapshot,scrollTop:900});
  expect(element.querySelectorAll(".v3-completed-controls")).toHaveLength(1);
  expect(element.querySelector("[data-testid=completed-viewport]")).not.toBeNull();
+});
+
+it("shows exactly one feedback state and offers retry only for a fetch error",async()=>{
+ const browser={cards:[],loaded:false,invalidRange:false,error:"조회 실패",retry:vi.fn()} as unknown as CompletedBrowser;
+ await act(()=>root.render(<CompletedCardBrowserFeedback browser={browser}/>));
+ expect(element.querySelectorAll('[role="alert"]')).toHaveLength(1);
+ expect(element.textContent).toContain("완료 카드를 불러오지 못했습니다.");
+ expect(element.textContent).not.toContain("Error:");
+ expect(element.textContent).not.toContain("선택한 기간에 완료 카드가 없습니다");
+ expect(element.querySelector("button")?.textContent).toBe("다시 불러오기");
+ await act(()=>root.render(<CompletedCardBrowserFeedback browser={{...browser,invalidRange:true}}/>));
+ expect(element.textContent).toContain("시작일과 종료일을 확인해 주세요.");
+ expect(element.querySelector("button")).toBeNull();
+ expect(element.textContent).not.toContain("완료 카드를 불러오지 못했습니다.");
 });

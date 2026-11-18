@@ -11,13 +11,20 @@ let element:HTMLDivElement,root:Root;
 beforeEach(()=>{vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});element=document.createElement("div");document.body.append(element);root=createRoot(element);});
 afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
 function makeCompletedBrowser(overrides:Partial<CompletedBrowser>={}):CompletedBrowser {
- return {cards:[],loading:false,error:"완료 카드 검색 실패",resetKey:"completed-search",period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false,...overrides};
+ return {cards:[],loading:false,loaded:true,invalidRange:false,error:"완료 카드 검색 실패",resetKey:"completed-search",period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false,...overrides};
 }
 it("keeps the board lanes and cards without stage drag handles",async()=>{
  await act(()=>root.render(<CardBoard cards={[reviewCard]} renderCard={card=><article data-card-id={card.id}>{card.title}</article>}/>));
  expect(element.querySelector('[aria-label="'+reviewCard.title+' 단계 이동"]')).toBeNull();
  expect(element.querySelector('[data-board-column="blocked"]')?.getAttribute("aria-label")).toBe("막힘");
  expect(element.querySelector('[data-card-id="'+reviewCard.id+'"]')).not.toBeNull();
+});
+it("omits the completed count until the current result is loaded",async()=>{
+ const render=(loaded:boolean)=><CardBoard cards={[]} completed={makeCompletedBrowser({error:null,loaded})} renderCard={()=>null}/>;
+ await act(()=>root.render(render(false)));
+ expect(element.querySelector('[data-board-column="done"] .v3-detail-section-head')?.textContent).toBe("완료");
+ await act(()=>root.render(render(true)));
+ expect(element.querySelector('[data-board-column="done"] .v3-detail-section-head')?.textContent).toBe("완료0개 표시");
 });
 it("expands the actual board and restores horizontal and lane scroll and focus",async()=>{
  await act(()=>root.render(<CardBoardWorkspace title="전체 카드" cards={[reviewCard]} renderCard={card=><article>{card.title}</article>}/>));
@@ -51,9 +58,9 @@ it("keeps completed search and feedback above the main board when its actual res
  expect(controls).not.toBeNull();
  expect(controls.compareDocumentPosition(board)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  expect(controls.querySelector('[aria-label="제목 또는 요청 검색"]')).not.toBeNull();
- expect(element.querySelector('[role="alert"]')?.textContent).toContain("완료 카드 검색 실패");
+ expect(element.querySelector('[role="alert"]')?.textContent).toContain("완료 카드를 불러오지 못했습니다.");
  expect([...element.querySelectorAll("button")].some(button=>button.textContent==="다시 불러오기")).toBe(true);
- expect(element.querySelector('[role="status"]')?.textContent).toBe("선택한 기간에 완료 카드가 없습니다");
+ expect(element.querySelector('[role="status"]')).toBeNull();
 
  await act(()=>element.querySelector<HTMLButtonElement>('button[aria-label="보드 확대"]')!.click());
  const doneLane=document.querySelector<HTMLElement>('[role="dialog"] [data-board-column="done"]')!;
@@ -61,7 +68,7 @@ it("keeps completed search and feedback above the main board when its actual res
  expect(doneLane.querySelector(".v3-completed-controls")).not.toBeNull();
  expect(doneLane.querySelector('[data-testid="completed-viewport"]')).not.toBeNull();
  expect(document.querySelectorAll(".v3-completed-controls")).toHaveLength(1);
- expect(doneLane.querySelector('[role="alert"]')?.textContent).toContain("완료 카드 검색 실패");
+ expect(doneLane.querySelector('[role="alert"]')?.textContent).toContain("완료 카드를 불러오지 못했습니다.");
  await act(()=>document.querySelector<HTMLButtonElement>('button[aria-label="확대 닫기"]')!.click());
  await act(()=>root.render(<CardBoardWorkspace title="전체 카드" cards={[staleDone]} completed={completed} completion={{includeCompleted:false,onChange:vi.fn()}} renderCard={card=><article>{card.title}</article>}/>));
  expect(element.querySelector(".v3-completed-controls")).toBeNull();

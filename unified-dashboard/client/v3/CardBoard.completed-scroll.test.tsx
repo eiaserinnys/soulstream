@@ -22,7 +22,7 @@ beforeEach(()=>{
 afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
 
 function makeCompletedBrowser(resetKey:string):CompletedBrowser {
- return {cards:[{...reviewCard,id:"completed",status:"done"}],loading:false,error:null,resetKey,period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false};
+ return {cards:[{...reviewCard,id:"completed",status:"done"}],loading:false,loaded:true,invalidRange:false,error:null,resetKey,period:"7",setPeriod:vi.fn(),start:"",setStart:vi.fn(),end:"",setEnd:vi.fn(),search:"",setSearch:vi.fn(),loadMore:vi.fn(),retry:vi.fn(),hasMore:false};
 }
 
 it("restores the done grid snapshot across expand and collapse and drops it when search resets",async()=>{
