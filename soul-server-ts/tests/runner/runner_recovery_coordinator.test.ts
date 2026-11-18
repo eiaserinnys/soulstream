@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,7 +16,7 @@ import {
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
-import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { scanRunnerRegistrations, type RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
   readRunnerRegistrationIdentity,
@@ -47,6 +47,38 @@ function deferred<T>() {
 }
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+
+  it("persists a scan and restores it before the next coordinator's first scan", async () => {
+    const fixture = await releasedTerminalSidecarFixture();
+    try {
+      const stateDirectory = join(fixture.root, "runner-state");
+      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+      await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+        ...identity!, retiredAt: "2026-10-12T00:00:00.000Z",
+      });
+      const scan = scanRunnerRegistrations;
+      const first = makeSubject([], RECOVERY_NOW_MS, [], { stateDirectory, scan });
+      await first.coordinator.scanOnce();
+      expect(JSON.parse(await readFile(join(stateDirectory, ".registration-scan-cache.json"), "utf8")).entries).toHaveLength(1);
+      const second = makeSubject([], RECOVERY_NOW_MS, [], { stateDirectory, scan });
+      await second.coordinator.scanOnce();
+      expect(first.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ registrationCacheMisses: expect.objectContaining({ notCached: 1 }) }),
+        "runner recovery scan completed",
+      );
+      expect(second.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ registrationCacheMisses: {
+          uncacheable: 0, fingerprintChanged: 0, fullRecheckExpired: 0, notCached: 0,
+        } }), "runner recovery scan completed",
+      );
+      expect(second.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ restored: 1, discarded: 0 }),
+        "runner registration scan cache restored",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
 
   it("keeps auto-resume claimed until the exact old registration is retired", async () => {
     const terminalRegistration = registration({
@@ -2267,6 +2299,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       return { registrations: [], errors: [] };
     });
     const subject = makeSubject([], Date.now(), [], { scan });
+    await subject.coordinator.restoreScanCache();
 
     const first = subject.coordinator.scanOnce();
     const second = subject.coordinator.scanOnce();
@@ -2325,7 +2358,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("caps the default hydration phase at ten seconds and defers unresolved work", async () => {
-    vi.useFakeTimers();
     let finishHydration!: (value: Task) => void;
     const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
@@ -2334,6 +2366,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
     let scanFinished = false;
     const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
     let beforeDeadline = false;
@@ -2357,7 +2391,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("starts at most four hydrations and leaves the queued remainder for a later scan", async () => {
-    vi.useFakeTimers();
     const registrations = Array.from({ length: 6 }, (_, index) =>
       registration({ sessionId: `session-${index}` }));
     const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
@@ -2370,6 +2403,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
 
     let scanFinished = false;
     const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
@@ -2401,7 +2436,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("reuses an in-flight hydration result on the next scan instead of duplicating the host call", async () => {
-    vi.useFakeTimers();
     let finishHydration!: (value: Task) => void;
     const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
     const hydrateRunnerRecoveryTask = vi.fn(() => hydration);
@@ -2411,6 +2445,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
     let firstFinished = false;
     const firstScan = subject.coordinator.scanOnce().then(() => { firstFinished = true; });
     let finishedAtDeadline = false;

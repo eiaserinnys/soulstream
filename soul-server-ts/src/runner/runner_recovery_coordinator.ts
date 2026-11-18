@@ -71,6 +71,7 @@ import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
+import { RunnerRegistrationScanCacheSnapshot } from "./runner_registration_scan_cache_snapshot.js";
 import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 
@@ -104,7 +105,10 @@ function centralCheckKey(registration: RunnerRegistration): string {
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
-  private readonly scanCache = new RunnerRegistrationScanCache();
+  private readonly scanCache: RunnerRegistrationScanCache;
+  private readonly scanCacheSnapshot: RunnerRegistrationScanCacheSnapshot;
+  private restoreScanCachePromise?: Promise<void>;
+  private scanCacheRestored = false;
   private readonly active = new Map<string, Promise<void>>();
   private readonly centralChecks = new Map<string, Promise<void>>();
   private readonly adoptionSends = new Set<string>();
@@ -129,6 +133,8 @@ export class RunnerRecoveryCoordinator {
     private readonly options: RunnerRecoveryCoordinatorOptions,
     private readonly releaseGarbageCollectionMinIntervalMs = DEFAULT_RELEASE_GC_MIN_INTERVAL_MS,
   ) {
+    this.scanCache = options.scanCache ?? new RunnerRegistrationScanCache();
+    this.scanCacheSnapshot = new RunnerRegistrationScanCacheSnapshot(options.stateDirectory, this.scanCache);
     // 완료 정산 미결 포트는 등록 은퇴 길이 쓴다. 거둠 경로도 같은 문을 지난다.
     this.registrationControl = new RunnerRegistrationControl(
       options.spawner,
@@ -218,6 +224,14 @@ export class RunnerRecoveryCoordinator {
     });
   }
 
+  async restoreScanCache(): Promise<void> {
+    this.restoreScanCachePromise ??= this.scanCacheSnapshot.restore().then((result) => {
+      this.options.logger.info(result, "runner registration scan cache restored");
+      this.scanCacheRestored = true;
+    });
+    await this.restoreScanCachePromise;
+  }
+
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopped = false;
@@ -232,7 +246,9 @@ export class RunnerRecoveryCoordinator {
   }
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
-    this.scanInFlight ??= this.performScan().finally(() => {
+    this.scanInFlight ??= (this.scanCacheRestored
+      ? this.performScan()
+      : this.restoreScanCache().then(() => this.performScan())).finally(() => {
       this.scanInFlight = undefined;
     });
     await this.scanInFlight;
@@ -415,6 +431,11 @@ export class RunnerRecoveryCoordinator {
           (registration) => !this.active.has(registration.config.sessionId),
         ),
       });
+      try {
+        await this.scanCacheSnapshot.persist();
+      } catch (error) {
+        this.options.logger.warn({ err: error }, "runner registration scan cache persist failed");
+      }
       const finishedAt = monotonicNow();
       const phaseDurationsMs = observation.phaseDurationsMs();
       const measuredMs = Object.values(phaseDurationsMs).reduce((sum, duration) => sum + duration, 0);
