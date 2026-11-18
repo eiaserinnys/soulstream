@@ -81,6 +81,7 @@ interface PendingListEntry {
   item: Record<string, unknown>;
   dirtyPath?: string;
   managedPaths?: string[];
+  baseRepoId?: string;
 }
 
 export class WorktreeService implements WorktreeExecutionResolver {
@@ -167,6 +168,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
             ? {
               dirtyPath: discovered.path,
               managedPaths: record?.managedPaths.map((managed) => managed.path) ?? [],
+              ...(discovered.kind === "base" ? { baseRepoId: repoId } : {}),
             }
             : {}),
         });
@@ -207,6 +209,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
       entry.item.dirty = await this.options.git.inspectDirty(
         entry.dirtyPath,
         entry.managedPaths ?? [],
+        entry.baseRepoId,
       );
     }
     return {

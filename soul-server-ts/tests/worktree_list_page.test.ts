@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -154,6 +154,34 @@ async function pagedFixture() {
 }
 
 describe("WorktreeService.list paging and removed filtering", () => {
+  it.each(["demo", undefined])("lists a linked base repository with repo id %s", async (repoId) => {
+    const { projectsRoot, repo, service } = fixture();
+    const outsideRoot = mkdtempSync(join(tmpdir(), "worktree-linked-repo-"));
+    roots.push(outsideRoot);
+    const linkedRepo = join(outsideRoot, "demo");
+    renameSync(repo, linkedRepo);
+    symlinkSync(linkedRepo, repo, "dir");
+    writeFileSync(join(linkedRepo, "README.md"), "changed\n");
+
+    const result = await service.list({ actorSessionId: "owner", ...(repoId ? { repoId } : {}) });
+
+    expect(result.worktrees).toContainEqual(expect.objectContaining({
+      repoId: "demo",
+      path: linkedRepo,
+      discoveryKind: "base",
+      dirty: expect.objectContaining({ clean: false }),
+    }));
+  });
+
+  it("does not bypass the root check for a different path when given a repo id", async () => {
+    const { worktreeGit } = fixture();
+    const outsideRoot = mkdtempSync(join(tmpdir(), "worktree-unregistered-"));
+    roots.push(outsideRoot);
+
+    await expect(worktreeGit.inspectDirty(outsideRoot, [], "demo"))
+      .rejects.toMatchObject({ code: "PATH_OUTSIDE_PROJECTS_ROOT" });
+  });
+
   it("pages the default list without removed records and inspects dirty only for the page", async () => {
     const { service, worktreeGit } = await pagedFixture();
     const inspectDirty = vi.spyOn(worktreeGit, "inspectDirty");

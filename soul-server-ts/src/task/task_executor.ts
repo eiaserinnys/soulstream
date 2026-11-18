@@ -177,6 +177,7 @@ import {
 } from "./persistent_generation_rollover.js";
 import {
   isCompleteRunnerExecutionIdentity,
+  lifecycleCommandMatchesRegistration,
   type RunnerTerminalFact,
 } from "./execution_registration.js";
 import {
@@ -259,8 +260,7 @@ function recoveredTerminalBelongsToSuccessorTurn(
   if (task.executionActivation !== undefined) return true;
   const registeredCommandId = task.executionRegistration?.executionCommandId;
   if (registeredCommandId === undefined) return false;
-  return terminalExecutionCommandId === undefined
-    || registeredCommandId !== terminalExecutionCommandId;
+  return !lifecycleCommandMatchesRegistration(terminalExecutionCommandId, registeredCommandId);
 }
 
 function recoveredRunnerTerminalObservation(

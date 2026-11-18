@@ -157,32 +157,36 @@ describe("runner process detach/reconnect E2E", () => {
     childPids.add(spawned.pid);
     const { mux, batches } = autoAcknowledgingMux();
     const host = processDispatcher(input, mux);
+    const registeredCommandId = "command:11111111-1111-4111-8111-111111111111";
 
     await expect(collectFrames(host.executeFrames({
       agentSessionId: "session-e2e",
       prompt: "fail before ID",
-    }))).rejects.toThrow(expectedError);
+    }, registeredCommandId))).rejects.toThrow(expectedError);
 
     const outbox = await RunnerSqliteEventOutbox.create(spawned.paths.databasePath);
     expect(await outbox.readBootstrap()).toBeNull();
     outbox.close();
     const lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
+    const firstCommandId = lifecycle.read()?.execution_command_id;
     expect(lifecycle.read()).toMatchObject({ execution_state: "failed" });
+    expect(firstCommandId).toMatch(/^execute:11111111-1111-4111-8111-111111111111:[0-9a-f-]{36}$/);
     lifecycle.close();
 
     const second = await collectFrames(host.executeFrames({
       agentSessionId: "session-e2e",
       prompt: "succeed with ID",
-    }));
+    }, registeredCommandId));
     expect(second.map((frame) => frame.payload)).toEqual([
       { type: "session", session_id: "backend-session-e2e" },
       {
         type: "assistant_message",
         content: "execution-2",
         timestamp: 3,
-        output_command_id: expect.stringMatching(/^execute:[0-9a-f-]{36}$/),
+        output_command_id: expect.stringMatching(/^execute:11111111-1111-4111-8111-111111111111:[0-9a-f-]{36}$/),
       },
     ]);
+    expect(second[1]?.payload?.output_command_id).not.toBe(firstCommandId);
     expect(batches.flatMap((batch) => batch.events).some((event) =>
       event.event_type === "claude_runtime_hook_event"
     )).toBe(false);

@@ -9,6 +9,7 @@ import { stampSessionCost, type SessionCostBase } from "../engine/session_cost.j
 import { engineEventMetadata } from "../engine/engine_event_metadata.js";
 import {
   newExecutionCommandId,
+  newRunnerExecuteCommandId,
   type RunnerExecutionIdentity,
 } from "../task/execution_registration.js";
 import { currentProcessLockOwner } from "./runner_process_lock.js";
@@ -61,7 +62,7 @@ const INTERVENTION_INPUT_CAPABILITIES = new Set(["intervene", "injectAtToolBound
  */
 export interface RunnerCommandDispatcher {
   dispatch(frame: unknown): Promise<RunnerCommandResultFrame>;
-  executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame>;
+  executeFrames(params: EngineExecuteParams, registeredCommandId?: string): AsyncIterable<RunnerEventFrame>;
   recoverFrames?(
     commandId?: string,
     onPendingFramesReplayed?: () => void,
@@ -199,8 +200,8 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     }
   }
 
-  executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
-    const commandId = `execute:${randomUUID()}`;
+  executeFrames(params: EngineExecuteParams, registeredCommandId?: string): AsyncIterable<RunnerEventFrame> {
+    const commandId = newRunnerExecuteCommandId(registeredCommandId);
     const command = executeCommandFrame(commandId, params);
     const result = this.dispatch(command);
     return this.executeCommand(commandId, result);

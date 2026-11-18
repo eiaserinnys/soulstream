@@ -138,7 +138,7 @@ describe("TaskEngineTurnRunner", () => {
 
     expect.soft(executeFrames).toHaveBeenCalledWith(expect.objectContaining({
       usage_snapshot: expect.objectContaining({ backend: "antigravity" }),
-    }));
+    }), undefined);
     expect(executeFrames.mock.calls[0][0]).not.toHaveProperty("claudeAccountPoolTarget");
   });
 
@@ -504,7 +504,10 @@ describe("TaskEngineTurnRunner", () => {
   });
 
   it("accepts externally resolved canUseTool and approval request frames without changing SSE", async () => {
-    const task = makeTask();
+    const task = makeTask({ executionRegistration: {
+      registrationId: "registration-a",
+      executionCommandId: "command:11111111-1111-4111-8111-111111111111",
+    } });
     const sendControlFrame = vi.fn();
     const engine: EnginePort = {
       backendId: "claude",
@@ -557,7 +560,7 @@ describe("TaskEngineTurnRunner", () => {
       type: "complete",
       result: "done",
       timestamp: 1,
-      output_command_id: expect.stringMatching(/^execute:[0-9a-f-]{36}$/),
+      output_command_id: expect.stringMatching(/^execute:11111111-1111-4111-8111-111111111111:[0-9a-f-]{36}$/),
       input_id: null,
       usage_snapshot: {
         schema_version: 1,

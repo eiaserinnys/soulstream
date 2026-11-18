@@ -400,7 +400,7 @@ export class TaskEngineTurnRunner {
       ...executeParams,
       usage_snapshot: usageSnapshot,
       execution_input: executionInput,
-    });
+    }, task.executionRegistration?.executionCommandId);
 
     return consumeRunnerFrames(frames, {
       task,
