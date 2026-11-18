@@ -9,7 +9,7 @@ import { PostItCard, type PostItCardHandle } from './PostItCard';
 
 export type BoardDragEvent = { absoluteX: number; absoluteY: number; x: number; y: number; translationX: number; translationY: number };
 export function BoardDragCard(props: {
-  api: ApiClient | null; card: CardDto; dragging: boolean; onOpen(target?: number): void; canPress?(): boolean;
+  api: ApiClient | null; card: CardDto; dragging: boolean; alignPaper?: boolean; onOpen(target?: number): void; canPress?(): boolean;
   onStart(event: BoardDragEvent): void; onMove(event: BoardDragEvent): void;
   onDrop(event: BoardDragEvent): void; onFinish(): void;
 }) {
@@ -80,7 +80,7 @@ export function BoardDragCard(props: {
   return <GestureDetector gesture={gesture} touchAction="auto"><View testID={`board-card-gesture-${props.card.id}`} collapsable={false} {...secondary} {...webContext}
     accessibilityActions={[{ name: 'showMenu', label: '카드 메뉴' }]}
     onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === 'showMenu') menu(); }} style={{ opacity: props.dragging ? 0.35 : 1 }}>
-    <PostItCard ref={cardRef} api={props.api} card={props.card} variant="compact" boardManaged
+    <PostItCard ref={cardRef} api={props.api} card={props.card} variant="compact" boardManaged alignPaper={props.alignPaper}
       canPress={canPress} canOpenContextMenu={canOpenContextMenu} onOpen={open} />
   </View></GestureDetector>;
 }

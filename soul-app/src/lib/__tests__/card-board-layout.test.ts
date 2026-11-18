@@ -58,12 +58,30 @@ test('검증 대기로는 끌어 옮길 수 없고 그 레인에서 다른 레�
   expect(boardDropStatus(100, 100, frame, g, review.start, 'awaiting_verification', columns)).toBe('review');
 });
 
-test('wide viewport snap offsets clamp and deduplicate without end spacers', () => {
+test('tablet end scroll rounds up to the nearest lane start', () => {
   const columns = boardVisibleColumns(false);
   const g = boardLaneGeometry(1210, 256, 8, false, columns);
   const offsets = boardSnapOffsets(1210, g, columns.length);
-  expect(offsets).toEqual([0, g.stride, 2 * g.stride, g.maxScroll]);
+  expect(offsets).toEqual([0, g.stride, 2 * g.stride, 3 * g.stride]);
+  expect(g.maxScroll).toBe(3 * g.stride);
   expect(offsets.length).toBe(new Set(offsets).size);
+});
+
+test.each([1124, 811])('tablet %i shows whole trailing lanes at the default position', width => {
+  const columns = boardVisibleColumns(false);
+  const g = boardLaneGeometry(width, 225.88, 8, false, columns, 8);
+  const review = columns.findIndex(([status]) => status === 'review');
+  const offset = boardLaneOffset(review, width, g, columns.length);
+  expect(g.lanes.some(lane => Math.abs(lane.start - offset) < 0.001)).toBe(true);
+  expect(g.lanes[review].start + g.lanes[review].width - offset).toBeLessThanOrEqual(width);
+});
+
+test('tablet inline uses phone lane sizes but ends on a lane start', () => {
+  const columns = boardVisibleColumns(false);
+  const g = boardLaneGeometry(400, 225.88, 8, true, columns, 8, 12, true);
+  expect(g.gap).toBe(8);
+  expect(g.inset).toBe(12);
+  expect(g.lanes.some(lane => Math.abs(lane.start - g.maxScroll) < 0.001)).toBe(true);
 });
 
 test('empty board has no scroll offsets and invalid lane offsets resolve to the origin', () => {

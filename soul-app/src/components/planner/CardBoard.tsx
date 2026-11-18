@@ -19,13 +19,14 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0, firstLoading = false, activePending = false }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0, firstLoading = false, activePending = false, outerPadding, expandedTablet = false, alignTablet = false }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void; hideEmptyLanes?: boolean;
   completed?:CompletedBrowser;
   reserveHomeComposerSpace?: boolean;
   railOverlayWidth?: number;
+  outerPadding?: number; expandedTablet?: boolean; alignTablet?: boolean;
   /** 보드 전체의 첫 로딩. 칸마다가 아니라 보드 프레임 가운데 하나만 세운다. */
   firstLoading?: boolean;
   /** 활성 목록이 아직 오지 않았다. 빈 칸 문구를 로딩 동안 내지 않는다. */
@@ -45,7 +46,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const scroll = useRef<ScrollView>(null);
   const [frame, setFrame] = useState<BoardFrame>({ x: 0, y: 0, width: 0, height: 0 });
   const viewport = (frame.width || window.width) - railOverlayWidth;
-  const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone,columns,paper.gap);
+  const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone,columns,paper.gap,outerPadding,alignTablet);
   const offsets = columns.map((_, index) => boardLaneOffset(index, viewport, geometry, columns.length));
   const preferredLane = columns.findIndex(([status]) => status === 'review');
   const defaultLaneIndex = preferredLane >= 0 ? preferredLane : columns.length ? 0 : -1;
@@ -166,7 +167,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
     if (!next) { Alert.alert('카드 이동 취소', '다른 단계의 레인 위에서 놓아 주세요.'); return; }
     void action.transition(card, next);
   };
-  return <View ref={frameRef} {...pan.handlers} testID="card-board-frame" style={{ flex: 1 }} onLayout={(event) => {
+  return <View ref={frameRef} {...pan.handlers} testID="card-board-frame" style={{ flex: 1, marginHorizontal: expandedTablet ? -t.uiSpacing.sm : 0 }} onLayout={(event) => {
     const { width, height } = event.nativeEvent.layout;
     setFrame((old) => ({ ...old, width, height }));
     frameRef.current?.measureInWindow((x, y) => setFrame({ x, y, width, height }));
@@ -178,13 +179,13 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       onScroll={(event) => { position.current.x = columns.length ? event.nativeEvent.contentOffset.x : 0;
         const lane = columns.length ? boardNearestLane(position.current.x, offsets) : -1;
         position.current.lane = lane >= 0 ? columns[lane]?.[0] : undefined; savePosition(); }}
-      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
+      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, paddingRight: geometry.inset + geometry.trailingSpace + railOverlayWidth, alignItems: 'stretch' }}>
       {hideEmptyLanes && columns.length === 0 && !firstLoading && !activePending ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
       {columns.map(([status, label],laneIndex) => {
         const items = active.filter((card) => card.status === status);
-        const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card}
+        const renderItem=(card:CardDto)=><BoardDragCard api={api} card={card} alignPaper={alignTablet}
           dragging={drag?.card.id === card.id} onOpen={(target)=>{if(pan.canPress()){if(target===undefined)onOpen(card.id);else onOpen(card.id,target);}}}
           canPress={pan.canPress} onStart={event=>start(card,event)}
           onMove={event=>{if(dragRef.current){const value={...dragRef.current,event};dragRef.current=value;setDrag(value);}}}
@@ -213,7 +214,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
             contentOffset={{ x: 0, y: position.current.lanes[status] ?? 0 }} scrollEventThrottle={16}
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
             contentContainerStyle={{ gap: t.cardLayout.gap, paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs, paddingBottom: t.cardLayout.padding }}>
-            {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card}
+            {items.length ? items.map((card) => <BoardDragCard key={card.id} api={api} card={card} alignPaper={alignTablet}
               dragging={drag?.card.id === card.id} onOpen={(target) => {
                 if (!pan.canPress()) return;
                 if (target === undefined) onOpen(card.id);

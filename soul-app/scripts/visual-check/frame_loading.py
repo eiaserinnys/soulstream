@@ -555,6 +555,149 @@ def check_resize(page: Page, base: str, output: Path, failures: list) -> list:
     return results
 
 
+ALIGNMENT_SCRIPT = r'''({expanded, external, requireCard, fullLanes}) => {
+  const scope = expanded ? document.querySelector('[data-testid="card-board-expanded"]') : document.querySelector('[data-testid="card-board-workspace"]');
+  if (!scope) throw Error('board scope missing');
+  const board = scope.querySelector('[data-testid="card-board"]');
+  const title = external ? document.querySelector('[data-testid="review-external-title"]') : scope.querySelector('[data-testid="card-board-heading-title"]');
+  if (!board || !title) throw Error('board or title missing');
+  const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,width:r.width}; };
+  const bounds=rect(board);
+  const lanes=[...board.querySelectorAll('[data-testid^="card-board-column-"]')].map(e=>({element:e,rect:rect(e),id:e.dataset.testid}));
+  const visible=lanes.filter(l=>l.rect.right>bounds.left+1 && l.rect.left<bounds.right-1);
+  if (!visible.length) throw Error('no visible lanes');
+  // Lanes are transparent. Inline boards may expose an empty bit of the
+  // preceding lane's padding; choose the first visible heading or paper.
+  const first=fullLanes ? visible[0] : visible.find(l => {
+    const content=l.element.querySelector('[data-testid^="card-board-lane-heading-"], [data-testid^="postit-card-"]');
+    if (!content) return false;
+    const r=rect(content); return r.right>bounds.left+1 && r.left<bounds.right-1;
+  });
+  if (!first) throw Error('no visible lane content');
+  const heading=first.element.querySelector('[data-testid^="card-board-lane-heading-"]');
+  const card=first.element.querySelector('[data-testid^="postit-card-"]');
+  if (!heading || (requireCard && !card)) throw Error('first lane heading or card missing: '+first.id);
+  const review=lanes.find(l=>l.id==='card-board-column-review');
+  return {title:rect(title),board:bounds,heading:rect(heading),card:card&&rect(card),scroll:board.scrollLeft,max:board.scrollWidth-board.clientWidth,
+    visible:visible.map(({id,rect})=>({id,...rect})),review:review&&review.rect,fullLanes};
+}'''
+
+
+def check_alignment_metrics(metrics: dict, label: str, failures: list, require_card: bool, full_lanes: bool, require_review: bool = False) -> None:
+    for item in ('heading', 'card') if require_card else ('heading',):
+        if not metrics.get(item) or abs(metrics[item]['left'] - metrics['title']['left']) > 1:
+            failures.append({'check': 'board start alignment', 'label': label, 'item': item, 'metrics': metrics})
+    if full_lanes:
+        for lane in metrics['visible']:
+            if lane['left'] < metrics['board']['left'] - 1 or lane['right'] > metrics['board']['right'] + 1:
+                failures.append({'check': 'partial board lane', 'label': label, 'lane': lane, 'metrics': metrics})
+    if require_review and (not metrics['review'] or metrics['review']['left'] < metrics['board']['left'] - 1 or metrics['review']['right'] > metrics['board']['right'] + 1):
+        failures.append({'check': 'review lane not fully visible', 'label': label, 'metrics': metrics})
+
+
+def check_board_alignment(page: Page, base: str, output: Path, width: int, failures: list) -> list:
+    results = []
+    for mode in ('boardInternal', 'boardExternal'):
+        label=f'alignment-inline-{mode}-{width}'
+        try:
+            page.goto(section_url(base, 'autoRefresh'), wait_until='networkidle')
+            page.get_by_test_id('settings-segment-refresh-owner-'+mode).click(force=True)
+            board=page.get_by_test_id('card-board').first
+            board.wait_for(state='visible')
+            page.wait_for_timeout(500)
+            board.evaluate('(e) => { e.scrollLeft = 0; }')
+            page.wait_for_timeout(300)
+            metrics=page.evaluate(ALIGNMENT_SCRIPT, {'expanded':False,'external':mode=='boardExternal','requireCard':True,'fullLanes':False})
+            check_alignment_metrics(metrics,label,failures,True,False)
+            if width == 390 and any(abs(metrics[k]['left']-16)>1 for k in ('title','heading','card')):
+                failures.append({'check':'phone inline baseline','label':label,'metrics':metrics})
+            page.screenshot(path=str(output / (label+'.png')))
+            results.append({'label':label,'metrics':metrics})
+            if width == 1180:
+                workspace=page.get_by_test_id('card-board-workspace').first
+                workspace.evaluate("(e) => { e.style.width='400px'; e.style.alignSelf='flex-start'; }")
+                page.wait_for_timeout(500)
+                board.evaluate('(e) => { e.scrollLeft=e.scrollWidth; }')
+                page.wait_for_timeout(400)
+                metrics=page.evaluate(ALIGNMENT_SCRIPT, {'expanded':False,'external':mode=='boardExternal','requireCard':True,'fullLanes':False})
+                check_alignment_metrics(metrics,label+'-end',failures,True,False)
+                results.append({'label':label+'-end','metrics':metrics})
+        except Exception as error:
+            failures.append({'check':'inline alignment','label':label,'error':str(error).splitlines()[0]})
+    if width != 1180:
+        return results
+    for duo in (False, True):
+        label='alignment-expanded-duo' if duo else 'alignment-expanded-1180'
+        try:
+            if duo:
+                page.set_viewport_size({'width':951,'height':669})
+            url=section_url(base,'autoRefresh') + ('&duoFrame=inner-landscape' if duo else '&boardAlignment=1')
+            page.goto(url,wait_until='networkidle')
+            page.get_by_test_id('duo-refresh-expand' if duo else 'refresh-expand').click(force=True)
+            modal=page.get_by_test_id('card-board-expanded')
+            modal.wait_for(state='visible')
+            page.wait_for_timeout(700)
+            if duo and modal.get_by_test_id('card-board-column-blocked').locator('[data-testid^="postit-card-"]').count() == 0:
+                raise RuntimeError('duo preceding blocked lane has no card')
+            board=modal.get_by_test_id('card-board')
+            for position in ('initial','end'):
+                if position == 'end':
+                    board.evaluate('(e) => { e.scrollLeft = e.scrollWidth; }')
+                    page.wait_for_timeout(300)
+                metrics=page.evaluate(ALIGNMENT_SCRIPT, {'expanded':True,'external':False,'requireCard':True,'fullLanes':True})
+                check_alignment_metrics(metrics,label+'-'+position,failures,True,True,position=='initial')
+                page.screenshot(path=str(output / (label+'-'+position+'.png')))
+                results.append({'label':label+'-'+position,'metrics':metrics})
+        except Exception as error:
+            failures.append({'check':'expanded alignment','label':label,'error':str(error).splitlines()[0]})
+        finally:
+            if duo: page.set_viewport_size({'width':1180,'height':820})
+    try:
+        page.goto(build_url(base),wait_until='networkidle')
+        page.get_by_test_id('settings-segment-frame-loading-mode-completedFirst').click(force=True)
+        page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+        page.wait_for_timeout(500)
+        metrics=page.evaluate(ALIGNMENT_SCRIPT, {'expanded':True,'external':False,'requireCard':False,'fullLanes':False})
+        check_alignment_metrics(metrics,'alignment-completed-visible',failures,False,False)
+        results.append({'label':'alignment-completed-visible','metrics':metrics})
+    except Exception as error:
+        failures.append({'check':'completed visible alignment','error':str(error).splitlines()[0]})
+    return results
+
+
+def check_completed_refresh(page: Page, base: str, output: Path, failures: list) -> dict:
+    try:
+        page.goto(section_url(base,'autoRefresh')+'&manyCompleted=1',wait_until='networkidle')
+        page.get_by_test_id('refresh-expand').click(force=True)
+        modal=page.get_by_test_id('card-board-expanded')
+        modal.wait_for(state='visible')
+        board=modal.get_by_test_id('card-board')
+        board.evaluate('(e) => { e.scrollLeft=e.scrollWidth; }')
+        lane=modal.get_by_test_id('card-board-scroll-done')
+        lane.wait_for(state='visible')
+        page.wait_for_timeout(700)
+        count=modal.get_by_test_id('card-board-count-done')
+        for _ in range(12):
+            lane.evaluate('(e) => { e.scrollTop=e.scrollHeight; }')
+            page.wait_for_timeout(500)
+            if int(count.inner_text().split('개')[0]) > 60:
+                break
+        page.wait_for_function('''() => {const e=document.querySelector('[data-testid="card-board-expanded"] [data-testid="card-board-count-done"]');return e && parseInt(e.textContent)>60;}''')
+        before={'scroll':lane.evaluate('(e) => e.scrollTop'),'count':int(count.inner_text().split('개')[0])}
+        page.get_by_test_id('refresh-begin').evaluate('(e) => e.click()')
+        page.wait_for_timeout(300)
+        page.get_by_test_id('refresh-finish').evaluate('(e) => e.click()')
+        page.wait_for_timeout(1000)
+        after={'scroll':lane.evaluate('(e) => e.scrollTop'),'count':int(count.inner_text().split('개')[0])}
+        if before['scroll']<1 or abs(before['scroll']-after['scroll'])>1 or after['count']<before['count']:
+            failures.append({'check':'completed refresh preservation','before':before,'after':after})
+        page.screenshot(path=str(output / 'completed-refresh-after.png'))
+        return {'before':before,'after':after}
+    except Exception as error:
+        failures.append({'check':'completed refresh','error':str(error).splitlines()[0]})
+        return {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Frame loading placement check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
@@ -638,6 +781,9 @@ def main() -> int:
                         "metrics": metrics,
                         "failures": sample_failures,
                     })
+                viewport_result['alignment'] = check_board_alignment(page, args.base_url, output, width, failures) if width in (1180, 390) else []
+                if width == 1180:
+                    viewport_result['completedRefresh'] = check_completed_refresh(page, args.base_url, output, failures)
                 viewport_result['boardStates'] = check_board_states(page, args.base_url, output, width, failures)
                 viewport_result['refreshStates'] = check_refresh_states(page, args.base_url, output, width, failures)
                 if width == 1180:

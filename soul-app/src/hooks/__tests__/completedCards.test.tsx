@@ -5,15 +5,16 @@ import {usePlannerFolder} from '../usePlannerFolder';
 import {usePlannerFolderDetail} from '../usePlannerReads';
 import {cardFixture} from '../../test-support/cards';
 import {usePlannerStore} from '../../store/plannerStore';
+import {mergeCompletedRefresh} from '../../../../packages/soul-ui/src/cards/completed-cards';
 // useCompletedCards applies its 250ms search debounce after mount; let it fire inside act
 // before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 260)); });
 
-test('hidden skips completed reads; shown pages keep fixed period and reset on invalidation',async()=>{
-  const card=cardFixture({id:'done',status:'done'});
+test('hidden skips reads; invalidation refreshes the first page and keeps the loaded tail',async()=>{
+  const card=cardFixture({id:'done',status:'done',completedAt:'2026-01-02T00:00:00Z'});
   const listCompletedCards=jest.fn().mockResolvedValueOnce({cards:[card],nextCursor:'next'})
     .mockResolvedValueOnce({cards:[card, {...card,id:'done-2'}],nextCursor:null})
-    .mockResolvedValue({cards:[card],nextCursor:null});
+    .mockResolvedValue({cards:[card],nextCursor:'next'});
   const api={listCompletedCards} as unknown as ApiClient;
   const hook=renderHook<CompletedBrowser,{shown:boolean}>(({shown})=>useCompletedCards(api,'folder-1',shown),{initialProps:{shown:false}});
   expect(listCompletedCards).not.toHaveBeenCalled();
@@ -22,11 +23,59 @@ test('hidden skips completed reads; shown pages keep fixed period and reset on i
   expect(Date.parse(first.completedBefore)-Date.parse(first.completedFrom)).toBe(7*24*60*60*1000);
   act(()=>hook.result.current.loadMore());await waitFor(()=>expect(hook.result.current.cards).toHaveLength(2));
   expect(listCompletedCards.mock.calls[1][0]).toEqual({...first,cursor:'next'});
+  const resetKey=hook.result.current.resetKey;
   act(()=>usePlannerStore.getState().invalidate('folder'));
-  await waitFor(()=>expect(hook.result.current.cards).toHaveLength(1));
+  await waitFor(()=>expect(listCompletedCards).toHaveBeenCalledTimes(3));
+  await waitFor(()=>expect(hook.result.current.loading).toBe(false));
+  expect(hook.result.current.cards).toHaveLength(2);
+  expect(hook.result.current.resetKey).toBe(resetKey);
   expect(listCompletedCards.mock.calls[2][0]).toMatchObject({folderId:first.folderId,q:first.q,limit:60});
   expect(Date.parse(listCompletedCards.mock.calls[2][0].completedBefore)).toBeGreaterThanOrEqual(Date.parse(first.completedBefore));
   expect(listCompletedCards.mock.calls[2][0].cursor).toBeUndefined();
+  await settleTimers();
+});
+
+test('refresh merges the older tail, or replaces it when the first page is complete',()=>{
+  const a={id:'a',completedAt:'2026-01-03'}, b={id:'b',completedAt:'2026-01-02'}, c={id:'c',completedAt:'2026-01-01'};
+  const previous={cards:[a,b,c],cursor:'old'};
+  expect(mergeCompletedRefresh({cards:[a,b],nextCursor:'new'},previous)).toEqual({cards:[a,b,c],cursor:'old'});
+  expect(mergeCompletedRefresh({cards:[a,b],nextCursor:null},previous)).toEqual({cards:[a,b],cursor:null});
+  expect(mergeCompletedRefresh({cards:[c],nextCursor:'new'},previous)).toEqual({cards:[c],cursor:'new'});
+});
+
+test('invalidation during a next page waits and refreshes once',async()=>{
+  const a=cardFixture({id:'a',status:'done',completedAt:'2026-01-02'}),b={...a,id:'b',completedAt:'2026-01-01'};
+  let resolve!: (value:{cards:typeof a[];nextCursor:string|null})=>void;
+  const pending=new Promise<{cards:typeof a[];nextCursor:string|null}>(done=>{resolve=done;});
+  const listCompletedCards=jest.fn().mockResolvedValueOnce({cards:[a],nextCursor:'next'}).mockReturnValueOnce(pending)
+    .mockResolvedValue({cards:[a],nextCursor:'next'});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  await waitFor(()=>expect(hook.result.current.cards).toHaveLength(1));
+  act(()=>hook.result.current.loadMore());
+  act(()=>{usePlannerStore.getState().invalidate('folder');usePlannerStore.getState().invalidate('folder');});
+  expect(listCompletedCards).toHaveBeenCalledTimes(2);
+  await act(async()=>{resolve({cards:[b],nextCursor:null});await pending;});
+  await waitFor(()=>expect(listCompletedCards).toHaveBeenCalledTimes(3));
+  await waitFor(()=>expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a','b']));
+  await settleTimers();
+});
+
+test('retry refreshes the first page while preserving the loaded tail',async()=>{
+  const a=cardFixture({id:'a',status:'done',completedAt:'2026-01-02'}),b={...a,id:'b',completedAt:'2026-01-01'};
+  const listCompletedCards=jest.fn().mockResolvedValueOnce({cards:[a],nextCursor:'next'})
+    .mockResolvedValueOnce({cards:[b],nextCursor:null}).mockRejectedValueOnce(new Error('오류'))
+    .mockResolvedValueOnce({cards:[a],nextCursor:'next'});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  await waitFor(()=>expect(hook.result.current.cards).toHaveLength(1));
+  act(()=>hook.result.current.loadMore());
+  await waitFor(()=>expect(hook.result.current.cards).toHaveLength(2));
+  act(()=>usePlannerStore.getState().invalidate('folder'));
+  await waitFor(()=>expect(hook.result.current.error).toBe('오류'));
+  act(()=>hook.result.current.retry());
+  await waitFor(()=>expect(hook.result.current.error).toBeNull());
+  expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a','b']);
   await settleTimers();
 });
 test('both folder reads always exclude done independently of completion visibility',async()=>{
