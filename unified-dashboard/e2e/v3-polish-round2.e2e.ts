@@ -127,9 +127,13 @@ async function expectGlobalToolbarChrome(page: Page): Promise<void> {
 
 async function expectGlobalToolbarInteractions(page: Page): Promise<void> {
   const toolbar = page.getByTestId("v3-global-toolbar");
-  await toolbar.getByRole("button", { name: "Open session search" }).click();
+  const searchButton = toolbar.getByRole("button", { name: "Open session search" });
+  await searchButton.click();
   await expect(page.getByRole("heading", { name: "세션 기록 검색" })).toBeVisible();
+  // 단추로 열면 검색 입력에 초점이 있고, Esc로 닫으면 연 단추로 초점이 돌아온다.
+  await expect(page.locator('[data-slot="dialog-popup"] input[placeholder="검색어를 입력하세요..."]')).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(searchButton).toBeFocused();
   await page.keyboard.press("Control+K");
   await expect(page.getByRole("heading", { name: "세션 기록 검색" })).toBeVisible();
   await page.keyboard.press("Escape");

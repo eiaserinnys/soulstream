@@ -1,6 +1,10 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
+
+// 이 파일의 효과는 목록 재조회를 비동기로 부르므로, 기본 1초 대기 대신 이 파일에서만
+// 넉넉한 asyncUtilTimeout을 쓴다. 전역 jest 설정은 바꾸지 않는다(카드 #1651).
+configure({ asyncUtilTimeout: 5000 });
 
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
@@ -88,7 +92,7 @@ test('lists every registered session, edits name and model, saves from the foote
   }));
   await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
   expect(screen.queryByTestId('settings-active-footer')).toBeNull();
-  expect(api.listPersistentSessions).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(api.listPersistentSessions).toHaveBeenCalledTimes(2));
 });
 
 test('keeps the recorded reasoning effort when the model choice is unchanged', async () => {

@@ -42,7 +42,7 @@ const persistentSession = {
   runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
 };
 
-const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selection", timeoutMs: 180_000,
+const result = await runPlaywrightLifecycle({ lockName: "card1583-dialog-selection", timeoutMs: 600_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
   const results = [];
@@ -270,7 +270,7 @@ async function documentReader(browser: Browser, width: number) {
     m.codeUS = await us(body.locator("pre, code").first());
     m.bodyButtons = await body.locator("button").evaluateAll(bs => bs.map(b => ({ label: b.getAttribute("aria-label") ?? b.textContent, us: getComputedStyle(b).userSelect, text: (b.textContent ?? "").trim() })));
     m.closeUS = await us(close);
-    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "edge", "end");
+    m.dragTitleToBodyEnd = await drag(page, title, body.locator("p").last(), "start", "end");
     await page.screenshot({ path: path.join(output, `document-drag-${width}.png`) });
     m.forwardCopied = await copied(page);
     console.log("문서 정방향", JSON.stringify(m));
@@ -281,7 +281,7 @@ async function documentReader(browser: Browser, width: number) {
     m.dragBodyToCloseCopied = await copied(page);
     m.tripleTitle = await triple(page, title);
     await page.screenshot({ path: path.join(output, `document-${width}.png`) });
-    await drag(page, title, body.locator("p").last(), "edge", "end");
+    await drag(page, title, body.locator("p").last(), "start", "end");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.keyboard.press("Escape");
     await dialog.waitFor({ state: "hidden" });

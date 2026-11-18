@@ -124,6 +124,8 @@ To run the Vite development server for `unified-dashboard` with hot module repla
 VITE_API_BASE=http://localhost:5200 pnpm --dir unified-dashboard dev
 ```
 
+`vite preview` (a static preview of a built `dist/`) starts without `VITE_API_BASE`; set it only when the preview should proxy `/api` and `/cogito` to an orchestrator.
+
 ## Mobile app dev start
 
 `soul-app` is a standalone Expo package outside the pnpm workspace. Install its dependencies and start the Expo development server with `npm --prefix soul-app`:

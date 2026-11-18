@@ -198,10 +198,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       .waitFor({ state: "visible" });
     await page.locator('.v3-chat-pane[aria-label="세션 채팅"]').waitFor({ state: "visible" });
     assert(await page.getByTestId("v3-standalone-task-empty").count() === 0, "폴더 소속 세션이 단독 모드로 열렸습니다.");
-    // 폴더 소속 세션을 열면 그 폴더의 보드 항목을 읽는다(쿼리 정본 folderId,
-    // client/v3/folder-inline-board-api.ts:32). 플래너와 워크스페이스가 각각
-    // 마운트되므로 총 요청 수는 표면 수를 따르고, 여기서는 0이 아님만 본다.
-    assert(folderBoardRequests >= 1, "폴더 소속 세션을 열었는데 보드 항목 요청이 없습니다.");
+    // 폴더 소속 세션을 열면 그 폴더의 보드 항목을 한 번만 읽는다(쿼리 정본 folderId,
+    // 공유 읽기 정본 client/v3/folder-inline-board-api.ts의 loadFolderBoardItems).
+    // 플래너 인라인과 워크스페이스가 같은 폴더와 invalidation key로 마운트되어도
+    // 진행 중 요청에 합류하므로 폴더 소속 세션을 처음 열 때 요청은 1회다.
+    assert(folderBoardRequests === 1, `폴더 소속 세션을 처음 열 때 보드 항목을 ${folderBoardRequests}회 요청했습니다.`);
     await capture(page, theme, "02-task-session-active-chat");
     // run-alpha-2의 폴더(rb-alpha)는 fixture에서 folder-amber의 자식이다. 현행
     // 헤더는 부모가 있으면 「상위 폴더로 이동」을 쓴다(client/v3/FolderDetailPane.tsx:209).
