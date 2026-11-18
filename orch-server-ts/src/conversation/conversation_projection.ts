@@ -3,6 +3,11 @@ import { isExternalInput, isInternalInput, isKeepalive, isHiddenConversationInpu
 export type ItemSender = { kind: "external"; label: string };
 export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }>; sender?: ItemSender };
 export type SourceEvent = { id: number; type: string; at: string; payload: Record<string, unknown> };
+export type ProjectionState = {
+  firstUserMessageSeen: boolean; keepalive: boolean; suppressed: boolean;
+  hiddenInputs: string[]; turnHiddenInputs: string[]; visibleInputInTurn: boolean;
+  busy: boolean; tool: string | null; streamId: string | null; streamText: string; errorInTurn: boolean;
+};
 export class ConversationProjection {
   private firstUserMessageSeen = false;
   private keepalive = false;
@@ -17,21 +22,27 @@ export class ConversationProjection {
   private errorInTurn = false;
 
   constructor(private readonly firstInputIsInitial: boolean) {}
-  clone(): ConversationProjection {
-    const copy = new ConversationProjection(this.firstInputIsInitial);
-    copy.firstUserMessageSeen = this.firstUserMessageSeen;
-    copy.keepalive = this.keepalive;
-    copy.suppressed = this.suppressed;
-    for (const id of this.hiddenInputs) copy.hiddenInputs.add(id);
-    for (const id of this.turnHiddenInputs) copy.turnHiddenInputs.add(id);
-    copy.visibleInputInTurn = this.visibleInputInTurn;
-    copy.busy = this.busy;
-    copy.tool = this.tool;
-    copy.streamId = this.streamId;
-    copy.streamText = this.streamText;
-    copy.errorInTurn = this.errorInTurn;
+  snapshot(): ProjectionState {
+    return { firstUserMessageSeen: this.firstUserMessageSeen, keepalive: this.keepalive, suppressed: this.suppressed,
+      hiddenInputs: [...this.hiddenInputs], turnHiddenInputs: [...this.turnHiddenInputs], visibleInputInTurn: this.visibleInputInTurn,
+      busy: this.busy, tool: this.tool, streamId: this.streamId, streamText: this.streamText, errorInTurn: this.errorInTurn };
+  }
+  static restore(firstInputIsInitial: boolean, state: ProjectionState): ConversationProjection {
+    const copy = new ConversationProjection(firstInputIsInitial);
+    copy.firstUserMessageSeen = state.firstUserMessageSeen;
+    copy.keepalive = state.keepalive;
+    copy.suppressed = state.suppressed;
+    for (const id of state.hiddenInputs) copy.hiddenInputs.add(id);
+    for (const id of state.turnHiddenInputs) copy.turnHiddenInputs.add(id);
+    copy.visibleInputInTurn = state.visibleInputInTurn;
+    copy.busy = state.busy;
+    copy.tool = state.tool;
+    copy.streamId = state.streamId;
+    copy.streamText = state.streamText;
+    copy.errorInTurn = state.errorInTurn;
     return copy;
   }
+  clone(): ConversationProjection { return ConversationProjection.restore(this.firstInputIsInitial, this.snapshot()); }
   activity() { return { busy: this.busy, tool: this.tool }; }
   hasErrorInTurn() { return this.errorInTurn; }
   allowsLive() { return !this.keepalive; }

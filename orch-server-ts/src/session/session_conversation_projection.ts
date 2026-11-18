@@ -1,5 +1,5 @@
 import type { SqlClient } from "../cards/control_plane/card_types.js";
-import { HISTORY_PAYLOAD, TYPES, sourceEvent } from "../conversation/conversation_history.js";
+import { HISTORY_PAYLOAD, TYPES, sourceEvent } from "../conversation/conversation_history_source.js";
 import { ConversationProjection, type Item } from "../conversation/conversation_projection.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 

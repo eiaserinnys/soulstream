@@ -889,7 +889,8 @@ state "한도 재개 예약" as sessionReservation {
 | src/control_plane/repositories/worktree_repository.ts | 2 | 0 | 3 | 워크트리의 활성 세션 판정. |
 | src/conversation/conversation_events.ts | 2 | 0 | 0 | 대화 사건 종류와 수신 상태. |
 | src/conversation/conversation_execution.ts | 1 | 0 | 0 | 대화 사건 종류와 수신 상태. |
-| src/conversation/conversation_history.ts | 0 | 1 | 0 | 대화 사건 종류와 수신 상태. |
+| src/conversation/conversation_history_snapshot.ts | 0 | 1 | 0 | 대화 사건 종류와 수신 상태. |
+| src/conversation/conversation_history_source.ts | 0 | 1 | 0 | 대화 사건 종류와 수신 상태. |
 | src/conversation/conversation_messages.ts | 0 | 1 | 0 | 대화 사건 종류와 수신 상태. |
 | src/conversation/conversation_projection.ts | 1 | 0 | 0 | 대화 사건 종류와 수신 상태. |
 | src/conversation/conversation_service.ts | 1 | 0 | 0 | 대화 사건 종류와 수신 상태. |
@@ -939,7 +940,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 81개, 비교 85줄, 목록 28줄, SQL 59줄이다.
+파일 82개, 비교 85줄, 목록 29줄, SQL 59줄이다.
 
 ## 다시 만들기
 
