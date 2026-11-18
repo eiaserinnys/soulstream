@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -63,8 +64,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
 
   try {
     await preparePage(page, theme);
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+    await openV3Folder(page, baseUrl);
 
     await page.getByRole("button", { name: "Open session search" }).click();
     await selectSearchResult(page, firstTarget.query, firstTarget.preview);

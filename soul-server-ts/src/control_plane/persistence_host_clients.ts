@@ -512,6 +512,11 @@ export class ClaudeRuntimeHostClient {
       sourceNode, sessionId, sdkSessionId, taskId, initiatingToolUseId,
     );
   }
+  activeGenerationsForNode(params: {
+    sourceNode: string; updatedBefore: Date; limit: number;
+  }): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return this.generations.activeForNode(params);
+  }
   activeGenerationsForExecution(
     sourceNode: string,
     sessionId: string,

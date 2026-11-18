@@ -14,6 +14,38 @@ import type { SessionCommandRouter } from "../src/session/session_command_router
 const sessionId = "81d61f13-b99b-4c58-9830-55487618e4dc";
 
 describe("recurring session creation", () => {
+  it.each(["preset-b", "preset-a"])("sends the ordered policy when the selected preset is %s", async (chosen) => {
+    const requireAvailable = vi.fn();
+    const chooseUsablePreset = vi.fn(() => chosen);
+    const selectNodeForCreate = vi.fn(() => ({ node: { nodeId: "node-a" }, profileId: "roselin", modelPresetId: "preset-a" }));
+    const createSession = vi.fn((payload: any, options: any) => {
+      options.beforeCreateCommand({ node: { nodeId: "node-a" }, modelPresetId: payload.model_preset });
+      return { node: { nodeId: "node-a" }, command: payload, modelPresetId: payload.model_preset };
+    });
+    const sendPendingCommand = vi.fn(async () => ({ type: "session_created", agentSessionId: sessionId }));
+    const result = await createRecurringSession({
+      router: { selectNodeForCreate, createSession, waitForCreatedSession: async () => true } as unknown as SessionCommandRouter,
+      bridge: { sendPendingCommand } as unknown as SessionCommandTransportBridge,
+      modelPresetAvailability: { chooseUsablePreset, requireAvailable },
+    }, { ...input(), modelPreset: null, modelPresetFallbacks: ["preset-b"] });
+    expect(chooseUsablePreset).toHaveBeenCalledWith("node-a", ["preset-a", "preset-b"]);
+    expect(createSession.mock.calls[0]![0]).toMatchObject({ model_preset: chosen, initial_model_preset: "preset-a", model_preset_fallbacks: ["preset-b"] });
+    expect(requireAvailable).toHaveBeenCalledWith("node-a", chosen);
+    expect(result.resolvedModelPreset).toBe(chosen);
+  });
+
+  it("leaves the command unchanged when no first preset is resolved", async () => {
+    const chooseUsablePreset = vi.fn();
+    const createSession = vi.fn((_payload: unknown) => ({ node: { nodeId: "node-a" }, command: {}, modelPresetId: undefined }));
+    await createRecurringSession({
+      router: { selectNodeForCreate: () => ({ node: { nodeId: "node-a" }, profileId: "roselin" }), createSession, waitForCreatedSession: async () => true } as unknown as SessionCommandRouter,
+      bridge: { sendPendingCommand: async () => ({ type: "session_created", agentSessionId: sessionId }) } as unknown as SessionCommandTransportBridge,
+      modelPresetAvailability: { chooseUsablePreset, requireAvailable: vi.fn() },
+    }, { ...input(), modelPreset: null, modelPresetFallbacks: ["preset-b"] });
+    expect(chooseUsablePreset).not.toHaveBeenCalled();
+    expect(createSession.mock.calls[0]![0]).not.toHaveProperty("model_preset_fallbacks");
+  });
+
   it("preserves stored external provenance and owner without a live initiating session", async () => {
     const callerInfo = { source: "dot", agent_id: "registered-dot", external_agent_id: "registered-dot", email: "person@example.test" };
     const createSession = vi.fn((_payload: unknown) => ({ node: { nodeId: "node-a" }, command: { requestId: "request" }, modelPresetId: "preset-a" }));
@@ -45,7 +77,7 @@ describe("recurring session creation", () => {
       command: { requestId: "request-1" },
       modelPresetId: "preset-a",
     };
-    const createSession = vi.fn(() => routed);
+    const createSession = vi.fn((_payload: unknown) => routed);
     const waitForCreatedSession = vi.fn(async () => false);
     const sendPendingCommand = vi.fn(async () => {
       throw new PendingNodeCommandTimeoutError({
@@ -72,6 +104,8 @@ describe("recurring session creation", () => {
       profile: "roselin",
       cardId: "card-1",
     }), expect.any(Object));
+    expect(createSession.mock.calls[0]![0]).not.toHaveProperty("initial_model_preset");
+    expect(createSession.mock.calls[0]![0]).not.toHaveProperty("model_preset_fallbacks");
     expect(sendPendingCommand).toHaveBeenCalledWith(routed);
     expect(waitForCreatedSession).toHaveBeenCalledWith(sessionId, "node-a", { timeoutMs: 0 });
   });

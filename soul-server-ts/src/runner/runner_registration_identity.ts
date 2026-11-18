@@ -17,6 +17,7 @@ import {
 } from "./runner_recovery_storage.js";
 
 const RUNNER_IDENTITY_FILE = "runner-identity.json";
+export const CHILD_RUNNER_IDENTITY_TIMEOUT_MS = 30_000;
 
 export interface RunnerRegistrationIdentity {
   schemaVersion: 1;
@@ -174,7 +175,7 @@ export async function waitForChildRunnerRegistrationIdentity(
     delay(ms: number): Promise<void>;
   },
 ): Promise<RunnerRegistrationIdentity | null> {
-  const deadline = deps.now() + 10_000;
+  const deadline = deps.now() + CHILD_RUNNER_IDENTITY_TIMEOUT_MS;
   while (deps.isPidAlive(pid) && deps.now() < deadline) {
     const current = await readRunnerRegistrationIdentity(sessionDirectory);
     if (

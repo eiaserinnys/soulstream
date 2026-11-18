@@ -40,11 +40,11 @@ export interface TerminalizeClaudeBackgroundTaskGenerationParams
   status: ClaudeBackgroundGenerationTerminalStatus;
   closeReason: string;
   terminalRevision: string;
-  delivery: RegisterSessionDeliveryParams;
+  delivery?: RegisterSessionDeliveryParams;
 }
 
 export type TerminalizeClaudeBackgroundTaskGenerationResult =
-  | { accepted: true; row: ClaudeBackgroundTaskGenerationRow; delivery: SessionDeliveryRow }
+  | { accepted: true; row: ClaudeBackgroundTaskGenerationRow; delivery?: SessionDeliveryRow }
   | { accepted: false; row: ClaudeBackgroundTaskGenerationRow };
 export type ResolveClaudeBackgroundTaskGenerationResult =
   | { status: "absent" }
@@ -95,6 +95,12 @@ export class ClaudeBackgroundGenerationHostClient {
     return this.transport.request<ClaudeBackgroundTaskGenerationRow | null>(
       "claude-runtime", "get_background_generation",
       [sourceNode, sessionId, sdkSessionId, taskId, initiatingToolUseId],
+    );
+  }
+
+  activeForNode(params: { sourceNode: string; updatedBefore: Date; limit: number }) {
+    return this.transport.request<ClaudeBackgroundTaskGenerationRow[]>(
+      "claude-runtime", "active_background_generations_for_node", [params],
     );
   }
 

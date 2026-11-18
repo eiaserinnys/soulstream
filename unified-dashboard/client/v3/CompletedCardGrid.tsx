@@ -1,5 +1,5 @@
 import { useCallback,useLayoutEffect,useRef,useState,type ReactNode } from "react";
-import { Button,Input } from "@seosoyoung/soul-ui";
+import { Button,FrameLoading,Input } from "@seosoyoung/soul-ui";
 import { CompletedVirtualGrid, type CompletedGridHandle,type CompletedGridSnapshot } from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
 import { completedPeriods } from "@seosoyoung/soul-ui/cards/completed-cards";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
@@ -17,7 +17,8 @@ export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser
 export function CompletedCardBrowserFeedback({browser}:{browser:CompletedBrowser}) {
   return <>
     {browser.error?<p role="alert" className="v3-card-board-empty">{browser.error}<Button variant="ghost" size="sm" onClick={browser.retry}>다시 불러오기</Button></p>:null}
-    {!browser.cards.length?<p className="v3-card-board-empty" role="status">{browser.loading?"완료 카드를 불러오는 중…":"선택한 기간에 완료 카드가 없습니다"}</p>:null}
+    {!browser.cards.length&&browser.loading?<FrameLoading label="완료 카드를 불러오는 중…"/>:null}
+    {!browser.cards.length&&!browser.loading?<p className="v3-card-board-empty" role="status">선택한 기간에 완료 카드가 없습니다</p>:null}
   </>;
 }
 

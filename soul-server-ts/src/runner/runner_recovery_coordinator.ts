@@ -9,6 +9,7 @@ import {
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
+  type RunnerRegistrationScan,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
@@ -66,13 +67,17 @@ import {
   RunnerAdoptionFailureRecovery,
   type RunnerAdoptionDisposition,
 } from "./runner_adoption_failure_recovery.js";
-import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import type { RunnerRecoveryCoordinatorOptions as BaseRunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
+import { RunnerRegistrationScanCacheSnapshot } from "./runner_registration_scan_cache_snapshot.js";
 import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
-export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+export type RunnerRecoveryCoordinatorOptions = BaseRunnerRecoveryCoordinatorOptions & {
+  terminalizeOrphanedClaudeBackgroundTasks?: ClaudeBackgroundTaskLifecycle["terminalizeOrphanedForNode"];
+};
 
 class SuccessorTurnStartedError extends Error {}
 /**
@@ -104,7 +109,10 @@ function centralCheckKey(registration: RunnerRegistration): string {
 
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
-  private readonly scanCache = new RunnerRegistrationScanCache();
+  private readonly scanCache: RunnerRegistrationScanCache;
+  private readonly scanCacheSnapshot: RunnerRegistrationScanCacheSnapshot;
+  private restoreScanCachePromise?: Promise<void>;
+  private scanCacheRestored = false;
   private readonly active = new Map<string, Promise<void>>();
   private readonly centralChecks = new Map<string, Promise<void>>();
   private readonly adoptionSends = new Set<string>();
@@ -113,6 +121,7 @@ export class RunnerRecoveryCoordinator {
   private readonly reapedSessions = new Set<string>();
   private readonly centralRetry = new Map<string, CentralCheckRetry>();
   private scanInFlight: Promise<void> | undefined;
+  private lastScan: RunnerRegistrationScan | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private releaseGarbageCollectionStartedAtMs: number | undefined;
   private releaseGarbageCollectionInFlight = false;
@@ -129,6 +138,8 @@ export class RunnerRecoveryCoordinator {
     private readonly options: RunnerRecoveryCoordinatorOptions,
     private readonly releaseGarbageCollectionMinIntervalMs = DEFAULT_RELEASE_GC_MIN_INTERVAL_MS,
   ) {
+    this.scanCache = options.scanCache ?? new RunnerRegistrationScanCache();
+    this.scanCacheSnapshot = new RunnerRegistrationScanCacheSnapshot(options.stateDirectory, this.scanCache);
     // 완료 정산 미결 포트는 등록 은퇴 길이 쓴다. 거둠 경로도 같은 문을 지난다.
     this.registrationControl = new RunnerRegistrationControl(
       options.spawner,
@@ -138,13 +149,14 @@ export class RunnerRecoveryCoordinator {
       ...(options.sessionGarbageCollector
         ? {
           collector: {
-            collect: async (scan, policy, phaseObservation) => await options.sessionGarbageCollector!.collect(
+            collect: async (scan, policy, phaseObservation, runRemoval) => await options.sessionGarbageCollector!.collect(
               scan,
               {
                 centralSessionExists: async (sessionId) =>
                   await options.taskManager.hydrateRunnerRecoveryTask(sessionId) !== null,
               },
               phaseObservation,
+              runRemoval,
             ),
           },
         }
@@ -218,9 +230,19 @@ export class RunnerRecoveryCoordinator {
     });
   }
 
+  async restoreScanCache(): Promise<void> {
+    this.restoreScanCachePromise ??= this.scanCacheSnapshot.restore().then((result) => {
+      this.options.logger.info(result, "runner registration scan cache restored");
+      this.scanCacheRestored = true;
+    });
+    await this.restoreScanCachePromise;
+  }
+
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopped = false;
+    const updatedBefore = new Date((this.options.now ?? Date.now)());
+    this.lastScan = undefined;
     await this.scanOnce();
     if (this.stopped) return;
     this.timer = setInterval(() => {
@@ -229,10 +251,29 @@ export class RunnerRecoveryCoordinator {
       });
     }, this.options.scanIntervalMs);
     this.timer.unref?.();
+    const terminalize = this.options.terminalizeOrphanedClaudeBackgroundTasks;
+    if (!terminalize) return;
+    const scan = this.lastScan as RunnerRegistrationScan | undefined;
+    if (!scan || scan.errors.some((failure) => !failure.sessionId)) {
+      this.options.logger.warn("orphaned Claude background sweep skipped: incomplete runner scan");
+      return;
+    }
+    const liveSessionIds = new Set([
+      ...scan.registrations.filter((registration) => registration.pidAlive)
+        .map((registration) => registration.config.sessionId),
+      ...scan.errors.map((failure) => failure.sessionId!),
+    ]);
+    void Promise.resolve().then(() => terminalize({
+      liveSessionIds, updatedBefore, limit: 1_000,
+    })).catch((err) => {
+      this.options.logger.error({ err }, "orphaned Claude background sweep failed");
+    });
   }
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
-    this.scanInFlight ??= this.performScan().finally(() => {
+    this.scanInFlight ??= (this.scanCacheRestored
+      ? this.performScan()
+      : this.restoreScanCache().then(() => this.performScan())).finally(() => {
       this.scanInFlight = undefined;
     });
     await this.scanInFlight;
@@ -248,7 +289,7 @@ export class RunnerRecoveryCoordinator {
       disposition: RunnerRecoveryDisposition;
     }> = [];
     try {
-      const sessionGcInFlight = this.sessionGarbageCollectionScheduler.inFlight;
+      const sessionGcInFlight = this.sessionGarbageCollectionScheduler.removalInFlight;
       if (sessionGcInFlight) {
         await observation.runAsync("gcWait", {}, async () => await sessionGcInFlight);
       } else {
@@ -267,6 +308,7 @@ export class RunnerRecoveryCoordinator {
           },
         );
       });
+      this.lastScan = scan;
       const registrationCacheMisses = this.scanCache.missCounts();
       scanRegistrations = scan.registrations;
       await observation.runAsync("unreadable", {}, async () => {
@@ -415,6 +457,11 @@ export class RunnerRecoveryCoordinator {
           (registration) => !this.active.has(registration.config.sessionId),
         ),
       });
+      try {
+        await this.scanCacheSnapshot.persist();
+      } catch (error) {
+        this.options.logger.warn({ err: error }, "runner registration scan cache persist failed");
+      }
       const finishedAt = monotonicNow();
       const phaseDurationsMs = observation.phaseDurationsMs();
       const measuredMs = Object.values(phaseDurationsMs).reduce((sum, duration) => sum + duration, 0);
@@ -1368,6 +1415,14 @@ export class RunnerRecoveryCoordinator {
           error,
           verified,
         );
+        if (owned.lifecycle === null && !owned.pidAlive) {
+          await this.registrationControl.retireTerminal({
+            ...owned,
+            pid: null,
+            pidStartIdentity: null,
+            pidAlive: false,
+          });
+        }
         if (recovered > 0 && alreadyTerminal) {
           await this.notifyDeadRunnerBackgroundStopped(recoveredTask);
         }

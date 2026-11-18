@@ -3,6 +3,7 @@ import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments"
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryIntent } from "../task/delivery_contract.js";
+import { nodeResponseRejection } from "../task/state/node_response_handling.js";
 import {
   CommandDispatchError,
   type CommandHandlerMap,
@@ -177,6 +178,14 @@ async function handleIntervene(
       resetsAt: cmd.resets_at,
     });
   } catch (err) {
+    const verdict = nodeResponseRejection(err);
+    if (verdict) {
+      throw new CommandDispatchError((err as Error).message, "NODE_RESPONSE_REJECTED", {
+        reason: verdict.facts.reason ?? null,
+        cell: verdict.decision.cell,
+        intents: verdict.decision.intents,
+      });
+    }
     throw new CommandDispatchError(err instanceof Error ? err.message : String(err));
   }
 

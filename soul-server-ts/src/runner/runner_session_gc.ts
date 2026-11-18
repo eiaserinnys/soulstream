@@ -19,6 +19,7 @@ import {
   countRetainedReasons,
   hasCentralDeletionOverride,
   hasProvenEmptyPrebootstrapEvidence,
+  isRetiredWithoutLifecycleAndNotAlive,
   sameRegistrationGeneration,
   terminalCandidateReason,
 } from "./runner_session_gc_predicates.js";
@@ -82,6 +83,7 @@ export class RunnerSessionGarbageCollector {
     scan: RunnerRegistrationScan,
     policy?: RunnerSessionGarbageCollectionPolicy,
     phaseObservation?: RunnerPhaseObservation,
+    runRemoval?: (operation: () => Promise<void>) => Promise<void>,
   ): Promise<RunnerSessionGcResult> {
     const startedAtMonotonicMs = this.deps.monotonicNow();
     const startedAtMs = this.deps.now();
@@ -106,6 +108,7 @@ export class RunnerSessionGarbageCollector {
         diagnostics,
         policy,
         phaseObservation,
+        runRemoval,
       );
     } catch (error) {
       const elapsedMs = durationMs();
@@ -138,6 +141,7 @@ export class RunnerSessionGarbageCollector {
     diagnostics: RunnerSessionGcDiagnostics,
     policy?: RunnerSessionGarbageCollectionPolicy,
     phaseObservation?: RunnerPhaseObservation,
+    runRemoval?: (operation: () => Promise<void>) => Promise<void>,
   ): Promise<RunnerSessionGcResult> {
     const result: RunnerSessionGcResult = { removed: [], retained: [] };
     let lastFailure: unknown;
@@ -266,14 +270,15 @@ export class RunnerSessionGarbageCollector {
               );
             }
             if (!deletedSessionEvidence) {
-              if (!hydrated.lifecycle) {
+              const retiredWithoutLifecycle = isRetiredWithoutLifecycleAndNotAlive(hydrated);
+              if (!hydrated.lifecycle && !retiredWithoutLifecycle) {
                 result.retained.push({
                   sessionId: registration.config.sessionId,
                   reason: "incomplete_bootstrap",
                 });
                 return;
               }
-              if (!hydrated.bootstrap) {
+              if (!hydrated.bootstrap || retiredWithoutLifecycle) {
                 if (!hasProvenEmptyPrebootstrapEvidence(inspection)) {
                   result.retained.push({
                     sessionId: registration.config.sessionId,
@@ -339,9 +344,10 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            const removeDirectory = () => this.deps.removeDirectory(
+            const remove = () => this.deps.removeDirectory(
               latest.config.paths.sessionDirectory,
             );
+            const removeDirectory = () => runRemoval ? runRemoval(remove) : remove();
             if (phaseObservation) {
               await phaseObservation.runAsync("removeDirectory", {
                 sessionId: latest.config.sessionId,

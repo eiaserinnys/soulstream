@@ -68,7 +68,13 @@ import { applyEventSessionEffect } from "./node/event_session_effect_applier.js"
 import { applyEventFeedProjection } from "./node/event_feed_projection_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { runnerInventoryCommandType } from "./node/registry_helpers.js";
+import { PendingNodeCommandRejectedError } from "./node/pending_commands.js";
 import { RUNNER_INVENTORY_COMMAND_TIMEOUT_MS } from "./node/node_timeouts.js";
+import {
+  DELIVERY_CLAIM_TTL_MS,
+  nodeRejectionDetailsSuffix,
+  releaseDeliveryAttemptAfterSendFailure,
+} from "./control_plane/session_delivery_release.js";
 import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
 import { ReleaseActivationReceiptRepository } from "./node/release_activation_receipt_repository.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
@@ -1335,6 +1341,9 @@ export async function createLiveProductionApplication(
   };
 }
 
+/** 한 번의 재생에서 처리하는 배달 수 상한. 예전 100건 일괄 claim과 같은 값이다. */
+const REPLAY_PENDING_DELIVERY_LIMIT = 100;
+
 export async function replayPendingImmediateDeliveriesForNode(input: {
   nodeId: string;
   connectionId: string;
@@ -1346,37 +1355,57 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
 }): Promise<void> {
   const attemptTokenPrefix = input.attemptTokenPrefix ?? "node-ready";
   const attemptToken = `${attemptTokenPrefix}:${input.nodeId}:${input.connectionId}`;
-  const claimed = await input.deliveries.recovery.claimPendingImmediateIntentsForNode(
-    input.nodeId,
-    attemptToken,
-  );
-  for (const row of claimed) {
+  // Send-time claims (card #1653): claiming 100 rows up front made every row after
+  // the first 30-second node wait expire before it was even sent. Claim one row
+  // right before sending it, in enqueue order, up to the same 100-row budget.
+  // Rows already attempted in this pass are excluded so a row released with a
+  // zero delay cannot be re-claimed and burn the retry budget in one pass.
+  const attemptedDeliveryIds: string[] = [];
+  while (attemptedDeliveryIds.length < REPLAY_PENDING_DELIVERY_LIMIT) {
+    const claimed = await input.deliveries.recovery.claimPendingImmediateIntentsForNode(
+      input.nodeId,
+      attemptToken,
+      1,
+      DELIVERY_CLAIM_TTL_MS,
+      [...attemptedDeliveryIds],
+    );
+    const row = claimed[0];
+    if (!row) return;
+    attemptedDeliveryIds.push(row.delivery_id);
+    if (row.target_worktree_id !== null
+      && (row.target_worktree_state === null || row.target_worktree_state === "removed")) {
+      const failure = `target session worktree removed: ${row.target_worktree_id}`;
+      await input.deliveries.markUncertain(row.delivery_id, attemptToken, failure);
+      input.warn(failure);
+      continue;
+    }
     try {
       const parsed = sessionDeliveryInterventionPayload(row, attemptToken);
       if (!parsed.ok) throw new Error(parsed.message);
       const routed = await input.sessionRouter
         .routeExistingSessionPendingCommand(parsed.value);
       const response = await input.sessionBridge.sendPendingCommand(routed);
-      if (response.status === "error") {
-        throw new Error(String(response.message ?? response.code ?? "intervene failed"));
+      if (response.status === "error" || response.type === "error") {
+        throw new PendingNodeCommandRejectedError({
+          commandType: routed.command.commandType,
+          requestId: routed.command.requestId,
+          message: String(response.message ?? response.code ?? "intervene failed"),
+          response,
+        });
       }
     } catch (error) {
       const failure = warningMessage(
         `${attemptTokenPrefix} delivery ${row.delivery_id} dispatch failed`,
         error,
-      );
-      const current = await input.deliveries.get(row.delivery_id);
-      if (
-        current?.attempt_token === attemptToken
-        && (current.state === "claimed" || current.state === "dispatching")
-      ) {
-        await input.deliveries.retryDeliveryAttempt(
-          row.delivery_id,
-          attemptToken,
-          failure,
-          0,
-        );
-      }
+      ) + nodeRejectionDetailsSuffix(error);
+      await releaseDeliveryAttemptAfterSendFailure({
+        repository: input.deliveries,
+        deliveryId: row.delivery_id,
+        attemptToken,
+        error,
+        failure,
+        attemptCount: row.attempt_count,
+      });
       input.warn(failure);
     }
   }
@@ -1389,7 +1418,7 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
 export function recurringSessionCreateInput(
   job: Pick<
     RecurringJob,
-    "jobId" | "prompt" | "nodeId" | "agentId" | "modelPreset" | "folderId" | "executionCaller"
+    "jobId" | "prompt" | "nodeId" | "agentId" | "modelPreset" | "modelPresetFallbacks" | "folderId" | "executionCaller"
   >,
   run: Pick<RecurringJobRun, "runId" | "sessionId">,
 ): CreateRecurringSessionInput {
@@ -1399,6 +1428,7 @@ export function recurringSessionCreateInput(
     nodeId: job.nodeId,
     agentId: job.agentId,
     modelPreset: job.modelPreset,
+    modelPresetFallbacks: job.modelPresetFallbacks,
     folderId: job.folderId,
     callerInfo: {
       ...job.executionCaller,

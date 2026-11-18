@@ -19,10 +19,12 @@ const expectedV3DialogConsumers = [
   "SessionSuccessionModal.tsx",
   "FolderMoveDialog.tsx",
   "FolderParentMoveDialog.tsx",
+  "FrameLoadingReviewSample.tsx",
   "V3ContextMenu.tsx",
 ] as const;
 
 const sharedV3DialogConsumers = [
+  "../components/AccessLinksTab.tsx",
   "../components/ConfigModal.tsx",
   "../components/OwnedAgentsTab.tsx",
   "../components/PersistentSessionSettingsDialog.tsx",

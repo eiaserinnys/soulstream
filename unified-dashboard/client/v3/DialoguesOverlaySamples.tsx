@@ -159,7 +159,11 @@ export function DialoguesOverlaySamples({
         renderCard={(card) => <PostItCardView card={card} activity={null} onOpen={() => done("보드 카드 열기")} />}
       />
     );
-  if (id === "document-reader") return <DocumentReaderDialog documentId="sample-linked-document" request={readSampleDocument} onClose={onClose}/>;
+  if (id === "document-reader") return <DocumentReaderDialog documentId="sample-linked-document"
+    request={new URLSearchParams(window.location.search).get("loading") === "1"
+      ? globalThis.fetch.bind(globalThis)
+      : readSampleDocument}
+    onClose={onClose}/>;
   if (id === "document-overlay")
     return createPortal(
       <div className="v3-workspace-scrim is-chat-open is-document-overlay">

@@ -477,3 +477,6 @@
     padding: 12px 0 0;
   }
 }
+
+/* 폴더 화면 첫 로딩은 오류 상자가 아니라 스크롤 프레임을 채우는 로딩 자리로 쓴다. */
+.v3-planner-loading { display: flex; flex-direction: column; min-height: 100%; }

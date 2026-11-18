@@ -2,7 +2,7 @@
 // and preview workflows stay together in one tab. Bundle rows and CRUD live
 // in separate components; another split would change the planned boundary.
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import {
@@ -250,7 +250,12 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     }
   };
 
-  if (loading) return <div className="py-8 text-center text-sm text-muted-foreground">프로필을 불러오는 중...</div>;
+  if (loading) return <FrameLoading label="프로필을 불러오는 중..." />;
+  // 첫 읽기 실패: 편집 영역 안의 오류 줄만 남기지 않고, 로더와 같은 자리에서
+  // 실패 안내를 보여 준다. 프로필이 이미 있으면 종전처럼 편집기 안 오류 줄을 쓴다.
+  if (error && profiles.length === 0 && !draft) {
+    return <FrameNotice><p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">{error}</p></FrameNotice>;
+  }
 
   return (
     <div>

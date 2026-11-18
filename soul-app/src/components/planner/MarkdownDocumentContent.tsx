@@ -1,6 +1,6 @@
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { MarkdownDocument } from '../../api/boardItemEndpoints';
@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassButton } from '../GlassSurface';
 import { removeOverlappingDocumentHeading } from '../../../../packages/soul-ui/src/lib/markdown-document-heading';
 import { cardDetailStyles } from './CardDetail.styles';
+import { FrameLoading } from '../FrameLoading';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 import { useDuoSideBand } from '../../navigation/duoSideBand';
 import { useRegisterDuoRailOverride } from '../../navigation/phoneRailActions';
@@ -67,11 +68,11 @@ export function MarkdownDocumentContent({ api, documentId, onClose, visible = tr
         ? [styles.content, { paddingBottom: insets.bottom + t.uiSpacing.xxl }]
         : [styles.content, { paddingBottom: t.uiSpacing.xxl }]}
         keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {loading ? <ActivityIndicator testID="markdown-document-loading" color={t.colors.accent} /> : null}
         {failed ? <Text testID="markdown-document-error" style={styles.error}>문서를 불러오지 못했습니다.</Text> : null}
         {document ? <PlannerMarkdownText testID="markdown-document-body"
           markdown={removeOverlappingDocumentHeading(document.body, document.title)} /> : null}
       </ScrollView>
+      {loading ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="markdown-document-loading" /></View> : null}
     </View>
   </View>;
 }

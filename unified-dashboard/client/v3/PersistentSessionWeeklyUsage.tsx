@@ -10,7 +10,8 @@ type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadSt
 
 function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading" | "loadState" | "node" | "gauges">): string | null {
   if (gauges.length) return null;
-  if (loading) return "불러오는 중";
+  // 값 자리에 로딩 글자를 넣지 않는다. 첫 로딩 동안은 자리표시 행이 자리를 지킨다.
+  if (loading) return null;
   if (loadState === "connectionError") return "조회 실패";
   if (node) return "주간 한도 없음";
   return "수집 대기";
@@ -102,7 +103,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
           {used === null ? null : <i style={{ width: `${used}%` }} />}
         </div>
       </div>;
-    }) : <div className="persistent-session-weekly-usage-row is-status">
+    }) : message || loadState === "connectionError" ? <div className="persistent-session-weekly-usage-row is-status">
       <div className="persistent-session-weekly-usage-labels">
         <span className="persistent-session-weekly-usage-status" role="status">{message}</span>
         {loadState === "connectionError" ? <DashboardIconCap appearance="bare" size="small" className="persistent-session-weekly-usage-retry" label="주간 사용량 다시 시도" disabled={loading} onClick={onRetry}>
@@ -110,7 +111,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
         </DashboardIconCap> : null}
       </div>
       <div className="persistent-session-weekly-usage-track" aria-hidden="true" />
-    </div>}
+    </div> : null}
     {node ? <button type="button" className="persistent-session-weekly-usage-node" aria-label={`노드 바꾸기, 현재 ${node.nodeId}`} onClick={onNextNode}>
       <span>{node.nodeId}</span><ChevronRight className="persistent-session-weekly-usage-chevron size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
     </button> : <div className="persistent-session-weekly-usage-node is-placeholder" aria-hidden="true" />}

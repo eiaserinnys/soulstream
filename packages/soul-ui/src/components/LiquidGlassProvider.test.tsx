@@ -8,6 +8,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WEBGL_GLASS_STORAGE_KEY } from "../lib/webgl-glass";
+import * as lens from "../lib/liquid-lens";
+import * as renderer from "../lib/webgl-glass-renderer";
 import { LiquidGlassCard } from "./LiquidGlassCard";
 import { LiquidGlassProvider } from "./LiquidGlassProvider";
 
@@ -61,5 +63,26 @@ describe("LiquidGlassProvider", () => {
     expect(card).not.toBeNull();
     expect(card!.dataset.liquidGlassWebgl).toBeUndefined();
     expect(container!.querySelector("[data-liquid-glass-webgl-provider='true']")).toBeNull();
+    expect(document.documentElement.getAttribute("data-webgl-glass")).toBe("off");
+  });
+
+  it("reflects the canvas preference and removes the marker on unmount", () => {
+    vi.spyOn(lens, "isChromiumLensRuntime").mockReturnValue(true);
+    vi.spyOn(renderer, "createWebglGlassRenderer").mockReturnValue(null);
+    getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockImplementation(() => ({}) as WebGL2RenderingContext);
+    window.localStorage.setItem(WEBGL_GLASS_STORAGE_KEY, "0");
+    flushSync(() => root!.render(createElement(LiquidGlassProvider, null, "Surface")));
+    expect(document.documentElement.getAttribute("data-webgl-glass")).toBe("off");
+    expect(container!.querySelector("[data-liquid-glass-webgl-provider='true']")).toBeNull();
+
+    window.localStorage.setItem(WEBGL_GLASS_STORAGE_KEY, "1");
+    flushSync(() => window.dispatchEvent(new Event("storage")));
+    expect(document.documentElement.getAttribute("data-webgl-glass")).toBe("on");
+    expect(container!.querySelector("[data-liquid-glass-webgl-provider='true']")).not.toBeNull();
+
+    flushSync(() => root!.unmount());
+    root = undefined;
+    expect(document.documentElement.hasAttribute("data-webgl-glass")).toBe(false);
   });
 });

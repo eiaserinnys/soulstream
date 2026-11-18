@@ -672,6 +672,22 @@
     {
       "id": "166_webhook_outbound.sql",
       "sha256": "219bb8443493af5cb81eebcec3d38c2b724d7b5361f5534d92f18762562f8263"
+    },
+    {
+      "id": "167_conversation_history_snapshots.sql",
+      "sha256": "f506e2377a8308fc644ad107605f8165e2f49d94c65cec567446133c8fee29ee"
+    },
+    {
+      "id": "168_events_id_created_at_cover_index.sql",
+      "sha256": "a72854279895eb40de7d0d176dda8b4471a1eaf46e193bfa88843d5c5386a173"
+    },
+    {
+      "id": "169_event_ingress_receipts_analyze_threshold.sql",
+      "sha256": "b9920e4a46da8673c20ad415cc6523ba7af5d611a57b4f9df0706711d529e140"
+    },
+    {
+      "id": "170_recurring_job_model_preset_fallbacks.sql",
+      "sha256": "59efd5a41351626631199d0028418bc1411f174831e720c99a7f66feeeb0de7d"
     }
   ]
 }

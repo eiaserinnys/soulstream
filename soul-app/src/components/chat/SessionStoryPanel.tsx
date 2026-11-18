@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import { useDuoSideBand } from '../../navigation/duoSideBand';
 import { useTokens, type DesignTokens } from '../../theme';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { GlassButton } from '../GlassSurface';
+import { FrameLoading } from '../FrameLoading';
 import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
@@ -178,10 +178,7 @@ export function SessionStoryPanel({
     return (
       <View testID="session-story-panel" style={styles.settingsRoot}>
         {loadState === 'loading' ? (
-          <View testID="session-story-loading" accessibilityRole="progressbar" style={styles.settingsLoading}>
-            <ActivityIndicator color={t.colors.textTertiary} />
-            <Text style={styles.settingsCopy}>스토리를 불러오는 중입니다.</Text>
-          </View>
+          <FrameLoading testID="session-story-loading" text="스토리를 불러오는 중입니다." inline />
         ) : null}
         {loadState === 'error' ? (
           <View style={styles.settingsError}>
@@ -217,9 +214,7 @@ export function SessionStoryPanel({
 
       {expanded ? (
         loadState === 'loading' ? (
-          <View testID="session-story-loading" style={[styles.loading, hideInlineToggle && { paddingTop: t.spacing.sm }]}>
-            <ActivityIndicator color={t.colors.textTertiary} />
-          </View>
+          <FrameLoading testID="session-story-loading" inline style={hideInlineToggle && { paddingTop: t.spacing.sm, paddingBottom: t.spacing.sm }} />
         ) : story ? (
           <ScrollView
             testID="session-story-scroll"
@@ -334,12 +329,6 @@ function makeStyles(t: DesignTokens) {
       ...t.foundation.typography.meta,
       fontWeight: '600',
     },
-    loading: {
-      minHeight: t.hitTarget.min,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingBottom: t.spacing.sm,
-    },
     scroll: {
       maxHeight: t.foundation.minHeight.memo * 2,
     },
@@ -367,7 +356,6 @@ function makeStyles(t: DesignTokens) {
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
     },
     settingsRoot: { gap: t.spacing.md },
-    settingsLoading: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
     settingsError: { alignItems: 'flex-start', gap: t.spacing.sm },
     settingsContent: { gap: t.spacing.md },
     settingsSection: { gap: t.spacing.xs },

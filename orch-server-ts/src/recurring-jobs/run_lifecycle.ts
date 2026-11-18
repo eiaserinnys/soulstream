@@ -31,7 +31,7 @@ export function makeRecurringRun(
       scheduleKind: job.scheduleKind, scheduleExpressions: job.scheduleExpressions, runAt: job.runAt,
       eventTrigger: job.eventTrigger ?? null,
       nodeId: job.nodeId, agentId: job.agentId,
-      modelPreset: job.modelPreset, folderId: job.folderId,
+      modelPreset: job.modelPreset, modelPresetFallbacks: job.modelPresetFallbacks ?? [], folderId: job.folderId,
       executionCaller: job.executionCaller, lateRunWindowSeconds: job.lateRunWindowSeconds,
     },
     state: input.state,

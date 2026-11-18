@@ -46,13 +46,96 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
   return route.fulfill({json:{card,reports:[{id:"report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
    questions:card.id==="home-3-0"?[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]:[],sessions:[]}});
  });
- await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible();
- const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible();
+ await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
+ const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible({timeout:20000});
  return {cards,reads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
 const captureEmptyLanes=async(page:Page,name:string)=>{mkdirSync(emptyLanesOutput,{recursive:true});await page.screenshot({path:path.join(emptyLanesOutput,`${name}.png`),animations:"disabled"});};
+
+for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포함 목록 보기 높이 ${width}`,async({page})=>{
+ const artifacts=path.resolve(process.env.CARD_HOME_ARTIFACTS??output),phase=process.env.CARD_HOME_PHASE??"after";
+ mkdirSync(artifacts,{recursive:true});
+ await page.setViewportSize({width,height});await page.emulateMedia({reducedMotion:"reduce"});
+ const {board}=await fixture(page,17,seed(),5),home=page.getByTestId("card-home");
+ await home.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+ const done=board.locator('[data-board-column="done"]'),boardViewport=done.getByTestId("completed-viewport");
+ await expect(done).toContainText("6개 표시");await boardViewport.scrollIntoViewIfNeeded();
+ const boardScroller=boardViewport.getByTestId("virtuoso-scroller"),boardCard=boardScroller.locator("[data-card-id]").first();
+ await expect(boardCard).toBeVisible();
+ const boardMetrics={viewport:await boardViewport.boundingBox(),scroller:await boardScroller.boundingBox(),firstCard:await boardCard.boundingBox()};
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-board.png`),animations:"disabled"});
+ expect(boardMetrics.viewport!.height).toBeGreaterThanOrEqual(200);
+ await home.getByRole("button",{name:"일반 보기",exact:true}).click();
+ const listViewport=home.getByTestId("completed-viewport"),listScroller=listViewport.getByTestId("virtuoso-scroller");
+ await expect(home.locator(".v3-completed-collection")).toContainText("6개 표시");
+ await listViewport.scrollIntoViewIfNeeded();await expect(listScroller).toBeAttached();
+ const listCard=listScroller.locator(".v3-completed-grid-item").first();
+ const queueTitle=home.locator('[data-card-group="queued"] .v3-section-head h2');
+ const completedTitle=home.locator(".v3-completed-collection > div > :is(h2,h3)");
+ const firstPeriod=home.locator(".v3-completed-collection .v3-completed-periods button").first();
+ const queue=home.locator('[data-card-group="queued"]'),running=home.locator('[data-card-group="running"]');
+ const queueHead=queue.locator(":scope > .v3-section-head"),completedHead=home.locator(".v3-completed-collection > .v3-section-head");
+ const queueCard=queue.locator("[data-card-id]").first().locator("..");
+ const typography=async(locator:typeof queueTitle)=>locator.evaluate(element=>{
+  const style=getComputedStyle(element);return {fontSize:style.fontSize,fontWeight:style.fontWeight,lineHeight:style.lineHeight};
+ });
+ const queueHeadBox=(await queueHead.boundingBox())!,completedHeadBox=(await completedHead.boundingBox())!;
+ const queueBox=(await queue.boundingBox())!,runningBox=(await running.boundingBox())!;
+ const listMetrics={viewport:await listViewport.boundingBox(),scroller:await listScroller.boundingBox(),firstCard:await listCard.boundingBox(),
+  typography:{queue:await typography(queueTitle),completed:await typography(completedTitle)},
+  starts:{queue:(await queueTitle.boundingBox())!.x,completed:(await completedTitle.boundingBox())!.x,
+   period:(await firstPeriod.boundingBox())!.x,card:(await listCard.boundingBox())!.x},
+  rhythm:{queueBelow:(await queueCard.boundingBox())!.y-(queueHeadBox.y+queueHeadBox.height),
+   completedBelow:(await firstPeriod.boundingBox())!.y-(completedHeadBox.y+completedHeadBox.height),
+   queueAbove:queueHeadBox.y-(runningBox.y+runningBox.height),completedAbove:completedHeadBox.y-(queueBox.y+queueBox.height)}};
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-list.png`),animations:"disabled"});
+ await completedHead.evaluate(head=>head.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"}));
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-seam.png`),animations:"disabled"});
+ const metrics={board:boardMetrics,list:listMetrics,resize:null as null|{width:number;height:number;documentWidth:number;clientWidth:number}};
+ const metricsPath=path.join(artifacts,`${phase}-${width}-metrics.json`);
+ writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
+ expect(listMetrics.viewport!.height).toBeGreaterThanOrEqual(200);
+ await expect(listCard).toBeVisible();
+ expect(listMetrics.firstCard!.x).toBeGreaterThanOrEqual(listMetrics.viewport!.x);
+ expect(listMetrics.firstCard!.x+listMetrics.firstCard!.width).toBeLessThanOrEqual(listMetrics.viewport!.x+listMetrics.viewport!.width);
+ expect(listMetrics.firstCard!.y).toBeGreaterThanOrEqual(listMetrics.viewport!.y);
+ expect(listMetrics.firstCard!.y+listMetrics.firstCard!.height).toBeLessThanOrEqual(listMetrics.viewport!.y+listMetrics.viewport!.height);
+ expect.soft(listMetrics.typography.completed,"완료와 대기열 머리 글자").toEqual(listMetrics.typography.queue);
+ const starts=Object.values(listMetrics.starts);
+ expect.soft(Math.max(...starts)-Math.min(...starts),"대기열·완료·기간·카드 시작선 차이").toBeLessThanOrEqual(1);
+ expect.soft(Math.abs(listMetrics.rhythm.completedBelow-listMetrics.rhythm.queueBelow),"머리 아래 간격 차이").toBeLessThanOrEqual(1);
+ expect.soft(Math.abs(listMetrics.rhythm.completedAbove-listMetrics.rhythm.queueAbove),"머리 위 간격 차이").toBeLessThanOrEqual(1);
+ const resized=width===390?{width:1440,height:900}:{width:390,height:844};
+ await page.setViewportSize(resized);
+ await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+ await expect.poll(async()=>(await listViewport.boundingBox())!.height).toBeGreaterThanOrEqual(200);
+ const overflow=await page.evaluate(()=>({documentWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}));
+ metrics.resize={width:resized.width,height:(await listViewport.boundingBox())!.height,...overflow};
+ writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
+ if(resized.width===390)expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.clientWidth);
+ if(width===1440){
+  await page.setViewportSize({width,height});
+  await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
+  const folder=page.getByTestId("folder-card-section");
+  await folder.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+  await folder.getByRole("button",{name:"일반 보기",exact:true}).click();
+  const folderCollection=folder.locator(".v3-completed-collection");
+  await expect(folderCollection.locator(".v3-detail-section-head > h3")).toHaveText("완료");
+  await folderCollection.getByTestId("completed-viewport").scrollIntoViewIfNeeded();
+  await folderCollection.locator(".v3-detail-section-head").scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,`${phase}-1440-folder-list.png`),animations:"disabled"});
+  await page.goto("/components");
+  const sample=page.getByTestId("card-board-sample");
+  await sample.getByRole("button",{name:"일반 보기",exact:true}).click();
+  await sample.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+  const sampleCollection=sample.locator(".v3-completed-collection");
+  await expect(sampleCollection.locator(".v3-detail-section-head > h3")).toHaveText("완료");
+  await sampleCollection.getByTestId("completed-viewport").scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,`${phase}-1440-components-list.png`),animations:"disabled"});
+ }
+});
 
 test("completed grid restores main scroll across expansion and resets after search",async({page},testInfo)=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});

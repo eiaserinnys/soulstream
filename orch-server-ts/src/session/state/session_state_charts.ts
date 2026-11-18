@@ -389,7 +389,7 @@ export function generateSessionStateDocument(
   for (const writer of SESSION_SQL_WRITERS) {
     const calls = writer.callSites.length === 0
       ? "없음"
-      : writer.callSites.map((site) => `${site.file}:${site.line}`).join("<br>");
+      : writer.callSites.map((site) => `${site.file} (${site.count}곳)`).join("<br>");
     lines.push(
       `| ${writer.name} | ${writer.writesStatus ? "예" : "아니오"} | ${writer.definition} | ${calls} | ${writer.note} |`,
     );
@@ -398,12 +398,12 @@ export function generateSessionStateDocument(
     "",
     "### 직접 UPDATE",
     "",
-    "| 파일:줄 | 상태를 쓰는가 | 뜻 |",
+    "| 파일 (같은 파일은 소스 순서) | 상태를 쓰는가 | 뜻 |",
     "| :-- | :-- | :-- |",
   );
   for (const write of SESSION_DIRECT_WRITES) {
     lines.push(
-      `| ${write.file}:${write.line} | ${write.writesStatus ? "예" : "아니오"} | ${write.note} |`,
+      `| ${write.file} | ${write.writesStatus ? "예" : "아니오"} | ${write.note} |`,
     );
   }
   lines.push(
@@ -444,7 +444,8 @@ export function generateSessionStateDocument(
     "## 다시 만들기",
     "",
     "```bash",
-    "corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/session-state-charts.ts docs/sessions/generated",
+    "corepack pnpm -C orch-server-ts run gen:session-docs",
+    "corepack pnpm -C orch-server-ts run check:session-machine",
     "```",
     "",
   );

@@ -2,6 +2,7 @@
 .config-dialog { height:min(var(--container-3xl), calc(100dvh - var(--v3-space-8) * 2)); }
 .config-dialog > [data-slot="dialog-header"] { border-bottom:1px solid var(--border); }
 .config-dialog [data-slot="dialog-description"] { word-break:keep-all; overflow-wrap:break-word; }
+.approved-dialog [data-slot="dialog-description"] { word-break:keep-all; overflow-wrap:anywhere; }
 .config-dialog .config-dialog-panel { padding:0; }
 .config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
 .config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
@@ -30,6 +31,9 @@
 .config-dialog .config-detail-heading h2 { margin:0 0 var(--v3-space-2); font:var(--v3-type-page) var(--v3-font-family); }
 .config-dialog .config-detail-heading p { color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); margin:0; }
 .config-dialog .config-back { display:none; }
+/* 탭 본문 자체가 로딩일 때: 제목 아래 남는 높이를 채우고 그 안에서 가운데에 선다. */
+.config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) { display:flex; flex-direction:column; }
+.config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) > .config-detail-heading { flex:none; }
 .config-dialog .config-appearance { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }
 .config-dialog .config-wallpaper-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--v3-space-2); margin-top:var(--v3-space-4); }

@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardStatus } from '../../api/cardTypes';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { useCardList } from '../../hooks/useCardList';
+import { FrameLoading } from '../FrameLoading';
 import { groupPersistentSessionTasks } from '../../lib/persistent-session-tasks';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -48,7 +49,7 @@ export function PersistentSessionTaskList({ api, onOpenCard, visible = true, con
 
   if (loading && cards.length === 0) return <View testID="persistent-task-list-loading" style={{ flex: 1, minHeight: t.foundation.minHeight.row,
     padding: t.foundation.pageInset, paddingTop: contentInset?.top, alignItems: 'center', justifyContent: 'center', ...hiddenStyle }}>
-    <ActivityIndicator color={t.colors.accent} />
+    <FrameLoading />
   </View>;
   if (error && cards.length === 0) return <View testID="persistent-task-list-error-state" style={{ paddingVertical: t.foundation.pageInset, paddingTop: contentInset?.top, gap: t.uiSpacing.sm, ...hiddenStyle }}>
     <Text testID="persistent-task-list-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>

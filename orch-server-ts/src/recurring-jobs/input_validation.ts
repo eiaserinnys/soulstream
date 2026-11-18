@@ -17,6 +17,11 @@ export function normalizedModelPreset(value: string | null): string | null {
   return requiredText(value, "model_preset");
 }
 
+export function normalizedModelPresetFallbacks(value: readonly string[], modelPreset: string | null): string[] {
+  if (!Array.isArray(value)) throw validation("model_preset_fallbacks must be an array");
+  return [...new Set(value.map(item => requiredText(item, "model_preset_fallbacks")))].filter(id => id !== modelPreset);
+}
+
 export function validation(message: string): RecurringJobError {
   return new RecurringJobError("VALIDATION", message, 422);
 }

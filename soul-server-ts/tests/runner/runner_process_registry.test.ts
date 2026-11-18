@@ -45,6 +45,42 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
+  it("filters unrelated code releases before asking the recovery storage worker", async () => {
+    const stateDirectory = await temporaryDirectory("release-filter");
+    for (const [sessionId, codeSha] of [["candidate", "release-a"], ["unrelated", "release-b"]]) {
+      const paths = runnerProcessPaths(stateDirectory, sessionId!);
+      const config = { ...registration({ sessionId }).config, paths, codeSha };
+      await mkdir(paths.sessionDirectory, { recursive: true });
+      await writeFile(paths.configPath, JSON.stringify(config));
+      await writeFile(paths.databasePath, "");
+    }
+    const broken = runnerProcessPaths(stateDirectory, "broken");
+    await mkdir(broken.sessionDirectory, { recursive: true });
+    await writeFile(broken.configPath, "{");
+    const pending = runnerProcessPaths(stateDirectory, "pending");
+    await mkdir(pending.sessionDirectory, { recursive: true });
+    const readAuthoritativeLifecycle = vi.fn(async () => null);
+    const recoveryStorage = { readAuthoritativeLifecycle } as never;
+
+    const baseline = await scanRunnerRegistrations(stateDirectory, { recoveryStorage });
+    readAuthoritativeLifecycle.mockClear();
+    const filtered = await scanRunnerRegistrations(stateDirectory, {
+      recoveryStorage,
+      onlyCodeShas: new Set(["release-a"]),
+    });
+
+    expect(filtered.registrations).toEqual(baseline.registrations.filter(
+      (item) => item.config.codeSha === "release-a",
+    ));
+    expect(filtered.errors.map(({ directory, error }) => [directory, error.message])).toEqual(
+      baseline.errors.map(({ directory, error }) => [directory, error.message]),
+    );
+    expect(readAuthoritativeLifecycle).toHaveBeenCalledOnce();
+    expect(readAuthoritativeLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "candidate" }), undefined,
+    );
+  });
+
   it("skips a registration directory while its config is not yet published", async () => {
     const stateDirectory = await temporaryDirectory("config-publication-race");
     const paths = runnerProcessPaths(stateDirectory, "session-config-pending");
@@ -823,6 +859,33 @@ describe("runner process registry", () => {
       correlationId: "host:orphaned",
     });
     recovered.close();
+  });
+
+  it("sends a retired runner with no lifecycle and an empty SQLite outbox to full inspection", async () => {
+    const stateDirectory = await temporaryDirectory("retired-prebootstrap-empty");
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    outbox.close();
+    const current = {
+      ...registration({ pidAlive: false }),
+      pid: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+      lifecycle: null,
+    };
+    current.config = { ...current.config, paths };
+
+    await expect(probeRunnerDurableRetention(current)).resolves.toMatchObject({
+      localRetentionReason: null,
+      registration: { lifecycle: null, bootstrap: null },
+    });
+    await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
+      durableRecordCount: 0,
+      unacknowledgedIpcFrameCount: 0,
+      registration: { lifecycle: null, bootstrap: null },
+    });
+    await expect(probeRunnerDurableRetention({ ...current, retiredAt: null }))
+      .resolves.toMatchObject({ localRetentionReason: "incomplete_bootstrap" });
   });
 
   it("proves a terminal pre-bootstrap runner has no durable discard blockers", async () => {

@@ -40,7 +40,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       Object.defineProperty(serviceWorker, "controller", { configurable: true, get: () => null });
     }
   ` });
-  await installV3VisualQaRoutes(page, { contextChainPreview: true });
+  await installV3VisualQaRoutes(page);
   await page.route("**/api/**", (route) => fixture.route(route));
 
   try {
@@ -59,7 +59,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const amberBox = await amber.boundingBox();
     if (!amberBox) throw new Error("프로젝트 행을 측정하지 못했습니다.");
     await amber.click({ button: "right", position: { x: 120, y: 14 } });
-    for (const label of ["새 프로젝트", "하위 프로젝트 만들기", "프로젝트 설정", "프로젝트 삭제"]) {
+    // 폴더 용어로 바뀐 현행 메뉴 정본(client/v3/context-menu-model.ts buildProjectContextMenuActions).
+    for (const label of ["폴더 열기", "폴더 ID 복사", "새 폴더", "폴더 설정", "폴더 보관"]) {
       await page.getByRole("menuitem", { name: label }).waitFor({ state: "visible" });
     }
     const menu = page.getByRole("menu");
@@ -69,27 +70,29 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(menuBox.y >= amberBox.y + 14 && menuBox.y <= amberBox.y + 30, "컨텍스트 메뉴의 세로 앵커가 포인터 위치에서 이동했습니다.");
     await capture(page, theme, "01-context-menu");
 
-    await page.getByRole("menuitem", { name: "프로젝트 설정" }).click();
+    await page.getByRole("menuitem", { name: "폴더 설정" }).click();
     const settingsForm = page.getByTestId("v3-project-dialog-form");
     await settingsForm.waitFor({ state: "visible" });
-    assert(await formSections(settingsForm) === "guidance|atom|기본 에이전트", "설정 창 폼 구성이 다릅니다.");
-    const settingsName = settingsForm.getByLabel("프로젝트 이름");
+    // 현행 폼 정본(client/v3/ProjectDialog.tsx 243·259·269줄 fieldset legend).
+    assert(await formSections(settingsForm) === "작업 지침|참고 자료|기본 에이전트", "설정 창 폼 구성이 다릅니다.");
+    const settingsName = settingsForm.getByLabel("폴더 이름");
     await settingsName.fill("소울스트림 개선");
     await page.getByRole("button", { name: "저장", exact: true }).click();
     await projectRow(page, "소울스트림 개선").waitFor({ state: "visible" });
 
-    await page.getByLabel("새 프로젝트", { exact: true }).click();
+    // 생성 진입점은 탐색의 「새 폴더」 캡이다(client/v3/V3Navigation.tsx 297줄).
+    await page.getByTestId("v3-all-projects").getByRole("button", { name: "새 폴더", exact: true }).click();
     const createForm = page.getByTestId("v3-project-dialog-form");
     await createForm.waitFor({ state: "visible" });
-    assert(await formSections(createForm) === "guidance|atom|기본 에이전트", "생성 창과 설정 창의 폼 구성이 다릅니다.");
-    await createForm.getByLabel("프로젝트 이름").fill("신규 프로젝트");
+    assert(await formSections(createForm) === "작업 지침|참고 자료|기본 에이전트", "생성 창과 설정 창의 폼 구성이 다릅니다.");
+    await createForm.getByLabel("폴더 이름").fill("신규 프로젝트");
     await page.getByRole("button", { name: "만들기", exact: true }).click();
     await projectRow(page, "신규 프로젝트").waitFor({ state: "visible" });
 
     const renamed = projectRow(page, "소울스트림 개선");
     await renamed.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "하위 프로젝트 만들기" }).click();
-    await page.getByTestId("v3-project-dialog-form").getByLabel("프로젝트 이름").fill("하위 신규");
+    await page.getByRole("menuitem", { name: "새 폴더" }).click();
+    await page.getByTestId("v3-project-dialog-form").getByLabel("폴더 이름").fill("하위 신규");
     await page.getByRole("button", { name: "만들기", exact: true }).click();
     const child = projectRow(page, "하위 신규");
     await child.waitFor({ state: "visible" });
@@ -108,15 +111,16 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.mouse.up();
     await expectAriaLevel(page, "신규 프로젝트", "1", fixture.reorders);
 
+    // 보관 확인 창 정본은 client/v3/FolderArchiveDialog.tsx의 제목이다.
     await renamed.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "프로젝트 삭제" }).click();
-    await page.getByRole("heading", { name: "프로젝트 삭제" }).waitFor({ state: "visible" });
+    await page.getByRole("menuitem", { name: "폴더 보관" }).click();
+    await page.getByRole("heading", { name: "폴더를 보관할까요?" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "취소" }).click();
 
     await projectRow(page, "신규 프로젝트").click({ button: "right" });
-    await page.getByRole("menuitem", { name: "프로젝트 삭제" }).click();
+    await page.getByRole("menuitem", { name: "폴더 보관" }).click();
     await projectRow(page, "신규 프로젝트").waitFor({ state: "detached" });
-    assert(await page.getByRole("heading", { name: "프로젝트 삭제" }).count() === 0, "빈 프로젝트 삭제에 불필요한 확인 창이 열렸습니다.");
+    assert(await page.getByRole("heading", { name: "폴더를 보관할까요?" }).count() === 0, "빈 폴더 보관에 불필요한 확인 창이 열렸습니다.");
     await capture(page, theme, "02-crud-dnd-complete");
 
     return {
@@ -131,10 +135,19 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 }
 
 function createProjectCrudFixture() {
-  let folders = [
-    { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null as string | null, projectPageId: "project-amber" },
-    { id: "folder-dashboard", name: "대시보드", sortOrder: 0, parentFolderId: "folder-amber", projectPageId: "project-dashboard" },
-    { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null as string | null, projectPageId: "project-ops" },
+  type FixtureFolder = {
+    id: string;
+    name: string;
+    sortOrder: number;
+    parentFolderId: string | null;
+    projectPageId: string;
+    version: number;
+    archived: boolean;
+  };
+  let folders: FixtureFolder[] = [
+    { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null, projectPageId: "project-amber", version: 1, archived: false },
+    { id: "folder-dashboard", name: "대시보드", sortOrder: 0, parentFolderId: "folder-amber", projectPageId: "project-dashboard", version: 1, archived: false },
+    { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops", version: 1, archived: false },
   ];
   let createdCount = 0;
   const reorders: Array<Array<{ id: string; parentFolderId: string | null; sortOrder: number }>> = [];
@@ -150,31 +163,56 @@ function createProjectCrudFixture() {
       if (url.pathname === "/api/folders" && request.method() === "GET") {
         return fulfillJson(route, { folders, sessions: {} });
       }
+      // 생성 직후 대화상자는 저장 전에 페이지를 한 번 읽는다. 새 페이지가 404면
+      // 저장이 실패해 모달이 열린 채 남고, 모달 밖 내비게이션은 aria-hidden이
+      // 되어 getByRole이 새 폴더 행을 찾지 못한다.
+      const createdPageMatch = /^\/api\/pages\/(project-created-\d+)$/.exec(url.pathname);
+      if (createdPageMatch && request.method() === "GET") {
+        const folder = folders.find((candidate) => candidate.projectPageId === createdPageMatch[1]);
+        return fulfillJson(route, {
+          page: {
+            id: createdPageMatch[1], title: folder?.name ?? "", daily_date: null,
+            version: 1, archived: false, metadata: {},
+            created_at: "2026-07-14T01:00:00.000Z", updated_at: "2026-07-14T01:00:00.000Z",
+          },
+          blocks: [],
+          state_vector: "",
+        });
+      }
       if (url.pathname === "/api/folders" && request.method() === "POST") {
         const payload = request.postDataJSON() as { name: string; parentFolderId?: string | null };
         createdCount += 1;
-        const folder = {
+        const folder: FixtureFolder = {
           id: `project-created-${createdCount}`,
           name: payload.name,
           parentFolderId: payload.parentFolderId ?? null,
           sortOrder: folders.filter((candidate) => candidate.parentFolderId === (payload.parentFolderId ?? null)).length,
           projectPageId: `project-created-${createdCount}`,
+          version: 1,
+          archived: false,
         };
         folders = [...folders, folder];
-        return fulfillJson(route, folder);
+        // soul-ui createFolderOperations는 { folder } 응답을 읽는다.
+        return fulfillJson(route, { folder, created: true });
       }
       const folderMatch = /^\/api\/folders\/([^/]+)$/.exec(url.pathname);
       if (folderMatch && request.method() === "PUT") {
         const id = decodeURIComponent(folderMatch[1]);
         const payload = request.postDataJSON() as { name: string };
-        folders = folders.map((folder) => folder.id === id ? { ...folder, name: payload.name } : folder);
+        folders = folders.map((folder) => folder.id === id ? { ...folder, name: payload.name, version: folder.version + 1 } : folder);
         return fulfillJson(route, { ok: true });
       }
-      if (folderMatch && request.method() === "DELETE") {
-        const id = decodeURIComponent(folderMatch[1]);
+      // 보관 정본은 POST /api/folders/:id/archive이고, 응답의 folder.archived를
+      // 스토어가 다시 읽는다(client/v3/project-folder-actions.ts:17-26).
+      const archiveMatch = /^\/api\/folders\/([^/]+)\/archive$/.exec(url.pathname);
+      if (archiveMatch && request.method() === "POST") {
+        const id = decodeURIComponent(archiveMatch[1]);
+        const target = folders.find((folder) => folder.id === id);
+        if (!target) return fulfillJson(route, { detail: "folder not found" }, 404);
         deletedIds.push(id);
-        folders = folders.filter((folder) => folder.id !== id);
-        return fulfillJson(route, { ok: true });
+        const archived: FixtureFolder = { ...target, archived: true, version: target.version + 1 };
+        folders = folders.map((folder) => folder.id === id ? archived : folder);
+        return fulfillJson(route, { folder: archived, idempotent: false });
       }
       if (url.pathname === "/api/folders/reorder" && request.method() === "PATCH") {
         const items = request.postDataJSON() as Array<{ id: string; parentFolderId: string | null; sortOrder: number }>;
@@ -196,13 +234,28 @@ function projectRow(page: Page, name: string) {
 
 async function startProjectDrag(page: Page, name: string) {
   const handle = page.getByRole("button", { name: `${name} 이동` });
-  const box = await handle.boundingBox();
-  if (!box) throw new Error(`${name} 드래그 핸들을 측정하지 못했습니다.`);
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(100);
-  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 10, { steps: 10 });
-  await page.getByTestId("v3-project-root-drop").waitFor({ state: "visible", timeout: 3_000 });
+  const rootDrop = page.getByTestId("v3-project-root-drop");
+  // 폴더 생성 직후 트리가 다시 그려지면서 pointerdown이 유실될 수 있다.
+  // 드래그가 시작되면 최상위 드롭 표면이 나타나므로, 그것을 확인하고
+  // 나타나지 않으면(드래그 미시작) 취소한 뒤 다시 잡는다.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await handle.hover();
+    const box = await handle.boundingBox();
+    if (!box) throw new Error(`${name} 드래그 핸들을 측정하지 못했습니다.`);
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 12, cy + 6, { steps: 6 });
+    try {
+      await rootDrop.waitFor({ state: "visible", timeout: 2_000 });
+      return;
+    } catch {
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+    }
+  }
+  throw new Error(`${name} 드래그를 시작하지 못했습니다.`);
 }
 
 async function dragProject(page: Page, source: string, target: string) {

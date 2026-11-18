@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Button,
   DashboardIconCap,
+  FrameLoading,
   buildUsageStatsModelOptions,
   formatUsageStatsCacheSplit,
   formatUsageStatsCoverage,
@@ -268,7 +269,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const nextDisabled = period === "all" || Boolean(nextRange && nextRange.since > asOfDate);
 
   const summaryValue = (metricName: Metric) => {
-    if (overviewLoading || detailLoading) return "불러오는 중…";
+    // 값이 들어갈 자리에는 로딩 글자를 넣지 않는다. 첫 로딩의 진행 표시는 막대 프레임 하나다.
+    if (overviewLoading || detailLoading) return "";
     if (beforeCoverage) return metricName === "tokens" ? "미기록" : "미확인";
     return displayedAggregate
       ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.coverage, false, metricName === "cost")
@@ -324,7 +326,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               <div className="usage-stats-summary-metric"><span>토큰</span><strong data-v3-selectable-content="true">{summaryValue("tokens")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadLine}</span></div>
               <div className="usage-stats-summary-metric"><span>정가</span><strong data-v3-selectable-content="true">{summaryValue("cost")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadCostLine}</span></div>
             </div>
-            <div className="usage-stats-summary-meta" aria-live="polite">
+            <div className="usage-stats-summary-meta" aria-live="polite" data-loading={overviewLoading || detailLoading || undefined}>
               {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span data-v3-selectable-content="true">미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
               {overviewLoading || detailLoading ? null : coverageLabel ? <span data-v3-selectable-content="true">{coverageLabel}</span> : null}
               {overview?.projection_status.state === "backfilling" ? <span>이전 기록 정리 중</span> : null}
@@ -366,8 +368,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             modelMode={view === "model" && modelMode}
             onSelect={chooseBucket}
           />
-          {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : view === "model" ? displayedModels.map(row => {
+          {(noRecords || beforeCoverage) && !overviewLoading ? null : overviewLoading ? null : <div className="usage-stats-share-list">
+            {view === "model" ? displayedModels.map(row => {
               const value = usageStatsMetricValue(row.metrics, metric, includeCacheRead);
               const name = row.attribution === "provider"
                 ? formatUsageStatsProviderLabel(row.provider)
@@ -400,7 +402,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
         </SettingsGroupBox>
 
         {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords && !unknownEmptyRange ? <SettingsGroupBox title="입력 자료 구성">
-          {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
+          {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <FrameLoading inline label="불러오는 중…" /> : detail ? <InputMaterial detail={detail} /> : null}
         </SettingsGroupBox> : null}
       </>
     )}

@@ -27,7 +27,7 @@ describe("recurring-job MCP tools", () => {
     );
     const created = await withMcpRequestContext(
       { callerSessionId: "caller-session" },
-      async () => await call("create_recurring_job", createInput()),
+      async () => await call("create_recurring_job", { ...createInput(), model_preset_fallbacks: ["fallback"] }),
     );
     const updated = await withMcpRequestContext(
       { callerSessionId: "caller-session" },
@@ -35,6 +35,7 @@ describe("recurring-job MCP tools", () => {
         job_id: "job-1",
         expected_version: 1,
         enabled: true,
+        model_preset_fallbacks: [],
       }),
     );
 
@@ -49,6 +50,7 @@ describe("recurring-job MCP tools", () => {
       name: "music recommendation",
       idempotency_key: "recurring:create:1",
       enabled: false,
+      model_preset_fallbacks: ["fallback"],
     }));
     expect(createBody.context.callerInfo.email).toBe("owner@example.com");
     const updateBody = JSON.parse(String(fetch.mock.calls[2]?.[1]?.body));
@@ -56,6 +58,7 @@ describe("recurring-job MCP tools", () => {
       job_id: "job-1",
       expected_version: 1,
       enabled: true,
+      model_preset_fallbacks: [],
     }));
     expect(updateBody.context).toMatchObject({ caller_session_id: "caller-session", callerInfo: { email: "owner@example.com" } });
   });

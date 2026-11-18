@@ -264,6 +264,11 @@
   font-size: var(--font-size-sm);
 }
 
+.v3-project-context-editor label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+
 .v3-project-context-editor textarea,
 .v3-project-context-editor input[type="number"] {
   border: 1px solid var(--glass-border);

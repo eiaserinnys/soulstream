@@ -534,6 +534,8 @@ export interface Task {
   modelPreset?: string | null;
   /** Runtime backend resolved from modelPreset. Not persisted independently. */
   modelPresetBackend?: BackendId;
+  /** Backend recorded in session metadata, used until the preset is resolved. */
+  recordedModelBackend?: string;
   /** Runtime env bundle resolved from modelPreset. Values never cross the wire. */
   modelPresetEnv?: Record<string, string>;
   /**

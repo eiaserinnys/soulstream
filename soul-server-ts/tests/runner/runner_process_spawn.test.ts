@@ -21,6 +21,7 @@ import type { RunnerWriterLockState } from "../../src/runner/runner_writer_lock.
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import {
+  CHILD_RUNNER_IDENTITY_TIMEOUT_MS,
   completeRunnerRegistrationIdentityFromChild,
   pendingRunnerRegistrationIdentity,
   readRunnerRegistrationIdentity,
@@ -44,6 +45,26 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessSpawner", () => {
+  it("accepts a child that publishes its identity after ten seconds", async () => {
+    const params = await input();
+    const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const pending = pendingRunnerRegistrationIdentity(params.sessionId, params.codeSha);
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, pending);
+    let now = 0;
+    const result = await waitForChildRunnerRegistrationIdentity(paths.sessionDirectory, pending, 4124, {
+      isPidAlive: () => true,
+      now: () => now,
+      delay: async () => {
+        now = 12_900;
+        await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+          ...pending, pid: 4124, startIdentity: "start-4124",
+        });
+      },
+    });
+    expect(result).toMatchObject({ pid: 4124, startIdentity: "start-4124" });
+  });
+
   it("retires a pending registration when the child misses its startup deadline", async () => {
     const params = await input();
     const paths = runnerProcessPaths(params.stateDirectory, params.sessionId);
@@ -59,7 +80,7 @@ describe("RunnerProcessSpawner", () => {
       {
         isPidAlive: () => true,
         now: () => now,
-        delay: async () => { now = 10_000; },
+        delay: async () => { now = CHILD_RUNNER_IDENTITY_TIMEOUT_MS; },
       },
     )).resolves.toBeNull();
 
@@ -67,7 +88,7 @@ describe("RunnerProcessSpawner", () => {
       .resolves.toMatchObject({
         registrationId: pending.registrationId,
         pid: null,
-        retiredAt: new Date(10_000).toISOString(),
+        retiredAt: new Date(CHILD_RUNNER_IDENTITY_TIMEOUT_MS).toISOString(),
       });
   });
 

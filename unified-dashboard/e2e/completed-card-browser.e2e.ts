@@ -35,7 +35,9 @@ for(const width of [390,1440])test(`web home/folder/expanded/regular/gallery ${w
  if(baseline){await page.goto('/components');await page.locator('#components-board').scrollIntoViewIfNeeded();await capture(page,`web-gallery-${width}`);await page.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();await expect(page.getByTestId('card-detail')).toBeVisible();await capture(page,`web-detail-tabs-${width}`);return;}
  const completionRequests=()=>state.requests.filter(url=>new URL(url).searchParams.get('status')==='done');
  expect(completionRequests()).toHaveLength(0);await expect(home.locator('[data-board-column=done]')).toHaveCount(0);
- await home.getByRole('switch',{name:'완료 숨김'}).click();const board=home.locator('.v3-card-board');
+ const completionFilter=home.locator('.v3-card-completion-filter');const filterTree=await completionFilter.ariaSnapshot();
+ expect(filterTree).toContain('switch "완료·취소 숨김"');expect(filterTree.split('완료·취소 숨김')).toHaveLength(2);
+ await completionFilter.getByText('완료·취소 숨김',{exact:true}).click();await expect(home.getByRole('switch',{name:'완료·취소 숨김'})).not.toBeChecked();const board=home.locator('.v3-card-board');
  await board.evaluate(node=>{node.scrollLeft=node.scrollWidth;});const lane=home.locator('[data-board-column=done]');
  await expect(lane.locator('[data-card-status=done]').first()).toBeVisible();
  const metrics=await lane.evaluate(node=>({width:node.getBoundingClientRect().width,mounted:node.querySelectorAll('[data-card-status=done]').length,
@@ -53,38 +55,41 @@ for(const width of [390,1440])test(`web home/folder/expanded/regular/gallery ${w
  await expanded.getByRole('button',{name:'지난 30일',exact:true}).click();await expect.poll(()=>completionRequests().some(url=>{const q=new URL(url).searchParams;return Date.parse(q.get('completedBefore')??'')-Date.parse(q.get('completedFrom')??'')===30*24*60*60*1000;})).toBe(true);
  await expanded.getByRole('button',{name:'전체',exact:true}).click();await expect.poll(()=>completionRequests().some(url=>!new URL(url).searchParams.has('completedFrom'))).toBe(true);
  await expanded.getByLabel('제목 또는 요청 검색').fill('결과가 없는 제목');await expect(expanded.getByText('선택한 기간에 완료 카드가 없습니다')).toBeVisible();await capture(page,`web-empty-${width}`);await expanded.getByLabel('제목 또는 요청 검색').fill('검색');await expect(expanded.locator('[data-card-status=done]').first()).toBeVisible();await expanded.getByRole('button',{name:'확대 닫기'}).click();
- await expect(home.getByLabel('제목 또는 요청 검색')).toHaveValue('검색');await expect(home.getByRole('switch',{name:'완료 숨김'})).not.toBeChecked();
+ await expect(home.getByLabel('제목 또는 요청 검색')).toHaveValue('검색');await expect(home.getByRole('switch',{name:'완료·취소 숨김'})).not.toBeChecked();
  await home.getByRole('button',{name:'일반 보기'}).click();await expect(home.getByTestId('completed-viewport')).toBeVisible();await capture(page,`web-regular-${width}`);
  if(width===390){await page.getByTestId('v3-mobile-tab-projects').click();await page.getByTestId('v3-mobile-project-list').getByRole('button',{name:'소울스트림',exact:true}).click();}
  else await page.getByTestId('v3-all-projects').getByRole('button',{name:'소울스트림',exact:true}).click();
- const folder=page.getByTestId('folder-card-section');await folder.scrollIntoViewIfNeeded();await expect(folder.getByRole('switch',{name:'완료 숨김'})).toBeChecked();
- await folder.getByRole('switch',{name:'완료 숨김'}).click();await folder.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});await expect(folder.locator('[data-card-status=done]').first()).toBeVisible();
+ const folder=page.getByTestId('folder-card-section');await folder.scrollIntoViewIfNeeded();await expect(folder.getByRole('switch',{name:'완료·취소 숨김'})).toBeChecked();
+ await folder.getByRole('switch',{name:'완료·취소 숨김'}).click();await folder.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});await expect(folder.locator('[data-card-status=done]').first()).toBeVisible();
  expect(state.requests.filter(url=>new URL(url).pathname.startsWith('/api/planner/folders/')&&!/\/(sessions|subfolders)$/.test(new URL(url).pathname)).every(url=>new URL(url).searchParams.get('includeCompleted')==='false')).toBe(true);
  await capture(page,`web-folder-${width}`);
  await page.goto('/components');const sample=page.getByTestId('card-board-sample');await sample.locator('.v3-card-board-workspace').scrollIntoViewIfNeeded();
- await sample.locator('.v3-card-board-workspace').getByRole('switch',{name:'완료 숨김'}).click();await sample.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
+ await sample.locator('.v3-card-board-workspace').getByRole('switch',{name:'완료·취소 숨김'}).click();await sample.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
  await expect(sample.locator('[data-board-column=done] [data-card-status=done]').first()).toBeVisible();await capture(page,`web-gallery-${width}`);
- await sample.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();await expect(page.getByTestId('card-detail')).toBeVisible();await capture(page,`web-detail-tabs-${width}`);expect(state.errors).toEqual([]);writeFileSync(path.join(output,`web-metrics-${width}.json`),JSON.stringify({metrics,requests:state.requests,errors:state.errors},null,2));
+ const detailsBefore=await page.getByTestId('card-detail').count();await sample.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
+ await expect(page.getByTestId('card-detail')).toHaveCount(detailsBefore+1);await expect(page.getByTestId('card-detail').last()).toBeVisible();await capture(page,`web-detail-tabs-${width}`);expect(state.errors).toEqual([]);writeFileSync(path.join(output,`web-metrics-${width}.json`),JSON.stringify({metrics,requests:state.requests,errors:state.errors},null,2));
 });
 for(const width of [390,1210])test(`RN web completed gallery ${width}`,async({page})=>{
  await page.setViewportSize({width,height:1000});await fixture(page);await page.goto(`/assets/ios-components/?section=boardConnected`);
  await expect(page.getByTestId('card-board-workspace')).toBeVisible();await capture(page,`rn-hidden-${width}`);
  if(baseline)return;
- await page.getByLabel('완료 숨김').click();await page.getByTestId('card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
+ await page.getByLabel('완료·취소 숨김').click();await page.getByTestId('card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
  const done=page.getByTestId('card-board-scroll-done');await expect(done.locator('[data-testid^="postit-card-"]').first()).toBeVisible();
  const mounted=await done.locator('[data-testid^="postit-card-"]').count();expect(mounted).toBeLessThan(60);
  await capture(page,`rn-completed-${width}`);await page.getByTestId('completed-search').fill('검색');
  await expect.poll(()=>done.locator('[data-testid^="postit-card-"]').first().textContent()).toContain('검색');
  await capture(page,`rn-search-${width}`);
  await page.goto('/assets/ios-components/?section=folderWorkspace');const list=page.getByTestId('task-workspace-scroll');await expect(list).toBeVisible();
- await page.getByLabel('완료 숨김').scrollIntoViewIfNeeded();await capture(page,`rn-folder-hidden-${width}`);await page.getByLabel('완료 숨김').click();
+ await page.getByLabel('완료·취소 숨김').scrollIntoViewIfNeeded();await capture(page,`rn-folder-hidden-${width}`);await page.getByLabel('완료·취소 숨김').click();
  await expect(list.getByText('60개 표시',{exact:true})).toBeVisible();
  await list.locator('[data-testid^="postit-card-completed-"]').first().scrollIntoViewIfNeeded();await capture(page,`rn-folder-completed-${width}`);
  const folderMounted=await list.locator('[data-testid^="postit-card-completed-"]').count();expect(folderMounted).toBeLessThan(60);
- await list.evaluate(node=>{node.scrollTop=node.scrollHeight;});await expect(list.getByText('120개 표시',{exact:true})).toBeAttached();await page.waitForTimeout(300);
- const folderMountedAfterPage=await list.locator('[data-testid^="postit-card-completed-"]').count();expect(folderMountedAfterPage).toBeLessThan(120);
+ await list.evaluate(node=>{node.scrollTop=node.scrollHeight;});
+ await expect.poll(async()=>{const loaded=Number(await list.evaluate(node=>node.textContent?.match(/([0-9]+)개 표시/)?.[1]??0));if(loaded>60)return loaded;if(!await list.evaluate(node=>node.scrollTop+node.clientHeight>=node.scrollHeight-1))await list.evaluate(node=>{node.scrollTop=node.scrollHeight;});return loaded;},{timeout:8000,intervals:[200,300,500]}).toBeGreaterThan(60);
+ const loadedAfterPage=Number(await list.evaluate(node=>node.textContent?.match(/([0-9]+)개 표시/)?.[1]??0));await expect(list.getByText(`${loadedAfterPage}개 표시`,{exact:true})).toBeAttached();await page.waitForTimeout(300);
+ const folderMountedAfterPage=await list.locator('[data-testid^="postit-card-completed-"]').count();expect(folderMountedAfterPage).toBeLessThan(loadedAfterPage);
  await page.goto('/assets/ios-components/?section=entryShell');await expect(page.getByTestId('card-board-workspace')).toBeVisible();await capture(page,`rn-entry-header-${width}`);
- const actions=await Promise.all(['완료 숨김','드래프트 카드 추가','기존 데일리 기록'].map(async name=>page.getByLabel(name,{exact:true}).first().evaluate(node=>{const r=node.getBoundingClientRect();return {label:node.getAttribute('aria-label'),x:r.x,y:r.y,width:r.width,height:r.height};})));
+ const actions=await Promise.all(['완료·취소 숨김','드래프트 카드 추가'].map(async name=>page.getByLabel(name,{exact:true}).first().evaluate(node=>{const r=node.getBoundingClientRect();return {label:node.getAttribute('aria-label'),x:r.x,y:r.y,width:r.width,height:r.height};})));
  writeFileSync(path.join(output,`rn-metrics-${width}.json`),JSON.stringify({mounted,folderMounted,folderMountedAfterPage,actions,platform:'RN web; native unmeasured'}));
 });
 
@@ -99,7 +104,7 @@ if(process.env.COMPLETED_METRICS==='1')test('web header layout coordinates',asyn
 if(process.env.COMPLETED_REBASE==='1')test('rebased gallery preserves completed grid and shared detail sample',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await fixture(page);await page.goto('/components');
  const sample=page.getByTestId('card-board-sample');await sample.locator('.v3-card-board-workspace').scrollIntoViewIfNeeded();
- await sample.locator('.v3-card-board-workspace').getByRole('switch',{name:'완료 숨김'}).click();await sample.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
+ await sample.locator('.v3-card-board-workspace').getByRole('switch',{name:'완료·취소 숨김'}).click();await sample.locator('.v3-card-board').evaluate(node=>{node.scrollLeft=node.scrollWidth;});
  await expect(sample.locator('[data-board-column=done] [data-card-status=done]').first()).toBeVisible();
  await sample.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();const detail=page.getByTestId('card-detail');await expect(detail).toBeVisible();
  await detail.getByRole('tab',{name:'노트',exact:true}).click();await expect(detail.getByText('내부 요약을 접지 않고 표시합니다.',{exact:true})).toBeVisible();await expect(detail.getByText('커멘트',{exact:true}).first()).toBeVisible();await capture(page,'web-detail-rebased-1440');

@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
+import {
+  DELIVERY_CLAIM_TTL_MS,
+  isExplicitNodeRejection,
+  nodeRejectionDetailsSuffix,
+  releaseDeliveryAttemptAfterSendFailure,
+} from "../control_plane/session_delivery_release.js";
 import type { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
 import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
+import { PendingNodeCommandRejectedError } from "../node/pending_commands.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
 
 /** Card callbacks do not re-claim queued deliveries. Other delivery policies remain unchanged. */
 export async function sendCardChangeOnce(
-  repository: Pick<SessionDeliveryRepository, "register" | "claim" | "get">,
+  repository: Pick<SessionDeliveryRepository,
+    "register" | "claim" | "get" | "retryDeliveryAttempt" | "markUncertain">,
   payload: InterveneNodeCommandPayload,
   send: (payload: InterveneNodeCommandPayload) => Promise<Record<string, unknown>>,
   registeredRow?: SessionDeliveryRow,
@@ -18,19 +26,55 @@ export async function sendCardChangeOnce(
   if (accepted(registered.row)) return;
   // This pending-only CAS closes the lookup→send race. The receiving ledger checks
   // this token and atomically moves claimed→dispatching before engine/queue admission.
+  // The claim outlives the node command wait (card #1653); a shorter TTL let the
+  // stale sweep revert an attempt we were still waiting on.
   const token = `card-change:${randomUUID()}`;
-  const claimed = await repository.claim(id, token);
+  const claimed = await repository.claim(id, token, DELIVERY_CLAIM_TTL_MS);
   if (!claimed) {
     if (accepted(await repository.get(id))) return;
     throw new Error(`Card delivery has no confirmed acceptance: ${id}`);
   }
-  const response = await send({ ...payload, delivery_attempt_token: token });
-  // Ack alone is insufficient: unknown/deferred and transport failures are not success.
-  if (response.status === "error" || response.type === "error"
-    || !["delivered", "queued", "auto_resumed", "suppressed"].includes(String(response.outcome))
-    || !accepted(await repository.get(id))) {
-    throw new Error(`Card delivery acceptance unconfirmed: ${id} (${String(response.outcome)})`);
+  try {
+    const response = await send({ ...payload, delivery_attempt_token: token });
+    // Ack alone is insufficient: unknown/deferred and transport failures are not success.
+    if (response.status === "error" || response.type === "error") {
+      throw nodeRejection(payload, response);
+    }
+    if (!["delivered", "queued", "auto_resumed", "suppressed"].includes(String(response.outcome))
+      || !accepted(await repository.get(id))) {
+      throw new Error(`Card delivery acceptance unconfirmed: ${id} (${String(response.outcome)})`);
+    }
+  } catch (error) {
+    // Only a rejection the node answered explicitly releases the claim. Timeouts,
+    // response-less rejections and unconfirmed acceptance still wait for expiry.
+    if (isExplicitNodeRejection(error)) {
+      await releaseDeliveryAttemptAfterSendFailure({
+        repository,
+        deliveryId: id,
+        attemptToken: token,
+        error,
+        failure: `card delivery ${id} dispatch failed: ${error.message}`
+          + nodeRejectionDetailsSuffix(error),
+        attemptCount: claimed.attempt_count,
+      });
+    }
+    throw error;
   }
+}
+
+function nodeRejection(
+  payload: InterveneNodeCommandPayload,
+  response: Record<string, unknown>,
+): PendingNodeCommandRejectedError {
+  return new PendingNodeCommandRejectedError({
+    commandType: payload.type,
+    requestId: typeof response.requestId === "string" ? response.requestId : "",
+    message: String(response.message ?? response.code ?? "Card delivery rejected"),
+    response: {
+      ...response,
+      type: typeof response.type === "string" ? response.type : "error",
+    },
+  });
 }
 
 async function register(

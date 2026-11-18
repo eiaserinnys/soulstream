@@ -9,7 +9,7 @@ import { UnknownModelPresetError } from "../model_catalog.js";
 import { resolveReasoningEffortForCreate } from "./task_reasoning_effort.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isRuntimeFollowup, sortInterventionsByPriority } from "./task_intervention_queue.js";
-import { buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
+import { buildModelBackendMetadataEntry, buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
 import { resolveGenerationState } from "./persistent_generation_state.js";
 
 import type {
@@ -262,6 +262,16 @@ export async function commitStart(
     },
     `persistent_generation_model_selection:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
   );
+  if (task.modelPresetBackend) {
+    const backendEntry = buildModelBackendMetadataEntry(task.modelPresetBackend);
+    const backendEventId = await persistence.enqueueMetadataEffect(task.agentSessionId, backendEntry, {
+      replaceExistingType: "model_backend",
+      waitForAck: true,
+    });
+    task.metadata = [...(task.metadata ?? []).filter((entry) => entry.type !== "model_backend"), backendEntry];
+    task.recordedModelBackend = task.modelPresetBackend;
+    if (backendEventId !== null) task.lastEventId = backendEventId;
+  }
 }
 
 export async function publishStarted(

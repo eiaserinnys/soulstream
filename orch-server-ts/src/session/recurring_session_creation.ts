@@ -19,7 +19,7 @@ import type { AdmittedAttachmentInput } from "../attachments/attachment_input_ad
 export type RecurringSessionCreateCoreOptions = {
   readonly router: SessionCommandRouter;
   readonly bridge: SessionCommandTransportBridge;
-  readonly modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  readonly modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable" | "chooseUsablePreset">;
   readonly timeoutMs?: number;
   readonly reconcileTimeoutMs?: number;
   readonly admitAttachments?: (
@@ -33,6 +33,7 @@ export type CreateRecurringSessionInput = {
   readonly nodeId: string;
   readonly agentId: string;
   readonly modelPreset: string | null;
+  readonly modelPresetFallbacks?: readonly string[];
   readonly folderId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
   readonly cardId?: string;
@@ -89,7 +90,7 @@ export async function createRecurringSession(
       );
     }
   }
-  const command: CreateSessionNodeCommandPayload = {
+  let command: CreateSessionNodeCommandPayload = {
     type: "create_session",
     agentSessionId: input.sessionId,
     prompt: input.prompt,
@@ -111,6 +112,18 @@ export async function createRecurringSession(
     ...(input.orchestrationAdmission?{orchestrationAdmission:input.orchestrationAdmission}:{}),
     caller_info: { ...input.callerInfo },
   };
+  if (input.modelPresetFallbacks?.length && options.modelPresetAvailability) {
+    const selection = options.router.selectNodeForCreate({
+      nodeId: input.nodeId, profileId: input.agentId,
+      ...(input.modelPreset === null ? {} : { modelPresetId: input.modelPreset }),
+    });
+    if (selection.modelPresetId) {
+      const chosen = options.modelPresetAvailability.chooseUsablePreset(selection.node.nodeId, [selection.modelPresetId, ...input.modelPresetFallbacks]);
+      command = { ...command, nodeId: selection.node.nodeId, profile: selection.profileId,
+        model_preset: chosen, initial_model_preset: selection.modelPresetId,
+        model_preset_fallbacks: [...input.modelPresetFallbacks] };
+    }
+  }
   const routed = options.router.createSession(command, {
     timeoutMs: options.timeoutMs,
     beforeCreateCommand: (selection) => {

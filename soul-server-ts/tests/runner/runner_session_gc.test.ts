@@ -14,6 +14,98 @@ const NOW = Date.parse("2026-08-12T00:00:00.000Z");
 const RETENTION_MS = 86_400_000;
 
 describe("RunnerSessionGarbageCollector", () => {
+  it("removes an expired retired runner without lifecycle when durable evidence is empty and the central session exists", async () => {
+    const subject = makeSubject();
+    const centralSessionExists = vi.fn(async () => true);
+    const session = registration({
+      sessionId: "retired-empty",
+      pid: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+      bootstrap: false,
+      lifecycleState: null,
+    });
+
+    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+      .resolves.toEqual({ removed: ["retired-empty"], retained: [] });
+    expect(subject.inspect).toHaveBeenCalledTimes(1);
+    expect(subject.removeDirectory).toHaveBeenCalledWith("/state/retired-empty");
+    expect(centralSessionExists).toHaveBeenCalled();
+  });
+
+  it("retains a retired runner without lifecycle while its kernel lock is held", async () => {
+    const subject = makeSubject();
+    const session = registration({
+      sessionId: "retired-live",
+      pid: null,
+      pidAlive: true,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+      bootstrap: false,
+      lifecycleState: null,
+    });
+
+    await expect(subject.collector.collect(scan([session]), {
+      centralSessionExists: async () => true,
+    })).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "retired-live", reason: "incomplete_bootstrap" }],
+    });
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it.each(["durable-records", "unacknowledged-ipc"] as const)(
+    "retains a retired runner without lifecycle with %s evidence",
+    async (evidenceKind) => {
+      const sessionId = `retired-${evidenceKind}`;
+      const subject = makeSubject({
+        durableRecordSessions: evidenceKind === "durable-records" ? new Set([sessionId]) : undefined,
+        unacknowledgedIpcSessions: evidenceKind === "unacknowledged-ipc" ? new Set([sessionId]) : undefined,
+      });
+      const session = registration({
+        sessionId,
+        pid: null,
+        retiredAt: "2026-08-10T00:00:00.000Z",
+        bootstrap: false,
+        lifecycleState: null,
+      });
+
+      await expect(subject.collector.collect(scan([session]), {
+        centralSessionExists: async () => true,
+      })).resolves.toEqual({
+        removed: [],
+        retained: [{ sessionId, reason: "incomplete_bootstrap" }],
+      });
+      expect(subject.inspect).toHaveBeenCalledTimes(1);
+      expect(subject.removeDirectory).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a retired runner without lifecycle until its retention window expires", async () => {
+    const subject = makeSubject();
+    const session = registration({
+      sessionId: "retired-recent",
+      retiredAt: "2026-08-11T12:00:00.000Z",
+      bootstrap: false,
+      lifecycleState: null,
+    });
+
+    await expect(subject.collector.collect(scan([session]))).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "retired-recent", reason: "retention_window" }],
+    });
+    expect(subject.inspect).not.toHaveBeenCalled();
+  });
+
+  it("retains a non-retired runner without lifecycle", async () => {
+    const subject = makeSubject();
+    const session = registration({ sessionId: "not-retired", bootstrap: false, lifecycleState: null });
+
+    await expect(subject.collector.collect(scan([session]))).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "not-retired", reason: "lifecycle_missing" }],
+    });
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
   it.each(["completed", "failed", "reaped", "closed"] as const)(
     "removes an expired terminal pre-bootstrap %s session only when durable evidence is empty",
     async (lifecycleState) => {
@@ -543,7 +635,7 @@ function registration(options: {
   registrationId?: string | null;
   pidStartIdentity?: string | null;
   bootstrap?: boolean;
-  lifecycleState?: "running" | "completed" | "failed" | "reaped" | "closed";
+  lifecycleState?: "running" | "completed" | "failed" | "reaped" | "closed" | null;
   retiredAt?: string;
 }): RunnerRegistration {
   const sessionId = options.sessionId;
@@ -569,7 +661,7 @@ function registration(options: {
     bootstrap: options.bootstrap === false
       ? null
       : { payload: { code_sha: "release-a" } } as never,
-    lifecycle: {
+    lifecycle: options.lifecycleState === null ? null : {
       session_id: sessionId,
       runner_pid: 42,
       execution_command_id: "execute-a",

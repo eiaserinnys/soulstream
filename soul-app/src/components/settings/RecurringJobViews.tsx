@@ -1,4 +1,5 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
+import { FrameLoading } from '../FrameLoading';
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -99,7 +100,8 @@ export function RecurringJobsList({
   return (
     <View testID="recurring-jobs-list" style={styles.block}>
       <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" />{!hideCreate ? <Action label="새 작업" onPress={onCreate} /> : null}</SettingsListHeader>
-      {loading || !loaded ? <ActivityIndicator color={t.colors.accent} /> : null}
+      {jobs.length === 0 && (loading || !loaded) ? <FrameLoading testID="recurring-jobs-loading" inline /> : null}
+      {jobs.length > 0 && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {loaded && !loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
       {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? jobDetail(job) : '일시정지됨'} onPress={() => onEdit(job)} />)}
@@ -312,7 +314,7 @@ export function RecurringJobEditor({
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 편집할 수 있습니다." />;
   return <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
   <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { ref: editorScroll, contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
-    {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+    {loading ? <FrameLoading testID="recurring-job-form-loading" inline /> : null}
     {loadError ? <View><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text>{jobId && !job ? <Action label="다시 불러오기" onPress={() => { if (dirty) confirmSettingsDiscard(() => void loadExisting(), saveScreen); else void loadExisting(); }}/>: null}</View> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
     <SettingsSection id="recurring-editor-groups" title="" flattened>
@@ -325,7 +327,7 @@ export function RecurringJobEditor({
     {isRecurring ? <>
       <RecurringSchedulePicker value={draft.schedule} onChange={(schedule) => update({ schedule })} />
       <View style={styles.actions}><Action label="다음 5회" disabled={previewLoading} onPress={() => void previewSchedule()}/></View>
-      {previewLoading ? <ActivityIndicator color={t.colors.accent}/> : null}
+      {previewLoading ? <FrameLoading testID="recurring-job-preview-loading" inline /> : null}
       {previewError ? <Text accessibilityRole="alert" style={styles.error}>{previewError}</Text> : null}
       {preview.length > 0 ? <View style={previewStyle}><Text style={styles.heading}>다음 5회</Text>{preview.map(time => <Text key={time} style={styles.help}>{formatTime(time, previewTimezone)}</Text>)}</View> : null}
     </> : scheduleKind === 'event'
@@ -333,7 +335,7 @@ export function RecurringJobEditor({
       : null}
     </Group>
     <Group title="실행 대상">
-    {loadingTargets || loadingNodes ? <ActivityIndicator color={t.colors.accent}/> : null}
+    {loadingTargets || loadingNodes ? <FrameLoading testID="recurring-job-targets-loading" inline /> : null}
     {targetsError || nodesError ? <View><Text accessibilityRole="alert" style={styles.error}>{targetsError ?? nodesError}</Text><Action label="다시 시도" onPress={() => setTargetsReload(value => value + 1)}/></View> : null}
     <Text style={styles.label}>실행 노드</Text><OptionRow label="실행 노드" selected={draft.nodeId} options={nodes.map((node) => ({ id: node.nodeId, label: node.nodeId }))} onSelect={chooseNode} emptyLabel="연결된 노드 없음" />
     <Text style={styles.label}>실행 에이전트</Text><OptionRow label="실행 에이전트" selected={draft.agentId} options={agents.map((agent) => ({ id: agent.id, label: agent.name ?? agent.id }))} onSelect={(agentId) => update({ agentId })} emptyLabel="노드를 선택하세요" />
@@ -378,7 +380,7 @@ export function RecurringJobHistory({
     } finally { if (request === requestRevision.current) setLoading(false); }
   }, [jobId, serverUrl]);
   useEffect(() => { void load(); }, [load]);
-  return <View testID="recurring-job-history" style={styles.block}><View style={styles.headerRow}><Text style={styles.heading}>최근 실행</Text><Action label="새로고침" onPress={() => void load()} testID="recurring-job-history-refresh" /></View>{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{loading ? <ActivityIndicator color={t.colors.accent}/> : null}{!loading && !error && runs.length === 0 ? <Notice text="실행 이력이 없습니다." /> : !loading && !error && runs.map((run) => {
+  return <View testID="recurring-job-history" style={styles.block}><View style={styles.headerRow}><Text style={styles.heading}>최근 실행</Text><Action label="새로고침" onPress={() => void load()} testID="recurring-job-history-refresh" /></View>{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{loading ? <FrameLoading testID="recurring-job-history-loading" inline /> : null}{!loading && !error && runs.length === 0 ? <Notice text="실행 이력이 없습니다." /> : !loading && !error && runs.map((run) => {
     const action = sessionAction(run);
     return <View key={run.run_id} style={styles.listRow}><View style={styles.grow}><Text style={styles.body}>{run.state}</Text><Text style={styles.help}>{formatTime(run.scheduled_for ?? run.created_at)}</Text>{run.reason_message || action.message ? <Text style={styles.help}>{run.reason_message ?? action.message}</Text> : null}</View><Action label={action.label} disabled={!action.canOpen} onPress={() => onOpenSession(run.session_id)} testID={`recurring-run-open-${run.run_id}`} /></View>;
   })}</View>;

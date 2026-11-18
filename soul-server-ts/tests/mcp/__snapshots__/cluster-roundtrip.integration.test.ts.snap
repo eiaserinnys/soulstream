@@ -28,7 +28,7 @@ exports[`cluster MCP roundtrip > preserves archive recurring > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": \\"<time>\\",\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": \\"<time>\\",\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -55,6 +55,7 @@ exports[`cluster MCP roundtrip > preserves archive recurring > result 1`] = `
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": false,
       "archived_at": "<time>",
@@ -89,14 +90,14 @@ exports[`cluster MCP roundtrip > preserves archive_recurring_job absent resource
 
 exports[`cluster MCP roundtrip > preserves create cron > node commands 1`] = `"[]"`;
 
-exports[`cluster MCP roundtrip > preserves create cron > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"recurring","scheduleExpressions":["0 9 * * *"],"runAt":null,"eventTrigger":null,"timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":{"timezone":"Asia/Seoul","scheduleExpressions":["0 9 * * *"],"expressions":[{"source":"0 9 * * *","minute":{"wildcard":false},"hour":{"wildcard":false},"dayOfMonth":{"wildcard":true},"month":{"wildcard":true},"dayOfWeek":{"wildcard":true}}]}},"requireAvailableTarget":true,"purpose":"settings"}]]"`;
+exports[`cluster MCP roundtrip > preserves create cron > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"recurring","scheduleExpressions":["0 9 * * *"],"runAt":null,"eventTrigger":null,"timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"modelPresetFallbacks":[],"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":{"timezone":"Asia/Seoul","scheduleExpressions":["0 9 * * *"],"expressions":[{"source":"0 9 * * *","minute":{"wildcard":false},"hour":{"wildcard":false},"dayOfMonth":{"wildcard":true},"month":{"wildcard":true},"dayOfWeek":{"wildcard":true}}]}},"requireAvailableTarget":true,"purpose":"settings"}]]"`;
 
 exports[`cluster MCP roundtrip > preserves create cron > result 1`] = `
 "{
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"event_last_fired_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"event_last_fired_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -124,6 +125,7 @@ exports[`cluster MCP roundtrip > preserves create cron > result 1`] = `
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": true,
       "archived_at": null,
@@ -139,14 +141,14 @@ exports[`cluster MCP roundtrip > preserves create cron > result 1`] = `
 
 exports[`cluster MCP roundtrip > preserves create once > node commands 1`] = `"[]"`;
 
-exports[`cluster MCP roundtrip > preserves create once > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"once","scheduleExpressions":[],"runAt":"2099-10-01T09:00:00+09:00","eventTrigger":null,"timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":null},"requireAvailableTarget":true,"purpose":"settings"}]]"`;
+exports[`cluster MCP roundtrip > preserves create once > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"name":"새 작업","prompt":"수행","scheduleKind":"once","scheduleExpressions":[],"runAt":"2099-10-01T09:00:00+09:00","eventTrigger":null,"timezone":"Asia/Seoul","nodeId":"node-a","agentId":"roselin","modelPreset":null,"modelPresetFallbacks":[],"folderId":"allowed-folder","lateRunWindowSeconds":1800,"schedule":null},"requireAvailableTarget":true,"purpose":"settings"}]]"`;
 
 exports[`cluster MCP roundtrip > preserves create once > result 1`] = `
 "{
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"once\\",\\n    \\"schedule_expressions\\": [],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": []\\n    },\\n    \\"run_at\\": \\"<time>\\",\\n    \\"event_trigger\\": null,\\n    \\"event_last_fired_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"generated-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"새 작업\\",\\n    \\"prompt\\": \\"수행\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"once\\",\\n    \\"schedule_expressions\\": [],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": []\\n    },\\n    \\"run_at\\": \\"<time>\\",\\n    \\"event_trigger\\": null,\\n    \\"event_last_fired_at\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -170,6 +172,7 @@ exports[`cluster MCP roundtrip > preserves create once > result 1`] = `
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": true,
       "archived_at": null,
@@ -211,7 +214,7 @@ exports[`cluster MCP roundtrip > preserves get recurring > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -238,6 +241,7 @@ exports[`cluster MCP roundtrip > preserves get recurring > result 1`] = `
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": true,
       "archived_at": null,
@@ -410,7 +414,7 @@ exports[`cluster MCP roundtrip > preserves list recurring > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
     }
   ],
   "structuredContent": {
@@ -438,6 +442,7 @@ exports[`cluster MCP roundtrip > preserves list recurring > result 1`] = `
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": true,
         "archived_at": null,
@@ -556,7 +561,7 @@ exports[`cluster MCP roundtrip > preserves ownerless archive another owner's job
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"no-email\\",\\n    \\"name\\": \\"다른 소유자의 반복 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": \\"<time>\\",\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"no-email\\",\\n    \\"name\\": \\"다른 소유자의 반복 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": \\"<time>\\",\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -583,6 +588,7 @@ exports[`cluster MCP roundtrip > preserves ownerless archive another owner's job
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": false,
       "archived_at": "<time>",
@@ -624,7 +630,7 @@ exports[`cluster MCP roundtrip > preserves ownerless get another owner's job > r
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"other@example.com\\",\\n    \\"name\\": \\"다른 소유자의 반복 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"other@example.com\\",\\n    \\"name\\": \\"다른 소유자의 반복 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 1,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -651,6 +657,7 @@ exports[`cluster MCP roundtrip > preserves ownerless get another owner's job > r
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": true,
       "archived_at": null,
@@ -673,7 +680,7 @@ exports[`cluster MCP roundtrip > preserves ownerless include archived > result 1
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-other\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-archived\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": false,\\n      \\"archived_at\\": \\"<time>\\",\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": null,\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-other\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-archived\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": false,\\n      \\"archived_at\\": \\"<time>\\",\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": null,\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
     }
   ],
   "structuredContent": {
@@ -701,6 +708,7 @@ exports[`cluster MCP roundtrip > preserves ownerless include archived > result 1
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": true,
         "archived_at": null,
@@ -733,6 +741,7 @@ exports[`cluster MCP roundtrip > preserves ownerless include archived > result 1
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": true,
         "archived_at": null,
@@ -765,6 +774,7 @@ exports[`cluster MCP roundtrip > preserves ownerless include archived > result 1
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": false,
         "archived_at": "<time>",
@@ -839,7 +849,7 @@ exports[`cluster MCP roundtrip > preserves ownerless run another owner's job > r
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"run\\": {\\n    \\"run_id\\": \\"generated-1\\",\\n    \\"job_id\\": \\"job-other\\",\\n    \\"trigger\\": \\"manual\\",\\n    \\"scheduled_for\\": null,\\n    \\"session_id\\": \\"generated-2\\",\\n    \\"state\\": \\"queued\\",\\n    \\"reason_code\\": null,\\n    \\"reason_message\\": null,\\n    \\"job_snapshot\\": {\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"scheduleKind\\": \\"recurring\\",\\n      \\"scheduleExpressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"runAt\\": null,\\n      \\"eventTrigger\\": null,\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"modelPreset\\": null,\\n      \\"folderId\\": \\"allowed-folder\\",\\n      \\"executionCaller\\": {\\n        \\"source\\": \\"browser\\",\\n        \\"email\\": \\"other@example.com\\"\\n      },\\n      \\"lateRunWindowSeconds\\": 1800\\n    },\\n    \\"created_at\\": \\"<time>\\",\\n    \\"started_at\\": null,\\n    \\"finished_at\\": null,\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"run\\": {\\n    \\"run_id\\": \\"generated-1\\",\\n    \\"job_id\\": \\"job-other\\",\\n    \\"trigger\\": \\"manual\\",\\n    \\"scheduled_for\\": null,\\n    \\"session_id\\": \\"generated-2\\",\\n    \\"state\\": \\"queued\\",\\n    \\"reason_code\\": null,\\n    \\"reason_message\\": null,\\n    \\"job_snapshot\\": {\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"scheduleKind\\": \\"recurring\\",\\n      \\"scheduleExpressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"runAt\\": null,\\n      \\"eventTrigger\\": null,\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"modelPreset\\": null,\\n      \\"modelPresetFallbacks\\": [],\\n      \\"folderId\\": \\"allowed-folder\\",\\n      \\"executionCaller\\": {\\n        \\"source\\": \\"browser\\",\\n        \\"email\\": \\"other@example.com\\"\\n      },\\n      \\"lateRunWindowSeconds\\": 1800\\n    },\\n    \\"created_at\\": \\"<time>\\",\\n    \\"started_at\\": null,\\n    \\"finished_at\\": null,\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -865,6 +875,7 @@ exports[`cluster MCP roundtrip > preserves ownerless run another owner's job > r
         "nodeId": "node-a",
         "agentId": "roselin",
         "modelPreset": null,
+        "modelPresetFallbacks": [],
         "folderId": "allowed-folder",
         "executionCaller": {
           "source": "browser",
@@ -883,14 +894,14 @@ exports[`cluster MCP roundtrip > preserves ownerless run another owner's job > r
 
 exports[`cluster MCP roundtrip > preserves ownerless update another owner's job > node commands 1`] = `"[]"`;
 
-exports[`cluster MCP roundtrip > preserves ownerless update another owner's job > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"other@example.com","actorId":"no-email","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait"},"source":"agent"},"target":{"jobId":"job-other","ownerEmail":"other@example.com","executionCaller":{"source":"browser","email":"other@example.com"},"name":"Updated by ownerless","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","enabled":true,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":"2026-10-03T00:00:00.000Z","version":1,"createdIdempotencyKey":"other-seed","createdBy":"other@example.com","updatedBy":"other@example.com","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
+exports[`cluster MCP roundtrip > preserves ownerless update another owner's job > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"other@example.com","actorId":"no-email","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait"},"source":"agent"},"target":{"jobId":"job-other","ownerEmail":"other@example.com","executionCaller":{"source":"browser","email":"other@example.com"},"name":"Updated by ownerless","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"modelPresetFallbacks":[],"folderId":"allowed-folder","enabled":true,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":"2026-10-03T00:00:00.000Z","version":1,"createdIdempotencyKey":"other-seed","createdBy":"other@example.com","updatedBy":"other@example.com","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
 
 exports[`cluster MCP roundtrip > preserves ownerless update another owner's job > result 1`] = `
 "{
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"no-email\\",\\n    \\"name\\": \\"Updated by ownerless\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-other\\",\\n    \\"owner_email\\": \\"other@example.com\\",\\n    \\"created_by\\": \\"other@example.com\\",\\n    \\"updated_by\\": \\"no-email\\",\\n    \\"name\\": \\"Updated by ownerless\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": true,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": \\"<time>\\",\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -917,6 +928,7 @@ exports[`cluster MCP roundtrip > preserves ownerless update another owner's job 
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": true,
       "archived_at": null,
@@ -1096,7 +1108,7 @@ exports[`cluster MCP roundtrip > preserves recurring bad cron > result 1`] = `
 
 exports[`cluster MCP roundtrip > preserves recurring bad version > node commands 1`] = `"[]"`;
 
-exports[`cluster MCP roundtrip > preserves recurring bad version > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","enabled":true,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":"2026-10-03T00:00:00.000Z","version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
+exports[`cluster MCP roundtrip > preserves recurring bad version > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"modelPresetFallbacks":[],"folderId":"allowed-folder","enabled":true,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":"2026-10-03T00:00:00.000Z","version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
 
 exports[`cluster MCP roundtrip > preserves recurring bad version > result 1`] = `
 "{
@@ -1164,7 +1176,7 @@ exports[`cluster MCP roundtrip > preserves recurring no email > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-other\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
+      "text": "{\\n  \\"jobs\\": [\\n    {\\n      \\"job_id\\": \\"job-1\\",\\n      \\"owner_email\\": \\"owner@example.com\\",\\n      \\"created_by\\": \\"caller\\",\\n      \\"updated_by\\": \\"caller\\",\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    },\\n    {\\n      \\"job_id\\": \\"job-other\\",\\n      \\"owner_email\\": \\"other@example.com\\",\\n      \\"created_by\\": \\"other@example.com\\",\\n      \\"updated_by\\": \\"other@example.com\\",\\n      \\"name\\": \\"다른 소유자의 반복 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_kind\\": \\"recurring\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"schedule\\": {\\n        \\"timezone\\": \\"Asia/Seoul\\",\\n        \\"schedule_expressions\\": [\\n          \\"0 9 * * *\\"\\n        ]\\n      },\\n      \\"run_at\\": null,\\n      \\"event_trigger\\": null,\\n      \\"node_id\\": \\"node-a\\",\\n      \\"agent_id\\": \\"roselin\\",\\n      \\"model_preset\\": null,\\n      \\"model_preset_fallbacks\\": [],\\n      \\"folder_id\\": \\"allowed-folder\\",\\n      \\"enabled\\": true,\\n      \\"archived_at\\": null,\\n      \\"late_run_window_seconds\\": 1800,\\n      \\"next_run_at\\": \\"<time>\\",\\n      \\"version\\": 1,\\n      \\"created_at\\": \\"<time>\\",\\n      \\"updated_at\\": \\"<time>\\"\\n    }\\n  ]\\n}"
     }
   ],
   "structuredContent": {
@@ -1192,6 +1204,7 @@ exports[`cluster MCP roundtrip > preserves recurring no email > result 1`] = `
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": true,
         "archived_at": null,
@@ -1224,6 +1237,7 @@ exports[`cluster MCP roundtrip > preserves recurring no email > result 1`] = `
         "node_id": "node-a",
         "agent_id": "roselin",
         "model_preset": null,
+        "model_preset_fallbacks": [],
         "folder_id": "allowed-folder",
         "enabled": true,
         "archived_at": null,
@@ -1590,7 +1604,7 @@ exports[`cluster MCP roundtrip > preserves run recurring > result 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"run\\": {\\n    \\"run_id\\": \\"generated-1\\",\\n    \\"job_id\\": \\"job-1\\",\\n    \\"trigger\\": \\"manual\\",\\n    \\"scheduled_for\\": null,\\n    \\"session_id\\": \\"generated-2\\",\\n    \\"state\\": \\"queued\\",\\n    \\"reason_code\\": null,\\n    \\"reason_message\\": null,\\n    \\"job_snapshot\\": {\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"scheduleKind\\": \\"recurring\\",\\n      \\"scheduleExpressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"runAt\\": null,\\n      \\"eventTrigger\\": null,\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"modelPreset\\": null,\\n      \\"folderId\\": \\"allowed-folder\\",\\n      \\"executionCaller\\": {\\n        \\"source\\": \\"agent\\",\\n        \\"email\\": \\"owner@example.com\\"\\n      },\\n      \\"lateRunWindowSeconds\\": 1800\\n    },\\n    \\"created_at\\": \\"<time>\\",\\n    \\"started_at\\": null,\\n    \\"finished_at\\": null,\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"run\\": {\\n    \\"run_id\\": \\"generated-1\\",\\n    \\"job_id\\": \\"job-1\\",\\n    \\"trigger\\": \\"manual\\",\\n    \\"scheduled_for\\": null,\\n    \\"session_id\\": \\"generated-2\\",\\n    \\"state\\": \\"queued\\",\\n    \\"reason_code\\": null,\\n    \\"reason_message\\": null,\\n    \\"job_snapshot\\": {\\n      \\"name\\": \\"정기 작업\\",\\n      \\"prompt\\": \\"확인\\",\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"scheduleKind\\": \\"recurring\\",\\n      \\"scheduleExpressions\\": [\\n        \\"0 9 * * *\\"\\n      ],\\n      \\"runAt\\": null,\\n      \\"eventTrigger\\": null,\\n      \\"nodeId\\": \\"node-a\\",\\n      \\"agentId\\": \\"roselin\\",\\n      \\"modelPreset\\": null,\\n      \\"modelPresetFallbacks\\": [],\\n      \\"folderId\\": \\"allowed-folder\\",\\n      \\"executionCaller\\": {\\n        \\"source\\": \\"agent\\",\\n        \\"email\\": \\"owner@example.com\\"\\n      },\\n      \\"lateRunWindowSeconds\\": 1800\\n    },\\n    \\"created_at\\": \\"<time>\\",\\n    \\"started_at\\": null,\\n    \\"finished_at\\": null,\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -1616,6 +1630,7 @@ exports[`cluster MCP roundtrip > preserves run recurring > result 1`] = `
         "nodeId": "node-a",
         "agentId": "roselin",
         "modelPreset": null,
+        "modelPresetFallbacks": [],
         "folderId": "allowed-folder",
         "executionCaller": {
           "source": "agent",
@@ -1890,14 +1905,14 @@ exports[`cluster MCP roundtrip > preserves unavailable transport for list_recurr
 
 exports[`cluster MCP roundtrip > preserves update recurring > node commands 1`] = `"[]"`;
 
-exports[`cluster MCP roundtrip > preserves update recurring > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"folderId":"allowed-folder","enabled":false,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":null,"version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
+exports[`cluster MCP roundtrip > preserves update recurring > recurring actors 1`] = `"[[{"actor":{"ownerEmail":"owner@example.com","actorId":"caller","callerInfo":{"source":"agent","agent_node":"worker-node","agent_id":"roselin","user_id":"roselin","agent_name":"로젤린","display_name":"로젤린","avatar_url":"/api/nodes/worker-node/agents/roselin/portrait","email":"owner@example.com"},"source":"agent"},"target":{"jobId":"job-1","ownerEmail":"owner@example.com","executionCaller":{"source":"agent","email":"owner@example.com"},"name":"정기 작업","prompt":"확인","timezone":"Asia/Seoul","scheduleKind":"recurring","runAt":null,"scheduleExpressions":["0 9 * * *"],"nodeId":"node-a","agentId":"roselin","modelPreset":null,"modelPresetFallbacks":[],"folderId":"allowed-folder","enabled":false,"archivedAt":null,"lateRunWindowSeconds":1800,"nextRunAt":null,"version":1,"createdIdempotencyKey":"seed","createdBy":"caller","updatedBy":"caller","createdAt":"2026-10-02T00:00:00.000Z","updatedAt":"2026-10-02T00:00:00.000Z"},"requireAvailableTarget":false,"purpose":"settings"}]]"`;
 
 exports[`cluster MCP roundtrip > preserves update recurring > result 1`] = `
 "{
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": null,\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
+      "text": "{\\n  \\"job\\": {\\n    \\"job_id\\": \\"job-1\\",\\n    \\"owner_email\\": \\"owner@example.com\\",\\n    \\"created_by\\": \\"caller\\",\\n    \\"updated_by\\": \\"caller\\",\\n    \\"name\\": \\"정기 작업\\",\\n    \\"prompt\\": \\"확인\\",\\n    \\"timezone\\": \\"Asia/Seoul\\",\\n    \\"schedule_kind\\": \\"recurring\\",\\n    \\"schedule_expressions\\": [\\n      \\"0 9 * * *\\"\\n    ],\\n    \\"schedule\\": {\\n      \\"timezone\\": \\"Asia/Seoul\\",\\n      \\"schedule_expressions\\": [\\n        \\"0 9 * * *\\"\\n      ]\\n    },\\n    \\"run_at\\": null,\\n    \\"event_trigger\\": null,\\n    \\"node_id\\": \\"node-a\\",\\n    \\"agent_id\\": \\"roselin\\",\\n    \\"model_preset\\": null,\\n    \\"model_preset_fallbacks\\": [],\\n    \\"folder_id\\": \\"allowed-folder\\",\\n    \\"enabled\\": false,\\n    \\"archived_at\\": null,\\n    \\"late_run_window_seconds\\": 1800,\\n    \\"next_run_at\\": null,\\n    \\"version\\": 2,\\n    \\"created_at\\": \\"<time>\\",\\n    \\"updated_at\\": \\"<time>\\"\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -1924,6 +1939,7 @@ exports[`cluster MCP roundtrip > preserves update recurring > result 1`] = `
       "node_id": "node-a",
       "agent_id": "roselin",
       "model_preset": null,
+      "model_preset_fallbacks": [],
       "folder_id": "allowed-folder",
       "enabled": false,
       "archived_at": null,

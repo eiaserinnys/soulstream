@@ -22,6 +22,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown } from "lucide-react";
 import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dashboard-store";
 import { DashboardIconCap } from "../DashboardIconCap";
+import { FrameLoading } from "../FrameLoading";
 import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectPersistentWorkDetails } from "../../lib/persistent-work-details-projection";
@@ -76,7 +77,7 @@ export interface ChatViewProps {
   historyEnabled?: boolean;
   transcriptFallback?: ReactNode;
   /** Status text shares the list gutter; boxed content aligns with the composer. */
-  transcriptFallbackLayout?: "status" | "content";
+  transcriptFallbackLayout?: "status" | "content" | "fill";
   showRuntimeStrips?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
@@ -898,7 +899,13 @@ function ChatViewContent({
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
-      {transcriptFallback != null ? <div className={presentation === "manuscript" && transcriptFallbackLayout === "status" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}>{renderHistoryHeader()}</div> : <>
+      {transcriptFallback != null ? (
+        transcriptFallbackLayout === "fill" ? (
+          <div data-slot="chat-transcript-fill" className="flex min-h-0 flex-1 flex-col">{transcriptFallback}</div>
+        ) : (
+          <div className={presentation === "manuscript" && transcriptFallbackLayout === "status" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}>{renderHistoryHeader()}</div>
+        )
+      ) : <>
       {focusEventId !== null
         && !history.loading
         && findFocusIndex(timelineItems, focusEventId) < 0
@@ -912,22 +919,27 @@ function ChatViewContent({
               : `최근 ${MAX_SEARCH_FOCUS_HISTORY_PAGES}페이지에서 검색 결과를 찾지 못했습니다. 이전 대화를 더 불러오면 이동할 수 있습니다.`}
           </div>
         )}
-      {timelineItems.length === 0 && (
+      {timelineItems.length === 0 && (history.loading ? (
+        // 보이는 행이 0개인 첫 로딩은 머리 자리 한 줄이 아니라 대화 목록 영역을 채우는 부품으로 기다린다.
+        <div data-slot="chat-transcript-fill" className="flex min-h-0 flex-1 flex-col">
+          <FrameLoading label="대화를 불러오는 중" />
+        </div>
+      ) : (
         <>
           <ChatHistoryStatus
-            loading={history.loading}
+            loading={false}
             reachedTop={history.reachedTop}
             blockedReason={history.blockedReason}
             onRetry={requestOlderManually}
             showReachedTop={false}
           />
-          {!history.loading && history.blockedReason === null && (
+          {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
               Waiting for events...
             </div>
           )}
         </>
-      )}
+      ))}
       {timelineItems.length > 0 && (
         <Virtuoso
         key={activeSessionKey}

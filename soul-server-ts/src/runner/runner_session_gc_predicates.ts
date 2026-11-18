@@ -22,6 +22,10 @@ export function hasProvenEmptyPrebootstrapEvidence(
     && inspection.unacknowledgedIpcFrameCount === 0;
 }
 
+export function isRetiredWithoutLifecycleAndNotAlive(registration: RunnerRegistration): boolean {
+  return Boolean(registration.retiredAt) && !registration.pidAlive && registration.lifecycle === null;
+}
+
 export function terminalCandidateReason(
   registration: RunnerRegistration,
   nowMs: number,

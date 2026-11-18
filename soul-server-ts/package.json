@@ -9,7 +9,7 @@
   },
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup --config tsup.config.ts --target node22 && tsup --config tsup.runner.config.ts --target node22 && node scripts/write_runner_release_package.mjs && tsx scripts/write_release_manifest.ts && npm run verify:bundle && node ../scripts/verify-bundle-load.mjs dist",
+    "build": "node scripts/build_dist.mjs --target node22",
     "build:portable": "tsup --config tsup.portable.config.ts",
     "pack:portable": "tsx scripts/pack_portable_release.ts",
     "verify:portable": "node --test scripts/verify_portable_release.test.mjs",
@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "typecheck:contracts": "tsc --noEmit -p tsconfig.contracts.json",
-    "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs scripts/verify_build_gate_contract.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node scripts/verify_runner_release_isolation.mjs",
+    "verify:bundle": "node scripts/verify_bundle.mjs",
     "verify:startup": "node --test scripts/verify_main_bundle_runner_startup.test.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
     "runner-outbox:inspect": "tsx scripts/inspect_runner_outbox.ts",

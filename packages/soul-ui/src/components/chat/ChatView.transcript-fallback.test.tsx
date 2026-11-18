@@ -44,10 +44,10 @@ it('uses the same manuscript list header for fallback and history loading',async
  const header=()=>host.querySelector('[data-slot="chat-manuscript-list-header"]');
  try{
   await act(async()=>root.render(<ChatView presentation="manuscript" transcriptFallback={<ChatHistoryStatus loading reachedTop={false} blockedReason={null} onRetry={()=>{}}/>}/>));
-  expect(header()?.textContent).toContain('Loading earlier messages...');
+  expect(header()?.textContent).toContain('이전 대화를 불러오는 중');
   const classes=header()?.className;
   await act(async()=>root.render(<ChatView presentation="manuscript"/>));
-  expect(header()?.textContent).toContain('Loading earlier messages...');
+  expect(header()?.textContent).toContain('이전 대화를 불러오는 중');
   expect(header()?.className).toBe(classes);
  }finally{act(()=>root.unmount());host.remove();useDashboardStore.getState().reset();vi.unstubAllGlobals();}
 });

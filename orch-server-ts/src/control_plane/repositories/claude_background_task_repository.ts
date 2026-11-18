@@ -107,7 +107,7 @@ export interface TerminalizeClaudeBackgroundTaskGenerationParams
   status: ClaudeBackgroundTerminalStatus;
   closeReason: string;
   terminalRevision: string;
-  delivery: RegisterSessionDeliveryParams;
+  delivery?: RegisterSessionDeliveryParams;
 }
 
 export type TerminalizeClaudeBackgroundTaskResult =
@@ -125,7 +125,7 @@ export type TerminalizeClaudeBackgroundTaskGenerationResult =
   | {
       accepted: true;
       row: ClaudeBackgroundTaskGenerationRow;
-      delivery: SessionDeliveryRow;
+      delivery?: SessionDeliveryRow;
     }
   | {
       accepted: false;
@@ -171,6 +171,12 @@ export class ClaudeBackgroundTaskRepository {
       taskId,
       initiatingToolUseId,
     );
+  }
+
+  async activeGenerationsForNode(params: {
+    sourceNode: string; updatedBefore: Date; limit: number;
+  }): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return await this.generations.activeForNode(params);
   }
 
   async activeGenerationsForExecution(

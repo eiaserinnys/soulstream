@@ -25,6 +25,7 @@ export function jobFromRow(row: Row): RecurringJob {
     nodeId: stringValue(row.node_id),
     agentId: stringValue(row.agent_id),
     modelPreset: nullableString(row.model_preset),
+    modelPresetFallbacks: row.model_preset_fallbacks == null ? [] : stringArray(row.model_preset_fallbacks),
     folderId: stringValue(row.folder_id),
     enabled: Boolean(row.enabled),
     archivedAt: timestampOrNull(row.archived_at),

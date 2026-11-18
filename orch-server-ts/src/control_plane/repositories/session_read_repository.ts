@@ -235,7 +235,7 @@ export class SessionReadRepository {
                 AND e.created_at >= ${params.period.since}::timestamptz
                 AND e.created_at < ${params.period.until}::timestamptz
             )
-          ORDER BY s.session_id ASC
+          ORDER BY s.updated_at DESC, s.session_id DESC
           LIMIT ${params.limit} OFFSET ${params.offset}
         )
         SELECT
@@ -246,7 +246,7 @@ export class SessionReadRepository {
             WHERE events.session_id = paged.session_id
           ) AS event_count
         FROM paged
-        ORDER BY paged.session_id ASC
+        ORDER BY paged.updated_at DESC, paged.session_id DESC
       `;
     } else {
       rows = await this.sql<SessionSummaryQueryRow[]>`

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import type { HistoricalMessage } from '../../api/historyTypes';
 import type { PersistentSessionResource } from '../../api/persistentSessionEndpoints';
@@ -7,6 +7,7 @@ import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import { pairTurnUsage } from '../../../../packages/soul-ui/src/lib/persistent-turn-usage';
 import { formatTurnUsageCaptionTitle } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import { useTokens } from '../../theme';
+import { FrameLoading } from '../FrameLoading';
 import {
   SettingsAction as Action,
   SettingsFormGroup as Group,
@@ -136,7 +137,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
 
   return <SettingsSection id="persistent-session-monitoring" title="" flattened>
     <Group title="최근 기록">
-      {isLoading ? <ActivityIndicator accessibilityLabel="기록 불러오는 중" color={t.colors.accent} /> : null}
+      {isLoading ? <FrameLoading testID="persistent-monitoring-loading" accessibilityLabel="기록 불러오는 중" inline /> : null}
       {!isLoading && generationState === 'ready' && hasGenerationOrHistory ? <ReadOnlyField label="현재 세대" value={generationValue} /> : null}
       {!isLoading && historyState === 'ready' && latestPersistentDecision ? <ReadOnlyField
         label="마지막 판단"

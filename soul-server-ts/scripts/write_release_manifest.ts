@@ -24,7 +24,8 @@ import { buildReleaseManifest, canonicalJson } from "../src/release/release_mani
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "..");
 const distRoot = resolve(
-  optionValue(process.argv.slice(2), "--dist-root") ?? resolve(packageRoot, "dist"),
+  optionValue(process.argv.slice(2), "--dist-root")
+    ?? resolve(packageRoot, process.env.SOUL_DIST_DIR ?? "dist"),
 );
 const runnerRoot = resolve(distRoot, "runner");
 // A portable bind records where the catalogue lives on the target; a repository

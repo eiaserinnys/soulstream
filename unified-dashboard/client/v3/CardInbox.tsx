@@ -29,5 +29,5 @@ export function CardInbox({folders,initialBoard=false,actions}:{folders:readonly
 
   {group==="attention"&&empty?<div className="v3-card-inbox-empty"><strong>지금은 확인할 것이 없습니다</strong><span>아래에서 새 세션을 시작하세요.</span></div>:null}
   <PostItGrid>{group==="queued"?<CardQueue layout="grid" activatorMode="status-chip" cards={groups.queued} renderRow={(card,_handle,activator)=><PostItCard card={card} statusActivator={activator}/>}/>:groups[group].map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
- </section>)}{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=><PostItCard card={card}/>}/>:null}</div>;
+ </section>)}{includeCompleted?<CompletedCardCollection browser={completed} heading="section" renderCard={card=><PostItCard card={card}/>}/>:null}</div>;
 }

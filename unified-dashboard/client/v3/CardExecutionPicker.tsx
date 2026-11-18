@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useNodeModelPresetCatalog, type NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
@@ -85,7 +85,7 @@ export function CardExecutionPickerView({selection,onChange,onCancel,onConfirm,c
      {reason ? <><span className="v3-card-execution-name">{preset.label}</span><span className="v3-card-execution-reason">{reason}</span></>
       : <span className={preset.reason==="quota_exhausted"?"text-destructive":undefined}>{modelPresetOptionLabel(preset)}</span>}
     </button>;
-   }):null}{catalog.status==="loading"?<p>불러오는 중…</p>:null}</section>
+   }):null}{catalog.status==="loading"?<FrameLoading inline label="불러오는 중…"/>:null}</section>
   </div>
   <div className="v3-card-execution-actions">
    <Button variant="ghost" onClick={onCancel}>취소</Button>

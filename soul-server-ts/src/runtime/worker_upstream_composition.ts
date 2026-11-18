@@ -14,6 +14,7 @@ import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import type { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
@@ -68,6 +69,7 @@ interface WorkerUpstreamCompositionParams {
   eventOutboxPump: EventOutboxPumpMux;
   runnerProcess: RunnerProcessComposition | undefined;
   runnerRecoveryCoordinator: RunnerRecoveryCoordinator | undefined;
+  runnerRegistrationScanCache: RunnerRegistrationScanCache;
   decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
   authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
 }
@@ -90,6 +92,7 @@ export function composeWorkerUpstreamAdapter({
   eventOutboxPump,
   runnerProcess,
   runnerRecoveryCoordinator,
+  runnerRegistrationScanCache,
   decisionRunner,
   authorizeOrchestrationWorker,
 }: WorkerUpstreamCompositionParams): UpstreamAdapter {
@@ -138,6 +141,7 @@ export function composeWorkerUpstreamAdapter({
         logger,
         worker.nodeStallMonitor,
         runnerProcess?.recoveryStorage,
+        runnerRegistrationScanCache,
       ),
       ...(agentProfileSource ? { agentProfileSource } : {}),
       ...(decisionRunner ? { decisionRunner } : {}),

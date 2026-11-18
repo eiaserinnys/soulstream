@@ -18,6 +18,7 @@ import {
   RUNNER_RELEASE_ARTIFACTS,
 } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
+import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 import {
   scanRunnerRegistrations,
@@ -353,8 +354,38 @@ describe("RunnerReleaseGarbageCollector", () => {
     await subject.pool.ensureRelease(subject.pool.describe("release-b"));
 
     await subject.collector.collect();
+    expect(subject.scan).toHaveBeenCalledWith(subject.stateDirectory, undefined, new Set(["release-a", "release-b"]));
 
     expect(subject.scan).toHaveBeenCalledOnce();
+  });
+
+  it("uses the candidate filter in the default registry scan and retains unreadable evidence", async () => {
+    const subject = await makeSubject([], false);
+    const paths = runnerProcessPaths(subject.stateDirectory, "unrelated");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    await writeFile(paths.configPath, JSON.stringify({
+      schemaVersion: 1, sessionId: "unrelated", backend: "codex",
+      agent: { id: "agent-a", name: "Agent A", backend: "codex", workspace_dir: "/workspace" },
+      paths, codeSha: "release-other", snapshotPath: "/release/other",
+      codexAdapterMode: "sdk", claudeRuntimeV2Enabled: true,
+      claudeRuntimeIdleTtlMs: 300_000, claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 600_000, internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexHome: "/home/test/.codex", rolloutRoot: "/home/test/.codex/sessions",
+    }));
+    await writeFile(paths.databasePath, "");
+    const broken = runnerProcessPaths(subject.stateDirectory, "broken");
+    await mkdir(broken.sessionDirectory, { recursive: true });
+    await writeFile(broken.configPath, "{");
+    const readAuthoritativeLifecycle = vi.fn(async () => null);
+    const collector = new RunnerReleaseGarbageCollector(
+      subject.pool, subject.stateDirectory, subject.logger, undefined,
+      { readAuthoritativeLifecycle } as never, "release-current",
+    );
+
+    await expect(collector.collect()).resolves.toEqual({
+      removed: [], retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
+    });
+    expect(readAuthoritativeLifecycle).not.toHaveBeenCalled();
   });
 
   it("isolates known corrupt evidence to its referenced release", async () => {

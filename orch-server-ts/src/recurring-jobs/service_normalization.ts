@@ -3,6 +3,7 @@ import { normalizeEventTrigger } from "./event_trigger.js";
 import {
   compileSchedule,
   normalizedModelPreset,
+  normalizedModelPresetFallbacks,
   onceTimezone,
   parseRunAt,
   positiveLateRunWindowSeconds,
@@ -19,7 +20,7 @@ import type {
 
 export type ValidateRecurringJobTarget = (input: {
   readonly actor: RecurringJobActor;
-  readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "folderId">;
+  readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "modelPresetFallbacks" | "folderId">;
   readonly requireAvailableTarget: boolean;
   readonly purpose: "settings" | "execution";
 }) => Promise<void>;
@@ -35,6 +36,7 @@ export type NormalizedRecurringJobCreate = {
   nodeId: string;
   agentId: string;
   modelPreset: string | null;
+  modelPresetFallbacks: readonly string[];
   folderId: string;
   lateRunWindowSeconds: number;
   schedule: ReturnType<typeof compileRecurringSchedule> | null;
@@ -65,6 +67,7 @@ export async function normalizeRecurringJobCreate(
   const eventTrigger = hasEventTrigger
     ? normalizeEventTrigger(input.eventTrigger!, nodeId)
     : null;
+  const modelPreset = normalizedModelPreset(input.modelPreset);
   const normalized = {
     name: requiredText(input.name, "name"),
     prompt: requiredText(input.prompt, "prompt"),
@@ -75,7 +78,8 @@ export async function normalizeRecurringJobCreate(
     timezone: schedule?.timezone ?? onceTimezone(requiredText(input.timezone, "timezone")),
     nodeId,
     agentId: requiredText(input.agentId, "agent_id"),
-    modelPreset: normalizedModelPreset(input.modelPreset),
+    modelPreset,
+    modelPresetFallbacks: normalizedModelPresetFallbacks(input.modelPresetFallbacks ?? [], modelPreset),
 
     folderId: requiredText(input.folderId, "folder_id"),
     lateRunWindowSeconds: positiveLateRunWindowSeconds(input.lateRunWindowSeconds ?? 1_800),
@@ -124,6 +128,7 @@ export async function mergeRecurringJobUpdate(
     nodeId: input.nodeId === undefined ? current.nodeId : requiredText(input.nodeId, "node_id"),
     agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
     modelPreset,
+    modelPresetFallbacks: normalizedModelPresetFallbacks(input.modelPresetFallbacks ?? current.modelPresetFallbacks ?? [], modelPreset),
 
     folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
     lateRunWindowSeconds: positiveLateRunWindowSeconds(
@@ -138,7 +143,8 @@ export async function mergeRecurringJobUpdate(
     target: candidate,
     requireAvailableTarget: candidate.nodeId !== current.nodeId ||
       candidate.agentId !== current.agentId ||
-      candidate.modelPreset !== current.modelPreset,
+      candidate.modelPreset !== current.modelPreset ||
+      JSON.stringify(candidate.modelPresetFallbacks) !== JSON.stringify(current.modelPresetFallbacks ?? []),
     purpose: "settings",
   });
   return candidate;
@@ -160,6 +166,7 @@ async function mergeEventJobUpdate(
     ? current.eventTrigger ?? null
     : normalizeEventTrigger(input.eventTrigger, nodeId);
   if (eventTrigger === null) throw new Error(`event job ${current.jobId} has no event_trigger`);
+  const modelPreset = input.modelPreset === undefined ? current.modelPreset : normalizedModelPreset(input.modelPreset);
   const candidate = {
     ...current,
     name: input.name === undefined ? current.name : requiredText(input.name, "name"),
@@ -173,9 +180,8 @@ async function mergeEventJobUpdate(
     eventTrigger,
     nodeId,
     agentId: input.agentId === undefined ? current.agentId : requiredText(input.agentId, "agent_id"),
-    modelPreset: input.modelPreset === undefined
-      ? current.modelPreset
-      : normalizedModelPreset(input.modelPreset),
+    modelPreset,
+    modelPresetFallbacks: normalizedModelPresetFallbacks(input.modelPresetFallbacks ?? current.modelPresetFallbacks ?? [], modelPreset),
 
     folderId: input.folderId === undefined ? current.folderId : requiredText(input.folderId, "folder_id"),
     lateRunWindowSeconds: positiveLateRunWindowSeconds(
@@ -190,7 +196,8 @@ async function mergeEventJobUpdate(
     target: candidate,
     requireAvailableTarget: candidate.nodeId !== current.nodeId ||
       candidate.agentId !== current.agentId ||
-      candidate.modelPreset !== current.modelPreset,
+      candidate.modelPreset !== current.modelPreset ||
+      JSON.stringify(candidate.modelPresetFallbacks) !== JSON.stringify(current.modelPresetFallbacks ?? []),
     purpose: "settings",
   });
   return candidate;

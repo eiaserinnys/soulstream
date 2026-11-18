@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Clipboard from 'expo-clipboard';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,6 +13,7 @@ import {
   type AppDiagnosticFailureRecord,
 } from '../../lib/session-succession-diagnostics';
 import { useTokens, type DesignTokens } from '../../theme';
+import { FrameLoading } from '../FrameLoading';
 import { settingsDiagnosticText } from './settingsDiagnosticText';
 import { SettingsSurface } from './SettingsSurface';
 
@@ -107,7 +107,7 @@ export function SessionDiagnosticsSection({
       <Text style={styles.empty}>앱과 기기 정보 및 관련 폴더, 프로젝트, 세션 식별자를 포함한 전체 JSON을 클립보드에 복사합니다.</Text>
       {copyMessage ? <Text accessibilityLiveRegion="polite" accessibilityRole={copyStatus === 'error' ? 'alert' : 'text'} style={copyStatus === 'error' ? styles.error : styles.success}>{copyMessage}</Text> : null}
       <SettingsSurface flattened={flattened} role="glassSoft" style={styles.surface}>
-        {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+        {loading ? <FrameLoading testID="session-diagnostics-loading" inline /> : null}
         {!loading && readError ? (
           <Text accessibilityRole="alert" style={styles.error}>
             진단 기록을 읽지 못했습니다. {readError}

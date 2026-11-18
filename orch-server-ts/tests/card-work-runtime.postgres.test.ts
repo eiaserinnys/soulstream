@@ -57,6 +57,10 @@ describe("card work runtime and internal MCP integration", () => {
     await h.sql`ALTER TABLE sessions ADD COLUMN termination_detail TEXT,
       ADD COLUMN last_assistant_text TEXT, ADD COLUMN worktree_id TEXT`;
     const canonicalSchema = await readFile(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
+    // card #1653 — a node's explicit rejection now records the attempt in the
+    // ledger instead of waiting for expiry, so this fixture needs the attempt
+    // table that prepareCardWorkSchema does not create.
+    await h.sql.unsafe(canonicalSchema.match(/CREATE TABLE IF NOT EXISTS session_delivery_attempts \([\s\S]*?\n\);/)![0]);
     for (const functionName of ["session_record_execution_registration", "session_apply_terminal_transition"]) {
       const startMarker = `CREATE OR REPLACE FUNCTION ${functionName}(`;
       const start = canonicalSchema.indexOf(startMarker);

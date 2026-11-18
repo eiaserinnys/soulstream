@@ -153,6 +153,9 @@ export function createInput(body: Record<string, unknown>): RecurringJobCreateIn
     nodeId: stringAlias(body, "nodeId", "node_id"),
     agentId: stringAlias(body, "agentId", "agent_id"),
     modelPreset: nullableStringAlias(body, "modelPreset", "model_preset"),
+    ...(has(body, "modelPresetFallbacks") || has(body, "model_preset_fallbacks")
+      ? { modelPresetFallbacks: stringsValue(body, "modelPresetFallbacks", "model_preset_fallbacks") }
+      : {}),
     folderId: stringAlias(body, "folderId", "folder_id"),
     ...(body.lateRunWindowSeconds === undefined && body.late_run_window_seconds === undefined
       ? {}
@@ -180,6 +183,9 @@ export function updateInput(body: Record<string, unknown>): RecurringJobUpdateIn
   if (has(body, "agentId") || has(body, "agent_id")) result.agentId = stringAlias(body, "agentId", "agent_id");
   if (has(body, "modelPreset") || has(body, "model_preset")) {
     result.modelPreset = nullableStringAlias(body, "modelPreset", "model_preset");
+  }
+  if (has(body, "modelPresetFallbacks") || has(body, "model_preset_fallbacks")) {
+    result.modelPresetFallbacks = stringsValue(body, "modelPresetFallbacks", "model_preset_fallbacks");
   }
   if (has(body, "folderId") || has(body, "folder_id")) result.folderId = stringAlias(body, "folderId", "folder_id");
   if (has(body, "enabled")) {
@@ -216,6 +222,7 @@ export function serializeJob(job: import("./types.js").RecurringJob): Record<str
     node_id: job.nodeId,
     agent_id: job.agentId,
     model_preset: job.modelPreset,
+    model_preset_fallbacks: job.modelPresetFallbacks ?? [],
     folder_id: job.folderId,
     enabled: job.enabled,
     archived_at: job.archivedAt,

@@ -39,6 +39,7 @@ import { UpstreamAdapter } from "../upstream/adapter.js";
 import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
+import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import { composeClaudeRuntime, composeClaudeAccountServices, composeQueuedDeliveryStartupRecovery, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
@@ -308,7 +309,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   });
   taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const settlement = composeCompletionSettlement({ env, logger, db, eventOutbox, completionNotifier: taskRuntime.completionNotifier, scheduleService });
+  const runnerRegistrationScanCache = new RunnerRegistrationScanCache();
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
+    scanCache: runnerRegistrationScanCache,
     hasPendingRunnerSettlement: settlement.hasPendingRunnerSettlement,
     env,
     runnerProcessFactory: runnerProcess?.runtimeFactory,
@@ -324,6 +327,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
           claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId, execution),
+        terminalizeOrphanedClaudeBackgroundTasks: (params) =>
+          claudeRuntime.backgroundLifecycle!.terminalizeOrphanedForNode(params),
         completionNotifier: taskRuntime.completionNotifier,
       }
       : {}),
@@ -441,6 +446,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       eventOutboxPump: eventOutboxPumpMux,
       runnerProcess,
       runnerRecoveryCoordinator,
+      runnerRegistrationScanCache,
       authorizeOrchestrationWorker: composeWorkerAdmissionAuthorizer(orchProxyConfig, env.SOULSTREAM_NODE_ID),
       decisionRunner: composePurposeDecisionRunner({
         nodeId: env.SOULSTREAM_NODE_ID, logger, taskManager, persistence, modelCatalog,

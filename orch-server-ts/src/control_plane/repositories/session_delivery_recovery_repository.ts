@@ -29,6 +29,11 @@ export interface QueuedDeliveryRecoveryScan {
   /** How long a delivery may sit queued before any node may recover it. */
   queuedAfterMs: number;
 }
+
+export interface PendingImmediateDeliveryRow extends SessionDeliveryRow {
+  target_worktree_id: string | null;
+  target_worktree_state: string | null;
+}
 /**
  * Owns the short-lived attempt token used while a worker checks the Claude
  * transcript for a previously queued delivery.
@@ -45,17 +50,21 @@ export class SessionDeliveryRecoveryRepository {
     attemptToken: string,
     limit = 100,
     attemptTtlMs = 15_000,
-  ): Promise<SessionDeliveryRow[]> {
+    excludeDeliveryIds: string[] = [],
+  ): Promise<PendingImmediateDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
-      return await transaction<SessionDeliveryRow[]>`
+      return await transaction<PendingImmediateDeliveryRow[]>`
         WITH due AS MATERIALIZED (
-          SELECT delivery.delivery_id
+          SELECT delivery.delivery_id, target.worktree_id AS target_worktree_id,
+            worktree.state AS target_worktree_state
           FROM session_deliveries AS delivery
           JOIN sessions AS target
             ON target.session_id = delivery.target_session_id
+          LEFT JOIN worktrees AS worktree ON worktree.id = target.worktree_id
           WHERE target.node_id = ${nodeId}
             AND delivery.state = 'pending'
             AND delivery.next_attempt_at <= NOW()
+            AND NOT (delivery.delivery_id = ANY(${excludeDeliveryIds}::text[]))
           ORDER BY delivery.enqueue_sequence
           FOR UPDATE OF delivery SKIP LOCKED
           LIMIT ${limit}
@@ -73,8 +82,9 @@ export class SessionDeliveryRecoveryRepository {
             AND delivery.state = 'pending'
           RETURNING delivery.*
         )
-        SELECT claimed.*
+        SELECT claimed.*, due.target_worktree_id, due.target_worktree_state
         FROM claimed
+        JOIN due ON due.delivery_id = claimed.delivery_id
         ORDER BY claimed.enqueue_sequence
       `;
     });

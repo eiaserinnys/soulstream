@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import {
   DashboardDndProvider,
   DashboardIconCap,
+  FrameLoading,
   isSystemFolderId,
   readFolderTreeExpandedState,
   reorderStarredFolderIds,
@@ -263,7 +264,7 @@ export function V3Navigation({
               );
             })}
           </StarredFolderSortableContext>
-          {starredFolders.length === 0 ? <p>{starredFoldersLoading ? "폴더를 불러오는 중…" : "별표 폴더가 없습니다."}</p> : null}
+          {starredFolders.length === 0 ? (starredFoldersLoading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : <p>별표 폴더가 없습니다.</p>) : null}
           {starredFoldersHasMore ? (
             <DashboardIconCap
               label="별표 폴더 더 보기"

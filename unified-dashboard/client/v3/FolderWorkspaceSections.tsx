@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   DashboardIconCap,
+  FrameLoading,
   retainEqualValue,
   type CatalogFolder,
   type SessionSummary,
@@ -122,7 +123,7 @@ export function FolderWorkspaceSections({
       {details.status === "ready" && details.data && pageId ? (
         <ProjectContextEditor pageId={pageId} snapshot={details.data} onChanged={refreshDetails} />
       ) : details.status === "loading" ? (
-        <section className="v3-project-context" aria-busy="true">프로젝트 컨텍스트를 불러오는 중…</section>
+        <section className="v3-project-context" aria-busy="true"><FrameLoading inline label="프로젝트 컨텍스트를 불러오는 중…" /></section>
       ) : details.status === "error" ? (
         <V3ErrorNotice className="v3-project-context v3-project-star-error" message="프로젝트 컨텍스트를 불러오지 못했습니다." detail={details.message} />
       ) : null}

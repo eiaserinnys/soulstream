@@ -90,6 +90,36 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
+  it("closes a delivery to a removed worktree through the real claim query", async () => {
+    await harness.sql`
+      INSERT INTO worktrees (id, node_id, repo_id, canonical_path, branch, created_from_sha,
+        created_by_session_id, state, worktree_identity)
+      VALUES ('removed-wt', 'node-test', 'repo', '/tmp/removed-wt', 'removed-branch', 'sha',
+        'caller-session', 'removed', 'identity')
+    `;
+    await harness.sql`UPDATE sessions SET worktree_id = 'removed-wt' WHERE session_id = 'caller-session'`;
+    const repository = new SessionDeliveryRepository(harness.sql);
+    await repository.register({
+      deliveryId: "removed-wt-delivery", targetSessionId: "caller-session",
+      relationKey: "removed-wt-relation", completionId: "removed-wt-completion",
+      intent: "human_live_steer", source: "user_message", payloadHash: "hash-removed-wt",
+      payload: { text: "continue", user: "alice" },
+    });
+    const route = vi.fn();
+    const send = vi.fn();
+    await replayPendingImmediateDeliveriesForNode({
+      nodeId: "node-test", connectionId: "removed-wt-connection", deliveries: repository,
+      sessionRouter: { routeExistingSessionPendingCommand: route } as never,
+      sessionBridge: { sendPendingCommand: send } as never, warn: () => undefined,
+    });
+    expect(route).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    await expect(repository.get("removed-wt-delivery")).resolves.toMatchObject({
+      state: "uncertain", aggregate_state: "dead_letter", attempt_count: 1,
+      last_error: expect.stringContaining("target session worktree removed: removed-wt"),
+    });
+  });
+
   it("keeps native task_notification durable and suppresses synthetic inline delivery", async () => {
     const taskId = "task-inline-native-notification";
     const event = terminal(taskId, "completed");
@@ -213,10 +243,9 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       deliveries: repository,
       sessionRouter: path.sessionRouter,
       sessionBridge: {
-        sendPendingCommand: vi.fn(async () => ({
-          status: "error" as const,
-          message: "injected transient dispatch failure",
-        })),
+        sendPendingCommand: vi.fn(async () => {
+          throw new Error("injected transient dispatch failure");
+        }),
       } as never,
       warn: (message) => warnings.push(message),
       attemptTokenPrefix: "maintenance",

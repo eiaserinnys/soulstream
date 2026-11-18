@@ -184,11 +184,41 @@ export class ClaudeBackgroundTaskLifecycle {
       return false;
     }
     if (!result.accepted) return false;
+    if (!result.delivery) throw new Error("Claude background terminal delivery missing");
     attachClaudeBackgroundDeliveryMetadata(
       event,
       deliveryMetadata(result.delivery, initiatingToolUseId),
     );
     return true;
+  }
+
+  async terminalizeOrphanedForNode(params: {
+    liveSessionIds: ReadonlySet<string>; updatedBefore: Date; limit: number;
+  }): Promise<{ queried: number; closed: number; skippedLive: number; failed: number }> {
+    const rows = await this.deps.repository.activeGenerationsForNode({
+      sourceNode: this.deps.sourceNode, updatedBefore: params.updatedBefore, limit: params.limit,
+    });
+    const counts = { queried: rows.length, closed: 0, skippedLive: 0, failed: 0 };
+    for (const row of rows) {
+      if (params.liveSessionIds.has(row.session_id)) {
+        counts.skippedLive += 1;
+        continue;
+      }
+      try {
+        const result = await this.deps.repository.terminalizeGeneration({
+          sourceNode: row.source_node, sessionId: row.session_id, taskId: row.task_id,
+          sdkSessionId: row.sdk_session_id, initiatingToolUseId: row.initiating_tool_use_id,
+          generationKey: row.generation_key, relationKey: row.relation_key, completionId: row.completion_id,
+          status: "killed", closeReason: "runner_missing",
+          terminalRevision: `runner-missing:${row.generation_key}`,
+        });
+        if (result.accepted) counts.closed += 1;
+      } catch (err) {
+        counts.failed += 1;
+        this.deps.logger?.error({ err, generationKey: row.generation_key }, "orphaned Claude background generation terminalization failed");
+      }
+    }
+    return counts;
   }
 
   async terminalizeDeadRunner(

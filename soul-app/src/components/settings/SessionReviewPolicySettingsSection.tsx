@@ -17,6 +17,7 @@ import type {
 import { useAuthStore } from '../../store/authStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
+import { FrameLoading } from '../FrameLoading';
 import { SettingsSection } from './SettingsSection';
 import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
 import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
@@ -220,7 +221,7 @@ export function SessionReviewPolicySettingsSection({
         </Text>
 
         {loading && !payload ? (
-          <ActivityIndicator testID="review-policy-loading" color={t.colors.accent} />
+          <FrameLoading testID="review-policy-loading" inline />
         ) : null}
 
         {[...catalog.values()].filter(entry => entry.source !== 'browser').map(entry => <View key={entry.source} testID={`review-policy-source-${entry.source}`} style={styles.sourceRow}><View style={styles.sourceText}><Text style={styles.sourceTitle}>{sourcePresentation(entry.source, entry).label}</Text><Text style={styles.help}>{sourcePresentation(entry.source, entry).description}{entry.automatic && sources.includes(entry.source) ? ' 자동 요청 출처일 수 있으므로 포함 전 확인이 필요합니다.' : ''}</Text></View>{catalogSwitch(entry.source)}</View>)}

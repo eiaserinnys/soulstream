@@ -96,6 +96,66 @@ describe("AutoResumeTransition", () => {
       .toBe("delivery_input:delivery-1");
   });
 
+  it("persists a delivery input once across rejected resume attempts", async () => {
+    const task = makeTerminalTask({ status: "interrupted" });
+    const double = makeEventPersistenceTestDouble();
+    const enqueueEvent = vi.spyOn(double.persistence, "enqueueEvent");
+    const rejected = {
+      eventId: 9,
+      applied: false,
+      rejectionReason: "worktree_not_ready",
+      canonicalSession: {
+        status: "interrupted",
+        termination_reason: null,
+        termination_detail: null,
+        review_state: "not_required",
+        last_assistant_text: null,
+        termination_event_id: null,
+        updated_at: "2026-11-15T00:00:00.000Z",
+        last_event_id: 9,
+      },
+    };
+    double.enqueueRunningTransitionAndWaitForApplication.mockResolvedValue(rejected);
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: double.persistence,
+    });
+    const message = { text: "retry", user: "u", deliveryId: "delivery-1" };
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(transition.resume(task, message, vi.fn()))
+        .rejects.toThrow("auto-resume running transition rejected");
+    }
+
+    expect(double.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledTimes(2);
+    expect(enqueueEvent.mock.calls.filter(([, event]) =>
+      event.type === "user_message" &&
+      (event as Record<string, unknown>)._dedupe_key === "delivery_input:delivery-1"
+    )).toHaveLength(1);
+  });
+
+  it("retries a delivery input when its first persistence attempt fails", async () => {
+    const task = makeTerminalTask({ status: "interrupted" });
+    const double = makeEventPersistenceTestDouble();
+    const enqueueEvent = vi.spyOn(double.persistence, "enqueueEvent")
+      .mockRejectedValueOnce(new Error("events DB unavailable"));
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: double.persistence,
+    });
+    const message = { text: "retry", user: "u", deliveryId: "delivery-1" };
+
+    await expect(transition.resume(task, message, vi.fn()))
+      .rejects.toThrow("events DB unavailable");
+    await expect(transition.resume(task, message, vi.fn()))
+      .resolves.toEqual({ autoResumed: true });
+
+    expect(enqueueEvent.mock.calls.filter(([, event]) =>
+      event.type === "user_message" &&
+      (event as Record<string, unknown>)._dedupe_key === "delivery_input:delivery-1"
+    )).toHaveLength(2);
+  });
+
   it("leaves the resumed user event unkeyed when the message has no delivery id", async () => {
     const task = makeTerminalTask();
     const persistenceDouble = makeEventPersistenceTestDouble();

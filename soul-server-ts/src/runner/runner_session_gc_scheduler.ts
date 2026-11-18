@@ -7,6 +7,7 @@ const SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 
 export class RunnerSessionGarbageCollectionScheduler {
   private collectionInFlight: Promise<void> | undefined;
+  private directoryRemovalInFlight: Promise<void> | undefined;
   private nextCollectionAtMs = 0;
 
   constructor(private readonly options: {
@@ -18,6 +19,10 @@ export class RunnerSessionGarbageCollectionScheduler {
 
   get inFlight(): Promise<void> | undefined {
     return this.collectionInFlight;
+  }
+
+  get removalInFlight(): Promise<void> | undefined {
+    return this.directoryRemovalInFlight;
   }
 
   schedule(scan: Awaited<ReturnType<typeof scanRunnerRegistrations>>): void {
@@ -37,6 +42,17 @@ export class RunnerSessionGarbageCollectionScheduler {
       scan,
       undefined,
       this.options.phaseObservationFactory?.(),
+      async (operation) => {
+        let finish!: () => void;
+        const removal = new Promise<void>((resolve) => { finish = resolve; });
+        this.directoryRemovalInFlight = removal;
+        try {
+          await operation();
+        } finally {
+          this.directoryRemovalInFlight = undefined;
+          finish();
+        }
+      },
     ).then(() => undefined);
   }
 

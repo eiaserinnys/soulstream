@@ -7,6 +7,8 @@ import { SystemMessage } from "@seosoyoung/soul-ui/components/chat/SystemMessage
 import { CollapsibleCaption } from "@seosoyoung/soul-ui/components/chat/CollapsibleCaption";
 import { LabeledDivider } from "@seosoyoung/soul-ui/components/chat/LabeledDivider";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
+import { InterventionMessage } from "@seosoyoung/soul-ui/components/chat/InterventionMessage";
+import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import { FolderPanelHeader, SessionPanelHeader } from "./WorkspacePanelHeaders";
 import { Button, DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, formatAssignedCardContextSnapshot } from "@seosoyoung/soul-ui";
 import { Folder, Layers, LayoutDashboard, MessageSquare, MoreHorizontal, Plus, RotateCcw, SendHorizontal, SquarePen, Star } from "lucide-react";
@@ -31,6 +33,7 @@ import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
+import { RuntimeLoadingReviewSample } from "./RuntimeLoadingReviewSample";
 import { PersistentTurnEndCaptionsReviewSample } from "./PersistentTurnEndCaptionsReviewSample";
 import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessageGroupReviewSample";
 import { ManuscriptActivityReviewSample } from "./ManuscriptActivityReviewSample";
@@ -40,6 +43,7 @@ import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenRe
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
+import { FrameLoadingReviewSample } from "./FrameLoadingReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
@@ -94,6 +98,21 @@ function UsageShareRowsSample({ rows }: { rows: readonly UsageShareRowSampleItem
   </div>;
 }
 
+function ExternalSenderSamples({ presentation }: { presentation: "default" | "manuscript" }) {
+  const rows: ChatMessage[] = [
+    { id: "director", role: "user", treeNodeId: "director", treeNodeType: "user_message", content: "이 내용을 확인해 주세요.", callerInfo: { source: "browser", display_name: "디렉터" } },
+    { id: "agent", role: "user", treeNodeId: "agent", treeNodeType: "user_message", content: "조사 결과를 전합니다.", callerInfo: { source: "agent" }, agentInfo: { source: "agent", agent_node: "eiaserinnys", agent_id: "roselin", agent_name: "로젤린" } },
+    { id: "link", role: "user", treeNodeId: "link", treeNodeType: "user_message", content: "접속 링크로 요청했습니다.", callerInfo: { source: "external", transport: "access_link", display_name: "외부 작업자" } },
+    { id: "webhook", role: "intervention", treeNodeId: "webhook", treeNodeType: "intervention", content: "웹훅에서 추가한 메시지입니다.", callerInfo: { source: "external", transport: "webhook", display_name: "알림 서비스" } },
+    { id: "long", role: "user", treeNodeId: "long", treeNodeType: "user_message", content: "긴 이름을 확인합니다.", callerInfo: { source: "external", transport: "access_link", display_name: "가".repeat(80) } },
+  ];
+  return <div data-testid={`external-sender-${presentation}`} style={{ minWidth: 0 }}>
+    {rows.map(msg => msg.role === 'intervention'
+      ? <InterventionMessage key={msg.id} msg={msg} presentation={presentation} />
+      : <UserMessage key={msg.id} msg={msg} presentation={presentation} />)}
+  </div>;
+}
+
 export function ComponentsReviewPage() {
   const [title, setTitle] = useState("컴포넌트 검수");
   const [notice, setNotice] = useState("샘플을 눌러 비교합니다. 입력과 버튼은 이 페이지 안에서만 동작합니다.");
@@ -127,6 +146,8 @@ export function ComponentsReviewPage() {
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'runtime-loading') return <RuntimeLoadingReviewSample />;
+  if (sampleParams.get('sample') === 'external-sender') return <div className="v3-detail-pane v3-detail-pane--inline"><ExternalSenderSamples presentation={sampleParams.get('presentation') === 'manuscript' ? 'manuscript' : 'default'} /></div>;
   if (sampleParams.get('sample') === 'weekly-usage') return <div className="v3-detail-pane v3-detail-pane--inline">
     <p className="v3-components-label">PersistentSessionWeeklyUsage</p>
     <PersistentSessionWeeklyUsageReviewSample />
@@ -296,6 +317,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="외부 발신자" state="기본과 원고"><ExternalSenderSamples presentation="default" /><ExternalSenderSamples presentation="manuscript" /></Sample>
             <Sample name="PAS 카드 펼친 장" state="카드와 질문"><PersistentReportReviewSample cardPreview bubble /></Sample>
             <Sample name="PAS 카드 완료" state="검수 대기 · 완료 버튼"><PersistentReportReviewSample completionScenario="review" bubble /></Sample>
             <Sample name="PAS 막힘 카드" state="확인했어 유지"><PersistentReportReviewSample completionScenario="blocked" bubble /></Sample>
@@ -435,6 +457,7 @@ export function ComponentsReviewPage() {
               <DashboardIconCap size="small" label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
             </div>
             <div className="v3-components-samples">
+            <Sample name="FrameLoading / FrameNotice" state="높이 고정 패널 · 대화상자 본문 · 좁은 폭 · 포털 대화상자 · 실패 안내 자리"><FrameLoadingReviewSample/></Sample>
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
             <Sample name="PersistentSessionScreen" state="운영 전화면 · 우하단 사용량 · 작업 목록 동시 펼침 · 실제 PAS 대화"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">

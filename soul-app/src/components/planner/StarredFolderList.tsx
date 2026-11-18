@@ -125,8 +125,8 @@ export function StarredFolderList({
           />
         )
       ))}
-      {folders.length === 0 ? (
-        <View style={styles.stateRow}><Text style={styles.empty}>{loading ? '별표 목록을 불러오는 중입니다.' : error ?? '별표 카드가 없습니다.'}</Text></View>
+      {folders.length === 0 && !loading ? (
+        <View style={styles.stateRow}><Text style={styles.empty}>{error ?? '별표 카드가 없습니다.'}</Text></View>
       ) : null}
       {!loading && refreshRequired && error && folders.length > 0 ? (
         <View testID="starred-refresh-error" style={styles.stateRow}>

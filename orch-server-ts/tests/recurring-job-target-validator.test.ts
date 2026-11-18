@@ -14,11 +14,30 @@ const actor: RecurringJobActor = {
 };
 
 describe("recurring job target validator", () => {
+  it("validates fallback advertisements when saving and chooses the usable preset for execution", async () => {
+    const nodes = registry();
+    nodes.registerNode({ type: "node_register", node_id: "node-a", agents: [{ id: "roselin", backend: "codex" }],
+      model_presets: ["codex-default", "fallback"].map(id => ({ id, label: id, backend: "codex", available: true })), supported_backends: ["codex"] });
+    const requireAvailable = vi.fn();
+    const chooseUsablePreset = vi.fn(() => "fallback");
+    const validator = createRecurringJobTargetValidator({ registry: nodes, modelPresetAvailability: { requireAvailable, chooseUsablePreset },
+      listFolders: async () => [{ id: "allowed-folder" }],
+      findUserByEmail: async () => ({ email: actor.ownerEmail, isAdmin: false, allowedFolderIds: ["allowed-folder"] }) });
+    const withFallback = { ...target("allowed-folder"), modelPresetFallbacks: ["fallback"] };
+    await validator({ actor, target: withFallback, purpose: "settings" });
+    expect(requireAvailable).toHaveBeenCalledWith("node-a", "fallback", { allowLimitRejected: true });
+    await validator({ actor, target: withFallback, purpose: "execution" });
+    expect(chooseUsablePreset).toHaveBeenCalledWith("node-a", ["codex-default", "fallback"]);
+    expect(requireAvailable).toHaveBeenLastCalledWith("node-a", "fallback", undefined);
+    await expect(validator({ actor, target: { ...withFallback, modelPresetFallbacks: ["unknown"] }, purpose: "settings" }))
+      .rejects.toMatchObject({ code: "VALIDATION", message: expect.stringContaining("not advertised") });
+  });
+
   it("applies connected node/agent/model and the owner's folder access before accepting a folder target", async () => {
     const requireAvailable = vi.fn();
     const validator = createRecurringJobTargetValidator({
       registry: registry(),
-      modelPresetAvailability: { requireAvailable },
+      modelPresetAvailability: { requireAvailable, chooseUsablePreset: vi.fn() },
       listFolders: async () => [
         { id: "allowed-folder" },
         { id: "private-folder" },
@@ -56,7 +75,7 @@ describe("recurring job target validator", () => {
     });
     const validator = createRecurringJobTargetValidator({
       registry: registry(),
-      modelPresetAvailability: { requireAvailable },
+      modelPresetAvailability: { requireAvailable, chooseUsablePreset: vi.fn() },
       listFolders: async () => [{ id: "allowed-folder" }],
       findUserByEmail: async () => ({
         email: "member@example.com",
@@ -80,7 +99,7 @@ describe("recurring job target validator", () => {
     let allowed = true;
     const validator = createRecurringJobTargetValidator({
       registry: registry(),
-      modelPresetAvailability: { requireAvailable: vi.fn() },
+      modelPresetAvailability: { requireAvailable: vi.fn(), chooseUsablePreset: vi.fn() },
       listFolders: async () => folder ? [folder] : [],
       findUserByEmail: async () => ({
         email: "member@example.com",
@@ -105,7 +124,7 @@ describe("recurring job target validator", () => {
     const requireAvailable = vi.fn();
     const validator = createRecurringJobTargetValidator({
       registry: new InMemoryNodeRegistry(),
-      modelPresetAvailability: { requireAvailable },
+      modelPresetAvailability: { requireAvailable, chooseUsablePreset: vi.fn() },
       listFolders: async () => [{ id: "allowed-folder" }, { id: "private-folder" }],
       findUserByEmail: async () => ({
         email: "member@example.com",
@@ -159,6 +178,7 @@ function target(folderId: string) {
     nodeId: "node-a",
     agentId: "roselin",
     modelPreset: "codex-default",
+    modelPresetFallbacks: [],
     container: { kind: "folder" as const, id: folderId },
     folderId,
   };

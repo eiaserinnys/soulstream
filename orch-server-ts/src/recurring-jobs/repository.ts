@@ -87,7 +87,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     const rows = await sql<Row[]>`
       INSERT INTO recurring_jobs (
         job_id, owner_email, execution_caller, name, prompt, schedule_expressions,
-        schedule_kind, run_at, event_trigger, event_last_fired_at, timezone, node_id, agent_id, model_preset,
+        schedule_kind, run_at, event_trigger, event_last_fired_at, timezone, node_id, agent_id, model_preset, model_preset_fallbacks,
         folder_id, enabled, archived_at, late_run_window_seconds, next_run_at,
         version, created_idempotency_key, created_by, updated_by, created_at, updated_at
       ) VALUES (
@@ -95,7 +95,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
         ${input.name}, ${input.prompt}, ${sql.json(input.scheduleExpressions)},
         ${input.scheduleKind}, ${input.runAt},
         ${input.eventTrigger == null ? null : sql.json(input.eventTrigger)}, ${input.eventLastFiredAt ?? null},
-        ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset},
+        ${input.timezone}, ${input.nodeId}, ${input.agentId}, ${input.modelPreset}, ${input.modelPresetFallbacks?.length ? sql.json(input.modelPresetFallbacks) : null},
         ${input.folderId}, ${input.enabled},
         ${input.archivedAt}, ${input.lateRunWindowSeconds}, ${input.nextRunAt},
         ${input.version}, ${input.createdIdempotencyKey}, ${input.createdBy}, ${input.updatedBy},
@@ -132,7 +132,8 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
           event_trigger = ${input.eventTrigger == null ? null : sql.json(input.eventTrigger)},
           event_last_fired_at = ${input.eventLastFiredAt ?? null},
           timezone = ${input.timezone}, node_id = ${input.nodeId}, agent_id = ${input.agentId},
-          model_preset = ${input.modelPreset}, folder_id = ${input.folderId}, enabled = ${input.enabled},
+          model_preset = ${input.modelPreset}, model_preset_fallbacks = ${input.modelPresetFallbacks?.length ? sql.json(input.modelPresetFallbacks) : null},
+          folder_id = ${input.folderId}, enabled = ${input.enabled},
           late_run_window_seconds = ${input.lateRunWindowSeconds}, next_run_at = ${input.nextRunAt},
           version = version + 1, updated_by = ${input.updatedBy}, updated_at = ${input.updatedAt}
       WHERE job_id = ${input.jobId} AND owner_email = ${input.ownerEmail}

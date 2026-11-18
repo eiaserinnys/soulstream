@@ -31,6 +31,7 @@ function createDb() {
       : parts.join("?")).replace(/\s+/g, " ").trim();
     if (fragment?.sqlFragment) values.shift();
     queries.push({ text, values });
+    if (text.includes("FROM conversation_history_snapshots")) return [];
     if (text.includes("FROM conversation_executions")) return state.executions;
     if (text.includes("MAX(id)")) {
       const rows = state.events.get(values[0] as string) ?? [];

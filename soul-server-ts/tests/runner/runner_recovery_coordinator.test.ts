@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,7 +16,8 @@ import {
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
-import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import { RunnerSessionGarbageCollector } from "../../src/runner/runner_session_gc.js";
+import { scanRunnerRegistrations, type RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
   readRunnerRegistrationIdentity,
@@ -47,6 +48,99 @@ function deferred<T>() {
 }
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+
+  it("sweeps once after the initial scan with every live and unreadable session protected", async () => {
+    const waiting = { ...registration({ sessionId: "waiting" }), bootstrap: null, lifecycle: null };
+    const retired = { ...registration({ sessionId: "retired", lifecycleState: "completed" }), retiredAt: "2026-08-11T00:00:00Z" };
+    const replay = registration({ sessionId: "replay", lifecycleState: "completed" });
+    const dead = registration({ sessionId: "dead", pidAlive: false, lifecycleState: "completed" });
+    const sweep = vi.fn(async () => ({ queried: 0, closed: 0, skippedLive: 0, failed: 0 }));
+    let now = RECOVERY_NOW_MS;
+    const scan = vi.fn(async () => { now += 5_000; return ({
+      registrations: [waiting, retired, replay, dead],
+      errors: [{ directory: "/unreadable", error: new Error("unreadable"), sessionId: "uncertain" }],
+    }); });
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      scan, now: () => now, quarantineFailure: vi.fn(async () => ({ status: "missing" as const })),
+      terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    await subject.coordinator.start();
+    expect(sweep).toHaveBeenCalledOnce();
+    expect(sweep).toHaveBeenCalledWith({
+      liveSessionIds: new Set(["waiting", "retired", "replay", "uncertain"]),
+      updatedBefore: new Date(RECOVERY_NOW_MS), limit: 1_000,
+    });
+    expect(scan.mock.invocationCallOrder[0]).toBeLessThan(sweep.mock.invocationCallOrder[0]!);
+    await subject.coordinator.scanOnce();
+    expect(sweep).toHaveBeenCalledOnce();
+    await subject.coordinator.stop();
+  });
+
+  it("skips the sweep when a scan error has no session id", async () => {
+    const sweep = vi.fn();
+    const subject = makeSubject([], RECOVERY_NOW_MS, [{ directory: "/unreadable", error: new Error("unreadable") }], {
+      quarantineFailure: vi.fn(async () => ({ status: "missing" as const })),
+      terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    await subject.coordinator.start();
+    expect(sweep).not.toHaveBeenCalled();
+    expect(subject.logger.warn).toHaveBeenCalled();
+    await subject.coordinator.stop();
+  });
+
+  it("keeps the periodic scan running when the sweep rejects", async () => {
+    const sweep = vi.fn(async () => { throw new Error("sweep failed"); });
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      scanIntervalMs: 10, terminalizeOrphanedClaudeBackgroundTasks: sweep,
+    });
+    const scanOnce = vi.spyOn(subject.coordinator, "scanOnce");
+    await expect(subject.coordinator.start()).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(scanOnce.mock.calls.length).toBeGreaterThan(1));
+    expect(subject.logger.error).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(Error) }), expect.stringContaining("orphan"));
+    await subject.coordinator.stop();
+  });
+
+  it("does not wait for the orphan sweep before returning from start", async () => {
+    const pending = deferred<{ queried: number; closed: number; skippedLive: number; failed: number }>();
+    const sweep = vi.fn(() => pending.promise);
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], { terminalizeOrphanedClaudeBackgroundTasks: sweep });
+    await expect(withinBudget(subject.coordinator.start(), 1_000)).resolves.toBeUndefined();
+    expect(sweep).toHaveBeenCalledOnce();
+    pending.resolve({ queried: 0, closed: 0, skippedLive: 0, failed: 0 });
+    await subject.coordinator.stop();
+  });
+
+  it("persists a scan and restores it before the next coordinator's first scan", async () => {
+    const fixture = await releasedTerminalSidecarFixture();
+    try {
+      const stateDirectory = join(fixture.root, "runner-state");
+      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+      await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+        ...identity!, retiredAt: "2026-10-12T00:00:00.000Z",
+      });
+      const scan = scanRunnerRegistrations;
+      const first = makeSubject([], RECOVERY_NOW_MS, [], { stateDirectory, scan });
+      await first.coordinator.scanOnce();
+      expect(JSON.parse(await readFile(join(stateDirectory, ".registration-scan-cache.json"), "utf8")).entries).toHaveLength(1);
+      const second = makeSubject([], RECOVERY_NOW_MS, [], { stateDirectory, scan });
+      await second.coordinator.scanOnce();
+      expect(first.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ registrationCacheMisses: expect.objectContaining({ notCached: 1 }) }),
+        "runner recovery scan completed",
+      );
+      expect(second.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ registrationCacheMisses: {
+          uncacheable: 0, fingerprintChanged: 0, fullRecheckExpired: 0, notCached: 0,
+        } }), "runner recovery scan completed",
+      );
+      expect(second.logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ restored: 1, discarded: 0 }),
+        "runner registration scan cache restored",
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
 
   it("keeps auto-resume claimed until the exact old registration is retired", async () => {
     const terminalRegistration = registration({
@@ -1729,31 +1823,85 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     await subject.coordinator.stop();
   });
 
-  it("serializes later recovery scans behind runner session garbage collection", async () => {
-    let finishCollection!: () => void;
-    const collection = new Promise<{ removed: string[]; retained: [] }>((resolve) => {
-      finishCollection = () => resolve({ removed: [], retained: [] });
-    });
-    const sessionGarbageCollector = { collect: vi.fn(() => collection) };
+  it("scans during central lookup and waits only while a session directory is removed", async () => {
+    const lookupStarted = deferred<void>();
+    const finishLookup = deferred<void>();
+    const removalStarted = deferred<void>();
+    const finishRemoval = deferred<void>();
+    const phases: string[] = [];
     const retired = registration({ pidAlive: false, lifecycleState: "completed" });
-    retired.retiredAt = "2026-08-11T00:00:25.000Z";
+    retired.retiredAt = "2026-08-01T00:00:00.000Z";
+    let lookupCount = 0;
+    const sessionGarbageCollector = new RunnerSessionGarbageCollector(
+      "/runner", 1_000, { info: vi.fn(), warn: vi.fn() }, {
+        now: () => RECOVERY_NOW_MS,
+        monotonicNow: () => 0,
+        withMutationLock: async (_path, operation) => await operation(),
+        refresh: async (item) => item,
+        probeRetention: async (item) => ({ registration: item, localRetentionReason: null }),
+        inspect: async (item) => ({
+          registration: item, acknowledgedThrough: 1, latestDurableSourceSeq: 1,
+          incompleteDurableWork: false, durableRecordCount: 1, unacknowledgedIpcFrameCount: 0,
+        }),
+        removeDirectory: async () => { removalStarted.resolve(); await finishRemoval.promise; },
+      },
+    );
+    const scan = vi.fn(async () => ({ registrations: [retired], errors: [] }));
     const subject = makeSubject(
       [retired],
-      Date.parse("2026-08-11T00:00:30.000Z"),
+      RECOVERY_NOW_MS,
       [],
-      { sessionGarbageCollector },
+      {
+        sessionGarbageCollector,
+        scan,
+        nodeStallMonitor: {
+          beginRunnerOperation: (context) => {
+            if (context.phase) phases.push(context.phase);
+            return () => {};
+          },
+        },
+        taskManager: {
+          hydrateRunnerRecoveryTask: async () => {
+            lookupCount++;
+            if (lookupCount === 1) { lookupStarted.resolve(); await finishLookup.promise; }
+            return null;
+          },
+        } as never,
+      },
     );
 
     await subject.coordinator.scanOnce();
-    expect(sessionGarbageCollector.collect).toHaveBeenCalledOnce();
+    await lookupStarted.promise;
+    const duringLookup = subject.coordinator.scanOnce().then(() => "scanned");
+    const lookupResult = await Promise.race([
+      duringLookup,
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
+    ]);
+    finishLookup.resolve();
+    await removalStarted.promise;
+    if (lookupResult === "blocked") {
+      finishRemoval.resolve();
+      await duringLookup;
+      await subject.coordinator.stop();
+      expect(lookupResult).toBe("scanned");
+      return;
+    }
+    await duringLookup;
+    const scansBeforeRemoval = scan.mock.calls.length;
+    phases.length = 0;
     const laterScan = subject.coordinator.scanOnce().then(() => "scanned");
-    await expect(Promise.race([
+    const removalResult = await Promise.race([
       laterScan,
       new Promise((resolve) => setTimeout(() => resolve("blocked"), 50)),
-    ])).resolves.toBe("blocked");
-
-    finishCollection();
+    ]);
+    const scansDuringRemoval = scan.mock.calls.length;
+    const phasesDuringRemoval = [...phases];
+    finishRemoval.resolve();
     await expect(laterScan).resolves.toBe("scanned");
+    expect(removalResult).toBe("blocked");
+    expect(scansDuringRemoval).toBe(scansBeforeRemoval);
+    expect(phasesDuringRemoval).toContain("gcWait");
+    expect(scan).toHaveBeenCalledTimes(scansBeforeRemoval + 1);
     await subject.coordinator.stop();
   });
 
@@ -2267,6 +2415,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       return { registrations: [], errors: [] };
     });
     const subject = makeSubject([], Date.now(), [], { scan });
+    await subject.coordinator.restoreScanCache();
 
     const first = subject.coordinator.scanOnce();
     const second = subject.coordinator.scanOnce();
@@ -2325,7 +2474,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("caps the default hydration phase at ten seconds and defers unresolved work", async () => {
-    vi.useFakeTimers();
     let finishHydration!: (value: Task) => void;
     const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
     const subject = makeSubject([registration()], RECOVERY_NOW_MS, [], {
@@ -2334,6 +2482,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
     let scanFinished = false;
     const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
     let beforeDeadline = false;
@@ -2357,7 +2507,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("starts at most four hydrations and leaves the queued remainder for a later scan", async () => {
-    vi.useFakeTimers();
     const registrations = Array.from({ length: 6 }, (_, index) =>
       registration({ sessionId: `session-${index}` }));
     const hydrateRunnerRecoveryTask = vi.fn(async (sessionId: string) => {
@@ -2370,6 +2519,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
 
     let scanFinished = false;
     const scan = subject.coordinator.scanOnce().then(() => { scanFinished = true; });
@@ -2401,7 +2552,6 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
   });
 
   it("reuses an in-flight hydration result on the next scan instead of duplicating the host call", async () => {
-    vi.useFakeTimers();
     let finishHydration!: (value: Task) => void;
     const hydration = new Promise<Task>((resolve) => { finishHydration = resolve; });
     const hydrateRunnerRecoveryTask = vi.fn(() => hydration);
@@ -2411,6 +2561,8 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         markRunnerFailureAndResume: vi.fn(async () => {}),
       },
     });
+    await subject.coordinator.restoreScanCache();
+    vi.useFakeTimers();
     let firstFinished = false;
     const firstScan = subject.coordinator.scanOnce().then(() => { firstFinished = true; });
     let finishedAtDeadline = false;
@@ -2635,6 +2787,43 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       }),
       "runner recovery action failed",
     );
+  });
+
+  it("retires a dead registration without lifecycle after marking failure and skips the next scan", async () => {
+    const dead: RunnerRegistration = {
+      ...registration({ pidAlive: false }), lifecycle: null, pid: null, pidStartIdentity: null,
+    };
+    const registrations = [dead];
+    const subject = makeSubject(registrations, Date.now());
+    subject.terminate.mockImplementation(async (_paths, _expected, released) => {
+      expect(released).toMatchObject({ pid: null, pidAlive: false, pidStartIdentity: null });
+      registrations[0] = { ...dead, retiredAt: new Date().toISOString() };
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.markRunnerFailure).toHaveBeenCalledOnce();
+    expect(subject.terminate).toHaveBeenCalledOnce();
+    expect(subject.markRunnerFailure.mock.invocationCallOrder[0])
+      .toBeLessThan(subject.terminate.mock.invocationCallOrder[0]!);
+  });
+
+  it("does not retire a dead registration without lifecycle when marking failure throws", async () => {
+    const dead: RunnerRegistration = {
+      ...registration({ pidAlive: false }), lifecycle: null, pid: null, pidStartIdentity: null,
+    };
+    const subject = makeSubject([dead], Date.now());
+    subject.markRunnerFailure.mockRejectedValue(new Error("mark failure failed"));
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.markRunnerFailure).toHaveBeenCalledOnce();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
   });
 
   it("isolates a disk-full reap write without killing the scan or resuming invented state", async () => {

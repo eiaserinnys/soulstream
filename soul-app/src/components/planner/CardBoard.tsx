@@ -1,6 +1,6 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, FlatList, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
@@ -14,17 +14,22 @@ import type { CompletedBrowser } from '../../hooks/useCompletedCards';
 import { CompletedCardFilters } from './CompletedCardFilters';
 import { boardVisibleColumns, boardDropStatus, boardLaneGeometry, boardLaneOffset, boardSnapOffsets, boardNearestLane, type BoardFrame, type BoardPosition } from '../../lib/card-board-layout';
 import { HomeComposerSpacer } from './HomeComposerSpacer';
+import { FrameLoading } from '../FrameLoading';
 export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0 }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0, firstLoading = false, activePending = false }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void; hideEmptyLanes?: boolean;
   completed?:CompletedBrowser;
   reserveHomeComposerSpace?: boolean;
   railOverlayWidth?: number;
+  /** 보드 전체의 첫 로딩. 칸마다가 아니라 보드 프레임 가운데 하나만 세운다. */
+  firstLoading?: boolean;
+  /** 활성 목록이 아직 오지 않았다. 빈 칸 문구를 로딩 동안 내지 않는다. */
+  activePending?: boolean;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -71,6 +76,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const initialized = useRef(false);
   const completedList=useRef<FlatList<CardDto>>(null);
   const completedResetKey = useRef(completed?.resetKey);
+  const completedFirstLoading = !!completed && completed.loading && completed.cards.length === 0 && !firstLoading;
   const laneScrolls = useRef<Partial<Record<CardDto['status'], ScrollView | null>>>({});
   const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
   useEffect(() => {
@@ -173,7 +179,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
         const lane = columns.length ? boardNearestLane(position.current.x, offsets) : -1;
         position.current.lane = lane >= 0 ? columns[lane]?.[0] : undefined; savePosition(); }}
       contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
-      {hideEmptyLanes && columns.length === 0 ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
+      {hideEmptyLanes && columns.length === 0 && !firstLoading && !activePending ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
       {columns.map(([status, label],laneIndex) => {
@@ -190,16 +196,19 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           </View>
           {status==='done'?<>
             {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}
+            <View style={{flex:1}}>
             <FlatList ref={completedList} key={geometry.completedColumns} testID="card-board-scroll-done" style={{flex:1}}
               contentOffset={{ x: 0, y: position.current.lanes.done ?? 0 }}
               data={items} numColumns={geometry.completedColumns} keyExtractor={card=>card.id} renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}>{renderItem(item)}</View>}
               columnWrapperStyle={geometry.completedColumns>1?{gap:paper.gap}:undefined}
-              contentContainerStyle={{paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding}}
+              contentContainerStyle={{flexGrow:1,paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding}}
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
               onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
-              ListEmptyComponent={<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{completed?.loading?'완료 카드를 불러오는 중…':'선택한 기간에 완료 카드가 없습니다'}</Text>}
+              ListEmptyComponent={firstLoading || completedFirstLoading ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
               ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="home-composer-spacer-done"/>}/>
+            {completedFirstLoading?<View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="card-board-done-loading"/></View>:null}
+            </View>
           </>:<ScrollView ref={value => { laneScrolls.current[status] = value; }} testID={`card-board-scroll-${status}`} scrollEnabled={!drag} style={{ flex: 1 }} showsVerticalScrollIndicator={false}
             contentOffset={{ x: 0, y: position.current.lanes[status] ?? 0 }} scrollEventThrottle={16}
             onScroll={(event) => { position.current.lanes[status] = event.nativeEvent.contentOffset.y; savePosition(); }}
@@ -212,12 +221,13 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               }} canPress={pan.canPress}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
-              : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
+              : firstLoading || activePending ? null : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
             <HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={t.cardLayout.gap} testID={`home-composer-spacer-${status}`} />
           </ScrollView>}
         </View>;
       })}
     </ScrollView>
+    {firstLoading ? <View testID="card-board-loading-frame" pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="card-board-loading" /></View> : null}
     {drag ? <View testID="card-board-drag-preview" pointerEvents="none" style={{ position: 'absolute', zIndex: 1,
       left: drag.event.absoluteX - drag.grabX - frame.x, top: drag.event.absoluteY - drag.grabY - frame.y }}>
       <PostItCard api={null} card={drag.card} variant="compact" onOpen={() => {}} />

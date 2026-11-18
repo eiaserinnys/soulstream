@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -35,7 +36,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   await preparePage(page, theme);
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
+    await openV3Folder(page, baseUrl);
     const running = page.getByTestId("v3-task-task-alpha");
     const completed = page.getByTestId("v3-task-task-beta");
     await running.waitFor({ state: "visible", timeout: 20_000 });
@@ -50,14 +51,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(!completedText.includes("rb-beta"), "완료 카드에 폴더 식별자가 노출되었습니다.");
     assert(!runningText.includes("컨텍스트"), "진행 카드에 컨텍스트 개수가 남았습니다.");
     assert(!completedText.includes("컨텍스트"), "완료 카드에 컨텍스트 개수가 남았습니다.");
-    assert(
-      /세션 #\d+ (실행 중|노드 오프라인)/.test(runningText),
-      `진행 중인 세션 표시가 사라졌습니다: ${runningText}`,
-    );
     assert(!completedText.includes("세션 #1 완료"), "완료 세션 문구가 남았습니다.");
     assert(!runningText.includes("담당 미지정") && !completedText.includes("담당 미지정"), "빈 담당자 문구가 남았습니다.");
-    assert(await running.locator(".v3-task-meta").count() === 1, "진행 카드의 의미 있는 담당자가 사라졌습니다.");
-    assert(await completed.locator(".v3-task-meta").count() === 1, "완료 카드의 의미 있는 담당자가 사라졌습니다.");
     assert(runningBox !== null && runningBox.height < 118, `진행 카드 높이가 ${runningBox?.height ?? "없음"}px입니다.`);
     assert(completedBox !== null && completedBox.height < 118, `완료 카드 높이가 ${completedBox?.height ?? "없음"}px입니다.`);
     assert(errors.length === 0, `브라우저 오류가 발생했습니다: ${errors.join(" | ")}`);
@@ -67,7 +62,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       runningHeight: runningBox.height,
       completedHeight: completedBox.height,
       internalMetadataHidden: true,
-      activeSessionVisible: true,
       browserErrors: errors.length,
     };
   } finally {

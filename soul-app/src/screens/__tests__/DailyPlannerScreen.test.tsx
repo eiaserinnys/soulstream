@@ -163,6 +163,58 @@ test.each(['phone', 'tabletPortrait'] as const)(
   },
 );
 
+test.each(['phone', 'tabletPortrait'] as const)(
+  '%s 첫 로딩 부품은 날짜 줄 아래부터 입력창 위까지의 칸 가운데를 채운다',
+  async (device) => {
+    mockDeviceType = device;
+    mockUsePlannerDaily.mockReturnValue({ data: undefined, loading: true, error: null, refresh: jest.fn() });
+    const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
+
+    const scroll = screen.getByTestId('phone-daily-body');
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle)).toMatchObject({ gap: 0, paddingBottom: 0 });
+    const loaderStyle = StyleSheet.flatten(screen.getByTestId('daily-loading').props.style);
+    expect(loaderStyle.flex).toBe(1);
+    expect(loaderStyle.position).not.toBe('absolute');
+
+    const children = screen.UNSAFE_getByType(ScrollView).props.children.filter(Boolean);
+    const dateIndex = children.findIndex((node: any) => node.props?.testID === 'daily-date-row');
+    const loaderIndex = children.findIndex((node: any) => node.props?.testID === 'daily-loading');
+    expect(dateIndex).toBeGreaterThanOrEqual(0);
+    expect(loaderIndex).toBe(dateIndex + 1);
+    expect(scroll.findAll((node) => node.props.testID === 'daily-composer-dock')).toHaveLength(0);
+  },
+);
+
+test('data 없이 당겨 다시 시도하는 동안은 가운데 부품과 실패 글자 없이 당김 스피너만 남는다', async () => {
+  let rejectRefresh!: (cause: Error) => void;
+  const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => { rejectRefresh = reject; }));
+  const state: any = { data: undefined, loading: false, error: 'network', refresh };
+  mockUsePlannerDaily.mockImplementation(() => state);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.getByText('network')).toBeTruthy();
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+
+  let request!: Promise<void>;
+  await act(async () => { request = screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+
+  state.loading = true;
+  state.error = null;
+  screen.rerender(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.queryByText('network')).toBeNull();
+
+  await act(async () => {
+    state.loading = false;
+    state.error = 'network';
+    rejectRefresh(new Error('network'));
+    await expect(request).rejects.toThrow('network');
+  });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.getByText('network')).toBeTruthy();
+});
+
 test('manual pull만 refreshing을 켜고 reject 뒤에도 finally에서 해제한다', async () => {
   let rejectRefresh!: (cause: Error) => void;
   const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => {

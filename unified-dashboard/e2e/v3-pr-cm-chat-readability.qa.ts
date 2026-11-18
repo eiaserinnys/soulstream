@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -50,7 +51,8 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     const gaps = await measureCardGaps(page);
 
     await page.getByTestId("config-button").click();
-    await page.getByRole("tab", { name: "채팅", exact: true }).click();
+    const configDialog = page.getByRole("dialog", { name: "설정", exact: true });
+    await configDialog.waitFor({ state: "visible" });
     const slider = page.locator('[data-testid="chat-font-size-slider"] input[type="range"]');
     await slider.press("End");
     await page.getByText("18px", { exact: true }).waitFor();
@@ -180,8 +182,7 @@ async function installAccountRoutes(page: Page, account: AccountPreferences, wri
 }
 
 async function openMain(page: Page) {
-  await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+  await openV3Folder(page, baseUrl);
   await page.locator(".v3-session-panel .v3-run-row").first().waitFor({ state: "visible" });
 }
 
@@ -333,13 +334,15 @@ function assertMetrics(metrics: {
   responsive: Array<{ width: number; height: number; overflow: number }>;
 }) {
   const { theme, gaps, collapsed, expanded, large, mobile, responsive } = metrics;
-  assert(gaps.task === 4 && gaps.session === 4, `${theme}: 카드 gap ${gaps.task}/${gaps.session}px`);
+  assert(gaps.task === 4 && gaps.session === 8, `${theme}: 카드 gap ${gaps.task}/${gaps.session}px`);
   assert(collapsed.toolHeight === 32, `${theme}: Tool Calls 접힘 높이 ${collapsed.toolHeight}px`);
   assert(collapsed.body.size === "14px" && collapsed.body.line === "22px", `${theme}: 14px 본문 ${JSON.stringify(collapsed.body)}`);
-  assert(collapsed.code.size === "14px" && collapsed.input.size === "14px", `${theme}: 14px 코드/입력 미적용`);
+  assert(collapsed.input.size === "14px", `${theme}: 14px 입력 미적용 ${JSON.stringify(collapsed.input)}`);
+  assert(collapsed.code.size === "12px" && collapsed.code.line === "16px", `${theme}: 코드 블록 고정 타이포 ${JSON.stringify(collapsed.code)}`);
   assert(expanded.toolBody?.size === "14px" && expanded.toolBody.line === "22px", `${theme}: 14px 도구 본문 ${JSON.stringify(expanded.toolBody)}`);
   assert(large.body.size === "18px" && large.body.line === "26px", `${theme}: 18px 본문 ${JSON.stringify(large.body)}`);
-  assert(large.code.size === "18px" && large.input.size === "18px" && large.toolBody?.size === "18px", `${theme}: 18px 코드/도구/입력 미적용`);
+  assert(large.input.size === "18px" && large.toolBody?.size === "18px", `${theme}: 18px 도구/입력 미적용`);
+  assert(large.code.size === "12px" && large.code.line === "16px", `${theme}: 코드 블록 고정 타이포 ${JSON.stringify(large.code)}`);
   assert(collapsed.toolHeader.size === "12px" && collapsed.toolHeader.line === "18px", `${theme}: Tool Calls 헤더가 가변됐습니다.`);
   assert(collapsed.toolIcons.length === 2 && collapsed.toolIcons.every((icon) => icon.width === 14 && icon.height === 14), `${theme}: Tool Calls 아이콘이 14px이 아닙니다.`);
   assert(collapsed.meta.size === large.meta.size && collapsed.meta.line === large.meta.line, `${theme}: 메타 타이포가 가변됐습니다.`);

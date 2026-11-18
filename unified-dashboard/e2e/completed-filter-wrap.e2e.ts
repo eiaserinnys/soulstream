@@ -28,7 +28,7 @@ for (const width of [390, 744, 1210]) test(`completed period whole-button wrap b
   await open(page, 'boardConnected');
   const workspace = page.getByTestId('card-board-workspace');
   await expect(workspace).toBeVisible();
-  await workspace.getByLabel('완료 숨김').click();
+  await workspace.getByLabel('완료·취소 숨김').click();
   await workspace.getByTestId('card-board').evaluate(node => { node.scrollLeft = node.scrollWidth; });
   const main = await labels(workspace);
   if (!baseline) for (const label of main) { expect(label.lines).toBe(1); expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1); }
