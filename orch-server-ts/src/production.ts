@@ -87,12 +87,15 @@ import {
   SessionForegroundObserverTracker,
 } from "./push/push_notifier.js";
 import { createProductionOutboundWebhook } from "./webhooks/production_wiring.js";
+import { ConversationHistory } from "./conversation/conversation_history.js";
 import { ExternalAccessGrantRepository } from "./external_access/external_access_grant_repository.js";
 import {
   createExternalInterventionDispatch,
   ExternalInputService,
 } from "./external_access/external_input_service.js";
 import { ExternalAccessTokenBucket } from "./external_access/external_access_token_bucket.js";
+import { ExternalReplySignal } from "./external_access/external_reply_signal.js";
+import { executeInterruptCommand } from "./session/session_action_command_errors.js";
 import type { OutboundWebhookService } from "./webhooks/outbound_service.js";
 import {
   createOrchestratorRuntimeServices,
@@ -957,6 +960,12 @@ export async function createLiveProductionApplication(
         },
       })
     : undefined;
+  // The public access link surface wakes held status reads through this
+  // in-process signal. It exists only when the admission service does, and
+  // the /x routes are not registered without it (fail closed).
+  const externalAccessReplySignal = externalInputService === undefined
+    ? undefined
+    : new ExternalReplySignal();
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -1002,6 +1011,29 @@ export async function createLiveProductionApplication(
         publicUrl: accessLinkPublicUrl,
       },
     }),
+    ...(externalAccessGrants === undefined
+      || externalInputService === undefined
+      || externalAccessTokenBucket === undefined
+      || externalAccessReplySignal === undefined
+      || accessLinkPublicUrl.length === 0
+      ? {}
+      : {
+          externalAccessPublicRoutes: {
+            sql: productionSql,
+            publicUrl: accessLinkPublicUrl,
+            grants: externalAccessGrants,
+            inputService: externalInputService,
+            history: new ConversationHistory(productionSql),
+            stopSession: async (targetSessionId: string) =>
+              (await executeInterruptCommand(
+                providers.runtime.sessionActionCommandRoutes,
+                targetSessionId,
+              )).outcome,
+            tokenBucket: externalAccessTokenBucket,
+            eventHub: runtimeServices.sessionEventHub,
+            replySignal: externalAccessReplySignal,
+          },
+        }),
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
@@ -1032,6 +1064,7 @@ export async function createLiveProductionApplication(
       nodePairingService,
       productionSql,
       deadLetterStore,
+      externalAccessReplySignal,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1495,6 +1528,7 @@ export function buildProductionRouteOptions(
   nodePairing?: NodePairingService,
   conversationSql?: SqlClient,
   deadLetterStore?: Pick<FileEventIngressDeadLetterStore, "list">,
+  externalAccessReplySignal?: ExternalReplySignal,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -1598,7 +1632,14 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
-        ...(conversationSql === undefined ? {} : { externalAccess: { sql: conversationSql } }),
+        ...(conversationSql === undefined ? {} : {
+          externalAccess: {
+            sql: conversationSql,
+            ...(externalAccessReplySignal === undefined
+              ? {}
+              : { replySignal: externalAccessReplySignal }),
+          },
+        }),
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,

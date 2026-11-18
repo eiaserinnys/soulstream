@@ -231,6 +231,7 @@ export class ExternalAccessGrantRepository {
     `;
   }
 
+  /** With `kind`, a grant of another kind is treated as absent. */
   async revoke(
     ownerEmail: string,
     grantId: string,

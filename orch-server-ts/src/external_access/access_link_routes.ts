@@ -120,7 +120,7 @@ export function registerAccessLinkRoutes(
     try {
       const email = await requireEmail(options, request);
       const { id } = grantIdParamsSchema.parse(request.params);
-      const revoked = await options.grants.revoke(email, id);
+      const revoked = await options.grants.revoke(email, id, "link");
       if (revoked === null) {
         throw new AccessLinkRouteError(404, "Access link not found");
       }

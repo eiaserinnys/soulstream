@@ -1,10 +1,22 @@
 import type { SqlClient } from "../control_plane/control_plane_types.js";
-import { ConversationError, type Binding } from "./conversation_types.js";
+import { ConversationError } from "./conversation_types.js";
 import { ConversationProjection, type Item } from "./conversation_projection.js";
 import { formatPosition } from "./conversation_position.js";
 import { enrichPayloads, HISTORY_PAYLOAD, sourceEvent, TYPES, type Row } from "./conversation_history_source.js";
 import { ConversationHistorySnapshotStore, type CachedItem } from "./conversation_history_snapshot.js";
 import type { FastifyRequest } from "fastify";
+
+/**
+ * Only the fields this projection reads. Callers that hold a full conversation
+ * `Binding` still pass it; read-only views (the external access link history)
+ * need not fabricate the rest.
+ */
+export type ConversationHistorySource = {
+  session_id: string;
+  first_input_is_initial_instruction: boolean;
+  creation_request?: { initial_instruction?: string | null } | null;
+  notices?: ReadonlyArray<{ id: string; text: string; at: string }>;
+};
 
 type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
 type CachedExecution = { projection: ConversationProjection; lastEventId: number; persistedEventId: number; items: CachedItem[]; createdAt: number; lastUsedAt: number };
@@ -20,7 +32,7 @@ export class ConversationHistory {
   constructor(private readonly sql: SqlClient, logger: Pick<FastifyRequest["log"], "warn"> = console) {
     this.snapshots = new ConversationHistorySnapshotStore(sql, logger);
   }
-  async load(binding: Binding) {
+  async load(binding: ConversationHistorySource) {
     const executions = await this.sql<Execution[]>`
       SELECT session_id,ordinal,first_input_is_initial_instruction FROM conversation_executions
       WHERE thread_id=${binding.session_id} AND phase='complete' ORDER BY ordinal`;
@@ -28,7 +40,7 @@ export class ConversationHistory {
       first_input_is_initial_instruction:binding.first_input_is_initial_instruction || Boolean(binding.creation_request?.initial_instruction?.length)});
     const loaded: Array<{ execution: Execution; entry: CachedExecution }> = [];
     for (const execution of executions) loaded.push({ execution, entry: await this.loadExecution(execution) });
-    const items: Array<{ position: string; item: Item; session: string }> = binding.notices.map(n => ({
+    const items: Array<{ position: string; item: Item; session: string }> = (binding.notices ?? []).map(n => ({
       position: "0", session: binding.session_id, item: { id:n.id, kind:"notice", text:n.text, at:n.at, attachments:[] },
     }));
     for (const { execution, entry } of loaded) {
@@ -106,7 +118,7 @@ export class ConversationHistory {
   async enrichPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     return (await enrichPayloads(this.sql, [payload]))[0]!;
   }
-  async items(binding: Binding, before: string | undefined, limit: number) {
+  async items(binding: ConversationHistorySource, before: string | undefined, limit: number) {
     const history = await this.load(binding);
     let end = history.items.length;
     if (before !== undefined) {

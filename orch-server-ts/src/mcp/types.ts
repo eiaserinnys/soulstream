@@ -51,7 +51,11 @@ export interface McpHostOptions {
   nodePairing?: import("../node_credentials/types.js").NodePairingHostOptions;
   externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   /** 외부 연동 회신 도구의 저장소. 없는 host는 그 도구에서만 external_access_unavailable을 낸다. */
-  externalAccess?: { sql: import("../control_plane/control_plane_types.js").SqlClient };
+  externalAccess?: {
+    sql: import("../control_plane/control_plane_types.js").SqlClient;
+    /** 대기 중인 상태 조회를 깨우는 프로세스 안 신호기. 없어도 회신은 그대로 저장된다. */
+    replySignal?: import("../external_access/external_reply_signal.js").ExternalReplySignal;
+  };
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;
   authBearerToken: string;
