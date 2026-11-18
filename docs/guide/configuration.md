@@ -129,6 +129,7 @@ agents:
 
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
 - Optional fields: `model`, `default_preset`, `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`.
+- For Claude sessions, the runner always adds `Monitor` to `disallowed_tools` to block this background task entry point (#1673).
 
 ## Model catalog (`packages/model-catalog/data/model-catalog.yaml`)
 

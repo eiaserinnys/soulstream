@@ -1525,7 +1525,7 @@ describe("ClaudeSdkClient", () => {
 
     expect(captured[0]?.options).toMatchObject({
       allowedTools: ["Read", "Bash"],
-      disallowedTools: ["WebFetch"],
+      disallowedTools: ["WebFetch", "Monitor"],
       maxTurns: 25,
     });
   });
