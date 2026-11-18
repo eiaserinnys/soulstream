@@ -195,6 +195,12 @@ function runFile(file) {
         PLAYWRIGHT_MODULE: playwrightEntry,
         ...(chromiumExecutable ? { PLAYWRIGHT_CHROMIUM_EXECUTABLE: chromiumExecutable } : {}),
         COMPONENTS_REVIEW_PHASE: process.env.COMPONENTS_REVIEW_PHASE ?? "qa",
+        // 두 QA가 기본 출력으로 추적 중인 e2e/evidence 그림을 덮어쓰지 않도록,
+        // git이 무시하는 .local/artifacts/screenshots 아래로 돌린다. 호출자 지정 값이 우선이다.
+        PR_CC_QA_OUTPUT: process.env.PR_CC_QA_OUTPUT
+          ?? join(dashboardDir, ".local", "artifacts", "screenshots", "pr-cc-modal-dialogs", "after"),
+        PR_CL_QA_OUTPUT: process.env.PR_CL_QA_OUTPUT
+          ?? join(dashboardDir, ".local", "artifacts", "screenshots", "pr-cl-visual-system"),
       },
       stdio: "inherit",
     });
