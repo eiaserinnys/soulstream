@@ -94,7 +94,7 @@ it('pins every session status literal to the allowlist with its meaning',async()
  sql:sum.sql+entry.sql,
  }),{comparisons:0,lists:0,sql:0});
  expect(SESSION_STATUS_LITERAL_ALLOWLIST).toHaveLength(81);
- expect(totals).toEqual({comparisons:85,lists:29,sql:59});
+ expect(totals).toEqual({comparisons:85,lists:28,sql:59});
  for(const entry of SESSION_STATUS_LITERAL_ALLOWLIST){
  expect(entry.note.length,entry.file).toBeGreaterThan(0);
  expect(entry.comparisons+entry.lists+entry.sql,entry.file).toBeGreaterThan(0);

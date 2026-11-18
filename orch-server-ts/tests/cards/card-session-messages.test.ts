@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { registerCardRoutes, cardRouteAuthRequirements } from "../../src/cards/card_routes.js";
 import { readCardSessionMessages } from "../../src/cards/card_session_messages.js";
 import type { CardDetail } from "../../src/cards/card_operations.js";
-import type { SqlClient } from "../../src/cards/control_plane/card_types.js";
 import { intervenePayload } from "../../src/session/session_action_command_payloads.js";
 import { readSessionConversation } from "../../src/session/session_conversation_projection.js";
 import type { FolderRouteOptions } from "../../src/folders/folder_routes.js";
@@ -15,12 +14,15 @@ type EventRow = { id: number; event_type: string; payload: Record<string, unknow
 
 function sqlWithEvents(rows: EventRow[]) {
   const statements: string[] = [];
-  const sql = Object.assign(async (strings: TemplateStringsArray) => {
+  const parameters: unknown[][] = [];
+  const unsafe = vi.fn((value: string) => value);
+  const sql = Object.assign(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const statement = strings.join("?");
     statements.push(statement);
+    parameters.push(values);
     return statement.includes("FROM events") ? rows : [];
-  }, { json: (value: unknown) => value }) as unknown as SqlClient;
-  return { sql, statements };
+  }, { json: (value: unknown) => value, unsafe }) as unknown as Parameters<typeof readSessionConversation>[0];
+  return { sql, statements, parameters, unsafe };
 }
 
 function detailOf(card: Record<string, unknown>, sessions: Array<Record<string, unknown>> = []) {
@@ -43,7 +45,7 @@ function sqlWithConversation(rows: EventRow[], data: ConversationData = {}) {
     if (statement.includes("jsonb_array_elements(uploads)")) return data.uploads ?? [];
     if (statement.includes("FROM sessions")) return data.nodeId ? [{ node_id: data.nodeId }] : [];
     return [];
-  }, { json: (value: unknown) => value }) as unknown as SqlClient;
+  }, { json: (value: unknown) => value, unsafe: (value: string) => value }) as unknown as Parameters<typeof readSessionConversation>[0];
   return { sql, statements };
 }
 
@@ -55,12 +57,15 @@ const events: EventRow[] = [
 ];
 
 it("projects the linked session conversation with the card agent label", async () => {
-  const { sql, statements } = sqlWithEvents(events);
+  const { sql, statements, parameters, unsafe } = sqlWithEvents(events);
   const result = await readCardSessionMessages(sql, detailOf(
     { assignee_session_id: "session-1", assignee_agent_id: "roselin" },
     [{ session_id: "session-1", display_name: "서소영", agent_id: "seosoyoung" }],
   ));
   expect(result).toMatchObject({ sessionId: "session-1", session: { sessionId: "session-1", displayName: "서소영" }, busy: false, tool: null });
+  expect(unsafe).toHaveBeenCalledWith(expect.stringContaining("CASE"));
+  expect(parameters[0]).toContain(unsafe.mock.results[0]?.value);
+  expect(statements[0]).toContain("SELECT id,event_type,?,created_at FROM events");
   expect(statements.some(statement => statement.includes("file_assets"))).toBe(false);
   expect(statements.some(statement => statement.includes("jsonb_array_elements(uploads)"))).toBe(false);
   expect(result.items).toEqual([
