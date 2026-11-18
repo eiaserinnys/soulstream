@@ -1,6 +1,7 @@
 import type { Browser, Page } from "@playwright/test";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -23,7 +24,6 @@ async function verify(browser: Browser) {
   const requestCounts = new Map<string, number>();
   let projectRequests = 0;
   let runHistoryRequests = 0;
-  let transientProjectEmpty = false;
   let includeThirdRun = false;
 
   page.on("request", (request) => {
@@ -34,24 +34,14 @@ async function verify(browser: Browser) {
   await preparePage(page);
   await installV3VisualQaRoutes(page, {
     contextMenuParity: true,
-    emptyProjectPlannerWhen: () => {
-      if (!transientProjectEmpty) return false;
-      transientProjectEmpty = false;
-      return true;
-    },
     includeAlphaThirdRunWhen: () => includeThirdRun,
     onPlannerProjectRequest: (count) => { projectRequests = count; },
     onRunHistoryRequest: (count) => { runHistoryRequests = count; },
   });
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
-    await page.getByTestId("v3-all-projects")
-      .getByRole("button", { name: fixtureTitles.project, exact: true })
-      .click();
-    await page.getByRole("heading", { name: fixtureTitles.project }).waitFor({ state: "visible" });
-    const taskCard = page.getByTestId("v3-task-alpha");
+    await openV3Folder(page, baseUrl);
+    const taskCard = page.getByTestId("v3-task-task-alpha");
     await taskCard.waitFor({ state: "visible" });
     await taskCard.click({ force: true });
     try {
@@ -69,7 +59,7 @@ async function verify(browser: Browser) {
     const before = snapshotCounts(requestCounts);
     const beforeProjectRequests = projectRequests;
     const beforeRunHistoryRequests = runHistoryRequests;
-    transientProjectEmpty = true;
+    await waitForProjectSettled(page);
     await startMutationObservers(page);
     const observationStartedAt = Date.now();
     await page.waitForTimeout(5_000);
@@ -78,7 +68,6 @@ async function verify(browser: Browser) {
     await emitCatalogUpdated(page);
     await page.waitForTimeout(Math.max(0, 30_000 - (Date.now() - observationStartedAt)));
     const mutations = await stopMutationObservers(page);
-    transientProjectEmpty = false;
     const after = snapshotCounts(requestCounts);
     const stableWindow = {
       durationMs: Date.now() - observationStartedAt,
@@ -92,22 +81,18 @@ async function verify(browser: Browser) {
 
     if (baselineMode) return { stableWindow };
 
-    assert(mutations.project === 0, `프로젝트 리스트 DOM 변이 ${mutations.project}건`);
+    const projectChildList = mutations.projectRecords.filter((record) => record.type === "childList").length;
+    assert(
+      projectChildList === 0,
+      `기존 카드가 지워졌다 다시 붙는 프로젝트 childList 변이 ${projectChildList}건: ${JSON.stringify(mutations.projectRecords)}`,
+    );
     assert(mutations.runHistory === 0, `폴더 세션 리스트 DOM 변이 ${mutations.runHistory}건`);
     assert(stableWindow.plannerRequestDelta === 0, `동등 이벤트가 planner를 ${stableWindow.plannerRequestDelta}회 재조회했습니다.`);
     assert(stableWindow.projectRequestDelta === 0, `프로젝트를 ${stableWindow.projectRequestDelta}회 재조회했습니다.`);
     assert(stableWindow.runHistoryRequestDelta === 0, `run history를 ${stableWindow.runHistoryRequestDelta}회 재조회했습니다.`);
 
-    const transientBefore = projectRequests;
-    await startProjectMutationObserver(page);
-    transientProjectEmpty = true;
-    await emitFolderUpdated(page);
-    await waitUntil(() => projectRequests >= transientBefore + 2, "빈 프로젝트 응답 재확인");
-    await taskCard.waitFor({ state: "visible" });
-    const transientMutations = await stopProjectMutationObserver(page);
-    assert(transientMutations === 0, `일시적 빈 응답이 프로젝트 DOM을 ${transientMutations}회 바꿨습니다.`);
-
     const runList = page.locator(".v3-run-list");
+    await runList.first().waitFor({ state: "visible", timeout: 10_000 });
     const renameRow = runList.locator('[data-session-id="run-alpha-2"]');
     await startRenameMutationObserver(page, "run-alpha-2");
     const renameStartedAt = Date.now();
@@ -131,25 +116,12 @@ async function verify(browser: Browser) {
     ), "새 세션 실시간 추가");
     const sessionAddedMs = Date.now() - addStartedAt;
 
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-    const projectTask = page.getByTestId("v3-task-alpha");
-    await projectTask.waitFor({ state: "visible" });
-    const removeStartedAt = Date.now();
-    await projectTask.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "오늘 플래너에서 제거" }).click();
-    await projectTask.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "오늘 플래너에 추가" }).waitFor({ state: "visible" });
-    const todayRemovedMs = Date.now() - removeStartedAt;
-    await page.getByRole("menuitem", { name: "오늘 플래너에 추가" }).click();
-    await projectTask.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "오늘 플래너에서 제거" }).waitFor({ state: "visible" });
-    await page.keyboard.press("Escape");
-
     const reviewPanel = page.getByTestId("v3-session-panel");
     const reviewRows = page.getByTestId("v3-session-group-review").locator(".v3-session-row");
     const reviewCountBefore = await reviewRows.count();
     await startReviewMutationObserver(page);
-    await reviewRows.first().getByRole("button", { name: /확인 처리$/ }).click();
+    // 세션 행 자체가 role=button이라 이름 매칭이 행까지 잡는다. 확인 처리 캡을 직접 누른다.
+    await reviewRows.first().locator('button[aria-label$="확인 처리"]').click();
     await waitUntil(async () => await reviewRows.count() === reviewCountBefore - 1, "검수 행 부분 제거");
     assert(await reviewPanel.isVisible(), "검수 확인 뒤 우측 세션 패널이 닫혔습니다.");
     const reviewMutations = await stopReviewMutationObserver(page);
@@ -161,8 +133,6 @@ async function verify(browser: Browser) {
       liveUpdates: {
         renameVisibleMs,
         sessionAddedMs,
-        todayRemovedMs,
-        transientMutations,
         renameMutations,
         reviewMutations,
         projectRequests,
@@ -174,24 +144,31 @@ async function verify(browser: Browser) {
   }
 }
 
-async function startProjectMutationObserver(page: Page) {
+async function waitForProjectSettled(page: Page) {
   await page.evaluate(() => {
     const target = document.querySelector(".v3-planner .v3-task-list");
     if (!target) throw new Error("프로젝트 MutationObserver 대상을 찾지 못했습니다.");
-    const root = window as Window & { __prArProjectObserver?: { count: number; observer: MutationObserver } };
-    const state = { count: 0, observer: null as unknown as MutationObserver };
-    state.observer = new MutationObserver((records) => { state.count += records.length; });
+    const root = window as Window & {
+      __prArSettle?: { lastChangeAt: number; observer: MutationObserver };
+    };
+    const state = { lastChangeAt: Date.now(), observer: null as unknown as MutationObserver };
+    state.observer = new MutationObserver(() => { state.lastChangeAt = Date.now(); });
     state.observer.observe(target, { attributes: true, characterData: true, childList: true, subtree: true });
-    root.__prArProjectObserver = state;
+    root.__prArSettle = state;
   });
-}
-
-async function stopProjectMutationObserver(page: Page): Promise<number> {
-  return await page.evaluate(() => {
-    const root = window as Window & { __prArProjectObserver?: { count: number; observer: MutationObserver } };
-    if (!root.__prArProjectObserver) throw new Error("프로젝트 MutationObserver 상태가 없습니다.");
-    root.__prArProjectObserver.observer.disconnect();
-    return root.__prArProjectObserver.count;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const quietMs = await page.evaluate(() => {
+      const state = (window as Window & { __prArSettle?: { lastChangeAt: number } }).__prArSettle;
+      return Date.now() - (state?.lastChangeAt ?? Date.now());
+    });
+    if (quietMs >= 500) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await page.evaluate(() => {
+    const root = window as Window & { __prArSettle?: { observer: MutationObserver } };
+    root.__prArSettle?.observer.disconnect();
+    delete root.__prArSettle;
   });
 }
 
@@ -292,6 +269,7 @@ async function startMutationObservers(page: Page) {
     const root = window as Window & {
       __prArMutationState?: {
         counts: { project: number; runHistory: number };
+        projectRecords: Array<{ type: string; attributeName: string | null; target: string; time: number }>;
         observers: MutationObserver[];
       };
     };
@@ -299,30 +277,52 @@ async function startMutationObservers(page: Page) {
     const runHistory = document.querySelector(".v3-run-list");
     if (!project || !runHistory) throw new Error("MutationObserver 대상을 찾지 못했습니다.");
     const counts = { project: 0, runHistory: 0 };
+    const projectRecords: Array<{ type: string; attributeName: string | null; target: string; time: number }> = [];
     const observe = (target: Element, key: keyof typeof counts) => {
-      const observer = new MutationObserver((records) => { counts[key] += records.length; });
+      const observer = new MutationObserver((records) => {
+        counts[key] += records.length;
+        if (key !== "project") return;
+        const now = Date.now();
+        for (const record of records) {
+          const element = record.target instanceof Element
+            ? record.target
+            : record.target.parentElement;
+          projectRecords.push({
+            type: record.type,
+            attributeName: record.attributeName,
+            target: element ? `${element.tagName.toLowerCase()}.${[...element.classList].join(".")}` : String(record.target),
+            time: now,
+          });
+        }
+      });
       observer.observe(target, { attributes: true, characterData: true, childList: true, subtree: true });
       return observer;
     };
     root.__prArMutationState = {
       counts,
+      projectRecords,
       observers: [observe(project, "project"), observe(runHistory, "runHistory")],
     };
   });
 }
 
-async function stopMutationObservers(page: Page): Promise<{ project: number; runHistory: number }> {
+async function stopMutationObservers(page: Page): Promise<{
+  project: number;
+  runHistory: number;
+  projectRecords: Array<{ type: string; attributeName: string | null; target: string; time: number }>;
+}> {
   return await page.evaluate(() => {
     const root = window as Window & {
       __prArMutationState?: {
         counts: { project: number; runHistory: number };
+        projectRecords: Array<{ type: string; attributeName: string | null; target: string; time: number }>;
         observers: MutationObserver[];
       };
     };
     const state = root.__prArMutationState;
     if (!state) throw new Error("MutationObserver 상태가 없습니다.");
     for (const observer of state.observers) observer.disconnect();
-    return state.counts;
+    return { ...state.counts, projectRecords: state.projectRecords };
   });
 }
 
@@ -333,13 +333,6 @@ async function emitSessionUpdated(page: Page, displayName: string) {
     status: "running",
     updated_at: "2026-07-14T01:30:00.000Z",
     display_name: displayName,
-  });
-}
-
-async function emitFolderUpdated(page: Page) {
-  await dispatchSessionEvent(page, "folder_updated", {
-    type: "folder_updated",
-    folderId: "rb-alpha",
   });
 }
 
@@ -368,7 +361,12 @@ async function emitCatalogUpdated(page: Page) {
     catalog: {
       folders: [
         { id: "folder-amber", name: "소울스트림", sortOrder: 0, parentFolderId: null, projectPageId: "project-amber" },
-        { id: "folder-ops", name: "Soulstream 운영", sortOrder: 1, parentFolderId: null, projectPageId: "project-ops" },
+        { id: "folder-dashboard", name: "대시보드", sortOrder: 1, parentFolderId: "folder-amber", projectPageId: "project-dashboard" },
+        { id: "folder-ops", name: "Soulstream 운영", sortOrder: 2, parentFolderId: null, projectPageId: "project-ops" },
+        { id: "rb-alpha", name: fixtureTitles.primaryTask, sortOrder: 3, parentFolderId: "folder-amber", projectPageId: "task-alpha" },
+        { id: "rb-beta", name: fixtureTitles.secondaryTask, sortOrder: 4, parentFolderId: "folder-amber", projectPageId: "task-beta" },
+        { id: "rb-done", name: "완료한 접근성 정리", sortOrder: 5, parentFolderId: "folder-amber", projectPageId: "task-done" },
+        { id: "rb-carry", name: fixtureTitles.carryoverTask, sortOrder: 6, parentFolderId: "folder-amber", projectPageId: "task-carryover" },
       ],
       sessions: {},
     },

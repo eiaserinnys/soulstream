@@ -1,9 +1,10 @@
-import type { Browser, Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
-import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { openV3Folder } from "./v3-qa-entry";
+import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
@@ -35,37 +36,31 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   await preparePage(page, theme);
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
-
-    const todayCaps = await auditVisibleCaps(page);
-    assert(todayCaps.length >= 8, `오늘 화면 아이콘 캡이 ${todayCaps.length}개뿐입니다.`);
-    await assertPressedToggle(page.getByTestId("v3-task-task-alpha").locator('[data-slot="dashboard-icon-cap"]'));
-    await capture(page, theme, "01-today-actions");
-
-    await page.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
+    await openV3Folder(page, baseUrl);
     await expect(page.getByRole("button", { name: "새 문서" })).toHaveCount(0);
     const projectCaps = await auditVisibleCaps(page);
-    for (const label of ["오늘로 돌아가기"]) {
+    for (const label of ["오늘 플래너로 돌아가기"]) {
       assert(projectCaps.some((cap) => cap.label === label), `${label} 아이콘 캡이 없습니다.`);
     }
     await capture(page, theme, "02-project-actions");
 
-    await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-alpha").click();
     const detail = page.locator(".v3-detail-pane").first();
     await detail.getByTestId("v3-folder-cards-section").waitFor({ state: "visible" });
     await detail.getByTestId("v3-inline-board").waitFor({ state: "visible" });
+    await detail.getByRole("button", { name: "새 세션" }).waitFor({ state: "visible" });
 
     const detailCaps = await auditVisibleCaps(detail);
     for (const label of [
-      "오늘 플래너로 돌아가기",
+      "상위 폴더로 이동",
       "폴더 설명 편집",
-      "컨텍스트 추가",
       "마크다운 추가",
       "새 세션",
     ]) {
-      assert(detailCaps.some((cap) => cap.label === label), `${label} 아이콘 캡이 없습니다.`);
+      assert(
+        detailCaps.some((cap) => cap.label === label),
+        `${label} 아이콘 캡이 없습니다. 보이는 캡: ${detailCaps.map((cap) => cap.label).join(" | ")}`,
+      );
     }
     assert(detailCaps.some((cap) => cap.label.startsWith("별표 ")), "별표 아이콘 캡이 없습니다.");
     assert(detailCaps.some((cap) => cap.label.startsWith("오늘 플래너")), "오늘 토글 아이콘 캡이 없습니다.");
@@ -80,7 +75,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     assert(errors.length === 0, `브라우저 오류가 발생했습니다: ${errors.join(" | ")}`);
     return {
-      todayCaps: todayCaps.length,
       projectCaps: projectCaps.length,
       detailCaps: detailCaps.length,
       allCapsHaveLabelsAndTooltips: true,
@@ -102,11 +96,13 @@ async function auditVisibleCaps(root: Page | ReturnType<Page["locator"]>) {
       const style = getComputedStyle(element);
       const compact = element.classList.contains("v3-planner-head-action");
       const pill = element.classList.contains("v3-context-add");
+      const small = element.classList.contains("dashboard-icon-cap--small");
       return {
         label: element.getAttribute("aria-label") ?? "",
         tooltip: element.getAttribute("title") ?? "",
         compact,
         pill,
+        small,
         width: element.getBoundingClientRect().width,
         height: element.getBoundingClientRect().height,
         radius: style.borderRadius,
@@ -114,7 +110,7 @@ async function auditVisibleCaps(root: Page | ReturnType<Page["locator"]>) {
     });
     assert(data.label.length > 0, `aria-label 없는 아이콘 캡 #${index}`);
     assert(data.tooltip.length > 0, `툴팁 없는 아이콘 캡: ${data.label}`);
-    const size = data.compact || data.pill ? 28 : 44;
+    const size = data.compact || data.pill ? 28 : data.small ? 32 : 44;
     if (data.pill) assert(data.width >= size, `${data.label} 너비가 ${data.width}px입니다.`);
     else assert(Math.abs(data.width - size) < 0.2, `${data.label} 너비가 ${data.width}px입니다.`);
     assert(Math.abs(data.height - size) < 0.2, `${data.label} 높이가 ${data.height}px입니다.`);

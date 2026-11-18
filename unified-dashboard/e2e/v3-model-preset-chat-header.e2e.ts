@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -25,9 +26,11 @@ for (const theme of ["dark", "light"] as const) {
         sessionModelPresets: { "run-alpha-2": "qa-standard" },
       });
 
-      await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
+      await openV3Folder(page, BASE_URL);
       await page.getByTestId("v3-task-task-alpha").click();
-      const taskRuns = page.locator(".v3-detail-pane .v3-run-open");
+      // 폴더 화면의 세션 목록과 전역 세션 패널이 같은 행을 함께 그리므로
+      // 폴더 상세(플래너 스크롤) 안의 행으로 범위를 좁힌다.
+      const taskRuns = page.locator('[data-testid="v3-planner-scroll"] .v3-run-open');
       await taskRuns.filter({ hasText: "시각 QA 순회" }).click();
 
       const badge = page.getByTestId("session-model-preset");
@@ -38,7 +41,12 @@ for (const theme of ["dark", "light"] as const) {
       if (viewport.name === "mobile") {
         await page.getByTestId("v3-mobile-tab-task").click();
       }
-      await taskRuns.filter({ hasText: "밀도 기준 정리" }).click();
+      // 데스크톱은 채팅이 열리면 워크스페이스 오버레이의 세션 목록을 쓰고,
+      // 모바일은 태스크 탭으로 돌아온 플래너 상세의 목록을 쓴다.
+      const secondRun = viewport.name === "mobile"
+        ? page.locator('[data-testid="v3-planner-scroll"] .v3-run-open')
+        : page.locator(".v3-workspace .v3-run-open");
+      await secondRun.filter({ hasText: "밀도 기준 정리" }).click();
       await expect(page.getByTestId("session-model-preset")).toHaveCount(0);
       await capture(page, theme, viewport.name, "unspecified");
     });

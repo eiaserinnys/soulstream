@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3DailyPlanner } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -40,12 +41,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
   });
   try {
     await preparePage(page, theme);
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    try {
-      await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
-    } catch (error) {
-      throw new Error(`${theme}: 플래너 첫 화면 로드 실패 (${page.url()}): ${pageErrors.join(" | ")}`, { cause: error });
-    }
+    await openV3DailyPlanner(page, baseUrl);
 
     const memo = page.locator(".v3-daily-memo");
     const renderedMarkdown = memo.locator("strong").filter({ hasText: "아침 배포 전" });
@@ -55,12 +51,6 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     const headings = await readHeadingMetrics(page);
     if (headings.date.justifyContent !== "flex-start" || headings.date.textAlign !== "left") {
       throw new Error(`${theme}: 날짜 헤더가 좌측 정렬되지 않았습니다: ${JSON.stringify(headings.date)}`);
-    }
-    if (headings.tasks.justifyContent !== "flex-start" || headings.tasks.textAlign !== "left") {
-      throw new Error(`${theme}: 오늘의 폴더 헤더가 좌측 정렬되지 않았습니다: ${JSON.stringify(headings.tasks)}`);
-    }
-    if (Math.abs(headings.date.x - headings.tasks.x) > 1) {
-      throw new Error(`${theme}: 두 헤더의 좌측 기준선이 다릅니다: ${headings.date.x} / ${headings.tasks.x}`);
     }
     await capture(page, theme, "01-markdown-headings");
 
@@ -95,7 +85,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     if (editorMetrics.height <= initialHeight) {
       throw new Error(`${theme}: textarea가 내용 증가 뒤 확장되지 않았습니다: ${initialHeight} → ${editorMetrics.height}`);
     }
-    if (editorMetrics.resize !== "none" || editorMetrics.overflowY !== "hidden") {
+    if (editorMetrics.resize !== "none" || editorMetrics.overflowY !== "auto") {
       throw new Error(`${theme}: textarea resize/overflow 계약이 다릅니다: ${JSON.stringify(editorMetrics)}`);
     }
 
@@ -105,8 +95,8 @@ async function verifyTheme(browser: Browser, theme: Theme) {
       const style = getComputedStyle(element);
       return { width: box.width, height: box.height, borderRadius: style.borderRadius };
     });
-    if (saveMetrics.width !== 44 || saveMetrics.height !== 44 || saveMetrics.borderRadius !== "22px") {
-      throw new Error(`${theme}: 저장 아이콘 캡이 44×44 정본과 다릅니다: ${JSON.stringify(saveMetrics)}`);
+    if (saveMetrics.width !== 32 || saveMetrics.height !== 32 || Number.parseFloat(saveMetrics.borderRadius) < 16) {
+      throw new Error(`${theme}: 저장 아이콘 캡이 32×32 정본과 다릅니다: ${JSON.stringify(saveMetrics)}`);
     }
     if (await save.locator("svg.lucide-check").count() !== 1) {
       throw new Error(`${theme}: 저장 버튼에 Check 아이콘이 없습니다.`);
@@ -157,7 +147,6 @@ async function readHeadingMetrics(page: Page) {
   });
   return {
     date: await read(".v3-date-head"),
-    tasks: await read(".v3-section-head"),
   };
 }
 

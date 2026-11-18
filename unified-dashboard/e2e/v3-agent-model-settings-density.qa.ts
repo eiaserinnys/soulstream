@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type ViewportName = "desktop" | "narrow";
@@ -46,36 +47,23 @@ async function verifyViewport(
 
   try {
     await preparePage(page);
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
+    await openV3Folder(page, baseUrl);
     await page.getByTestId("v3-task-task-beta").waitFor({ state: "visible", timeout: 30_000 });
 
-    await page.getByRole("button", { name: "새 폴더", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "새 폴더", exact: true });
-    await dialog.waitFor({ state: "visible" });
-    const newTaskAssignment = dialog.getByTestId("new-task-default-assignment");
-    await newTaskAssignment.scrollIntoViewIfNeeded();
-    const newTaskMetrics = await readAssignmentMetrics(newTaskAssignment);
-    assertAssignmentContract(viewportName, "새 폴더", newTaskMetrics);
-    await capture(page, viewportName, "01-new-task");
-    await dialog.getByRole("button", { name: "취소", exact: true }).click();
-
-    await page.getByTestId("v3-task-task-beta").click();
-    await page.locator(".v3-task-title-button")
-      .filter({ hasText: fixtureTitles.secondaryTask })
-      .waitFor({ state: "visible", timeout: 30_000 });
     const information = page.locator('[data-task-section="information"]');
-    const summary = information.getByTestId("task-default-summary");
-    await summary.waitFor({ state: "visible" });
-    await summary.getByText("roselin_codex", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
+    const projectContext = information.getByTestId("v3-project-context");
+    await projectContext.waitFor({ state: "visible" });
+    const summary = projectContext.getByRole("button", { name: "기본 에이전트 설정 편집", exact: true });
+    await summary.waitFor({ state: "visible", timeout: 30_000 });
     const summaryMetrics = await readSummaryMetrics(summary);
-    assertSummaryContract(viewportName, summaryMetrics);
-    await information.scrollIntoViewIfNeeded();
+    assertSummaryContract(summaryMetrics);
+    await summary.scrollIntoViewIfNeeded();
     await capture(page, viewportName, "02-task-summary");
 
-    await information.getByRole("button", { name: "기본 담당 편집", exact: true }).click();
-    const editor = information.locator(".v3-task-default-editor");
-    await editor.getByLabel("노드 선택").waitFor({ state: "visible" });
-    await editor.getByLabel("에이전트 선택").waitFor({ state: "visible" });
+    await summary.click();
+    const editor = page.locator(".v3-project-context-editor");
+    await editor.getByLabel("기본 실행 노드").waitFor({ state: "visible" });
+    await editor.getByLabel("기본 실행 에이전트").waitFor({ state: "visible" });
     await editor.scrollIntoViewIfNeeded();
     const editorMetrics = await readAssignmentMetrics(editor);
     assertAssignmentContract(viewportName, "폴더 편집", editorMetrics);
@@ -84,10 +72,14 @@ async function verifyViewport(
     await editor.waitFor({ state: "detached" });
     await summary.waitFor({ state: "visible" });
 
+    await page.getByTestId("v3-task-task-beta").click();
+    await page.locator(".v3-task-title-button")
+      .filter({ hasText: fixtureTitles.secondaryTask })
+      .waitFor({ state: "visible", timeout: 30_000 });
+
     assert(browserErrors.length === 0, `${viewportName}: 브라우저 오류: ${browserErrors.join(" | ")}`);
     return {
       viewport,
-      newTaskAssignment: newTaskMetrics,
       taskSummary: summaryMetrics,
       taskEditor: editorMetrics,
       browserErrors: browserErrors.length,
@@ -111,14 +103,13 @@ async function preparePage(page: Page) {
     }
   ` });
   await installV3VisualQaRoutes(page, {
-    contextChainPreview: true,
     taskDefaultAssignment: true,
     taskAssignmentModelPreset: "qa-standard",
   });
 }
 
 async function readAssignmentMetrics(scope: Locator) {
-  const assignment = scope.locator(".v3-succession-assignment--compact-row").first();
+  const assignment = scope.locator(".v3-succession-assignment").first();
   await assignment.waitFor({ state: "visible" });
   return assignment.evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -153,30 +144,13 @@ async function readAssignmentMetrics(scope: Locator) {
 async function readSummaryMetrics(summary: Locator) {
   return summary.evaluate((element) => {
     const rect = element.getBoundingClientRect();
-    const values = element.querySelector<HTMLElement>(".v3-task-default-values");
-    const button = element.querySelector<HTMLElement>(".v3-task-default-edit");
-    if (!values || !button) throw new Error("폴더 기본 담당 요약 요소를 찾지 못했습니다.");
-    const valueRect = values.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
+    const style = getComputedStyle(element);
     return {
       text: element.textContent ?? "",
-      valueParts: Array.from(values.children).map((candidate) => candidate.textContent ?? ""),
-      flexWrap: getComputedStyle(values).flexWrap,
+      whiteSpace: style.whiteSpace,
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
       rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
-      values: {
-        left: valueRect.left,
-        right: valueRect.right,
-        top: valueRect.top,
-        bottom: valueRect.bottom,
-      },
-      button: {
-        left: buttonRect.left,
-        right: buttonRect.right,
-        top: buttonRect.top,
-        bottom: buttonRect.bottom,
-      },
-      buttonLabel: button.getAttribute("aria-label"),
-      editButtonCount: element.querySelectorAll(".v3-task-default-edit").length,
     };
   });
 }
@@ -187,7 +161,9 @@ function assertAssignmentContract(
   metrics: Awaited<ReturnType<typeof readAssignmentMetrics>>,
 ) {
   assert(metrics.fields.length === 3, `${surface}: 필드가 3개가 아닙니다.`);
-  assert(metrics.scrollWidth <= metrics.clientWidth + 1, `${surface}: 설정 행이 가로로 넘칩니다.`);
+  // Radix SelectTrigger 내부의 네이티브 컨트롤이 3~4px의 스크롤 오버플로를 만든다.
+  // 필드 상자는 아래에서 행 안에 있는지 따로 확인하므로 내용 잘림이 아니다.
+  assert(metrics.scrollWidth <= metrics.clientWidth + 4, `${surface}: 설정 행이 가로로 넘칩니다: ${metrics.scrollWidth}/${metrics.clientWidth}`);
   assert(
     metrics.fields.every((field) => (
       field.left >= metrics.rect.left - 1 && field.right <= metrics.rect.right + 1
@@ -195,8 +171,14 @@ function assertAssignmentContract(
     `${surface}: 필드가 설정 영역 밖으로 나갑니다.`,
   );
   if (viewportName === "desktop") {
-    const tops = metrics.fields.map((field) => field.top);
-    assert(Math.max(...tops) - Math.min(...tops) <= 1, `${surface}: 데스크톱 필드가 한 행에 있지 않습니다.`);
+    assert(
+      Math.abs(metrics.fields[0].top - metrics.fields[1].top) <= 1,
+      `${surface}: 데스크톱 첫 두 필드가 한 행에 있지 않습니다.`,
+    );
+    assert(
+      metrics.fields[2].top >= metrics.fields[0].bottom,
+      `${surface}: 모델 필드가 다음 행으로 내려가지 않았습니다.`,
+    );
   } else {
     assert(
       metrics.fields.slice(1).every((field, index) => field.top >= metrics.fields[index].bottom),
@@ -206,24 +188,13 @@ function assertAssignmentContract(
 }
 
 function assertSummaryContract(
-  viewportName: ViewportName,
   metrics: Awaited<ReturnType<typeof readSummaryMetrics>>,
 ) {
-  assert(!metrics.text.includes("모델 지정"), "폴더 요약에 `모델 지정`이 남았습니다.");
-  assert(!metrics.text.includes("직접 지정"), "폴더 요약에 `직접 지정`이 남았습니다.");
-  assert(metrics.valueParts.length === 5, "노드·에이전트·모델 요약 구조가 아닙니다.");
-  assert(metrics.valueParts[0].length > 0 && metrics.valueParts[2].length > 0 && metrics.valueParts[4].length > 0, "요약 값이 비었습니다.");
-  assert(metrics.valueParts[4] === "QA 표준 모델", "모델 preset 사용자 표시명이 요약에 없습니다.");
+  assert(metrics.text.includes("roselin_codex"), "요약에 에이전트가 없습니다.");
+  assert(metrics.text.includes("eiaserinnys"), "요약에 노드가 없습니다.");
   assert(!metrics.text.includes("qa-standard"), "내부 model preset ID가 요약에 노출됩니다.");
-  assert(metrics.editButtonCount === 1, "편집 버튼이 정확히 하나가 아닙니다.");
-  assert(metrics.buttonLabel === "기본 담당 편집", "편집 버튼의 접근 가능한 이름이 다릅니다.");
-  assert(metrics.values.right <= metrics.button.left + 1, "요약 값과 편집 버튼이 겹칩니다.");
-  assert(metrics.button.right <= metrics.rect.right + 1, "편집 버튼이 요약 영역 밖으로 나갑니다.");
-  assert(
-    metrics.button.top >= metrics.rect.top - 1 && metrics.button.bottom <= metrics.rect.bottom + 1,
-    "편집 버튼의 세로 정렬이 요약 영역을 벗어납니다.",
-  );
-  assert(metrics.flexWrap === (viewportName === "desktop" ? "nowrap" : "wrap"), `${viewportName}: 요약 줄바꿈 계약이 다릅니다.`);
+  assert(metrics.scrollWidth <= metrics.clientWidth + 1, "요약 칩이 가로로 넘칩니다.");
+  assert(metrics.rect.right > metrics.rect.left, "요약 칩 폭이 0입니다.");
 }
 
 async function capture(page: Page, viewportName: ViewportName, name: string) {

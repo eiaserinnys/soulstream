@@ -40,7 +40,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       Object.defineProperty(serviceWorker, "controller", { configurable: true, get: () => null });
     }
   ` });
-  await installV3VisualQaRoutes(page, { contextChainPreview: true });
+  await installV3VisualQaRoutes(page);
   await page.route("**/api/**", (route) => fixture.route(route));
 
   try {

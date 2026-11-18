@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -34,7 +35,9 @@ test("resume-after-limit desktop action keeps a successful reservation result vi
 
   const menu = page.getByRole("menu");
   const action = menu.getByRole("menuitem", { name: /리밋이 풀릴 때 재개/ });
-  await expect(menu.getByRole("status")).toHaveText(/해제 예정$/);
+  // 메뉴에는 재개 예약 상태와 취소 항목 안내가 각각 status로 있다.
+  const status = menu.getByRole("status").filter({ hasNotText: "취소할 재개 예약" });
+  await expect(status).toHaveText(/해제 예정$/);
   await expect(action).not.toHaveAttribute("aria-disabled", "true");
   const postResponse = page.waitForResponse((response) => (
     response.request().method() === "POST"
@@ -44,7 +47,7 @@ test("resume-after-limit desktop action keeps a successful reservation result vi
   expect((await postResponse).status()).toBe(200);
 
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("status"))
+  await expect(status)
     .toHaveText(/\d{1,2}월 \d{1,2}일 \d{2}:\d{2} 재개 예약/);
 });
 
@@ -54,7 +57,8 @@ test("resume-after-limit desktop action keeps a failed reservation reason visibl
 
   const menu = page.getByRole("menu");
   const action = menu.getByRole("menuitem", { name: /리밋이 풀릴 때 재개/ });
-  await expect(menu.getByRole("status")).toHaveText(/해제 예정$/);
+  const status = menu.getByRole("status").filter({ hasNotText: "취소할 재개 예약" });
+  await expect(status).toHaveText(/해제 예정$/);
   await expect(action).not.toHaveAttribute("aria-disabled", "true");
   const postResponse = page.waitForResponse((response) => (
     response.request().method() === "POST"
@@ -64,7 +68,7 @@ test("resume-after-limit desktop action keeps a failed reservation reason visibl
   expect((await postResponse).status()).toBe(409);
 
   await expect(menu).toBeVisible();
-  const result = menu.getByRole("status");
+  const result = menu.getByRole("status").filter({ hasNotText: "취소할 재개 예약" });
   await expect(result).toContainText("RATE_LIMIT_RESET_UNAVAILABLE");
   await expect(result).toContainText("제한 해제 시각을 확인할 수 없습니다.");
   await expect(result).not.toContainText("재개 예약");
@@ -149,7 +153,7 @@ async function prepareEligibleDesktopScenario(
 }
 
 async function openSessionMenu(page: Page, surface: "desktop" | "mobile"): Promise<void> {
-  await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
+  await openV3Folder(page, BASE_URL);
   const task = page.getByTestId("v3-task-task-alpha");
   await expect(task).toBeVisible();
   await task.click();

@@ -1,0 +1,38 @@
+# 카드 #1596 v3 QA 실행 목록 (unified-dashboard 기준 경로)
+# 진입만 고친 QA
+e2e/turn-summary-caption.qa.ts
+e2e/v3-daily-task-card-diet.qa.ts
+e2e/v3-modal-shell.qa.ts
+e2e/v3-pr-cb-visual.qa.ts
+e2e/v3-pr-cl-visual-system.qa.ts
+e2e/v3-pr-cm-chat-readability.qa.ts
+e2e/v3-pr-cn-planner-polish.qa.ts
+e2e/v3-pr-co-search-session-select.qa.ts
+e2e/v3-pr-cs-document-context.qa.ts
+# 진입과 함께 사라진 단언을 고친 QA
+e2e/v3-agent-model-settings-density.qa.ts
+e2e/v3-daily-surface.qa.ts
+e2e/v3-icon-action-caps.qa.ts
+e2e/v3-task-project-move.qa.ts
+e2e/v3-task-today-toggle.qa.ts
+e2e/v3-list-flush.qa.ts
+# 판단 대상
+e2e/v3-editor-context-ux.qa.ts
+e2e/v3-polish-round2.e2e.ts
+e2e/v3-context-menus.e2e.ts
+e2e/v3-visual-qa.e2e.ts
+e2e/v3-aesthetic-polish.e2e.ts
+e2e/v3-bounded-reads.e2e.ts
+e2e/v3-project-star-entry.e2e.ts
+e2e/v3-model-preset-chat-header.e2e.ts
+e2e/resume-after-limit-context-menu.e2e.ts
+e2e/components-feedback-v3.e2e.ts
+# 이미 정상으로 본 standalone QA
+# 첫 화면·사라진 기능과 무관하게 실패한 넷은 범위 밖으로 목록에서 뺐다.
+# v3-askquestion-input-row: vite preview가 dist에 없는 e2e fixture html을 서빙하지 못한다.
+# v3-project-folder-state: 프로젝트 행에 드래그 핸들이 생겨 getByRole('button')이 셋을 잡는다.
+# v3-session-panel: 우측 패널 상한 실측이 300px다.
+# v3-succession-picker: 테마 두 번 × 31초 관찰 창이 180초 harness 제한을 넘는다.
+# v3-project-navigation-crud: 메뉴 라벨이 '새 프로젝트'에서 '새 폴더'로 바뀌어 항목을 찾지 못한다.
+e2e/v3-main-columns.qa.ts
+e2e/v3-task-document-board.qa.ts

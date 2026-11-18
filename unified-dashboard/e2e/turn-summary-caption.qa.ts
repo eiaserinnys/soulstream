@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -136,6 +137,10 @@ async function verifyActualViewportRetention(page: Page) {
   await scroller.waitFor({ state: "visible", timeout: 20_000 });
   await page.waitForTimeout(750);
   await scroller.evaluate((element) => {
+    // 프로그램 스크롤만으로는 제품의 follow 의도가 꺼지지 않는다
+    // (ChatView는 wheel/touch/keyboard의 실제 위쪽 입력만 follow off로 본다).
+    // 위쪽 휠 입력으로 사용자 탐색 의도를 먼저 세운 뒤 위치를 옮긴다.
+    element.dispatchEvent(new WheelEvent("wheel", { deltaY: -64, bubbles: true }));
     element.scrollTop = Math.floor(
       (element.scrollHeight - element.clientHeight) * 0.55,
     );
@@ -354,7 +359,9 @@ async function installScrollCommandProbe(page: Page) {
       originalScrollTo(...args);
     };
     scroller.scrollBy = (...args: Parameters<HTMLElement["scrollBy"]>) => {
-      calls.push("scrollBy");
+      // Virtuoso는 행 높이 측정 편차를 자체 scrollBy로 보정한다. 이 QA가 보는
+      // 것은 제품 코드의 강제 스크롤이므로 vendor 청크에서 온 호출은 뺀다.
+      if (!(new Error().stack ?? "").includes("vendor-")) calls.push("scrollBy");
       originalScrollBy(...args);
     };
     (
@@ -602,8 +609,7 @@ function parseEventId(key: string): number {
 }
 
 async function openChat(page: Page) {
-  await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-  await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+  await openV3Folder(page, baseUrl);
   await page.getByTestId("v3-task-task-alpha").click();
   const run = page.locator(".v3-detail-pane .v3-run-open").filter({ hasText: "시각 QA 순회" });
   await run.waitFor({ state: "visible", timeout: 20_000 });

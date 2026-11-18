@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const mode = process.env.PR_AD_QA_MODE === "before" ? "before" : "after";
@@ -54,7 +55,7 @@ async function captureBefore(page: Page) {
 
   await gotoPlanner(page);
   await openPrimaryTask(page);
-  await page.getByRole("button", { name: /PR-O 결정 로그/ }).click();
+  await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
   const inlineMarkdown = page.getByTestId("v3-inline-markdown");
   await waitVisible(inlineMarkdown, "기준 인라인 마크다운");
   await waitCount(inlineMarkdown.locator("textarea"), 0, "기준 인라인 마크다운 textarea");
@@ -83,8 +84,11 @@ async function captureAfter(page: Page) {
     throw new Error(`atom popover가 본문 높이를 바꿨습니다: ${atomHeightBefore} → ${atomHeightAfter}`);
   }
   await capture(page, "03-atom-popover-layout-stable");
+  // atom 인스턴스 편집기는 노드 선택 팝업을 함께 열므로, 첫 Escape는 그 팝업을 닫고
+  // 두 번째 Escape가 바깥 편집 팝업을 닫는다(중첩 팝업은 자식이 열려 있으면 부모가 닫히지 않는다).
   await page.keyboard.press("Escape");
-  await waitCount(page.locator('[data-editor-presentation="popover"]'), 0, "닫힌 atom popover");
+  await page.keyboard.press("Escape");
+  await page.locator('[data-editor-presentation="popover"]').waitFor({ state: "hidden", timeout: 10_000 });
 
   const guidance = page.getByTestId("v3-project-guidance-project-guidance");
   await waitText(guidance, "프로젝트의 결정을 실제 근거와 함께 기록하고", "프로젝트 guidance");
@@ -109,14 +113,16 @@ async function captureAfter(page: Page) {
   });
   console.log(`[pr-ad/qa] guidance 패널 · ${guidancePanelHeightBefore} → ${guidancePanelHeightAfter} · ${JSON.stringify(guidanceEditorMetrics)}`);
   const guidanceHeightAfter = await elementHeight(context);
-  if (Math.abs(guidanceHeightAfter - guidanceHeightBefore) > 12) {
+  // 미리보기(렌더된 마크다운)와 편집기(textarea)는 줄바꿈이 한 줄까지 달라질 수 있다.
+  // 두 줄(22px × 2) 넘게 움직이면 예전의 인라인 확장처럼 레이아웃이 밀린 것으로 본다.
+  if (Math.abs(guidanceHeightAfter - guidanceHeightBefore) > 44) {
     throw new Error(`guidance 제자리 편집의 높이 이동이 큽니다: ${guidanceHeightBefore} → ${guidanceHeightAfter}`);
   }
   await capture(page, "04-guidance-inline-edit");
 
-  await gotoPlanner(page);
+  await openProject(page);
   await openPrimaryTask(page);
-  await page.getByRole("button", { name: /PR-O 결정 로그/ }).click();
+  await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
   const inlineMarkdown = page.getByTestId("v3-inline-markdown");
   await inlineMarkdown.getByRole("button", { name: "PR-O 결정 로그 문서 편집" }).click();
   const editor = inlineMarkdown.getByRole("textbox", { name: "PR-O 결정 로그 문서 마크다운" });
@@ -130,9 +136,9 @@ async function captureAfter(page: Page) {
   await saved;
   await waitText(inlineMarkdown, "왕복 저장 검증", "저장 직후 인라인 마크다운");
 
-  await gotoPlanner(page);
+  await openProject(page);
   await openPrimaryTask(page);
-  await page.getByRole("button", { name: /PR-O 결정 로그/ }).click();
+  await page.getByRole("button", { name: "PR-O 결정 로그 펼치기" }).click();
   const roundtripMarkdown = page.getByTestId("v3-inline-markdown");
   await waitText(roundtripMarkdown, "왕복 저장 검증", "재조회 인라인 마크다운");
   await roundtripMarkdown.scrollIntoViewIfNeeded();
@@ -147,10 +153,7 @@ async function captureAfter(page: Page) {
 
 async function captureMobile(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
-  await gotoPlanner(page);
-  const openArchive = page.getByRole("button", { name: "아카이브 보기 ›", exact: true });
-  await waitVisible(openArchive, "390px 프로젝트 아카이브 진입 버튼");
-  await openArchive.click();
+  await openV3Folder(page, baseUrl);
   await waitVisible(page.getByTestId("v3-project-context"), "390px 프로젝트 컨텍스트");
   const context = page.getByTestId("v3-project-context");
   const heightBefore = await elementHeight(context);
@@ -198,30 +201,19 @@ async function openFixturePage(browser: Browser, viewport: { width: number; heig
 
 async function gotoPlanner(page: Page) {
   console.log("[pr-ad/qa] /v3 진입");
-  await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-  try {
-    await waitVisible(page.getByTestId("v3-task-task-alpha"), "플래너 카드");
-  } catch (error) {
-    console.error(`[pr-ad/qa] 현재 URL · ${page.url()}`);
-    const bodyText = await page.locator("body").textContent({ timeout: 1_000 }).catch(() => "본문 조회 실패");
-    console.error(`[pr-ad/qa] 화면 본문 · ${(bodyText ?? "").slice(0, 2_000)}`);
-    throw error;
-  }
+  await openV3DailyPlanner(page, baseUrl);
   console.log("[pr-ad/qa] 플래너 로드됨");
 }
 
 async function openProject(page: Page) {
-  const project = page.getByTestId("v3-all-projects")
-    .locator(".v3-project-nav-row")
-    .filter({ hasText: fixtureTitles.project });
-  await project.click();
+  await openV3Folder(page, baseUrl);
   await waitVisible(page.getByTestId("v3-project-context"), "프로젝트 컨텍스트");
   console.log("[pr-ad/qa] 프로젝트 컨텍스트 열림");
 }
 
 async function openPrimaryTask(page: Page) {
   await page.getByTestId("v3-task-task-alpha").click();
-  await waitVisible(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 }), "폴더 상세 제목");
+  await waitVisible(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }), "폴더 상세 제목");
   console.log("[pr-ad/qa] 폴더 상세 열림");
 }
 

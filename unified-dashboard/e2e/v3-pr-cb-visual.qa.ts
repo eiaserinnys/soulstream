@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 type Theme = "dark" | "light";
@@ -40,33 +41,31 @@ async function verifyTheme(browser: Browser, theme: Theme) {
 
   try {
     await preparePage(page, theme);
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
+    await openV3Folder(page, baseUrl);
     const taskCard = page.getByTestId("v3-task-task-alpha");
     const sessionRow = page.getByTestId("v3-session-row-run-alpha-2");
     await taskCard.waitFor({ state: "visible", timeout: 30_000 });
     await sessionRow.waitFor({ state: "visible" });
 
     const firstScreen = await page.evaluate(() => {
-      const dateElement = document.querySelector<HTMLElement>(".v3-date-head");
-      const tasksElement = document.querySelector<HTMLElement>(".v3-section-head");
+      const headerElement = document.querySelector<HTMLElement>(".v3-inline-folder-header");
       const cardElement = document.querySelector<HTMLElement>(".v3-task-card");
       const sessionCardElement = document.querySelector<HTMLElement>(".v3-session-panel .v3-run-row");
       const trailingElement = document.querySelector<HTMLElement>(".v3-session-panel .v3-run-trailing");
-      if (!dateElement || !tasksElement || !cardElement || !sessionCardElement || !trailingElement) {
+      if (!headerElement || !cardElement || !sessionCardElement || !trailingElement) {
         throw new Error("PR-CB 기준 화면 요소를 찾을 수 없습니다.");
       }
-      const date = dateElement.getBoundingClientRect();
-      const tasks = tasksElement.getBoundingClientRect();
+      const header = headerElement.getBoundingClientRect();
       const card = cardElement.getBoundingClientRect();
       const sessionCard = sessionCardElement.getBoundingClientRect();
       const trailing = trailingElement.getBoundingClientRect();
       return {
-        hasSharedColumn: Boolean(document.querySelector(".v3-planner-column")),
-        x: { date: date.x, tasks: tasks.x, card: card.x },
+        hasFolderHeader: header.width > 0,
+        x: { header: header.x, card: card.x },
         trailingRightGap: sessionCard.right - trailing.right,
       };
     });
-    await capture(page, theme, "01-daily-session-panel");
+    await capture(page, theme, "01-folder-session-panel");
 
     await sessionRow.locator(".v3-run-open").click();
     await page.locator(".v3-chat-header").waitFor({ state: "visible" });
@@ -87,9 +86,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await capture(page, theme, "02-chat-header");
 
     if (strict) {
-      assert(firstScreen.hasSharedColumn, `${theme}: 공통 플래너 열이 없습니다.`);
-      assert(Math.abs(firstScreen.x.date - firstScreen.x.tasks) <= 1, `${theme}: 날짜/폴더 제목 기준선이 다릅니다.`);
-      assert(Math.abs(firstScreen.x.date - firstScreen.x.card) <= 1, `${theme}: 제목/카드 기준선이 다릅니다.`);
+      assert(firstScreen.hasFolderHeader, `${theme}: 폴더 화면 헤더가 없습니다.`);
       assert(firstScreen.trailingRightGap >= 9, `${theme}: trailing 우측 여백이 부족합니다: ${firstScreen.trailingRightGap}`);
       assert(chatHeader.breadcrumbCount === 0, `${theme}: 세션 채팅 breadcrumb가 남았습니다.`);
       assert(chatHeader.title === "시각 QA 순회", `${theme}: 실제 세션 제목이 아닙니다: ${chatHeader.title}`);
