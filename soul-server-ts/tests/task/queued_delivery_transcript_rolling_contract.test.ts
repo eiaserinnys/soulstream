@@ -5,12 +5,36 @@ import { DELIVERY_INTENTS, type DeliveryIntent } from
   "../../src/task/delivery_contract.js";
 import { redeliverStoredDeliveryContent } from
   "../../src/task/delivery_row_intervention.js";
+import { hasLiveRunner } from "../../src/task/delivery_instruction_receipt.js";
+import type { Task } from "../../src/task/task_models.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 
 type LedgerState = "claimed" | "delivered" | "consumed" | "queued";
 
 describe("queued transcript recovery rolling contract", () => {
+  it.each([false, true])("uses an attached runner's active execution (%s) to settle absent input", async (active) => {
+    const redeliverContent = vi.fn(async () => undefined);
+    const task = { runner: { dispatcher: { hasActiveExecution: () => active } } } as Task;
+    const harness = makeDeferredHarness("absent", {
+      redeliverContent,
+      instructionVerdict: "unknown",
+      hasLiveRunner: (row) => hasLiveRunner(row, () => task),
+    });
+
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves
+      .toEqual({ claimed: 1, settled: 1 });
+    if (active) {
+      expect(redeliverContent).not.toHaveBeenCalled();
+      expect(harness.markUncertain).toHaveBeenCalledWith(
+        "delivery-deferred", "rolling-worker", "runner_receipt_unknown",
+      );
+    } else {
+      expect(redeliverContent).toHaveBeenCalledOnce();
+      expect(harness.markUncertain).not.toHaveBeenCalled();
+    }
+  });
+
   it("redelivers an absent transcript when there is no live runner", async () => {
     const redeliverContent = vi.fn(async () => undefined);
     const harness = makeDeferredHarness("absent", { redeliverContent, instructionVerdict: "unknown", hasLiveRunner: false });
@@ -380,12 +404,13 @@ function makeDeferredHarness(
     intent?: DeliveryIntent;
     redeliverContent?: (row: SessionDeliveryRow) => Promise<void>;
     instructionVerdict?: "applied" | "not_applied" | "unknown";
-    hasLiveRunner?: boolean;
+    hasLiveRunner?: boolean | ((row: SessionDeliveryRow) => boolean);
   } = {},
 ) {
   let claimable = true;
   const claimedRow = {
     delivery_id: "delivery-deferred",
+    target_session_id: "session-deferred",
     intent: options.intent ?? "human_live_steer",
     state: "claimed",
     // A node began handing it to a runner before the restart.
@@ -413,7 +438,11 @@ function makeDeferredHarness(
     instructionReceipt: {
       lookup: async () => options.instructionVerdict ?? "not_applied",
     },
-    ...(options.hasLiveRunner === undefined ? {} : { hasLiveRunner: () => options.hasLiveRunner }),
+    ...(options.hasLiveRunner === undefined ? {} : {
+      hasLiveRunner: typeof options.hasLiveRunner === "function"
+        ? options.hasLiveRunner
+        : () => options.hasLiveRunner,
+    }),
     deliveryRepository: {
       get: vi.fn(async () => claimedRow),
       markConsumed: vi.fn(async () => null),
