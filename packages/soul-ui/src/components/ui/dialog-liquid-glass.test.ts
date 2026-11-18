@@ -18,6 +18,11 @@ describe("dialog liquid glass surfaces", () => {
       expect(rule).toContain(`[data-slot="${slot}"]`);
     }
     expect(rule).toMatch(/\[data-slot="select-popup"\]\s*>\s*\.glass/);
+    const preceding = css.slice(0, css.indexOf(rule))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "");
+    const nestingDepth = [...preceding].reduce((depth, char) => depth + (char === "{" ? 1 : char === "}" ? -1 : 0), 0);
+    expect(nestingDepth).toBe(0);
   });
   it.each(dialogSurfaceFiles)("%s uses the shared liquid glass modal surface", (fileName) => {
     const source = readUiSource(fileName);

@@ -2,6 +2,7 @@
  * VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43183 --strictPort
  * PLAYWRIGHT_MODULE=$(realpath unified-dashboard/node_modules/@playwright/test/../../playwright/index.mjs) V3_POPUP_BASELINE=1 node soul-server-ts/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/v3-popup-surface.qa.ts
  * Run again without V3_POPUP_BASELINE to compare against .local/card1619/before/metrics.json.
+ * Set V3_POPUP_FOLDER_BEFORE=1 before moving the CSS rule to capture the folder picker regression.
  * CHROMIUM_PATH may be set to a compatible Chrome; otherwise Playwright Chromium is used.
  */
 import type { Browser, Locator, Page } from "@playwright/test";
@@ -12,9 +13,10 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:43183";
 const baseline = process.env.V3_POPUP_BASELINE === "1";
-const output = path.resolve(`.local/card1619/${baseline ? "before" : "after"}`);
+const folderBefore = process.env.V3_POPUP_FOLDER_BEFORE === "1";
+const output = path.resolve(`.local/card1619/${folderBefore ? "before-layer" : baseline ? "before" : "after"}`);
 const beforePath = path.resolve(".local/card1619/before/metrics.json");
-const before = baseline ? null : JSON.parse(readFileSync(beforePath, "utf8"));
+const before = baseline || folderBefore ? null : JSON.parse(readFileSync(beforePath, "utf8"));
 mkdirSync(output, { recursive: true });
 
 type Surface = { background: string; backdrop: string; alpha: number };
@@ -23,6 +25,12 @@ const results = await runPlaywrightLifecycle({
   lockName: "card1619-popup-surface", timeoutMs: 1_200_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
 }, async ({ browser }: { browser: Browser }) => {
+  if (folderBefore) {
+    const surfaces: Record<string, Surface> = {};
+    await captureFolderPicker(browser, "dark", surfaces);
+    assert(surfaces["card-folder"].alpha < 1, "변경 전 폴더 선택 배경이 이미 불투명합니다.");
+    return [{ theme: "dark", glass: "0", width: 1440, canvas: false, surfaces, interactions: {} }];
+  }
   const rows: Entry[] = [];
   const cases = baseline
     ? [["dark", "0", 390], ["dark", "1", 1440], ["light", "1", 1440], ["dark", "0", 1440]] as const
@@ -34,7 +42,7 @@ const results = await runPlaywrightLifecycle({
   return rows;
 });
 writeFileSync(path.join(output, "metrics.json"), JSON.stringify(results, null, 2));
-if (!baseline) {
+if (!baseline && !folderBefore) {
   for (const row of results) {
     if (row.glass === "1" && row.width === 1440) {
       const reference = before.find((item: Entry) => item.theme === row.theme && item.glass === "1" && item.width === 1440);
@@ -128,6 +136,7 @@ async function runCase(browser: Browser, theme: string, glass: string, width: nu
       await alert.waitFor({ state: "hidden" });
     }
     await captureDocument(browser, theme, glass, width, height, surfaces);
+    if (!baseline && glass === "0" && width === 1440) await captureFolderPicker(browser, theme, surfaces);
     console.log("문서 열기 완료");
     return { theme, glass, width, canvas, surfaces, interactions };
   } finally { await context.close(); }
@@ -140,11 +149,34 @@ async function capture(page: Page, surface: Locator, name: string, theme: string
     const style = getComputedStyle(el);
     const color = style.backgroundColor;
     const probe = document.createElement("canvas").getContext("2d")!;
-    probe.fillStyle = color; probe.fillRect(0, 0, 1, 1);
+    if (!CSS.supports("color", color)) throw new Error(`유효하지 않은 배경색: ${color}`);
+    probe.fillStyle = "#010203"; probe.fillStyle = color;
+    const first = probe.fillStyle;
+    probe.fillStyle = "#040506"; probe.fillStyle = color;
+    if (probe.fillStyle !== first) throw new Error(`배경색 파싱 실패: ${color}`);
+    probe.fillRect(0, 0, 1, 1);
     return { background: color, backdrop: style.backdropFilter, alpha: probe.getImageData(0, 0, 1, 1).data[3] / 255 };
   });
   writeFileSync(path.join(output, `${theme}-${glass}-${width}-${name}.json`), JSON.stringify(results[name], null, 2));
   await page.screenshot({ path: path.join(output, `${theme}-${glass}-${width}-${name}.png`), animations: "disabled", timeout: 60_000 });
+}
+
+async function captureFolderPicker(browser: Browser, theme: string, surfaces: Record<string, Surface>) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.addInitScript(theme => {
+    localStorage.setItem("soul-dashboard-theme", theme);
+    localStorage.setItem("ls.webglGlass", "0");
+    (window as typeof window & { __name?: unknown }).__name = (f: unknown) => f;
+  }, theme);
+  await installV3VisualQaRoutes(page, {});
+  await page.route("**/api/auth/config", r => r.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
+  await page.route("**/api/auth/status", r => r.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
+  try {
+    await page.goto(`${baseUrl}/dialogues?sample=card-create`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "폴더 선택", exact: true }).click();
+    await capture(page, page.locator('[data-slot="popover-popup"].v3-card-folder-picker:visible'), "card-folder", theme, "0", 1440, 900, surfaces);
+  } finally { await context.close(); }
 }
 
 async function mountAlertSample(page: Page) {
