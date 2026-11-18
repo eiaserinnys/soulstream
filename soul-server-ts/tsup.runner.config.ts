@@ -1,8 +1,9 @@
 import { defineConfig } from "tsup";
+import { join } from "node:path";
 
 export default defineConfig({
   entry: { runner_entry: "src/runner/runner_entry.ts" },
-  outDir: "dist/runner",
+  outDir: join(process.env.SOUL_DIST_DIR ?? "dist", "runner"),
   format: ["esm"],
   platform: "node",
   target: "node22",

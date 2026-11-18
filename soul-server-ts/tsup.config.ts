@@ -8,6 +8,7 @@ export default defineConfig({
     "src/upstream/control_inbox_worker_entry.ts",
   ],
   format: ["esm"],
+  outDir: process.env.SOUL_DIST_DIR ?? "dist",
   target: "node22",
   clean: true,
   sourcemap: true,

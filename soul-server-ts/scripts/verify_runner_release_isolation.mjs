@@ -4,7 +4,7 @@ import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile }
 import { createServer } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -13,6 +13,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+const distRoot = resolve(packageRoot, process.env.SOUL_DIST_DIR ?? "dist");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-runner-release-isolation-"));
 let runner;
 let releaseRoot;
@@ -20,16 +21,16 @@ try {
   // 정책은 빌드에 말려 들어간다. 호스트 번들이 런타임 파일 조회로 되돌아가면
   // 배포 산출물에 정책 JSON이 없어 restricted 시작이 전부 503이 된다.
   // 번들러 출처 주석(`// src/policies/session-isolation.json`)은 조회가 아니므로 뺀다.
-  const hostBundle = await readFile(join(packageRoot, "dist/main.js"), "utf8");
+  const hostBundle = await readFile(join(distRoot, "main.js"), "utf8");
   const executableHostBundle = hostBundle.replace(/^\/\/.*$/gm, "");
   if (executableHostBundle.includes("policies/session-isolation.json")) {
     throw new Error("host bundle still looks up the isolation policy file at runtime");
   }
 
   const prewarm = await runProcess(process.execPath, [
-    join(packageRoot, "dist/runner/runner_release_prewarm.js"),
+    join(distRoot, "runner/runner_release_prewarm.js"),
     "--artifacts",
-    join(packageRoot, "dist/runner"),
+    join(distRoot, "runner"),
     "--releases",
     join(temporaryRoot, "runner-releases"),
   ], { cwd: temporaryRoot, env: sanitizedEnvironment() });
@@ -103,7 +104,7 @@ try {
     rolloutRoot: null,
   }));
   const initializeDatabase = await runProcess(process.execPath, [
-    join(packageRoot, "dist/runner/runner_release_prewarm.js"),
+    join(distRoot, "runner/runner_release_prewarm.js"),
     "--database",
     paths.databasePath,
   ], { cwd: temporaryRoot, env: sanitizedEnvironment() });

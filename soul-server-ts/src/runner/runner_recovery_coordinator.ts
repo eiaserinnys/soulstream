@@ -1389,6 +1389,14 @@ export class RunnerRecoveryCoordinator {
           error,
           verified,
         );
+        if (owned.lifecycle === null && !owned.pidAlive) {
+          await this.registrationControl.retireTerminal({
+            ...owned,
+            pid: null,
+            pidStartIdentity: null,
+            pidAlive: false,
+          });
+        }
         if (recovered > 0 && alreadyTerminal) {
           await this.notifyDeadRunnerBackgroundStopped(recoveredTask);
         }
