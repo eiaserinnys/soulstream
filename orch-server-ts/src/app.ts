@@ -4,6 +4,11 @@ import { registerAccessLinkRoutes, type AccessLinkRouteOptions } from "./externa
 import { registerOutboundWebhookRoutes, type OutboundWebhookRouteOptions } from "./webhooks/outbound_routes.js";
 import { registerInboundHookRoutes, type InboundHookRouteOptions } from "./webhooks/inbound_hook_routes.js";
 import { registerInboundWebhookRoutes, type InboundWebhookRouteOptions } from "./webhooks/inbound_webhook_routes.js";
+import {
+  registerExternalAccessPublicRoutes,
+  type ExternalAccessPublicRouteOptions,
+} from "./external_access/public_link_routes.js";
+import { isExternalAccessRequestPath } from "./external_access/external_access_paths.js";
 import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
 import type { McpHostOptions } from "./mcp/types.js";
@@ -263,6 +268,7 @@ export type CreateAppOptions = {
   outboundWebhookRoutes?: OutboundWebhookRouteOptions;
   inboundHookRoutes?: InboundHookRouteOptions;
   inboundWebhookRoutes?: InboundWebhookRouteOptions;
+  externalAccessPublicRoutes?: ExternalAccessPublicRouteOptions;
   resolveSessionOwner?: McpHostOptions["resolveSessionOwner"];
   externalEvents?: import("./external_events/service.js").ExternalEventsService;
   mcpHostRoutes?: Omit<McpHostOptions, "recurringJobs" | "cardOrchestration" | "cluster"> & { cluster: Omit<McpHostOptions["cluster"], "logger"> } & Partial<Pick<McpHostOptions, "recurringJobs" | "cardOrchestration">>;
@@ -421,6 +427,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.outboundWebhookRoutes) registerOutboundWebhookRoutes(app, options.outboundWebhookRoutes);
   if (options.inboundHookRoutes) registerInboundHookRoutes(app, options.inboundHookRoutes);
   if (options.inboundWebhookRoutes) registerInboundWebhookRoutes(app, options.inboundWebhookRoutes);
+  if (options.externalAccessPublicRoutes) {
+    registerExternalAccessPublicRoutes(app, options.externalAccessPublicRoutes);
+  }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }
@@ -513,6 +522,11 @@ function registerCorsBoundary(
 ): void {
   const allowed = new Set(allowedOrigins);
   app.addHook("onRequest", async (request, reply) => {
+    // The public access link surface answers no CORS: no headers on its
+    // responses and no preflight. Other paths keep the existing behavior.
+    if (isExternalAccessRequestPath(request.url.split("?", 1)[0] || "/")) {
+      return;
+    }
     const origin = singleHeader(request.headers.origin);
     const originAllowed = origin !== undefined &&
       (allowed.has(origin) || allowed.has("*"));

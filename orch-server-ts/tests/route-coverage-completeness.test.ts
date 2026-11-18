@@ -168,6 +168,7 @@ function createAllOptInRouteApp() {
     outboundWebhookRoutes: inert,
     inboundHookRoutes: inert,
     inboundWebhookRoutes: inert,
+    externalAccessPublicRoutes: inert,
     persistentSessionRoutes: { service: inert, reports: inert, requireSessionAccess: async () => undefined },
     conversationRoutes: { service: inert, resolveAccount: async () => "test-account" },
     persistentContextRoutes: { service: inert, authBearerToken: "test-token" },

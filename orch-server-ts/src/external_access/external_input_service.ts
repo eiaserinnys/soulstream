@@ -298,17 +298,22 @@ export class ExternalInputService {
   async readExternalRequestStatus(
     grant: ExternalAccessGrant,
     requestId: string,
+    options: { consumeRate?: boolean } = {},
   ): Promise<ReadExternalRequestStatusResult> {
-    const rate = this.tokenBucket.take(
-      `read:${grant.id}`,
-      EXTERNAL_READ_RATE_PER_MINUTE,
-    );
-    if (!rate.allowed) {
-      return {
-        ok: false,
-        reason: "rate_limited",
-        retry_after_seconds: rate.retryAfterSeconds,
-      };
+    // A long poll consumes the read bucket once per HTTP request; its wake-up
+    // re-reads pass `consumeRate: false`.
+    if (options.consumeRate !== false) {
+      const rate = this.tokenBucket.take(
+        `read:${grant.id}`,
+        EXTERNAL_READ_RATE_PER_MINUTE,
+      );
+      if (!rate.allowed) {
+        return {
+          ok: false,
+          reason: "rate_limited",
+          retry_after_seconds: rate.retryAfterSeconds,
+        };
+      }
     }
     const rows = await this.options.sql<ExternalRequestStatusRow[]>`
       SELECT

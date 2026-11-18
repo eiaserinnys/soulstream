@@ -13,6 +13,7 @@ import {
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
 import type {
   ExistingSessionActionPayload,
+  InterruptNodeCommandPayload,
   InterveneNodeCommandPayload,
 } from "./session_action_command_payloads.js";
 import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
@@ -97,6 +98,36 @@ export async function executeInterveneCommand(
     }
     const mapped = mappedActionErrorResponse(error);
     return "response" in mapped ? genericStatusErrorResponse(mapped.response) : mapped;
+  }
+}
+
+/**
+ * Interrupt without a FastifyReply, for callers that map the outcome to their
+ * own surface (the public access link stop route). The HTTP interrupt route
+ * keeps its existing response mapping.
+ */
+export type InterruptCommandOutcome =
+  | { outcome: "stopped" }
+  | { outcome: "not_running" }
+  | { outcome: "unavailable" };
+
+export async function executeInterruptCommand(
+  options: SessionActionCommandDispatchOptions,
+  agentSessionId: string,
+): Promise<InterruptCommandOutcome> {
+  const payload: InterruptNodeCommandPayload = {
+    type: "interrupt_session",
+    agentSessionId,
+  };
+  try {
+    const response = await dispatchActionCommand(options, payload);
+    if (!isAckStatusError(response)) return { outcome: "stopped" };
+    const code = stringField(response.code, "INTERRUPT_SESSION_FAILED");
+    return interruptStatusCode(code, response.message) === 409
+      ? { outcome: "not_running" }
+      : { outcome: "unavailable" };
+  } catch {
+    return { outcome: "unavailable" };
   }
 }
 

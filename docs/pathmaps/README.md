@@ -21,3 +21,4 @@
 | [인바운드 웹훅](inbound-webhooks.md) | `/api/hooks` 수신·키/서명 인증·멱등 접수·자료 표기·상태 조회·버킷 |
 | [무설치 노드 릴리스 묶음](portable-release-bundle.md) | platform 무관 payload 빌드·pack·tarball·노드 쪽 bind·`ReleaseManifestV1` |
 | [portable-node 연결](portable-node-connect.md) | 공개 clone·pairing·runtime lock·릴리스 묶음·빈 작업 폴더·판 전환·감독 |
+| [외부 접속 링크(/x)](external-access-links.md) | 다섯 무인증 경로·kind/권한 입구·read/send 버킷·로그 가림·nginx 조각 적용 순서 |

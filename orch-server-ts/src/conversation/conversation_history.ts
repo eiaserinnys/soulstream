@@ -1,7 +1,19 @@
 import type { SqlClient } from "../control_plane/control_plane_types.js";
-import { ConversationError, type Binding } from "./conversation_types.js";
+import { ConversationError } from "./conversation_types.js";
 import { ConversationProjection, type Item, type SourceEvent } from "./conversation_projection.js";
 import { formatPosition } from "./conversation_position.js";
+
+/**
+ * Only the fields this projection reads. Callers that hold a full conversation
+ * `Binding` still pass it; read-only views (the external access link history)
+ * need not fabricate the rest.
+ */
+export type ConversationHistorySource = {
+  session_id: string;
+  first_input_is_initial_instruction: boolean;
+  creation_request?: { initial_instruction?: string | null } | null;
+  notices?: ReadonlyArray<{ id: string; text: string; at: string }>;
+};
 
 type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
@@ -27,7 +39,7 @@ export class ConversationHistory {
   private readonly cache = new Map<string, CachedExecution>();
   private readonly locks = new Map<string, Promise<void>>();
   constructor(private readonly sql: SqlClient) {}
-  async load(binding: Binding) {
+  async load(binding: ConversationHistorySource) {
     const executions = await this.sql<Execution[]>`
       SELECT session_id,ordinal,first_input_is_initial_instruction FROM conversation_executions
       WHERE thread_id=${binding.session_id} AND phase='complete' ORDER BY ordinal`;
@@ -35,7 +47,7 @@ export class ConversationHistory {
       first_input_is_initial_instruction:binding.first_input_is_initial_instruction || Boolean(binding.creation_request?.initial_instruction?.length)});
     const loaded: Array<{ execution: Execution; entry: CachedExecution }> = [];
     for (const execution of executions) loaded.push({ execution, entry: await this.loadExecution(execution) });
-    const items: Array<{ position: string; item: Item; session: string }> = binding.notices.map(n => ({
+    const items: Array<{ position: string; item: Item; session: string }> = (binding.notices ?? []).map(n => ({
       position: "0", session: binding.session_id, item: { id:n.id, kind:"notice", text:n.text, at:n.at, attachments:[] },
     }));
     for (const { execution, entry } of loaded) {
@@ -122,7 +134,7 @@ export class ConversationHistory {
       return asset ? [{ id, name: asset.original_name, mime: asset.mime_type }] : [];
     }) };
   }
-  async items(binding: Binding, before: string | undefined, limit: number) {
+  async items(binding: ConversationHistorySource, before: string | undefined, limit: number) {
     const history = await this.load(binding);
     let end = history.items.length;
     if (before !== undefined) {

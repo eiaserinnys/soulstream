@@ -357,6 +357,40 @@ describe("access link management routes", () => {
     }
   });
 
+  it("revokes only link grants, so another kind's id is the same 404", async () => {
+    const { app, repository } = createRouteApp();
+    try {
+      const webhook = await repository.issue({
+        kind: "inbound_webhook",
+        ownerEmail: OWNER_EMAIL,
+        label: "웹훅",
+        targetSessionId: TARGET_SESSION,
+        permissions: ["send"],
+        expiresInSeconds: null,
+      });
+      expect(webhook.key.startsWith("ssxw_")).toBe(true);
+
+      const response = await remove(app, webhook.grant.id);
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ detail: "Access link not found" });
+      const row = (await grantRows()).find((entry) => entry.id === webhook.grant.id);
+      expect(row?.revoked_at).toBeNull();
+      expect((await repository.resolveGrant(webhook.key)).ok).toBe(true);
+
+      // The same owner's link still revokes with the kind filter in place.
+      const link = (await issue(app, {
+        target_session_id: TARGET_SESSION,
+        label: "내 링크",
+        expires_in_seconds: 3600,
+      })).json();
+      const revoked = await remove(app, link.id);
+      expect(revoked.statusCode).toBe(200);
+      expect(revoked.json()).toMatchObject({ id: link.id, revoked_at: expect.any(String) });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("lists only the caller's link grants", async () => {
     const { app } = createRouteApp();
     try {

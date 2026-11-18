@@ -20,6 +20,15 @@ export const externalAccessHandlers = {
       options.cluster.logger,
     );
     if (!result.ok) return errorResult(result.reason);
+    // A reply may be what a pending status long poll is waiting for. The
+    // signal is in-process and optional; the reply is already stored either way.
+    const separator = result.request_handle.indexOf(":");
+    if (separator > 0) {
+      options.externalAccess.replySignal?.notify(
+        result.request_handle.slice(0, separator),
+        result.request_handle.slice(separator + 1),
+      );
+    }
     return jsonResult({
       reply_id: result.reply_id,
       request_handle: result.request_handle,

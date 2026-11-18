@@ -4,6 +4,7 @@ import { accessLinkRouteAuthRequirements } from "../external_access/access_link_
 import { outboundWebhookRouteAuthRequirements } from "../webhooks/outbound_routes.js";
 import { inboundHookRouteAuthRequirements } from "../webhooks/inbound_hook_routes.js";
 import { inboundWebhookRouteAuthRequirements } from "../webhooks/inbound_webhook_routes.js";
+import { externalAccessPublicRouteAuthRequirements } from "../external_access/public_link_routes.js";
 import { oauthRouteAuthRequirements } from "../oauth/oauth_routes.js";
 import { mcpHostRouteAuthRequirements } from "../mcp/mcp_host_routes.js";
 import { scheduleHostRouteAuthRequirements } from "../schedule/schedule_host_route.js";
@@ -67,6 +68,7 @@ export const routeCoverageOwners = [
   { owner: "webhooks.outbound", authRequirements: outboundWebhookRouteAuthRequirements },
   { owner: "webhooks.inbound", authRequirements: inboundHookRouteAuthRequirements },
   { owner: "webhooks.inbound.manage", authRequirements: inboundWebhookRouteAuthRequirements },
+  { owner: "access.links.public", authRequirements: externalAccessPublicRouteAuthRequirements },
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
   { owner: "schedule.host", authRequirements: scheduleHostRouteAuthRequirements },
   {owner:"cards.settings",authRequirements:cardDispatchSettingsRouteAuthRequirements},
@@ -143,6 +145,8 @@ export const tsOnlyRouteKeys = [
   "POST /api/hooks/{grant_id}", "GET /api/hooks/{grant_id}/requests/{request_id}",
   "POST /api/webhooks/inbound", "GET /api/webhooks/inbound",
   "GET /api/webhooks/inbound/{id}/requests", "DELETE /api/webhooks/inbound/{id}",
+  "GET /x/{key}", "POST /x/{key}/messages", "GET /x/{key}/messages/{requestId}",
+  "GET /x/{key}/history", "POST /x/{key}/stop",
   "POST /api/mcp/host/{tool}",
   "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",

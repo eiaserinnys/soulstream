@@ -8,6 +8,7 @@ import { classifyRouteFamily, isLowRiskRouteEntry } from "../contract/route_regi
 import { isDashboardFallbackRequest } from "../dashboard/dashboard_serving.js";
 import type { NodeCredentialResolver, NodePrincipal } from "../node_credentials/types.js";
 import { oauthScopeForRoute, requireOAuthScope, type OAuthResourceAccess } from "../oauth/oauth_access.js";
+import { isExternalAccessRequestPath } from "../external_access/external_access_paths.js";
 import { isNodeCredentialRouteAllowed } from "./node_credential_route_allowlist.js";
 import { requestLogPath, setAuthenticatedLogNodeId } from "./production_logging.js";
 
@@ -40,6 +41,13 @@ export function registerProductionAuthGuard(
     const routeUrl = request.routeOptions.url;
     if (options.externalMcpPath !== undefined && routeUrl === options.externalMcpPath) return;
     const requestPath = request.url.split("?", 1)[0] ?? "/";
+    if (isExternalAccessRequestPath(requestPath)) {
+      // The public link surface sets these for matched routes; the guard sets
+      // them too so its own 401 and the dashboard fallback never leave `/x`
+      // without them.
+      reply.header("cache-control", "no-store");
+      reply.header("referrer-policy", "no-referrer");
+    }
     if (
       routeUrl === undefined &&
       isDashboardFallbackRequest(request.method, requestPath)
