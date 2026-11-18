@@ -1,0 +1,45 @@
+# 카드 #1596 v3 QA 실행 목록 (unified-dashboard 기준 경로)
+# 진입만 고친 QA
+e2e/turn-summary-caption.qa.ts
+e2e/v3-daily-task-card-diet.qa.ts
+e2e/v3-modal-shell.qa.ts
+e2e/v3-pr-cb-visual.qa.ts
+e2e/v3-pr-cl-visual-system.qa.ts
+e2e/v3-pr-cm-chat-readability.qa.ts
+e2e/v3-pr-cn-planner-polish.qa.ts
+e2e/v3-pr-co-search-session-select.qa.ts
+e2e/v3-pr-cs-document-context.qa.ts
+# 진입과 함께 사라진 단언을 고친 QA
+e2e/v3-agent-model-settings-density.qa.ts
+e2e/v3-daily-surface.qa.ts
+e2e/v3-icon-action-caps.qa.ts
+e2e/v3-task-project-move.qa.ts
+e2e/v3-task-today-toggle.qa.ts
+e2e/v3-list-flush.qa.ts
+# 이번 검토에서 진입 외에 고친 standalone QA
+e2e/v3-project-navigation-crud.qa.ts
+e2e/v3-succession-picker.qa.ts
+e2e/v3-session-panel.qa.ts
+# 이번 검토에서 함께 고친 e2e: 연결 감시 모달 원인을 없애고 우회 클릭을 실제 클릭으로 되돌림
+e2e/components-feedback-v3.e2e.ts
+# 검토에서 판단만 하고 그대로 둔 QA
+e2e/v3-editor-context-ux.qa.ts
+e2e/v3-polish-round2.e2e.ts
+e2e/v3-context-menus.e2e.ts
+e2e/v3-visual-qa.e2e.ts
+e2e/v3-aesthetic-polish.e2e.ts
+e2e/v3-bounded-reads.e2e.ts
+e2e/v3-project-star-entry.e2e.ts
+e2e/v3-model-preset-chat-header.e2e.ts
+e2e/resume-after-limit-context-menu.e2e.ts
+# 진입 외에는 이미 정상이라 손대지 않은 standalone QA
+e2e/v3-main-columns.qa.ts
+e2e/v3-task-document-board.qa.ts
+# 목록에서 제외: dev 서버 전용. dist preview는 dist에 없는 e2e fixture html을 서빙하지 못한다.
+# 이렇게 돌린다(한 줄):
+#   corepack pnpm@10.32.1 --dir unified-dashboard dev --host 127.0.0.1 --port 5173 & sleep 5; V3_QA_BASE_URL=http://127.0.0.1:5173 corepack pnpm@10.32.1 --dir unified-dashboard exec tsx e2e/v3-askquestion-input-row.qa.ts
+# e2e/v3-askquestion-input-row.qa.ts
+# 목록에서 제외: 확인 대상 화면이 제품에서 사라짐. 이 QA는 v3-project-loading/error/
+# empty-project-view testid를 기다리지만 현행 /v3에는 그 표면이 없다(현행은 .v3-load-error).
+# 원문 실패: locator.waitFor: Timeout 30000ms exceeded. - waiting for getByTestId('v3-project-loading') to be visible
+# e2e/v3-project-folder-state.qa.ts

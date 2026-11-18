@@ -23,7 +23,8 @@ const requestedTheme = process.env.PR_AI_QA_THEME === "dark"
 const observationMs = Number(process.env.V3_QA_OBSERVE_MS ?? 31_000);
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
-  timeoutMs: 180_000,
+  // 기본 관찰 31초를 테마 두 번 돌린다. 180초로는 관찰만으로 상한을 넘긴다.
+  timeoutMs: 300_000,
 }, async ({ browser }) => requestedTheme
   ? { [requestedTheme]: await verifyTheme(browser, requestedTheme) }
   : {

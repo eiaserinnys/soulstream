@@ -98,7 +98,8 @@ async function openProject(page: Page) {
   const navigation = page.getByTestId("v3-all-projects");
   await navigation.waitFor({ state: "visible" });
   const row = navigation.locator(".v3-project-nav-row").filter({ hasText: "소울스트림" });
-  await row.getByRole("button").click();
+  // 행에는 펼치기 토글·드래그 핸들·이름 링크 버튼이 함께 있다. 이름 링크만 누른다.
+  await row.locator(".v3-project-nav-link").click();
 }
 
 async function capture(page: Page, theme: string, name: string) {

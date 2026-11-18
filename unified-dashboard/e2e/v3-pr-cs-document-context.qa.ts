@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -35,7 +36,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   await preparePage(page, theme);
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
+    await openV3Folder(page, baseUrl);
     await page.getByTestId("v3-task-task-alpha").click();
     const board = page.getByTestId("v3-inline-board");
     await board.waitFor({ state: "visible" });
@@ -85,10 +86,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const editedBody = "# 서버 재조회 완료\n\n입력 손실 없이 저장했습니다.";
     await bodyEditor.fill(editedBody);
     const bodyPut = page.waitForResponse((response) => response.url().endsWith("/api/markdown-documents/doc-inline") && response.request().method() === "PUT");
-    const bodyReread = page.waitForResponse((response) => response.url().endsWith("/api/markdown-documents/doc-inline") && response.request().method() === "GET");
-    await inlineMarkdown.getByRole("button", { name: "완료" }).click();
+    await inlineMarkdown.getByRole("button", { name: `${renamedTitle} 문서 저장` }).click();
     await bodyPut;
-    await bodyReread;
     await page.getByText("서버 재조회 완료", { exact: true }).waitFor({ state: "visible" });
     const selectionPolicy = await page.evaluate(() => ({
       shell: getComputedStyle(document.querySelector(".v3-shell")!).userSelect,
@@ -103,15 +102,21 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await row.click({ button: "right" });
     await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
+    const moveDialog = page.getByRole("dialog", { name: "다른 폴더로 이동" });
+    await moveDialog.waitFor({ state: "visible" });
+    await moveDialog.getByRole("tab", { name: "전체", exact: true }).click();
+    await moveDialog.getByRole("searchbox", { name: "이동할 폴더 검색" }).fill(fixtureTitles.secondaryTask);
+    await moveDialog.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
+    await moveDialog.locator('[role="treeitem"][aria-selected="true"]').waitFor({ state: "visible" });
     const moveResponse = page.waitForResponse((response) => (
-      response.url().includes("/api/board-items/markdown%3Adoc-inline/container")
+      response.url().includes("/api/board-items/markdown%3Adoc-inline/folder")
       && response.request().method() === "PATCH"
     ));
-    await page.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
+    await moveDialog.getByRole("button", { name: "이동", exact: true }).click();
     await moveResponse;
     await row.waitFor({ state: "detached" });
 
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    await openV3Folder(page, baseUrl);
     await page.getByTestId("v3-task-task-beta").click();
     const movedRow = page.getByTestId("v3-inline-board").locator('[data-board-kind="markdown"] .v3-inline-board-row');
     await movedRow.waitFor({ state: "visible" });
@@ -132,11 +137,14 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await movedRow.waitFor({ state: "detached" });
     await capture(page, theme, "02-moved-and-deleted");
 
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    // 데일리 밖 세션도 canonical 소속 폴더를 찾아 그 폴더 창으로 열려야 한다.
+    // 픽스처에서 이 세션의 소속은 folder-amber다.
     await page.getByTestId("v3-session-row-run-outside-task").getByRole("button").first().click();
-    await page.getByRole("button", { name: "폴더 제목 편집" }).filter({ hasText: "완료한 접근성 정리" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "폴더 제목 편집" })
+      .filter({ hasText: fixtureTitles.project }).waitFor({ state: "visible", timeout: 20_000 });
     await page.getByTestId("v3-standalone-session-chat").waitFor({ state: "detached" });
-    assert(await page.getByText("연결된 폴더가 없습니다.", { exact: true }).count() === 0, "데일리 밖 세션을 무소속으로 표시했습니다.");
+    assert(await page.getByText("연결된 폴더가 없습니다.", { exact: true }).count() === 0,
+      "데일리 밖 세션을 무소속으로 표시했습니다.");
     await capture(page, theme, "03-session-owning-task");
 
     const unexpectedErrors = errors.filter((message) => !message.includes("favicon"));

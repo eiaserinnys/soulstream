@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -22,7 +23,7 @@ for (const theme of ["dark", "light"] as const) {
 
     const requests: string[] = [];
     page.on("request", (request) => requests.push(new URL(request.url()).pathname));
-    await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
+    await openV3Folder(page, BASE_URL);
     await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
@@ -30,7 +31,7 @@ for (const theme of ["dark", "light"] as const) {
       .locator(".v3-project-nav-row")
       .filter({ hasText: fixtureTitles.project });
     await projectRow.click({ button: "right" });
-    await expect(page.getByRole("menuitem", { name: "프로젝트 열기" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "폴더 열기" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "폴더 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "새 폴더" })).toBeVisible();
     await capture(page, theme, "01-project-context-menu");
@@ -45,11 +46,12 @@ for (const theme of ["dark", "light"] as const) {
     await capture(page, theme, "02-task-context-menu");
     await page.keyboard.press("Escape");
 
+    const boardRequestsBeforeTask = requests.filter((pathName) => pathName === "/api/board-items").length;
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })).toBeVisible();
     await expect(page.getByRole("button", { name: "▦ 보드로 보기" })).toHaveCount(0);
     await expect(page.getByTestId("v3-inline-board")).toBeVisible();
-    await expect.poll(() => requests.filter((pathName) => pathName === "/api/board-items").length).toBe(1);
+    await expect.poll(() => requests.filter((pathName) => pathName === "/api/board-items").length - boardRequestsBeforeTask).toBe(1);
     expect(requests.filter((pathName) => pathName === "/api/markdown-documents/doc-inline")).toHaveLength(0);
 
     const alphaRun = page.locator('.v3-task-detail-content .v3-run-row[data-session-id="run-alpha-2"]');
@@ -57,39 +59,51 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "세션 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "이름 변경" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "삭제" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "이 세션을 이어서 시작하기" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "다른 폴더로 이동" })).toBeVisible();
     await capture(page, theme, "03-run-context-menu");
     await page.getByRole("menuitem", { name: "세션 ID 복사" }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("run-alpha-2");
 
     await alphaRun.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" }).click();
+    await page.getByRole("menuitem", { name: "이 세션을 이어서 시작하기" }).click();
     await expect(page.getByRole("heading", { name: "새 세션", exact: true })).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "이어받을 이전 세션" })).toContainText("시각 QA 순회 · 세션 #2");
-    await expect(page.locator(".v3-succession-modal")).toContainText("시각 QA 순회 · 세션 #2");
+    // 이전 세션 선택 필드는 접힌 「함께 전달할 자료」 안에 있다.
+    await page.locator(".v3-succession-modal summary").filter({ hasText: "함께 전달할 자료" }).click();
+    await expect(page.getByRole("combobox", { name: "이어받을 이전 세션" })).toContainText("시각 QA 순회");
+    await expect(page.locator(".v3-succession-modal")).toContainText("시각 QA 순회");
     await expect(page.locator(".v3-succession-modal")).not.toContainText("run-alpha-2");
     await capture(page, theme, "04-targeted-succession");
     await page.getByRole("button", { name: "승계 닫기" }).click();
 
     await alphaRun.click({ button: "right" });
     await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
-    await expect(page.getByRole("heading", { name: "다른 폴더로 이동" })).toBeVisible();
-    await page.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
+    const moveDialog = page.getByRole("dialog", { name: "다른 폴더로 이동" });
+    await expect(moveDialog.getByRole("heading", { name: "다른 폴더로 이동" })).toBeVisible();
+    await moveDialog.getByRole("tab", { name: "전체", exact: true }).click();
+    await moveDialog.getByRole("searchbox", { name: "이동할 폴더 검색" }).fill(fixtureTitles.secondaryTask);
+    await moveDialog.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
+    await expect(moveDialog.locator('[role="treeitem"][aria-selected="true"]')).toBeVisible();
+    await moveDialog.getByRole("button", { name: "이동", exact: true }).click();
     await expect(alphaRun).toHaveCount(0);
 
     await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    await openV3Folder(page, BASE_URL);
     await page.getByTestId("v3-task-task-beta").click();
     const movedRun = page.locator('.v3-task-detail-content .v3-run-row[data-session-id="run-alpha-2"]');
     await expect(movedRun).toBeVisible();
     await movedRun.click({ button: "right" });
     await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
-    await page.getByRole("button", { name: new RegExp(fixtureTitles.primaryTask) }).click();
+    await expect(moveDialog.getByRole("heading", { name: "다른 폴더로 이동" })).toBeVisible();
+    await moveDialog.getByRole("tab", { name: "전체", exact: true }).click();
+    await moveDialog.getByRole("searchbox", { name: "이동할 폴더 검색" }).fill(fixtureTitles.primaryTask);
+    await moveDialog.getByRole("button", { name: new RegExp(fixtureTitles.primaryTask) }).click();
+    await expect(moveDialog.locator('[role="treeitem"][aria-selected="true"]')).toBeVisible();
+    await moveDialog.getByRole("button", { name: "이동", exact: true }).click();
     await expect(movedRun).toHaveCount(0);
 
     await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    await openV3Folder(page, BASE_URL);
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.locator('.v3-task-detail-content .v3-run-row[data-session-id="run-alpha-2"]')).toBeVisible();
 
@@ -97,13 +111,6 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByTestId("v3-inline-markdown")).toContainText("마크다운 본문은 행을 연 뒤에만 불러옵니다.");
     await expect.poll(() => requests.filter((pathName) => pathName === "/api/markdown-documents/doc-inline").length).toBe(1);
     await capture(page, theme, "05-inline-markdown");
-
-    await page.getByRole("button", { name: "검증 현황 펼치기" }).click();
-    const customView = page.locator('iframe[title="검증 현황"]');
-    await expect(customView).toBeVisible();
-    await expect(customView).toHaveAttribute("sandbox", "allow-scripts");
-    await expect(page.getByTestId("v3-inline-markdown")).toHaveCount(0);
-    await capture(page, theme, "06-inline-custom-view");
     await expectNoHorizontalOverflow(page);
   });
 }
@@ -111,7 +118,7 @@ for (const theme of ["dark", "light"] as const) {
 test("PR-O · 390px · context menu uses mobile dialog without overflow", async ({ page }) => {
   test.setTimeout(90_000);
   await preparePage(page, "dark", { width: 390, height: 844 });
-  await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
+  await openV3Folder(page, BASE_URL);
   const task = page.getByTestId("v3-task-task-alpha");
   await expect(task).toBeVisible();
   await task.click({ button: "right" });

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -32,32 +33,39 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  const audit = { transfers: 0, boardMoves: 0, dailyWrites: 0 };
+  const audit = { folderMoves: 0, dailyWrites: 0 };
   await preparePage(page, theme, audit);
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    const task = page.getByTestId("v3-task-alpha");
+    await openV3Folder(page, baseUrl);
+    const task = page.getByTestId("v3-task-task-alpha");
     await task.waitFor({ state: "visible" });
 
     await openContextMenu(task);
-    await page.getByRole("menuitem", { name: "다른 프로젝트로 이동" }).click();
-    const dialog = page.getByRole("dialog", { name: "다른 프로젝트로 이동" });
+    await page.getByRole("menuitem", { name: "다른 폴더로 이동" }).click();
+    const dialog = page.getByRole("dialog", { name: "폴더 이동" });
     await dialog.waitFor({ state: "visible" });
+    // 폴더 선택기는 별표 탭으로 열린다. 대상 폴더는 전체 탭에 있고,
+    // 선택 뒤 푸터의 폴더 이동 버튼을 눌러야 실제로 옮긴다.
+    await dialog.getByRole("tab", { name: "전체" }).click();
     const target = dialog.getByRole("button", { name: /Soulstream 운영/ });
+    const confirmMove = dialog.getByRole("button", { name: "폴더 이동", exact: true });
     await target.click();
+    await confirmMove.click();
 
     await dialog.getByRole("alert").waitFor({ state: "visible" });
-    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 1,
-      "실패 복구 후 기존 프로젝트에 폴더가 돌아오지 않았습니다.");
+    assert(await page.getByTestId("v3-task-task-alpha").count() === 1,
+      "실패 복구 후 기존 폴더에 하위 폴더가 돌아오지 않았습니다.");
 
     await target.click();
+    await confirmMove.click();
     await dialog.waitFor({ state: "detached" });
-    await projectGroup(page, "Soulstream 운영").getByTestId("v3-task-alpha").waitFor({ state: "visible" });
-    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 0,
-      "이동 후 기존 프로젝트에 폴더가 남았습니다.");
-    assert(audit.transfers === 3, `프로젝트 페이지 이동/복구 호출 수가 다릅니다: ${audit.transfers}`);
-    assert(audit.boardMoves === 2, `보드 이동 호출 수가 다릅니다: ${audit.boardMoves}`);
+    await openV3Folder(page, baseUrl, "folder-ops");
+    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
+    await openV3Folder(page, baseUrl);
+    assert(await page.getByTestId("v3-task-task-alpha").count() === 0,
+      "이동 후 기존 폴더에 하위 폴더가 남았습니다.");
+    assert(audit.folderMoves === 2, `폴더 이동 호출 수가 다릅니다: ${audit.folderMoves}`);
     assert(audit.dailyWrites === 0, "프로젝트 이동이 데일리 마운트를 변경했습니다.");
     assert(browserErrors.length === 0, `브라우저 오류가 발생했습니다: ${browserErrors.join(" | ")}`);
     await capture(page, theme, "01-project-move");
@@ -78,7 +86,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 async function preparePage(
   page: Page,
   theme: "dark" | "light",
-  audit: { transfers: number; boardMoves: number; dailyWrites: number },
+  audit: { folderMoves: number; dailyWrites: number },
 ) {
   await page.addInitScript({ content: `
     localStorage.setItem("soul-dashboard-theme", ${JSON.stringify(theme)});
@@ -109,63 +117,20 @@ async function preparePage(
     }],
     nextCursor: null,
   }));
-  await page.route("**/api/pages/block-transfers", async (route) => {
-    audit.transfers += 1;
-    const input = route.request().postDataJSON() as {
-      source: { page_id: string };
-      target: { page_id: string };
-    };
-    return fulfillJson(route, {
-      source: mutation(input.source.page_id),
-      target: mutation(input.target.page_id),
-      target_created: false,
-    });
-  });
-  await page.route("**/api/board-items/**/container", async (route) => {
-    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/")[3] ?? "");
-    if (id !== "task:rb-alpha") return route.fallback();
-    audit.boardMoves += 1;
-    if (audit.boardMoves === 1) return route.fulfill({ status: 204 });
-    return fulfillJson(route, {
-      ok: true,
-      boardItem: {
-        id,
-        folderId: "folder-ops",
-        containerKind: "folder",
-        containerId: "folder-ops",
-        itemType: "task",
-        itemId: "rb-alpha",
-        x: 0,
-        y: 0,
-      },
-    });
+  await page.route("**/api/folders/rb-alpha", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    audit.folderMoves += 1;
+    // 첫 이동은 실패시켜 낙관적 이동이 되돌아오는지 확인한다. 응답 본문을
+    // 깨뜨리면 브라우저 콘솔 오류 없이 클라이언트 파싱 단계에서 실패한다.
+    if (audit.folderMoves === 1) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{" });
+    }
+    return route.fallback();
   });
   await page.route("**/api/pages/daily-*/operations", async (route) => {
     audit.dailyWrites += 1;
     return route.fallback();
   });
-}
-
-function mutation(pageId: string) {
-  return {
-    page: {
-      id: pageId,
-      title: pageId === "project-ops" ? "Soulstream 운영" : fixtureTitles.project,
-      daily_date: null,
-      version: 5,
-      archived: false,
-      metadata: {},
-      created_at: "2026-07-14T00:00:00Z",
-      updated_at: "2026-07-17T00:00:00Z",
-    },
-    blocks: [],
-    operation: { id: `transfer-${pageId}` },
-    temp_id_mapping: {},
-  };
-}
-
-function projectGroup(page: Page, title: string): Locator {
-  return page.locator(".v3-project-group").filter({ hasText: title });
 }
 
 async function openContextMenu(target: Locator) {

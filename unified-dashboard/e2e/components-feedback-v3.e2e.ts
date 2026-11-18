@@ -4,6 +4,7 @@ import path from "node:path";
 import { reviewCard } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
+const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const output = path.resolve("../../../.local/artifacts/20261001-web-ui-v3");
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
 if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE required");
@@ -11,14 +12,22 @@ mkdirSync(output, { recursive: true });
 
 for (const width of [1440, 390]) for (const webgl of [false, true]) {
 test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ page }) => {
-  test.setTimeout(120_000);
+  // 실측(2026-11-18, 공유 호스트): 1440 fallback 35.2s, 1440 webgl 11.1m,
+  // 390 fallback 31.2s, 390 webgl 3.4m. 소프트웨어 WebGL 두 조합만 상한을
+  // 크게 두고 나머지는 실측에 맞춰 줄인다.
+  test.setTimeout(width === 1440 && webgl ? 720_000 : width === 390 && webgl ? 300_000 : 120_000);
   const name = `${phase}-${width}-${webgl ? "webgl" : "fallback"}`;
   const errors: string[] = [];
   page.on("pageerror", error => { errors.push(error.stack ?? error.message); writeFileSync(path.join(output, `${name}-page-errors.json`), JSON.stringify(errors, null, 2)); });
   await page.setViewportSize({ width, height: 1000 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   const preferences = { appearance: "dark", chatFontSize: 17, wallpaper: { mode: "photo", customImage: "/api/user/background?v=qa" } };
-  await page.addInitScript(({ preferences, webgl }) => {
+  // 함수형 addInitScript는 트랜스파일 결과에 __name 호출이 섞이면 페이지에서
+  // ReferenceError로 끊겨 서비스 워커 차단이 통째로 건너뛰어진다. 문자열로 넣어
+  // 페이지에서 그대로 실행되게 한다.
+  await page.addInitScript({ content: `(() => {
+    const preferences = ${JSON.stringify(preferences)};
+    const webgl = ${JSON.stringify(webgl)};
     // Throttle only the live glass loop for software WebGL on the shared
     // verification host. Its actual renderer, wallpaper and tint stay active.
     const request = window.requestAnimationFrame.bind(window);
@@ -29,7 +38,34 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
     localStorage.setItem("soul-dashboard-theme", "dark");
     localStorage.setItem("ls.webglGlass", webgl ? "1" : "0");
     localStorage.setItem("soul-user-preferences:qa@example.test", JSON.stringify(preferences));
-  }, { preferences, webgl });
+    // 서비스 워커가 새로 제어를 잡으면 페이지가 한 번 새로고침된다.
+    // 이 검수는 한 번 로드한 화면을 재는 QA라서 등록 자체를 막는다.
+    const registration = {
+      update: async () => undefined, active: null, installing: null, waiting: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+    };
+    Object.defineProperty(ServiceWorkerContainer.prototype, "register", {
+      configurable: true,
+      value: async () => registration,
+    });
+    Object.defineProperty(ServiceWorkerContainer.prototype, "controller", {
+      configurable: true,
+      get: () => null,
+    });
+    // 실시간 유리 화면은 소프트웨어 WebGL로 브라우저 프로세스가 포화된다. 그러면
+    // 헬스 응답이 연결 감시의 5초 중단 제한을 넘겨 연결 끊김 모달이 떠오르고,
+    // 그 모달의 포커스 트랩이 표면 측정을 방해한다. 측정 대상이 아닌 헬스만
+    // 네트워크를 거치지 않게 한다.
+    const health = JSON.stringify({ healthy: true, ready: true, draining: false, build_id: "dev" });
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+      if (url.endsWith("/api/health") || url.includes("/api/health?")) {
+        return Promise.resolve(new Response(health, { status: 200, headers: { "content-type": "application/json" } }));
+      }
+      return realFetch(input, init);
+    };
+  })();` });
   await installV3VisualQaRoutes(page, { unifiedFolderView: true, timelineEventCount: 1 });
   await page.route("**/api/auth/config", r => r.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
   await page.route("**/api/auth/status", r => r.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
@@ -48,10 +84,12 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   await page.route("**/api/config/settings", r => r.fulfill({ json: { categories:[{name:"qa",label:"설정 표면 검수",fields:[
     {...field,key:"qa-text",label:"입력"}, {...field,key:"qa-secret",label:"마스킹",sensitive:true},
     {...field,key:"qa-readonly",label:"읽기 전용",read_only:true}] }] } }));
-  await page.goto("/components");
-  await expect(page.getByTestId("components-review")).toBeVisible();
+  await page.goto(`${BASE_URL}/components`);
+  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 30_000 });
   await page.evaluate(() => document.fonts.ready);
-  if (webgl) await expect(page.locator('[data-slot="chat-input-composer"]')).toHaveAttribute("data-liquid-glass-webgl", "true");
+  // 검수 화면에는 원고형 샘플까지 여러 컴포저가 있다. 유리 표면을 쓰는
+  // 기본 컴포저 하나만 확인한다.
+  if (webgl) await expect(page.locator('[data-slot="chat-input-composer"]:not([data-chat-presentation])').first()).toHaveAttribute("data-liquid-glass-webgl", "true", { timeout: 30_000 });
   // Capture the current compositor surface directly. Playwright's animation
   // stabilization waits indefinitely while the live WebGL glass redraws.
   const cdp = await page.context().newCDPSession(page);
@@ -162,7 +200,8 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   const reference = await readSurface(chip); surfaces.push({ kind: "folder-chip", ...reference });
   await page.locator("#components-controls").evaluate(el => el.scrollIntoView({ block:"center", behavior:"instant" })); await capture("controls");
   const controls = page.getByTestId("components-review-controls");
-  for (const el of await controls.locator('[role="combobox"], input:not([type="checkbox"]):not([aria-hidden="true"])').all()) {
+  // 비활성 샘플은 고유의 감쇠(opacity 0.64)를 가진다. 활성 컨트롤만 비교한다.
+  for (const el of await controls.locator('[role="combobox"]:not([data-disabled]):not([aria-disabled="true"]), input:not([type="checkbox"]):not([aria-hidden="true"]):not([disabled])').all()) {
     const surface = await readSurface(el); surfaces.push(surface);
     expect.soft(surface.background).toBe(reference.background);
     expect.soft(surface.ancestorOpacity).toBe(1);
@@ -178,35 +217,49 @@ test(`composer and surfaces ${width} ${webgl ? "webgl" : "fallback"}`, async ({ 
   await capture("description-edit"); const edit = await readSurface(panel.locator(".v3-description-editor"));
   expect.soft(edit.background).toBe(view.background);
   surfaces.push({ kind: "description-view", ...view }, { kind: "description-edit", ...edit });
-  const composer = await readSurface(page.locator('[data-slot="chat-input-composer"]'));
+  const composer = await readSurface(page.locator('[data-slot="chat-input-composer"]:not([data-chat-presentation])').first());
   expect.soft(composer.background).toBe(reference.background);
   surfaces.push({ kind: "composer", ...composer });
-  await page.goto("/");
+  await page.goto(`${BASE_URL}/`);
   const liveInput = page.locator('[data-testid="card-composer"] textarea').first();
-  await expect(liveInput).toBeVisible(); await liveInput.fill("샘플 메시지");
+  await expect(liveInput).toBeVisible({ timeout: 30_000 }); await liveInput.fill("샘플 메시지");
   const operationalInput = await readComposer(liveInput); await capture("operational-input");
+  // 연결 감시 모달은 위에서 헬스 응답을 직접 돌려줘 더 이상 뜨지 않는다.
+  // 화면 전환은 실제 클릭으로 한다.
   if (width < 760) {
     await page.getByTestId("v3-mobile-tab-projects").click();
     await page.getByTestId("v3-mobile-project-list").getByRole("button", { name: "소울스트림", exact: true }).click();
   } else await page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true }).click();
+  // 폴더 화면 진입은 프로젝트 컨텍스트 표면의 가시성으로 확인한다
+  // (client/v3/ProjectContextEditor.tsx:157).
   const context = page.getByTestId("v3-project-context");
-  await expect(context).toBeVisible(); await capture("operational-context");
+  await expect(context).toBeVisible({ timeout: 30_000 });
+  await page.locator(".v3-description-shell").first().waitFor({ state: "visible", timeout: 30_000 });
+  await capture("operational-context");
   expect(errors).toEqual([]);
-  await page.getByTestId("v3-task-task-alpha").click({ timeout: 5000 });
   const livePanel = page.locator(".v3-description-preview").first();
-  await expect(livePanel).toBeVisible();
+  await expect(livePanel).toBeVisible({ timeout: 30_000 });
   const operationalPanel = await readSurface(livePanel);
   expect.soft(operationalPanel.background).toBe(reference.background);
   await capture("operational-folder");
-  await page.locator(".v3-description-shell").first().getByRole("button", { name: "폴더 설명 편집", exact:true }).first().click();
+  // 편집기를 열고 실제로 보이는지 확인한다. 편집기는 포커스를 잃으면 닫히므로
+  // 열자마자 표면을 읽고 캡처한다.
+  const editCap = page.locator(".v3-description-shell").first().getByRole("button", { name: "폴더 설명 편집", exact: true }).first();
+  const operationalEditor = page.locator(".v3-description-editor").first();
+  await editCap.click();
+  await expect(operationalEditor).toBeVisible({ timeout: 30_000 });
+  const operationalEditorSurface = await readSurface(operationalEditor);
   await capture("operational-folder-edit");
-  expect.soft((await readSurface(page.locator('.v3-description-editor').first())).background).toBe(reference.background);
+  expect(operationalEditorSurface.background).toBe(reference.background);
   await page.keyboard.press('Escape');
   await page.getByTestId("v3-global-toolbar").getByRole("button", { name: "서버 설정" }).click();
-  await expect(page.getByRole("heading", { name: "⚙️ 서버 설정" })).toBeVisible(); await capture("operational-settings");
-  await expect(page.getByRole("dialog").getByTestId("config-field-row")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "설정", exact: true })).toBeVisible({ timeout: 30_000 }); await capture("operational-settings");
+  // 설정은 카테고리 목록에서 고른다. 모의 카테고리의 필드 3개를 연다.
+  const configDialog = page.getByRole("dialog").filter({ has: page.getByTestId("config-category-nav") });
+  await configDialog.getByTestId("config-category-nav").getByRole("button", { name: "설정 표면 검수" }).click();
+  await expect(configDialog.getByTestId("config-field-row")).toHaveCount(3, { timeout: 30_000 });
   const operationalSettings = [];
-  for (const input of await page.getByRole('dialog').getByTestId('config-field-row').locator('input').all()) {
+  for (const input of await configDialog.getByTestId('config-field-row').locator('input').all()) {
     const surface = await readSurface(input); operationalSettings.push(surface);
     expect.soft(surface.background).toBe(reference.background);
     expect.soft(surface.ancestorOpacity).toBe(1);

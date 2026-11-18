@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -26,24 +27,17 @@ for (const theme of ["dark", "light"] as const) {
     await preparePage(page, theme);
 
     try {
-      await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByText("오늘의 폴더")).toBeVisible();
-      await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
+      await openV3Folder(page, baseUrl);
       await expect(page.getByTestId("v3-session-row-run-alpha-2")).toBeVisible();
       await capture(page, theme, "01-first-screen");
 
-      const projectButton = page.getByTestId("v3-all-projects")
-        .getByRole("button", { name: fixtureTitles.project, exact: true });
-      await projectButton.evaluate((element: HTMLButtonElement) => element.click());
-      await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible();
+      // 폴더 제목 h1의 접근 이름은 편집 버튼 이름이다. 제목은 버튼 텍스트로 확인한다.
+      await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.project })).toBeVisible();
       await capture(page, theme, "02-project-view");
 
-      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-      await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
-      await page.getByTestId("v3-task-task-alpha")
-        .evaluate((element: HTMLElement) => element.click());
+      await page.getByTestId("v3-task-task-alpha").click();
       await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }))
-        .toBeVisible();
+        .toBeVisible({ timeout: 30_000 });
       await capture(page, theme, "03-task-information");
 
       await page.getByRole("button", { name: "보드 섹션으로 이동" }).click();
@@ -54,9 +48,11 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
       const sessionRow = page.getByTestId("v3-session-row-run-alpha-2");
       await sessionRow.locator(".v3-run-open").click();
-      await expect(page.getByRole("button", { name: "세션 섹션으로 이동" }))
+      // 인라인 폴더 패널과 작업 공간에 같은 내비게이션이 있다. 열린 작업 공간 쪽만 본다.
+      await expect(page.locator(".v3-workspace").getByRole("button", { name: "세션 섹션으로 이동" }))
         .toHaveAttribute("aria-current", "location");
-      await expect(page.locator('.v3-detail-scroll [data-session-id="run-alpha-2"]'))
+      // 상세와 세션 패널에 같은 세션 행이 하나씩 있다. 둘 다 활성 상태다.
+      await expect(page.locator('.v3-detail-scroll [data-session-id="run-alpha-2"]').first())
         .toHaveClass(/is-active/);
       await capture(page, theme, "05-session-focus");
 
@@ -94,7 +90,11 @@ async function preparePage(page: Page, theme: "dark" | "light") {
 }
 
 async function assertAestheticContracts(page: Page) {
-  const navigation = page.getByRole("navigation", { name: "폴더 섹션" });
+  // 세션을 열면 작업 공간이 인라인 폴더 패널 위에 겹친다. 두 패널에 같은
+  // 내비게이션이 있으므로 보이는 작업 공간 쪽만 검사한다.
+  const workspace = page.locator(".v3-workspace");
+  const detailScroll = workspace.locator(".v3-detail-scroll");
+  const navigation = workspace.getByRole("navigation", { name: "폴더 섹션" });
   await expect(navigation.getByRole("button")).toHaveCount(4);
   await expect(navigation.getByRole("button").evaluateAll((buttons) => (
     buttons.map((button) => button.getAttribute("aria-label"))
@@ -104,16 +104,16 @@ async function assertAestheticContracts(page: Page) {
     "보드 섹션으로 이동",
     "세션 섹션으로 이동",
   ]);
-  await expect(page.locator(".v3-detail-scroll [data-task-section]").evaluateAll((sections) => (
+  await expect(detailScroll.locator("[data-task-section]").evaluateAll((sections) => (
     sections.map((section) => section.getAttribute("data-task-section"))
   ))).resolves.toEqual(["information", "cards", "board", "sessions"]);
   await expect(page.locator(".v3-session-panel .v3-run-row:not(.liquid-glass-card)"))
     .toHaveCount(0);
-  await expect(page.locator(".v3-detail-scroll .v3-run-row:not(.liquid-glass-card)"))
+  await expect(detailScroll.locator(".v3-run-row:not(.liquid-glass-card)"))
     .toHaveCount(0);
 
-  await page.getByRole("button", { name: "보드 섹션으로 이동" }).click();
-  await expect(page.locator(".v3-inline-board-item:not(.liquid-glass-card)"))
+  await navigation.getByRole("button", { name: "보드 섹션으로 이동" }).click();
+  await expect(workspace.locator(".v3-inline-board-item:not(.liquid-glass-card)"))
     .toHaveCount(0);
 }
 

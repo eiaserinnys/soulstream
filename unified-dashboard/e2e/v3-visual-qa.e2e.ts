@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -31,7 +32,7 @@ for (const theme of ["dark", "light"] as const) {
     { name: "mobile", width: 390, height: 844 },
   ] as const) {
     test(`v3 visual sweep · ${theme} · ${viewport.width}px`, async ({ page }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(420_000);
       const outputDir = path.join(OUTPUT_ROOT, `${theme}-${viewport.width}`);
       mkdirSync(outputDir, { recursive: true });
       const diagnostics: Diagnostics = {
@@ -68,7 +69,24 @@ for (const theme of ["dark", "light"] as const) {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await page.addInitScript(({ appearance, webglOverride }: { appearance: Theme; webglOverride: string | null }) => {
         localStorage.setItem("soul-dashboard-theme", appearance);
-        if (webglOverride !== null) localStorage.setItem("ls.webglGlass", webglOverride);
+        // 이 스윕은 화면 배치와 테마를 캡처한다. 유리 WebGL 표면은
+        // v3-polish-round2가 따로 검사하므로, 여기서는 끄고 돈다.
+        // 켜면 공유 호스트 부하에서 모든 상호작용이 몇 배로 느려진다.
+        // 유리가 켜진 화면이 필요하면 V3_QA_WEBGL_OVERRIDE=1로 돌린다.
+        localStorage.setItem("ls.webglGlass", webglOverride ?? "0");
+        // 연결 감시자는 health 요청이 5초를 넘기면 연결 끊김 모달을 띄워
+        // 이후 클릭을 가로막는다. 이 스윕은 화면 상태를 재는 QA라서,
+        // 가상 서버와 같은 health 응답을 페이지 안에서 즉시 돌려준다.
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          if (url.endsWith("/api/health")) {
+            return Promise.resolve(new Response(JSON.stringify({
+              healthy: true, ready: true, draining: false, build_id: "dev",
+            }), { status: 200, headers: { "Content-Type": "application/json" } }));
+          }
+          return nativeFetch(input, init);
+        };
         const serviceWorker = navigator.serviceWorker;
         if (serviceWorker) {
           Object.defineProperty(serviceWorker, "register", {
@@ -88,51 +106,44 @@ for (const theme of ["dark", "light"] as const) {
         }
       }, { appearance: theme, webglOverride: WEBGL_OVERRIDE });
       await installV3VisualQaRoutes(page);
-      await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-      await expect(page.getByText("오늘의 폴더")).toBeVisible();
-      await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
+      await openV3DailyPlanner(page, BASE_URL);
       await page.waitForLoadState("networkidle");
       diagnostics.fontFamily = await page.locator(".v3-emoji").first().evaluate((element) => (
         getComputedStyle(element).fontFamily
       ));
 
       await capture(page, outputDir, "01-today-planner", diagnostics);
-      await page.getByRole("button", { name: "새 폴더", exact: true }).hover();
-      await capture(page, outputDir, "01b-today-primary-hover", diagnostics);
-
       if (viewport.name === "desktop") {
-        await page.getByTestId("v3-all-projects")
-          .getByRole("button", { name: fixtureTitles.project, exact: true })
-          .click();
-      } else {
-        await page.getByRole("button", { name: "아카이브 보기 ›" }).first().click();
+        // 좌측 내비게이션은 데스크톱에만 있다. 모바일은 프로젝트 탭을 쓴다.
+        await page.getByTestId("v3-all-projects").getByRole("button", { name: "새 폴더", exact: true }).hover();
+        await capture(page, outputDir, "01b-today-primary-hover", diagnostics);
       }
-      await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible({ timeout: 20_000 });
+
+      await openV3Folder(page, BASE_URL);
+      await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.project })).toBeVisible({ timeout: 20_000 });
       await capture(page, outputDir, "02-project-view", diagnostics);
 
-      await page.getByRole("button", { name: "새 폴더", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "새 폴더" })).toBeVisible();
-      await capture(page, outputDir, "03-new-task-form-focus", diagnostics);
-      await page.getByRole("button", { name: "취소" }).click();
+      if (viewport.name === "desktop") {
+        await page.getByTestId("v3-all-projects").getByRole("button", { name: "새 폴더", exact: true }).click();
+        await expect(page.getByRole("dialog", { name: "새 폴더" })).toBeVisible();
+        await capture(page, outputDir, "03-new-task-form-focus", diagnostics);
+        await page.getByRole("button", { name: "취소" }).click();
+      }
 
       await page.getByTestId("v3-task-task-alpha").click();
-      await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
+      await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })).toBeVisible();
       await capture(page, outputDir, "04-task-detail-rendered", diagnostics);
-      await page.locator(".v3-description-preview").click();
+      await page.locator(".v3-description-preview").first().click();
       await expect(page.getByRole("textbox", { name: "폴더 설명 마크다운" })).toBeFocused();
       await capture(page, outputDir, "04b-task-detail-editing", diagnostics);
-      await page.getByRole("button", { name: "완료", exact: true }).click();
+      await page.getByRole("button", { name: "폴더 설명 저장" }).click();
+      await capture(page, outputDir, "05-folder-context", diagnostics);
 
-      await page.getByRole("button", { name: "컨텍스트 추가", exact: true }).click();
-      await expect(page.getByRole("tablist", { name: "컨텍스트 종류" })).toBeVisible();
-      for (const tab of ["페이지", "atom", "이전 세션", "guidance"]) {
-        await page.getByRole("tab", { name: new RegExp(tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).click();
-        await capture(page, outputDir, `05-context-${slug(tab)}`, diagnostics);
-      }
-      await page.getByRole("button", { name: "컨텍스트 선택 닫기", exact: true }).click();
-
-      await page.locator(".v3-run-open").filter({ hasText: "run #2" }).click();
-      await expect(page.getByRole("region", { name: "Run 채팅" })).toBeVisible();
+      // 실행 행은 스크롤 컨테이너 안에 있고, 호스트가 느릴 때 Playwright의
+      // scroll-into-view가 수 분을 잡아먹는다. 화면 상태를 여는 것이 목적이므로
+      // 클릭 이벤트를 직접 보낸다.
+      await page.locator(".v3-detail-pane .v3-run-open").filter({ hasText: "시각 QA 순회" }).dispatchEvent("click");
+      await expect(page.locator(".v3-chat-pane")).toBeVisible();
       await capture(page, outputDir, "06-chat-open", diagnostics);
       if (viewport.name === "desktop") {
         await dragDivider(page, 0.6);
@@ -145,21 +156,25 @@ for (const theme of ["dark", "light"] as const) {
         await capture(page, outputDir, "06d-chat-split-max-75", diagnostics);
         await page.waitForLoadState("networkidle");
         navigationInProgress = true;
-        await page.reload({ waitUntil: "domcontentloaded" });
-        await expect(page.getByText("오늘의 폴더")).toBeVisible();
+        await openV3Folder(page, BASE_URL);
         await page.waitForLoadState("networkidle");
         navigationInProgress = false;
-        await page.getByTestId("v3-all-projects")
-          .getByRole("button", { name: fixtureTitles.project, exact: true })
-          .click();
         await page.getByTestId("v3-task-task-alpha").click();
-        await page.locator(".v3-run-open").filter({ hasText: "run #2" }).click();
+        await page.locator(".v3-detail-pane .v3-run-open").filter({ hasText: "시각 QA 순회" }).dispatchEvent("click");
         await expect(page.getByRole("separator", { name: "상세와 채팅 너비 조절" })).toHaveAttribute("aria-valuenow", "60");
         await capture(page, outputDir, "06e-chat-split-after-reload-60", diagnostics);
       }
 
-      await page.getByRole("button", { name: "채팅 닫기" }).click();
-      await page.getByRole("button", { name: "새 세션", exact: true }).click();
+      // 일반 작업 분기의 채팅 패널에는 닫기 버튼이 없다. 채팅을 연 채로
+      // 상세 패널의 세션 히스토리에서 승계 모달을 열어 캡처한다.
+      let sessionHistoryPane = page.locator(".v3-workspace");
+      if (viewport.name === "mobile") {
+        // 모바일 작업 공간은 한 번에 한 패널만 보여준다. 폴더 탭으로 옮기면
+        // 플래너 안의 인라인 상세로 돌아가고, 세션 히스토리도 그쪽에 있다.
+        await page.getByTestId("v3-mobile-tab-task").click();
+        sessionHistoryPane = page.getByTestId("v3-planner-scroll");
+      }
+      await sessionHistoryPane.getByRole("button", { name: "새 세션", exact: true }).dispatchEvent("click");
       await expect(page.getByRole("dialog", { name: "새 세션", exact: true })).toBeVisible();
       await capture(page, outputDir, "07-session-succession", diagnostics);
       await page.getByRole("button", { name: "승계 닫기" }).click();
@@ -171,9 +186,14 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
       await expect(page.locator(".v3-ritual-card")).toBeVisible();
       await capture(page, outputDir, "08-ritual-in-progress", diagnostics);
+      const ritualProgress = page.getByRole("progressbar", { name: "아침 정리 진행률" });
       for (let count = 0; count < 6; count += 1) {
         if (await page.locator(".v3-ritual-done").isVisible().catch(() => false)) break;
+        const valueBefore = await ritualProgress.getAttribute("aria-valuenow");
         await page.getByRole("button", { name: "데일리에서 내리기" }).click();
+        // 처리 중에는 버튼이 비활성화되고, 응답이 끝나야 다음 항목으로 넘어간다.
+        // 진행률이 바뀌는 것을 다음 항목 준비 완료의 신호로 삼는다.
+        await expect(ritualProgress).not.toHaveAttribute("aria-valuenow", valueBefore ?? "", { timeout: 30_000 });
       }
       await expect(page.locator(".v3-ritual-done")).toBeVisible();
       await capture(page, outputDir, "08b-ritual-complete", diagnostics);
@@ -194,7 +214,7 @@ for (const theme of ["dark", "light"] as const) {
       navigationInProgress = true;
       await page.goto(`${BASE_URL}/v2`, { waitUntil: "domcontentloaded" });
       await expect(page).toHaveURL(`${BASE_URL}/`);
-      await expect(page.getByText("오늘의 폴더")).toBeVisible();
+      await expect(page.getByTestId("card-home")).toBeVisible();
       await page.waitForLoadState("networkidle");
       navigationInProgress = false;
       await capture(page, outputDir, "10-v2-redirected-to-main", diagnostics);
@@ -254,17 +274,8 @@ async function dragDivider(page: Page, ratio: number): Promise<void> {
   await page.mouse.up();
 }
 
-async function returnToPlanner(page: Page, viewport: "desktop" | "mobile"): Promise<void> {
-  if (viewport === "mobile") {
-    await page.getByTestId("v3-mobile-tab-today").click();
-  } else {
-    await page.getByRole("button", { name: "← 오늘로" }).click();
-  }
-  await expect(page.getByText("오늘의 폴더")).toBeVisible();
-}
-
-function slug(label: string): string {
-  return label.replace(/[^a-zA-Z0-9가-힣]+/g, "-").replace(/^-|-$/g, "");
+async function returnToPlanner(page: Page, _viewport: "desktop" | "mobile"): Promise<void> {
+  await openV3DailyPlanner(page, BASE_URL);
 }
 
 function formatRequestFailure(request: Request): string {

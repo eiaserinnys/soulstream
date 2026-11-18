@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { openV3DailyPlanner, openV3Folder } from "./v3-qa-entry";
 import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const BASE_URL = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
@@ -51,8 +52,7 @@ for (const theme of ["dark", "light"] as const) {
     }, theme);
     await installV3VisualQaRoutes(page, { alphaRunHistoryPages: true });
 
-    await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
+    await openV3Folder(page, BASE_URL);
     await page.waitForLoadState("networkidle");
     await capture(page, outputDir, "01-entry");
 
@@ -61,28 +61,29 @@ for (const theme of ["dark", "light"] as const) {
     expect(apiRequests(requests, "/api/nodes")).toHaveLength(0);
     expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
 
-    await page.getByTestId("v3-all-projects")
-      .getByRole("button", { name: fixtureTitles.project, exact: true })
-      .click();
-    await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible();
+    // 폴더 제목 h1의 접근 이름은 편집 버튼 이름이다. 제목은 버튼 텍스트로 확인한다.
+    await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.project })).toBeVisible();
     await capture(page, outputDir, "02-project");
 
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask })).toBeVisible();
     await expect(page.getByText("1회", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("v3-load-more-runs")).toBeVisible();
-    expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(0);
+    // 이전 세션은 '더 보기' 버튼 대신 스크롤 감지 로더가 이어서 불러온다.
+    await expect(page.getByTestId("v3-run-history-auto-loader")).toBeVisible();
     await capture(page, outputDir, "03-task-latest-run");
 
-    await page.getByTestId("v3-load-more-runs").click();
+    await page.getByTestId("v3-planner-scroll").evaluate((element) => {
+      element.scrollTo({ top: element.scrollHeight });
+    });
     await expect(page.getByText("2회", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("v3-load-more-runs")).toBeHidden();
+    await expect(page.getByTestId("v3-run-history-auto-loader")).toBeHidden();
+    // 다음 페이지는 정확히 한 번만 요청한다.
     expect(apiRequests(requests, "/api/planner/folders/rb-alpha/sessions")).toHaveLength(1);
     await capture(page, outputDir, "04-task-full-history");
 
     await page.getByRole("button", { name: "상위 폴더로 이동" }).click();
-    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-    await expect(page.getByText("오늘의 폴더")).toBeVisible();
+    // 첫 화면은 카드 홈이고, 일일 플래너는 기록 버튼으로 연다.
+    await openV3DailyPlanner(page, BASE_URL);
     await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
     await expect(page.locator(".v3-ritual-card")).toBeVisible();
