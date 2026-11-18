@@ -57,8 +57,7 @@ export async function reconcileNodeStartup(
     // Lock order is session, then worktree, each table in key order. The ingress
     // gate (event_session_gate.ts) and the SQL functions take the same order, so
     // this transaction cannot deadlock with them on one session and its worktree.
-    // The locks only precede the restore UPDATE below; they write nothing, so the
-    // pinned session write lines (session-machine-inventory test) stay unchanged.
+    // The locks only precede the restore UPDATE below; they write nothing.
     await lockRestorableSessionsThenWorktrees(
       sql,
       nodeId,

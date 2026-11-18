@@ -8,13 +8,12 @@ export interface SessionSqlWriter {
   name: string;
   writesStatus: boolean;
   definition: string;
-  callSites: Array<{ file: string; line: number }>;
+  callSites: Array<{ file: string; count: number }>;
   note: string;
 }
 
 export interface SessionDirectWrite {
   file: string;
-  line: number;
   statement: "UPDATE" | "INSERT";
   writesStatus: boolean;
   note: string;
@@ -24,63 +23,62 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_register",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1365",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [],
     note: "정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다.",
   },
   {
     name: "session_register_with_model_preset",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1395",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 130 },
-      { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 236 },
+      { file: "src/control_plane/repositories/session_mutation_repository.ts", count: 2 },
     ],
     note: "등록 입력의 상태와 검수 칸을 그대로 INSERT한다.",
   },
   {
     name: "session_update",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1527",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 284 },
+      { file: "src/control_plane/repositories/session_mutation_repository.ts", count: 1 },
     ],
     note: "허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다.",
   },
   {
     name: "session_acknowledge_review",
     writesStatus: false,
-    definition: "packages/db-schema/sql/schema.sql:1434",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/runtime/live_session_review_repository.ts", line: 23 },
-      { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 326 },
+      { file: "src/control_plane/repositories/session_mutation_repository.ts", count: 1 },
+      { file: "src/runtime/live_session_review_repository.ts", count: 1 },
     ],
     note: "review_state만 쓴다.",
   },
   {
     name: "session_record_execution_registration",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1604",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 196 },
+      { file: "src/node/event_session_effect_applier.ts", count: 1 },
     ],
     note: "워크트리 게이트 뒤 실행 등록과 상태를 쓴다.",
   },
   {
     name: "session_apply_running_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:4179",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 77 },
+      { file: "src/node/event_session_effect_applier.ts", count: 1 },
     ],
     note: "워크트리 게이트 뒤 상태와 검수 칸을 쓴다.",
   },
   {
     name: "session_apply_terminal_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1745",
+    definition: "packages/db-schema/sql/schema.sql",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 254 },
+      { file: "src/node/event_session_effect_applier.ts", count: 1 },
     ],
     note: "종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다.",
   },
@@ -89,63 +87,54 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
 export const SESSION_DIRECT_WRITES: SessionDirectWrite[] = [
   {
     file: "src/control_plane/repositories/node_startup_reconciliation.ts",
-    line: 31,
     statement: "UPDATE",
     writesStatus: true,
     note: "시작 정리에서 사라진 세션을 interrupted로 쓴다.",
   },
   {
     file: "src/control_plane/repositories/node_startup_reconciliation.ts",
-    line: 68,
     statement: "UPDATE",
     writesStatus: true,
     note: "시작 정리에서 살아 있는 세션을 running으로 되살린다.",
   },
   {
     file: "src/control_plane/repositories/session_mutation_repository.ts",
-    line: 359,
-    statement: "UPDATE",
-    writesStatus: true,
-    note: "노드 끊김 정리에서 interrupted와 검수 칸을 쓴다.",
-  },
-  {
-    file: "src/control_plane/repositories/session_mutation_repository.ts",
-    line: 144,
     statement: "UPDATE",
     writesStatus: false,
     note: "card_id만 쓴다.",
   },
   {
     file: "src/control_plane/repositories/session_mutation_repository.ts",
-    line: 250,
     statement: "UPDATE",
     writesStatus: false,
     note: "worktree_id와 card_id만 쓴다.",
   },
   {
     file: "src/control_plane/repositories/session_mutation_repository.ts",
-    line: 341,
     statement: "UPDATE",
     writesStatus: false,
     note: "모델 선택 칸만 쓴다.",
   },
   {
+    file: "src/control_plane/repositories/session_mutation_repository.ts",
+    statement: "UPDATE",
+    writesStatus: true,
+    note: "노드 끊김 정리에서 interrupted와 검수 칸을 쓴다.",
+  },
+  {
     file: "src/runtime/live_provider_factory.ts",
-    line: 633,
     statement: "UPDATE",
     writesStatus: false,
     note: "node_id, display_name, folder_id만 쓴다.",
   },
   {
     file: "src/node/event_feed_projection_applier.ts",
-    line: 49,
     statement: "UPDATE",
     writesStatus: false,
     note: "last_event_id, last_read_event_id, updated_at만 쓴다.",
   },
   {
     file: "src/control_plane/repositories/session_card_replacement.ts",
-    line: 44,
     statement: "UPDATE",
     writesStatus: false,
     note: "caller_session_id만 쓴다.",

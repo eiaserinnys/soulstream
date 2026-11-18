@@ -24,22 +24,21 @@ async function sourceFiles(): Promise<string[]>{
  return files.sort();
 }
 
-it('pins every SQL session writer call to its line',async()=>{
+it('matches every SQL session writer call by file and count',async()=>{
+ const schema=await readFile(new URL('../../packages/db-schema/sql/schema.sql',import.meta.url),'utf8');
  for(const writer of SESSION_SQL_WRITERS){
- const found:string[]=[];
+ const found:Array<{file:string;count:number}>=[];
  for(const file of await sourceFiles()){
  const lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');
  const pattern=new RegExp(`(?<![A-Za-z0-9_])${writer.name}\\s*\\(`);
- lines.forEach((line,index)=>{if(pattern.test(line))found.push(`${file}:${index+1}`);});
+ const count=lines.filter(line=>pattern.test(line)).length;
+ if(count)found.push({file,count});
  }
- const expected=writer.callSites.map(site=>`${site.file}:${site.line}`).sort();
- expect(found,writer.name).toEqual(expected);
- const schema=(await readFile(new URL('../../packages/db-schema/sql/schema.sql',import.meta.url),'utf8')).split('\n');
- expect(schema[Number(writer.definition.split(':').at(-1))-1],writer.name).toContain(writer.name);
- }
- const schema=(await readFile(new URL('../../packages/db-schema/sql/schema.sql',import.meta.url),'utf8'));
- for(const writer of SESSION_SQL_WRITERS){
- const start=schema.indexOf(`CREATE OR REPLACE FUNCTION ${writer.name}`);
+ const expected=[...writer.callSites].sort((a,b)=>a.file.localeCompare(b.file));
+ expect(found.sort((a,b)=>a.file.localeCompare(b.file)),writer.name).toEqual(expected);
+ const pattern=new RegExp(`CREATE OR REPLACE FUNCTION ${writer.name}\\s*\\(`);
+ const start=schema.search(pattern);
+ expect(start,writer.name).toBeGreaterThanOrEqual(0);
  const body=schema.slice(start,schema.indexOf('$$;',start)+3);
  if(writer.writesStatus){
  expect(body,writer.name).toMatch(/\bstatus\b/);
@@ -47,26 +46,34 @@ it('pins every SQL session writer call to its line',async()=>{
  expect(body,writer.name).not.toMatch(/\bstatus\s*=/);
  }
  }
- expect(schema.slice(schema.indexOf('CREATE OR REPLACE FUNCTION session_update'),schema.indexOf('$$;',schema.indexOf('CREATE OR REPLACE FUNCTION session_update')))).toContain("'status'");
+ const updateStart=schema.search(/CREATE OR REPLACE FUNCTION session_update\s*\(/);
+ expect(schema.slice(updateStart,schema.indexOf('$$;',updateStart))).toContain("'status'");
 });
 
-it('pins every direct session write to its line and status flag',async()=>{
- const found:string[]=[];
+it('matches every direct session write in file order and checks its status flag',async()=>{
+ const found=new Map<string,{line:string;statement:string}[]>();
  for(const file of await sourceFiles()){
  const lines=(await readFile(new URL(`../${file}`,import.meta.url),'utf8')).split('\n');
  lines.forEach((line,index)=>{
- if(/\b(INSERT\s+INTO|UPDATE)\s+sessions\b/.test(line))found.push(`${file}:${index+1}`);
+ if(!/\b(INSERT\s+INTO|UPDATE)\s+sessions\b/.test(line))return;
+ const remaining=lines.slice(index).join('\n');
+ const statement=remaining.slice(0,remaining.indexOf(';')+1);
+ const writes=found.get(file)??[];
+ writes.push({line,statement});
+ found.set(file,writes);
  });
  }
- expect(found.sort()).toEqual(SESSION_DIRECT_WRITES.map(write=>`${write.file}:${write.line}`).sort());
- for(const write of SESSION_DIRECT_WRITES){
- const lines=(await readFile(new URL(`../${write.file}`,import.meta.url),'utf8')).split('\n');
- let statement='';
- for(let index=write.line-1;index<lines.length&&index<write.line+10;index+=1){
- statement+=`${lines[index]}\n`;
- if(lines[index]!.includes(';'))break;
+ const files=[...new Set(SESSION_DIRECT_WRITES.map(write=>write.file))].sort();
+ expect([...found.keys()].sort()).toEqual(files);
+ for(const file of files){
+ const writes=SESSION_DIRECT_WRITES.filter(write=>write.file===file);
+ const actual=found.get(file)!;
+ expect(actual.length,file).toBe(writes.length);
+ for(let index=0;index<writes.length;index+=1){
+ const write=writes[index]!;
+ expect(actual[index]!.line,`${file} #${index+1}`).toContain(write.statement);
+ expect(/\bstatus\s*=/.test(actual[index]!.statement),`${file} #${index+1}`).toBe(write.writesStatus);
  }
- expect(/\bstatus\s*=/.test(statement),`${write.file}:${write.line}`).toBe(write.writesStatus);
  }
 });
 
@@ -88,13 +95,6 @@ it('pins every session status literal to the allowlist with its meaning',async()
  const declared=new Map(SESSION_STATUS_LITERAL_ALLOWLIST.map(entry=>[entry.file,{comparisons:entry.comparisons,lists:entry.lists,sql:entry.sql}]));
  expect([...counts.keys()].sort()).toEqual([...declared.keys()].sort());
  for(const [file,row] of counts)expect(row,file).toEqual(declared.get(file));
- const totals=SESSION_STATUS_LITERAL_ALLOWLIST.reduce((sum,entry)=>({
- comparisons:sum.comparisons+entry.comparisons,
- lists:sum.lists+entry.lists,
- sql:sum.sql+entry.sql,
- }),{comparisons:0,lists:0,sql:0});
- expect(SESSION_STATUS_LITERAL_ALLOWLIST).toHaveLength(82);
- expect(totals).toEqual({comparisons:85,lists:29,sql:59});
  for(const entry of SESSION_STATUS_LITERAL_ALLOWLIST){
  expect(entry.note.length,entry.file).toBeGreaterThan(0);
  expect(entry.comparisons+entry.lists+entry.sql,entry.file).toBeGreaterThan(0);

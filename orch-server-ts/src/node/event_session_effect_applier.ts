@@ -141,7 +141,6 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
  * 저장된 claude_session_id가 있고 들어온 값과 다르면 true. 세션 행은 호출 앞에서
  * lockSession이 이미 잡았으므로 잠금 없이 읽는다. true이면 불변 예외로 사건 전체가
  * 버려지지 않게 호출부가 효과만 건너뛰고 사건은 그대로 커밋한다.
- * 호출부 줄 번호가 session_state_writes.ts에 못 박혀 있어 이 검사는 파일 끝에 둔다.
  */
 async function hasConflictingBackendSessionId(
   sql: EventIngressQuerySql,

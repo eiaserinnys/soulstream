@@ -12,6 +12,8 @@
     "plan:page-yjs-snapshot-repair": "tsx scripts/plan-page-yjs-snapshot-repair.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:session-machine": "vitest run tests/session-machine-inventory.test.ts tests/session-machine-charts.test.ts",
+    "gen:session-docs": "tsx scripts/session-state-charts.ts",
     "verify:bundle": "node --test ../scripts/verify-workspace-bundle.test.mjs && node ../scripts/verify-workspace-bundle.mjs dist && node ../scripts/verify-bundle-load.mjs dist",
     "typecheck": "tsc --noEmit"
   },
