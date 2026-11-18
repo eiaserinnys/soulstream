@@ -265,6 +265,34 @@ describe("MarkdownDocumentPanel", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["", " \n\t "])("shows a muted notice instead of Markdown for an empty body %j", async (body) => {
+    storedDocument.body = body;
+    ({ container, root } = renderPanel());
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    const empty = readBody.querySelector<HTMLElement>('[data-testid="markdown-empty"]');
+    expect(empty?.textContent).toBe("빈 문서");
+    expect(empty?.classList.contains("text-sm")).toBe(true);
+    expect(empty?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(empty?.classList.contains("select-none")).toBe(true);
+    expect(readBody.querySelector("p")).toBeNull();
+  });
+
+  it("renders nonempty Markdown without an empty notice", async () => {
+    ({ container, root } = renderPanel());
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    expect(readBody.querySelector('[data-testid="markdown-empty"]')).toBeNull();
+    expect(readBody.querySelector("p")?.textContent).toBe("Initial body");
+  });
+
+  it("places the loading frame inside a flex scroll area", () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    ({ container, root } = renderPanel());
+    const loading = container.querySelector<HTMLElement>('[data-slot="frame-loading"]');
+    expect(loading).not.toBeNull();
+    expect(loading?.parentElement?.classList.contains("flex")).toBe(true);
+    expect(loading?.parentElement?.classList.contains("overflow-auto")).toBe(true);
+  });
+
   it("switches to CodeMirror on body click and saves edited body on blur", async () => {
     ({ container, root } = renderPanel());
 
@@ -400,6 +428,8 @@ describe("MarkdownDocumentPanel", () => {
     const error = await waitForSelector(container, '[data-testid="markdown-load-error"]');
 
     expect(error.textContent).toBe("불러오기 실패");
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(error.closest('[data-slot="frame-notice"]')?.parentElement?.classList.contains("flex")).toBe(true);
     expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
   });
 

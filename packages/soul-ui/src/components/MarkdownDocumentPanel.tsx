@@ -5,6 +5,7 @@ import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
 import { FrameLoading } from "./FrameLoading";
+import { FrameNotice } from "./FrameNotice";
 import {
   getMetadataNumber,
   getMetadataText,
@@ -448,13 +449,13 @@ export function MarkdownDocumentPanel({
         </Button></span>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
+      <div ref={scrollContainerRef} className={`min-h-0 flex-1 overflow-auto p-3${!document ? " flex" : ""}`} onMouseDown={handleEditScrollMouseDown}>
         {!document ? (
           panelError?.kind === "load"
-            ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
+            ? <FrameNotice><p className="text-sm text-muted-foreground" data-testid="markdown-load-error" data-v3-selectable-content="true" role="alert">불러오기 실패</p></FrameNotice>
             : <FrameLoading label="불러오는 중" />
         ) : isEditingBody ? (
-          <Suspense fallback={<FrameLoading label="편집기를 불러오는 중" />}>
+          <Suspense fallback={<div className="flex h-full"><FrameLoading label="편집기를 불러오는 중" /></div>}>
             <MarkdownCodeMirrorEditor
               ref={editorRef}
               value={body}
@@ -470,14 +471,14 @@ export function MarkdownDocumentPanel({
         ) : (
           <div
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
-            data-v3-selectable-content="true"
+            data-v3-selectable-content={body.trim() ? "true" : undefined}
             onClick={(event) => {
               if (event.target instanceof Element && event.target.closest("a, button")) return;
               enterEditMode();
             }}
             data-testid="markdown-read-body"
           >
-            <MarkdownContent content={body || "빈 문서"} codeBlockLayout="document" />
+            {body.trim() ? <MarkdownContent content={body} codeBlockLayout="document" /> : <span className="select-none text-sm text-muted-foreground" data-testid="markdown-empty">빈 문서</span>}
           </div>
         )}
       </div>
