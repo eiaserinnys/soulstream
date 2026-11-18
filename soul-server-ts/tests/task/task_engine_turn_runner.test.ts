@@ -70,9 +70,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeEngine(
   onExecute: (params: EngineExecuteParams) => void | Promise<void>,
+  backendId: EnginePort["backendId"] = "claude",
 ): EnginePort {
   return {
-    backendId: "claude",
+    backendId,
     workspaceDir: "/tmp/agent",
     async *execute(params): AsyncIterable<SSEEventPayload> {
       await onExecute(params);
@@ -121,6 +122,24 @@ describe("TaskEngineTurnRunner", () => {
         process.env[key] = original;
       }
     }
+  });
+
+  it("attributes a turn to the actual engine and excludes it from the Claude pool", async () => {
+    const { runner } = makeSubject(catalogResolver(), true);
+    const runtime = createInProcessTaskRunnerRuntime(makeEngine(() => undefined, "antigravity"));
+    const executeFrames = vi.spyOn(runtime.dispatcher, "executeFrames");
+
+    await drain(runner.executeTurn({
+      task: makeTask({ modelPreset: "gemini-4-hydrogen" }),
+      agent,
+      runner: runtime,
+      input: { prompt: "turn" },
+    }));
+
+    expect.soft(executeFrames).toHaveBeenCalledWith(expect.objectContaining({
+      usage_snapshot: expect.objectContaining({ backend: "antigravity" }),
+    }));
+    expect(executeFrames.mock.calls[0][0]).not.toHaveProperty("claudeAccountPoolTarget");
   });
 
   it("marks only resolved official Claude models for pool selection and omits task OAuth", async () => {
@@ -488,7 +507,7 @@ describe("TaskEngineTurnRunner", () => {
     const task = makeTask();
     const sendControlFrame = vi.fn();
     const engine: EnginePort = {
-      backendId: "openai-agents",
+      backendId: "claude",
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames() {
