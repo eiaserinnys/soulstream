@@ -26,7 +26,7 @@ import { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
-import { createInstructionReceiptLookup } from "../task/delivery_instruction_receipt.js";
+import { createInstructionReceiptLookup, hasLiveRunner } from "../task/delivery_instruction_receipt.js";
 import type { Task } from "../task/task_models.js";
 import { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
@@ -119,7 +119,7 @@ export function composeQueuedDeliveryRecovery(
       recoveryRepository: deliveryRepository.recovery,
       transcriptReceipt,
       instructionReceipt: { lookup: createInstructionReceiptLookup(params.getTask, params.logger) },
-      hasLiveRunner: row => !!row.target_session_id && !!params.getTask(row.target_session_id)?.runner,
+      hasLiveRunner: row => hasLiveRunner(row, params.getTask),
       redeliverContent: params.redeliverContent,
       logger: params.logger,
     },

@@ -4,6 +4,15 @@ import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import type { NodeInstructionVerdict } from "./state/node_instruction_decision.js";
 import type { Task } from "./task_models.js";
 
+/** A retained runner is live for recovery only while it has an active execution. */
+export function hasLiveRunner(
+  row: SessionDeliveryRow,
+  getTask: (sessionId: string) => Task | undefined,
+): boolean {
+  const task = row.target_session_id ? getTask(row.target_session_id) : undefined;
+  return task?.runner?.dispatcher.hasActiveExecution() === true;
+}
+
 /**
  * Asks the runner this task is attached to whether it received an instruction
  * number. "Unknown" covers every case where the answer cannot prove anything:
