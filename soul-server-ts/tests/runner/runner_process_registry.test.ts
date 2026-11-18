@@ -564,7 +564,7 @@ describe("runner process registry", () => {
       }
       database.close();
       const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
-      expect(fresh.closedTailState).toBeUndefined();
+      expect(fresh.closedTailState).toMatchObject({ status: "unknown" });
 
       await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
         localRetentionReason: null,
