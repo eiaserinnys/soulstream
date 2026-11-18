@@ -3,13 +3,14 @@ import { Select, SelectItem, SelectPopup, SelectSeparator, SelectTrigger } from 
 
 /** Agent and model catalogs share the trigger, keyboard handling and option surface. */
 export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, options, disabled,
-  invalid, className, triggerClassName, triggerRef, adornment, message, onValueChange, onOpenChangeComplete }: {
+  invalid, className, triggerClassName, triggerRef, adornment, message, onValueChange, onOpenChangeComplete, alignItemWithTrigger }: {
   label: string; ariaLabel: string; value: string; selectedLabel: ReactNode;
   options: readonly { value: string; label: ReactNode; disabled?: boolean; separatorBefore?: boolean }[];
   disabled?: boolean; invalid?: boolean; className?: string; triggerClassName?: string;
   triggerRef?: Ref<HTMLButtonElement>;
   adornment?: ReactNode; message?: ReactNode; onValueChange(value: string): void;
   onOpenChangeComplete?(open: boolean): void;
+  alignItemWithTrigger?: boolean;
 }) {
   const id = useId();
   return <div className={className}>
@@ -20,7 +21,7 @@ export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, 
           aria-label={ariaLabel} aria-invalid={invalid || undefined}>
           <span className="flex-1 truncate">{selectedLabel}</span>
         </SelectTrigger>
-        <SelectPopup>{options.map(option => <Fragment key={option.value}>{option.separatorBefore && <SelectSeparator/>}<SelectItem value={option.value} disabled={option.disabled}>
+        <SelectPopup alignItemWithTrigger={alignItemWithTrigger}>{options.map(option => <Fragment key={option.value}>{option.separatorBefore && <SelectSeparator/>}<SelectItem value={option.value} disabled={option.disabled}>
           {option.label}
         </SelectItem></Fragment>)}</SelectPopup>
       </Select>

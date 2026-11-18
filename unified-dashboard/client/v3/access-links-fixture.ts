@@ -21,7 +21,7 @@ export function createAccessLinksFixture() {
       const issue = JSON.parse(String(init.body)) as AccessLinkIssue;
       const link: AccessLink = { id: `link-${links.length}`, ...issue, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + issue.expires_in_seconds * 1000).toISOString(), revoked_at: null, last_used_at: null };
       links = [link, ...links];
-      return Response.json({ ...link, url: 'https://example.test/x/fake-review-key' }, { status: 201 });
+      return Response.json({ ...link, url: 'https://soulstream.example.test/x/sl_fakeid_' + 'A'.repeat(43) }, { status: 201 });
     }
     if (init?.method === 'DELETE') {
       const id = decodeURIComponent(path.split('/').pop()!);

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AccessLinksTab } from './AccessLinksTab';
 import type { AccessLink } from '../lib/access-links-api';
 
-vi.mock('./CatalogSelectionField', () => ({ CatalogSelectionField: ({ label, ariaLabel, value, options, disabled, message, onValueChange }: any) => <label>{label}<select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onValueChange(event.target.value)}><option value="">고르기</option>{options.map((option: any) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{message}</label> }));
+vi.mock('./CatalogSelectionField', () => ({ CatalogSelectionField: ({ label, ariaLabel, value, options, disabled, invalid, message, onValueChange }: any) => <label>{label}<select aria-label={ariaLabel} aria-invalid={invalid || undefined} value={value} disabled={disabled} onChange={event => onValueChange(event.target.value)}><option value="">고르기</option>{options.map((option: any) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{message}</label> }));
 
 const sessionId = '12345678-1234-4234-8234-123456789abc';
 const otherId = '87654321-1234-4234-8234-123456789abc';
@@ -83,6 +83,31 @@ it.each([[401, '로그인이 끝났습니다. 다시 로그인하세요.'], [404
   issueStatus = status; await render(); await openForm(); await click('링크 만들기', true);
   expect(document.body.textContent).toContain(text); expect(document.body.textContent).not.toContain('raw server detail');
 });
+it('shows manual 404 after the ID and marks only that input invalid', async () => {
+  issueStatus = 404; await render(); await openForm(); await click('링크 만들기', true);
+  const id = document.querySelector('[aria-label="세션 ID"]')!;
+  const select = document.querySelector('[aria-label="대상 세션"]')!;
+  const error = [...document.querySelectorAll('[role="alert"]')].find(el => el.textContent?.includes('이 세션을 찾지'))!;
+  expect(id.getAttribute('aria-invalid')).toBe('true');
+  expect(select.getAttribute('aria-invalid')).toBeNull();
+  expect(id.compareDocumentPosition(error) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+it('marks the session selector invalid when a selected PAS returns 404', async () => {
+  issueStatus = 404; await render(); await click('링크 만들기');
+  const select = document.querySelector<HTMLSelectElement>('[aria-label="대상 세션"]')!;
+  await act(async () => { select.value = sessionId; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await input('발신자 이름', '도우미'); await click('링크 만들기', true);
+  expect(select.getAttribute('aria-invalid')).toBe('true');
+  expect(document.body.textContent).toContain('이 세션을 찾지 못했거나 열 수 없습니다.');
+});
+it('returns the copy button to its initial state after a copy failure', async () => {
+  const copy = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('failed'));
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
+  await render(); await openForm(); await click('링크 만들기', true); await click('복사', true);
+  expect(button('복사됨', true)).toBeTruthy(); await click('복사됨', true);
+  expect(button('복사', true)).toBeTruthy();
+  expect(document.body.textContent).toContain('복사하지 못했습니다.');
+});
 it('validates the manual ID and requires a permission', async () => {
   await render(); await openForm(); await input('세션 ID', 'bad', true);
   expect(document.body.textContent).toContain('세션 ID 형식이 아닙니다.');
@@ -93,6 +118,8 @@ it('validates the manual ID and requires a permission', async () => {
 it('prevents duplicate submissions and discards a late response after unmount', async () => {
   await render(); await openForm(); pendingIssue = () => {};
   await act(async () => { const submit = button('링크 만들기', true); submit.click(); submit.click(); });
+  expect(button('만드는 중…', true).disabled).toBe(false);
+  expect(button('만드는 중…', true).getAttribute('aria-disabled')).toBe('true');
   expect(request.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   const resolve = pendingIssue!; await act(async () => root.unmount()); root = createRoot(document.body.appendChild(document.createElement('div')));
   await act(async () => resolve(Response.json({ url: 'https://example.test/x/fake-late' }, { status: 201 })));
