@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join } from "node:path";
 
 import type {
+  HostDirectoryEntry,
   IsolationHostPorts,
   IsolationMask,
   IsolationPreparationInput,
@@ -71,11 +72,19 @@ export function isEnvMaskTargetName(name: string): boolean {
   return !ENV_MASK_SCAN_EXCLUDED_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
-/** 동시에 여는 디렉터리 수. 11만 개 규모에서도 파일 핸들을 말리지 않게 한다. */
-export const ENV_MASK_SCAN_CONCURRENCY = 16;
-
 /** 뿌리별 탐색 결과를 다시 쓰는 시간. 지나면 다시 훑는다. */
 export const ENV_MASK_SCAN_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 동기 순회가 이벤트 루프에 양보하기 전까지 일하는 시간. 디렉터리 나열이
+ * 비동기가 아니어도 긴 순회가 다른 작업을 오래 막지 않게 한다.
+ */
+const ENV_MASK_SCAN_YIELD_INTERVAL_MS = 10;
+
+/** 순회가 오래 이어져도 다른 작업이 굶지 않게 이벤트 루프에 양보한다. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 /** 캐시한 탐색 결과가 유효한 탐색 규칙인지 가르는 지문. */
 const ENV_MASK_SCAN_RULE_KEY = [
@@ -84,10 +93,14 @@ const ENV_MASK_SCAN_RULE_KEY = [
   `exclude=${[...ENV_MASK_SCAN_EXCLUDED_SUFFIXES].sort().join(",")}`,
 ].join("|");
 
-/** 훑는 데 필요한 호스트 포트만. 시험과 측정이 가짜·실제 포트를 그대로 넘긴다. */
+/**
+ * 훑는 데 필요한 호스트 포트만. 디렉터리 나열은 동기 포트를 써서 서비스가
+ * 공유하는 libuv 스레드풀(기본 4)을 기다리지 않는다. 시험과 측정이 가짜·실제
+ * 포트를 그대로 넘긴다.
+ */
 export type EnvMaskScanPorts = Pick<
   IsolationHostPorts,
-  "listDirectory" | "lstatPath" | "resolveRealPath"
+  "listDirectorySync" | "lstatPath" | "resolveRealPath"
 >;
 
 export interface ScannedEnvMaskEntry {
@@ -124,6 +137,13 @@ interface CachedEnvMaskRootScan {
  */
 const envMaskScanCache = new Map<string, CachedEnvMaskRootScan>();
 
+/**
+ * 진행 중인 뿌리 탐색. 같은 열쇠(규칙·공통 제외·뿌리)의 요청이 겹치면 새로
+ * 훑지 않고 이 Promise를 함께 기다린다. 같은 뿌리를 동시에 훑는 두 요청이
+ * 디렉터리를 두 번 나열하며 서로를 기다리는 일을 막는다.
+ */
+const envMaskScanInFlight = new Map<string, Promise<EnvMaskRootScanResult>>();
+
 /** 시험과 측정에서 캐시 상태를 초기화할 때만 쓴다. */
 export function clearEnvMaskScanCache(): void {
   envMaskScanCache.clear();
@@ -137,8 +157,10 @@ function isPathAtOrUnder(path: string, root: string): boolean {
 }
 
 /**
- * 뿌리 하나를 병렬로 훑어 `.env` 후보를 모은다. 깊이·건너뛸 이름·대상 이름
- * 판정은 `ENV_MASK_SCAN_RULE_KEY`에 들어 있어 규칙이 바뀌면 캐시가 갈린다.
+ * 뿌리 하나를 명시 스택으로 훑어 `.env` 후보를 모은다. 디렉터리 나열은 동기
+ * 포트로 해 스레드풀을 쓰지 않고, 약 `ENV_MASK_SCAN_YIELD_INTERVAL_MS`마다
+ * 이벤트 루프에 양보한다. 깊이·건너뛸 이름·대상 이름 판정은
+ * `ENV_MASK_SCAN_RULE_KEY`에 들어 있어 규칙이 바뀌면 캐시가 갈린다.
  */
 async function scanEnvMaskRoot(
   root: string,
@@ -150,20 +172,21 @@ async function scanEnvMaskRoot(
   const pending: { path: string; depth: number }[] = [{ path: root, depth: 0 }];
   const excluded = (path: string): boolean =>
     commonExclusions.some((candidate) => isPathAtOrUnder(path, candidate));
+  let lastYieldAt = performance.now();
 
-  const readDirectory = async (current: {
-    path: string;
-    depth: number;
-  }): Promise<void> => {
-    if (current.depth >= ENV_MASK_SCAN_MAX_DEPTH) return;
-    let entriesInDirectory: Awaited<
-      ReturnType<EnvMaskScanPorts["listDirectory"]>
-    >;
+  while (pending.length > 0) {
+    if (performance.now() - lastYieldAt >= ENV_MASK_SCAN_YIELD_INTERVAL_MS) {
+      await yieldToEventLoop();
+      lastYieldAt = performance.now();
+    }
+    const current = pending.pop();
+    if (!current || current.depth >= ENV_MASK_SCAN_MAX_DEPTH) continue;
+    let entriesInDirectory: HostDirectoryEntry[];
     try {
-      entriesInDirectory = await ports.listDirectory(current.path);
+      entriesInDirectory = ports.listDirectorySync(current.path);
     } catch {
       // 호스트가 읽지 못하는 디렉터리는 상자 안에서도 읽을 수 없다.
-      return;
+      continue;
     }
     for (const entry of entriesInDirectory) {
       const path = join(current.path, entry.name);
@@ -197,34 +220,7 @@ async function scanEnvMaskRoot(
         kind: realFact.kind === "directory" ? "directory" : "file",
       });
     }
-  };
-
-  // 큐는 앞에서만 읽고 뒤에만 붙인다. 작업자는 큐에 이미 있는 항목만 가져가고,
-  // 새 하위 디렉터리는 끝난 작업자의 pump가 집어 간다.
-  let cursor = 0;
-  let active = 0;
-  let finish!: () => void;
-  const done = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  const pump = (): void => {
-    while (active < ENV_MASK_SCAN_CONCURRENCY && cursor < pending.length) {
-      const current = pending[cursor];
-      if (!current) break;
-      cursor += 1;
-      active += 1;
-      void readDirectory(current).finally(() => {
-        active -= 1;
-        if (cursor >= pending.length && active === 0) {
-          finish();
-          return;
-        }
-        pump();
-      });
-    }
-  };
-  pump();
-  await done;
+  }
   return { entries, files };
 }
 
@@ -254,14 +250,29 @@ export async function scanEnvMaskRoots(
       files += cached.files;
       continue;
     }
+    // 같은 열쇠의 탐색이 이미 돌고 있으면 새로 훑지 않고 그 결과를 함께
+    // 기다린다. 기다린 요청은 캐시에서 되쓴 것이 아니므로 miss로 셈하고,
+    // 디렉터리 나열은 한 번만 일어난다.
     cacheMisses += 1;
-    const scanned = await scanEnvMaskRoot(root, ports, commonExclusions);
-    envMaskScanCache.set(key, {
-      // 적중해도 만료를 늘리지 않는다. 훑은 시점에서 5분이다.
-      expiresAt: Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS,
-      entries: scanned.entries,
-      files: scanned.files,
-    });
+    let pending = envMaskScanInFlight.get(key);
+    if (!pending) {
+      pending = scanEnvMaskRoot(root, ports, commonExclusions)
+        .then((scanned) => {
+          envMaskScanCache.set(key, {
+            // 적중해도 만료를 늘리지 않는다. 훑은 시점에서 5분이다.
+            expiresAt: Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS,
+            entries: scanned.entries,
+            files: scanned.files,
+          });
+          return scanned;
+        })
+        .finally(() => {
+          // 실패했으면 진행 표시를 지워 다음 요청이 다시 훑게 한다.
+          envMaskScanInFlight.delete(key);
+        });
+      envMaskScanInFlight.set(key, pending);
+    }
+    const scanned = await pending;
     rootScans.push(scanned);
     files += scanned.files;
   }

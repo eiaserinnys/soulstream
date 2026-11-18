@@ -4,6 +4,7 @@ import {
   closeSync,
   copyFileSync,
   existsSync,
+  type Dirent,
   lstatSync,
   mkdirSync,
   openSync,
@@ -18,10 +19,25 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 
 import type { ResolvedMcpServer } from "../../src/mcp_config_service.js";
 import type {
+  HostDirectoryEntry,
   HostPathFact,
   IsolationHostPorts,
   IsolationPolicy,
 } from "../../src/security/session_isolation_contract.js";
+
+/** dirent를 호스트 포트가 돌려주는 이름·종류 쌍으로 바꾼다. */
+function toDirectoryEntry(entry: Dirent): HostDirectoryEntry {
+  return {
+    name: entry.name,
+    kind: entry.isSymbolicLink()
+      ? "symlink"
+      : entry.isDirectory()
+        ? "directory"
+        : entry.isFile()
+          ? "file"
+          : "other",
+  };
+}
 
 /** 테스트에서만 쓰는 호스트 사실 대체값. 실제 시스템 경로를 건드리지 않는다. */
 export interface FakeSystemFact {
@@ -125,16 +141,14 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
       if (override === null) throw new Error(`not a directory: ${path}`);
       if (override !== undefined) return [];
       if (!inside(path)) throw new Error(`not a directory: ${path}`);
-      return readdirSync(path, { withFileTypes: true }).map((entry) => ({
-        name: entry.name,
-        kind: entry.isSymbolicLink()
-          ? "symlink"
-          : entry.isDirectory()
-            ? "directory"
-            : entry.isFile()
-              ? "file"
-              : "other",
-      }));
+      return readdirSync(path, { withFileTypes: true }).map(toDirectoryEntry);
+    },
+    listDirectorySync(path: string) {
+      const override = systemFact(path);
+      if (override === null) throw new Error(`not a directory: ${path}`);
+      if (override !== undefined) return [];
+      if (!inside(path)) throw new Error(`not a directory: ${path}`);
+      return readdirSync(path, { withFileTypes: true }).map(toDirectoryEntry);
     },
     async readSymlink(path: string): Promise<string | null> {
       const override = systemFact(path);
