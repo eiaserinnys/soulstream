@@ -185,6 +185,36 @@ test.each(['phone', 'tabletPortrait'] as const)(
   },
 );
 
+test('data 없이 당겨 다시 시도하는 동안은 가운데 부품과 실패 글자 없이 당김 스피너만 남는다', async () => {
+  let rejectRefresh!: (cause: Error) => void;
+  const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => { rejectRefresh = reject; }));
+  const state: any = { data: undefined, loading: false, error: 'network', refresh };
+  mockUsePlannerDaily.mockImplementation(() => state);
+  const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.getByText('network')).toBeTruthy();
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+
+  let request!: Promise<void>;
+  await act(async () => { request = screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+
+  state.loading = true;
+  state.error = null;
+  screen.rerender(<DailyPlannerScreen date="2026-07-17" />);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.queryByText('network')).toBeNull();
+
+  await act(async () => {
+    state.loading = false;
+    state.error = 'network';
+    rejectRefresh(new Error('network'));
+    await expect(request).rejects.toThrow('network');
+  });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+  expect(screen.queryByTestId('daily-loading')).toBeNull();
+  expect(screen.getByText('network')).toBeTruthy();
+});
+
 test('manual pull만 refreshing을 켜고 reject 뒤에도 finally에서 해제한다', async () => {
   let rejectRefresh!: (cause: Error) => void;
   const refresh = jest.fn(() => new Promise<void>((_resolve, reject) => {

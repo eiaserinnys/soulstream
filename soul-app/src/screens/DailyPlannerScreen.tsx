@@ -156,8 +156,8 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           />
         ) : null}
       </View>
-      {firstLoading ? <FrameLoading testID="daily-loading" /> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {firstLoading && !pullRefreshing ? <FrameLoading testID="daily-loading" /> : null}
+      {error && !pullRefreshing ? <Text style={styles.error}>{error}</Text> : null}
       {data ? (
         <DailyMemo
           date={date}

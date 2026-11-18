@@ -51,6 +51,30 @@ test('첫 로딩에는 빈 유리 시트를 그리지 않고, 데이터가 있�
   expect(screen.getByText('별표 카드가 없습니다.')).toBeTruthy();
 });
 
+test('빈 목록을 당기면 당김 스피너 하나만 돌고, 끝나면 빈 상태로 돌아온다', async () => {
+  let resolve!: (value: unknown) => void;
+  mockState.data = { items: [], nextCursor: null };
+  mockState.loading = true;
+  mockState.refresh.mockReturnValue(new Promise((ok) => { resolve = ok; }));
+  const screen = render(<StarredFoldersScreen />);
+  expect(screen.getByTestId('starred-loading')).toBeTruthy();
+
+  let request!: Promise<unknown>;
+  act(() => { request = screen.UNSAFE_getByType(RefreshControl).props.onRefresh(); });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(true);
+  expect(screen.queryByTestId('starred-loading')).toBeNull();
+
+  await act(async () => {
+    mockState.loading = false;
+    resolve('refreshed');
+    await request;
+  });
+  expect(screen.UNSAFE_getByType(RefreshControl).props.refreshing).toBe(false);
+  expect(screen.queryByTestId('starred-loading')).toBeNull();
+  expect(screen.getByTestId('starred-task-sheet')).toBeTruthy();
+  expect(screen.getByText('별표 카드가 없습니다.')).toBeTruthy();
+});
+
 test('자동 pending 전중후는 pull을 켜지 않고 스크롤을 유지한다', () => {
   const screen = render(<StarredFoldersScreen />);
   const scroll = screen.getByTestId('starred-task-scroll');
