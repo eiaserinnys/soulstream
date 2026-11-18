@@ -108,7 +108,10 @@ export async function runProductionMain(): Promise<void> {
     modelCatalog.close();
     throw error;
   }
-  const locks = new HandoverPostgres(config.database_url, server.pageGate);
+  const locks = new HandoverPostgres(config.database_url, server.pageGate, {
+    stopBackground: server.stopBackground,
+    resumeBackground: server.resumeBackground,
+  });
   const handover = new OrchestratorHandover(locks, {
     start: async () => { const address = await server.listen(); console.info(`soulstream-orch-server-ts listening at ${address}`); },
     stopBackground: server.stopBackground,
