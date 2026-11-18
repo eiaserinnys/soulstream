@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type {
   BoardItem,
@@ -19,6 +19,7 @@ import { DisclosureIcon } from '../DisclosureIcon';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
+import { FrameLoading } from '../FrameLoading';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
 
 const INLINE_TYPES = new Set<BoardItem['itemType']>([
@@ -92,9 +93,7 @@ export function FolderBoardContent({
         }} />
       {sectionExpanded ? <GroupedGlassSheet>
         {visibleStatus === 'loading' ? (
-          <View testID="task-board-loading" style={styles.stateRow}>
-            <ActivityIndicator color={t.colors.accent} />
-          </View>
+          <FrameLoading testID="task-board-loading" inline />
         ) : null}
         {visibleStatus === 'error' ? (
           <View style={styles.stateRow}>
@@ -269,7 +268,7 @@ function InlineMarkdown({
   }, [api, documentId, scopeGeneration]);
   const ownsDocument = ownerGeneration === scopeGeneration;
   if (ownsDocument && error) return <Text style={styles.error}>문서 본문을 불러오지 못했습니다.</Text>;
-  if (!ownsDocument || !document) return <ActivityIndicator color={t.colors.accent} />;
+  if (!ownsDocument || !document) return <FrameLoading testID="task-board-markdown-loading" inline />;
   return (
     <View testID="task-board-markdown-body" style={styles.body}>
       <PlannerMarkdownText markdown={document.body} />
@@ -309,7 +308,7 @@ function InlineCustomView({
   }, [api, customViewId, scopeGeneration]);
   const ownsDocument = ownerGeneration === scopeGeneration;
   if (ownsDocument && error) return <Text style={styles.error}>Flux 카드를 불러오지 못했습니다.</Text>;
-  if (!ownsDocument || !document) return <ActivityIndicator />;
+  if (!ownsDocument || !document) return <FrameLoading testID="task-board-custom-view-loading" inline />;
   return (
     <WebView
       testID="task-board-custom-view"

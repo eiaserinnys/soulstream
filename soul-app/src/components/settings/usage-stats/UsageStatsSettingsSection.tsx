@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Text, View, type TextStyle } from 'react-native';
+import { Platform, Text, View, type TextStyle } from 'react-native';
 import { useSettingsWorkspace } from '../SettingsWorkspaceContext';
 import { GlassButton } from '../../GlassSurface';
 import { SettingsOptionRow } from '../SettingsOptionRow';
 import { SettingsSection } from '../SettingsSection';
 import { SettingsSegmentedControl } from '../SettingsSegmentedControl';
+import { FrameLoading } from '../../FrameLoading';
 import { useTokens } from '../../../theme';
 import {
   buildUsageStatsModelOptions,
@@ -429,7 +430,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
 function StatusSection({ flattened, state, loading, onRetry }: { flattened: boolean; state: UsageStatsLoadState; loading: boolean; onRetry(): void }) {
   const t = useTokens();
   const content = state === 'loading'
-    ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><ActivityIndicator size="small" color={t.colors.accent} /><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중…</Text></View>
+    ? <FrameLoading testID="usage-stats-loading" text="불러오는 중…" inline />
     : state === 'forbidden'
         ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>이 통계를 볼 권한이 없습니다.</Text>
         : <View style={{ gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>통계를 불러오지 못했습니다.</Text><GlassButton disabled={loading} onPress={onRetry}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 불러오기</Text></GlassButton></View>;

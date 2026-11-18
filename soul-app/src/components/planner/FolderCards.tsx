@@ -1,5 +1,5 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import { usePlannerFolder } from '../../hooks/usePlannerFolder';
 import { useTokens } from '../../theme';
@@ -14,6 +14,7 @@ import type { FolderCardDisplay } from './CardBoardWorkspace';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { useCompletedCards } from '../../hooks/useCompletedCards';
 import { CompletedCardCollection } from './CompletedCardCollection';
+import { FrameLoading } from '../FrameLoading';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
@@ -41,9 +42,8 @@ export const FolderCards = forwardRef<FolderCardsHandle, {
       <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton></> : null}
     </View>
     {adding ? <CardComposer key={folderId} api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
-    {loading && !data ? <ActivityIndicator color={t.colors.accent} /> : null}
+    {loading && !data ? <FrameLoading testID="folder-cards-loading" inline /> : <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>}
     {error ? <Text style={styles.error}>{error}</Text> : null}
-    <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>
     {!virtualHost&&cardDisplay.includeCompleted?<CompletedCardCollection api={api} browser={completed} onOpen={setSelected}/>:null}
     <CardDetailSheet api={api} cardId={selected} onClose={() => setSelected(null)} onOpenSession={onOpenSession} />
   </View>;

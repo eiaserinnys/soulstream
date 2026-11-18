@@ -7,11 +7,29 @@ import { RefreshControl, StyleSheet } from 'react-native';
 import { StarredFoldersScreen } from '../StarredFoldersScreen';
 import { useSettingsStore } from '../../store/settingsStore';
 
+const folder = {
+  page: { id: 'starred-1', title: '별표 업무', dailyDate: null, version: 1,
+    archived: false, metadata: { starred: true }, createdAt: '', updatedAt: '' },
+  blocks: [], folderId: 'task-1', folderSummary: null, status: 'open', assignee: '담당 미확인',
+  contextCount: 0, progress: null, projectPageId: null, sessions: [], sessionIds: [],
+};
+
 let mockState: any;
 beforeEach(() => {
   useSettingsStore.setState({ serverUrl: '' });
-  mockState = { data: { items: [], nextCursor: null }, loading: false, error: null, refreshRequired: false,
+  mockState = { data: { items: [folder], nextCursor: null }, loading: false, error: null, refreshRequired: false,
     refresh: jest.fn(), loadMore: jest.fn(), moveFolderOrder: jest.fn(), reordering: false };
+});
+
+test('보일 데이터가 없는 첫 로딩은 구석 표시 대신 프레임 가운데 부품을 세운다', () => {
+  mockState.data = { items: [], nextCursor: null };
+  mockState.loading = true;
+  const screen = render(<StarredFoldersScreen />);
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
+  expect(screen.getByTestId('starred-loading').props.accessibilityRole).toBe('progressbar');
+  expect(StyleSheet.flatten(screen.getByTestId('starred-loading').props.style).flex).toBe(1);
+  expect(screen.queryByText('별표 카드가 없습니다.')).toBeNull();
+  expect(screen.queryByText('별표 목록을 불러오는 중입니다.')).toBeNull();
 });
 
 test('자동 pending 전중후는 pull을 켜지 않고 스크롤을 유지한다', () => {

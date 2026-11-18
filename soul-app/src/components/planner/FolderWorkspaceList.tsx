@@ -10,6 +10,7 @@ import { createPostItRoles } from '../../theme/postItRoles';
 import { completedGridLayout } from '../../../../packages/soul-ui/src/cards/completed-cards';
 import type { FolderCardDisplay } from './CardBoardWorkspace';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
+import { FrameLoading } from '../FrameLoading';
 import { CompletedCardFilters } from './CompletedCardFilters';
 import { PostItCard } from './PostItCard';
 import { CardDetailSheet } from './CardDetailSheet';
@@ -52,7 +53,7 @@ export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledD
       initialNumToRender={columns*2} maxToRenderPerBatch={columns*2} windowSize={5} showsVerticalScrollIndicator={false}
       ListHeaderComponent={<View style={{gap:t.spacing.lg}}>{header}{display.includeCompleted?<View style={{gap:t.uiSpacing.sm}}>
         <PlannerSectionHeader variant="board" title="완료" count={browser.cards.length} countSuffix="개 표시"/><CompletedCardFilters browser={browser}/>
-        {!browser.cards.length?<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{browser.loading?'완료 카드를 불러오는 중…':'선택한 기간에 완료 카드가 없습니다'}</Text>:null}
+        {!browser.cards.length?(browser.loading?<FrameLoading testID="folder-workspace-completed-loading" inline/>:<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>선택한 기간에 완료 카드가 없습니다</Text>):null}
       </View>:null}</View>}
       renderItem={({item})=><View style={{width:paper.width}}><PostItCard api={api} card={item} variant="compact" onOpen={()=>setSelected(item.id)}/></View>}
       onViewableItemsChanged={onVisibleRows} ListFooterComponent={<View style={{gap:t.spacing.lg}}>{footer}</View>} onEndReached={browser.loadMore} onEndReachedThreshold={0.5}/>

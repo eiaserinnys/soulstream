@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 import { Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
+import { FrameLoading } from '../components/FrameLoading';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { DailyMemo } from '../components/planner/DailyMemo';
@@ -147,7 +148,7 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           <Text style={styles.dateButton}>›</Text>
         </GlassButton>
         </View>
-        {loading && !pullRefreshing ? (
+        {loading && !!data && !pullRefreshing ? (
           <AutomaticRefreshIndicator
             testID="daily-auto-progress"
             style={styles.autoProgress}
@@ -174,8 +175,9 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           })}
         />
       ) : null}
-      <TodayCards api={api} data={data} onOpenSession={onOpenSession} onDragStateChange={setDraggingCards} />
+      {data || !loading ? <TodayCards api={api} data={data} onOpenSession={onOpenSession} onDragStateChange={setDraggingCards} /> : null}
     </ScrollView>
+    {!data && loading ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="daily-loading" /></View> : null}
     <View testID="daily-composer-dock" style={styles.dock}><CardComposer today api={api} onSessionCreated={onOpenSession} /></View>
       <NewFolderSheet
         visible={newFolderVisible}
@@ -218,6 +220,7 @@ function makeStyles(t: DesignTokens, layout: 'phone' | 'tablet') {
   return StyleSheet.create({
     container: { flex: 1, ...roles.canvas.tokenStyle },
     content: {
+      flexGrow: 1,
       paddingHorizontal: t.uiSpacing.lg,
       paddingVertical: t.spacing.lg,
       gap: t.uiSpacing.lg,

@@ -1,6 +1,7 @@
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
+import { FrameLoading } from '../FrameLoading';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type ViewToken } from 'react-native';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type ViewToken } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerSessionSummary } from '../../api/plannerTypes';
 import type { Session } from '../../api/types';
@@ -209,10 +210,7 @@ export function FolderSessionHistory({
             </Text>
             <View style={styles.detailStateRow}>
               {detailStatus === 'loading' ? (
-                <>
-                  <ActivityIndicator size="small" color={t.colors.accent} />
-                  <Text style={styles.detailMessage}>세션 상세를 불러오는 중입니다.</Text>
-                </>
+                <FrameLoading testID={`task-run-detail-progress-${session.agentSessionId}`} text="세션 상세를 불러오는 중입니다." inline style={{ flex: 1 }} />
               ) : (
                 <>
                   <Text style={styles.error}>세션 상세를 불러오지 못했습니다.</Text>
@@ -245,7 +243,7 @@ export function FolderSessionHistory({
   };
   if (!folderId && !explicitSessionIds) return null;
   const footer = <>
-    {!explicitSessionIds && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
+    {!explicitSessionIds && loading ? <FrameLoading testID="folder-session-history-loading" inline /> : null}
     {!explicitSessionIds && error ? <Text style={styles.error}>{error}</Text> : null}
     {!explicitSessionIds && data?.nextCursor && !loading && error ? (
       <TouchableOpacity testID="task-run-history-retry" style={styles.moreAction} onPress={loadMore}>

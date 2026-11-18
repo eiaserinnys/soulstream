@@ -32,6 +32,7 @@ import { ReviewFolderTabs } from './ReviewFolderTabs';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
+import { ReviewFrameLoading } from './ReviewFrameLoading';
 import { ReviewCardImages } from './ReviewCardImages';
 import {
   entryShellCatalogSessions,
@@ -92,6 +93,7 @@ const sections = [
   { value: 'attachments', label: '첨부' },
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
+  { value: 'frameLoading', label: '프레임 로딩' },
   { value: 'cardImages', label: '카드 이미지' },
   { value: 'dialogues', label: '다이얼로그' },
   { value: 'iphoneDuo', label: '아이폰 듀오' },
@@ -244,6 +246,7 @@ function Gallery() {
   if (section === 'contentLinkDocument') return <ReviewContentLinkDocument />;
   if (section === 'longFolders') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewLongFolders /></View>;
   if (section === 'autoRefresh') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAutoRefresh /></View>;
+  if (section === 'frameLoading') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewFrameLoading /></View>;
   return <View style={{ flex: 1 }}><ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={style} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
     <View style={{ gap: t.spacing.sm }}>

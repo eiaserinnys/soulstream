@@ -2,7 +2,7 @@ import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityCo
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
@@ -32,6 +32,7 @@ import { CardTimeline, type CardQuestionHandlers } from './CardTimeline';
 import { answerCardQuestionChoice, cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget,
   useCardQuestionTargetLifetime } from './CardQuestionBlock';
 import { cardDetailStyles } from './CardDetail.styles';
+import { FrameLoading } from '../FrameLoading';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
 import { CardNotes } from './CardNotes';
@@ -353,7 +354,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
             }
           }}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          {!detail ? <ActivityIndicator color={t.colors.accent} /> : null}
           {detail && tab === 'items' ? <CardCheckItems key={cardId} cardId={detail.card.id} items={cardItems}
             pendingConfirmations={itemActions.pendingConfirmations} onConfirm={itemActions.confirm}
             initiallyConfirmedIds={currentVisit?.initiallyConfirmedIds ?? []}
@@ -364,6 +364,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
           {detail && tab === 'notes' ? <CardNotes brief={detail.card.brief} notes={detail.notes ?? []} sessions={detail.sessions} assigneeSessionId={detail.card.assigneeSessionId} /> : null}
           {detail && tab === 'items' && cardItems.length === 0 ? <Text style={styles.empty}>확인 항목이 없습니다.</Text> : null}
         </ScrollView>}
+        {!detail ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { bottom: dockBottom + dockHeight + t.uiSpacing.sm }]}><FrameLoading testID="card-detail-loading" /></View> : null}
         <View testID="card-detail-dock" style={[styles.dock, { bottom: dockBottom }]} onLayout={(event) => {
           const next = event.nativeEvent.layout.height;
           setDockHeight((current) => current === next ? current : next);
