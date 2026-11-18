@@ -22,24 +22,18 @@ export interface V3VisualQaRouteOptions {
   unifiedFolderView?: boolean;
   nestedSubfolder?: boolean;
   alphaRunHistoryPages?: boolean;
-  catalogDelayMs?: number;
-  failTaskTitleRenameOnce?: boolean;
   successionPickerRuns?: boolean;
-  plannerDelayMs?: number;
   timelineEventCount?: number;
   timelineContentByEventId?: Readonly<Record<number, string>>;
   liveEventText?: string;
   contextMenuParity?: boolean;
   taskDefaultAssignment?: boolean;
   taskAssignmentModelPreset?: string;
-  taskContextEditing?: boolean;
-  legacyAtomContext?: boolean;
   outsideTaskSession?: boolean;
   sessionModelPresets?: Readonly<Record<string, string | null>>;
   sessionReasoningEfforts?: Readonly<Record<string, string | null>>;
   excludeSessionIdsFromInitialStream?: readonly string[];
   includeAlphaThirdRunWhen?: () => boolean;
-  includeCreatedTaskWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
@@ -445,11 +439,6 @@ async function fulfillJson(route: Route, body: Json, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function delay(ms: number | undefined): Promise<void> {
-  if (!ms) return;
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function timelinePage(
   sessionId: string,
   eventCount: number,
@@ -504,16 +493,6 @@ export async function installV3VisualQaRoutes(
 ): Promise<void> {
   pageReads[pages.taskAlpha.id].page.metadata.starred = true;
   if (options.contextMenuParity) resetContextMenuParityState();
-  pageReads[pages.taskBeta.id].blocks = pageReads[pages.taskBeta.id].blocks.filter((item) => item.id !== "beta-cj-atom");
-  if (options.legacyAtomContext) {
-    pageReads[pages.taskBeta.id].blocks.push(block("beta-cj-atom", pages.taskBeta.id, "atom_ref", "", {
-      instance: "atom",
-      nodeId: "e6abe00f-3f3f-47ee-9188-c7a6320bd426",
-      depth: 3,
-      titlesOnly: false,
-    }));
-  }
-  let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   const baseQaSessions = options.unifiedFolderView
     ? [...sessions, outsideTaskSession, ...Array.from({ length: 48 }, (_, index) => ({
         ...outsideTaskSession,
@@ -540,8 +519,6 @@ export async function installV3VisualQaRoutes(
     fixtureFolder("rb-beta", pages.taskBeta, options.nestedSubfolder ? "folder-dashboard" : "folder-amber"),
     fixtureFolder("rb-done", pages.taskDone, "folder-amber"),
     fixtureFolder("rb-carry", pages.carryover, "folder-amber"),
-    ...(options.includeCreatedTaskWhen?.() === true
-      ? [fixtureFolder(pages.taskCreated.id, pages.taskCreated, "folder-amber")] : []),
   ];
   const folderPageById = new Map([
     ["folder-amber", pages.project], ["folder-dashboard", pages.projectDashboard],
@@ -561,9 +538,7 @@ export async function installV3VisualQaRoutes(
     completedUserId: null, completedAt: null, createdAt: NOW, updatedAt: NOW };
   let plannerProjectRequests = 0;
   let runHistoryRequests = 0;
-  const visiblePages = () => options.includeCreatedTaskWhen?.() === true
-    ? allPages
-    : allPages.filter((candidate) => candidate.id !== pages.taskCreated.id);
+  const visiblePages = () => allPages.filter((candidate) => candidate.id !== pages.taskCreated.id);
   const alphaRunIds = () => [
     ...runSessions["rb-alpha"],
     ...(options.includeAlphaThirdRunWhen?.() === true ? ["run-alpha-3"] : []),
@@ -722,7 +697,6 @@ export async function installV3VisualQaRoutes(
           plannerProjectRequests += 1;
           options.onPlannerProjectRequest?.(plannerProjectRequests);
         }
-        await delay(options.plannerDelayMs);
         const folderPage = folderPageById.get(folderId)!;
         const offset = Number(url.searchParams.get("cursor") ?? "0");
         const folderSessions = folderId === "folder-amber"
@@ -813,7 +787,6 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/sessions" && request.method() === "GET") {
       options.onSessionListRequest?.();
       const requestedIds = url.searchParams.getAll("session_id");
-      if (requestedIds.length === 0) await delay(options.catalogDelayMs);
       // 검토 대기 조회는 서버가 상태로 거른다. 전체 목록으로 답하면 카탈로그의
       // 검토 큐 병합이 모든 세션을 검토 대상으로 끌어들인다.
       const reviewState = url.searchParams.get("review_state");
@@ -1001,10 +974,6 @@ export async function installV3VisualQaRoutes(
       };
       const rename = input.operations?.find((operation) => operation.op === "rename_page");
       if (rename?.title && pageId === pages.taskAlpha.id) {
-        if (shouldFailTaskTitleRename) {
-          shouldFailTaskTitleRename = false;
-          return fulfillJson(route, { detail: "fixture rename failure" }, 500);
-        }
         pages.taskAlpha.title = rename.title;
         pages.taskAlpha.version += 1;
         const snapshot = tasks["rb-alpha"] as ReturnType<typeof task>;
@@ -1054,29 +1023,6 @@ export async function installV3VisualQaRoutes(
         }
         current.page.version += 1;
       }
-      if (options.taskContextEditing && pageId === pages.taskBeta.id) {
-        for (const operation of input.operations ?? []) {
-          if (operation.op === "create_block" && operation.temp_id) {
-            current.blocks.push(block(
-              tempIdMapping[operation.temp_id] ?? operation.temp_id,
-              pageId,
-              operation.block_type ?? "paragraph",
-              operation.text ?? "",
-              operation.properties ?? {},
-              operation.parent_id ?? null,
-            ));
-          }
-          if (operation.op === "update_block_type_and_properties" && operation.block_id) {
-            current.blocks = current.blocks.map((candidate) => candidate.id === operation.block_id
-              ? { ...candidate, block_type: operation.block_type ?? candidate.block_type, properties: operation.properties ?? {} }
-              : candidate);
-          }
-          if (operation.op === "delete_block_subtree" && operation.block_id) {
-            current.blocks = current.blocks.filter((candidate) => candidate.id !== operation.block_id);
-          }
-        }
-        current.page.version += 1;
-      }
       return fulfillJson(route, {
         page: current.page,
         blocks: current.blocks,
@@ -1085,7 +1031,6 @@ export async function installV3VisualQaRoutes(
       });
     }
     if (/^\/api\/pages\/[^/]+\/backlinks$/.test(path)) {
-      await delay(options.plannerDelayMs);
       const taskId = decodeURIComponent(path.split("/")[3] ?? "");
       const sourcePageId = [pages.taskAlpha.id, pages.taskBeta.id, pages.taskDone.id, pages.carryover.id].includes(taskId)
         ? pages.project.id
@@ -1160,7 +1105,6 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, { ok: true, snapshot: { folder, sections: [], items: [] } });
     }
     if (path === "/api/board-items") {
-      await delay(options.plannerDelayMs);
       const sessionId = url.searchParams.get("sessionId");
       if (sessionId) {
         const owningFolderId = sessionId === "run-outside-task" ? "rb-done" : null;
