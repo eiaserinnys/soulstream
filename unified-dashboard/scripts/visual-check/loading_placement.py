@@ -126,7 +126,7 @@ Object.defineProperty(navigator.serviceWorker, 'controller', { configurable: tru
 """
 
 MEASURE_SCRIPT = """
-({ frameSelector, text }) => {
+({ frameSelector, text, insetTop }) => {
   const round = (value) => Math.round(value * 10) / 10;
   // 회전 중인 스피너의 외접 상자는 각도에 따라 커진다. 잠깐 애니메이션을 끄고
   // 배치 상자를 잰 뒤 즉시 되돌린다.
@@ -151,6 +151,17 @@ MEASURE_SCRIPT = """
     top: fr.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth),
     bottom: fr.bottom - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth),
   };
+  // 제목처럼 프레임 위쪽에 늘 남는 것이 있으면 그 아래 남는 영역을 프레임으로 잰다.
+  if (insetTop) {
+    const inset = frame.querySelector(insetTop);
+    if (inset) {
+      const insetStyle = getComputedStyle(inset);
+      frameContent.top = Math.max(
+        frameContent.top,
+        inset.getBoundingClientRect().bottom + parseFloat(insetStyle.marginBottom),
+      );
+    }
+  }
   const slot = frame.querySelector('[data-slot="frame-loading"]');
   let target = slot;
   let kind = 'slot';
@@ -429,11 +440,13 @@ SCREENS = [
     },
     {
         "key": "settings-tab",
+        # 탭 본문은 높이가 정해진 상자다. 제목 아래 남는 영역을 채워 그 안에서 가운데에 선다.
         "frame": ".config-detail",
+        "insetTop": ".config-detail-heading",
         "after": '[data-slot="frame-loading"]',
         "before": ".py-8.text-center",
         "text": "프로필을 불러오는 중...",
-        "mode": "content",
+        "mode": "fill",
         "hold": "**/api/agent-profiles",
         "open": open_settings_tab,
     },
@@ -537,6 +550,7 @@ def capture_screen(browser, base: str, out: Path, screen: dict, width: int, base
         settle(page)
         measurement = page.evaluate(MEASURE_SCRIPT, {
             "frameSelector": screen["frame"],
+            "insetTop": screen.get("insetTop"),
             "text": screen["text"],
         })
         verdict = judge(measurement, screen["mode"], baseline)
