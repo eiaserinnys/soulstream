@@ -491,6 +491,10 @@ function ChatViewContent({
     requestOlderDuringExploration,
     setFocusEventId,
   ]);
+  const scrollItemToOffset = useCallback((index: number, offset: number) => {
+    // scrollToIndex addresses the current data array, not firstItemIndex keys.
+    virtuosoRef.current?.scrollToIndex({ index, align: "start", offset: -offset });
+  }, []);
   const {
     scrollerRef,
     bindScrollerElement,
@@ -503,6 +507,7 @@ function ChatViewContent({
     isFollowing,
     isExplicitEventFocus: focusEventId !== null,
     recordFirstVisibleKey,
+    scrollItemToOffset,
     onUserViewportInput: handleUserViewportInput,
   });
   // 보이는 영역에 들어온 대상 행에 고리를 붙이고 2초 뒤 지운다.

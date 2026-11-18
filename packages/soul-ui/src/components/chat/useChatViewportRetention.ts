@@ -31,8 +31,17 @@ interface ChatViewportRetentionOptions {
   isFollowing: boolean;
   isExplicitEventFocus: boolean;
   recordFirstVisibleKey: (key: string | null) => void;
+  /** 현재 data 배열의 index 행을 viewport 위에서 offset px 자리로 옮긴다(Virtuoso 공개 API). */
+  scrollItemToOffset: (index: number, offset: number) => void;
   onUserViewportInput?: (event: Event) => void;
 }
+
+// 과거 삽입 뒤 Virtuoso의 측정과 spacer 갱신은 수백 ms 동안 이어진다. 높이 변화가
+// 이만큼 멈출 때까지 보던 행을 붙잡고, 끝나지 않는 변화는 상한에서 놓는다.
+const RETENTION_QUIET_MS = 600;
+const RETENTION_MAX_MS = 4000;
+// 시계가 멈춘 환경(동기 rAF 시험)에서도 끝나도록 frame 수에도 상한을 둔다. 120Hz에서 4초다.
+const RETENTION_MAX_FRAMES = 480;
 
 /**
  * Virtuoso의 공개 scroller DOM과 렌더 행 geometry만으로 실제 first-visible
@@ -46,6 +55,7 @@ export function useChatViewportRetention({
   isFollowing,
   isExplicitEventFocus,
   recordFirstVisibleKey,
+  scrollItemToOffset,
   onUserViewportInput,
 }: ChatViewportRetentionOptions) {
   const scrollerRef = useRef<HTMLElement | null>(null);
@@ -63,6 +73,10 @@ export function useChatViewportRetention({
   recordFirstVisibleKeyRef.current = recordFirstVisibleKey;
   const onUserViewportInputRef = useRef(onUserViewportInput);
   onUserViewportInputRef.current = onUserViewportInput;
+  const scrollItemToOffsetRef = useRef(scrollItemToOffset);
+  scrollItemToOffsetRef.current = scrollItemToOffset;
+  const groupedRef = useRef(grouped);
+  groupedRef.current = grouped;
 
   const recordVisuallyFirstItem = useCallback(() => {
     if (retentionTargetRef.current !== null) return;
@@ -112,32 +126,54 @@ export function useChatViewportRetention({
     scroller.dataset.chatViewportRetentionStarts = String(
       Number(scroller.dataset.chatViewportRetentionStarts ?? "0") + 1,
     );
-    // Virtuoso의 ResizeObserver와 spacer 보정은 data commit 뒤 여러 frame에 걸칠 수 있다.
-    // 한두 frame만 보면 중간 spacer 좌표를 최종값으로 오인하므로 짧은 settle window 동안
-    // 같은 stable key의 offset을 유지한다.
-    let remainingPasses = 8;
+    // Virtuoso의 ResizeObserver와 spacer 보정은 data commit 뒤 수백 ms에 걸친다.
+    // 높이 변화가 조용해질 때까지 같은 stable key의 offset을 유지한다.
+    const startedAt = performance.now();
+    let lastChangeAt = startedAt;
+    let lastScrollHeight = scroller.scrollHeight;
+    let frames = 0;
+    const preserveTargetOffset = () => {
+      const now = performance.now();
+      const currentOffset = measureChatItemOffset(scroller, target.key);
+      if (currentOffset === null) {
+        // 보던 행이 렌더 범위 밖이면 scrollTop을 덮어쓰지 않는다. scrollHeight에는
+        // 그 행 아래 추정 spacer 변화가 섞여 있어 절대 좌표로 쓸 수 없다. Virtuoso에
+        // 그 행의 index와 저장한 offset을 넘겨 위치를 되돌린다. Virtuoso의 행 높이
+        // 추정은 측정마다 바뀌므로 행이 다시 렌더될 때까지 frame마다 요청하고, 렌더되면
+        // 아래 geometry 경로가 남은 오차를 맞춘다.
+        const index = groupedRef.current.findIndex(
+          (item) => messageOrGroupKey(item) === target.key,
+        );
+        if (index >= 0) scrollItemToOffsetRef.current(index, target.offset);
+        lastChangeAt = now;
+      } else {
+        const delta = currentOffset - target.offset;
+        if (Math.abs(delta) >= 0.5) {
+          scroller.scrollTop += delta;
+          const accumulated = Number(
+            scroller.dataset.chatViewportRetentionCorrection ?? "0",
+          );
+          scroller.dataset.chatViewportRetentionCorrection = String(
+            accumulated + delta,
+          );
+          lastChangeAt = now;
+        }
+      }
+      if (scroller.scrollHeight !== lastScrollHeight) {
+        lastScrollHeight = scroller.scrollHeight;
+        lastChangeAt = now;
+      }
+    };
     const preserveObservedViewport = () => {
       if (retentionTargetRef.current !== target) return;
-      const currentOffset = measureChatItemOffset(scroller, target.key);
-      // 큰 history prepend로 target DOM이 overscan 밖으로 밀리면 공개 scrollHeight
-      // 증가분으로 먼저 같은 절대 좌표를 복원한다. target이 다시 렌더되면 아래
-      // geometry 경로가 실제 offset 오차를 마무리한다.
-      const delta = currentOffset === null
-        ? target.scrollTop
-          + (scroller.scrollHeight - target.scrollHeight)
-          - scroller.scrollTop
-        : currentOffset - target.offset;
-      if (Math.abs(delta) >= 0.5) {
-        scroller.scrollTop += delta;
-        const accumulated = Number(
-          scroller.dataset.chatViewportRetentionCorrection ?? "0",
-        );
-        scroller.dataset.chatViewportRetentionCorrection = String(
-          accumulated + delta,
-        );
-      }
-      remainingPasses -= 1;
-      if (remainingPasses > 0) {
+      preserveTargetOffset();
+      const now = performance.now();
+      frames += 1;
+      if (
+        now - lastChangeAt < RETENTION_QUIET_MS
+        && now - startedAt < RETENTION_MAX_MS
+        && frames < RETENTION_MAX_FRAMES
+      ) {
         retentionFrameRef.current = window.requestAnimationFrame(
           preserveObservedViewport,
         );
@@ -148,6 +184,11 @@ export function useChatViewportRetention({
       scroller.dataset.chatViewportRetentionPending = "false";
       recordVisuallyFirstItem();
     };
+    // data commit 뒤 첫 frame 전에도 Virtuoso의 prepend margin과 header 변화가 이미
+    // DOM에 있다. commit의 동기 갱신이 끝난 직후 한 번 맞춰 그 사이에도 행이 튀지 않게 한다.
+    queueMicrotask(() => {
+      if (retentionTargetRef.current === target) preserveTargetOffset();
+    });
     retentionFrameRef.current = window.requestAnimationFrame(
       preserveObservedViewport,
     );

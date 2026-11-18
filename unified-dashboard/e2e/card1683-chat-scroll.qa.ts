@@ -43,7 +43,7 @@ const chatRoot = (page: Page) => page.locator('[data-slot="chat-root"]').filter(
 const bannerButton = (root: Locator) => root.getByRole("button", { name: "↓ 새 메시지", exact: true });
 const followButton = (root: Locator) => root.getByRole("button", { name: "↓ 자동 스크롤", exact: true });
 
-async function chatPage(browser: Browser, width: number, height: number, deliverLive = false) {
+async function chatPage(browser: Browser, width: number, height: number, deliverLive = false, fixedClock = true) {
   const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: "dark" });
   const page = await context.newPage();
   await page.addInitScript({ content: "window.__name = (f) => f;" });
@@ -75,7 +75,10 @@ async function chatPage(browser: Browser, width: number, height: number, deliver
       },
     });
   });
-  await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
+  // Playwright clock fakes requestAnimationFrame, setTimeout and performance.now. Virtuoso and the
+  // viewport retention then run frame callbacks apart from layout and ResizeObserver delivery, so the
+  // history timing scenario keeps the browser clock.
+  if (fixedClock) await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
   await installV3VisualQaRoutes(page, {});
   await sessionRoutes(page);
   let synced = false;
@@ -102,7 +105,7 @@ async function openChat(page: Page, baseUrl: string, width: number) {
 }
 
 async function historyScenario(browser: Browser, baseUrl: string, width: number, target: HistoryTarget) {
-  const { context, page } = await chatPage(browser, width, width === 1440 ? 1000 : 844);
+  const { context, page } = await chatPage(browser, width, width === 1440 ? 1000 : 844, false, false);
   const held = gate();
   let requested = false;
   const network: { cursor: string | null; event: "request" | "response"; at: number }[] = [];
