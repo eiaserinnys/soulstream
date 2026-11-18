@@ -3,7 +3,8 @@
  * VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43184 --strictPort
  * PLAYWRIGHT_MODULE=$(realpath node_modules/.pnpm/playwright@1.63.0/node_modules/playwright/index.mjs) \
  *   node unified-dashboard/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/card1684-document-panel-states.qa.ts
- * 수정 전 캡처: CARD1684_BEFORE=1 을 실행 명령 앞에 붙인다.
+ * 수정 전 캡처: 기준 커밋의 소스를 제공하는 서버를 V3_QA_BASE_URL로 지정하고
+ * CARD1684_BEFORE=1 을 실행 명령 앞에 붙인다.
  */
 import type { Browser, Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -53,13 +54,32 @@ async function scene(browser: Browser, width: number, state: State) {
     const metrics = await target.evaluate((el, stateName) => {
       const scroll = stateName === "empty" || stateName === "content" ? el.parentElement : el.closest(".overflow-auto");
       if (!scroll) throw new Error("본문 스크롤 영역이 없습니다.");
-      const rect = el.getBoundingClientRect();
+      const visibleParts = stateName === "loading" || stateName === "editor-loading"
+        ? Array.from(el.querySelectorAll("svg, .v3-frame-loading-label")) : [el];
+      if ((stateName === "loading" || stateName === "editor-loading") && visibleParts.length !== 2) {
+        throw new Error("로딩 표시의 스피너와 글자를 찾지 못했습니다.");
+      }
+      const boxes = stateName === "error" ? (() => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return [range.getBoundingClientRect()];
+      })() : visibleParts.map(part => part.getBoundingClientRect());
+      const left = Math.min(...boxes.map(box => box.left));
+      const top = Math.min(...boxes.map(box => box.top));
+      const right = Math.max(...boxes.map(box => box.right));
+      const bottom = Math.max(...boxes.map(box => box.bottom));
+      const rect = { x: left, y: top, width: right - left, height: bottom - top };
       const area = scroll.getBoundingClientRect();
+      const overlay = el.closest(".v3-folder-board-document-overlay");
+      if (!overlay) throw new Error("문서 오버레이가 없습니다.");
+      const overlayRect = overlay.getBoundingClientRect();
       const text = stateName === "empty" ? el.querySelector('[data-testid="markdown-empty"]') ?? el.querySelector("p") ?? el : stateName === "content" ? el.querySelector("p") ?? el : el;
       const style = getComputedStyle(text);
       return {
         target: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         area: { x: area.x, y: area.y, width: area.width, height: area.height },
+        overlay: { y: overlayRect.y, height: overlayRect.height, alignSelf: getComputedStyle(overlay).alignSelf },
+        viewportHeight: window.innerHeight,
         dx: Math.abs(rect.x + rect.width / 2 - area.x - area.width / 2),
         dy: Math.abs(rect.y + rect.height / 2 - area.y - area.height / 2),
         color: style.color, fontWeight: style.fontWeight, fontSize: style.fontSize,
@@ -98,6 +118,7 @@ for (const width of [1440, 390]) {
   for (const state of ["loading", "error", "editor-loading"]) {
     const m = results[`${state}-${width}`];
     if (m.dx > 2 || m.dy > 2) failures.push(`${state}-${width}: 가운데 오차 ${m.dx}, ${m.dy}`);
+    if (width === 390 && m.area.height < m.viewportHeight / 2) failures.push(`${state}-${width}: 본문 영역 높이가 화면의 절반보다 작음 (${m.area.height}px)`);
   }
   const empty = results[`empty-${width}`];
   const content = results[`content-${width}`];
