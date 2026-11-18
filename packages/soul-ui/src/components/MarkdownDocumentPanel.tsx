@@ -413,7 +413,7 @@ export function MarkdownDocumentPanel({
             titleEditingRef.current = false;
             void saveNow();
           }}
-          className="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
+          className="min-w-0 flex-1 rounded-md bg-transparent px-0 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
           aria-label="문서 제목"
         />
         <span
@@ -424,8 +424,7 @@ export function MarkdownDocumentPanel({
         >
           {statusLabel}
         </span>
-        {document ? (
-          isEditingBody ? (
+        {isEditingBody && document ? (
             <DashboardIconCap
               label="편집 완료"
               data-testid="markdown-edit-done"
@@ -438,12 +437,12 @@ export function MarkdownDocumentPanel({
             <DashboardIconCap
               label="문서 편집"
               data-testid="markdown-edit-start"
+              disabled={!document}
               onClick={enterEditMode}
             >
               <Pencil className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
-          )
-        ) : null}
+          )}
         <span className="inline-flex" title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}><Button variant="ghost" size="icon" disabled={!canDeleteDocument} onClick={remove} title={canDeleteDocument ? "문서 삭제" : undefined} aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}>
           <Trash2 className="h-4 w-4" />
         </Button></span>
@@ -478,7 +477,7 @@ export function MarkdownDocumentPanel({
             }}
             data-testid="markdown-read-body"
           >
-            {body.trim() ? <MarkdownContent content={body} codeBlockLayout="document" /> : <span className="select-none text-sm text-muted-foreground" data-testid="markdown-empty">빈 문서</span>}
+            {body.trim() ? <MarkdownContent content={body} codeBlockLayout="document" /> : <span className="select-none text-sm text-[var(--v3-text-tertiary)]" data-testid="markdown-empty">빈 문서</span>}
           </div>
         )}
       </div>

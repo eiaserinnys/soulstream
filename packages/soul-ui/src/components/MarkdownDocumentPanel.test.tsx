@@ -272,7 +272,7 @@ describe("MarkdownDocumentPanel", () => {
     const empty = readBody.querySelector<HTMLElement>('[data-testid="markdown-empty"]');
     expect(empty?.textContent).toBe("빈 문서");
     expect(empty?.classList.contains("text-sm")).toBe(true);
-    expect(empty?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(empty?.classList.contains("text-[var(--v3-text-tertiary)]")).toBe(true);
     expect(empty?.classList.contains("select-none")).toBe(true);
     expect(readBody.querySelector("p")).toBeNull();
   });
@@ -291,6 +291,7 @@ describe("MarkdownDocumentPanel", () => {
     expect(loading).not.toBeNull();
     expect(loading?.parentElement?.classList.contains("flex")).toBe(true);
     expect(loading?.parentElement?.classList.contains("overflow-auto")).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="markdown-edit-start"]')?.disabled).toBe(true);
   });
 
   it("switches to CodeMirror on body click and saves edited body on blur", async () => {
@@ -429,6 +430,7 @@ describe("MarkdownDocumentPanel", () => {
 
     expect(error.textContent).toBe("불러오기 실패");
     expect(error.getAttribute("role")).toBe("alert");
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="markdown-edit-start"]')?.disabled).toBe(true);
     expect(error.closest('[data-slot="frame-notice"]')?.parentElement?.classList.contains("flex")).toBe(true);
     expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
   });
