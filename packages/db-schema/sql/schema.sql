@@ -4827,3 +4827,6 @@ CREATE TABLE IF NOT EXISTS conversation_history_snapshots (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (session_id, first_input_is_initial_instruction)
 );
+
+-- Card #1631: enable index-only nested-loop lookups for delivery latency.
+CREATE INDEX IF NOT EXISTS idx_events_id_created_at_cover ON events (session_id, id) INCLUDE (created_at);
