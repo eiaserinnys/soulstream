@@ -12,7 +12,7 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
   const [start,setStart]=useState(()=>localDate(new Date(Date.now()-7*24*60*60*1000))),[end,setEnd]=useState(()=>localDate(new Date()));
   const [search,setSearch]=useState(""),[q,setQ]=useState("");
   useEffect(()=>{const timer=setTimeout(()=>setQ(search.trim()),250);return()=>clearTimeout(timer);},[search]);
-  const bounds=useMemo(()=>completedBounds(period,start,end,Date.now()),[period,start,end,q,enabled,revision]);
+  const bounds=useMemo(()=>completedBounds(period,start,end,Date.now()),[period,start,end,q,enabled]);
   const params=useMemo(()=>({folderId,...bounds,q,limit:60}),[folderId,bounds,q]);
   const key=JSON.stringify(params),resetKey=`${key}:${revision}`;
   const [page,setPage]=useState<{key:string;cards:CardRow[];cursor:string|null}>({key:"",cards:[],cursor:null});
@@ -26,7 +26,7 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
       if(current!==generation.current)return;
       cursor.current=result.nextCursor;
       setPage(previous=>({key,cursor:result.nextCursor,cards:[...new Map([...(after&&previous.key===key?previous.cards:[]),...result.cards].map(card=>[card.id,card])).values()]}));
-    }catch(cause){if(current===generation.current)setError(String(cause));}
+    }catch(cause){if(current===generation.current)setError(cause instanceof Error?cause.message:String(cause));}
     finally{if(current===generation.current){busy.current=false;setLoading(false);}}
   },[enabled,bounds,params,key,loader]);
   useEffect(()=>{
@@ -34,7 +34,7 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
     if(enabled&&bounds)void fetchPage();
     return()=>{generation.current++;};
   },[fetchPage,revision]);
-  return {cards:enabled&&page.key===key?page.cards:[],loading,error:bounds?error:"시작일과 종료일을 확인해 주세요.",resetKey,
+  return {cards:enabled&&page.key===key?page.cards:[],loading,error,invalidRange:!bounds,loaded:!!(enabled&&bounds&&page.key===key),resetKey,
     period,setPeriod,start,setStart,end,setEnd,search,setSearch,
     loadMore:()=>{if(cursor.current)void fetchPage(cursor.current);},retry:()=>void fetchPage(),hasMore:!!page.cursor};
 }

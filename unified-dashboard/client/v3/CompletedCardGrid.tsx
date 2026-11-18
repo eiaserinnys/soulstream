@@ -4,6 +4,7 @@ import { CompletedVirtualGrid, type CompletedGridHandle,type CompletedGridSnapsh
 import { completedPeriods } from "@seosoyoung/soul-ui/cards/completed-cards";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CompletedBrowser } from "./use-completed-cards";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 export type { CompletedGridSnapshot };
 
 export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser}) {
@@ -15,11 +16,11 @@ export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser
 }
 
 export function CompletedCardBrowserFeedback({browser}:{browser:CompletedBrowser}) {
-  return <>
-    {browser.error?<p role="alert" className="v3-card-board-empty">{browser.error}<Button variant="ghost" size="sm" onClick={browser.retry}>다시 불러오기</Button></p>:null}
-    {!browser.cards.length&&browser.loading?<FrameLoading label="완료 카드를 불러오는 중…"/>:null}
-    {!browser.cards.length&&!browser.loading?<p className="v3-card-board-empty" role="status">선택한 기간에 완료 카드가 없습니다</p>:null}
-  </>;
+  if(browser.invalidRange)return <p role="alert" className="v3-card-board-empty">시작일과 종료일을 확인해 주세요.</p>;
+  if(browser.error)return <V3ErrorNotice message="완료 카드를 불러오지 못했습니다." detail={browser.error}><Button variant="ghost" size="sm" onClick={browser.retry}>다시 불러오기</Button></V3ErrorNotice>;
+  if(browser.cards.length)return null;
+  if(!browser.loaded)return <FrameLoading label="완료 카드를 불러오는 중…"/>;
+  return <p className="v3-card-board-empty" role="status">선택한 기간에 완료 카드가 없습니다</p>;
 }
 
 function RestorableCompletedGrid({browser,renderCard,snapshot,onSnapshotChange}: {

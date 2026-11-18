@@ -46,7 +46,7 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed,
       return left<right?-1:left>right?1:0;
     });
     return <section key={status} className="v3-card-board-column" data-board-column={status} aria-label={label} style={status==="done"?{width:doneWidth}:undefined}>
-      <div className="v3-detail-section-head"><h3>{label}</h3><span>{column.length}개{status==="done"?" 표시":""}</span>{status==="todo"?draftAction:null}</div>
+      <div className="v3-detail-section-head"><h3>{label}</h3>{status!=="done"||!completed||completed.loaded?<span>{column.length}개{status==="done"?" 표시":""}</span>:null}{status==="todo"?draftAction:null}</div>
       {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=>renderCard(card)} showControls={!hideEmptyLanes} showFeedback={!hideEmptyLanes}
         snapshot={completedGridSnapshot} onSnapshotChange={onCompletedGridSnapshotChange}/>:<div className="v3-card-board-lane">
         {sorted.length ? sorted.map(card=><Fragment key={card.id}>{renderCard(card)}</Fragment>)
