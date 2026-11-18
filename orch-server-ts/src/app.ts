@@ -343,6 +343,11 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     ...(options.mcpHostRoutes.cluster?.readSession ? { externalLlm: {
       service: options.externalEvents, getSession: options.mcpHostRoutes.cluster.readSession,
     } } : {}),
+    // 앱이 받은 운영 DB 클라이언트는 oauthRoutes.sql 하나다. 외부 요청 회신 도구는
+    // 같은 클라이언트를 써서 배포 즉시 동작한다(테스트 호스트는 externalAccess를 직접 준다).
+    ...(options.mcpHostRoutes.externalAccess === undefined && options.oauthRoutes !== undefined
+      ? { externalAccess: { sql: options.oauthRoutes.sql } }
+      : {}),
     cluster: { ...options.mcpHostRoutes.cluster, logger: app.log },
     recurringJobs: options.recurringJobHostRoutes ?? options.mcpHostRoutes.recurringJobs!,
     cardOrchestration: options.cardOrchestrationRoutes ?? options.mcpHostRoutes.cardOrchestration!,

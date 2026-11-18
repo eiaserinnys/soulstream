@@ -324,6 +324,9 @@
     "rename_folder": {
       "category": "allow"
     },
+    "reply_to_external_request": {
+      "category": "allow"
+    },
     "report_card_item": {
       "category": "allow"
     },

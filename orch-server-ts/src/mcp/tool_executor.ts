@@ -1,4 +1,5 @@
 import { sessionMessageHandlers } from "./session_message_handlers.js";
+import { externalAccessHandlers } from "./external_access_handlers.js";
 import { externalLlmHandlers } from "./external_llm_handlers.js";
 import { clusterHandlers } from "./cluster_handlers.js";
 import { cardOrchestrationHandlers } from "./card_orchestration_handlers.js";
@@ -19,6 +20,7 @@ import { nodePairingHandlers } from "./node_pairing_handlers.js";
 
 export const mcpToolHandlers = {
   ...sessionMessageHandlers,
+  ...externalAccessHandlers,
   ...externalLlmHandlers,
   ...clusterHandlers,
   ...cardOrchestrationHandlers,

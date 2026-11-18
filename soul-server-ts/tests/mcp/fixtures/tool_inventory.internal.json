@@ -7055,6 +7055,33 @@
     "name": "rename_folder"
   },
   {
+    "description": "Internal only. Reply to one external request using the request_handle from its external_sender context item. The turn's normal answer is not delivered externally. final=true closes the request and later replies are rejected; close with no text when there is nothing to answer.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "final": {
+          "type": "boolean"
+        },
+        "request_handle": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_handle",
+        "final"
+      ],
+      "type": "object"
+    },
+    "name": "reply_to_external_request"
+  },
+  {
     "description": "담당 항목을 doing, done, dropped로 알립니다. 끝나거나 빼면 result에 결과나 까닭 한 줄(80자까지)을 쓰고 evidence에 캡처와 링크를 넷까지 답니다(설명 40자까지). 못 본 것은 caveat(60자까지)에 적습니다. 사용자가 확인한 항목을 고칠 때는 reopen_reason(80자까지)이 필요합니다. 커밋, 경로, URL 같은 식별자는 노트에 적습니다.",
     "execution": {
       "taskSupport": "forbidden"
