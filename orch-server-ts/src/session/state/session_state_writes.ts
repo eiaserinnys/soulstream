@@ -217,6 +217,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/conversation/conversation_projection.ts", comparisons: 1, lists: 0, sql: 0, note: "대화 사건 종류와 수신 상태." },
   { file: "src/conversation/conversation_service.ts", comparisons: 1, lists: 0, sql: 0, note: "대화 사건 종류와 수신 상태." },
   { file: "src/execute/execute_proxy_routes.ts", comparisons: 1, lists: 0, sql: 0, note: "실행 프록시 프레임 종류." },
+  { file: "src/external_access/external_input_service.ts", comparisons: 3, lists: 0, sql: 0, note: "대상 세션의 관측 상태를 외부 응답에 싣는다." },
   { file: "src/folders/folder_operations.ts", comparisons: 0, lists: 1, sql: 0, note: "폴더 운영 상태." },
   { file: "src/mcp/session_consumption_boundary.ts", comparisons: 0, lists: 1, sql: 0, note: "세션 종료 여부를 읽는다." },
   { file: "src/model/model_preset_availability.ts", comparisons: 1, lists: 0, sql: 0, note: "모델 공급자 상태." },
