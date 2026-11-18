@@ -45,6 +45,42 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
+  it("filters unrelated code releases before asking the recovery storage worker", async () => {
+    const stateDirectory = await temporaryDirectory("release-filter");
+    for (const [sessionId, codeSha] of [["candidate", "release-a"], ["unrelated", "release-b"]]) {
+      const paths = runnerProcessPaths(stateDirectory, sessionId!);
+      const config = { ...registration({ sessionId }).config, paths, codeSha };
+      await mkdir(paths.sessionDirectory, { recursive: true });
+      await writeFile(paths.configPath, JSON.stringify(config));
+      await writeFile(paths.databasePath, "");
+    }
+    const broken = runnerProcessPaths(stateDirectory, "broken");
+    await mkdir(broken.sessionDirectory, { recursive: true });
+    await writeFile(broken.configPath, "{");
+    const pending = runnerProcessPaths(stateDirectory, "pending");
+    await mkdir(pending.sessionDirectory, { recursive: true });
+    const readAuthoritativeLifecycle = vi.fn(async () => null);
+    const recoveryStorage = { readAuthoritativeLifecycle } as never;
+
+    const baseline = await scanRunnerRegistrations(stateDirectory, { recoveryStorage });
+    readAuthoritativeLifecycle.mockClear();
+    const filtered = await scanRunnerRegistrations(stateDirectory, {
+      recoveryStorage,
+      onlyCodeShas: new Set(["release-a"]),
+    });
+
+    expect(filtered.registrations).toEqual(baseline.registrations.filter(
+      (item) => item.config.codeSha === "release-a",
+    ));
+    expect(filtered.errors.map(({ directory, error }) => [directory, error.message])).toEqual(
+      baseline.errors.map(({ directory, error }) => [directory, error.message]),
+    );
+    expect(readAuthoritativeLifecycle).toHaveBeenCalledOnce();
+    expect(readAuthoritativeLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "candidate" }), undefined,
+    );
+  });
+
   it("skips a registration directory while its config is not yet published", async () => {
     const stateDirectory = await temporaryDirectory("config-publication-race");
     const paths = runnerProcessPaths(stateDirectory, "session-config-pending");

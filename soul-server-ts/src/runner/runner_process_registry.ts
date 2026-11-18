@@ -18,7 +18,7 @@ import {
   readRunnerSqliteLifecycle,
   type RunnerLifecycleRecord,
 } from "./sqlite_runner_lifecycle.js";
-import type { RunnerChildConfig } from "./runner_process_spawn.js";
+import { readRunnerChildConfig, type RunnerChildConfig } from "./runner_process_spawn.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
 import { isRunnerRegistrationDirectoryName } from "./runner_process_paths.js";
 import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
@@ -110,6 +110,7 @@ export async function scanRunnerRegistrations(
     cache?: RunnerRegistrationScanCache;
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
+    onlyCodeShas?: ReadonlySet<string>;
   } & AuthoritativeRunnerLifecycleOptions = {},
 ): Promise<RunnerRegistrationScan> {
   const registrations: RunnerRegistration[] = [];
@@ -130,6 +131,14 @@ export async function scanRunnerRegistrations(
   for (const [scanPosition, entry] of entries.entries()) {
     if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
+    if (options.onlyCodeShas) {
+      try {
+        const config = await readRunnerChildConfig(resolve(directory, "runner-config.json"));
+        if (!options.onlyCodeShas.has(config.codeSha)) continue;
+      } catch {
+        // Preserve the normal reader's missing-config and unreadable-evidence handling.
+      }
+    }
     try {
       const readFresh = async () => await readRunnerRegistrationSummary(directory, {
           ...options,
