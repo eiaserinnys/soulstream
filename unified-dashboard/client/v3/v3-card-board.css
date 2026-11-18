@@ -78,3 +78,4 @@
 .v3-completed-viewport > div { scrollbar-width: none; }
 .v3-completed-viewport > div::-webkit-scrollbar { display: none; }
 .v3-postit-grid.v3-completed-collection { display: block; max-width: calc(var(--postit-width) * 3 + var(--v3-space-6) * var(--postit-scale) * 2 + var(--v3-space-2)); min-width: 0; width: 100%; }
+.v3-completed-collection > .v3-completed-controls, .v3-completed-collection > .v3-completed-viewport { padding-inline: 0; }

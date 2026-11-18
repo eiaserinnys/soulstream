@@ -71,8 +71,17 @@ for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포�
  const listViewport=home.getByTestId("completed-viewport"),listScroller=listViewport.getByTestId("virtuoso-scroller");
  await expect(home.locator(".v3-completed-collection")).toContainText("6개 표시");
  await listViewport.scrollIntoViewIfNeeded();await expect(listScroller).toBeAttached();
- const listCard=listScroller.locator("[data-card-id]").first();
- const listMetrics={viewport:await listViewport.boundingBox(),scroller:await listScroller.boundingBox(),firstCard:await listCard.boundingBox()};
+ const listCard=listScroller.locator(".v3-completed-grid-item").first();
+ const queueTitle=home.locator('[data-card-group="queued"] .v3-section-head h2');
+ const completedTitle=home.locator(".v3-completed-collection > div > :is(h2,h3)");
+ const firstPeriod=home.locator(".v3-completed-collection .v3-completed-periods button").first();
+ const typography=async(locator:typeof queueTitle)=>locator.evaluate(element=>{
+  const style=getComputedStyle(element);return {fontSize:style.fontSize,fontWeight:style.fontWeight,lineHeight:style.lineHeight};
+ });
+ const listMetrics={viewport:await listViewport.boundingBox(),scroller:await listScroller.boundingBox(),firstCard:await listCard.boundingBox(),
+  typography:{queue:await typography(queueTitle),completed:await typography(completedTitle)},
+  starts:{queue:(await queueTitle.boundingBox())!.x,completed:(await completedTitle.boundingBox())!.x,
+   period:(await firstPeriod.boundingBox())!.x,card:(await listCard.boundingBox())!.x}};
  await page.screenshot({path:path.join(artifacts,`${phase}-${width}-list.png`),animations:"disabled"});
  const metrics={board:boardMetrics,list:listMetrics,resize:null as null|{width:number;height:number;documentWidth:number;clientWidth:number}};
  const metricsPath=path.join(artifacts,`${phase}-${width}-metrics.json`);
@@ -83,6 +92,9 @@ for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포�
  expect(listMetrics.firstCard!.x+listMetrics.firstCard!.width).toBeLessThanOrEqual(listMetrics.viewport!.x+listMetrics.viewport!.width);
  expect(listMetrics.firstCard!.y).toBeGreaterThanOrEqual(listMetrics.viewport!.y);
  expect(listMetrics.firstCard!.y+listMetrics.firstCard!.height).toBeLessThanOrEqual(listMetrics.viewport!.y+listMetrics.viewport!.height);
+ expect.soft(listMetrics.typography.completed,"완료와 대기열 머리 글자").toEqual(listMetrics.typography.queue);
+ const starts=Object.values(listMetrics.starts);
+ expect.soft(Math.max(...starts)-Math.min(...starts),"대기열·완료·기간·카드 시작선 차이").toBeLessThanOrEqual(1);
  const resized=width===390?{width:1440,height:900}:{width:390,height:844};
  await page.setViewportSize(resized);
  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
@@ -91,6 +103,26 @@ for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포�
  metrics.resize={width:resized.width,height:(await listViewport.boundingBox())!.height,...overflow};
  writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
  if(resized.width===390)expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.clientWidth);
+ if(width===1440){
+  await page.setViewportSize({width,height});
+  await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
+  const folder=page.getByTestId("folder-card-section");
+  await folder.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+  await folder.getByRole("button",{name:"일반 보기",exact:true}).click();
+  const folderCollection=folder.locator(".v3-completed-collection");
+  await expect(folderCollection.locator(".v3-detail-section-head > h3")).toHaveText("완료");
+  await folderCollection.getByTestId("completed-viewport").scrollIntoViewIfNeeded();
+  await folderCollection.locator(".v3-detail-section-head").scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,`${phase}-1440-folder-list.png`),animations:"disabled"});
+  await page.goto("/components");
+  const sample=page.getByTestId("card-board-sample");
+  await sample.getByRole("button",{name:"일반 보기",exact:true}).click();
+  await sample.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+  const sampleCollection=sample.locator(".v3-completed-collection");
+  await expect(sampleCollection.locator(".v3-detail-section-head > h3")).toHaveText("완료");
+  await sampleCollection.getByTestId("completed-viewport").scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,`${phase}-1440-components-list.png`),animations:"disabled"});
+ }
 });
 
 test("completed grid restores main scroll across expansion and resets after search",async({page},testInfo)=>{
