@@ -23,12 +23,21 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_URL = 'https://soulstream.example.test/x/sl_fakeid_' + 'A' * 43
 NAMES = ['✨ 서소영 관제', '🌿 로젤린 작업', '🔍 조사 세션', '📝 글쓰기', '🎨 디자인 검수', '🧭 프로젝트 안내', '📚 자료 정리', '🤖 아주 긴 영구 에이전트 세션 이름']
 SESSIONS = [{'session_id': f'00000000-0000-4000-8000-{i + 1:012}', 'display_name': name, 'agent_name': '로젤린'} for i, name in enumerate(NAMES)]
+
+WORDS = '''root => { const out = []; const roots = root ? [document.querySelector(root)] : [...document.querySelectorAll('.access-links, [role=dialog][data-open]')].slice(-1);
+          for (const r of roots) { if (!r) continue; const walker = document.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+            let n; while ((n = walker.nextNode())) { const el = n.parentElement; const s = getComputedStyle(el);
+              if (s.whiteSpace === 'nowrap' || el.closest('.owned-agents-token, [aria-hidden=true]')) continue;
+              const re = /\\S+/g; let m; while ((m = re.exec(n.textContent))) { const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + m[0].length);
+                const tops = [...new Set([...rg.getClientRects()].filter(x => x.width > 0).map(x => Math.round(x.top)))];
+                if (tops.length > 1) out.push({word: m[0], cls: String(el.className).slice(0, 60), tag: el.tagName, text: n.textContent.slice(0, 60), wb: s.wordBreak}); } } }
+          return out; }'''
 
 
 def iso(offset):
@@ -70,6 +79,7 @@ def main():
               ROOT / 'unified-dashboard/client/components/AccessLinksTab.tsx',
               ROOT / 'unified-dashboard/client/components/CatalogSelectionField.tsx',
               ROOT / 'unified-dashboard/client/components/config/access-links.css',
+              ROOT / 'unified-dashboard/client/components/config/busy-button.ts',
               ROOT / 'unified-dashboard/client/components/config/config-layout.css',
               ROOT / 'unified-dashboard/client/components/config/SettingsListDetail.tsx']
     fingerprint = hashlib.sha256(b''.join(path.read_bytes() for path in inputs)).hexdigest()
@@ -179,19 +189,28 @@ def main():
                 }""")
                 measurements[name] = result
                 if result['page'] > result['viewport'] + 1 or any(x['scroll'] > x['client'] + 1 or x['escaped'] for x in result['bounds']): problems.append(name + ': 가로 넘침')
+            def check_words(name, root=None):
+                split_words = page.evaluate(WORDS, root)
+                measurements[name] = split_words
+                if split_words:
+                    problems.append(name + ': 낱말 가운데 줄바꿈')
+
             for width in ([1440] if args.phase == 'wide' else [360] if args.phase == 'narrow' else []):
                 state['links'] = new_links()
                 open_tab(width)
                 page.get_by_text('외부 조사 도우미').wait_for()
+                if width == 360: check_words('words-tab-360-closed', '.access-links')
                 shot(f'tab-{width}-closed')
                 page.get_by_text('지난 링크', exact=False).first.click()
                 shot(f'tab-{width}-expanded')
                 overflow(f'tab-{width}')
+                if width == 360: check_words('words-tab-360-expanded', '.access-links')
                 open_issue()
                 page.wait_for_function("() => document.activeElement?.getAttribute('aria-label') === '대상 세션'", timeout=10000)
                 measurements[f'issue-open-{width}'] = focus(page)
                 if measurements[f'issue-open-{width}']['label'] != '대상 세션': problems.append(f'{width}: 발급 창 초점')
                 shot(f'issue-{width}-empty')
+                if width == 360: check_words('words-issue-360-empty')
                 labels = page.evaluate("""() => {
                   const root = document.querySelector('.access-links-form');
                   const sender = root.querySelector('input[aria-label="발신자 이름"]').closest('label').querySelector('span');
@@ -212,6 +231,7 @@ def main():
                 page.get_by_label('세션 ID').fill('bad')
                 page.get_by_label('세션 ID').blur()
                 shot(f'issue-{width}-invalid')
+                if width == 360: check_words('words-issue-360-invalid')
                 page.get_by_label('세션 ID').fill(SESSIONS[0]['session_id'])
                 state['issue'] = 404
                 page.get_by_role('dialog').last.get_by_role('button', name='링크 만들기').click()
@@ -280,21 +300,36 @@ def main():
                 page.set_viewport_size({'width': 360, 'height': 800}); shot('resize-360'); overflow('resize-360')
                 if page.get_by_label('발신자 이름').input_value() != '크기 변경 확인': problems.append('창 크기 변경 중 입력이 사라짐')
                 page.set_viewport_size({'width': 1440, 'height': 1000}); shot('resize-1440'); overflow('resize-1440')
-                for width in [360, 1440]:
-                    page.get_by_role('combobox', name='대상 세션').click()
-                    page.get_by_role('listbox').wait_for()
-                    page.set_viewport_size({'width': width, 'height': 800 if width == 360 else 1000})
-                    page.wait_for_function("""() => { const p = [...document.querySelectorAll('[role=listbox]')].find(e => e.getBoundingClientRect().width > 0); const t = document.querySelector('[aria-label="대상 세션"]'); if (!p || !t) return false; const r = p.getBoundingClientRect(), a = t.getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1 && Math.abs(r.left - a.left) <= 2; }""", timeout=10000)
-                    positions = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].at(-1).getBoundingClientRect();
-                      const p = [...document.querySelectorAll('[role=listbox]')].find(e => e.getBoundingClientRect().width > 0).getBoundingClientRect(); const t = document.querySelector('[aria-label="대상 세션"]').getBoundingClientRect(); return {center: (d.left+d.right)/2, width: innerWidth, popupLeft:p.left, popupRight:p.right, triggerLeft:t.left}; }""")
-                    measurements[f'resize-position-{width}'] = positions
-                    if abs(positions['center'] - width / 2) > 2 or positions['popupLeft'] < -1 or positions['popupRight'] > width + 1 or abs(positions['popupLeft'] - positions['triggerLeft']) > 2: problems.append(f'{width}: 크기 변경 위치')
-                    page.keyboard.press('Escape')
-                    page.get_by_role('listbox').wait_for(state='hidden')
+                # Capture both lists at each width, then resize while each list is open.
+                for field, capture in [('대상 세션', 'target'), ('기간', 'duration')]:
+                    for width, next_width in [(1440, 360), (360, 1440)]:
+                        trigger = page.get_by_role('combobox', name=field)
+                        trigger.click()
+                        listbox = page.locator('[role=listbox]:visible')
+                        listbox.wait_for()
+                        page.wait_for_timeout(300)
+                        shot(f'{capture}-options-{width}')
+                        page.set_viewport_size({'width': next_width, 'height': 800 if next_width == 360 else 1000})
+                        try:
+                            listbox.wait_for(state='hidden', timeout=3000)
+                            page.wait_for_function(
+                                "label => document.activeElement?.getAttribute('aria-label') === label",
+                                arg=field, timeout=3000)
+                        except PlaywrightTimeoutError:
+                            pass
+                        result = {'visibleListboxes': listbox.count(),
+                                  'expanded': trigger.get_attribute('aria-expanded'),
+                                  'focus': focus(page)}
+                        measurements[f'resize-{capture}-{width}-to-{next_width}'] = result
+                        if result['visibleListboxes'] or result['expanded'] != 'false' or result['focus']['label'] != field:
+                            problems.append(f'{field} {width}→{next_width}: 크기 변경 뒤 목록 또는 초점')
+                            if result['visibleListboxes']:
+                                page.keyboard.press('Escape')
+                page.get_by_role('combobox', name='대상 세션').focus()
                 tabs = []
                 for _ in range(6): page.keyboard.press('Tab'); tabs.append(focus(page))
                 measurements['tab-focus'] = tabs
-                if not all(item['dialog'] for item in tabs): problems.append('Tab 초점이 열린 창 밖으로 이동')
+                if not all(item['dialogTitle'] == '새 접속 링크' for item in tabs): problems.append('Tab 초점이 열린 창 밖으로 이동')
                 page.keyboard.press('Escape')
                 page.get_by_text('새 접속 링크').wait_for(state='hidden')
                 page.wait_for_function("() => document.activeElement?.textContent?.trim() === '링크 만들기' && document.activeElement?.closest('[role=dialog]')?.querySelector('[data-slot=dialog-title]')?.textContent?.trim() === '설정'", timeout=10000)
@@ -338,7 +373,7 @@ def main():
                 measurements[f'pas-loading-{width}'] = 'visible'
                 page.get_by_role('combobox', name='대상 세션').wait_for(state='visible')
                 page.wait_for_timeout(4000)
-                page.get_by_role('combobox', name='대상 세션').click(); page.get_by_role('listbox').wait_for(); shot(f'target-options-{width}')
+                page.get_by_role('combobox', name='대상 세션').click(); page.get_by_role('listbox').wait_for(); shot(f'target-options-loaded-{width}')
                 measurements[f'target-options-{width}'] = {'separators': page.locator('[role=listbox] [role=separator]').count()}
                 if page.locator('[role=listbox] [role=separator]').count() < 1: problems.append(f'{width}: 대상 선택지 구분선 없음')
                 if width == 360:

@@ -60,6 +60,23 @@ def run(page, width, state, new_links, open_tab, focus, shot, overflow, measurem
         if len(result) < 3 or any(item['tag'] == 'BODY' for item in result):
             problems.append(f'{width} {name}: 대기 중 초점이 사라짐')
 
+    def submit_and_check_busy(name, title, text):
+        nonlocal checks
+        timeline_start()
+        page.keyboard.press('Enter')
+        page.wait_for_timeout(300)
+        buttons = page.get_by_role('dialog', name=title, exact=True).locator('[data-slot=dialog-footer] button')
+        result = buttons.evaluate_all("""buttons => buttons.map(button => ({
+          text: button.textContent.trim(), opacity: getComputedStyle(button).opacity,
+          focused: document.activeElement === button,
+        }))""")
+        measurements[f'{name}-footer-{width}'] = result
+        checks += 1
+        if result != [{'text': '취소', 'opacity': '0.64', 'focused': False},
+                      {'text': text, 'opacity': '0.64', 'focused': True}]:
+            problems.append(f'{width} {name}: 대기 중 단추 흐림 또는 초점 불일치')
+        shot(f'{name}-footer-{width}')
+
     state['links'] = new_links()
     state['pas'] = 'ok'
     open_tab(width, extra='&slowWrite=1')
@@ -124,7 +141,7 @@ def run(page, width, state, new_links, open_tab, focus, shot, overflow, measurem
         if index >= 2: key('Space')
     key('Tab'); record('발급 취소', text='취소', title='새 접속 링크')
     key('Tab'); record('발급 실행', text='링크 만들기', title='새 접속 링크')
-    timeline_start(); key('Enter')
+    submit_and_check_busy('issue-busy', '새 접속 링크', '만드는 중…')
     await_focus("() => document.activeElement?.textContent?.trim() === '복사'")
     timeline_end('issue-busy')
     record('주소 복사', text='복사', title='링크를 만들었습니다')
@@ -155,7 +172,7 @@ def run(page, width, state, new_links, open_tab, focus, shot, overflow, measurem
         next_label = page.locator('.access-links-row').nth(1).locator('.access-links-label').inner_text()
         key('Enter'); await_focus("() => document.activeElement?.textContent?.trim() === '취소'")
         key('Tab'); record('폐기 실행', text='폐기', title='링크 폐기')
-        timeline_start(); key('Enter')
+        submit_and_check_busy('revoke-busy', '링크 폐기', '폐기 중…')
         page.wait_for_function("label => document.activeElement?.closest('.access-links-row')?.querySelector('.access-links-label')?.textContent?.trim() === label", arg=next_label, timeout=15000)
         timeline_end('revoke-busy')
         record('폐기 뒤 다음 행', text='폐기', title='설정', row=next_label)
