@@ -21,9 +21,11 @@ function fakeSql(rows: {
     const text = strings.join(" ").replace(/\s+/g, " ");
     calls.push({ text, values });
     if (text.includes("set_config")) return [];
-    if (text.includes("GROUP BY")) return rows.byNode ?? [];
-    if (text.includes("LIMIT 5")) return rows.slowest ?? [];
-    return rows.overall ?? [];
+    return [
+      ...(rows.byNode ?? []).map((row) => ({ ...row, kind: "node" })),
+      ...(rows.overall ?? []).map((row) => ({ ...row, kind: "overall" })),
+      ...(rows.slowest ?? []).map((row) => ({ ...row, kind: "slowest" })),
+    ];
   }) as DeliveryLatencyQuery;
   sql = Object.assign(query, {
     begin: async <T>(callback: (tx: DeliveryLatencyQuery) => Promise<T>): Promise<T> => callback(query),
@@ -85,7 +87,10 @@ describe("get_event_ingress_delivery_latency query", () => {
     );
 
     expect(calls[0]?.text).toContain("set_config('statement_timeout'");
-    expect(calls[0]?.values).toContain("10000ms");
+    expect(calls[0]?.values).toContain("55000ms");
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.text).toContain("joined AS MATERIALIZED");
+    expect(calls[1]?.text).toContain("GROUP BY GROUPING SETS");
     for (const call of calls.slice(1)) {
       expect(call.text).toContain("event_ingress_receipts r");
       expect(call.text).toContain("JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id");

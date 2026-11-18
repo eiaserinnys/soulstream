@@ -51,6 +51,12 @@ test("PAS period history is a strict internal read-only tool", () => {
   assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", limit: 101 }).success, false);
   assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", max_text_chars: 99 }).success, false);
 });
+test("delivery latency has a 60-second internal read-only timeout", () => {
+  const definition = clusterTools.get_event_ingress_delivery_latency;
+  assert.equal(definition.timeoutMs, 60000);
+  assert.equal(definition.audience, "internal");
+  assert.equal(definition.config.annotations?.readOnlyHint, true);
+});
 test("turn usage reads are strict internal-only read-only tools", () => {
   assert.equal(sessionTools.list_turn_usage.timeoutMs, 30000);
   assert.equal(sessionTools.summarize_turn_usage.timeoutMs, 60000);

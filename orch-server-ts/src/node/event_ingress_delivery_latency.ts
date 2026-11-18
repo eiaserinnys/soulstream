@@ -6,7 +6,7 @@
  * 노드 시계 차이로 음수가 나와도 그대로 낸다.
  *
  * 새 DB 풀을 만들지 않고 orch가 이미 가진 SQL 클라이언트를 받는다. 한 트랜잭션
- * 안에서 statement_timeout을 10초로 걸어 느린 조회가 풀을 오래 붙잡지 않게 한다.
+ * 안에서 statement_timeout을 55초로 걸어 느린 조회가 풀을 오래 붙잡지 않게 한다.
  */
 
 export type DeliveryLatencyQuery = <
@@ -55,7 +55,7 @@ export type DeliveryLatencyResult = {
 
 const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
 const MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const STATEMENT_TIMEOUT = "10000ms";
+const STATEMENT_TIMEOUT = "55000ms";
 
 export async function queryEventIngressDeliveryLatency(
   sql: DeliveryLatencySql,
@@ -79,66 +79,51 @@ export async function queryEventIngressDeliveryLatency(
   const untilIso = until.toISOString();
   const nodeId = input.node_id ?? null;
 
-  const { nodeRows, overallRows, slowestRows } = await sql.begin(async (tx) => {
+  const rows = await sql.begin(async (tx) => {
     await tx`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true)`;
-    const nodeRows = await tx`
-      SELECT r.node_id,
-             count(*)::int AS count,
-             percentile_cont(0.5) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p50_ms,
-             percentile_cont(0.9) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p90_ms,
-             percentile_cont(0.99) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p99_ms,
-             max(EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000)::double precision AS max_ms
-      FROM event_ingress_receipts r
-      JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id
-      WHERE r.created_at >= ${sinceIso} AND r.created_at < ${untilIso}
-        AND (${nodeId}::text IS NULL OR r.node_id = ${nodeId})
-      GROUP BY r.node_id
-      ORDER BY r.node_id
+    return await tx`
+      WITH joined AS MATERIALIZED (
+        SELECT r.node_id, r.session_id, r.event_id, e.event_type,
+               e.created_at AS event_created_at, r.created_at AS committed_at,
+               r.created_at - e.created_at AS delay,
+               EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000 AS delay_ms
+        FROM event_ingress_receipts r
+        JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id
+        WHERE r.created_at >= ${sinceIso} AND r.created_at < ${untilIso}
+          AND (${nodeId}::text IS NULL OR r.node_id = ${nodeId})
+      ), results AS (
+        SELECT CASE WHEN GROUPING(node_id) = 1 THEN 'overall' ELSE 'node' END AS kind,
+               node_id, count(*)::int AS count,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_ms) AS p50_ms,
+               percentile_cont(0.9) WITHIN GROUP (ORDER BY delay_ms) AS p90_ms,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY delay_ms) AS p99_ms,
+               max(delay_ms)::double precision AS max_ms,
+               NULL::text AS session_id, NULL::integer AS event_id,
+               NULL::text AS event_type, NULL::timestamptz AS event_created_at,
+               NULL::timestamptz AS committed_at, NULL::double precision AS delay_ms,
+               NULL::interval AS delay
+        FROM joined
+        GROUP BY GROUPING SETS ((node_id), ())
+        UNION ALL
+        SELECT 'slowest', node_id, NULL::int, NULL::double precision,
+               NULL::double precision, NULL::double precision, NULL::double precision,
+               session_id, event_id, event_type, event_created_at, committed_at,
+               delay_ms::double precision, delay
+        FROM (
+          SELECT * FROM joined ORDER BY delay DESC, event_id DESC LIMIT 5
+        ) slowest
+      )
+      SELECT * FROM results
+      ORDER BY kind, CASE WHEN kind = 'node' THEN node_id END, delay DESC, event_id DESC
     `;
-    const overallRows = await tx`
-      SELECT count(*)::int AS count,
-             percentile_cont(0.5) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p50_ms,
-             percentile_cont(0.9) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p90_ms,
-             percentile_cont(0.99) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000
-             ) AS p99_ms,
-             max(EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000)::double precision AS max_ms
-      FROM event_ingress_receipts r
-      JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id
-      WHERE r.created_at >= ${sinceIso} AND r.created_at < ${untilIso}
-        AND (${nodeId}::text IS NULL OR r.node_id = ${nodeId})
-    `;
-    const slowestRows = await tx`
-      SELECT r.node_id,
-             r.session_id,
-             r.event_id,
-             e.event_type,
-             e.created_at AS event_created_at,
-             r.created_at AS committed_at,
-             (EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000)::double precision AS delay_ms
-      FROM event_ingress_receipts r
-      JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id
-      WHERE r.created_at >= ${sinceIso} AND r.created_at < ${untilIso}
-        AND (${nodeId}::text IS NULL OR r.node_id = ${nodeId})
-      ORDER BY (r.created_at - e.created_at) DESC, r.event_id DESC
-      LIMIT 5
-    `;
-    return { nodeRows, overallRows, slowestRows };
   });
+  const nodeRows = rows.filter((row) => row.kind === "node");
+  const overallRow = rows.find((row) => row.kind === "overall");
+  const slowestRows = rows.filter((row) => row.kind === "slowest");
 
   return {
     window: { since: sinceIso, until: untilIso },
-    overall: stats(overallRows[0]),
+    overall: stats(overallRow),
     by_node: nodeRows.map((row) => ({
       node_id: String(row.node_id),
       ...stats(row),
