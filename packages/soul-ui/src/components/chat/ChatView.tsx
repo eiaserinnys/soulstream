@@ -92,6 +92,8 @@ function isGenerationDivider(item: ChatTimelineItem): boolean {
   return item.type === "single" && item.msg.treeNodeType === "generation_started";
 }
 
+const CHAT_FOLLOW_CONTROL_CLASS = "flex select-none items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium glass-shadow-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+
 // 초점 대상 행은 Virtuoso 행 key로 찾고, 스크롤 상자의 보이는 영역과 겹치는지로 화면 안을 판정한다.
 function findFocusRowElement(
   scroller: HTMLElement | null,
@@ -312,6 +314,7 @@ function ChatViewContent({
   );
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const followToggleRef = useRef<HTMLButtonElement>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [expandedToolGroups, setExpandedToolGroups] = useState<{
@@ -892,6 +895,8 @@ function ChatViewContent({
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
       data-chat-first-item-index={firstItemIndex}
+      data-chat-item-count={timelineItems.length}
+      data-chat-prepended-count={chatPrependedCount}
       style={chatTypographyStyle}
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
@@ -1064,18 +1069,23 @@ function ChatViewContent({
       {presentation === "default" && <div className="relative flex shrink-0 items-center justify-end pb-2">
         {transcriptFallback == null && showNewMessage && !isFollowing && (
           <button
-            onClick={scrollToBottom}
-            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-md border border-accent-blue/30 bg-accent-blue/15 px-2.5 py-1.5 text-xs font-medium text-accent-blue glass-shadow-xs transition-colors hover:bg-accent-blue/25"
+            type="button"
+            onClick={() => {
+              followToggleRef.current?.focus({ preventScroll: true });
+              scrollToBottom();
+            }}
+            className={cn("absolute left-1/2 -translate-x-1/2 border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25", CHAT_FOLLOW_CONTROL_CLASS)}
           >
             {"\u2193"} 새 메시지
           </button>
         )}
         <button
+          ref={followToggleRef}
+          type="button"
           onClick={toggleFollow}
           aria-pressed={isFollowing}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-            "border glass-shadow-xs",
+            CHAT_FOLLOW_CONTROL_CLASS,
             isFollowing
               ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
