@@ -28,6 +28,8 @@ import {
   RunnerSqliteLifecycle,
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { RunnerHostStateStore, runnerHostStatePath } from "../../src/runner/runner_host_state_store.js";
+import { ClosedRunnerTailDrainer } from "../../src/runner/closed_runner_tail_drainer.js";
 import { RunnerAdoptionRejectedError } from
   "../../src/task/runner_adoption_rejected_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
@@ -48,6 +50,125 @@ function deferred<T>() {
 }
 
 describe("RunnerRecoveryCoordinator exception matrix", () => {
+
+  it("reads a retired completed runner's tail and starts a nonblocking drain", async () => {
+    const fixture = await releasedTerminalSidecarFixture();
+    try {
+      const identity = await readRunnerRegistrationIdentity(fixture.paths.sessionDirectory);
+      await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+        ...identity!, retiredAt: "2026-08-11T00:00:30.000Z",
+      });
+      const writer = await RunnerSqliteEventOutbox.open(fixture.paths.databasePath);
+      await writer.initializeBootstrap({
+        session_id: "session-a", created_at: "2026-08-11T00:00:00.000Z",
+        resume: {
+          schema_version: 1, backend_session_id: "backend-a", cwd: "/workspace/a",
+          codex_home: "/home/test/.codex", rollout_root: "/home/test/.codex/sessions",
+          code_sha: "sha256-b271cc86", snapshot_path: "/release/a",
+        },
+      });
+      await writer.append({
+        session_id: "session-a", event_type: "assistant", payload: { text: "tail" },
+        searchable_text: "tail", created_at: "2026-08-11T00:00:01.000Z",
+        semantic_dedupe_key: null, session_effect: null,
+      });
+      const streamId = writer.streamId;
+      writer.close();
+      const host = RunnerHostStateStore.open(runnerHostStatePath(fixture.paths.databasePath));
+      host.initializeEventCheckpoint({ streamId, sessionId: "session-a", acknowledgedThrough: 1 });
+      host.close();
+      const current = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory);
+      expect(current.closedTailState).toMatchObject({
+        status: "requires_drain", acknowledgedThrough: 1, latestDurableSourceSeq: 2,
+      });
+      const pending = deferred<void>();
+      const register = vi.fn((pump: import("../../src/upstream/event_outbox_pump.js").EventOutboxPump) => {
+        pump.connect(async (batch) => {
+          await pending.promise;
+          await pump.handleAck({
+            type: "event_append_ack", stream_id: batch.stream_id,
+            acked_through: batch.events.at(-1)!.source_seq,
+            events: batch.events.map((event) => ({ source_seq: event.source_seq, event_id: 100 + event.source_seq })),
+          });
+        });
+        return () => pump.disconnect();
+      });
+      const drainer = new ClosedRunnerTailDrainer({
+        pumpMux: { register }, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      });
+      const drain = vi.spyOn(drainer, "drain");
+      const subject = makeSubject([current], RECOVERY_NOW_MS, [], { closedTailDrainer: drainer });
+      await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
+      expect(drain).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(register).toHaveBeenCalledOnce());
+      await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
+      expect(drain).toHaveBeenCalledOnce();
+      pending.resolve();
+      await subject.coordinator.waitForSettled();
+      expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: "session-a", startAck: 1, endAck: 2, outcome: "acknowledged",
+      }), "retired runner tail drain completed");
+      const acknowledged = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory);
+      const after = makeSubject([acknowledged], RECOVERY_NOW_MS, [], { closedTailDrainer: { drain } });
+      await after.coordinator.scanOnce();
+      expect(drain).toHaveBeenCalledOnce();
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips retired runners with a live pid, nonterminal lifecycle, or active stream pump", async () => {
+    const live = retiredWithTail("live", "failed");
+    live.pidAlive = true;
+    const running = retiredWithTail("running", "running");
+    const pumped = retiredWithTail("pumped", "failed");
+    const drain = vi.fn(async () => {});
+    const hasActivePump = vi.fn((streamId: string) => streamId === "stream-pumped");
+    const subject = makeSubject([live, running, pumped], RECOVERY_NOW_MS, [], {
+      closedTailDrainer: { drain, hasActivePump },
+    });
+    await subject.coordinator.scanOnce();
+    expect(hasActivePump).toHaveBeenCalledWith("stream-pumped");
+    expect(drain).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed retired tail only after ten minutes", async () => {
+    let now = RECOVERY_NOW_MS;
+    const current = retiredWithTail("session-a", "failed");
+    const drain = vi.fn(async () => {}).mockRejectedValueOnce(new Error("ACK timed out"));
+    const subject = makeSubject([current], now, [], { now: () => now, closedTailDrainer: { drain } });
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(drain).toHaveBeenCalledOnce();
+    now += 599_999;
+    await subject.coordinator.scanOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    now += 1;
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(drain).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts only one retired tail drain at a time", async () => {
+    const first = retiredWithTail("first", "failed");
+    const second = retiredWithTail("second", "completed");
+    const pending = deferred<void>();
+    const drain = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+    const subject = makeSubject([first, second], RECOVERY_NOW_MS, [], { closedTailDrainer: { drain } });
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.scanOnce();
+    expect(drain).toHaveBeenCalledOnce();
+    pending.resolve();
+    await subject.coordinator.waitForSettled();
+    first.closedTailState = {
+      status: "fully_acknowledged", streamId: "stream-first", sessionId: "first",
+      latestDurableSourceSeq: 3, acknowledgedThrough: 3,
+    };
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    expect(drain).toHaveBeenCalledTimes(2);
+    expect(drain.mock.calls[1]![0].config.sessionId).toBe("second");
+  });
 
   it("sweeps once after the initial scan with every live and unreadable session protected", async () => {
     const waiting = { ...registration({ sessionId: "waiting" }), bootstrap: null, lifecycle: null };
@@ -4254,6 +4375,16 @@ function registration(options: {
       terminal_error: options.terminalError ?? null,
     },
   };
+}
+
+function retiredWithTail(sessionId: string, lifecycleState: "running" | "completed" | "failed"): RunnerRegistration {
+  const current = registration({ sessionId, pidAlive: false, lifecycleState });
+  current.retiredAt = "2026-08-11T00:00:00.000Z";
+  current.closedTailState = {
+    status: "requires_drain", streamId: `stream-${sessionId}`, sessionId,
+    latestDurableSourceSeq: 3, acknowledgedThrough: 2,
+  };
+  return current;
 }
 
 async function releasedTerminalSidecarFixture(options: {

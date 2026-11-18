@@ -62,6 +62,7 @@ import {
 } from "../task/state/node_response_handling.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
+import { readClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
 import {
   closedRunnerTailRequiresDrain,
@@ -89,6 +90,7 @@ class SuccessorTurnStartedError extends Error {}
  * worker를 붐비지 않게 한다. 릴리스 GC는 즉시성이 필요 없다.
  */
 const DEFAULT_RELEASE_GC_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const RETIRED_TAIL_RETRY_MS = 10 * 60 * 1000;
 
 /** 중앙 확인이 기억하는 직전 잇기 응답과 다음 판정 시각이다. */
 interface CentralCheckRetry {
@@ -118,6 +120,8 @@ export class RunnerRecoveryCoordinator {
   private restoreScanCachePromise?: Promise<void>;
   private scanCacheRestored = false;
   private readonly active = new Map<string, Promise<void>>();
+  private retiredTailDrain: Promise<void> | undefined;
+  private readonly retiredTailRetryAt = new Map<string, number>();
   private readonly centralChecks = new Map<string, Promise<void>>();
   private readonly adoptionSends = new Set<string>();
   /** 시동 잇기의 응답을 기다리는 세션. 응답 뒤 턴이 도는 동안에는 막지 않는다. */
@@ -339,7 +343,12 @@ export class RunnerRecoveryCoordinator {
           (disposition === "adopt_prebootstrap" || disposition === "adopt_running")
           && this.adoptionFailureRecovery.shouldSkip(sessionId)
         ) continue;
-        if (disposition === "wait_for_bootstrap" || disposition === "retired_terminal") {
+        if (disposition === "retired_terminal") {
+          this.startRetiredTailDrain(registration);
+          this.recoveryLogger.clear(sessionId);
+          continue;
+        }
+        if (disposition === "wait_for_bootstrap") {
           this.recoveryLogger.clear(sessionId);
           continue;
         }
@@ -523,6 +532,48 @@ export class RunnerRecoveryCoordinator {
         : {}),
     });
   }
+
+  private startRetiredTailDrain(registration: RunnerRegistration): void {
+    const tail = registration.closedTailState;
+    const sessionId = registration.config.sessionId;
+    if (
+      this.retiredTailDrain
+      || registration.pidAlive
+      || !registration.lifecycle
+      || !isTerminalRunnerExecutionState(registration.lifecycle.execution_state)
+      || tail?.status !== "requires_drain"
+      || (this.retiredTailRetryAt.get(sessionId) ?? 0) > (this.options.now ?? Date.now)()
+      || this.options.closedTailDrainer.hasActivePump?.(tail.streamId)
+    ) return;
+
+    const observation = this.createObservation("runner.recovery.retiredTailDrain");
+    this.retiredTailDrain = (async () => {
+      let outcome: "acknowledged" | "failed" = "acknowledged";
+      let failure: unknown;
+      try {
+        await this.options.closedTailDrainer.drain(registration, observation);
+        this.retiredTailRetryAt.delete(sessionId);
+      } catch (error) {
+        outcome = "failed";
+        failure = error;
+        this.retiredTailRetryAt.set(sessionId, (this.options.now ?? Date.now)() + RETIRED_TAIL_RETRY_MS);
+      }
+      let endAck: number | null = null;
+      try {
+        const end = await readClosedRunnerTailState(
+          registration.config.paths.databasePath, sessionId, observation, this.options.recoveryStorage,
+        );
+        if ("acknowledgedThrough" in end) endAck = end.acknowledgedThrough;
+      } catch (error) {
+        failure ??= error;
+      }
+      this.options.logger.info({
+        sessionId, startAck: tail.acknowledgedThrough, endAck, outcome,
+        ...(failure ? { err: failure } : {}),
+      }, "retired runner tail drain completed");
+    })().finally(() => { this.retiredTailDrain = undefined; });
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
@@ -534,12 +585,14 @@ export class RunnerRecoveryCoordinator {
   async waitForSettled(): Promise<void> {
     while (
       this.scanInFlight
+      || this.retiredTailDrain
       || this.active.size > 0
       || this.adoptionFailureRecovery.pending().length > 0
       || this.centralChecks.size > 0
     ) {
       await Promise.allSettled([
         ...(this.scanInFlight ? [this.scanInFlight] : []),
+        ...(this.retiredTailDrain ? [this.retiredTailDrain] : []),
         ...this.active.values(),
         ...this.adoptionFailureRecovery.pending(),
         ...this.centralChecks.values(),
