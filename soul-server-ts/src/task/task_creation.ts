@@ -23,6 +23,7 @@ import type {
 import {
   buildCallerInfoMetadataEntry,
   buildClaudePermissionModeMetadataEntry,
+  buildModelBackendMetadataEntry,
 } from "./task_metadata.js";
 import {
   appendCreationWarning,
@@ -163,6 +164,7 @@ export class TaskCreation {
       callerMetadata,
       permissionModeMetadata,
       modelPresetFallbacksMetadata,
+      ...(params.modelPresetBackend ? [buildModelBackendMetadataEntry(params.modelPresetBackend)] : []),
       ...(params.orchestrationPurpose
         ? [{ type: ORCHESTRATION_PURPOSE_TYPE, ...params.orchestrationPurpose }] : []),
     ].filter(
@@ -189,6 +191,7 @@ export class TaskCreation {
       model: params.model,
       modelPreset: params.modelPreset,
       modelPresetBackend: params.modelPresetBackend,
+      recordedModelBackend: params.modelPresetBackend,
       modelPresetEnv: params.modelPresetEnv,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,

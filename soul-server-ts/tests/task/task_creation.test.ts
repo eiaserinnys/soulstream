@@ -7,6 +7,16 @@ import {
 } from "./task_creation_harness.js";
 
 describe("TaskCreation", () => {
+  it("persists the selected preset backend at creation", async () => {
+    const h = makeHarness();
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-backend", prompt: "hello", modelPresetBackend: "antigravity",
+    });
+    const entry = { type: "model_backend", value: { backend: "antigravity" } };
+    expect(task.recordedModelBackend).toBe("antigravity");
+    expect(task.metadata).toContainEqual(entry);
+    expect(h.appendMetadata).toHaveBeenCalledWith("sess-backend", entry, { waitForAck: true });
+  });
   it("exposes creation effects that settle after session placement", async () => {
     const h = makeHarness();
     let placementStarted!: () => void;

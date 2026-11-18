@@ -19,6 +19,25 @@ export function buildSessionCostMetadataEntry(
   return { type: "session_cost", value: { usd: cost.usd, partial: cost.partial } };
 }
 
+export function buildModelBackendMetadataEntry(backend: string): Record<string, unknown> {
+  return { type: "model_backend", value: { backend } };
+}
+
+export function extractModelBackendFromMetadata(metadata: unknown): string | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "model_backend") continue;
+    const value = record.value;
+    if (!value || typeof value !== "object") continue;
+    const backend = (value as Record<string, unknown>).backend;
+    return typeof backend === "string" ? backend : undefined;
+  }
+  return undefined;
+}
+
 export function extractSessionCostFromMetadata(metadata: unknown): SessionCostBase | undefined {
   if (!Array.isArray(metadata)) return undefined;
   for (let i = metadata.length - 1; i >= 0; i--) {

@@ -7,7 +7,7 @@ import type {
 } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
-import { TaskLiveDeliveryResult } from "../../src/task/task_live_delivery_result.js";
+import { TaskLiveDeliveryResult, resolveTaskBackend } from "../../src/task/task_live_delivery_result.js";
 import type { Task } from "../../src/task/task_models.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -58,6 +58,16 @@ function makeSubject() {
     agentRegistry,
   };
 }
+
+it("prefers the running engine, then the resolved and recorded backends, over the profile", () => {
+  const task = makeTask({ profileId: "agent-codex", recordedModelBackend: "antigravity" });
+  const { agentRegistry } = makeSubject();
+  expect(resolveTaskBackend(task, agentRegistry as never)).toBe("antigravity");
+  task.modelPresetBackend = "claude";
+  expect(resolveTaskBackend(task, agentRegistry as never)).toBe("claude");
+  task.runner = createInProcessTaskRunnerRuntime(makeBaseEngine({ backendId: "codex" }));
+  expect(resolveTaskBackend(task, agentRegistry as never)).toBe("codex");
+});
 
 describe("TaskLiveDeliveryResult.deliverInputResponse", () => {
   it("delivers to the live engine, publishes the resolved event, and returns eventId", async () => {
