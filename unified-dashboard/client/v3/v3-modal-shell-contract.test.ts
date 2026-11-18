@@ -26,6 +26,8 @@ const expectedV3DialogConsumers = [
 const sharedV3DialogConsumers = [
   "../components/AccessLinksTab.tsx",
   "../components/ConfigModal.tsx",
+  "../components/InboundWebhooksSection.tsx",
+  "../components/OutboundWebhooksSection.tsx",
   "../components/OwnedAgentsTab.tsx",
   "../components/PersistentSessionSettingsDialog.tsx",
   "../components/SearchModal.tsx",

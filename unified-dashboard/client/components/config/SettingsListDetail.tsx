@@ -125,11 +125,12 @@ export function SettingsField({ label, children }: { label: string; children: Re
 }
 
 /** 여러 줄 입력. 한 줄 입력(soul-ui Input)과 같은 표면과 포커스 모양을 쓰고 크기 조절은 끈다. */
-export function SettingsMultilineField({ label, value, rows = 5, placeholder, onChange }: {
+export function SettingsMultilineField({ label, value, rows = 5, placeholder, maxLength, onChange }: {
   label: string;
   value: string;
   rows?: number;
   placeholder?: string;
+  maxLength?: number;
   onChange(value: string): void;
 }) {
   return (
@@ -140,6 +141,7 @@ export function SettingsMultilineField({ label, value, rows = 5, placeholder, on
           rows={rows}
           value={value}
           placeholder={placeholder}
+          maxLength={maxLength}
           onChange={(event) => onChange(event.target.value)}
           className={`${inputFieldClassName} resize-none py-2`}
         />

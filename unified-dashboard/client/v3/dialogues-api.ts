@@ -1,6 +1,7 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
 import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
 import { accessLinkSessions, createAccessLinksFixture } from "./access-links-fixture";
+import { createWebhooksFixture } from "./webhooks-fixture";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { ClaudeAccount, ClaudeAccountList, SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
@@ -384,6 +385,7 @@ export function createDialoguesApi() {
     },
   };
   const accessLinks = createAccessLinksFixture();
+  const webhooks = createWebhooksFixture();
   const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
   const sample = new URLSearchParams(window.location.search).get("sample");
   const persistentState = new URLSearchParams(window.location.search).get("persistentState") ?? (
@@ -406,6 +408,10 @@ export function createDialoguesApi() {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
+    if (path.startsWith('/api/webhooks')) {
+      if (new URLSearchParams(window.location.search).has('webhooksVisual')) return fetch(path, init);
+      return webhooks(input, init);
+    }
     if (path.startsWith('/api/access-links') || (sample === 'settings' && path === '/api/persistent-sessions' && method === 'GET')) {
       if (new URLSearchParams(window.location.search).has('accessLinksVisual')) return fetch(path, init);
       if (path === '/api/persistent-sessions') {
