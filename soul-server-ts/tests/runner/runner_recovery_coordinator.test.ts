@@ -2673,6 +2673,43 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("retires a dead registration without lifecycle after marking failure and skips the next scan", async () => {
+    const dead: RunnerRegistration = {
+      ...registration({ pidAlive: false }), lifecycle: null, pid: null, pidStartIdentity: null,
+    };
+    const registrations = [dead];
+    const subject = makeSubject(registrations, Date.now());
+    subject.terminate.mockImplementation(async (_paths, _expected, released) => {
+      expect(released).toMatchObject({ pid: null, pidAlive: false, pidStartIdentity: null });
+      registrations[0] = { ...dead, retiredAt: new Date().toISOString() };
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.markRunnerFailure).toHaveBeenCalledOnce();
+    expect(subject.terminate).toHaveBeenCalledOnce();
+    expect(subject.markRunnerFailure.mock.invocationCallOrder[0])
+      .toBeLessThan(subject.terminate.mock.invocationCallOrder[0]!);
+  });
+
+  it("does not retire a dead registration without lifecycle when marking failure throws", async () => {
+    const dead: RunnerRegistration = {
+      ...registration({ pidAlive: false }), lifecycle: null, pid: null, pidStartIdentity: null,
+    };
+    const subject = makeSubject([dead], Date.now());
+    subject.markRunnerFailure.mockRejectedValue(new Error("mark failure failed"));
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.markRunnerFailure).toHaveBeenCalledOnce();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+  });
+
   it("isolates a disk-full reap write without killing the scan or resuming invented state", async () => {
     const error = Object.assign(new Error("database or disk is full"), { code: "SQLITE_FULL" });
     const subject = makeSubject([registration({ pidAlive: false })], Date.now(), [], {

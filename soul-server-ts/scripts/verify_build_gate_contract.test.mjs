@@ -18,13 +18,37 @@ import { runReleaseBuild } from "./release-build-child.mjs";
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
 
+test("build stages and verifies output before promotion", () => {
+  assert.equal(packageJson.scripts.build, "node scripts/build_dist.mjs");
+});
+
+test("a failed staged verification leaves the current dist untouched", async () => {
+  const { buildDist } = await import("./build_dist.mjs");
+  const root = mkdtempSync(join(tmpdir(), "soul-build-stage-"));
+  try {
+    mkdirSync(join(root, "dist"));
+    writeFileSync(join(root, "dist", "current"), "running");
+    const calls = [];
+    await assert.rejects(buildDist({
+      packageRoot: root,
+      run: async (args, options) => {
+        calls.push(args[0]);
+        assert.equal(options.env.SOUL_DIST_DIR, "dist.next");
+        assert.equal(readFileSync(join(root, "dist", "current"), "utf8"), "running");
+        if (args[0].endsWith("verify_bundle.mjs")) throw new Error("verification failed");
+      },
+    }), /verification failed/);
+    assert.equal(readFileSync(join(root, "dist", "current"), "utf8"), "running");
+    assert.equal(calls.length, 5);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("verify:bundle keeps the build gate free of the main server startup contract", () => {
   assert.equal(
     packageJson.scripts["verify:bundle"],
-    "node --test ../scripts/verify-workspace-bundle.test.mjs "
-      + "scripts/verify_build_gate_contract.test.mjs "
-      + "&& node ../scripts/verify-workspace-bundle.mjs dist "
-      + "&& node scripts/verify_runner_release_isolation.mjs",
+    "node scripts/verify_bundle.mjs",
   );
   assert.doesNotMatch(
     packageJson.scripts["verify:bundle"],
