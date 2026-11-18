@@ -8,15 +8,18 @@
  * 3. 대화 맨 위(1440/390): event=1 진입 뒤 마지막 이력 페이지를 붙잡아 두고, 풀린 뒤
  *    맨 위에서 마지막 휠을 한 번 더 굴렸을 때 첫 행 top 차이가 1px 이하인지 잰다.
  *    「대화의 시작」 표기가 DOM에 없어야 한다.
- * 4. 대화 한국어 문구(1440/390): 입력창 자리표시·「↓ 맨 아래로」·「💭 생각」 이름표.
+ * 4. 대화 한국어 문구(1440/390): 입력창 자리표시·「↓ 자동 스크롤」·「💭 생각」 이름표.
  * 5. 문서 패널 한국어 문구(1440/390): 기본 제목 「제목 없는 문서」·빈 본문 「빈 문서」·
  *    삭제 단추 툴팁/접근 이름 「문서 삭제」·제목/본문 접근 이름.
  * 6. 문서 패널 로딩 「불러오는 중」, 편집기 로딩 「편집기를 불러오는 중」.
  * 7. 전체 내용 보기 단추 로딩 「불러오는 중」(전문 요청 지연).
- * 8. 입력창 단추 이름(1440/390): 「보내기」·모드 「새 대화」·첨부 「파일 첨부」의
+ * 8. 입력창 단추 이름(1440/390): 「보내기」·모드 「대화 이어가기」·첨부 「파일 첨부」의
  *    접근 이름/툴팁. 좁은 폭에서 단추가 입력창 밖으로 밀리거나 내용이 잘리지 않는지 잰다.
  * 9. 새 메시지 배너(1440/390): 실행 중 위로 스크롤한 뒤 새 이벤트가 도착하면
  *    「↓ 새 메시지」 배너가 뜨고, 실행 중 입력창 이름이 「개입」인지 확인한다.
+ * 10. 따라가기 단추(1440/390, 누름/대조): 맨 아래에서 「↓ 자동 스크롤」을 누른 경우와
+ *    누르지 않은 경우에 새 응답이 오면, 강조 상태·맨 아래 거리·새 메시지 배너가
+ *    어떻게 달라지는지 견준다.
  *
  * 실행:
  *   VITE_API_BASE=http://127.0.0.1:5200 corepack pnpm --dir unified-dashboard dev --host 127.0.0.1 --port 43184 --strictPort
@@ -426,7 +429,7 @@ async function chatKorean(browser: Browser, width: number) {
     await root.waitFor({ state: "visible", timeout: 30_000 });
     const thinking = page.getByText("💭 생각", { exact: true }).first();
     await thinking.waitFor({ state: "visible", timeout: 30_000 });
-    const follow = page.getByRole("button", { name: /맨 아래로/ }).first();
+    const follow = page.getByRole("button", { name: /자동 스크롤/ }).first();
     await follow.waitFor({ state: "visible", timeout: 30_000 });
     const composer = page.locator('textarea[placeholder="대화를 이어서 입력하세요"]').first();
     await composer.waitFor({ state: "visible", timeout: 30_000 });
@@ -449,7 +452,7 @@ async function chatKorean(browser: Browser, width: number) {
     }
     if (!baseline) {
       assert(placeholder === "대화를 이어서 입력하세요", `입력창 자리표시 불일치: ${placeholder}`);
-      assert(followText?.includes("맨 아래로") === true, `따라가기 단추 문구 불일치: ${followText}`);
+      assert(followText?.includes("자동 스크롤") === true, `따라가기 단추 문구 불일치: ${followText}`);
       assert(thinkingText === "💭 생각", `생각 이름표 불일치: ${thinkingText}`);
     }
     return { placeholder, followText, thinkingText };
@@ -566,7 +569,7 @@ async function chatButtons(browser: Browser, width: number) {
     if (!baseline) {
       assert(sendLabel === "보내기", `보내기 단추 접근 이름 불일치: ${sendLabel}`);
       assert(sendTitle === "보내기", `보내기 단추 툴팁 불일치: ${sendTitle}`);
-      assert(modeLabel === "새 대화", `입력 모드 이름 불일치: ${modeLabel}`);
+      assert(modeLabel === "대화 이어가기", `입력 모드 이름 불일치: ${modeLabel}`);
       assert(attachLabel === "파일 첨부", `첨부 단추 접근 이름 불일치: ${attachLabel}`);
       assert(attachTitle === "파일 첨부", `첨부 단추 툴팁 불일치: ${attachTitle}`);
       const { composer, send: sendBox, attach: attachBox, mode: modeBox, body } = layout;
@@ -696,6 +699,116 @@ async function newMessagesBanner(browser: Browser, width: number) {
       assert(layout.documentOverflow <= 0, `배너 문서 가로 넘침 ${layout.documentOverflow}px`);
     }
     return { width, scrollState, viewportHeight, distance, bannerText, oldBannerCount, sendLabel, modeLabel, layout };
+  } finally {
+    await context.close();
+  }
+}
+
+async function followToggle(browser: Browser, width: number, press: boolean) {
+  const { context, page } = await ctx(browser, width, width < 500 ? 844 : 1000);
+  try {
+    await installV3VisualQaRoutes(page, {});
+    await installSessionRoutes(page);
+    const synced = new Set<string>();
+    let releaseLive!: () => void;
+    const liveGate = new Promise<void>(resolve => { releaseLive = resolve; });
+    let liveServed = false;
+    await page.route("**/api/sessions/*/events*", async route => {
+      const session = new URL(route.request().url()).pathname.split("/")[3];
+      if (!synced.has(session)) {
+        synced.add(session);
+        return route.fulfill({
+          contentType: "text/event-stream",
+          body: `event: history_sync\ndata: ${JSON.stringify({ type: "history_sync", last_event_id: 80, is_live: true, status: "running" })}\n\n`,
+        });
+      }
+      await liveGate;
+      if (!liveServed) {
+        liveServed = true;
+        return route.fulfill({
+          contentType: "text/event-stream; charset=utf-8",
+          body: `id: 101\nevent: assistant_message\ndata: ${JSON.stringify({ type: "assistant_message", content: "단추를 누른 뒤 도착한 새 응답\n둘째 줄\n셋째 줄\n넷째 줄", timestamp: 101, tool_use_id: "live-101", _final_for_live_stream: true })}\n\n`,
+        });
+      }
+      return route.fulfill({ contentType: "text/event-stream", body: ": keepalive\n\n" });
+    });
+    const messages = Array.from({ length: 80 }, (_, index) => {
+      const id = 80 - index;
+      return {
+        id,
+        parent_event_id: null,
+        event_type: "user_message",
+        payload: { text: `따라가기 검수 ${id}\n둘째 줄\n셋째 줄`, timestamp: id },
+        created_at: new Date(id * 1_000).toISOString(),
+      };
+    });
+    await page.route((url: URL) => /^\/api\/sessions\/[^/]+\/timeline$/.test(url.pathname), route => {
+      const cursor = new URL(route.request().url()).searchParams.get("before");
+      return route.fulfill({ json: cursor === null ? { messages, next_cursor: null } : { messages: [], next_cursor: null } });
+    });
+    await page.goto(`${baseUrl}/?session=run-alpha-2`, { waitUntil: "domcontentloaded" });
+    if (width < 500) {
+      await page.waitForTimeout(1_500);
+      await page.getByTestId("v3-mobile-tab-chat").click();
+    }
+    const root = page.locator('[data-slot="chat-root"]').filter({ visible: true });
+    await root.waitFor({ state: "visible", timeout: 30_000 });
+    const scroller = root.locator('[data-virtuoso-scroller="true"]');
+    await scroller.waitFor({ state: "visible", timeout: 30_000 });
+    for (let poll = 0; poll < 100; poll += 1) {
+      const ready = await scroller.evaluate(el => el.scrollHeight > el.clientHeight + 100
+        && el.scrollHeight - el.clientHeight - el.scrollTop <= 48);
+      if (ready) break;
+      await page.waitForTimeout(200);
+    }
+    await page.waitForTimeout(800);
+    const follow = root.getByRole("button", { name: /자동 스크롤/ }).first();
+    await follow.waitFor({ state: "visible", timeout: 30_000 });
+    const state = async () => ({
+      label: (await follow.textContent())?.trim() ?? null,
+      highlighted: ((await follow.getAttribute("class")) ?? "").includes("text-accent-blue"),
+      distance: Math.round(await scroller.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)),
+      banner: await root.getByRole("button", { name: /새 메시지/ }).count(),
+      liveVisible: await root.getByText("단추를 누른 뒤 도착한 새 응답").count(),
+    });
+    const tag = `${width}-${press ? "pressed" : "control"}`;
+    const before = await state();
+    await page.screenshot({ path: path.join(output, `follow-${tag}-1-before-${suffix}.png`), animations: "disabled" });
+    if (press) {
+      await follow.click();
+      await page.waitForTimeout(700);
+    }
+    const afterPress = await state();
+    await page.screenshot({ path: path.join(output, `follow-${tag}-2-after-press-${suffix}.png`), animations: "disabled" });
+    releaseLive();
+    for (let poll = 0; poll < 75; poll += 1) {
+      if (await root.getByText("단추를 누른 뒤 도착한 새 응답").count() > 0) break;
+      await page.waitForTimeout(200);
+    }
+    await page.waitForTimeout(1_200);
+    const afterLive = await state();
+    const liveInView = await root.getByText("단추를 누른 뒤 도착한 새 응답").first().evaluate((el, scrollerEl) => {
+      const rect = el.getBoundingClientRect();
+      const viewport = (scrollerEl as HTMLElement).getBoundingClientRect();
+      return rect.bottom > viewport.top && rect.top < viewport.bottom;
+    }, await scroller.elementHandle()).catch(() => false);
+    await page.screenshot({ path: path.join(output, `follow-${tag}-3-after-live-${suffix}.png`), animations: "disabled" });
+    if (!baseline) {
+      assert(before.label === "↓ 자동 스크롤", `따라가기 단추 문구 불일치: ${before.label}`);
+      assert(before.highlighted, "따라가기 단추가 켜진 상태로 시작하지 않음");
+      assert(afterPress.highlighted === !press, `누른 뒤 단추 강조 불일치: ${afterPress.highlighted}`);
+      assert(afterLive.liveVisible > 0, "새 응답이 대화에 나타나지 않음");
+      if (press) {
+        assert(afterLive.highlighted === false, "누른 뒤 새 응답이 와도 단추가 강조되어 있음");
+        assert(afterLive.banner === 1, `누른 뒤 새 메시지 배너 ${afterLive.banner}개`);
+        assert(afterLive.distance > 48, `누른 뒤 새 응답이 와도 맨 아래로 따라감: 거리 ${afterLive.distance}px`);
+      } else {
+        assert(afterLive.highlighted, "누르지 않았는데 단추 강조가 풀림");
+        assert(afterLive.banner === 0, `누르지 않았는데 새 메시지 배너 ${afterLive.banner}개`);
+        assert(afterLive.distance <= 48, `누르지 않았는데 맨 아래를 따라가지 않음: 거리 ${afterLive.distance}px`);
+      }
+    }
+    return { tag, before, afterPress, afterLive, liveInView };
   } finally {
     await context.close();
   }
@@ -900,7 +1013,7 @@ async function fullContentLoading(browser: Browser, width: number) {
 
 const result = await runPlaywrightLifecycle({
   lockName: "card1650-keepall-korean",
-  timeoutMs: 420_000,
+  timeoutMs: 600_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
   const measured: Record<string, unknown> = { baseline };
@@ -916,6 +1029,11 @@ const result = await runPlaywrightLifecycle({
   measured.chatButtons390 = await chatButtons(browser, 390);
   measured.newMessages1440 = await newMessagesBanner(browser, 1440);
   measured.newMessages390 = await newMessagesBanner(browser, 390);
+  for (const width of [1440, 390]) {
+    for (const press of [false, true]) {
+      measured[`follow${width}${press ? "Pressed" : "Control"}`] = await followToggle(browser, width, press);
+    }
+  }
   measured.documentPanel = await documentPanel(browser);
   measured.documentLoading = await documentLoading(browser);
   measured.editorLoading = await editorLoading(browser);

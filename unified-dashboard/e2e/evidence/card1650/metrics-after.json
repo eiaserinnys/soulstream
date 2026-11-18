@@ -460,8 +460,8 @@
         "older-20"
       ],
       "beforeRelease": {
-        "key": "user-msg-67",
-        "offset": -42
+        "key": "user-msg-65",
+        "offset": -94
       },
       "firstRow": {
         "key": "user-msg-1",
@@ -490,8 +490,8 @@
         "older-20"
       ],
       "beforeRelease": {
-        "key": "user-msg-35",
-        "offset": -113
+        "key": "user-msg-21",
+        "offset": 26
       },
       "firstRow": {
         "key": "user-msg-1",
@@ -514,18 +514,18 @@
     },
     "chatKorean1440": {
       "placeholder": "대화를 이어서 입력하세요",
-      "followText": "↓ 맨 아래로",
+      "followText": "↓ 자동 스크롤",
       "thinkingText": "💭 생각"
     },
     "chatKorean390": {
       "placeholder": "대화를 이어서 입력하세요",
-      "followText": "↓ 맨 아래로",
+      "followText": "↓ 자동 스크롤",
       "thinkingText": "💭 생각"
     },
     "chatButtons1440": {
       "sendLabel": "보내기",
       "sendTitle": "보내기",
-      "modeLabel": "새 대화",
+      "modeLabel": "대화 이어가기",
       "attachLabel": "파일 첨부",
       "attachTitle": "파일 첨부",
       "layout": {
@@ -581,7 +581,7 @@
     "chatButtons390": {
       "sendLabel": "보내기",
       "sendTitle": "보내기",
-      "modeLabel": "새 대화",
+      "modeLabel": "대화 이어가기",
       "attachLabel": "파일 첨부",
       "attachTitle": "파일 첨부",
       "layout": {
@@ -637,12 +637,12 @@
     "newMessages1440": {
       "width": 1440,
       "scrollState": {
-        "top": 4095,
-        "height": 4860,
+        "top": 4491,
+        "height": 6576,
         "client": 765
       },
       "viewportHeight": 765,
-      "distance": 1470,
+      "distance": 1218,
       "bannerText": "↓ 새 메시지",
       "oldBannerCount": 0,
       "sendLabel": "개입",
@@ -667,7 +667,7 @@
         "client": 555
       },
       "viewportHeight": 555,
-      "distance": 900,
+      "distance": 1648,
       "bannerText": "↓ 새 메시지",
       "oldBannerCount": 0,
       "sendLabel": "개입",
@@ -683,6 +683,106 @@
         "clientWidth": 103,
         "documentOverflow": 0
       }
+    },
+    "follow1440Control": {
+      "tag": "1440-control",
+      "before": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterPress": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterLive": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 1
+      },
+      "liveInView": true
+    },
+    "follow1440Pressed": {
+      "tag": "1440-pressed",
+      "before": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterPress": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": false,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterLive": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": false,
+        "distance": 148,
+        "banner": 1,
+        "liveVisible": 1
+      },
+      "liveInView": true
+    },
+    "follow390Control": {
+      "tag": "390-control",
+      "before": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterPress": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterLive": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 1
+      },
+      "liveInView": true
+    },
+    "follow390Pressed": {
+      "tag": "390-pressed",
+      "before": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": true,
+        "distance": 2040,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterPress": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": false,
+        "distance": 0,
+        "banner": 0,
+        "liveVisible": 0
+      },
+      "afterLive": {
+        "label": "↓ 자동 스크롤",
+        "highlighted": false,
+        "distance": 150,
+        "banner": 1,
+        "liveVisible": 1
+      },
+      "liveInView": true
     },
     "documentPanel": {
       "titleValue": "제목 없는 문서",

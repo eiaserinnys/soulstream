@@ -34,6 +34,17 @@ describe("chat tone config", () => {
     });
 
     expect(resolveChatInputMode({
+      isFinished: true,
+      isLlmFinished: false,
+      sending: false,
+      ctxCount: 0,
+    })).toMatchObject({
+      modeLabel: "대화 이어가기",
+      borderColor: "focus:border-accent-blue/40",
+      buttonVariant: "default",
+    });
+
+    expect(resolveChatInputMode({
       isFinished: false,
       isLlmFinished: false,
       sending: false,

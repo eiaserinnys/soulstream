@@ -440,7 +440,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     expect(container.querySelector<HTMLElement>('[data-slot="chat-root"]')?.dataset.chatPresentation)
       .toBe("manuscript");
-    expect(container.textContent).not.toContain("맨 아래로");
+    expect(container.textContent).not.toContain("자동 스크롤");
     expect(container.querySelector('[data-testid="runtime-strips"]')).not.toBeNull();
     expect(chatInputMock.props?.presentation).toBe("manuscript");
     expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
@@ -1484,7 +1484,7 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
     const followButton = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("맨 아래로"),
+      (candidate) => candidate.textContent?.includes("자동 스크롤"),
     );
     flushSync(() => {
       followButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

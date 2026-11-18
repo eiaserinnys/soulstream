@@ -1080,7 +1080,7 @@ function ChatViewContent({
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >
-          {"\u2193"} 맨 아래로
+          {"\u2193"} 자동 스크롤
         </button>
       </div>}
 

@@ -47,7 +47,7 @@ export function resolveChatInputMode(input: ChatInputModeInput): ChatInputModeVi
   const modeLabel = isLlmFinished
     ? `LLM (맥락 ${ctxCount}개)`
     : isFinished
-      ? "새 대화"
+      ? "대화 이어가기"
       : "개입";
 
   // 색상 의미는 유지하되 Button variant 정본만 호출한다.
