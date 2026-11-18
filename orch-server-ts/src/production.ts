@@ -81,6 +81,7 @@ import {
   SessionForegroundObserverTracker,
 } from "./push/push_notifier.js";
 import { createProductionOutboundWebhook } from "./webhooks/production_wiring.js";
+import { ExternalAccessGrantRepository } from "./external_access/external_access_grant_repository.js";
 import type { OutboundWebhookService } from "./webhooks/outbound_service.js";
 import {
   createOrchestratorRuntimeServices,
@@ -908,6 +909,22 @@ export async function createLiveProductionApplication(
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildInfo,runtimeServices.sessionBroadcaster);
   const productionSql = await sqlResolver.resolveSql() as unknown as SqlClient;
+  // Shared with the future /x surface: one grant repository for the production pool.
+  // Fail closed: without the user authorizer, the session access provider, or the
+  // public origin, neither the store nor the management routes are created.
+  const accessLinkSessionAccess = providers.sessionCatalogRoutes.accessProvider;
+  const accessLinkAuthorizeUser = providers.authRoutes.authorizeUser;
+  const accessLinkPublicUrl = config.soulstream_public_url?.trim() ?? "";
+  const externalAccessGrants =
+    accessLinkSessionAccess !== undefined
+    && accessLinkAuthorizeUser !== undefined
+    && accessLinkPublicUrl.length > 0
+      ? new ExternalAccessGrantRepository({
+          sql: productionSql,
+          authorizeUser: accessLinkAuthorizeUser,
+          requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        })
+      : undefined;
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -920,6 +937,14 @@ export async function createLiveProductionApplication(
     },
     externalEvents,
     ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
+    ...(externalAccessGrants === undefined || accessLinkSessionAccess === undefined ? {} : {
+      accessLinkRoutes: {
+        currentEmail: providers.adminUsersRoutes.provider.currentEmail,
+        grants: externalAccessGrants,
+        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        publicUrl: accessLinkPublicUrl,
+      },
+    }),
     resolveSessionOwner,
     ...(config.mcp_external_ingress_enabled ? { externalIngress: {
       path: config.mcp_external_ingress_path!, nodeId: config.node_name!, source: config.mcp_external_ingress_source!,
@@ -1489,6 +1514,7 @@ export function buildProductionRouteOptions(
     ...(ephemeralLlmRoutes === undefined ? {} : { ephemeralLlmRoutes }),
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
+        ...(conversationSql === undefined ? {} : { externalAccess: { sql: conversationSql } }),
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,
