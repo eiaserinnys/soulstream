@@ -139,7 +139,7 @@ describe("central owned agents through REST and real MCP HTTP", () => {
     } finally { await app.close(); }
   });
   it("creates and updates a real SQL reservation over HTTP MCP with existing target and owner ACL", async () => {
-    for (const migration of ["094_recurring_jobs.sql", "106_recurring_jobs_once.sql", "161_recurring_jobs_event_trigger.sql"])
+    for (const migration of ["094_recurring_jobs.sql", "106_recurring_jobs_once.sql", "161_recurring_jobs_event_trigger.sql", "170_recurring_job_model_preset_fallbacks.sql"])
       await h.sql.unsafe(await readFile(new URL(`../../packages/db-schema/sql/migrations/${migration}`, import.meta.url), "utf8"));
     await h.sql`ALTER TABLE recurring_jobs DROP COLUMN container_kind, DROP COLUMN container_id`;
     const resolver = { resolveSql: async () => h.liveSql, close: async () => {} };
@@ -149,7 +149,7 @@ describe("central owned agents through REST and real MCP HTTP", () => {
       model_presets: [{ id: "model", label: "Model", backend: "codex", available: true, usage_provider: null }], supported_backends: ["codex"] });
     const modelCheck = vi.fn();
     const recurring = new RecurringJobService({ repository: jobs, validateTarget: createRecurringJobTargetValidator({ registry,
-      modelPresetAvailability: { requireAvailable: modelCheck }, listFolders: () => [{ id: "allowed" }, { id: "private" }],
+      modelPresetAvailability: { requireAvailable: modelCheck, chooseUsablePreset: vi.fn() }, listFolders: () => [{ id: "allowed" }, { id: "private" }],
       findUserByEmail: async email => ({ email, isAdmin: false, allowedFolderIds: ["allowed"] }),
     }) });
     const agent = await service.create(owner, "Reservation MCP"), stranger = await service.create(other, "Other MCP");

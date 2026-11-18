@@ -62,6 +62,11 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
       "utf8",
     );
     await harness.sql.unsafe(eventTriggerMigration);
+    const fallbackMigration = await readFile(
+      new URL("../../packages/db-schema/sql/migrations/170_recurring_job_model_preset_fallbacks.sql", import.meta.url),
+      "utf8",
+    );
+    await harness.sql.unsafe(fallbackMigration);
     const migratedProfile = await harness.sql<{
       atom_contexts: unknown[];
       context_bundles: unknown[];
@@ -90,6 +95,14 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
 
   afterAll(async () => {
     await harness.cleanup();
+  });
+
+  it("persists and clears ordered fallback presets as JSONB", async () => {
+    const created = await repository.createJob(job({ modelPresetFallbacks: ["second", "third"] }));
+    expect((await repository.getJob(created.jobId))?.modelPresetFallbacks).toEqual(["second", "third"]);
+    const cleared = await repository.updateJob({ ...created, modelPresetFallbacks: [] }, created.version);
+    expect(cleared).toMatchObject({ modelPresetFallbacks: [] });
+    expect((await repository.getJob(created.jobId))?.modelPresetFallbacks).toEqual([]);
   });
 
   it("lists jobs across owners with the existing archive order and resolves archived owners", async () => {
@@ -554,6 +567,7 @@ function job(overrides: Partial<RecurringJob> = {}): RecurringJob {
     nodeId: "node-a",
     agentId: "roselin",
     modelPreset: null,
+    modelPresetFallbacks: [],
 
     folderId: "folder-a",
     enabled: true,

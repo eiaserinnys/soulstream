@@ -60,7 +60,7 @@ function recurringFixture() {
     sequence = 0; jobs.clear(); runs.clear(); validateTarget.mockClear(); changeWarn.mockClear();
     const job: RecurringJob = { jobId: "job-1", ownerEmail: "owner@example.com", executionCaller: { source: "agent", email: "owner@example.com" },
       name: "정기 작업", prompt: "확인", timezone: "Asia/Seoul", scheduleKind: "recurring", runAt: null, scheduleExpressions: ["0 9 * * *"],
-      nodeId: "node-a", agentId: "roselin", modelPreset: null, folderId: "allowed-folder", enabled: true, archivedAt: null,
+      nodeId: "node-a", agentId: "roselin", modelPreset: null, modelPresetFallbacks: [], folderId: "allowed-folder", enabled: true, archivedAt: null,
       lateRunWindowSeconds: 1800, nextRunAt: "2026-10-03T00:00:00.000Z", version: 1, createdIdempotencyKey: "seed", createdBy: "caller", updatedBy: "caller", createdAt: now, updatedAt: now };
     jobs.set(job.jobId, job);
     const otherJob = { ...job, jobId: "job-other", ownerEmail: "other@example.com",

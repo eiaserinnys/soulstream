@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
+import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
+import { SessionCommandRouter } from "../src/session/session_command_router.js";
+import { createRecurringSession } from "../src/session/recurring_session_creation.js";
+import { recurringSessionCreateInput } from "../src/production.js";
 import { RecurringJobService } from "../src/recurring-jobs/service.js";
 import { createRecurringJobTargetValidator } from "../src/recurring-jobs/target_validator.js";
 import type {
@@ -19,6 +23,84 @@ const actor: RecurringJobActor = {
 };
 
 describe("RecurringJobService", () => {
+  it("dispatches with an available fallback and reports all candidates unavailable", async () => {
+    const repository = memoryRepository();
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({ type: "node_register", node_id: "node-a", agents: [{ id: "roselin", backend: "codex" }],
+      model_presets: ["first", "second"].map(id => ({ id, label: id, backend: "codex", available: true })), supported_backends: ["codex"] });
+    let allLimited = false;
+    const chooseUsablePreset = vi.fn(() => allLimited ? "first" : "second");
+    const requireAvailable = vi.fn((_node: string, preset: string, options?: { allowLimitRejected?: boolean }) => {
+      if (options?.allowLimitRejected !== true && (preset === "first" || allLimited)) {
+        throw new ModelPresetAvailabilityError("MODEL_PRESET_UNAVAILABLE", "limit rejected");
+      }
+      return undefined as never;
+    });
+    const router = new SessionCommandRouter({ registry });
+    vi.spyOn(router, "waitForCreatedSession").mockResolvedValue(true);
+    const sendPendingCommand = vi.fn(async (routed: any) => {
+      const response = { type: "session_created", requestId: routed.command.requestId, agentSessionId: routed.command.message.agentSessionId };
+      registry.receiveNodeMessage("node-a", response);
+      return response;
+    });
+    const launch = vi.fn(async ({ job, run }: { job: RecurringJob; run: RecurringJobRun }) => createRecurringSession({
+      router, bridge: { sendPendingCommand } as never, modelPresetAvailability: { chooseUsablePreset, requireAvailable },
+    }, recurringSessionCreateInput(job, run)));
+    const service = new RecurringJobService({ repository, now: () => new Date("2026-09-21T00:00:00.000Z"),
+      validateTarget: createRecurringJobTargetValidator({ registry, modelPresetAvailability: { chooseUsablePreset, requireAvailable },
+        listFolders: async () => [{ id: "folder-a" }],
+        findUserByEmail: async () => ({ email: actor.ownerEmail, isAdmin: false, allowedFolderIds: ["folder-a"] }) }),
+      launcher: { isNodeConnected: () => true, createRecurringSession: launch, findDurableSession: async () => null } });
+    await expect(service.create(actor, { ...createInput(), modelPreset: "first", modelPresetFallbacks: ["unknown"] }))
+      .rejects.toMatchObject({ code: "VALIDATION", message: expect.stringContaining("not advertised") });
+    const job = await service.create(actor, { ...createInput(), modelPreset: "first", modelPresetFallbacks: ["second"] });
+    const run = await service.runManual(actor, job.jobId, "available");
+    expect(run).toMatchObject({ state: "running", jobSnapshot: { modelPresetFallbacks: ["second"], resolvedModelPreset: "second" } });
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ job: expect.objectContaining({ modelPresetFallbacks: ["second"] }) }));
+    expect(sendPendingCommand.mock.calls[0]![0].command.message).toMatchObject({
+      model_preset: "second", initial_model_preset: "first", model_preset_fallbacks: ["second"],
+    });
+    repository.runs.set(run.runId, { ...run, state: "completed" });
+    allLimited = true;
+    const rejected = await service.runManual(actor, job.jobId, "limited");
+    expect(rejected).toMatchObject({ state: "error", reasonCode: "TARGET_INVALID_AT_DISPATCH" });
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes an older snapshot without the fallback key", async () => {
+    const repository = memoryRepository();
+    let connected = false;
+    const launch = vi.fn(async () => ({ state: "running" as const, resolvedModelPreset: null }));
+    const service = new RecurringJobService({ repository, now: () => new Date("2026-09-21T00:00:00.000Z"), newId: sequentialIds(),
+      launcher: { isNodeConnected: () => connected, createRecurringSession: launch, findDurableSession: async () => null } });
+    const job = await service.create(actor, { ...createInput(), modelPresetFallbacks: ["fallback"] });
+    const waiting = await service.runManual(actor, job.jobId, "old-snapshot");
+    const { modelPresetFallbacks: _oldKey, ...oldSnapshot } = waiting.jobSnapshot;
+    const oldRun = { ...waiting, jobSnapshot: oldSnapshot };
+    repository.runs.set(oldRun.runId, oldRun);
+    connected = true;
+    const result = await service.dispatchRun(job, oldRun);
+    expect(result.state).toBe("running");
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ job: expect.objectContaining({ modelPresetFallbacks: [] }) }));
+  });
+  it.each(["recurring", "once", "event"] as const)("saves and updates fallback order for %s jobs", async (kind) => {
+    const validateTarget = vi.fn(async () => undefined);
+    const service = new RecurringJobService({ repository: memoryRepository(), validateTarget,
+      now: () => new Date("2026-09-21T00:00:00.000Z"), newId: sequentialIds() });
+    const base = kind === "once" ? onceInput() : kind === "event"
+      ? { ...createInput(), scheduleExpressions: undefined, eventTrigger: { type: "node_connected" as const } }
+      : createInput();
+    const created = await service.create(actor, { ...base, modelPreset: "first", modelPresetFallbacks: [" second ", "first", "second"] });
+    expect(created.modelPresetFallbacks).toEqual(["second"]);
+    expect((await service.get(actor, created.jobId)).modelPresetFallbacks).toEqual(["second"]);
+    const kept = await service.update(actor, created.jobId, { expectedVersion: created.version, name: "updated" });
+    expect(kept.modelPresetFallbacks).toEqual(["second"]);
+    const changed = await service.update(actor, kept.jobId, { expectedVersion: kept.version, modelPresetFallbacks: ["third"] });
+    expect(changed.modelPresetFallbacks).toEqual(["third"]);
+    expect(validateTarget).toHaveBeenLastCalledWith(expect.objectContaining({ requireAvailableTarget: true }));
+    const cleared = await service.update(actor, changed.jobId, { expectedVersion: changed.version, modelPresetFallbacks: [] });
+    expect(cleared.modelPresetFallbacks).toEqual([]);
+  });
   it("provides all-owner reads while preserving the existing archive filter", async () => {
     const repository = memoryRepository();
     const service = new RecurringJobService({
@@ -391,7 +473,7 @@ describe("RecurringJobService", () => {
       },
       validateTarget: createRecurringJobTargetValidator({
         registry,
-        modelPresetAvailability: { requireAvailable: vi.fn() },
+        modelPresetAvailability: { requireAvailable: vi.fn(), chooseUsablePreset: vi.fn() },
         listFolders: async () => [{ id: "folder-a", archived: false }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,
@@ -628,7 +710,7 @@ describe("RecurringJobService", () => {
       },
       validateTarget: createRecurringJobTargetValidator({
         registry,
-        modelPresetAvailability: { requireAvailable: vi.fn() },
+        modelPresetAvailability: { requireAvailable: vi.fn(), chooseUsablePreset: vi.fn() },
         listFolders: async () => [{ id: "folder-a", archived: folderArchived }],
         findUserByEmail: async () => ({
           email: actor.ownerEmail,

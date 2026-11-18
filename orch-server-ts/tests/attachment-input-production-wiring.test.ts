@@ -168,6 +168,7 @@ describe("live attachment input admission wiring", () => {
       nodeId: "node-a",
       agentId: "agent-a",
       modelPreset: null,
+      modelPresetFallbacks: [],
       folderId: "folder-a",
       executionCaller: { source: "browser", email: "owner@example.test", user_id: "owner-user" },
     };

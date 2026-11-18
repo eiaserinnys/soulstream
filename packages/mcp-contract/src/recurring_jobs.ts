@@ -1,10 +1,14 @@
 import { z } from "zod";
 import type { McpToolDefinition } from "./tool_definitions.js";
 const callerSchema = { caller_session_id: z.string().min(1).optional() };
+const modelPresetFallbacks = z.array(z.string().min(1).refine(item => item.trim().length > 0)).optional().describe(
+  "만들 때와 실행 중 한도에서 차례로 쓸 대체 모델 preset id. 같은 노드 안에서만 쓴다",
+);
 const jobTargetSchema = {
   node_id: z.string().min(1),
   agent_id: z.string().min(1),
   model_preset: z.string().min(1).nullable(),
+  model_preset_fallbacks: modelPresetFallbacks,
   folder_id: z.string().min(1),
 };
 const scheduleSchema = {
@@ -66,6 +70,7 @@ export const recurringJobTools = {
         node_id: z.string().min(1).optional(),
         agent_id: z.string().min(1).optional(),
         model_preset: z.string().min(1).nullable().optional(),
+        model_preset_fallbacks: modelPresetFallbacks,
         folder_id: z.string().min(1).optional(),
         enabled: z.boolean().optional(),
         late_run_window_seconds: z.number().int().positive().optional(),
