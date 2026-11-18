@@ -78,7 +78,7 @@ it('keeps the target frame isolated while list and session summary load in seque
   expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-session')).toBe('two');
   expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('true');
   expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('false');
-  expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('이전 대화를 불러오는 중');
+  expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('대화를 불러오는 중');
   expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('old-report');
   expect(useDashboardStore.getState().tree).toBeNull();expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.sessionId).toBe('two');
@@ -249,10 +249,10 @@ it('omits weekly usage on the unselected wide PAS route',async()=>{
 });
 it('keeps transcript loading until the target subscription synchronizes',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});mocks.sync=false;await mount('one');
- expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('이전 대화를 불러오는 중');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('대화를 불러오는 중');
  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('false');
  mocks.sync=true;await mount('one');
- expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('이전 대화를 불러오는 중');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('대화를 불러오는 중');
  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
 });
 
@@ -262,14 +262,14 @@ it('holds the stream error through automatic retries until sync or manual reconn
  expect(retry()).not.toBeNull();
  for(const status of ['connecting','connected','error','connecting']){
   mocks.streamStatus=status;await mount('one');expect(retry()).not.toBeNull();
-  expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('이전 대화를 불러오는 중');
+  expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('대화를 불러오는 중');
  }
  mocks.sync=true;mocks.streamStatus='connected';await mount('one');
  expect(retry()).toBeNull();expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
  mocks.sync=false;mocks.streamStatus='error';await mount('one');expect(retry()).not.toBeNull();
  await act(async()=>retry()!.click());expect(mocks.reconnect).toHaveBeenCalledOnce();
  // reconnect updates the hook status after this render; its old error must not flash back.
- expect(retry()).toBeNull();expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('이전 대화를 불러오는 중');
+ expect(retry()).toBeNull();expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('대화를 불러오는 중');
  mocks.streamStatus='connecting';await mount('one');expect(retry()).toBeNull();
  mocks.streamStatus='error';await mount('one');expect(retry()).not.toBeNull();
  mocks.streamStatus='connecting';await mount('two');expect(retry()).toBeNull();

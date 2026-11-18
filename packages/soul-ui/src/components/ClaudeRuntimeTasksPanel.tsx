@@ -16,7 +16,6 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
-import { FrameLoading } from "./FrameLoading";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
 import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
 
@@ -119,8 +118,9 @@ export function ClaudeRuntimeTasksPanel({
   // 첫 로딩에는 헤더 단추를 돌리지 않고 본문에서 기다린다. 자료가 있는 채로
   // 새로고침할 때만 헤더 단추가 돈다.
   const firstLoading = loading && tasks.length === 0 && !hasModeState && !error;
+  if (firstLoading) return null;
   const spinRefreshButton = loading && !firstLoading;
-  const showBody = expanded || firstLoading;
+  const showBody = expanded;
 
   const refreshButton = (
     <Button
@@ -141,8 +141,6 @@ export function ClaudeRuntimeTasksPanel({
           {error}
         </div>
       ) : null}
-
-      {firstLoading ? <FrameLoading label="불러오는 중…" /> : null}
 
       {hasModeState ? (
         <div className="flex flex-wrap gap-1.5">

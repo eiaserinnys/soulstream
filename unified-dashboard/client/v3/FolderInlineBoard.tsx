@@ -4,6 +4,7 @@ import {
   DashboardIconCap,
   DisclosureActionIcon,
   FrameLoading,
+  FrameNotice,
   deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
@@ -374,7 +375,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
       });
     return () => controller.abort();
   }, [documentId, invalidationKey]);
-  if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
+  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">문서 본문을 불러오지 못했습니다.</p></FrameNotice>;
   if (!document) return <FrameLoading label="본문을 불러오는 중…" />;
   return (
     <div className="v3-inline-markdown" data-testid="v3-inline-markdown">
@@ -410,7 +411,7 @@ function InlineCustomView({ customViewId, invalidationKey }: { customViewId: str
       });
     return () => controller.abort();
   }, [customViewId, invalidationKey]);
-  if (error) return <p className="v3-inline-board-error">커스텀 뷰를 불러오지 못했습니다.</p>;
+  if (error) return <FrameNotice><p className="v3-inline-board-error" role="alert">커스텀 뷰를 불러오지 못했습니다.</p></FrameNotice>;
   if (!document) return <FrameLoading label="커스텀 뷰를 불러오는 중…" />;
   return (
     <CustomViewIframe

@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
-"""프레임 로딩 배치 시각 검수.
+"""프레임 로딩·실패 자리 시각 검수.
 
 대표 화면의 로딩 상태를 Playwright 로 붙잡아 두고 넓은 폭(1440)과 좁은 폭(390)에서
-캡처한 뒤, 로딩 덩어리(스피너+글자)의 중심이 프레임의 내용 상자 중심에서 1px 안에
-있는지 잰다. 높이가 내용으로 정해지는 자리(content)는 가로 중심과 위/아래 여백이
-같은지를 잰다.
+캡처한 뒤, 로딩 덩어리(스피너+글자)가 프레임(내용이 들어올 영역) 안 어디에 서는지 잰다.
+
+  - 채움 프레임: 덩어리 중심과 프레임 내용 상자 중심의 가로·세로 차이(1px 안).
+  - 내용 높이 프레임: 가로 중심과, 프레임 위 가장자리에서 덩어리 위까지 / 덩어리
+    아래에서 프레임 아래 가장자리까지의 거리 차이(1px 안). 로더 자기 안쪽 여백이
+    아니라 프레임 기준으로 잰다.
+  - 토큰: 부품의 계산된 간격(gap), 글자 크기, 글자 굵기, 글자 색이 그 자리에서
+    풀린 --v3-space-2 / --v3-type-meta / --v3-text-secondary 값과 같은지 단언한다.
+    포털 대화상자 안에서도 같은 값이어야 한다.
+  - 실패 전환: 로딩에서 실패로 바꾼 뒤 실패 안내 묶음의 중심이 로더 중심과 1px 안에
+    있는지, 내용 높이 프레임(폴더 본문)에서는 뒤따르는 구역이 움직이지 않았는지 잰다.
+  - 세션 통계: 로더가 막대 프레임 하나뿐인지, 값 자리에 로딩 글자가 없는지 단언한다.
+  - 런타임 띠: 첫 로딩 동안 아무것도 그리지 않고, 응답 뒤에만 접힌 머리줄이 나오며,
+    데이터 있는 새로고침에는 머리 단추만 도는지 단언한다.
 
 준비
 
@@ -17,34 +28,31 @@
     python3 -P unified-dashboard/scripts/visual-check/loading_placement.py \
         http://127.0.0.1:5173 /path/to/output
 
-    # 기준본(origin/main) 캡처: 같은 스크립트로 --baseline
+    # 밝은 테마에서 포털 대화상자 토큰까지 확인
     python3 -P unified-dashboard/scripts/visual-check/loading_placement.py \
-        http://127.0.0.1:5173 /path/to/output-before --baseline
+        http://127.0.0.1:5173 /path/to/output --theme light \
+        --screen search-modal --screen ritual-modal
 
 산출물
 
-    {출력}/loading-{화면}-{폭}[-before].png
-    {출력}/measurements.json   (프레임·로딩 덩어리 좌표와 판정)
+    {출력}/loading-{화면}-{폭}[-{테마}].png
+    {출력}/measurements.json   (프레임·덩어리 좌표, 토큰 계산값, 실패 전환 측정)
     {출력}/report.json         (화면별 판정과 종합 판정)
 
-표준 출력에는 캡처마다 한 줄, 마지막에 판정 요약을 남긴다. --baseline 이 아니면
-가로/세로 중심이 1px 를 넘게 어긋나거나, 높이 고정 프레임을 채우지 못하거나,
-로딩 덩어리가 보이지 않으면 종료 코드 1로 끝난다.
-
-기준본 캡처에는 두 표본 경로가 아직 없으므로(런타임 첫 로딩 표본, 문서 리더 로딩
-표본) 기준본 체크아웃에 표본 파일만 얹어 같은 주소로 찍는다. 표본은 검수용 껍데기이고
-재는 대상은 기준본 부품이다.
+표준 출력에는 캡처마다 한 줄, 마지막에 판정 요약을 남긴다. 배치·토큰·실패 전환·
+추가 단언 중 하나라도 1px/토큰 값을 벗어나면 종료 코드 1로 끝난다.
 """
 
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import re
 import sys
 from pathlib import Path
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
 TOLERANCE_PX = 1.0
 WIDTHS = (1440, 390)
@@ -86,6 +94,30 @@ PAS_LIST = {
     "total": 0,
     "create_defaults": {"node_id": "eiaserinnys", "preferred_agent_id": "default"},
 }
+PAS_CHAT_SESSION = {
+    "session_id": "pas-1",
+    "display_name": "검수 관제",
+    "node_id": "eiaserinnys",
+    "folder_id": "folder-1",
+    "agent_id": "default",
+    "agent_name": "기본",
+    "persistent": True,
+    "settings": {
+        "default_model": {"model_preset": "sample-sol", "reasoning_effort": None},
+        "fallback_models": [],
+        "show_generation_separator": True,
+        "show_character": False,
+        "show_jev_candidates": False,
+        "show_work_details": False,
+        "animate_character": False,
+        "turn_usage_mode": "collapsed",
+        "show_turn_usage": False,
+    },
+    "runtime": {
+        "current_model": {"model_preset": "sample-sol", "reasoning_effort": None, "model": None},
+        "pending": None,
+    },
+}
 PAGE = {
     "id": "page-1",
     "title": "검수 폴더",
@@ -113,6 +145,20 @@ BOARD_ITEMS = {"boardItems": [{
     "metadata": {"title": "검수 문서"},
     "sortOrder": 0,
 }]}
+RUNTIME_SCHEDULES = {
+    "sessionId": "review-runtime-loaded",
+    "nextRunAt": "2026-11-19T00:00:00.000Z",
+    "schedules": [{
+        "scheduleId": "review-schedule-1",
+        "kind": "cron",
+        "status": "active",
+        "prompt": "아침 점검",
+        "cronExpression": "0 9 * * *",
+        "nextRunAt": "2026-11-19T00:00:00.000Z",
+        "recurring": True,
+        "timezone": "Asia/Seoul",
+    }],
+}
 
 INIT_SCRIPT = """
 localStorage.setItem('soul-dashboard-theme', '__THEME__');
@@ -126,7 +172,7 @@ Object.defineProperty(navigator.serviceWorker, 'controller', { configurable: tru
 """
 
 MEASURE_SCRIPT = """
-({ frameSelector, text, insetTop }) => {
+({ frameSelector, insetTop, insetBottom }) => {
   const round = (value) => Math.round(value * 10) / 10;
   // 회전 중인 스피너의 외접 상자는 각도에 따라 커진다. 잠깐 애니메이션을 끄고
   // 배치 상자를 잰 뒤 즉시 되돌린다.
@@ -144,14 +190,18 @@ MEASURE_SCRIPT = """
   const fail = (error) => { style.remove(); return { error }; };
   if (!frame) return fail('frame not found');
   const fr = frame.getBoundingClientRect();
-  const cs = getComputedStyle(frame);
+  const fcs = getComputedStyle(frame);
+  const borderLeft = parseFloat(fcs.borderLeftWidth);
+  const borderTop = parseFloat(fcs.borderTopWidth);
+  // 스크롤 상자도 실제 내용 폭(스크롤바 제외)을 쓴다. clientWidth/Height 는 패딩 상자에서
+  // 스크롤바를 뺀 값이므로 패딩을 다시 빼면 내용 상자가 된다.
   const frameContent = {
-    left: fr.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth),
-    right: fr.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth),
-    top: fr.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth),
-    bottom: fr.bottom - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth),
+    left: fr.left + borderLeft + parseFloat(fcs.paddingLeft),
+    right: fr.left + borderLeft + frame.clientWidth - parseFloat(fcs.paddingRight),
+    top: fr.top + borderTop + parseFloat(fcs.paddingTop),
+    bottom: fr.top + borderTop + frame.clientHeight - parseFloat(fcs.paddingBottom),
   };
-  // 제목처럼 프레임 위쪽에 늘 남는 것이 있으면 그 아래 남는 영역을 프레임으로 잰다.
+  // 제목·머리줄처럼 프레임 위쪽에 늘 남는 것이 있으면 그 아래 남는 영역을 프레임으로 잰다.
   if (insetTop) {
     const inset = frame.querySelector(insetTop);
     if (inset) {
@@ -162,33 +212,96 @@ MEASURE_SCRIPT = """
       );
     }
   }
-  const slot = frame.querySelector('[data-slot="frame-loading"]');
-  let target = slot;
-  let kind = 'slot';
-  if (!target) {
-    kind = 'text';
-    const nodes = Array.from(frame.querySelectorAll('*')).filter((element) =>
-      (element.textContent ?? '').trim() === text && element.getClientRects().length > 0);
-    nodes.sort((a, b) => (a.textContent ?? '').length - (b.textContent ?? '').length
-      || a.children.length - b.children.length);
-    target = nodes[0] ?? null;
+  if (insetBottom) {
+    const inset = frame.querySelector(insetBottom);
+    if (inset) {
+      const insetStyle = getComputedStyle(inset);
+      frameContent.bottom = Math.min(
+        frameContent.bottom,
+        inset.getBoundingClientRect().top - parseFloat(insetStyle.marginTop),
+      );
+    }
   }
-  if (!target) return fail('loading element not found');
-  const rects = kind === 'slot'
-    ? Array.from(target.children)
-        .filter((child) => child.getClientRects().length > 0)
-        .map((child) => child.getBoundingClientRect())
-    : [target.getBoundingClientRect()];
+  const slots = Array.from(frame.querySelectorAll('[data-slot="frame-loading"]'))
+    .filter((element) => element.getClientRects().length > 0);
+  const slot = slots[0];
+  if (!slot) return fail('loading element not found');
+  const rects = Array.from(slot.children)
+    .filter((child) => child.getClientRects().length > 0)
+    .map((child) => child.getBoundingClientRect());
   const cluster = union(rects);
   if (!cluster) return fail('loading cluster not found');
-  const targetRect = target.getBoundingClientRect();
-  const targetStyle = getComputedStyle(target);
-  const slotContent = kind === 'slot' ? {
-    top: targetRect.top + parseFloat(targetStyle.paddingTop) + parseFloat(targetStyle.borderTopWidth),
-    bottom: targetRect.bottom - parseFloat(targetStyle.paddingBottom) - parseFloat(targetStyle.borderBottomWidth),
-    left: targetRect.left + parseFloat(targetStyle.paddingLeft) + parseFloat(targetStyle.borderLeftWidth),
-    right: targetRect.right - parseFloat(targetStyle.paddingRight) - parseFloat(targetStyle.borderRightWidth),
-  } : null;
+  const slotRect = slot.getBoundingClientRect();
+  const slotStyle = getComputedStyle(slot);
+  const svg = slot.querySelector('svg');
+  const label = slot.querySelector('.v3-frame-loading-label');
+  const labelStyle = label ? getComputedStyle(label) : null;
+
+  // 토큰이 이 자리에서 실제로 풀리는지: 같은 토큰을 적용한 숨은 표본과 계산값을 비교한다.
+  const inline = slot.hasAttribute('data-inline');
+  const probe = document.createElement('span');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;width:0;height:0;gap:var(--v3-space-2);padding:var(--v3-space-4);font:var(--v3-type-meta) var(--v3-font-family);color:var(--v3-text-secondary);';
+  const probePad1 = document.createElement('span');
+  probePad1.setAttribute('aria-hidden', 'true');
+  probePad1.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;width:0;height:0;padding-block:var(--v3-space-1);';
+  slot.append(probe, probePad1);
+  const probeStyle = getComputedStyle(probe);
+  const probePad1Style = getComputedStyle(probePad1);
+  const tokens = {
+    space1: slotStyle.getPropertyValue('--v3-space-1').trim(),
+    space2: slotStyle.getPropertyValue('--v3-space-2').trim(),
+    space4: slotStyle.getPropertyValue('--v3-space-4').trim(),
+    typeMeta: slotStyle.getPropertyValue('--v3-type-meta').trim(),
+    fontFamily: slotStyle.getPropertyValue('--v3-font-family').trim(),
+    textSecondary: slotStyle.getPropertyValue('--v3-text-secondary').trim(),
+  };
+  const metaMatch = tokens.typeMeta.match(/^(\\d+)\\s+([\\d.]+px)\\/([\\d.]+px)$/);
+  const expected = {
+    gap: probeStyle.columnGap,
+    fontSize: metaMatch ? metaMatch[2] : null,
+    fontWeight: metaMatch ? metaMatch[1] : null,
+    lineHeight: metaMatch ? metaMatch[3] : null,
+    color: probeStyle.color,
+    paddingTop: inline ? probePad1Style.paddingTop : probeStyle.paddingTop,
+    paddingRight: probeStyle.paddingRight,
+    paddingBottom: inline ? probePad1Style.paddingBottom : probeStyle.paddingBottom,
+    paddingLeft: probeStyle.paddingLeft,
+  };
+  const actual = {
+    gap: slotStyle.columnGap,
+    fontSize: slotStyle.fontSize,
+    fontWeight: slotStyle.fontWeight,
+    lineHeight: slotStyle.lineHeight,
+    color: slotStyle.color,
+    paddingTop: slotStyle.paddingTop,
+    paddingRight: slotStyle.paddingRight,
+    paddingBottom: slotStyle.paddingBottom,
+    paddingLeft: slotStyle.paddingLeft,
+    labelFontSize: labelStyle ? labelStyle.fontSize : null,
+    labelFontWeight: labelStyle ? labelStyle.fontWeight : null,
+    labelColor: labelStyle ? labelStyle.color : null,
+  };
+  const spinnerToLabel = svg && label
+    ? round(label.getBoundingClientRect().left - svg.getBoundingClientRect().right)
+    : null;
+  const checks = {
+    gap: Boolean(tokens.space2) && actual.gap === expected.gap,
+    padding: Boolean(tokens.space4) && actual.paddingTop === expected.paddingTop
+      && actual.paddingRight === expected.paddingRight
+      && actual.paddingBottom === expected.paddingBottom
+      && actual.paddingLeft === expected.paddingLeft,
+    fontSize: Boolean(metaMatch) && actual.fontSize === expected.fontSize
+      && (actual.labelFontSize === null || actual.labelFontSize === expected.fontSize),
+    fontWeight: Boolean(metaMatch) && actual.fontWeight === expected.fontWeight
+      && (actual.labelFontWeight === null || actual.labelFontWeight === expected.fontWeight),
+    color: Boolean(tokens.textSecondary) && actual.color === expected.color
+      && (actual.labelColor === null || actual.labelColor === expected.color),
+    spinnerToLabel: spinnerToLabel !== null && Math.abs(spinnerToLabel - parseFloat(expected.gap)) <= 0.6,
+  };
+  slot.removeChild(probe);
+  slot.removeChild(probePad1);
+
   const clusterCenter = {
     x: (cluster.left + cluster.right) / 2,
     y: (cluster.top + cluster.bottom) / 2,
@@ -198,51 +311,167 @@ MEASURE_SCRIPT = """
     y: (frameContent.top + frameContent.bottom) / 2,
   };
   const result = {
-    kind,
-    visible: targetRect.width > 0 && targetRect.height > 0,
+    inline,
+    visible: slotRect.width > 0 && slotRect.height > 0,
+    text: (slot.textContent || '').trim(),
+    frameSlotCount: slots.length,
+    pageSlotCount: Array.from(document.querySelectorAll('[data-slot="frame-loading"]'))
+      .filter((element) => element.getClientRects().length > 0).length,
     slot: {
-      width: round(targetRect.width),
-      height: round(targetRect.height),
+      width: round(slotRect.width),
+      height: round(slotRect.height),
     },
     cluster: {
       width: round(cluster.right - cluster.left),
       height: round(cluster.bottom - cluster.top),
       centerX: round(clusterCenter.x),
       centerY: round(clusterCenter.y),
-      text: (target.textContent ?? '').trim(),
     },
     frameContent: {
+      left: round(frameContent.left),
+      top: round(frameContent.top),
+      right: round(frameContent.right),
+      bottom: round(frameContent.bottom),
       width: round(frameContent.right - frameContent.left),
       height: round(frameContent.bottom - frameContent.top),
       centerX: round(frameCenter.x),
       centerY: round(frameCenter.y),
     },
-    slotContent: slotContent ? {
-      top: round(slotContent.top),
-      bottom: round(slotContent.bottom),
-    } : null,
     dx: round(clusterCenter.x - frameCenter.x),
     dy: round(clusterCenter.y - frameCenter.y),
-    padTop: kind === 'slot' ? round(cluster.top - slotContent.top) : null,
-    padBottom: kind === 'slot' ? round(slotContent.bottom - cluster.bottom) : null,
+    gapTop: round(cluster.top - frameContent.top),
+    gapBottom: round(frameContent.bottom - cluster.bottom),
+    tokens,
+    expected,
+    actual,
+    checks,
+    spinnerToLabel,
   };
   style.remove();
   return result;
 }
 """
 
+NOTICE_SCRIPT = """
+() => {
+  const round = (value) => Math.round(value * 10) / 10;
+  const seats = Array.from(document.querySelectorAll('[data-slot="frame-notice"]'))
+    .filter((element) => element.getClientRects().length > 0);
+  if (!seats.length) return { error: 'notice not found' };
+  const seat = seats[seats.length - 1];
+  const child = Array.from(seat.children)
+    .find((element) => element.getClientRects().length > 0);
+  if (!child) return { error: 'notice content not found' };
+  const rect = child.getBoundingClientRect();
+  return {
+    seatCount: seats.length,
+    text: (child.textContent || '').trim().slice(0, 120),
+    width: round(rect.width),
+    height: round(rect.height),
+    centerX: round((rect.left + rect.right) / 2),
+    centerY: round((rect.top + rect.bottom) / 2),
+  };
+}
+"""
 
-def load_json(context, pattern: str, payload) -> None:
+ANCHOR_SCRIPT = """
+(text) => {
+  const element = Array.from(document.querySelectorAll('h1, h2, h3, h4, p, span'))
+    .find((candidate) => (candidate.textContent || '').trim() === text);
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return { top: Math.round((rect.top + window.scrollY) * 10) / 10, text };
+}
+"""
+
+STATS_SCRIPT = """
+() => {
+  const visible = (element) => element.getClientRects().length > 0;
+  const loaders = Array.from(document.querySelectorAll('[data-slot="frame-loading"]')).filter(visible);
+  const chart = document.querySelector('.usage-stats-chart');
+  const loadingTexts = Array.from(document.querySelectorAll('*'))
+    .filter((element) => element.children.length === 0
+      && (element.textContent || '').trim() === '불러오는 중…' && visible(element));
+  return {
+    loaderCount: loaders.length,
+    chartLoader: Boolean(chart && chart.querySelector('[data-slot="frame-loading"]')),
+    loadingTextCount: loadingTexts.length,
+    summaryValues: Array.from(document.querySelectorAll('.usage-stats-summary-metric > strong'))
+      .map((element) => (element.textContent || '').trim()),
+    shareList: Boolean(document.querySelector('.usage-stats-share-list')),
+    detailLoader: Boolean(document.querySelector('.usage-stats-input-material [data-slot="frame-loading"]')),
+  };
+}
+"""
+
+RUNTIME_LOADING_SCRIPT = """
+() => {
+  const panel = document.querySelector('[data-testid="runtime-sample-first-loading"]');
+  if (!panel) return { error: 'sample panel not found' };
+  return {
+    sections: panel.querySelectorAll('section').length,
+    hasCount: (panel.textContent || '').includes('예약 0'),
+    text: (panel.textContent || '').trim(),
+  };
+}
+"""
+
+RUNTIME_RESPONSE_SCRIPT = """
+() => {
+  const panel = document.querySelector('[data-testid="runtime-sample-first-loading"]');
+  const refresh = document.querySelector('[data-testid="runtime-sample-refresh"]');
+  const section = panel ? panel.querySelector('section[data-slot="claude-runtime-schedules-caption"]') : null;
+  const toggle = section ? section.querySelector('button[aria-expanded]') : null;
+  return {
+    firstLoadingSections: panel ? panel.querySelectorAll('section').length : -1,
+    firstLoadingText: panel ? (panel.textContent || '').trim() : null,
+    collapsed: toggle ? toggle.getAttribute('aria-expanded') : null,
+    firstLoadingLoader: panel ? Boolean(panel.querySelector('[data-slot="frame-loading"]')) : null,
+    refreshSpinning: refresh
+      ? Boolean(refresh.querySelector('button[title="새로고침"] .animate-spin'))
+      : null,
+  };
+}
+"""
+
+
+class Held:
+    """응답을 붙잡아 두는 라우트 모음. 실패로 풀거나 일부만 남기고 풀 수 있다."""
+
+    def __init__(self) -> None:
+        self.routes = []
+
+    def __call__(self, route) -> None:
+        self.routes.append(route)
+
+    def release(self, status: int = 200, body="{}", content_type: str = "application/json",
+                only=None, exclude=None) -> int:
+        kept = []
+        released = 0
+        for route in self.routes:
+            url = route.request.url
+            if (only is not None and not only(url)) or (exclude is not None and exclude(url)):
+                kept.append(route)
+                continue
+            try:
+                route.fulfill(
+                    status=status,
+                    content_type=content_type,
+                    body=body if isinstance(body, str) else json.dumps(body),
+                )
+                released += 1
+            except Exception as error:  # noqa: BLE001
+                print("release error", error, file=sys.stderr)
+        self.routes = kept
+        return released
+
+
+def load_json(context, pattern, payload) -> None:
     body = payload if isinstance(payload, str) else json.dumps(payload)
     context.route(
         pattern,
         lambda route: route.fulfill(status=200, content_type="application/json", body=body),
     )
-
-
-def hold(context, pattern) -> None:
-    """응답을 붙잡아 둔다. Playwright 가 라우트를 처리하지 않아 요청이 끝나지 않는다."""
-    context.route(pattern, lambda route: None)
 
 
 def install_page(context, theme: str) -> None:
@@ -263,7 +492,6 @@ def install_page(context, theme: str) -> None:
         lambda route: route.fulfill(status=200, content_type="text/event-stream", body=""),
     )
     load_json(context, "**/api/folders", FOLDERS)
-    # 설정 모달이 배열을 기대하는 응답들 — 빈 배열이라도 모양을 맞춰 준다.
     load_json(context, "**/api/nodes/*/agents", {"agents": []})
     load_json(context, "**/api/nodes/*/agents/default/portrait", "")
     load_json(context, "**/api/config/settings", {"categories": [], "values": {}})
@@ -283,10 +511,6 @@ def settle(page: Page) -> None:
 
 def wait_shell(page: Page) -> None:
     page.wait_for_selector(".v3-shell", state="visible", timeout=30000)
-
-
-def wait_loading(page: Page, frame: str, after: str, before: str) -> None:
-    page.wait_for_selector(f"{frame} {after}, {frame} {before}", state="visible", timeout=30000)
 
 
 def open_card_board(page: Page) -> None:
@@ -328,6 +552,17 @@ def open_pas_screen(page: Page) -> None:
     wait_shell(page)
 
 
+def open_pas_chat(context, page: Page) -> None:
+    """PAS 목록은 받았고 대화 타임라인 첫 요청을 붙잡는다: 대화 0행 첫 로딩."""
+    held = Held()
+    context.route(re.compile(r"/api/sessions\?.*session_id=pas-1"), held)
+    load_json(context, "**/api/persistent-sessions", {
+        **PAS_LIST, "sessions": [PAS_CHAT_SESSION], "total": 1,
+    })
+    page.goto("/persistent/pas-1")
+    wait_shell(page)
+
+
 def open_settings_tab(page: Page) -> None:
     page.goto("/")
     wait_shell(page)
@@ -335,52 +570,15 @@ def open_settings_tab(page: Page) -> None:
     page.get_by_role("button", name="에이전트", exact=True).click()
 
 
-def click_menu_item(page: Page, label: str, timeout: int = 30000) -> None:
-    """넓은 폭은 base-ui 메뉴(div[role=menuitem]), 좁은 폭은 단추 목록으로 뜬다."""
-    page.wait_for_function(
-        """(label) => [...document.querySelectorAll('button, [role="menuitem"]')]
-             .some((element) => element.textContent.trim() === label)""",
-        arg=label,
-        timeout=timeout,
-    )
-    page.evaluate(
-        """(label) => {
-          const element = [...document.querySelectorAll('button, [role="menuitem"]')]
-            .find((candidate) => candidate.textContent.trim() === label);
-          element.click();
-        }""",
-        label,
-    )
-
-
-def open_project_dialog(page: Page) -> None:
+def click_settings_tab(page: Page, label: str) -> None:
     page.goto("/")
     wait_shell(page)
-    # 좁은 폭에서는 사이드바 나무가 숨어 있지만 행은 마운트돼 있다. 좌표를 실은
-    # contextmenu 이벤트를 직접 보내 메뉴를 연다(측정 대상은 대화상자 배치다).
-    state = "visible" if page.viewport_size["width"] > 760 else "attached"
-    page.wait_for_selector('[data-testid="v3-project-row-folder-1"]', state=state, timeout=30000)
-    page.wait_for_timeout(500)
-    for attempt in range(3):
-        page.evaluate("""() => {
-          const row = document.querySelector('[data-testid="v3-project-row-folder-1"]');
-          const rect = row.getBoundingClientRect();
-          row.dispatchEvent(new MouseEvent('contextmenu', {
-            bubbles: true, cancelable: true,
-            clientX: rect.x + 24, clientY: rect.y + 12,
-          }));
-        }""")
-        try:
-            click_menu_item(page, "폴더 설정", timeout=5000)
-            return
-        except PlaywrightTimeoutError:
-            if attempt == 2:
-                raise
+    page.click('[data-testid="config-button"]')
+    page.get_by_role("button", name=label, exact=True).click()
 
 
-def open_runtime_sample(page: Page) -> None:
-    page.goto("/components?sample=runtime-loading")
-    page.wait_for_selector('section[data-slot="claude-runtime-schedules-caption"]', state="visible", timeout=30000)
+def open_usage_stats(page: Page) -> None:
+    click_settings_tab(page, "세션 통계")
 
 
 def open_search_modal(page: Page) -> None:
@@ -397,223 +595,405 @@ def open_document_reader(page: Page) -> None:
     page.wait_for_selector('[data-testid="internal-document-dialog"]', state="visible", timeout=30000)
 
 
-SCREENS = [
-    {
-        "key": "card-board",
-        "frame": '.v3-card-inbox[data-card-scope="all"]',
-        "after": '[data-slot="frame-loading"]',
-        "before": 'p.v3-card-board-empty[role="status"]',
-        "text": "카드를 불러오는 중…",
-        "mode": "fill",
-        "hold": re.compile(r"/api/cards\?.*includeCompleted=false"),
-        "open": open_card_board,
-    },
-    {
-        "key": "completed-cards",
-        "frame": '[data-testid="completed-viewport"]',
-        "after": '[data-slot="frame-loading"]',
-        "before": 'p.v3-card-board-empty[role="status"]',
-        "text": "완료 카드를 불러오는 중…",
-        "mode": "content",
-        "hold": re.compile(r"/api/cards\?.*\bstatus=done\b"),
-        "open": open_completed_cards,
-    },
-    {
-        "key": "folder-body",
-        "frame": ".v3-inline-board-item",
-        "after": '[data-slot="frame-loading"]',
-        "before": "p.v3-detail-empty",
-        "text": "본문을 불러오는 중…",
-        "mode": "content",
-        "hold": re.compile(r"/api/markdown-documents/"),
-        "open": open_folder_body,
-    },
-    {
-        "key": "pas-screen",
-        "frame": ".persistent-session-main",
-        "after": '[data-slot="frame-loading"]',
-        "before": 'p[role="status"]',
-        "text": "불러오는 중…",
-        "mode": "fill",
-        "hold": "**/api/persistent-sessions",
-        "open": open_pas_screen,
-    },
-    {
-        "key": "settings-tab",
-        # 탭 본문은 높이가 정해진 상자다. 제목 아래 남는 영역을 채워 그 안에서 가운데에 선다.
-        "frame": ".config-detail",
-        "insetTop": ".config-detail-heading",
-        "after": '[data-slot="frame-loading"]',
-        "before": ".py-8.text-center",
-        "text": "프로필을 불러오는 중...",
-        "mode": "fill",
-        "hold": "**/api/agent-profiles",
-        "open": open_settings_tab,
-    },
-    {
-        "key": "project-dialog",
-        "frame": '.project-purpose-dialog [data-slot="dialog-panel"]',
-        "after": '[data-slot="frame-loading"]',
-        "before": 'p[aria-busy="true"]',
-        "text": "프로젝트 설정을 불러오는 중…",
-        "mode": "content",
-        "hold": re.compile(r"/api/pages/page-1\?include_blocks=true"),
-        "open": open_project_dialog,
-    },
-    {
-        "key": "runtime-schedules",
-        # 캡션 껍데기가 아니라 로딩이 실제로 놓이는 스크롤 본문을 프레임으로 잰다.
-        "frame": 'section[data-slot="claude-runtime-schedules-caption"] > div:last-child',
-        "after": '[data-slot="frame-loading"]',
-        "before": ".animate-spin",
-        "text": "불러오는 중…",
-        "mode": "content",
-        "hold": "**/api/sessions/review-runtime-loading/schedules",
-        "baseline_url": "/components",
-        "baseline_hold": "**/api/sessions/components-review-manuscript/schedules",
-        "open": open_runtime_sample,
-    },
-    {
-        "key": "search-modal",
-        "frame": '[data-slot="dialog-popup"] [data-slot="dialog-panel"]',
-        "after": '[data-slot="frame-loading"]',
-        "before": ".py-6 .animate-spin",
-        "text": "검색 중...",
-        "mode": "content",
-        "hold": re.compile(r"/cogito/search\?"),
-        "open": open_search_modal,
-    },
-    {
-        "key": "document-reader",
-        "frame": '[data-testid="internal-document-dialog"] [data-slot="dialog-panel"]',
-        "after": '[data-slot="frame-loading"]',
-        "before": ".v3-board-load-state",
-        "text": "본문을 불러오는 중…",
-        "mode": "content",
-        "hold": re.compile(r"/api/markdown-documents/sample-linked-document"),
-        "open": open_document_reader,
-    },
-]
+def open_ritual_modal(context, page: Page) -> None:
+    page.goto("/")
+    wait_shell(page)
+    if page.viewport_size["width"] <= 760:
+        # 좁은 폭의 "카드" 탭은 카드 보드다. 기록 단추로 일일 플래너를 연다.
+        page.click('[data-testid="v3-mobile-tab-today"]')
+        page.wait_for_selector('[aria-label="기록"]', state="attached", timeout=30000)
+        page.evaluate("""() => document.querySelector('[aria-label="기록"]').click()""")
+    else:
+        page.get_by_text("(오늘)").first.click()
+    page.wait_for_selector('[aria-label="아침 정리"]', state="attached", timeout=30000)
+    page.wait_for_timeout(800)
+    # 아침 정리 조회가 여러 API 를 부른다. 모두 붙잡아 로딩 상태로 둔다.
+    held = Held()
+    context.route("**/api/**", held)
+    page.evaluate("""() => document.querySelector('[aria-label="아침 정리"]').click()""")
 
 
-def judge(measurement: dict, mode: str, baseline: bool) -> dict:
+def open_runtime_sample(page: Page) -> None:
+    page.goto("/components?sample=runtime-loading")
+    page.wait_for_selector('[data-testid="runtime-loading-review"]', state="visible", timeout=60000)
+
+
+def judge_loading(measurement: dict, mode: str) -> dict:
     if "error" in measurement:
-        return {"passed": baseline, "reason": measurement["error"]}
+        return {"passed": False, "reason": measurement["error"]}
+    tokens_passed = all(measurement["checks"].values())
     if not measurement["visible"]:
-        return {"passed": baseline, "reason": "로딩 요소가 보이지 않음"}
-    if baseline:
-        return {"passed": True, "reason": "기준본 기록"}
+        return {"passed": False, "reason": "로딩 요소가 보이지 않음", "tokens": tokens_passed}
     horizontal = abs(measurement["dx"]) <= TOLERANCE_PX
     if mode == "fill":
         vertical = abs(measurement["dy"]) <= TOLERANCE_PX
-        passed = horizontal and vertical
-        reason = "가로·세로 중심" if passed else "프레임 중심에서 벗어남"
+        placement = horizontal and vertical
+        reason = "가로·세로 중심" if placement else "프레임 중심에서 벗어남"
     else:
-        symmetric = (measurement["padTop"] is not None
-                     and abs(measurement["padTop"] - measurement["padBottom"]) <= TOLERANCE_PX)
-        passed = horizontal and symmetric
-        reason = "가로 중심·위아래 여백 같음" if passed else "가로 중심 또는 위아래 여백이 어긋남"
+        symmetric = abs(measurement["gapTop"] - measurement["gapBottom"]) <= TOLERANCE_PX
+        placement = horizontal and symmetric
+        reason = "가로 중심·프레임 위아래 거리 같음" if placement else "가로 중심 또는 프레임 위아래 거리가 어긋남"
+    passed = placement and tokens_passed
+    if not passed and placement:
+        reason = "토큰 계산값이 다름"
     return {
         "passed": passed,
         "reason": reason,
+        "placement": placement,
+        "tokensPassed": tokens_passed,
         "horizontal": horizontal,
         **({"vertical": abs(measurement["dy"]) <= TOLERANCE_PX} if mode == "fill" else {
-            "paddingSymmetric": abs(measurement["padTop"] - measurement["padBottom"]) <= TOLERANCE_PX
-            if measurement["padTop"] is not None else False,
+            "gapDifference": round(abs(measurement["gapTop"] - measurement["gapBottom"]), 3),
         }),
     }
 
 
-def capture_screen(browser, base: str, out: Path, screen: dict, width: int, baseline: bool) -> dict:
+def judge_notice(loading: dict, notice: dict) -> dict:
+    if "error" in notice:
+        return {"passed": False, "reason": notice["error"]}
+    dx = round(notice["centerX"] - loading["cluster"]["centerX"], 3)
+    dy = round(notice["centerY"] - loading["cluster"]["centerY"], 3)
+    passed = abs(dx) <= TOLERANCE_PX and abs(dy) <= TOLERANCE_PX
+    return {
+        "passed": passed,
+        "reason": "실패 안내 중심이 로더 중심과 같음" if passed else "실패 안내 중심이 로더 중심에서 벗어남",
+        "dx": dx,
+        "dy": dy,
+        **notice,
+    }
+
+
+def screenshot_path(out: Path, scene: dict, width: int, theme: str, suffix: str = "") -> Path:
+    theme_suffix = "" if theme == "dark" else f"-{theme}"
+    return out / f"loading-{scene['key']}-{width}{theme_suffix}{suffix}.png"
+
+
+def capture_scene(browser, base: str, out: Path, scene: dict, width: int, theme: str) -> dict:
     context = browser.new_context(
         base_url=base,
         viewport={"width": width, "height": VIEWPORT_HEIGHTS[width]},
-        color_scheme="dark",
+        color_scheme=theme,
         reduced_motion="reduce",
     )
-    install_page(context, "dark")
-    if screen.get("hold") and not baseline:
-        hold(context, screen["hold"])
-    if baseline and screen.get("baseline_hold"):
-        hold(context, screen["baseline_hold"])
-    elif baseline and screen.get("hold"):
-        hold(context, screen["hold"])
+    install_page(context, theme)
+    held = None
+    if scene.get("hold"):
+        held = Held()
+        context.route(scene["hold"], held)
     page = context.new_page()
     page.on("pageerror", lambda error: print(f"pageerror: {error}", file=sys.stderr))
+    entry = {
+        "scene": scene["key"],
+        "width": width,
+        "theme": theme,
+        "frame": scene["frame"],
+        "mode": scene["mode"],
+        "capture": screenshot_path(out, scene, width, theme).name,
+        "passed": False,
+    }
     try:
-        if baseline and screen.get("baseline_url"):
-            page.goto(f"{base}{screen['baseline_url']}")
-            page.wait_for_selector('section[data-slot="claude-runtime-schedules-caption"]', state="visible", timeout=30000)
+        opener = scene["open"]
+        if len(inspect.signature(opener).parameters) >= 2:
+            opener(context, page)
         else:
-            screen["open"](page)
-        wait_loading(page, screen["frame"], screen["after"], screen["before"])
+            opener(page)
+        wait_selector = scene.get("wait", '[data-slot="frame-loading"]')
+        page.wait_for_selector(f'{scene["frame"]} {wait_selector}', state="visible", timeout=30000)
         settle(page)
         measurement = page.evaluate(MEASURE_SCRIPT, {
-            "frameSelector": screen["frame"],
-            "insetTop": screen.get("insetTop"),
-            "text": screen["text"],
+            "frameSelector": scene["frame"],
+            "insetTop": scene.get("insetTop"),
+            "insetBottom": scene.get("insetBottom"),
         })
-        verdict = judge(measurement, screen["mode"], baseline)
-        suffix = "-before" if baseline else ""
-        path = out / f"loading-{screen['key']}-{width}{suffix}.png"
-        page.screenshot(path=str(path), animations="disabled")
-        print(f"{screen['key']}-{width}{suffix}: {path.as_posix()}")
-        return {
-            "screen": screen["key"],
-            "width": width,
-            "mode": screen["mode"],
-            "baseline": baseline,
-            "capture": path.name,
-            "frame": screen["frame"],
-            **measurement,
-            **verdict,
-        }
+        entry.update(measurement)
+        verdict = judge_loading(measurement, scene["mode"])
+        entry.update(verdict)
+        page.screenshot(path=str(screenshot_path(out, scene, width, theme)), animations="disabled")
+
+        extra = scene.get("extra")
+        if extra:
+            extra_result = extra(page)
+            entry["extra"] = extra_result
+            extra_passed = extra_result.get("passed", False)
+            entry["passed"] = bool(entry["passed"] and extra_passed)
+            if not extra_passed:
+                entry["reason"] = extra_result.get("reason", "추가 단언 실패")
+
+        if scene.get("fail") and "cluster" in measurement:
+            anchor_text = scene.get("anchorText")
+            anchor_before = page.evaluate(ANCHOR_SCRIPT, anchor_text) if anchor_text else None
+            if held is None:
+                raise RuntimeError("fail scene requires a held route")
+            held.release(status=500, body={"error": "boom"})
+            page.wait_for_selector('[data-slot="frame-notice"]', state="visible", timeout=30000)
+            page.wait_for_timeout(500)
+            notice = page.evaluate(NOTICE_SCRIPT)
+            notice_verdict = judge_notice(measurement, notice)
+            anchor_after = page.evaluate(ANCHOR_SCRIPT, anchor_text) if anchor_text else None
+            anchor_verdict = {"passed": True}
+            if anchor_text and anchor_before and anchor_after:
+                delta = round(anchor_after["top"] - anchor_before["top"], 3)
+                anchor_verdict = {
+                    "passed": abs(delta) <= TOLERANCE_PX,
+                    "reason": "뒤 구역 위치 불변" if abs(delta) <= TOLERANCE_PX else "뒤 구역이 움직임",
+                    "deltaTop": delta,
+                    "text": anchor_text,
+                }
+            entry["failure"] = {
+                **notice_verdict,
+                "anchor": anchor_verdict,
+            }
+            failure_shot = screenshot_path(out, scene, width, theme, "-fail")
+            page.screenshot(path=str(failure_shot), animations="disabled")
+            entry["failureCapture"] = failure_shot.name
+            if not (notice_verdict["passed"] and anchor_verdict["passed"]):
+                entry["passed"] = False
+                entry["reason"] = notice_verdict["reason"] if not notice_verdict["passed"] else anchor_verdict["reason"]
+
+        print(
+            f"{scene['key']}-{width}{'-' + theme if theme != 'dark' else ''}: "
+            f"dx={entry.get('dx')} dy={entry.get('dy')} "
+            f"gap=({entry.get('gapTop')},{entry.get('gapBottom')}) "
+            f"tokens={entry.get('checks')} → {entry.get('reason')}"
+        )
+        return entry
     finally:
         context.close()
 
 
+def capture_runtime(browser, base: str, out: Path, scene: dict, width: int, theme: str) -> dict:
+    context = browser.new_context(
+        base_url=base,
+        viewport={"width": width, "height": VIEWPORT_HEIGHTS[width]},
+        color_scheme=theme,
+        reduced_motion="reduce",
+    )
+    install_page(context, theme)
+    held = Held()
+    context.route(re.compile(
+        r"/api/sessions/(review-runtime-loading|review-runtime-loaded|review-runtime-refresh)/schedules$"
+    ), held)
+    page = context.new_page()
+    page.on("pageerror", lambda error: print(f"pageerror: {error}", file=sys.stderr))
+    entry = {
+        "scene": scene["key"],
+        "width": width,
+        "theme": theme,
+        "capture": screenshot_path(out, scene, width, theme).name,
+        "passed": False,
+    }
+    try:
+        open_runtime_sample(page)
+        page.wait_for_timeout(1200)
+        settle(page)
+        loading = page.evaluate(RUNTIME_LOADING_SCRIPT)
+        page.screenshot(path=str(screenshot_path(out, scene, width, theme)), animations="disabled")
+        # 앞의 두 패널 요청만 풀고, 새로고침 패널 요청은 붙잡아 단추 회전을 남긴다.
+        held.release(
+            status=200,
+            body=RUNTIME_SCHEDULES,
+            exclude=lambda url: "/review-runtime-refresh/schedules" in url,
+        )
+        page.wait_for_timeout(1200)
+        after = page.evaluate(RUNTIME_RESPONSE_SCRIPT)
+        failure_shot = screenshot_path(out, scene, width, theme, "-after")
+        page.screenshot(path=str(failure_shot), animations="disabled")
+        loading_passed = (
+            loading.get("sections") == 0
+            and not loading.get("hasCount")
+            and loading.get("error") is None
+        )
+        after_passed = (
+            after.get("firstLoadingSections") == 1
+            and after.get("collapsed") == "false"
+            and after.get("firstLoadingLoader") is False
+            and after.get("refreshSpinning") is True
+        )
+        entry.update({
+            "loading": loading,
+            "after": after,
+            "afterCapture": failure_shot.name,
+            "passed": loading_passed and after_passed,
+            "reason": "첫 로딩 빈 띠 · 응답 뒤 접힌 머리줄 · 새로고침 단추 회전"
+            if loading_passed and after_passed else "런타임 띠 동작이 다름",
+        })
+        print(
+            f"{scene['key']}-{width}: loading={loading} after={after} → {entry['reason']}"
+        )
+        return entry
+    finally:
+        context.close()
+
+
+def stats_extra(page: Page) -> dict:
+    result = page.evaluate(STATS_SCRIPT)
+    passed = (
+        result["loaderCount"] == 1
+        and result["chartLoader"]
+        and result["loadingTextCount"] == 1
+        and all(value == "" for value in result["summaryValues"])
+        and not result["shareList"]
+    )
+    return {
+        **result,
+        "passed": passed,
+        "reason": "막대 프레임 로더 하나 · 값 자리 비움 · 점유 목록 없음"
+        if passed else "세션 통계 로딩 표시가 하나가 아님",
+    }
+
+
+SCENES = [
+    {
+        "key": "card-board",
+        "frame": '.v3-card-inbox[data-card-scope="all"]',
+        "mode": "fill",
+        "open": open_card_board,
+        "hold": re.compile(r"/api/cards\?.*includeCompleted=false"),
+        "fail": True,
+    },
+    {
+        "key": "completed-cards",
+        "frame": '[data-testid="completed-viewport"]',
+        "mode": "content",
+        "open": open_completed_cards,
+        "hold": re.compile(r"/api/cards\?.*\bstatus=done\b"),
+    },
+    {
+        "key": "folder-body",
+        "frame": ".v3-inline-board-item",
+        "insetTop": ".v3-inline-board-row",
+        "mode": "content",
+        "open": open_folder_body,
+        "hold": re.compile(r"/api/markdown-documents/"),
+        "fail": True,
+        "anchorText": "세션 히스토리",
+    },
+    {
+        "key": "planner",
+        "frame": ".v3-planner-loading",
+        "mode": "fill",
+        "open": lambda page: open_folder_after_home(page),
+        "hold": "**/api/planner/folders/folder-1*",
+        "fail": True,
+    },
+    {
+        "key": "pas-screen",
+        "frame": ".persistent-session-main",
+        "mode": "fill",
+        "open": open_pas_screen,
+        "hold": "**/api/persistent-sessions",
+        "fail": True,
+    },
+    {
+        "key": "pas-chat-empty",
+        "frame": '[data-slot="chat-transcript-fill"]',
+        "mode": "fill",
+        "open": open_pas_chat,
+        "expectText": "대화를 불러오는 중",
+    },
+    {
+        "key": "settings-tab",
+        "frame": ".config-detail",
+        "insetTop": ".config-detail-heading",
+        "mode": "fill",
+        "open": open_settings_tab,
+        "hold": "**/api/agent-profiles",
+        "fail": True,
+    },
+    {
+        "key": "search-modal",
+        "frame": '[data-slot="search-results-region"]',
+        "mode": "fill",
+        "open": open_search_modal,
+        "hold": re.compile(r"/cogito/search\?"),
+        "themes": ("dark", "light"),
+    },
+    {
+        "key": "ritual-modal",
+        "frame": ".v3-ritual-message",
+        "mode": "fill",
+        "open": open_ritual_modal,
+        "themes": ("dark", "light"),
+    },
+    {
+        "key": "document-reader",
+        "frame": '[data-testid="internal-document-dialog"] [data-slot="dialog-panel"]',
+        "mode": "fill",
+        "open": open_document_reader,
+        "hold": re.compile(r"/api/markdown-documents/sample-linked-document"),
+        "fail": True,
+    },
+    {
+        "key": "session-stats",
+        "frame": ".usage-stats-chart",
+        "mode": "fill",
+        "open": open_usage_stats,
+        "hold": re.compile(r"/api/session-statistics"),
+        "wait": '[data-slot="frame-loading"]',
+        "extra": stats_extra,
+    },
+    {
+        "key": "runtime-strips",
+        "mode": "behavior",
+        "open": open_runtime_sample,
+    },
+]
+
+
+def open_folder_after_home(page: Page) -> None:
+    page.goto("/")
+    wait_shell(page)
+    open_folder(page)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="프레임 로딩 배치 시각 검수")
+    parser = argparse.ArgumentParser(description="프레임 로딩·실패 자리 시각 검수")
     parser.add_argument("base_url", help="대시보드 dev 서버 주소 (예: http://127.0.0.1:5173)")
     parser.add_argument("output_dir", help="캡처와 measurements.json 을 둘 폴더")
-    parser.add_argument("--baseline", action="store_true", help="기준본 캡처(판정 없이 기록)")
-    parser.add_argument("--screen", action="append", choices=[screen["key"] for screen in SCREENS],
+    parser.add_argument("--theme", choices=("dark", "light"), default="dark")
+    parser.add_argument("--screen", action="append", choices=[scene["key"] for scene in SCENES],
                         help="이 화면만 찍는다 (여러 번 지정 가능)")
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
     out = Path(args.output_dir).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
-    screens = [screen for screen in SCREENS if not args.screen or screen["key"] in args.screen]
+    scenes = [scene for scene in SCENES if not args.screen or scene["key"] in args.screen]
     captures: list[dict] = []
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         try:
             for width in WIDTHS:
-                for screen in screens:
-                    captures.append(capture_screen(browser, base, out, screen, width, args.baseline))
+                for scene in scenes:
+                    themes = scene.get("themes", ("dark",))
+                    if args.theme not in themes:
+                        continue
+                    if scene.get("mode") == "behavior":
+                        captures.append(capture_runtime(browser, base, out, scene, width, args.theme))
+                    else:
+                        captures.append(capture_scene(browser, base, out, scene, width, args.theme))
         finally:
             browser.close()
 
     failures = [entry for entry in captures if not entry["passed"]]
     report = {
         "baseUrl": base,
-        "baseline": args.baseline,
+        "theme": args.theme,
         "tolerancePx": TOLERANCE_PX,
         "widths": list(WIDTHS),
         "captures": captures,
         "assertions": {
-            "placement": {
+            "placementAndTokens": {
                 "passed": not failures,
                 "failures": [
-                    {"screen": entry["screen"], "width": entry["width"], "reason": entry["reason"]}
+                    {"scene": entry["scene"], "width": entry["width"], "reason": entry["reason"]}
                     for entry in failures
                 ],
             },
         },
     }
-    report["passed"] = all(entry["passed"] for entry in report["assertions"].values())
+    report["passed"] = not failures
     (out / "measurements.json").write_text(
         json.dumps({"tolerancePx": TOLERANCE_PX, "captures": captures}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -622,15 +1002,15 @@ def main() -> int:
 
     for entry in captures:
         print(
-            f"{entry['screen']} {entry['width']}px: dx={entry.get('dx')}px dy={entry.get('dy')}px "
-            f"pad=({entry.get('padTop')},{entry.get('padBottom')}) → {entry['reason']}"
+            f"{entry['scene']} {entry['width']}px: dx={entry.get('dx')} dy={entry.get('dy')} "
+            f"gap=({entry.get('gapTop')},{entry.get('gapBottom')}) → {entry['reason']}"
         )
-    if failures and not args.baseline:
+    if failures:
         print("\n".join(
-            f"배치 실패: {entry['screen']} {entry['width']}px · {entry['reason']}" for entry in failures
+            f"실패: {entry['scene']} {entry['width']}px · {entry['reason']}" for entry in failures
         ), file=sys.stderr)
         return 1
-    print(f"판정: {len(captures)}건 · {TOLERANCE_PX}px 기준 통과")
+    print(f"판정: {len(captures)}건 · 배치 {TOLERANCE_PX}px · 토큰 계산값 통과")
     return 0
 
 

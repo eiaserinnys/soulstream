@@ -12,7 +12,6 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
-import { FrameLoading } from "./FrameLoading";
 import { DashboardIconCap } from "./DashboardIconCap";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
 import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
@@ -104,8 +103,9 @@ export function ClaudeRuntimeSchedulesPanel({
   // 첫 로딩에는 헤더 단추를 돌리지 않고 본문에서 기다린다. 자료가 있는 채로
   // 새로고침할 때만 헤더 단추가 돈다.
   const firstLoading = loading && schedules.length === 0 && !error;
+  if (firstLoading) return null;
   const spinRefreshButton = loading && schedules.length > 0;
-  const showBody = expanded || firstLoading;
+  const showBody = expanded;
 
   const refreshButton = (
     <Button
@@ -142,8 +142,6 @@ export function ClaudeRuntimeSchedulesPanel({
           {error}
         </div>
       ) : null}
-
-      {firstLoading ? <FrameLoading label="불러오는 중…" /> : null}
 
       {schedules.map((schedule) => {
         const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);

@@ -269,7 +269,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const nextDisabled = period === "all" || Boolean(nextRange && nextRange.since > asOfDate);
 
   const summaryValue = (metricName: Metric) => {
-    if (overviewLoading || detailLoading) return "불러오는 중…";
+    // 값이 들어갈 자리에는 로딩 글자를 넣지 않는다. 첫 로딩의 진행 표시는 막대 프레임 하나다.
+    if (overviewLoading || detailLoading) return "";
     if (beforeCoverage) return metricName === "tokens" ? "미기록" : "미확인";
     return displayedAggregate
       ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.coverage, false, metricName === "cost")
@@ -367,8 +368,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             modelMode={view === "model" && modelMode}
             onSelect={chooseBucket}
           />
-          {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <FrameLoading inline label="불러오는 중…" /> : view === "model" ? displayedModels.map(row => {
+          {(noRecords || beforeCoverage) && !overviewLoading ? null : overviewLoading ? null : <div className="usage-stats-share-list">
+            {view === "model" ? displayedModels.map(row => {
               const value = usageStatsMetricValue(row.metrics, metric, includeCacheRead);
               const name = row.attribution === "provider"
                 ? formatUsageStatsProviderLabel(row.provider)

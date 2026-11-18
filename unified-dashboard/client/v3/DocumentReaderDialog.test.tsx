@@ -35,7 +35,7 @@ it("opens a loading dialog before the response arrives", async () => {
 });
 it.each([404, 500])("shows a fixed message for HTTP %s", async (status) => {
   await mount(vi.fn(async () => new Response("internal failure", { status })));
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe(status === 404 ? "문서를 찾을 수 없습니다" : "문서를 불러오지 못했습니다");
+  expect(document.querySelector('[data-slot="frame-notice"] p')?.textContent).toBe(status === 404 ? "문서를 찾을 수 없습니다" : "문서를 불러오지 못했습니다");
   expect(document.querySelector('[data-slot="dialog-title"] .sr-only')?.textContent).toBe("문서");
 });
 it("does not paint the previous document before loading a different document", async () => {
@@ -58,14 +58,14 @@ it("keeps a successful document visible when reopening and replaces it with the 
   await mount(request);
   await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
   const loading: boolean[] = [];
-  const observer = new MutationObserver(() => loading.push(!!document.querySelector('.v3-board-load-state')));
+  const observer = new MutationObserver(() => loading.push(!!document.querySelector('[data-slot="frame-notice"]')));
   observer.observe(document.body, { childList: true, subtree: true });
   try {
     await act(async () => root.render(<DocumentReaderDialog documentId="doc-1" request={request} onClose={() => {}}/>));
     expect(request).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("문서 제목");
     expect(document.querySelector('.v3-folder-board-document-copy')?.textContent).toContain("이전 본문");
-    expect(document.querySelector('.v3-board-load-state')).toBeNull();
+    expect(document.querySelector('[data-slot="frame-notice"]')).toBeNull();
     await act(async () => resolveRefresh(Response.json({ id: "doc-1", title: "갱신한 제목", body: "갱신한 본문", version: 2 })));
     expect(document.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("갱신한 제목");
     expect(document.querySelector('.v3-folder-board-document-copy')?.textContent).toContain("갱신한 본문");
@@ -77,11 +77,11 @@ it("starts loading again when reopening a document whose previous request failed
   const request = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 404 }))
     .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRefresh = resolve; }));
   await mount(request);
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("문서를 찾을 수 없습니다");
+  expect(document.querySelector('[data-slot="frame-notice"] p')?.textContent).toBe("문서를 찾을 수 없습니다");
   await act(async () => root.render(<DocumentReaderDialog documentId={null} request={request} onClose={() => {}}/>));
   await act(async () => root.render(<DocumentReaderDialog documentId="doc-1" request={request} onClose={() => {}}/>));
   expect(request).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[data-slot="frame-loading"]')?.textContent).toBe("본문을 불러오는 중…");
   await act(async () => resolveRefresh(new Response(null, { status: 404 })));
-  expect(document.querySelector('.v3-board-load-state p')?.textContent).toBe("문서를 찾을 수 없습니다");
+  expect(document.querySelector('[data-slot="frame-notice"] p')?.textContent).toBe("문서를 찾을 수 없습니다");
 });

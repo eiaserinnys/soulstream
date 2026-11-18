@@ -23,6 +23,8 @@ export { CustomViewPanel } from "./CustomViewPanel";
 export type { CustomViewPanelProps } from "./CustomViewPanel";
 export { FrameLoading } from "./FrameLoading";
 export type { FrameLoadingProps } from "./FrameLoading";
+export { FrameNotice } from "./FrameNotice";
+export type { FrameNoticeProps } from "./FrameNotice";
 export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
 export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";

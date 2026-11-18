@@ -438,7 +438,7 @@ export function ComponentsReviewPage() {
               <DashboardIconCap size="small" label="샘플 패널 열기" onClick={() => setPanelOpen(true)}><Layers className="h-4 w-4"/></DashboardIconCap>
             </div>
             <div className="v3-components-samples">
-            <Sample name="FrameLoading" state="높이 고정 패널 · 대화상자 본문 · 좁은 폭"><FrameLoadingReviewSample/></Sample>
+            <Sample name="FrameLoading / FrameNotice" state="높이 고정 패널 · 대화상자 본문 · 좁은 폭 · 포털 대화상자 · 실패 안내 자리"><FrameLoadingReviewSample/></Sample>
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
             <Sample name="PersistentSessionScreen" state="운영 전화면 · 우하단 사용량 · 작업 목록 동시 펼침 · 실제 PAS 대화"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
