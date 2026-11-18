@@ -90,6 +90,18 @@ describe("dispatching attempt expiry over PostgreSQL", () => {
       attempt_token: null,
       last_error: "delivery attempt expired",
     });
+    // 만료 청소는 토큰을 지우기 전 값을 시도 기록에 남긴다(card #1653).
+    const attempts = await harness.sql<Array<{
+      attempt_token: string | null;
+      reason: string;
+    }>>`
+      SELECT attempt_token, reason
+      FROM session_delivery_attempts
+      WHERE delivery_id = 'delivery-1'
+    `;
+    expect(attempts).toEqual([
+      { attempt_token: "token-1", reason: "delivery attempt expired" },
+    ]);
   });
 
   it("honors a custom dispatching window", async () => {

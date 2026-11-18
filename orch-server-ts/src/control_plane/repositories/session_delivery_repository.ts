@@ -278,27 +278,38 @@ export class SessionDeliveryRepository {
 
   async expireStaleDeliveryAttempts(): Promise<number> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
+      // The retry SET clears attempt_token before RETURNING, so read the token the
+      // attempt was claimed with before the update (card #1653). The suffix of the
+      // token (route:, card-change:, node-ready:, maintenance:) tells who held it.
       const rows = await transaction<Array<{
         delivery_id: string;
-        attempt_token: string | null;
+        attempt_token_snapshot: string | null;
         aggregate_state: SessionDeliveryRow["aggregate_state"];
       }>>`
-        UPDATE session_deliveries
+        WITH candidate AS MATERIALIZED (
+          SELECT delivery_id, attempt_token AS attempt_token_snapshot
+          FROM session_deliveries
+          WHERE state IN ('claimed', 'dispatching')
+            AND attempt_expires_at <= NOW()
+          FOR UPDATE
+        )
+        UPDATE session_deliveries AS delivery
         SET ${deliveryRetryOrDeadLetterSet(transaction as unknown as SqlClient, {
           reason: "delivery attempt expired",
           retryState: "pending",
           preserveExistingError: true,
         })}
-        WHERE state IN ('claimed', 'dispatching')
-          AND attempt_expires_at <= NOW()
-        RETURNING delivery_id, attempt_token, aggregate_state
+        FROM candidate
+        WHERE delivery.delivery_id = candidate.delivery_id
+        RETURNING delivery.delivery_id, candidate.attempt_token_snapshot,
+          delivery.aggregate_state
       `;
       for (const row of rows) {
         await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
           deliveryId: row.delivery_id,
           outcome: attemptOutcomeFor(row),
           reason: "delivery attempt expired",
-          attemptToken: row.attempt_token,
+          attemptToken: row.attempt_token_snapshot,
         });
       }
       // 대상 세션이 지워지면 FK ON DELETE SET NULL이 target을 비우고, pending을

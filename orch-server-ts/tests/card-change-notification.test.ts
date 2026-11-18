@@ -4,6 +4,11 @@ import { selectCardBoardNotice } from "../src/cards/card_board_notice.js";
 import { sendCardChangeOnce } from "../src/cards/card_change_delivery.js";
 import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "../src/node/node_timeouts.js";
+import {
+  PendingNodeCommandRejectedError,
+  PendingNodeCommandTimeoutError,
+} from "../src/node/pending_commands.js";
 import type { InterveneNodeCommandPayload } from "../src/session/session_action_command_payloads.js";
 const change = (overrides: Record<string,unknown> = {}) => ({
   previousStatus:"queued",previousAssigneeSessionId:"owner",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
@@ -98,6 +103,8 @@ describe("card change delivery reuse",()=>{
       register:vi.fn(async()=>({row:registered,inserted:true,conflict:false})),
       claim:vi.fn(async()=>row({state:"claimed"})),
       get:vi.fn(async()=>row({state:"queued",aggregate_state:"pending"})),
+      retryDeliveryAttempt:vi.fn(),
+      markUncertain:vi.fn(),
     };
     const send=vi.fn(async()=>({outcome:"queued"}));
     await sendCardChangeOnce(repository,payload,send);
@@ -111,6 +118,8 @@ describe("card change delivery reuse",()=>{
       register:vi.fn(),
       claim:vi.fn(async()=>row({state:"claimed"})),
       get:vi.fn(async()=>row({state:"queued",aggregate_state:"pending"})),
+      retryDeliveryAttempt:vi.fn(),
+      markUncertain:vi.fn(),
     };
     const send=vi.fn(async()=>({outcome:"queued"}));
     await sendCardChangeOnce(repository,payload,send,registered);
@@ -119,7 +128,7 @@ describe("card change delivery reuse",()=>{
     expect(send).toHaveBeenCalledTimes(1);
   });
   it("does not re-claim an already queued registered row",async()=>{
-    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn()};
+    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn(),retryDeliveryAttempt:vi.fn(),markUncertain:vi.fn()};
     const send=vi.fn();
     await sendCardChangeOnce(repository,payload,send,row({state:"queued"}));
     expect(repository.register).not.toHaveBeenCalled();
@@ -127,9 +136,94 @@ describe("card change delivery reuse",()=>{
     expect(send).not.toHaveBeenCalled();
   });
   it("rejects a registered row from another delivery identity",async()=>{
-    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn()};
+    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn(),retryDeliveryAttempt:vi.fn(),markUncertain:vi.fn()};
     await expect(sendCardChangeOnce(repository,payload,vi.fn(),row({delivery_id:"different-delivery"})))
       .rejects.toThrow("Card delivery identity mismatch");
     expect(repository.register).not.toHaveBeenCalled();expect(repository.claim).not.toHaveBeenCalled();
+  });
+});
+
+describe("card change delivery release on explicit rejection",()=>{
+  const payload={type:"intervene",agentSessionId:"owner",text:"카드 변경",user:"caller",delivery_id:"delivery-1",source:"card_change",relation_key:"relation-1",completion_id:"completion-1"} as unknown as InterveneNodeCommandPayload;
+  const row=(overrides:Record<string,unknown>={})=>({delivery_id:"delivery-1",state:"pending",aggregate_state:"pending",attempt_count:0,...overrides}) as SessionDeliveryRow;
+  const rejection=(details?:Record<string,unknown>,message="resume rejected")=>new PendingNodeCommandRejectedError({
+    commandType:"intervene",requestId:"request-1",message,
+    response:{type:"error",code:"NODE_RESPONSE_REJECTED",...(details?{details}:{})},
+  });
+  function harness(send:(payload:InterveneNodeCommandPayload)=>Promise<Record<string,unknown>>){
+    const state={token:""};
+    const claim=vi.fn(async(_id:string,token:string)=>{state.token=token;return row({state:"claimed",attempt_token:token});});
+    const get=vi.fn(async()=>row({state:"claimed",attempt_token:state.token}));
+    const retryDeliveryAttempt=vi.fn(async()=>null);
+    const markUncertain=vi.fn(async()=>null);
+    const repository={register:vi.fn(),claim,get,retryDeliveryAttempt,markUncertain};
+    const run=()=>sendCardChangeOnce(repository as never,payload,send,row());
+    return {run,claim,get,retryDeliveryAttempt,markUncertain,state};
+  }
+
+  it("claims past the node command wait and frees a retryable rejection with its reason",async()=>{
+    const error=rejection({reason:"auto_resume_rejected",cell:"retryable"},"auto-resume running transition rejected for 3fc3dab0");
+    const h=harness(async()=>{throw error;});
+    await expect(h.run()).rejects.toBe(error);
+    expect(h.claim).toHaveBeenCalledWith("delivery-1",expect.stringMatching(/^card-change:/),DEFAULT_NODE_COMMAND_TIMEOUT_MS+5_000);
+    expect(h.retryDeliveryAttempt).toHaveBeenCalledOnce();
+    expect(h.retryDeliveryAttempt).toHaveBeenCalledWith("delivery-1",h.state.token,
+      expect.stringContaining("auto-resume running transition rejected for 3fc3dab0"),60_000);
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("dead letters an error response whose cell is no_retry",async()=>{
+    const h=harness(async()=>({type:"error",message:"already terminal",code:"NODE_RESPONSE_REJECTED",details:{reason:"already_terminal",cell:"no_retry"}}));
+    await expect(h.run()).rejects.toThrow("already terminal");
+    expect(h.markUncertain).toHaveBeenCalledWith("delivery-1",h.state.token,
+      expect.stringContaining("already terminal"));
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+  });
+
+  it("dead letters a permanent rejection without a response body change",async()=>{
+    const h=harness(async()=>{throw rejection({reason:"gone",cell:"permanent"});});
+    await expect(h.run()).rejects.toThrow("resume rejected");
+    expect(h.markUncertain).toHaveBeenCalledWith("delivery-1",h.state.token,expect.stringContaining("resume rejected"));
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+  });
+
+  it("leaves a command timeout to the expiry sweep",async()=>{
+    const error=new PendingNodeCommandTimeoutError({commandType:"intervene",requestId:"request-1",timeoutMs:30_000});
+    const h=harness(async()=>{throw error;});
+    await expect(h.run()).rejects.toBe(error);
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("leaves a rejection without a node response to the expiry sweep",async()=>{
+    const error=new PendingNodeCommandRejectedError({commandType:"intervene",requestId:"request-1",message:"Node disconnected"});
+    const h=harness(async()=>{throw error;});
+    await expect(h.run()).rejects.toBe(error);
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("leaves unconfirmed acceptance to the expiry sweep",async()=>{
+    const h=harness(async()=>({status:"ok",outcome:"deferred"}));
+    h.get.mockResolvedValue(row({state:"pending"}));
+    await expect(h.run()).rejects.toThrow("Card delivery acceptance unconfirmed");
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("does not release a row that already reached queued",async()=>{
+    const h=harness(async()=>{throw rejection({reason:"worktree_not_ready",cell:"retryable"});});
+    h.get.mockResolvedValue(row({state:"queued"}));
+    await expect(h.run()).rejects.toThrow("resume rejected");
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("does not release a row another token now holds",async()=>{
+    const h=harness(async()=>{throw rejection({reason:"worktree_not_ready",cell:"retryable"});});
+    h.get.mockResolvedValue(row({state:"claimed",attempt_token:"route:someone-else"}));
+    await expect(h.run()).rejects.toThrow("resume rejected");
+    expect(h.retryDeliveryAttempt).not.toHaveBeenCalled();
+    expect(h.markUncertain).not.toHaveBeenCalled();
   });
 });

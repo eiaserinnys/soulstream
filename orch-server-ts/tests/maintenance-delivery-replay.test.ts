@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import { DELIVERY_CLAIM_TTL_MS } from "../src/control_plane/session_delivery_release.js";
+import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "../src/node/node_timeouts.js";
 import { replayPendingImmediateDeliveriesForNode } from "../src/production.js";
 import { PendingNodeCommandRejectedError } from "../src/node/pending_commands.js";
 
@@ -12,19 +15,19 @@ function rejection(details?: Record<string, unknown>) {
   });
 }
 
-function harness(options: {
+function replayRow(id = "delivery-1", options: {
   attemptCount?: number;
   worktreeId?: string | null;
   worktreeState?: string | null;
-  error?: Error;
-  response?: Record<string, unknown>;
-} = {}) {
-  const token = "maintenance:node-1:connection-1";
-  const row = {
-    delivery_id: "delivery-1",
+} = {}): SessionDeliveryRow & {
+  target_worktree_id: string | null;
+  target_worktree_state: string | null;
+} {
+  return {
+    delivery_id: id,
     target_session_id: "session-1",
     completion_id: "completion-1",
-    relation_key: "relation-1",
+    relation_key: `relation-${id}`,
     intent: "durable_next_turn",
     source: "test",
     payload: { text: "continue" },
@@ -33,14 +36,40 @@ function harness(options: {
     target_worktree_id: options.worktreeId ?? null,
     target_worktree_state: options.worktreeState ?? null,
     state: "claimed",
-    attempt_token: token,
+    attempt_token: "maintenance:node-1:connection-1",
+  } as unknown as SessionDeliveryRow & {
+    target_worktree_id: string | null;
+    target_worktree_state: string | null;
   };
-  const claimPendingImmediateIntentsForNode = vi.fn().mockResolvedValue([row]);
+}
+
+function harness(options: {
+  attemptCount?: number;
+  worktreeId?: string | null;
+  worktreeState?: string | null;
+  error?: Error;
+  response?: Record<string, unknown>;
+  rows?: SessionDeliveryRow[];
+} = {}) {
+  const token = "maintenance:node-1:connection-1";
+  const rows = options.rows ?? [replayRow("delivery-1", {
+    attemptCount: options.attemptCount,
+    worktreeId: options.worktreeId,
+    worktreeState: options.worktreeState,
+  })];
+  const claimPendingImmediateIntentsForNode = vi.fn();
+  for (const row of rows) {
+    claimPendingImmediateIntentsForNode.mockResolvedValueOnce([row]);
+  }
+  claimPendingImmediateIntentsForNode.mockResolvedValue([]);
   const retryDeliveryAttempt = vi.fn().mockResolvedValue(null);
   const markUncertain = vi.fn().mockResolvedValue(null);
-  const get = vi.fn().mockResolvedValue(row);
+  const get = vi.fn(async (deliveryId: string) =>
+    rows.find((row) => row.delivery_id === deliveryId) ?? null);
   const route = vi.fn().mockResolvedValue({ command: { commandType: "intervene", requestId: "request-1" } });
-  const send = options.error ? vi.fn().mockRejectedValue(options.error) : vi.fn().mockResolvedValue(options.response ?? { status: "ok" });
+  const send = options.error
+    ? vi.fn().mockRejectedValue(options.error)
+    : vi.fn().mockResolvedValue(options.response ?? { status: "ok" });
   const warn = vi.fn();
   const run = () => replayPendingImmediateDeliveriesForNode({
     nodeId: "node-1", connectionId: "connection-1", attemptTokenPrefix: "maintenance",
@@ -49,7 +78,10 @@ function harness(options: {
     sessionBridge: { sendPendingCommand: send } as never,
     warn,
   });
-  return { run, token, route, send, retryDeliveryAttempt, markUncertain };
+  return {
+    run, token, route, send, claim: claimPendingImmediateIntentsForNode,
+    retryDeliveryAttempt, markUncertain,
+  };
 }
 
 describe("pending immediate delivery replay", () => {
@@ -115,5 +147,38 @@ describe("pending immediate delivery replay", () => {
     }) });
     await h.run();
     expect(h.retryDeliveryAttempt).toHaveBeenCalledWith("delivery-1", h.token, expect.stringContaining("Node disconnected"), 0);
+  });
+
+  it("claims and sends one delivery at a time, alternating in enqueue order", async () => {
+    const h = harness({ rows: [replayRow("delivery-1"), replayRow("delivery-2")] });
+    await h.run();
+    expect(h.route.mock.calls.map((call) => (call[0] as { delivery_id?: string }).delivery_id))
+      .toEqual(["delivery-1", "delivery-2"]);
+    const claims = h.claim.mock.invocationCallOrder;
+    const sends = h.send.mock.invocationCallOrder;
+    expect(claims).toHaveLength(3);
+    expect(claims[0]).toBeLessThan(sends[0]!);
+    expect(sends[0]).toBeLessThan(claims[1]!);
+    expect(claims[1]).toBeLessThan(sends[1]!);
+    expect(sends[1]).toBeLessThan(claims[2]!);
+  });
+
+  it("claims with the node command wait plus five seconds and skips rows already attempted this pass", async () => {
+    const h = harness();
+    await h.run();
+    expect(DELIVERY_CLAIM_TTL_MS).toBe(DEFAULT_NODE_COMMAND_TIMEOUT_MS + 5_000);
+    expect(h.claim.mock.calls).toEqual([
+      ["node-1", h.token, 1, DELIVERY_CLAIM_TTL_MS, []],
+      ["node-1", h.token, 1, DELIVERY_CLAIM_TTL_MS, ["delivery-1"]],
+    ]);
+  });
+
+  it("stops at one hundred deliveries per pass", async () => {
+    const h = harness({
+      rows: Array.from({ length: 120 }, (_, index) => replayRow(`delivery-${index}`)),
+    });
+    await h.run();
+    expect(h.send).toHaveBeenCalledTimes(100);
+    expect(h.claim).toHaveBeenCalledTimes(100);
   });
 });
