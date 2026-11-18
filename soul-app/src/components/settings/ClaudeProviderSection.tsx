@@ -204,7 +204,7 @@ function PoolClaudeRow({
         <View style={styles.headerControls}>
           {!expanded ? <Text style={styles.metaText}>계정 {list.accounts.length}</Text> : null}
           {expanded ? <GlassButton testID="claude-account-add" size="compact"
-            accessibilityLabel="Claude 계정 추가" onPress={() => poolRef.current?.startLogin()} disabled={loginStarting}>
+            accessibilityLabel="Claude 계정 추가" onPress={() => poolRef.current?.startLogin()} busy={loginStarting}>
             {loginStarting ? <ActivityIndicator size="small" color={t.colors.accent} />
               : <>
                 <Ionicons name="add" size={t.iconSize.compact} color={t.colors.accent} />
@@ -373,7 +373,7 @@ function LegacyClaudeRow({
           borderRadius={t.foundation.radius.round}
           accessibilityLabel={authStatus?.has_token ? '재로그인' : '로그인'}
           onPress={handleRelogin}
-          disabled={loginLoading}
+          busy={loginLoading}
         >
           {loginLoading ? <ActivityIndicator size="small" color={t.colors.accent} />
             : <Ionicons name={authStatus?.has_token ? 'refresh' : 'log-in-outline'} size={t.iconSize.compact} color={t.colors.textSecondary} />}
@@ -408,7 +408,7 @@ function LegacyClaudeRow({
         autoCorrect={false}
       />
       <View style={styles.actionRow}>
-        <GlassButton testID="claude-code-confirm" tone="link" style={styles.action} contentStyle={styles.buttonContent} onPress={handleSubmitCode} disabled={submitting}>
+        <GlassButton testID="claude-code-confirm" tone="link" style={styles.action} contentStyle={styles.buttonContent} onPress={handleSubmitCode} busy={submitting}>
           {({ contentColor }) => (submitting ? <ActivityIndicator size="small" color={contentColor} /> : <Text style={[styles.actionText, { color: contentColor }]}>확인</Text>)}
         </GlassButton>
         <GlassButton testID="claude-code-cancel" tone="link" style={styles.action} contentStyle={styles.buttonContent} onPress={() => {

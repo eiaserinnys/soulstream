@@ -779,7 +779,7 @@ test('모두 확인 띠와 머리 완료는 저장 중 함께 잠기고 띠의 �
   await waitFor(() => expect(screen.getByTestId('card-now-complete')).toBeTruthy());
   await act(async () => fireEvent.press(screen.getByTestId('card-now-complete')));
   expect(screen.getByTestId('card-now-complete').props.accessibilityState.disabled).toBe(true);
-  expect(screen.getAllByLabelText('완료').every(button => button.props.accessibilityState.disabled)).toBe(true);
+  expect(screen.getAllByLabelText('완료').filter(button => button.props.accessibilityState.busy)).toHaveLength(1);
   fireEvent.press(screen.getByTestId('card-now-complete'));
   expect(api.setCardStatus).toHaveBeenCalledTimes(1);
   await act(async () => saved.resolve({ card: { ...reviewing.card, status: 'done', version: card.version + 1 }, folderId: card.folderId }));

@@ -489,7 +489,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
           <Text style={styles.poolTitle}>Claude 계정</Text>
           {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
         </View>
-        <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} disabled={loginStarting}>
+        <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} busy={loginStarting}>
           {loginStarting ? <ActivityIndicator size="small" color={t.colors.accent} /> : <>
             <Ionicons name="add" size={t.iconSize.compact} color={t.colors.accent} />
             <Text style={styles.accentButtonText}>계정 추가</Text>
@@ -574,20 +574,20 @@ function AccountRow({
           value={account.enabled} onValueChange={onToggle} disabled={busy}
           trackColor={{ false: t.colors.border, true: t.colors.accent }} />
         {totalCount > 1 && account.enabled ? <>
-          <GlassButton testID={`claude-priority-up-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === 0 || busy}
+          <GlassButton testID={`claude-priority-up-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === 0} busy={busy}
             accessibilityLabel="우선순위 올리기" onPress={onMoveUp}>
             <Ionicons name="arrow-up" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton>
-          <GlassButton testID={`claude-priority-down-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === totalCount - 1 || busy}
+          <GlassButton testID={`claude-priority-down-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === totalCount - 1} busy={busy}
             accessibilityLabel="우선순위 내리기" onPress={onMoveDown}>
             <Ionicons name="arrow-down" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton>
         </> : null}
-        <GlassButton testID={`claude-account-relogin-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={busy}
+        <GlassButton testID={`claude-account-relogin-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} busy={busy}
           accessibilityLabel="재로그인" onPress={onRelogin}>
           <Ionicons name="refresh" size={t.iconSize.compact} color={t.colors.textSecondary} />
         </GlassButton>
-        <GlassButton testID={`claude-account-delete-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={busy}
+        <GlassButton testID={`claude-account-delete-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} busy={busy}
           accessibilityLabel="계정 삭제" onPress={onAskDelete}>
           <Ionicons name="trash-outline" size={t.iconSize.compact} color={t.colors.textSecondary} />
         </GlassButton>
@@ -607,10 +607,10 @@ function DeleteConfirmation({ accountId, busy, onCancel, onConfirm }: { accountI
   return <View testID={`claude-account-delete-confirmation-${accountId}`} style={styles.confirmRow}>
     <Text style={styles.confirmPrompt}>이 계정을 노드에서 삭제할까요?</Text>
     <View style={styles.confirmActions}>
-      <GlassButton testID="claude-account-delete-cancel" accessibilityLabel="삭제 취소" onPress={onCancel} disabled={busy} style={styles.confirmButton}>
+      <GlassButton testID="claude-account-delete-cancel" accessibilityLabel="삭제 취소" onPress={onCancel} busy={busy} style={styles.confirmButton}>
         <Text style={styles.secondaryButtonText}>취소</Text>
       </GlassButton>
-      <GlassButton testID={`claude-account-delete-confirm-${accountId}`} accessibilityLabel="계정 삭제 확인" onPress={onConfirm} disabled={busy} style={styles.confirmButton} contentStyle={styles.destructiveConfirm}>
+      <GlassButton testID={`claude-account-delete-confirm-${accountId}`} accessibilityLabel="계정 삭제 확인" onPress={onConfirm} busy={busy} style={styles.confirmButton} contentStyle={styles.destructiveConfirm}>
         {busy ? <ActivityIndicator size="small" color={t.colors.errorText} /> : <Text style={styles.destructiveButtonText}>삭제</Text>}
       </GlassButton>
     </View>

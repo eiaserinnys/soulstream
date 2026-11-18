@@ -206,7 +206,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               accessibilityLabel="완료" disabled onPress={() => {}} surfaceTestID={`postit-complete-${card.id}`}>
               <Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} />
             </GlassButton> : card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
-              disabled={pending} accessibilityLabel="완료" surfaceTestID={`postit-complete-${card.id}`} onPress={() => { if (canInteract()) void transition(card, 'done'); }}>
+              busy={pending} accessibilityLabel="완료" surfaceTestID={`postit-complete-${card.id}`} onPress={() => { if (canInteract()) void transition(card, 'done'); }}>
               <Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} />
             </GlassButton> : null}
           </View>

@@ -179,7 +179,8 @@ test('actual report controls hide cancellation until server answer, disable duri
   expect(screen.getByTestId('report-cancel').props.accessibilityState.disabled).toBe(false);
   const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
   act(() => useChatStore.getState().setPendingOptimistic('pas', other));
-  expect(screen.getByTestId('report-cancel').props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByTestId('report-cancel').props.accessibilityState.busy).toBe(true);
+  expect(screen.getByTestId('report-cancel').props.disabled).toBeFalsy();
   const sent = jest.mocked(api.intervene).mock.calls.length;
   fireEvent.press(screen.getByTestId('report-cancel'));
   expect(api.intervene).toHaveBeenCalledTimes(sent);
@@ -190,7 +191,7 @@ test('actual report controls hide cancellation until server answer, disable duri
   const revised = [{ ...entry, updated_at: '2026-10-14T00:00:00Z' }];
   screen.rerender(<Harness entries={revised} />);
   measurePersistentReports(screen);
-  expect(screen.getByLabelText('응').props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByLabelText('응').props.accessibilityState.busy).toBe(true);
   act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
   fireEvent.press(screen.getByLabelText('응'));
   expect(notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);

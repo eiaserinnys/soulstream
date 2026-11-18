@@ -273,7 +273,7 @@ export function SessionReviewPolicySettingsSection({
             tone="link"
             style={styles.smallButton}
             onPress={addSource}
-            disabled={!draft.trim() || loading || saving}
+            disabled={!draft.trim()} busy={loading || saving}
           >
             {({ contentColor }) => (
               <Text style={[styles.secondaryText, { color: contentColor }]}>추가</Text>
@@ -299,7 +299,7 @@ export function SessionReviewPolicySettingsSection({
             tone="link"
             style={styles.action}
             onPress={reload}
-            disabled={loading || saving || forbidden}
+            disabled={forbidden} busy={loading || saving}
           >
             {({ contentColor }) => (
               <Text style={[styles.secondaryText, { color: contentColor }]}>다시 불러오기</Text>
@@ -311,7 +311,7 @@ export function SessionReviewPolicySettingsSection({
             accessibilityLabel="검수 정책 저장"
             style={styles.action}
             onPress={() => void save()}
-            disabled={!changed || loading || saving || forbidden}
+            disabled={!changed || forbidden} busy={loading || saving}
           >
             {({ contentColor }) => (saving ? (
               <ActivityIndicator size="small" color={contentColor} />

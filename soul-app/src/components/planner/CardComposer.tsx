@@ -69,7 +69,7 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
       <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={pending}
         styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
       <View style={styles.padded}>
-        <GlassButton accessibilityLabel="폴더·노드·에이전트·모델 선택" onPress={() => setSelecting(true)} disabled={locked}>
+        <GlassButton accessibilityLabel="폴더·노드·에이전트·모델 선택" onPress={() => setSelecting(true)} disabled={!attachments.attachmentsReady || !draft.ready} busy={pending}>
           <Text style={styles.body} numberOfLines={1}>{folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'} · {value.agentId ?? '담당 선택'} · {value.nodeId || '노드 선택'} · {value.modelPreset ?? '기본 모델'}</Text>
         </GlassButton>
       </View>

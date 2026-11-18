@@ -27,9 +27,6 @@ import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ChatScreen } from '../screens/ChatScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { RecurringJobsScreen } from '../screens/RecurringJobsScreen';
-import { RecurringJobEditorScreen } from '../screens/RecurringJobEditorScreen';
-import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen';
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassClusterContainer, GlassSurface } from '../components/GlassSurface';
@@ -197,11 +194,9 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
     || (active === 'FolderTab' && (!nestedRouteName || nestedRouteName === 'FolderList'))
     || (active === 'FeedTab' && (!nestedRouteName || nestedRouteName === 'Feed'))
   );
-  const showHeaderCap = !duoSideBand && !rootWithoutHeader && (active === 'SettingsTab'
-    ? ['RecurringJobs', 'RecurringJobEditor', 'RecurringJobHistory'].includes(nestedRouteName ?? '')
-    : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
-      ? nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument'
-      : false);
+  const showHeaderCap = !duoSideBand && !rootWithoutHeader
+    && (active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab')
+    && nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument';
   const compact = duoSideBand && windowWidth > windowHeight;
   // 하위 화면이 탭바를 숨기면 레일 열 폭은 유지하고 캡슐만 감춘다.
   const hidden = !duoSideBand && StyleSheet.flatten(
@@ -319,9 +314,6 @@ export type PersistentStackParamList = {
 };
 export type SettingsStackParamList = {
   Settings: undefined;
-  RecurringJobs: undefined;
-  RecurringJobEditor: { jobId?: string } | undefined;
-  RecurringJobHistory: { jobId: string };
 };
 
 const DailyStack = createNativeStackNavigator<DailyStackParamList>();
@@ -612,18 +604,14 @@ function PersistentNavigator() {
 
 function SettingsNavigator() {
   const t = useTokens();
-  const duo = useDuoSideBand();
   return (
     <SettingsStack.Navigator screenOptions={stackScreenOptions(t)}>
       <SettingsStack.Screen name="Settings" component={PhoneSettingsScreen} options={{ ...rootScreenOptions('SettingsTab'), headerShown: false }} />
-      <SettingsStack.Screen name="RecurringJobs" component={RecurringJobsScreen} options={{ title: '반복 작업', headerShown: !duo }} />
-      <SettingsStack.Screen name="RecurringJobEditor" component={RecurringJobEditorScreen} options={{ title: '반복 작업 편집', headerShown: !duo }} />
-      <SettingsStack.Screen name="RecurringJobHistory" component={RecurringJobHistoryScreen} options={{ title: '실행 이력', headerShown: !duo }} />
     </SettingsStack.Navigator>
   );
 }
 
-export function PhoneSettingsScreen({ navigation }: NativeStackScreenProps<SettingsStackParamList, 'Settings'>) {
+export function PhoneSettingsScreen() {
   return <SettingsScreen active={useIsFocused()} showTitle={false} bottomSafeAreaOwner="parent" />;
 }
 

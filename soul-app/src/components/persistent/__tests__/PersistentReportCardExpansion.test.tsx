@@ -14,6 +14,7 @@ import { useCardStore } from '../../../store/cardStore';
 import { useDraftStore } from '../../../store/draftStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { cardFixture } from '../../../test-support/cards';
+import * as useCardDetailModule from '../../../hooks/useCardDetail';
 import { PersistentReportCardExpansion } from '../PersistentReportCardExpansion';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
@@ -129,6 +130,25 @@ test('shows a folded card read error and retries in place', async () => {
   await waitFor(() => expect(screen.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
   expect(api.getCard).toHaveBeenCalledTimes(2);
   expect(screen.queryByText('카드를 불러오지 못했습니다.')).toBeNull();
+});
+
+test('처리 중인 다시 읽기 단추는 busy로 남아 누름을 무시하고 초점을 잃지 않는다', async () => {
+  // 다시 읽기가 시작되면 useCardDetail이 오류를 지워 단추가 로딩 표시로 바뀐다.
+  // 처리 중 상태 자체는 그 전이에서만 보이므로, 오류를 유지하는 hook으로 단추의 busy 배선을 확인한다.
+  const refresh = jest.fn(() => new Promise<never>(() => undefined));
+  const spy = jest.spyOn(useCardDetailModule, 'useCardDetail').mockReturnValue({ detail: null, error: '요청 실패', refresh } as never);
+  try {
+    const screen = render(<PersistentReportCardExpansion api={{ listCards: jest.fn() } as unknown as ApiClient} entry={{ ...entry, card_id: card.id }} />);
+    await act(async () => { fireEvent.press(screen.getByTestId('persistent-report-card-retry')); });
+    const button = screen.getByTestId('persistent-report-card-retry');
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(button.props.disabled).toBeFalsy();
+    expect(button.props.accessibilityState).toMatchObject({ busy: true });
+    await act(async () => { fireEvent.press(button); });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  } finally {
+    spy.mockRestore();
+  }
 });
 
 test.each([false, true])('focused card composer follows reading growth and viewport changes (bubble=%s)', async bubble => {

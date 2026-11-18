@@ -6,10 +6,6 @@ import type { PhoneReturnTab } from './phonePanelHistory';
 
 export type PhoneTabName = (typeof ROOT_TAB_ORDER)[number];
 export type MainFocusKind = 'cards' | 'feed' | 'folder' | 'dailyHistory' | 'search';
-export type RecurringJobsPanelState =
-  | { kind: 'list' }
-  | { kind: 'editor'; jobId?: string }
-  | { kind: 'history'; jobId: string };
 
 export type FolderWorkspaceContext = {
   folderPageId: string;
@@ -51,8 +47,7 @@ export type NormalizedNavigationLocation =
     cardId?: string;
     fromPersistent?: boolean;
   }
-  | { originTab: PhoneTabName; kind: 'settings'; category?: string | null }
-  | { originTab: PhoneTabName; kind: 'recurringJobs'; panel: RecurringJobsPanelState };
+  | { originTab: PhoneTabName; kind: 'settings'; category?: string | null };
 
 export type TabletLocationContext = {
   lastMainFocus?: MainFocusKind;
@@ -63,7 +58,6 @@ export type TabletLocationContext = {
   activeSessionId?: string | null;
   settingsVisible?: boolean;
   settingsCategory?: string | null;
-  recurringJobsPanel?: RecurringJobsPanelState | null;
   searchActive?: boolean;
   searchQuery?: string;
   pasSelectedCardId?: string | null;
@@ -78,7 +72,6 @@ export type TabletContinuityEffects = {
   sessionOverlay?: { sessionId: string; focusEventId?: number; storyOpenRequestId?: number } | null;
   settingsVisible?: boolean;
   settingsCategory?: string | null;
-  recurringJobsPanel?: RecurringJobsPanelState | null;
   searchActive?: boolean;
   searchQuery?: string;
   pasSelectedCardId?: string | null;
@@ -96,7 +89,6 @@ type LooseState = { index?: number; routes?: LooseRoute[] };
 type RouteSpec = { name: string; params?: Record<string, unknown> };
 
 const PHONE_TABS = ROOT_TAB_ORDER as readonly PhoneTabName[];
-const RECURRING_JOBS_CATEGORY = 'recurring-jobs';
 
 function isPhoneTab(name: unknown): name is PhoneTabName {
   return typeof name === 'string' && (PHONE_TABS as readonly string[]).includes(name);
@@ -260,22 +252,6 @@ export function readPhoneLocation(
     }
     case 'Settings':
       return { originTab, kind: 'settings', category: context.settingsCategory ?? null };
-    case 'RecurringJobs':
-      return { originTab, kind: 'recurringJobs', panel: { kind: 'list' } };
-    case 'RecurringJobEditor': {
-      const jobId = stringParam(top.params, 'jobId');
-      return {
-        originTab,
-        kind: 'recurringJobs',
-        panel: jobId === undefined ? { kind: 'editor' } : { kind: 'editor', jobId },
-      };
-    }
-    case 'RecurringJobHistory':
-      return {
-        originTab,
-        kind: 'recurringJobs',
-        panel: { kind: 'history', jobId: stringParam(top.params, 'jobId') ?? '' },
-      };
     default:
       return defaultPhoneLocation(originTab);
   }
@@ -354,9 +330,6 @@ export function readTabletLocation(
 
 function tabletMainLocation(context: TabletLocationContext): NormalizedNavigationLocation {
   if (context.settingsVisible) {
-    if (context.recurringJobsPanel) {
-      return { originTab: 'SettingsTab', kind: 'recurringJobs', panel: context.recurringJobsPanel };
-    }
     return { originTab: 'SettingsTab', kind: 'settings', category: context.settingsCategory ?? null };
   }
 
@@ -505,11 +478,6 @@ export function buildPhoneState(
     case 'settings':
       activeTab = 'SettingsTab';
       break;
-    case 'recurringJobs': {
-      activeTab = 'SettingsTab';
-      setStack('SettingsTab', recurringJobRoutes(location.panel));
-      break;
-    }
   }
 
   updatedTabs.add(activeTab);
@@ -573,19 +541,6 @@ function chatParams(
     ...(location.usageEntry === undefined ? {} : { usageEntry: location.usageEntry }),
     returnTab,
   };
-}
-
-function recurringJobRoutes(panel: RecurringJobsPanelState): RouteSpec[] {
-  const routes: RouteSpec[] = [{ name: 'Settings' }, { name: 'RecurringJobs' }];
-  if (panel.kind === 'editor') {
-    routes.push({
-      name: 'RecurringJobEditor',
-      ...(panel.jobId === undefined ? {} : { params: { jobId: panel.jobId } }),
-    });
-  } else if (panel.kind === 'history') {
-    routes.push({ name: 'RecurringJobHistory', params: { jobId: panel.jobId } });
-  }
-  return routes;
 }
 
 function stackState(tab: PhoneTabName, routes: RouteSpec[]): Record<string, unknown> {
@@ -691,12 +646,6 @@ export function buildTabletState(location: NormalizedNavigationLocation): {
       return main({
         settingsVisible: true,
         settingsCategory: location.category ?? null,
-      });
-    case 'recurringJobs':
-      return main({
-        settingsVisible: true,
-        settingsCategory: RECURRING_JOBS_CATEGORY,
-        recurringJobsPanel: location.panel,
       });
   }
 }

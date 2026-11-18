@@ -15,9 +15,6 @@ jest.mock('../../screens/SessionFeedScreen', () => ({ SessionFeedScreen: () => r
 jest.mock('../../screens/SearchScreen', () => ({ SearchScreen: () => null }));
 jest.mock('../../screens/ChatScreen', () => ({ ChatScreen: () => require('react').createElement(require('react-native').View, { testID: 'real-chat' }) }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
-jest.mock('../../screens/RecurringJobsScreen', () => ({ RecurringJobsScreen: () => null }));
-jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorScreen: () => null }));
-jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ onOpenSession }: { onOpenSession?: (id: string) => void }) =>
   require('react').createElement(require('react-native').Pressable, {
@@ -87,8 +84,7 @@ test.each(['DailyTab', 'FolderTab', 'SettingsTab', 'notification'] as const)(
     const navigation = createNavigationContainerRef<any>();
     const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation}><TabNavigator /></NavigationContainer></PersistentSessionProvider>);
     await waitFor(() => expect(navigation.isReady()).toBe(true));
-    if (origin !== 'notification') act(() => navigation.navigate(origin,
-      origin === 'SettingsTab' ? { screen: 'RecurringJobHistory', params: { jobId: 'job' } } : undefined));
+    if (origin !== 'notification') act(() => navigation.navigate(origin));
     const returnTab = origin === 'notification' ? 'DailyTab' : origin;
     const before = navigation.getRootState();
     expect(before.routes.find(route => route.name === 'FeedTab')?.state).toBeUndefined();

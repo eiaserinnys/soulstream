@@ -68,7 +68,6 @@ export function RecurringJobsList({
   serverUrl: string;
   onCreate(): void;
   onEdit(job: RecurringJobDto): void;
-  /** Phone screen increments this after returning from editor/history. */
   refreshKey?: number;
   hideCreate?: boolean;
 }) {

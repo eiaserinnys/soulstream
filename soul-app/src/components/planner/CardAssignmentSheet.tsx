@@ -98,7 +98,7 @@ export function CardAssignmentSheet({ api, value, onClose, onSave, mode = 'assig
       {selection.modelPresetSelectionInvalid && mode !== 'move' && !folderOnly ? <Text style={styles.error}>선택한 모델을 이 노드에서 사용할 수 없습니다.</Text> : null}
       <View style={styles.actions}>
         <GlassButton onPress={onClose}><Text style={styles.body}>취소</Text></GlassButton>
-        <GlassButton onPress={() => { void save(); }} disabled={pending || !selection.selectedFolderId || (startAfterSave && (!selection.effectiveNodeId || !selection.agentId || !selection.effectiveModelPreset?.available)) || (mode !== 'move' && !folderOnly && ((mode !== 'edit' && !selection.agentId) || selection.modelPresetSelectionInvalid))}>
+        <GlassButton onPress={() => { void save(); }} busy={pending} disabled={!selection.selectedFolderId || (startAfterSave && (!selection.effectiveNodeId || !selection.agentId || !selection.effectiveModelPreset?.available)) || (mode !== 'move' && !folderOnly && ((mode !== 'edit' && !selection.agentId) || selection.modelPresetSelectionInvalid))}>
           <Text style={styles.actionText}>확인</Text>
         </GlassButton>
       </View>

@@ -247,7 +247,7 @@ test('locks source controls while a save is in flight', async () => {
     expect(screen.getByTestId('review-policy-switch-slack').props.disabled)
       .toBe(true);
     expect(screen.getByTestId('review-policy-add').props.accessibilityState)
-      .toEqual({ disabled: true });
+      .toMatchObject({ busy: true });
   });
 
   resolveUpdate({
@@ -295,11 +295,11 @@ test('locks source controls while a reload is in flight', async () => {
     expect(screen.getByTestId('review-policy-switch-slack').props.disabled)
       .toBe(true);
     expect(screen.getByTestId('review-policy-add').props.accessibilityState)
-      .toEqual({ disabled: true });
+      .toMatchObject({ busy: true });
     expect(screen.getByTestId('review-policy-reload').props.accessibilityState)
-      .toEqual({ disabled: true });
+      .toMatchObject({ busy: true });
     expect(screen.getByTestId('review-policy-save').props.accessibilityState)
-      .toEqual({ disabled: true });
+      .toMatchObject({ busy: true });
   });
 
   resolveReload(latestPayload);

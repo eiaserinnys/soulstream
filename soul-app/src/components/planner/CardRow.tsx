@@ -153,7 +153,7 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
   const { transition, pending } = useCardTransition(api, card.id);
   const time = <Text style={styles.time} numberOfLines={1}>{formatRelativeTime(card.updatedAt)}</Text>;
   const complete = card.status === 'review' ? <GlassButton iconOnly size={board ? 'compact' : 'card'} borderRadius={t.foundation.radius.round} accessibilityLabel="완료"
-    disabled={pending || !api} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
+    disabled={!api} busy={pending} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
       void transition(card, 'done');
     }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null;
   const identityContent = <>

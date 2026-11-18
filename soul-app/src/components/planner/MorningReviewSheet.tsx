@@ -155,7 +155,7 @@ export function MorningReviewSheet({
                   <GlassButton
                     testID="morning-review-today"
                     variant="primary"
-                    disabled={processing}
+                    busy={processing}
                     onPress={() => { void runAction('today'); }}
                     contentStyle={styles.action}
                   >
@@ -163,7 +163,7 @@ export function MorningReviewSheet({
                   </GlassButton>
                   <GlassButton
                     testID="morning-review-later"
-                    disabled={processing}
+                    busy={processing}
                     onPress={() => { void runAction('later'); }}
                     contentStyle={styles.action}
                   >
@@ -171,7 +171,7 @@ export function MorningReviewSheet({
                   </GlassButton>
                   <GlassButton
                     testID="morning-review-done"
-                    disabled={processing}
+                    busy={processing}
                     onPress={() => { void runAction('done'); }}
                     contentStyle={styles.action}
                   >

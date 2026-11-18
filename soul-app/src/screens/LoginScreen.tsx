@@ -124,7 +124,8 @@ export function LoginScreen() {
         style={styles.btn}
         contentStyle={styles.buttonContent}
         onPress={() => void handleLogin()}
-        disabled={!request || loading}
+        disabled={!request}
+        busy={loading}
       >
         {({ contentColor }) => (loading ? (
           <ActivityIndicator color={contentColor} />

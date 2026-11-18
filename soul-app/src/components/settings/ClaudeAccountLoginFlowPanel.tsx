@@ -46,17 +46,17 @@ export function ClaudeAccountLoginFlowPanel({ flow, code, error, starting, submi
         <ActivityIndicator size="small" color={t.colors.accent} />
         <Text style={styles.metaText}>{verifying ? '인증 코드를 확인하고 계정 정보를 가져오는 중입니다.' : '인증 링크를 준비하고 있습니다.'}</Text>
       </View>
-      {!verifying ? <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} disabled={cancelling}>
+      {!verifying ? <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} busy={cancelling}>
         <Text style={styles.secondaryButtonText}>{cancelling ? '취소 중' : '취소'}</Text>
       </GlassButton> : null}
     </> : null}
     {flow.state === 'url_ready' || failed ? <>
       <View style={styles.authActions}>
-        <GlassButton testID="claude-login-open-auth" accessibilityLabel={failed ? '새 인증 링크 받기' : '인증 페이지 열기'} onPress={failed ? onRestart : onOpenAuth} disabled={failed ? starting : !flow.auth_url || starting} style={styles.flexButton}>
+        <GlassButton testID="claude-login-open-auth" accessibilityLabel={failed ? '새 인증 링크 받기' : '인증 페이지 열기'} onPress={failed ? onRestart : onOpenAuth} disabled={!failed && !flow.auth_url} busy={starting} style={styles.flexButton}>
           <Ionicons name={failed ? 'refresh' : 'open-outline'} size={t.iconSize.compact} color={t.colors.accent} />
           <Text style={styles.accentButtonText}>{failed ? '새 인증 링크 받기' : '인증 페이지 열기'}</Text>
         </GlassButton>
-        <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} disabled={cancelling}>
+        <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} busy={cancelling}>
           <Text style={styles.secondaryButtonText}>취소</Text>
         </GlassButton>
       </View>
@@ -66,11 +66,11 @@ export function ClaudeAccountLoginFlowPanel({ flow, code, error, starting, submi
         style={[styles.codeInput, codeFocused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
         autoCapitalize="none" autoCorrect={false} />
       <GlassButton testID="claude-login-submit" accessibilityLabel="인증 코드 확인" onPress={onSubmit}
-        disabled={!code.trim() || submitting || verifying} variant="primary">
+        disabled={!code.trim()} busy={submitting || verifying} variant="primary">
         {({ contentColor }) => submitting ? <ActivityIndicator size="small" color={contentColor} /> : <Text style={[styles.primaryButtonText, { color: contentColor }]}>{failed ? '다시 확인' : '확인'}</Text>}
       </GlassButton>
     </> : null}
-    {flow.state === 'code_submitted' || flow.state === 'verifying' ? <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} disabled={cancelling || submitting}>
+    {flow.state === 'code_submitted' || flow.state === 'verifying' ? <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} busy={cancelling || submitting}>
       <Text style={styles.secondaryButtonText}>{cancelling ? '취소 중' : '취소'}</Text>
     </GlassButton> : null}
   </View>;

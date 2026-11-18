@@ -390,7 +390,8 @@ export const ChatInputRequest = memo(function ChatInputRequest({
               <GlassButton
                 testID="input-request-submit"
                 variant="primary"
-                disabled={!canSubmit}
+                disabled={isDone || isTimedOut || !allQuestionsAnswered(questions, selections)}
+                busy={isSubmitting}
                 onPress={() => {
                   void submitSelections(selections);
                 }}

@@ -21,7 +21,7 @@ export function PersistentReportUndoRow({ undo, styles }: {
   const t = useTokens();
   return <View style={styles.undoRow}>
     <Text testID="report-undo-label" style={styles.receivedLabel}>{undo.label}</Text>
-    <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" disabled={undo.busy}
+    <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" busy={undo.busy}
       accessibilityLabel="되돌리기" onPress={undo.onUndo}><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
         <UndoCountdownRing key={undo.expiresAt} expiresAt={undo.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS} />
         <Text style={styles.cancelLabel}>되돌리기</Text>
@@ -29,7 +29,7 @@ export function PersistentReportUndoRow({ undo, styles }: {
   </View>;
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
-  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
+  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false, disabled = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
   acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false, question }: {
   /** 카드 #1197: 새 질문 장은 본문과 동작 줄을 질문 부품이 그린다. */
@@ -42,7 +42,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
-  bubble?: boolean; surfaceHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
+  bubble?: boolean; surfaceHeight?: number; busy?: boolean; disabled?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
   onHeight?(height: number): void; onInteraction?(pressed: boolean): void;
   onReady?(): void;
 }) {
@@ -130,14 +130,14 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       {question ? question.actions : answer ? <View testID="report-received-row" style={[styles.received, { minHeight: t.hitTarget.min }]}>
         {received}{cancelSent ? <View style={styles.cancelStatus}><Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text></View>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
-            disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}
+            disabled={disabled} busy={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}
       </View> : acknowledgeable || entry.options.length || holdAction ? <View testID="report-actions" style={styles.actions}>
         {(acknowledgeable ? [acknowledgeLabel] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
-          disabled={busy} accessibilityLabel={option}
+          disabled={disabled} busy={busy} accessibilityLabel={option}
           onPress={() => acknowledgeable ? onDismiss() : onOption(option)} style={styles.button}>
           <Text style={styles.buttonLabel}>{option}</Text>
         </GlassButton>)}
-        {holdAction ? <GlassButton key={holdAction.label} variant="paper" size="compact" disabled={busy}
+        {holdAction ? <GlassButton key={holdAction.label} variant="paper" size="compact" disabled={disabled} busy={busy}
           accessibilityLabel={holdAction.label} onPress={holdAction.onPress} style={styles.button}>
           <Text style={styles.buttonLabel}>{holdAction.label}</Text>
         </GlassButton> : null}

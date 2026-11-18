@@ -150,7 +150,7 @@ export function CardQuestionActions({ view, composerVisible = false, busy = fals
   const styles = useMemo(() => makeStyles(t), [t]);
   if (!view.open) return null;
   const button = (label: string, onPress: () => void, primary = false) => <GlassButton key={label} variant={primary ? 'primary' : 'paper'} size="compact"
-    disabled={busy} accessibilityLabel={label} onPress={onPress} style={styles.button}>
+    busy={busy} accessibilityLabel={label} onPress={onPress} style={styles.button}>
     <Text style={[styles.buttonLabel, primary && { color: t.colors.accentText }]}>{label}</Text>
   </GlassButton>;
   return <View testID="card-question-actions" style={styles.actions}>

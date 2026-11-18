@@ -148,7 +148,7 @@ export function DisplaySettingsSection({
                 tone="link"
                 style={styles.action}
                 contentStyle={styles.secondaryButtonContent}
-                disabled={savingBackground}
+                busy={savingBackground}
                 onPress={onPickBackground}
               >
                 {({ contentColor }) => (savingBackground ? (
@@ -164,7 +164,7 @@ export function DisplaySettingsSection({
                   tone="link"
                   style={styles.action}
                   contentStyle={styles.secondaryButtonContent}
-                  disabled={savingBackground}
+                  busy={savingBackground}
                   onPress={onResetBackground}
                 >
                   {({ contentColor }) => (
