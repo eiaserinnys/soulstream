@@ -126,6 +126,7 @@ export const sessionDataOperations = {
   generation_checkpoint_material: ["sessionReadComposites", null, "getGenerationCheckpointMaterial"],
   caller_chain: ["sessionReads", null, "getSessionCallerChain"],
   owner_node: ["sessionReads", null, "getSessionOwnerNode"],
+  existing_session_ids: ["sessionReads", null, "listExistingSessionIds"],
 } as const satisfies Record<string, OperationTarget>;
 
 const worktreeOperations = {
@@ -184,6 +185,12 @@ function registerDomain(
       if (!rawArgs) {
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "body.args must be an array"));
+      }
+      if (domain === "session-data" && request.params.operation === "existing_session_ids"
+        && (rawArgs.length !== 1 || !Array.isArray(rawArgs[0])
+          || rawArgs[0].length > 500 || !rawArgs[0].every((id: unknown) => typeof id === "string"))) {
+        return sendTimed(request, reply, timing, 400, () =>
+          errorReply(reply, 400, "INVALID_HOST_REQUEST", "expected an array of at most 500 session ids"));
       }
       const args = normalizeRetryDelay(request.params.operation, rawArgs);
       if (!args) {

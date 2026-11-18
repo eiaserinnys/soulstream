@@ -156,8 +156,8 @@ export class RunnerRecoveryCoordinator {
             collect: async (scan, policy, phaseObservation, runRemoval) => await options.sessionGarbageCollector!.collect(
               scan,
               {
-                centralSessionExists: async (sessionId) =>
-                  await options.taskManager.hydrateRunnerRecoveryTask(sessionId) !== null,
+                listExistingSessionIds: async (sessionIds) =>
+                  await options.taskManager.listExistingSessionIds(sessionIds),
               },
               phaseObservation,
               runRemoval,

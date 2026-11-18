@@ -1867,7 +1867,9 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           registration: item, acknowledgedThrough: 1, latestDurableSourceSeq: 1,
           incompleteDurableWork: false, durableRecordCount: 1, unacknowledgedIpcFrameCount: 0,
         }),
-        removeDirectory: async () => { removalStarted.resolve(); await finishRemoval.promise; },
+        moveDirectory: async () => { removalStarted.resolve(); await finishRemoval.promise; },
+        listTrash: async () => [],
+        removeDirectory: async () => {},
       },
     );
     const scan = vi.fn(async () => ({ registrations: [retired], errors: [] }));
@@ -1885,10 +1887,10 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
           },
         },
         taskManager: {
-          hydrateRunnerRecoveryTask: async () => {
+          listExistingSessionIds: async () => {
             lookupCount++;
             if (lookupCount === 1) { lookupStarted.resolve(); await finishLookup.promise; }
-            return null;
+            return [];
           },
         } as never,
       },
@@ -1927,6 +1929,42 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(phasesDuringRemoval).toContain("gcWait");
     expect(scan).toHaveBeenCalledTimes(scansBeforeRemoval + 1);
     await subject.coordinator.stop();
+  });
+
+  it("does not wait for trash removal outside the gate during a recovery scan", async () => {
+    const removalStarted = deferred<void>();
+    const finishRemoval = deferred<void>();
+    const phases: string[] = [];
+    const retired = registration({ pidAlive: false, lifecycleState: "completed" });
+    retired.retiredAt = "2026-08-01T00:00:00.000Z";
+    const sessionGarbageCollector = new RunnerSessionGarbageCollector(
+      "/runner", 1_000, { info: vi.fn(), warn: vi.fn() }, {
+        now: () => RECOVERY_NOW_MS, monotonicNow: () => 0,
+        withMutationLock: async (_path, operation) => await operation(),
+        refresh: async (item) => item,
+        probeRetention: async (item) => ({ registration: item, localRetentionReason: null }),
+        inspect: async (item) => ({ registration: item, acknowledgedThrough: 1, latestDurableSourceSeq: 1,
+          incompleteDurableWork: false, durableRecordCount: 1, unacknowledgedIpcFrameCount: 0 }),
+        moveDirectory: async () => {}, listTrash: async () => ["old"],
+        removeDirectory: async () => { removalStarted.resolve(); await finishRemoval.promise; },
+      },
+    );
+    const subject = makeSubject([retired], RECOVERY_NOW_MS, [], {
+      sessionGarbageCollector,
+      nodeStallMonitor: { beginRunnerOperation: (context) => { if (context.phase) phases.push(context.phase); return () => {}; } },
+    });
+    await subject.coordinator.scanOnce();
+    await removalStarted.promise;
+    phases.length = 0;
+    const scan = subject.coordinator.scanOnce();
+    const outcome = await Promise.race([scan.then(() => "scanned"), new Promise((resolve) => setTimeout(() => resolve("blocked"), 50))]);
+    finishRemoval.resolve();
+    await scan;
+    await subject.coordinator.stop();
+    expect(outcome).toBe("scanned");
+    // gcWait is observed even when no removal is in flight; completion before
+    // finishRemoval proves that the synchronous observation did not wait.
+    expect(phases).toContain("gcWait");
   });
 
   it("keeps terminal replay ahead of session garbage collection", async () => {
@@ -4030,6 +4068,7 @@ function makeSubject(
   };
   const baseTaskManager = {
     hydrateRunnerRecoveryTask,
+    listExistingSessionIds: vi.fn(async (ids: string[]) => ids),
     markRunnerFailure,
     projectClosedRunner,
   };

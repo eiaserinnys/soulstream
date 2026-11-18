@@ -45,6 +45,11 @@ afterEach(async () => {
 });
 
 describe("runner process registry", () => {
+  it("does not scan the GC trash as registrations", async () => {
+    const stateDirectory = await temporaryDirectory("gc-trash");
+    await mkdir(join(stateDirectory, "_gc-trash", "old-session"), { recursive: true });
+    await expect(scanRunnerRegistrations(stateDirectory)).resolves.toEqual({ registrations: [], errors: [] });
+  });
   it("filters unrelated code releases before asking the recovery storage worker", async () => {
     const stateDirectory = await temporaryDirectory("release-filter");
     for (const [sessionId, codeSha] of [["candidate", "release-a"], ["unrelated", "release-b"]]) {

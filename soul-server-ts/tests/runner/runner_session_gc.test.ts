@@ -14,6 +14,64 @@ const NOW = Date.parse("2026-08-12T00:00:00.000Z");
 const RETENTION_MS = 86_400_000;
 
 describe("RunnerSessionGarbageCollector", () => {
+  it("looks up eligible ids once before locking and rechecks a deleted id inside the lock", async () => {
+    const events: string[] = [];
+    const subject = makeSubject({ withMutationLock: async (_path, operation) => {
+      events.push("lock");
+      return await operation();
+    } });
+    const ids = vi.fn(async (ids: string[]) => { events.push(`lookup:${ids.join(",")}`); return ids.filter((id) => id === "present"); });
+    const retired = (sessionId: string) => registration({ sessionId, retiredAt: "2026-08-10T00:00:00.000Z" });
+    await subject.collector.collect(scan([retired("deleted"), retired("present"), registration({ sessionId: "legacy" })]), { listExistingSessionIds: ids });
+    expect(ids.mock.calls).toEqual([[ ["deleted", "present"] ], [["deleted"]]]);
+    expect(events.slice(0, 3)).toEqual(["lookup:deleted,present", "lock", "lookup:deleted"]);
+  });
+
+  it("retains eligible sessions when the batch lookup fails", async () => {
+    const subject = makeSubject();
+    const ids = vi.fn(async () => { throw new Error("host unavailable"); });
+    const session = registration({ sessionId: "unreadable", retiredAt: "2026-08-10T00:00:00.000Z" });
+    await expect(subject.collector.collect(scan([session]), { listExistingSessionIds: ids })).resolves.toEqual({
+      removed: [], retained: [{ sessionId: "unreadable", reason: "evidence_unreadable" }],
+    });
+    expect(ids).toHaveBeenCalledOnce();
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it("moves under the removal gate and cleans all trash children after unlocking", async () => {
+    let locked = false;
+    let gated = false;
+    const events: string[] = [];
+    const subject = makeSubject({
+      withMutationLock: async (_path, operation) => { locked = true; try { return await operation(); } finally { locked = false; } },
+      moveDirectory: async (_source, destination) => { expect(locked && gated).toBe(true); events.push(destination); },
+      listTrash: async () => ["old", "new"],
+      removeDirectory: async (path) => { expect(locked || gated).toBe(false); events.push(path); },
+    });
+    await subject.collector.collect(scan([registration({ sessionId: "expired" })]), undefined, undefined,
+      async (operation) => { gated = true; try { await operation(); } finally { gated = false; } });
+    expect(events[0]).toMatch(/^\/state\/_gc-trash\/expired-/);
+    expect(events.slice(1)).toEqual(["/state/_gc-trash/old", "/state/_gc-trash/new"]);
+    expect(subject.logger.info).toHaveBeenLastCalledWith(expect.objectContaining({ trashRemoved: 2, trashDurationMs: expect.any(Number) }), expect.any(String));
+  });
+
+  it("falls back to removing in place inside the gate when rename fails", async () => {
+    let gated = false;
+    const subject = makeSubject({
+      moveDirectory: async () => { throw new Error("rename failed"); },
+      removeDirectory: async (path) => { expect(gated).toBe(true); expect(path).toBe("/state/expired"); },
+    });
+    await expect(subject.collector.collect(scan([registration({ sessionId: "expired" })]), undefined, undefined,
+      async (operation) => { gated = true; try { await operation(); } finally { gated = false; } }))
+      .resolves.toEqual({ removed: ["expired"], retained: [] });
+  });
+
+  it("counts a missing source as removed without falling back to rm", async () => {
+    const subject = makeSubject({ moveDirectory: async () => { throw Object.assign(new Error("gone"), { code: "ENOENT" }); } });
+    await expect(subject.collector.collect(scan([registration({ sessionId: "expired" })])))
+      .resolves.toEqual({ removed: ["expired"], retained: [] });
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
   it("removes an expired retired runner without lifecycle when durable evidence is empty and the central session exists", async () => {
     const subject = makeSubject();
     const centralSessionExists = vi.fn(async () => true);
@@ -25,7 +83,7 @@ describe("RunnerSessionGarbageCollector", () => {
       lifecycleState: null,
     });
 
-    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+    await expect(subject.collector.collect(scan([session]), existencePolicy(centralSessionExists)))
       .resolves.toEqual({ removed: ["retired-empty"], retained: [] });
     expect(subject.inspect).toHaveBeenCalledTimes(1);
     expect(subject.removeDirectory).toHaveBeenCalledWith("/state/retired-empty");
@@ -43,9 +101,7 @@ describe("RunnerSessionGarbageCollector", () => {
       lifecycleState: null,
     });
 
-    await expect(subject.collector.collect(scan([session]), {
-      centralSessionExists: async () => true,
-    })).resolves.toEqual({
+    await expect(subject.collector.collect(scan([session]), existencePolicy(async () => true))).resolves.toEqual({
       removed: [],
       retained: [{ sessionId: "retired-live", reason: "incomplete_bootstrap" }],
     });
@@ -68,9 +124,7 @@ describe("RunnerSessionGarbageCollector", () => {
         lifecycleState: null,
       });
 
-      await expect(subject.collector.collect(scan([session]), {
-        centralSessionExists: async () => true,
-      })).resolves.toEqual({
+      await expect(subject.collector.collect(scan([session]), existencePolicy(async () => true))).resolves.toEqual({
         removed: [],
         retained: [{ sessionId, reason: "incomplete_bootstrap" }],
       });
@@ -181,7 +235,9 @@ describe("RunnerSessionGarbageCollector", () => {
         mutationLockCallbackEntries: 1,
         unreadableRegistrations: 0,
         startedAtMs: NOW,
-        durationMs: 1,
+        durationMs: 3,
+        trashRemoved: 0,
+        trashDurationMs: 1,
       },
       "runner session GC sweep completed",
     );
@@ -228,7 +284,7 @@ describe("RunnerSessionGarbageCollector", () => {
         pidStartIdentity: null,
         retiredAt: "2026-08-10T00:00:00.000Z",
       })]),
-      { centralSessionExists: vi.fn(async () => false) },
+      existencePolicy(vi.fn(async () => false)),
     )).resolves.toEqual({ removed: ["deleted"], retained: [] });
     expect(subject.removeDirectory).toHaveBeenCalledWith("/state/deleted");
   });
@@ -244,7 +300,7 @@ describe("RunnerSessionGarbageCollector", () => {
         pidStartIdentity: null,
         retiredAt: "2026-08-10T00:00:00.000Z",
       })]),
-      { centralSessionExists: vi.fn(async () => true) },
+      existencePolicy(vi.fn(async () => true)),
     )).resolves.toEqual({
       removed: [],
       retained: [{ sessionId: "retained", reason: "final_ack_pending" }],
@@ -299,7 +355,7 @@ describe("RunnerSessionGarbageCollector", () => {
       retiredAt: "2026-08-10T00:00:00.000Z",
     });
 
-    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+    await expect(subject.collector.collect(scan([session]), existencePolicy(centralSessionExists)))
       .resolves.toEqual({ removed: ["deleted-pending"], retained: [] });
     expect(subject.inspect).toHaveBeenCalledTimes(1);
     expect(centralSessionExists).toHaveBeenCalledTimes(2);
@@ -325,7 +381,7 @@ describe("RunnerSessionGarbageCollector", () => {
       retiredAt: "2026-08-10T00:00:00.000Z",
     });
 
-    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+    await expect(subject.collector.collect(scan([session]), existencePolicy(centralSessionExists)))
       .resolves.toEqual({
         removed: [],
         retained: [{ sessionId: "reappeared-pending", reason: "central_session_present" }],
@@ -351,7 +407,7 @@ describe("RunnerSessionGarbageCollector", () => {
       retiredAt: "2026-08-10T00:00:00.000Z",
     });
 
-    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+    await expect(subject.collector.collect(scan([session]), existencePolicy(centralSessionExists)))
       .resolves.toEqual({
         removed: [],
         retained: [{ sessionId: "central-present", reason: "durable_replay_pending" }],
@@ -517,7 +573,7 @@ describe("RunnerSessionGarbageCollector", () => {
         retiredAt: "2026-08-10T00:00:00.000Z",
       }),
       registration({ sessionId: "legacy" }),
-    ]), { centralSessionExists }, observation);
+    ]), existencePolicy(centralSessionExists), observation);
 
     expect(centralSessionExists.mock.calls.map(([sessionId]) => sessionId)).toEqual([
       "deleted",
@@ -527,7 +583,7 @@ describe("RunnerSessionGarbageCollector", () => {
       {
         phase: "centralSessionLookup",
         operation: "runner.recovery.sessionGc.centralSessionLookup.initial",
-        sessionId: "deleted",
+        sessionId: "runner-recovery:session-gc-central-lookup",
       },
       {
         phase: "centralSessionLookup",
@@ -570,8 +626,11 @@ function makeSubject(options: {
   }>;
   monotonicNow?: () => number;
   withMutationLock?: RunnerSessionGarbageCollectorDependencies["withMutationLock"];
+  moveDirectory?: RunnerSessionGarbageCollectorDependencies["moveDirectory"];
+  removeDirectory?: RunnerSessionGarbageCollectorDependencies["removeDirectory"];
+  listTrash?: RunnerSessionGarbageCollectorDependencies["listTrash"];
 } = {}) {
-  const removeDirectory = vi.fn(async () => {});
+  const removeDirectory = vi.fn(options.removeDirectory ?? (async () => {}));
   let monotonicTime = 0;
   const withMutationLock = vi.fn(options.withMutationLock ?? (async <T>(
     _path: string,
@@ -606,21 +665,25 @@ function makeSubject(options: {
     probeRetention,
     inspect,
     removeDirectory,
+    moveDirectory: options.moveDirectory ?? (async () => { throw new Error("test fallback"); }),
+    listTrash: options.listTrash ?? (async () => []),
   } as RunnerSessionGarbageCollectorDependencies;
   const logger = { info: vi.fn(), warn: vi.fn() };
   return {
-    collector: new RunnerSessionGarbageCollector(
-      "/state",
-      RETENTION_MS,
-      logger as never,
-      deps,
-    ),
+    collector: new RunnerSessionGarbageCollector("/state", RETENTION_MS, logger as never, deps),
     removeDirectory,
     withMutationLock,
     probeRetention,
     inspect,
     logger,
   };
+}
+
+function existencePolicy(exists: (id: string) => Promise<boolean>) {
+  return { listExistingSessionIds: async (ids: string[]) => {
+    const results = await Promise.all(ids.map(exists));
+    return ids.filter((_, index) => results[index]);
+  } };
 }
 
 function scan(registrations: RunnerRegistration[]): RunnerRegistrationScan {

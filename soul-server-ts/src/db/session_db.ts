@@ -412,6 +412,10 @@ export class SessionDB {
     return await this.requireSessionDataHost().getSessionOwnerNode(sessionId);
   }
 
+  async listExistingSessionIds(sessionIds: string[]): Promise<string[]> {
+    return await this.requireSessionDataHost().listExistingSessionIds(sessionIds);
+  }
+
   async appendClaudeTranscriptEntries(
     key: ClaudeTranscriptKey,
     entries: ClaudeTranscriptEntry[],

@@ -4,10 +4,28 @@ import type {
   RunnerDurableInspection,
   RunnerRegistration,
 } from "./runner_process_registry.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type { RunnerSessionGarbageCollectionPolicy } from "./runner_session_gc.js";
+
+export async function isDeletedCentralSessionEvidence(
+  registration: RunnerRegistration,
+  policy: RunnerSessionGarbageCollectionPolicy | undefined,
+  phaseObservation?: RunnerPhaseObservation,
+): Promise<boolean> {
+  if (!policy || !registration.retiredAt || registration.pidAlive) return false;
+  const lookup = async () => (await policy.listExistingSessionIds([registration.config.sessionId])).includes(registration.config.sessionId);
+  const exists = phaseObservation
+    ? await phaseObservation.runAsync("centralSessionLookup", {
+      sessionId: registration.config.sessionId,
+      label: "beforeDelete",
+    }, lookup)
+    : await lookup();
+  return !exists;
+}
 
 export function hasCentralDeletionOverride(
   registration: RunnerRegistration,
-  policy: { centralSessionExists(sessionId: string): Promise<boolean> } | undefined,
+  policy: { listExistingSessionIds(sessionIds: string[]): Promise<string[]> } | undefined,
 ): boolean {
   return Boolean(policy && registration.retiredAt && !registration.pidAlive);
 }

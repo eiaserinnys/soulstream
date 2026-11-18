@@ -27,7 +27,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   scanIntervalMs: number;
   taskManager: Pick<
     TaskManager,
-    "hydrateRunnerRecoveryTask" | "markRunnerFailure"
+    "hydrateRunnerRecoveryTask" | "markRunnerFailure" | "listExistingSessionIds"
   > & Partial<
     Pick<
       TaskManager,

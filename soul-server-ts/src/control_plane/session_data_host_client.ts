@@ -49,6 +49,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "generation_checkpoint_material",
   "caller_chain",
   "owner_node",
+  "existing_session_ids",
 ] as const;
 
 /** event_read_page의 id 정렬 방향. 생략하면 지금까지처럼 오름차순이다. */
@@ -121,6 +122,7 @@ export interface SessionReadOptions {
 }
 
 export interface SessionDataHost {
+  listExistingSessionIds(sessionIds: string[]): Promise<string[]>;
   getSession(sessionId: string, options?: SessionReadOptions): Promise<SessionRow | null>;
   listSessionsSummary(params: {
     search?: string | null;
@@ -183,6 +185,13 @@ export function isSessionDataHostError(error: unknown): error is SessionDataHost
 }
 
 export class SessionDataHostClient implements SessionDataHost {
+  async listExistingSessionIds(sessionIds: string[]): Promise<string[]> {
+    const existing: string[] = [];
+    for (let offset = 0; offset < sessionIds.length; offset += 500) {
+      existing.push(...await this.turnCritical<string[]>("existing_session_ids", [sessionIds.slice(offset, offset + 500)]));
+    }
+    return existing;
+  }
   private readonly transport: PersistenceHostTransport;
   private readonly logger: HostClientConfig["logger"];
 

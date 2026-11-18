@@ -63,6 +63,13 @@ export interface HostSessionOwnerNode {
 export class SessionReadRepository {
   constructor(private readonly sql: SqlClient) {}
 
+  async listExistingSessionIds(sessionIds: string[]): Promise<string[]> {
+    const rows = await this.sql<{ session_id: string }[]>`
+      SELECT session_id FROM sessions WHERE session_id = ANY(${sessionIds}::text[])
+    `;
+    return rows.map((row) => row.session_id);
+  }
+
   /**
    * Reads only the owning node. A caller that just routes a message must not
    * pay for the whole session row (metadata can reach hundreds of KB).
