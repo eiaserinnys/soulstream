@@ -77,7 +77,7 @@ export const clusterTools = {
       },
       annotations: { readOnlyHint: true },
     } },
-  get_event_ingress_delivery_latency: { name: "get_event_ingress_delivery_latency", audience: "internal", config: {
+  get_event_ingress_delivery_latency: { name: "get_event_ingress_delivery_latency", audience: "internal", timeoutMs: 60000, config: {
       description:
         "orch가 사건을 커밋한 시각(event_ingress_receipts.created_at)에서 노드가 만든 시각(events.created_at)을 뺀 전달 지연을 조회한다. 기간은 7일 이하만 받고 overall·노드별 count와 p50/p90/p99/max, 느린 5건을 낸다.",
       inputSchema: {
