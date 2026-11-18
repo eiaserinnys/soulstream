@@ -22,8 +22,7 @@ import { SessionSearchField } from '../search/SessionSearchField';
 import { useSearchStore } from '../../store/searchStore';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
-import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/CardBoardWorkspace';
-import { CompletedCardsToggle } from '../planner/CompletedCardsToggle';
+import { CardBoardHeaderActions, CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/CardBoardWorkspace';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
@@ -51,6 +50,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
   const styles = useMemo(() => makeStyles(t), [t]);
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
+  const [boardRefreshing, setBoardRefreshing] = useState(false);
   useImperativeHandle(ref, () => ({
     openCreate: () => boardRef.current?.openCreate(),
     openExpanded: () => boardRef.current?.openExpanded(),
@@ -131,24 +131,9 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        {view === 'board' && !effectiveShowSearch && compactHeader ? (
-          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-            testID="board-header-overflow-button" accessibilityLabel="보드 메뉴"
-            accessibilityState={{ expanded: overflowOpen }}
-            onPress={() => setOverflowOpen((open) => !open)}>
-            <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
-          </LiquidGlassButton>
-        ) : null}
-        {view === 'board' && !effectiveShowSearch && !compactHeader ? <>
-          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-            accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
-            <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-          </LiquidGlassButton>
-          <CompletedCardsToggle {...cardDisplay} />
-          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={() => boardRef.current?.openExpanded()}>
-            <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-          </LiquidGlassButton>
-        </> : null}
+        {view === 'board' && !effectiveShowSearch ? <CardBoardHeaderActions cardDisplay={cardDisplay} refreshing={boardRefreshing}
+          slotTestID="tablet-board-header-refresh-slot" compact={compactHeader} overflowOpen={overflowOpen}
+          onToggleOverflow={() => setOverflowOpen(open => !open)} onCreate={() => boardRef.current?.openCreate()} onExpand={() => boardRef.current?.openExpanded()} /> : null}
         {activeSection.kind === 'daily' && !effectiveShowSearch && view === 'existing' ? (
           <DailyHeaderActions
             onOpenReview={() => dailyRef.current?.openReview()}
@@ -166,7 +151,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
           <CardBoardWorkspace ref={boardRef} externalHeader={!effectiveShowSearch} key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
             title={effectiveShowSearch ? title : undefined}
-            cardDisplay={cardDisplay} reserveHomeComposerSpace onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
+            cardDisplay={cardDisplay} reserveHomeComposerSpace onAutoRefreshChange={setBoardRefreshing} externalHeaderHidden={duo} onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
           <DailyPlannerScreen

@@ -324,6 +324,19 @@ def check_board_states(page: Page, base: str, output: Path, width: int, failures
 
 def check_refresh_states(page: Page, base: str, output: Path, width: int, failures: list) -> list:
     results = []
+    geometry_script = '''mode => {
+      const modal = mode === 'boardExpanded' ? document.querySelector('[data-testid="card-board-expanded"]') : null;
+      const scope = modal || document;
+      const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
+      const visible = e => { const r=rect(e), s=getComputedStyle(e); return r.width>0 && r.height>0 && s.visibility!=='hidden' && s.display!=='none'; };
+      const labels = ['드래프트 카드 추가','완료·취소 숨김','보드 확대','보드 확대 닫기','이전 날짜','다음 날짜'];
+      const controls = [...scope.querySelectorAll('[role="button"],button')].filter(e=>visible(e) && labels.includes(e.getAttribute('aria-label')));
+      const frames = [...scope.querySelectorAll('[data-testid="card-board-frame"]')].filter(visible);
+      const items = [...controls,...frames];
+      const positions = Object.fromEntries(items.map((e,i)=>[(e.getAttribute('data-testid') || e.getAttribute('aria-label')) + ':' + i,rect(e)]));
+      const workspace = document.querySelector('[data-testid="card-board-workspace"]');
+      return {positions, paddingTop:workspace && parseFloat(getComputedStyle(workspace).paddingTop)};
+    }'''
     for mode in ('boardInternal', 'boardExternal', 'starred', 'sidebar', 'picker', 'daily', 'boardExpanded'):
         label = f'{mode}-{width}'
         try:
@@ -332,13 +345,20 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
             selected = 'boardInternal' if mode == 'boardExpanded' else mode
             page.get_by_test_id(f'settings-segment-refresh-owner-{selected}').click(force=True)
             page.wait_for_timeout(500)
-            board_top = page.get_by_test_id('card-board-frame').first.bounding_box() if mode == 'boardExternal' else None
-            page.get_by_test_id('refresh-begin').click(force=True)
-            if mode == 'picker':
-                page.get_by_test_id('refresh-picker-open').click(force=True)
             if mode == 'boardExpanded':
                 page.get_by_test_id('refresh-expand').click(force=True)
+                page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+                page.wait_for_timeout(700)
+            before = page.evaluate(geometry_script, mode)
+            page.screenshot(path=str(output / f'auto-refresh-{label}-before.png'))
+            if mode == 'boardExpanded':
+                page.get_by_test_id('refresh-begin').evaluate('(e) => e.click()')
+            else:
+                page.get_by_test_id('refresh-begin').click(force=True)
+            if mode == 'picker':
+                page.get_by_test_id('refresh-picker-open').click(force=True)
             page.wait_for_timeout(700)
+            during = page.evaluate(geometry_script, mode)
             metrics = page.evaluate('''mode => {
               const ids = {boardInternal:'card-board-auto-progress', boardExternal:'card-board-auto-progress',
                 boardExpanded:'card-board-expanded-auto-progress', starred:'starred-auto-progress', daily:'daily-auto-progress'};
@@ -346,15 +366,19 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
               const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
               const marker = element && rect(element);
               const frameId = mode === 'boardExpanded' ? 'card-board-expanded' : mode.startsWith('board') ? 'card-board-workspace' : mode === 'starred' ? 'starred-refresh-frame' : 'phone-daily-body';
-              const frameElement = element && element.closest(`[data-testid="${frameId}"]`);
+              const frameElement = element && (mode === 'boardExternal'
+                ? element.closest('[data-testid="review-phone-card-header"],[data-testid="review-tablet-card-header"]')
+                : element.closest(`[data-testid="${frameId}"]`));
               const frame = frameElement && rect(frameElement);
               let rounded = null;
               for (let p = element && element.parentElement; p; p = p.parentElement) {
                 const radius = parseFloat(getComputedStyle(p).borderTopRightRadius) || 0;
                 if (radius) { rounded = {rect:rect(p), radius}; break; }
               }
-              const overlaps = element && frameElement ? [...frameElement.querySelectorAll('button,[role="button"]')].filter(e => {
-                const r=rect(e); return r.width && r.height && marker.left < r.right && marker.right > r.left && marker.top < r.bottom && marker.bottom > r.top;
+              const scope = mode === 'boardExpanded' ? document.querySelector('[data-testid="card-board-expanded"]') : document;
+              const candidates = scope.querySelectorAll('button,[role="button"],[data-testid^="card-board-lane-heading-"],[data-testid^="postit-card-"],[data-testid="card-board-heading-title"],[data-testid="review-external-title"],[data-testid="daily-centered-date"]');
+              const overlaps = element ? [...candidates].filter(e => {
+                const r=rect(e), s=getComputedStyle(e); return r.width && r.height && s.display!=='none' && s.visibility!=='hidden' && marker.left < r.right && marker.right > r.left && marker.top < r.bottom && marker.bottom > r.top;
               }).map(e=>e.getAttribute('data-testid') || e.getAttribute('aria-label')) : [];
               const phase = document.querySelector('[data-testid="refresh-phase"]');
               return {scrollWidth:document.documentElement.scrollWidth, viewport:innerWidth, marker, frame, rounded, overlaps,
@@ -363,12 +387,17 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
             }''', mode)
             if not metrics['phase'] or not metrics['phase'].startswith('pending'):
                 failures.append({'check': 'refresh did not start', 'label': label, 'metrics': metrics})
-            if board_top:
-                after_top = page.get_by_test_id('card-board-frame').first.bounding_box()
-                metrics['boardTopBefore'] = board_top['y']
-                metrics['boardTopDuring'] = after_top['y'] if after_top else None
-                if not after_top or abs(after_top['y'] - board_top['y']) > 1:
-                    failures.append({'check': 'board moved during refresh', 'label': label, 'metrics': metrics})
+            metrics['before'] = before
+            metrics['during'] = during
+            if before['positions'].keys() != during['positions'].keys():
+                failures.append({'check': 'controls changed during refresh', 'label': label, 'before': before, 'during': during})
+            else:
+                for key, rect in before['positions'].items():
+                    after = during['positions'][key]
+                    if any(abs(rect[edge] - after[edge]) > 1 for edge in ('left', 'right', 'top', 'bottom')):
+                        failures.append({'check': 'control moved during refresh', 'label': label, 'element': key, 'before': rect, 'during': after})
+            if mode == 'boardExternal' and before['paddingTop'] != 8:
+                failures.append({'check': 'external board top padding', 'label': label, 'actual': before['paddingTop']})
             if metrics['scrollWidth'] != metrics['viewport']:
                 failures.append({'check': 'document overflow', 'label': label, 'metrics': metrics})
             expected_marker = mode in ('boardInternal', 'boardExternal', 'boardExpanded', 'starred', 'daily')
@@ -378,9 +407,8 @@ def check_refresh_states(page: Page, base: str, output: Path, width: int, failur
                 m, f = metrics['marker'], metrics['frame']
                 if m['left'] < f['left'] - 1 or m['right'] > f['right'] + 1 or m['top'] < f['top'] - 1 or m['bottom'] > f['bottom'] + 1:
                     failures.append({'check': 'marker outside frame', 'label': label, 'metrics': metrics})
-                # Daily keeps its existing date-row placement by specification.
-                if metrics['overlaps'] and mode != 'daily':
-                    failures.append({'check': 'marker overlaps button', 'label': label, 'metrics': metrics})
+                if metrics['overlaps']:
+                    failures.append({'check': 'marker overlaps content', 'label': label, 'metrics': metrics})
                 if metrics['overflow'] != 'hidden':
                     failures.append({'check': 'marker overflow not clipped', 'label': label, 'metrics': metrics})
                 rounded = metrics['rounded']

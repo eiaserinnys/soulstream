@@ -1,14 +1,9 @@
 import React, { useLayoutEffect, useMemo, useRef } from 'react';
-import { View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DailyStackParamList } from './TabNavigator';
-import { useTokens } from '../theme';
 import { useCardDisplay } from '../hooks/useCardDisplay';
 import { CardHomeScreen } from '../screens/CardHomeScreen';
-import { CompletedCardsToggle } from '../components/planner/CompletedCardsToggle';
-import { LiquidGlassButton } from '../components/LiquidGlassButton';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
+import { CardBoardHeaderActions, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { openPhoneChat } from './phoneSessionNavigation';
 import { useDuoSideBand } from './duoSideBand';
 import { DuoRailOverlayContext } from './tabContract';
@@ -19,8 +14,8 @@ import { DuoSafeTop } from './DuoSafeTop';
 /** Home actions use the existing native root header slots. */
 export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
   usePhoneConversationKeyboard(navigation);
-  const t = useTokens();
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
   const cardDisplay = useCardDisplay();
   const duo = useDuoSideBand();
   const railOverlayWidth = React.useContext(DuoRailOverlayContext);
@@ -33,14 +28,9 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
   useLayoutEffect(() => { navigation.setOptions({
     headerTitleAlign: 'left',
     headerLeft: () => null,
-    headerRight: () => <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
-        accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
-        <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
-      </LiquidGlassButton>
-      <CompletedCardsToggle {...cardDisplay} />
-    </View>,
-  }); }, [navigation, t, cardDisplay.includeCompleted, cardDisplay.onChange]);
-  return <DuoSafeTop><CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} railOverlayWidth={railOverlayWidth} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
+    headerRight: () => <CardBoardHeaderActions cardDisplay={cardDisplay} refreshing={refreshing}
+      slotTestID="phone-card-header-refresh-slot" onCreate={() => boardRef.current?.openCreate()} />,
+  }); }, [navigation, cardDisplay.includeCompleted, cardDisplay.onChange, refreshing]);
+  return <DuoSafeTop><CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} railOverlayWidth={railOverlayWidth} onAutoRefreshChange={setRefreshing} externalHeaderHidden={duo} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
     onSessionCreated={id => { openPhoneChat(navigation, id); }} /></DuoSafeTop>;
 }

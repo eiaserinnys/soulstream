@@ -15,6 +15,7 @@ import { useCardStore } from '../../store/cardStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { CompletedCardsToggle } from '../../components/planner/CompletedCardsToggle';
 import { useUIStore } from '../../store/uiStore';
+import { usePlannerStore } from '../../store/plannerStore';
 // Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
 // promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
@@ -46,6 +47,21 @@ beforeEach(() => {
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });
   mockApi.listCards.mockReset(); mockApi.listCompletedCards.mockReset(); mockApi.listCompletedCards.mockResolvedValue({cards: [], nextCursor: null}); mockApi.getCard.mockReset(); mockApi.setCardStatus.mockReset();
+});
+
+test('외부 머리에 홈 보드의 재조회 상태를 전달한다', async () => {
+  let finish!: (value: { cards: ReturnType<typeof cardFixture>[] }) => void;
+  mockApi.listCards.mockResolvedValueOnce({ cards: [cardFixture({ status: 'review' })] });
+  mockApi.listCards.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const onAutoRefreshChange = jest.fn();
+  render(<CardHomeScreen externalHeader onAutoRefreshChange={onAutoRefreshChange} onOpen={() => {}} />);
+  await waitFor(() => expect(mockApi.listCards).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(onAutoRefreshChange).toHaveBeenLastCalledWith(false));
+  act(() => usePlannerStore.getState().invalidate('folder'));
+  await waitFor(() => expect(onAutoRefreshChange).toHaveBeenLastCalledWith(true));
+  expect(mockApi.listCards).toHaveBeenCalledTimes(2);
+  await act(async () => finish({ cards: [cardFixture({ status: 'review' })] }));
+  await waitFor(() => expect(onAutoRefreshChange).toHaveBeenLastCalledWith(false));
 });
 
 test('전체 홈과 폴더 선호를 따로 유지하고 홈 재마운트에도 보존한다', async () => {

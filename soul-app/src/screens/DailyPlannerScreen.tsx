@@ -9,7 +9,7 @@ import React, {
   useState,
 } from 'react';
 import { Alert, RefreshControl, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AutomaticRefreshIndicator } from '../components/AutomaticRefreshIndicator';
+import { AutomaticRefreshSlot } from '../components/AutomaticRefreshIndicator';
 import { FrameLoading } from '../components/FrameLoading';
 import { createApiClient } from '../api/client';
 import type { PlannerFolder } from '../api/plannerTypes';
@@ -134,7 +134,10 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
     >
       <View testID="daily-date-row" style={styles.dateRow}>
         <Text style={styles.kicker}>DAILY</Text>
-        <Text testID="daily-centered-date" style={styles.date} numberOfLines={1}>{formatDailyDate(date)}</Text>
+        <View style={styles.dateArea}>
+          <Text testID="daily-centered-date" style={styles.date} numberOfLines={1}>{formatDailyDate(date)}</Text>
+          <AutomaticRefreshSlot active={loading && !!data && !pullRefreshing} testID="daily-refresh-slot" indicatorTestID="daily-auto-progress" />
+        </View>
         <View style={styles.dateActions}>
         <GlassButton iconOnly borderRadius={t.foundation.radius.round}
           accessibilityLabel="이전 날짜"
@@ -149,12 +152,6 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           <Text style={styles.dateButton}>›</Text>
         </GlassButton>
         </View>
-        {loading && !!data && !pullRefreshing ? (
-          <AutomaticRefreshIndicator
-            testID="daily-auto-progress"
-            style={styles.autoProgress}
-          />
-        ) : null}
       </View>
       {firstLoading && !pullRefreshing ? <FrameLoading testID="daily-loading" /> : null}
       {error && !pullRefreshing ? <Text style={styles.error}>{error}</Text> : null}
@@ -242,10 +239,7 @@ function makeStyles(t: DesignTokens, layout: 'phone' | 'tablet') {
     kicker: { ...planner.typography.meta, fontWeight: planner.typography.section.fontWeight,
       color: t.colors.textSecondary, letterSpacing: t.uiSpacing.xxs },
     dateActions: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs },
-    autoProgress: {
-      position: 'absolute',
-      right: planner.actionColumn + t.uiSpacing.sm,
-    },
+    dateArea: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
     date: {
       color: t.colors.textPrimary,
       ...planner.typography.navigation,

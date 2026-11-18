@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../api/client';
-import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
+import { CardBoardHeaderActions, CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
+import { TabletPaneHeader } from '../components/split/TabletPaneHeader';
 import { FolderSelectionSheet } from '../components/planner/FolderSelectionSheet';
 import { SidebarPane } from '../components/split/SidebarPane';
 import { GlassButton } from '../components/GlassSurface';
@@ -10,7 +11,7 @@ import { StarredFoldersWorkspace } from '../screens/StarredFoldersScreen';
 import { DailyPlannerScreen } from '../screens/DailyPlannerScreen';
 import { usePlannerStarred } from '../hooks/usePlannerStarred';
 import { usePlannerStore } from '../store/plannerStore';
-import { useTokens } from '../theme';
+import { useDeviceType, useTokens } from '../theme';
 import { createReviewApi, makeCard, starredFolders } from './fixtures';
 
 const modes = [
@@ -23,6 +24,9 @@ type Mode = typeof modes[number]['value'];
 /** Local deferred reads exercise the real owners; no shared fixture defaults or live transport. */
 export function ReviewAutoRefresh() {
   const t = useTokens();
+  const phone = useDeviceType() === 'phone';
+  const [refreshing, setRefreshing] = useState(false);
+  const [includeCompleted, setIncludeCompleted] = useState(false);
   const [mode, setMode] = useState<Mode>('boardInternal');
   const [empty, setEmpty] = useState(false);
   const [phase, setPhase] = useState<'before' | 'pending' | 'after'>('before');
@@ -77,7 +81,12 @@ export function ReviewAutoRefresh() {
       <Text testID="refresh-phase" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{phase} · {cycles}회</Text>
       <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>시작·완료를 반복하여 같은 콘텐츠의 요청 전·중·후를 비교합니다. RN web 예시이며 네이티브 당김 표시는 렌더 트리에서 확인합니다.</Text>
     </View>
-    {mode.startsWith('board') ? <CardBoardWorkspace ref={board} api={api} externalHeader={mode === 'boardExternal'} cardDisplay={{ includeCompleted: false, onChange: () => {} }} onOpen={() => {}} />
+    {mode === 'boardExternal' ? <TabletPaneHeader testID={phone ? 'review-phone-card-header' : 'review-tablet-card-header'}>
+      <Text testID="review-external-title" style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드</Text>
+      <CardBoardHeaderActions cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} refreshing={refreshing}
+        slotTestID="review-external-refresh-slot" onCreate={() => board.current?.openCreate()} onExpand={!phone ? () => board.current?.openExpanded() : undefined} />
+    </TabletPaneHeader> : null}
+    {mode.startsWith('board') ? <CardBoardWorkspace ref={board} api={api} externalHeader={mode === 'boardExternal'} onAutoRefreshChange={setRefreshing} cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} onOpen={() => {}} />
       : mode === 'starred' ? <StarredFoldersWorkspace api={api} />
         : mode === 'sidebar' ? <SidebarPane active={false} />
           : mode === 'daily' ? <DailyPlannerScreen active={false} date="2026-10-02" />
