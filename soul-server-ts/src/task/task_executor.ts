@@ -151,7 +151,7 @@ import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-pre
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import {
-  recordDeliverySessionEventEvidence,
+  recordTurnInputSessionEventEvidence,
   TaskDeliveryTurnReceipt,
 } from "./task_delivery_turn_receipt.js";
 import {
@@ -2567,9 +2567,7 @@ export class TaskExecutor {
     // they are delivered or queued, and a resumed delivery persists its
     // user_message before the executor starts. Remember that so settle does
     // not call the delivery lost when the turn observes no receipt (card #1604).
-    for (const intervention of interventions) {
-      recordDeliverySessionEventEvidence(task, intervention.deliveryId);
-    }
+    recordTurnInputSessionEventEvidence(task, interventions);
     if (!this.deliveryConsumption) return undefined;
     const receipt = new TaskDeliveryTurnReceipt(
       this.deliveryConsumption,

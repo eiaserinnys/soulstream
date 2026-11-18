@@ -255,6 +255,21 @@ export function recordDeliverySessionEventEvidence(
   evidence.add(deliveryId);
 }
 
+/**
+ * Marks the deliveries that entered this turn whose body was already persisted
+ * as a session event. Runtime follow-ups are engine-internal prompts that are
+ * never written to the session timeline, so they carry no evidence.
+ */
+export function recordTurnInputSessionEventEvidence(
+  task: Task,
+  interventions: readonly InterventionMessage[],
+): void {
+  for (const intervention of interventions) {
+    if (isRuntimeFollowup(intervention)) continue;
+    recordDeliverySessionEventEvidence(task, intervention.deliveryId);
+  }
+}
+
 export function hasDeliverySessionEventEvidence(
   task: Task,
   deliveryId: string | undefined,
