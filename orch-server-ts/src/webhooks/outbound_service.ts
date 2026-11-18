@@ -7,10 +7,8 @@ import {
   publishDueSubscriptions,
   publishSubscription,
 } from "./outbound_publisher.js";
-import {
-  generateSigningSecret,
-  OutboundWebhookRepository,
-} from "./outbound_repository.js";
+import { OutboundWebhookRepository } from "./outbound_repository.js";
+import { generateSigningSecret } from "./signing_secret.js";
 import {
   sendDelivery,
   sendNextDueDelivery,

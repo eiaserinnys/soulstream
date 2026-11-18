@@ -11,13 +11,17 @@ import {
   SessionResourceAccessError,
   type SessionRequestAccessGuard,
 } from "../session/session_resource_access.js";
+import { generateSigningSecret } from "../webhooks/signing_secret.js";
+import { verifyStandardWebhookSignature } from
+  "../webhooks/standard_webhook_signature.js";
 
 /**
  * External access grants (design 2.1, 2.7).
  *
  * The grant row is the single credential record shared by expiring access links
- * (#1457) and inbound webhooks (#1458). This unit implements the key auth mode
- * only; signature verification is #1458 work.
+ * (#1457) and inbound webhooks (#1458). Links authenticate with a key; inbound
+ * webhooks additionally support a Standard Webhooks signature over the raw
+ * received bytes.
  */
 
 export const ACCESS_LINK_KEY_PREFIX = "ssxl";
@@ -79,6 +83,34 @@ export interface IssuedExternalAccessGrant {
   key: string;
 }
 
+export interface IssueInboundWebhookGrantInput {
+  ownerEmail: string;
+  label: string;
+  targetSessionId: string;
+  /** Inbound webhooks accept a bearer key or a Standard Webhooks signature. */
+  authMode: ExternalAccessAuthMode;
+  /** Issuer note placed before the received body; 4000 characters at most. */
+  preamble?: string | null;
+  /** Optional expiry; inbound webhooks may not expire. */
+  expiresInSeconds?: number | null;
+}
+
+export interface IssuedInboundWebhookGrant {
+  grant: ExternalAccessGrantSummary;
+  /** Raw key (`key` mode) or signing secret (`signature` mode); shown once. */
+  secret: string;
+}
+
+export type InboundWebhookCredential =
+  | { mode: "key"; rawKey: string }
+  | {
+    mode: "signature";
+    headers: Readonly<Record<string, string | string[] | undefined>>;
+    rawBody: Buffer;
+  };
+
+export const INBOUND_WEBHOOK_PREAMBLE_MAX_LENGTH = 4000;
+
 export type ExternalGrantIssuerAuthorizer = (
   user: { email: string },
 ) => string | null | undefined | Promise<string | null | undefined>;
@@ -127,6 +159,63 @@ export class ExternalAccessGrantRepository {
     return { grant, key };
   }
 
+  /**
+   * Issues an inbound webhook grant (design 4.1). Permissions are fixed to
+   * `send` and `read_own`; the credential is either an `ssxw_` key (only the
+   * hash is stored) or a Standard Webhooks signing secret (kept verbatim
+   * because verification needs the original value).
+   */
+  async issueInboundWebhook(
+    input: IssueInboundWebhookGrantInput,
+  ): Promise<IssuedInboundWebhookGrant> {
+    const preamble = input.preamble ?? null;
+    if (preamble !== null && preamble.length > INBOUND_WEBHOOK_PREAMBLE_MAX_LENGTH) {
+      throw new Error(
+        `Inbound webhook preamble must be at most ${INBOUND_WEBHOOK_PREAMBLE_MAX_LENGTH} characters`,
+      );
+    }
+    const storedPreamble = preamble !== null && preamble.trim().length === 0
+      ? null
+      : preamble;
+    const expiresInSeconds = input.expiresInSeconds ?? null;
+    if (expiresInSeconds !== null
+      && (!Number.isFinite(expiresInSeconds) || expiresInSeconds <= 0)) {
+      throw new Error("Inbound webhook expiresInSeconds must be positive");
+    }
+    const now = this.currentTime();
+    const expiresAt = expiresInSeconds === null
+      ? null
+      : new Date(now.getTime() + expiresInSeconds * 1000);
+    const id = randomUUID();
+    const key = input.authMode === "key"
+      ? buildExternalAccessKey(id, "inbound_webhook")
+      : null;
+    const signingSecret = input.authMode === "signature"
+      ? generateSigningSecret()
+      : null;
+    const rows = await this.options.sql<ExternalAccessGrantSummary[]>`
+      INSERT INTO external_access_grants (
+        id, kind, owner_email, label, target_session_id, permissions,
+        auth_mode, key_hash, signing_secret, preamble, expires_at, created_at
+      ) VALUES (
+        ${id}, 'inbound_webhook', ${input.ownerEmail}, ${input.label},
+        ${input.targetSessionId}, ${["send", "read_own"]}::TEXT[],
+        ${input.authMode}, ${key === null ? null : hashExternalAccessKey(key)},
+        ${signingSecret}, ${storedPreamble}, ${expiresAt}, ${now}
+      )
+      RETURNING id, kind, owner_email, label, target_session_id, permissions,
+                auth_mode, preamble, expires_at, revoked_at, created_at,
+                last_used_at
+    `;
+    const grant = rows[0];
+    if (grant === undefined) {
+      throw new Error("External access grant insert returned no row");
+    }
+    if (key !== null) return { grant, secret: key };
+    if (signingSecret !== null) return { grant, secret: signingSecret };
+    throw new Error("Inbound webhook grant has no credential");
+  }
+
   async list(ownerEmail: string): Promise<ExternalAccessGrantSummary[]> {
     return await this.options.sql<ExternalAccessGrantSummary[]>`
       SELECT id, kind, owner_email, label, target_session_id, permissions,
@@ -172,6 +261,42 @@ export class ExternalAccessGrantRepository {
   ): Promise<ResolveExternalAccessGrantResult> {
     const parsed = parseExternalAccessKey(rawKey);
     if (parsed === null) return unauthorized();
+    const grant = await this.loadGrantRow(parsed.grantId);
+    if (grant === undefined || grant.target_session_exists !== true) {
+      return unauthorized();
+    }
+    if (grant.auth_mode !== "key" || grant.key_hash === null) return unauthorized();
+    if (!externalAccessKeyMatches(rawKey, grant.key_hash)) return unauthorized();
+    return await this.judgeGrantAccess(grant, requiredPermission);
+  }
+
+  /**
+   * Resolves a credential presented to `/api/hooks/<grant_id>` (design 4.2).
+   * The id must name an inbound webhook grant, the credential mode must match
+   * the grant, and the key's own grant id must equal the URL id. Any credential
+   * failure answers the same plain unauthorized.
+   */
+  async resolveInboundWebhookGrant(
+    grantId: string,
+    credential: InboundWebhookCredential,
+    requiredPermission?: ExternalAccessPermission,
+  ): Promise<ResolveExternalAccessGrantResult> {
+    if (!UUID_PATTERN.test(grantId)) return unauthorized();
+    const grant = await this.loadGrantRow(grantId);
+    if (grant !== undefined) {
+      if (grant.kind !== "inbound_webhook") return unauthorized();
+      if (grant.auth_mode !== credential.mode) return unauthorized();
+      const matches = credential.mode === "key"
+        ? inboundWebhookKeyMatches(grantId, credential.rawKey, grant)
+        : inboundWebhookSignatureMatches(credential, grant);
+      if (!matches) return unauthorized();
+    }
+    return await this.judgeGrantAccess(grant, requiredPermission);
+  }
+
+  private async loadGrantRow(
+    grantId: string,
+  ): Promise<ExternalAccessGrantRow | undefined> {
     const rows = await this.options.sql<ExternalAccessGrantRow[]>`
       SELECT access_grant.id, access_grant.kind, access_grant.owner_email,
              access_grant.label, access_grant.target_session_id,
@@ -185,14 +310,23 @@ export class ExternalAccessGrantRepository {
                WHERE target.session_id = access_grant.target_session_id
              ) AS target_session_exists
       FROM external_access_grants access_grant
-      WHERE access_grant.id = ${parsed.grantId}
+      WHERE access_grant.id = ${grantId}
     `;
-    const grant = rows[0];
+    return rows[0];
+  }
+
+  /**
+   * The part of the judgment shared by link keys and inbound webhooks after a
+   * credential matched: revocation, expiry, the issuer, the target session ACL
+   * and the required permission.
+   */
+  private async judgeGrantAccess(
+    grant: ExternalAccessGrantRow | undefined,
+    requiredPermission?: ExternalAccessPermission,
+  ): Promise<ResolveExternalAccessGrantResult> {
     if (grant === undefined || grant.target_session_exists !== true) {
       return unauthorized();
     }
-    if (grant.auth_mode !== "key" || grant.key_hash === null) return unauthorized();
-    if (!externalAccessKeyMatches(rawKey, grant.key_hash)) return unauthorized();
     if (grant.revoked_at !== null) return unauthorized();
     const now = this.currentTime().getTime();
     if (grant.expires_at !== null && grant.expires_at.getTime() <= now) {
@@ -221,6 +355,33 @@ export class ExternalAccessGrantRepository {
   private currentTime(): Date {
     return this.options.now?.() ?? new Date();
   }
+}
+
+const UUID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function inboundWebhookKeyMatches(
+  grantId: string,
+  rawKey: string,
+  grant: ExternalAccessGrantRow,
+): boolean {
+  if (grant.key_hash === null) return false;
+  if (!rawKey.startsWith(`${INBOUND_WEBHOOK_KEY_PREFIX}_`)) return false;
+  const parsed = parseExternalAccessKey(rawKey);
+  if (parsed === null || parsed.grantId !== grantId.toLowerCase()) return false;
+  return externalAccessKeyMatches(rawKey, grant.key_hash);
+}
+
+function inboundWebhookSignatureMatches(
+  credential: Extract<InboundWebhookCredential, { mode: "signature" }>,
+  grant: ExternalAccessGrantRow,
+): boolean {
+  if (grant.signing_secret === null) return false;
+  return verifyStandardWebhookSignature({
+    secret: grant.signing_secret,
+    headers: credential.headers,
+    rawBody: credential.rawBody,
+  }).ok;
 }
 
 /** `<prefix>_<grant id, 22 base64url chars>_<32 random bytes base64url>`. */
