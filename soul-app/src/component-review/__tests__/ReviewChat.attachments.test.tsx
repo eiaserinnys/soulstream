@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { getChatRowHorizontalInset } from '../../components/chat/ChatBody.styles';
@@ -11,6 +11,12 @@ import { TodayCardComposer } from '../../components/planner/TodayCardComposer';
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../components/chat/ChatBody', () => ({ ChatBody: () => null }));
 jest.mock('../../components/events/AssistantMessage', () => ({ AssistantMessage: () => null }));
+
+async function renderReviewChat() {
+  let screen!: ReturnType<typeof render>;
+  await act(async () => { screen = render(<ReviewChat />); });
+  return screen;
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'location', { configurable: true, value: { search: '', origin: 'https://review.test' } });
@@ -25,8 +31,8 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴다', () => {
-  const screen = render(<ReviewChat />);
+test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴다', async () => {
+  const screen = await renderReviewChat();
   const sample = within(screen.getByTestId('review-chat-composer-surface-none'));
   expect(sample.UNSAFE_getByType(TodayCardComposer).props.api).not.toBeNull();
   expect(sample.getByTestId('card-folder-chip')).toBeTruthy();
@@ -34,8 +40,8 @@ test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴
   expect(sample.getByTestId('chat-composer-box')).toBeTruthy();
 });
 
-test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 연결한다', () => {
-  const screen = render(<ReviewChat />);
+test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 연결한다', async () => {
+  const screen = await renderReviewChat();
   const sample = screen.getByTestId('review-chat-attachment-only-user-message');
   expect(within(sample).queryByTestId('user-message-text')).toBeNull();
   expect(within(sample).getByText('2026-10-17 서버 로그 전체.txt')).toBeTruthy();
@@ -44,7 +50,7 @@ test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 �
 });
 
 test('첨부만 전송 표본은 chips와 composer를 같은 간격 없는 그룹에 둔다', async () => {
-  const screen = render(<ReviewChat />);
+  const screen = await renderReviewChat();
   fireEvent.press(screen.getByTestId('settings-segment-review-composer-state-attachment-only'));
 
   const group = screen.getByTestId('review-chat-composer-input-group');
@@ -57,7 +63,7 @@ test('첨부만 전송 표본은 chips와 composer를 같은 간격 없는 그�
 });
 
 test('첨부 업로드 중 표본은 입력한 본문을 유지하고 첨부 칩을 보이지 않는다', async () => {
-  const screen = render(<ReviewChat />);
+  const screen = await renderReviewChat();
   fireEvent.press(screen.getByTestId('settings-segment-review-composer-state-uploading'));
   fireEvent.changeText(screen.getByLabelText('공개 예시 메시지'), '본문을 입력한 상태');
 
