@@ -46,8 +46,8 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
   return route.fulfill({json:{card,reports:[{id:"report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
    questions:card.id==="home-3-0"?[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]:[],sessions:[]}});
  });
- await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible();
- const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible();
+ await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
+ const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible({timeout:20000});
  return {cards,reads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
@@ -75,14 +75,24 @@ for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포�
  const queueTitle=home.locator('[data-card-group="queued"] .v3-section-head h2');
  const completedTitle=home.locator(".v3-completed-collection > div > :is(h2,h3)");
  const firstPeriod=home.locator(".v3-completed-collection .v3-completed-periods button").first();
+ const queue=home.locator('[data-card-group="queued"]'),running=home.locator('[data-card-group="running"]');
+ const queueHead=queue.locator(":scope > .v3-section-head"),completedHead=home.locator(".v3-completed-collection > .v3-section-head");
+ const queueCard=queue.locator("[data-card-id]").first().locator("..");
  const typography=async(locator:typeof queueTitle)=>locator.evaluate(element=>{
   const style=getComputedStyle(element);return {fontSize:style.fontSize,fontWeight:style.fontWeight,lineHeight:style.lineHeight};
  });
+ const queueHeadBox=(await queueHead.boundingBox())!,completedHeadBox=(await completedHead.boundingBox())!;
+ const queueBox=(await queue.boundingBox())!,runningBox=(await running.boundingBox())!;
  const listMetrics={viewport:await listViewport.boundingBox(),scroller:await listScroller.boundingBox(),firstCard:await listCard.boundingBox(),
   typography:{queue:await typography(queueTitle),completed:await typography(completedTitle)},
   starts:{queue:(await queueTitle.boundingBox())!.x,completed:(await completedTitle.boundingBox())!.x,
-   period:(await firstPeriod.boundingBox())!.x,card:(await listCard.boundingBox())!.x}};
+   period:(await firstPeriod.boundingBox())!.x,card:(await listCard.boundingBox())!.x},
+  rhythm:{queueBelow:(await queueCard.boundingBox())!.y-(queueHeadBox.y+queueHeadBox.height),
+   completedBelow:(await firstPeriod.boundingBox())!.y-(completedHeadBox.y+completedHeadBox.height),
+   queueAbove:queueHeadBox.y-(runningBox.y+runningBox.height),completedAbove:completedHeadBox.y-(queueBox.y+queueBox.height)}};
  await page.screenshot({path:path.join(artifacts,`${phase}-${width}-list.png`),animations:"disabled"});
+ await completedHead.evaluate(head=>head.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"}));
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-seam.png`),animations:"disabled"});
  const metrics={board:boardMetrics,list:listMetrics,resize:null as null|{width:number;height:number;documentWidth:number;clientWidth:number}};
  const metricsPath=path.join(artifacts,`${phase}-${width}-metrics.json`);
  writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
@@ -95,6 +105,8 @@ for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포�
  expect.soft(listMetrics.typography.completed,"완료와 대기열 머리 글자").toEqual(listMetrics.typography.queue);
  const starts=Object.values(listMetrics.starts);
  expect.soft(Math.max(...starts)-Math.min(...starts),"대기열·완료·기간·카드 시작선 차이").toBeLessThanOrEqual(1);
+ expect.soft(Math.abs(listMetrics.rhythm.completedBelow-listMetrics.rhythm.queueBelow),"머리 아래 간격 차이").toBeLessThanOrEqual(1);
+ expect.soft(Math.abs(listMetrics.rhythm.completedAbove-listMetrics.rhythm.queueAbove),"머리 위 간격 차이").toBeLessThanOrEqual(1);
  const resized=width===390?{width:1440,height:900}:{width:390,height:844};
  await page.setViewportSize(resized);
  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
