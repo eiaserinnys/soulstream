@@ -386,7 +386,8 @@ async function collectWorktreeFacts(args: {
   const repositories: RegisteredRepository[] = [];
   for (const repoId of repoIds) {
     // B2가 등록 리포 경로로 resolve하는 값과 같은 입력에서 받는다.
-    const canonicalPath = await realpath(join(projectsRoot, repoId));
+    const repositoryPath = join(projectsRoot, repoId);
+    const canonicalPath = await realpath(repositoryPath).catch(() => repositoryPath);
     commonDirectories.set(repoId, await args.resolveCommonDir(canonicalPath));
     repositories.push({ repoId, canonicalPath });
   }

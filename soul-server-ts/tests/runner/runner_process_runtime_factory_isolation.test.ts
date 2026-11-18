@@ -23,12 +23,6 @@ import type { SessionIsolationSpec } from
 import type { Task } from "../../src/task/task_models.js";
 
 // 호스트 준비는 실제 bwrap/pasta/FS를 건드리지 않는다. 포트와 계획만 가짜로 둔다.
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...original, realpath: async (path: string) =>
-    path.startsWith("/projects/") ? path : original.realpath(path) };
-});
-
 const isolationModuleMocks = vi.hoisted(() => ({
   prepareIsolationPlan: vi.fn(async (input: Record<string, unknown>, _ports: unknown) => ({
     spec: { sessionId: input.sessionId },
