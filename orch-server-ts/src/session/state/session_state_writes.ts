@@ -246,7 +246,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/session/session_action_command_errors.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 응답 상태." },
   { file: "src/session/session_background_schedule_errors.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 응답 상태." },
   { file: "src/session/session_command_routes.ts", comparisons: 2, lists: 0, sql: 0, note: "노드 응답 상태." },
-  { file: "src/session/session_conversation_projection.ts", comparisons: 1, lists: 1, sql: 0, note: "대화 사건 종류." },
+  { file: "src/session/session_conversation_projection.ts", comparisons: 1, lists: 0, sql: 0, note: "대화 사건 종류." },
   { file: "src/session/session_delete.ts", comparisons: 1, lists: 1, sql: 0, note: "활성 세션 판정과 노드 응답 상태." },
   { file: "src/session/session_feed_state_repository.ts", comparisons: 0, lists: 1, sql: 0, note: "피드 상태 종류." },
   { file: "src/session/session_limit_termination.ts", comparisons: 1, lists: 0, sql: 0, note: "한도 종료 판정." },
