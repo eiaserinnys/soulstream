@@ -222,13 +222,37 @@
 
 .v3-project-context-popover {
   width: min(380px, calc(100vw - 24px));
+  max-height: var(--available-height);
+}
+
+.v3-project-context-popover [data-slot="popover-viewport"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .v3-project-context-popover .v3-project-context-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(var(--available-height) - var(--v3-space-8) - var(--v3-space-1));
   min-width: 0;
   margin: 0;
   border: 0;
   padding: 0;
+}
+
+.v3-project-context-popover .v3-project-context-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.v3-project-context-popover .v3-project-context-editor-actions {
+  flex: none;
+  padding-top: var(--v3-space-3);
+  border-top: thin solid var(--v3-stroke-default);
 }
 
 .v3-project-context-actions > button {

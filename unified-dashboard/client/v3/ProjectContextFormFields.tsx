@@ -37,7 +37,7 @@ export function ProjectAtomFields({
       </label>
       <label>
         atom 노드
-        <AtomNodeSelector request={request}
+        <AtomNodeSelector presentation="inline" request={request}
           value={value.nodeId}
           selectedTitle={value.nodeTitle}
           disabled={disabled || value.instance !== "atom"}
