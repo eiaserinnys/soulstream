@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
@@ -119,6 +120,7 @@ describe("R36 delete_session lifecycle lab", () => {
       deleteTask: async (sessionId: string) => await route.deleteTask(sessionId),
       hydrateRunnerRecoveryTask: vi.fn(async (sessionId: string) =>
         centralSessions.has(sessionId) ? tasks.get(sessionId) ?? task(sessionId) : null),
+      listExistingSessionIds: vi.fn(async (ids: string[]) => ids.filter((id) => centralSessions.has(id))),
       markRunnerFailureAndResume: vi.fn(async () => {}),
       projectClosedRunner: vi.fn(async () => true),
     } as unknown as TaskManager;
@@ -174,6 +176,12 @@ describe("R36 delete_session lifecycle lab", () => {
           registration: candidate,
           localRetentionReason: null,
         }),
+        moveDirectory: async (path) => {
+          const sessionId = path.slice("/state/".length);
+          removed.push(sessionId);
+          registrations.delete(sessionId);
+        },
+        listTrash: async () => [],
         removeDirectory: async (path) => {
           const sessionId = path.slice("/state/".length);
           removed.push(sessionId);
@@ -254,6 +262,9 @@ describe("R36 delete_session lifecycle lab", () => {
   it("retires and garbage-collects a missing session with only a terminal historical pid", async () => {
     let now = STARTED_AT;
     const fixture = await durableMissingSessionFixture("reaped", () => now);
+    const staleTrash = join(fixture.stateDirectory, "_gc-trash", "stale");
+    await mkdir(staleTrash, { recursive: true });
+    await writeFile(join(staleTrash, "payload"), "old");
     const logger = testLogger();
     const taskManager = missingSessionTaskManager();
     const coordinator = new RunnerRecoveryCoordinator({
@@ -315,6 +326,7 @@ describe("R36 delete_session lifecycle lab", () => {
       await coordinator.stop();
 
       expect(await pathExists(fixture.paths.sessionDirectory)).toBe(false);
+      expect(await pathExists(staleTrash)).toBe(false);
     } finally {
       await coordinator.stop();
       await rm(fixture.root, { recursive: true, force: true });
@@ -433,6 +445,7 @@ function silentLogger() {
 function missingSessionTaskManager(): TaskManager {
   return {
     hydrateRunnerRecoveryTask: vi.fn(async () => null),
+    listExistingSessionIds: vi.fn(async () => []),
     markRunnerFailureAndResume: vi.fn(async () => {}),
     projectClosedRunner: vi.fn(async () => true),
   } as unknown as TaskManager;

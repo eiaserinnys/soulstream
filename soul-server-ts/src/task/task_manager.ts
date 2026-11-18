@@ -435,6 +435,10 @@ export class TaskManager {
     return task && isOrchestrationDecisionTask(task) ? null : task;
   }
 
+  async listExistingSessionIds(sessionIds: string[]): Promise<string[]> {
+    return await this.db.listExistingSessionIds(sessionIds);
+  }
+
   /** 거둔 러너의 메모리 task를 내린다. 다음 조회는 저장소에서 다시 읽는다. */
   forgetRunnerRecoveryTask(task: Task): void {
     this.forgetTaskObject(task);

@@ -10,6 +10,18 @@ import {
 const logger = pino({ level: "silent" });
 
 describe("SessionDataHostClient", () => {
+  it("splits existing-id reads into batches of 500", async () => {
+    const requests: string[][] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const { args } = JSON.parse(String(init?.body)) as { args: [string[]] };
+      requests.push(args[0]);
+      return new Response(JSON.stringify(args[0].filter((id) => id.endsWith("0"))));
+    }));
+    const client = new SessionDataHostClient({ orch: { baseUrl: "http://orchestrator.test", headers: {} }, logger });
+    const ids = Array.from({ length: 1001 }, (_, i) => `s${i}`);
+    await expect(client.listExistingSessionIds(ids)).resolves.toEqual(ids.filter((id) => id.endsWith("0")));
+    expect(requests).toEqual([ids.slice(0, 500), ids.slice(500, 1000), ids.slice(1000)]);
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -39,6 +51,7 @@ describe("SessionDataHostClient", () => {
       "generation_checkpoint_material",
       "caller_chain",
       "owner_node",
+      "existing_session_ids",
     ]);
   });
 
@@ -93,6 +106,7 @@ describe("SessionDataHostClient", () => {
         },
         caller_chain: { root: null, ancestors: [] },
         owner_node: { node_id: "node-a" },
+        existing_session_ids: ["s1"],
       };
       return new Response(JSON.stringify(result[operation ?? ""]), { status: 200 });
     });
@@ -131,6 +145,7 @@ describe("SessionDataHostClient", () => {
       () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20, unsummarizedEventLimit: 200 }),
       () => client.getSessionCallerChain("s1"),
       () => client.getSessionOwnerNode("s1"),
+      () => client.listExistingSessionIds(["s1"]),
     ];
 
     for (const call of calls) await call();

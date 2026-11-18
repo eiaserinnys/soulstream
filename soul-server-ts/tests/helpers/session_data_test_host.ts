@@ -29,6 +29,7 @@ export function configureTestSessionDataHost(
   );
 
   db.configureSessionDataHost({
+    listExistingSessionIds: (sessionIds: string[]) => sessions.listExistingSessionIds(sessionIds),
     getSession: (sessionId: Parameters<SessionDataHost["getSession"]>[0]) => sessions.getSession(sessionId),
     getSessionOwnerNode: (sessionId: Parameters<SessionDataHost["getSessionOwnerNode"]>[0]) => sessions.getSessionOwnerNode(sessionId),
     listSessionsSummary: (params: Parameters<SessionDataHost["listSessionsSummary"]>[0]) => sessions.listSessionsSummary(params),

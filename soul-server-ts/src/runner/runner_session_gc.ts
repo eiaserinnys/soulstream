@@ -1,7 +1,12 @@
-import { rm } from "node:fs/promises";
+// The sweep keeps its retention decisions and lock-to-trash ordering together;
+// splitting the transaction across modules would obscure the deletion boundary.
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Logger } from "pino";
 
+import { renameWithTransientRetry } from "../atomic_file_rename.js";
 import {
   inspectRunnerDurableState,
   probeRunnerDurableRetention,
@@ -19,6 +24,7 @@ import {
   countRetainedReasons,
   hasCentralDeletionOverride,
   hasProvenEmptyPrebootstrapEvidence,
+  isDeletedCentralSessionEvidence,
   isRetiredWithoutLifecycleAndNotAlive,
   sameRegistrationGeneration,
   terminalCandidateReason,
@@ -45,6 +51,8 @@ export interface RunnerSessionGarbageCollectorDependencies {
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerDurableRetentionProbe>;
   removeDirectory(path: string): Promise<void>;
+  moveDirectory(source: string, destination: string): Promise<void>;
+  listTrash(path: string): Promise<string[]>;
 }
 
 interface RunnerSessionGcDiagnostics {
@@ -59,7 +67,7 @@ export interface RunnerSessionGcResult {
 }
 
 export interface RunnerSessionGarbageCollectionPolicy {
-  centralSessionExists(sessionId: string): Promise<boolean>;
+  listExistingSessionIds(sessionIds: string[]): Promise<string[]>;
 }
 
 export class RunnerSessionGarbageCollector {
@@ -145,6 +153,29 @@ export class RunnerSessionGarbageCollector {
   ): Promise<RunnerSessionGcResult> {
     const result: RunnerSessionGcResult = { removed: [], retained: [] };
     let lastFailure: unknown;
+    const initialIds = scan.registrations.filter((registration) =>
+      !terminalCandidateReason(registration, startedAtMs, this.retentionMs)
+      && hasCentralDeletionOverride(registration, policy),
+    ).map((registration) => registration.config.sessionId);
+    const queriedIds = new Set(initialIds);
+    let existingIds = new Set<string>();
+    let lookupFailure: unknown;
+    if (policy && initialIds.length > 0) {
+      try {
+        const lookup = () => policy.listExistingSessionIds(initialIds);
+        existingIds = new Set(phaseObservation
+          ? await phaseObservation.runAsync("centralSessionLookup", { label: "initial" }, lookup)
+          : await lookup());
+      } catch (error) {
+        lookupFailure = error;
+      }
+    }
+    const initialEvidence = (registration: RunnerRegistration): boolean => {
+      if (!hasCentralDeletionOverride(registration, policy)) return false;
+      if (lookupFailure !== undefined) throw lookupFailure;
+      if (!queriedIds.has(registration.config.sessionId)) throw new Error("central session was not included in GC lookup");
+      return !existingIds.has(registration.config.sessionId);
+    };
     for (const registration of scan.registrations) {
       const candidateReason = terminalCandidateReason(
         registration,
@@ -163,6 +194,7 @@ export class RunnerSessionGarbageCollector {
         async () => {
           diagnostics.mutationLockCallbackEntries += 1;
           try {
+            if (lookupFailure !== undefined && queriedIds.has(registration.config.sessionId)) throw lookupFailure;
             assertOwnedSessionDirectory(
               this.stateDirectory,
               registration.config.paths.sessionDirectory,
@@ -220,12 +252,7 @@ export class RunnerSessionGarbageCollector {
                 });
                 return;
               }
-              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
-                retentionProbe.registration,
-                policy,
-                phaseObservation,
-                "initial",
-              );
+              deletedSessionEvidence = initialEvidence(retentionProbe.registration);
               if (!deletedSessionEvidence) {
                 result.retained.push({
                   sessionId: registration.config.sessionId,
@@ -262,12 +289,7 @@ export class RunnerSessionGarbageCollector {
               return;
             }
             if (!probeReason) {
-              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
-                hydrated,
-                policy,
-                phaseObservation,
-                "initial",
-              );
+              deletedSessionEvidence = initialEvidence(hydrated);
             }
             if (!deletedSessionEvidence) {
               const retiredWithoutLifecycle = isRetiredWithoutLifecycleAndNotAlive(hydrated);
@@ -335,7 +357,6 @@ export class RunnerSessionGarbageCollector {
                 latest,
                 policy,
                 phaseObservation,
-                "beforeDelete",
               )
             ) {
               result.retained.push({
@@ -344,9 +365,18 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            const remove = () => this.deps.removeDirectory(
-              latest.config.paths.sessionDirectory,
-            );
+            const sessionDirectory = latest.config.paths.sessionDirectory;
+            const trashDirectory = join(this.stateDirectory, "_gc-trash");
+            const destination = join(trashDirectory, `${basename(sessionDirectory)}-${randomUUID()}`);
+            const remove = async () => {
+              try {
+                await this.deps.moveDirectory(sessionDirectory, destination);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+                this.logger.warn({ err: error, sessionId: latest.config.sessionId }, "runner session GC rename failed; removing in place");
+                await this.deps.removeDirectory(sessionDirectory);
+              }
+            };
             const removeDirectory = () => runRemoval ? runRemoval(remove) : remove();
             if (phaseObservation) {
               await phaseObservation.runAsync("removeDirectory", {
@@ -388,6 +418,30 @@ export class RunnerSessionGarbageCollector {
         ...observationArgs,
       );
     }
+    const trashStarted = this.deps.monotonicNow();
+    const trashDirectory = resolve(this.stateDirectory, "_gc-trash");
+    let trashRemoved = 0;
+    try {
+      const children = await this.deps.listTrash(trashDirectory);
+      for (const child of children) {
+        const path = resolve(trashDirectory, child);
+        if (dirname(path) !== trashDirectory) {
+          this.logger.warn({ path }, "runner session GC skipped invalid trash child");
+          continue;
+        }
+        try {
+          await this.deps.removeDirectory(path);
+          trashRemoved += 1;
+        } catch (error) {
+          this.logger.warn({ err: error, path }, "runner session GC could not remove trash child");
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.logger.warn({ err: error, path: trashDirectory }, "runner session GC could not read trash");
+      }
+    }
+    const trashDurationMs = Math.max(0, this.deps.monotonicNow() - trashStarted);
     const elapsedMs = durationMs();
     const phaseDurationsMs = phaseObservation
       ? phaseDurationsWithOtherMs(phaseObservation, elapsedMs)
@@ -403,6 +457,8 @@ export class RunnerSessionGarbageCollector {
         unreadableRegistrations: scan.errors.length,
         startedAtMs,
         durationMs: elapsedMs,
+        trashRemoved,
+        trashDurationMs,
         ...diagnostics,
         ...(phaseObservation ? {
           phaseDurationsMs,
@@ -422,23 +478,6 @@ export class RunnerSessionGarbageCollector {
     );
     return result;
   }
-}
-
-async function isDeletedCentralSessionEvidence(
-  registration: RunnerRegistration,
-  policy: RunnerSessionGarbageCollectionPolicy | undefined,
-  phaseObservation?: RunnerPhaseObservation,
-  label: "initial" | "beforeDelete" = "initial",
-): Promise<boolean> {
-  if (!policy || !registration.retiredAt || registration.pidAlive) return false;
-  const lookup = () => policy.centralSessionExists(registration.config.sessionId);
-  const exists = phaseObservation
-    ? await phaseObservation.runAsync("centralSessionLookup", {
-      sessionId: registration.config.sessionId,
-      label,
-    }, lookup)
-    : await lookup();
-  return !exists;
 }
 
 function phaseDurationsWithOtherMs(
@@ -486,6 +525,11 @@ function defaultDependencies(
       phaseObservation,
       recoveryStorage,
     ),
-    removeDirectory: async (path) => await rm(path, { recursive: true }),
+    removeDirectory: async (path) => await rm(path, { recursive: true, force: true }),
+    moveDirectory: async (source, destination) => {
+      await mkdir(dirname(destination), { recursive: true });
+      await renameWithTransientRetry(source, destination);
+    },
+    listTrash: async (path) => await readdir(path),
   };
 }

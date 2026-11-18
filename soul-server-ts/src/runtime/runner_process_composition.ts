@@ -129,6 +129,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
   taskManager: Pick<
     TaskManager,
     | "hydrateRunnerRecoveryTask"
+    | "listExistingSessionIds"
     | "markRunnerFailure"
     | "projectClosedRunner"
     | "listTasks"

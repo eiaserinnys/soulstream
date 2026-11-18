@@ -8,6 +8,14 @@ import { EventReadRepository } from "../src/control_plane/repositories/event_rea
 import { SessionReadRepository } from "../src/control_plane/repositories/session_read_repository.js";
 
 describe("session-data read repositories", () => {
+  it("reads only existing session ids in one query", async () => {
+    const { sql, calls } = createSql(() => [{ session_id: "s1" }]);
+    const repository = new SessionReadRepository(sql);
+    await expect(repository.listExistingSessionIds(["s1", "missing"])).resolves.toEqual(["s1"]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toContain("session_id = ANY(");
+    expect(calls[0]?.values).toEqual([["s1", "missing"]]);
+  });
   it("owns all four session read queries and normalizes numeric summary fields", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const { sql, calls } = createSql((text) => {

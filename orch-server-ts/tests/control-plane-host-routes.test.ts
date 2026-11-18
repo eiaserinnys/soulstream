@@ -959,7 +959,7 @@ describe("control-plane host routes", () => {
   });
 
   it("dispatches every session-data operation in the exported whitelist", async () => {
-    // 쓰기 9개와 읽기 21개를 여기에 그대로 적는다. 화이트리스트에서 op를 빼거나 더하면
+    // 쓰기 9개와 읽기 22개를 여기에 그대로 적는다. 화이트리스트에서 op를 빼거나 더하면
     // 아래 정확 일치 단언이 실패한다.
     const expectedOperations = {
       put_report_entry: ["persistentReports", null, "put"],
@@ -992,8 +992,9 @@ describe("control-plane host routes", () => {
       generation_checkpoint_material: ["sessionReadComposites", null, "getGenerationCheckpointMaterial"],
       caller_chain: ["sessionReads", null, "getSessionCallerChain"],
       owner_node: ["sessionReads", null, "getSessionOwnerNode"],
+      existing_session_ids: ["sessionReads", null, "listExistingSessionIds"],
     } as const;
-    expect(Object.keys(expectedOperations)).toHaveLength(30);
+    expect(Object.keys(expectedOperations)).toHaveLength(31);
     expect(sessionDataOperations).toEqual(expectedOperations);
 
     const repositories: Record<string, Record<string, ReturnType<typeof vi.fn>>> = {};
@@ -1013,11 +1014,29 @@ describe("control-plane host routes", () => {
         method: "POST",
         url: `/api/session-data/host/${operation}`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { args: [] },
+        payload: { args: operation === "existing_session_ids" ? [["s1"]] : [] },
       });
       expect(response.statusCode, operation).toBe(200);
       expect(repositories[repositoryKey]![method], operation).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("rejects invalid and oversized existing-session id requests", async () => {
+    const listExistingSessionIds = vi.fn(async () => ["s1"]);
+    const app = Fastify();
+    apps.push(app);
+    registerPersistenceHostRoutes(app, {
+      nodeCredentials: null, authBearerToken: token,
+      repositoryProvider: async () => ({ sessionReads: { listExistingSessionIds } }) as unknown as PersistenceHostRepositories,
+    });
+    for (const ids of [Array.from({ length: 501 }, (_, i) => `s${i}`), ["s1", 5], "s1"]) {
+      const response = await app.inject({ method: "POST", url: "/api/session-data/host/existing_session_ids", headers: { authorization: `Bearer ${token}` }, payload: { args: [ids] } });
+      expect(response.statusCode).toBe(400);
+    }
+    expect(listExistingSessionIds).not.toHaveBeenCalled();
+    const response = await app.inject({ method: "POST", url: "/api/session-data/host/existing_session_ids", headers: { authorization: `Bearer ${token}` }, payload: { args: [["s1", "missing"]] } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(["s1"]);
   });
 
   it("returns idempotency conflicts across the session mutation host boundary", async () => {
