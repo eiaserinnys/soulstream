@@ -29,6 +29,9 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useCardStore } from '../../../store/cardStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 const card = cardFixture({ status: 'review', assigneeSessionId: 'root', nodeId: 'node-1' });
 const root = { agentSessionId: 'root', displayName: '담당 세션', agentId: 'roselin', nodeId: 'node-1', modelPreset: 'sol', status: 'idle', createdAt: '', updatedAt: '' };
 const child = { ...root, agentSessionId: 'child', displayName: '작업 세션', callerSessionId: 'root' };
@@ -83,6 +86,7 @@ test('카드 배경은 폴더 컨테이너이고 small은 폴더 히스토리의
   expect(screen.getAllByTestId('session-card-identity')[0].props.children).toContain('node-1 · sol');
   expect(flat(screen.UNSAFE_getByType(require('react-native').FlatList).props.contentContainerStyle).gap).toBe(result.current.cardLayout.gap);
   expect(flat(screen.getByTestId('task-run-depth-child').props.style).marginLeft).toBe(result.current.spacing.md);
+  await settleTimers();
 });
 test('카드 셋째 줄은 최신 보고 제목 → 최신 커멘트 → 요청 순서이다', () => {
   const screen = render(<CardRow api={null} card={card} onOpen={jest.fn()} />);

@@ -32,7 +32,7 @@ jest.mock('../../../hooks/usePlannerFolder', () => ({
 
 import React from 'react';
 import { PixelRatio, StyleSheet } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { PlannerBlock } from '../../../api/plannerTypes';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
 import { useAuthStore } from '../../../store/authStore';
@@ -41,6 +41,9 @@ import { TabletMarkdownEditor } from '../TabletMarkdownEditor';
 import { FolderBoardContent } from '../FolderBoardContent';
 import { FolderCards } from '../FolderCards';
 import { cardFixture } from '../../../test-support/cards';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const memoBlock = {
   id: 'memo-1',
@@ -139,6 +142,7 @@ test.each([
       .toMatchObject({ minHeight: actionSize, height: actionSize, width: actionSize });
     const cardRow = screen.getByTestId('card-row-card-1');
     expect(cardRow.findAll((node) => StyleSheet.flatten(node.props.style)?.minHeight === 112).length).toBeGreaterThan(0);
+    await settleTimers();
   },
 );
 

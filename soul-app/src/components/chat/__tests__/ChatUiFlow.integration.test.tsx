@@ -14,6 +14,9 @@ import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 import { groupChatEvents, projectManuscriptMessages } from '../groupChatEvents';
 import { projectHiddenConversationTurns } from '../hiddenConversationProjection';
 import type { SessionEvent } from '../../../api/types';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 // Existing ChatBody/AssistantMessage test patterns: replace OS transport and
 // native markdown/slider only. History, SSE gate, store, list and draft are real.
@@ -112,6 +115,7 @@ test.each(['default', 'manuscript'] as const)('real %s body appends into the dra
   mockApi.intervene.mockResolvedValue({ delivered: true, outcome: 'delivered' });
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+  await settleTimers();
 });
 test('submit clearing closes the notice line before the response and keeps it closed on failure', async () => {
   let rejectRequest!: (error: Error) => void;
@@ -130,6 +134,7 @@ test('submit clearing closes the notice line before the response and keeps it cl
   expect(useChatStore.getState().pendingOptimisticBySession.one.pendingStatus).toBe('failed');
   expect(input().props.value).toBe('');
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+  await settleTimers();
 });
 test('an opened notice line resets when the session changes', async () => {
   const screen = await open();
@@ -194,6 +199,7 @@ test('SSE arrives before the same id history response through the reader and pro
   await act(async () => resolveHistory({ messages: [stored], next_cursor: null }));
   await waitFor(() => expect(screen.getAllByLabelText('인원수')).toHaveLength(1));
   expect(useChatStore.getState().eventsBySession.one.filter(event => event.id === ui.id)).toHaveLength(1);
+  await settleTimers();
 });
 test('same id SSE/history is one row, row remount retains state, changing session resets defaults', async () => {
   const screen = await open(); edit(screen);
@@ -217,6 +223,7 @@ test('menu copies and selects current values, then returns to the same interacti
   expect(screen.queryByLabelText('인원수')).toBeNull();
   fireEvent.press(screen.getByTestId('message-selection-done'));
   expect(screen.getByLabelText('인원수').props.value).toBe('12');
+  await settleTimers();
 });
 test('ordinary live answer → UI → ordinary final keeps both responses', async () => {
   mockApi.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
@@ -228,6 +235,7 @@ test('ordinary live answer → UI → ordinary final keeps both responses', asyn
   await sse('assistant_message', { content: '일반 최종', final: true }, '3');
   expect(screen.getByLabelText('인원수')).toBeTruthy();
   expect(screen.getByText('일반 최종')).toBeTruthy();
+  await settleTimers();
 });
 test('text_start/delta interrupted by UI keeps separate text runs', async () => {
   mockApi.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
@@ -241,6 +249,7 @@ test('text_start/delta interrupted by UI keeps separate text runs', async () => 
   for (const event of events) await sse(event.type, event.data, event.id);
   expect(screen.getByText('앞 글')).toBeTruthy(); expect(screen.getByText('뒤 글')).toBeTruthy();
   expect(screen.getAllByLabelText('인원수')).toHaveLength(1);
+  await settleTimers();
 });
 test('PAS tool/thinking activity breaks at UI and preserves delegation/notification/keepalive hiding', async () => {
   const events: SessionEvent[] = [

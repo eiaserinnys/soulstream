@@ -38,6 +38,9 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { ROOT_SECTION_CONFIG } from '../../../navigation/rootSectionConfig';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 import { SidebarPane } from '../SidebarPane';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 section-title 역할을 쓴다', () => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
@@ -112,6 +115,7 @@ test('사이드바 중요 작업도 공통 순서 변경·오류 안내와 drag 
   expect(mockMoveStarredFolderOrder).toHaveBeenCalledWith('a', null);
   expect(alert).toHaveBeenCalledWith('작업을 완료하지 못했습니다.', '저장 실패');
   alert.mockRestore();
+  await settleTimers();
 });
 
 test.each([

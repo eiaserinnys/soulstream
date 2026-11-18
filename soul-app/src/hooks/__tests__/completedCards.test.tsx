@@ -5,6 +5,9 @@ import {usePlannerFolder} from '../usePlannerFolder';
 import {usePlannerFolderDetail} from '../usePlannerReads';
 import {cardFixture} from '../../test-support/cards';
 import {usePlannerStore} from '../../store/plannerStore';
+// useCompletedCards applies its 250ms search debounce after mount; let it fire inside act
+// before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 260)); });
 
 test('hidden skips completed reads; shown pages keep fixed period and reset on invalidation',async()=>{
   const card=cardFixture({id:'done',status:'done'});
@@ -24,6 +27,7 @@ test('hidden skips completed reads; shown pages keep fixed period and reset on i
   expect(listCompletedCards.mock.calls[2][0]).toMatchObject({folderId:first.folderId,q:first.q,limit:60});
   expect(Date.parse(listCompletedCards.mock.calls[2][0].completedBefore)).toBeGreaterThanOrEqual(Date.parse(first.completedBefore));
   expect(listCompletedCards.mock.calls[2][0].cursor).toBeUndefined();
+  await settleTimers();
 });
 test('both folder reads always exclude done independently of completion visibility',async()=>{
   const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});

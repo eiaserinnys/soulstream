@@ -15,6 +15,9 @@ import { useCardStore } from '../../store/cardStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { CompletedCardsToggle } from '../../components/planner/CompletedCardsToggle';
 import { useUIStore } from '../../store/uiStore';
+// Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
+// promises) must settle inside act before RNTL's cleanup yields to the event loop.
+const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
 const mockApi = { listCards: jest.fn(), listCompletedCards: jest.fn(), getCard: jest.fn(), setCardStatus: jest.fn() };
 test('home composer floats over the board and measured height reserves lane scroll space only', async () => {
@@ -64,6 +67,7 @@ test('전체 홈과 폴더 선호를 따로 유지하고 홈 재마운트에도 
   screen = render(<CardHomeScreen onOpen={() => {}} />);
   await waitFor(() => expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   expect(screen.getByLabelText('완료·취소 숨김').props.accessibilityState.selected).toBe(false);
+  await settleTimers();
 });
 
 test('완료 표시 중 드롭 저장 후 숨김·재마운트·다시 표시해도 완료 상태를 보존한다', async () => {
@@ -102,4 +106,5 @@ test('완료 표시 중 드롭 저장 후 숨김·재마운트·다시 표시해
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   await waitFor(()=>expect(screen.getByTestId('postit-card-card-1')).toBeTruthy());
   expect(useCardStore.getState().rows[card.id].status).toBe('done');
+  await settleTimers();
 });
