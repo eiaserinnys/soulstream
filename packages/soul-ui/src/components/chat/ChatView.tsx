@@ -48,6 +48,7 @@ import {
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
+  hasNewMessageTailChange,
   MAX_SEARCH_FOCUS_HISTORY_PAGES,
   messageOrGroupKey,
   resolveFocusEventId,
@@ -748,7 +749,7 @@ function ChatViewContent({
       prevVisibleItemsRef.current,
       timelineItems,
     );
-    const newMessageItemsChanged = !areMessageGroupsRenderEqual(
+    const newMessageItemsChanged = hasNewMessageTailChange(
       prevVisibleItemsRef.current.filter((item) => !isGenerationDivider(item)),
       timelineItems.filter((item) => !isGenerationDivider(item)),
     );
@@ -1047,9 +1048,8 @@ function ChatViewContent({
       )}
       </>}
 
-      {transcriptFallback == null && showNewMessage && !isFollowing && (
+      {presentation === "manuscript" && transcriptFallback == null && showNewMessage && !isFollowing && (
         <div className="relative">
-          {presentation === "manuscript" ? (
             <DashboardIconCap
               appearance="bare"
               label="새 메시지로 이동"
@@ -1058,25 +1058,26 @@ function ChatViewContent({
             >
               <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
             </DashboardIconCap>
-          ) : (
-            <button
-              onClick={scrollToBottom}
-              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {"\u2193"} 새 메시지
-            </button>
-          )}
         </div>
       )}
 
-      {presentation === "default" && <div className="flex shrink-0 justify-end pb-2 pr-3">
+      {presentation === "default" && <div className="relative flex shrink-0 items-center justify-end pb-2">
+        {transcriptFallback == null && showNewMessage && !isFollowing && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-md border border-accent-blue/30 bg-accent-blue/15 px-2.5 py-1.5 text-xs font-medium text-accent-blue glass-shadow-xs transition-colors hover:bg-accent-blue/25"
+          >
+            {"\u2193"} 새 메시지
+          </button>
+        )}
         <button
           onClick={toggleFollow}
+          aria-pressed={isFollowing}
           className={cn(
             "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
             "border glass-shadow-xs",
             isFollowing
-              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25"
+              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >
