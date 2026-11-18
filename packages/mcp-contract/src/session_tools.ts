@@ -88,7 +88,8 @@ export const sessionTools = {
         "세션 목록을 페이지네이션하여 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. "
         + "기간을 지정하면 그 기간에 이벤트가 있는 세션만 반환한다. 진행 중 세션은 확인 시각을 until로 고정한다"
         + "(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합). "
-        + "영구 세션(PAS)을 찾을 때는 list_persistent_sessions를 쓴다.",
+        + "영구 세션(PAS)을 찾을 때는 list_persistent_sessions를 쓴다. "
+        + "결과는 since/until 유무와 상관없이 최근 갱신 순(updated_at 내림차순)이다.",
       inputSchema: {
         cursor: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),
@@ -212,12 +213,13 @@ export const sessionTools = {
         session_id: z.string(),
       },
     } },
-  search_session_history: { name: "search_session_history", audience: "all", timeoutMs: 15000, config: {
+  search_session_history: { name: "search_session_history", audience: "all", timeoutMs: 15000, strictInputSchema: true, config: {
       description:
         "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). "
         + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다. '
         + "세션 단위로 찾을 때는 search_sessions를 먼저 쓴다. "
-        + "호출한 세션 자신의 이벤트는 session_ids에 직접 넣지 않는 한 결과에서 뺀다.",
+        + "호출한 세션 자신의 이벤트는 session_ids에 직접 넣지 않는 한 결과에서 뺀다. "
+        + "세션으로 거르려면 session_ids(배열)를 쓴다. 스키마에 없는 키는 오류로 돌려준다.",
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),
