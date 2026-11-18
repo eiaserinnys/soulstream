@@ -980,10 +980,27 @@ def session_routes(context, session_id: str) -> None:
 
 def open_dashboard_chat(context, page: Page) -> None:
     session_routes(context, "dash-1")
-    page.goto("/?session=dash-1")
-    wait_shell(page)
     if page.viewport_size["width"] <= 760:
-        page.click('[data-testid="v3-mobile-tab-chat"]')
+        folder_session = {"agentSessionId": "dash-1", "status": "completed", "sessionType": "claude",
+                          "nodeId": "eiaserinnys", "folderId": "folder-1", "agentId": "default",
+                          "eventCount": 20, "displayName": "검수 세션", "prompt": "로딩 표시를 가운데로",
+                          "createdAt": "2026-11-17T00:00:00.000Z", "updatedAt": "2026-11-18T03:00:00.000Z",
+                          "completedAt": "2026-11-18T03:00:00.000Z"}
+        load_json(context, "**/api/planner/folders/folder-1*", {
+            **PROJECT_AGGREGATE, "sessions": {"items": [folder_session], "nextCursor": None},
+        })
+        page.goto("/")
+        wait_shell(page)
+        open_folder(page)
+        page.get_by_text("검수 세션").first.wait_for(state="visible", timeout=20000)
+        page.evaluate("""() => {
+          const el = Array.from(document.querySelectorAll('.v3-runs *'))
+            .find(e => (e.textContent || '').trim() === '검수 세션');
+          (el.closest('button,[role=button],[tabindex]') || el).click();
+        }""")
+    else:
+        page.goto("/?session=dash-1")
+        wait_shell(page)
 
 
 def open_pas_older(context, page: Page) -> None:
@@ -1061,8 +1078,8 @@ def capture_search_states(browser, base: str, out: Path, scene: dict, width: int
           value: document.querySelector('[placeholder="검색어를 입력하세요..."]').value,
           dialog: !!document.querySelector('[role=dialog]')})""")
         page.keyboard.press("Escape")
-        page.wait_for_timeout(300)
-        esc_closed = page.locator('[role="dialog"]').count() == 0
+        page.locator('[data-slot="dialog-popup"]:visible').wait_for(state="hidden", timeout=10000)
+        esc_closed = page.locator('[data-slot="dialog-popup"]:visible').count() == 0
         passed = (has_results and has_empty and focus_on_open and tab_inside and esc_closed and not resize["overflow"] and resize["dialog"]
                   and not narrow_overflow and resize["value"] == "유지할 입력" and min(initial_height, results_height, empty_height) >= 159)
         return {"scene": scene["key"], "width": width, "theme": theme, "passed": passed,
@@ -1190,7 +1207,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="프레임 로딩·실패 자리 시각 검수")
     parser.add_argument("base_url", help="대시보드 dev 서버 주소 (예: http://127.0.0.1:5173)")
     parser.add_argument("output_dir", help="캡처와 measurements.json 을 둘 폴더")
-    parser.add_argument("--theme", choices=("dark", "light"), default="dark")
+    parser.add_argument("--theme", choices=("dark", "light", "all"), default="all")
     parser.add_argument("--screen", action="append", choices=[scene["key"] for scene in SCENES],
                         help="이 화면만 찍는다 (여러 번 지정 가능)")
     args = parser.parse_args()
@@ -1207,18 +1224,19 @@ def main() -> int:
             for width in WIDTHS:
                 for scene in scenes:
                     themes = scene.get("themes", ("dark",))
-                    if args.theme not in themes:
-                        continue
-                    try:
-                        if scene.get("mode") == "search-behavior":
-                            captures.append(capture_search_states(browser, base, out, scene, width, args.theme))
-                        elif scene.get("mode") == "behavior":
-                            captures.append(capture_runtime(browser, base, out, scene, width, args.theme))
-                        else:
-                            captures.append(capture_scene(browser, base, out, scene, width, args.theme))
-                    except Exception as error:  # noqa: BLE001 — 장면별 실패를 기록하고 나머지를 계속 잰다.
-                        captures.append({"scene": scene["key"], "width": width, "theme": args.theme,
-                                         "passed": False, "reason": str(error)})
+                    for theme in themes:
+                        if args.theme != "all" and theme != args.theme:
+                            continue
+                        try:
+                            if scene.get("mode") == "search-behavior":
+                                captures.append(capture_search_states(browser, base, out, scene, width, theme))
+                            elif scene.get("mode") == "behavior":
+                                captures.append(capture_runtime(browser, base, out, scene, width, theme))
+                            else:
+                                captures.append(capture_scene(browser, base, out, scene, width, theme))
+                        except Exception as error:  # noqa: BLE001 — 장면별 실패를 기록하고 나머지를 계속 잰다.
+                            captures.append({"scene": scene["key"], "width": width, "theme": theme,
+                                             "passed": False, "reason": str(error)})
         finally:
             browser.close()
 

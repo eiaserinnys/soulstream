@@ -287,7 +287,7 @@ async function documentReader(browser: Browser, width: number) {
     await dialog.waitFor({ state: "hidden" });
     await page.locator("a:visible", { hasText: "없는 문서" }).first().click();
     await dialog.waitFor({ state: "visible" });
-    const err = dialog.locator(".v3-board-load-state p");
+    const err = dialog.locator('[data-slot="frame-notice"] p');
     await err.waitFor({ state: "visible" });
     m.errorText = await err.textContent();
     m.errorUS = await us(err);
