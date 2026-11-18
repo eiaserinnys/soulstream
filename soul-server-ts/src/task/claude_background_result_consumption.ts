@@ -40,7 +40,7 @@ export function classifyClaudeBackgroundConsumptionProof(
   }
   if (start.toolName === "SendMessage") {
     const matches = runtimeTasks.filter((task) =>
-      task.toolUseId === start.toolUseId && task.isBackgrounded === true &&
+      task.toolUseId === start.toolUseId &&
       TERMINAL_TASK_OUTPUT_STATUSES.has(task.status)
     );
     return matches.length === 1

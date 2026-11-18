@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { attachClaudeBackgroundDeliveryMetadata } from "../../src/engine/claude_background_delivery_metadata.js";
+import { attachClaudeBackgroundProvenance } from "../../src/engine/claude_background_provenance.js";
 import { markPostResultDrainEvent } from "../../src/engine/claude_event_phase.js";
 import { attachClaudeResultReceiptMetadata } from
   "../../src/engine/claude_result_receipt_metadata.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import { buildClaudeBackgroundGenerationIdentity } from "../../src/task/claude_background_generation_identity.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
   ClaudeRuntimeTaskFollowupController,
@@ -89,14 +92,14 @@ function makeMocks() {
 }
 
 describe("TaskExecutor Claude runtime task follow-up", () => {
-  it.each(["foreground", "result-before-terminal", "error"] as const)(
+  it.each(["foreground", "result-before-terminal", "error", "sdk-membership"] as const)(
     "SendMessage %s reaches the ledger at turn end", async (scenario) => {
       const mocks = makeMocks();
       const task = makeTask();
       task.codexThreadId = "sdk-session-1";
       task.claudeRuntime = { updatedAt: 1, tasks: { child: {
         taskId: "child", status: "running", updatedAt: 1,
-        isBackgrounded: true, toolUseId: "send-1",
+        ...(scenario === "sdk-membership" ? {} : { isBackgrounded: true }), toolUseId: "send-1",
       } } };
       let tombstone: { relationKey: string; completionId: string } | undefined;
       let row: Record<string, unknown> | undefined;
@@ -137,6 +140,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         onResume: resume, releaseRetainedRunner: async () => undefined,
         logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
       });
+      const collect = vi.spyOn(controller, "collect");
       let turns = 0;
       const engine: EnginePort = {
         backendId: "claude", workspaceDir: "/tmp/claude-roselin",
@@ -147,7 +151,22 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
             const result = { type: "tool_result", tool_name: "SendMessage", tool_use_id: "send-1", is_error: scenario === "error", result: "report", timestamp: 2 } as SSEEventPayload;
             if (scenario === "result-before-terminal") yield result;
             task.claudeRuntime!.tasks.child!.status = "completed";
-            yield { type: "claude_runtime_task_updated", task_id: "child", session_id: "sdk-session-1", patch: { status: "completed", is_backgrounded: true, tool_use_id: "send-1" } } as unknown as SSEEventPayload;
+            const terminal = { type: "claude_runtime_task_updated", task_id: "child", session_id: "sdk-session-1", patch: { status: "completed", ...(scenario === "sdk-membership" ? {} : { is_backgrounded: true }), tool_use_id: "send-1" } } as unknown as SSEEventPayload;
+            if (scenario === "sdk-membership") {
+              const identity = buildClaudeBackgroundGenerationIdentity({
+                sourceNode: "node-1", agentSessionId: task.agentSessionId,
+                sdkSessionId: "sdk-session-1", sdkTaskId: "child", initiatingToolUseId: "send-1",
+              });
+              attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+              attachClaudeBackgroundDeliveryMetadata(terminal, {
+                initiatingToolUseId: "send-1", deliveryId: identity.deliveryId,
+                completionId: identity.completionId, relationKey: identity.relationKey,
+                producerTerminalRevision: "1", deliveryCreatedAt: "2026-11-18T00:00:00.000Z",
+                source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+                storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+              });
+            }
+            yield terminal;
             if (scenario !== "result-before-terminal") yield result;
           } else {
             yield exactResult(params.inputUuid);
@@ -166,9 +185,11 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       executor.startNewExecution(task, claudeAgent);
       await task.executionPromise;
-      expect(turns).toBe(scenario === "foreground" ? 1 : 2);
-      expect(repository.recordRelationConsumed).toHaveBeenCalledTimes(scenario === "foreground" ? 1 : 0);
-      expect(queue).toHaveBeenCalledTimes(scenario === "foreground" ? 0 : 1);
+      const consumed = scenario === "foreground" || scenario === "sdk-membership";
+      expect(turns).toBe(consumed ? 1 : 2);
+      expect(repository.recordRelationConsumed).toHaveBeenCalledTimes(consumed ? 1 : 0);
+      expect(queue).toHaveBeenCalledTimes(consumed ? 0 : 1);
+      if (scenario === "sdk-membership") expect(collect).toHaveReturnedWith(expect.any(String));
       expect(resume).not.toHaveBeenCalled();
     },
   );
