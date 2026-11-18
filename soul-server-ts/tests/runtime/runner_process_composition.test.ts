@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { RunnerRegistrationScanCache } from "../../src/runner/runner_registration_scan_cache.js";
+import { RunnerRecoveryCoordinator } from "../../src/runner/runner_recovery_coordinator.js";
 
 import {
   composeRunnerProcessRuntime,
@@ -22,6 +24,37 @@ describe("runner process composition feature gate", () => {
       await chmod(directory, 0o755).catch(() => undefined);
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("shares a coordinator scan result with the live inventory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "runner-shared-cache-"));
+    directories.push(root);
+    const directory = join(root, "session-cached");
+    await mkdir(directory);
+    await writeFile(join(directory, "runner-config.json"), "{}");
+    const cache = new RunnerRegistrationScanCache();
+    const readFresh = vi.fn(async () => ({
+      config: { sessionId: "session-cached", paths: { sessionDirectory: directory } },
+      pid: null, pidAlive: false, registeredAtMs: 0, bootstrap: null, lifecycle: null,
+      retiredAt: "2026-10-12T00:00:00.000Z",
+    } as never));
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const coordinator = new RunnerRecoveryCoordinator({
+      nodeId: "node-a", stateDirectory: root, leaseTimeoutMs: 120_000, scanIntervalMs: 15_000,
+      scanCache: cache, taskManager: {} as never, taskExecutor: {} as never,
+      closedTailDrainer: { drain: vi.fn() }, logger,
+      scan: async (_root, options) => ({
+        registrations: [await options!.cache!.read(directory, readFresh)], errors: [],
+      }),
+    });
+    await coordinator.scanOnce();
+    const reporter = composeRunnerReconciliationReporter(
+      { SOUL_RUNNER_STATE_DIR: root, SOUL_RUNNER_LEASE_TIMEOUT_MS: 120_000 } as never,
+      {} as never, coordinator, logger, undefined, undefined, cache,
+    );
+    // A fresh inventory read would reject the intentionally invalid config.
+    await expect(reporter.listLiveRunnerSessionIds!()).resolves.toEqual([]);
+    expect(readFresh).toHaveBeenCalledOnce();
   });
 
   it("does not construct or validate runner process dependencies while disabled", async () => {
