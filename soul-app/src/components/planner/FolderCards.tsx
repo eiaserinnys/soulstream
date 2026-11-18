@@ -42,7 +42,9 @@ export const FolderCards = forwardRef<FolderCardsHandle, {
       <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton></> : null}
     </View>
     {adding ? <CardComposer key={folderId} api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
-    {loading && !data ? <FrameLoading testID="folder-cards-loading" inline /> : <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>}
+    <View testID="folder-cards-list-box">
+      {loading && !data ? <FrameLoading testID="folder-cards-loading" inline /> : <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>}
+    </View>
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {!virtualHost&&cardDisplay.includeCompleted?<CompletedCardCollection api={api} browser={completed} onOpen={setSelected}/>:null}
     <CardDetailSheet api={api} cardId={selected} onClose={() => setSelected(null)} onOpenSession={onOpenSession} />

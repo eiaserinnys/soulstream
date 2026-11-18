@@ -3,6 +3,7 @@ import { FrameLoading } from '../FrameLoading';
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   ScrollView,
@@ -99,7 +100,8 @@ export function RecurringJobsList({
   return (
     <View testID="recurring-jobs-list" style={styles.block}>
       <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" />{!hideCreate ? <Action label="새 작업" onPress={onCreate} /> : null}</SettingsListHeader>
-      {loading || !loaded ? <FrameLoading testID="recurring-jobs-loading" inline /> : null}
+      {jobs.length === 0 && (loading || !loaded) ? <FrameLoading testID="recurring-jobs-loading" inline /> : null}
+      {jobs.length > 0 && loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {loaded && !loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}
       {jobs.map((job) => <SettingsListRow key={job.job_id} testID={`recurring-job-${job.job_id}`} title={job.name} detail={job.archived_at ? '보관됨' : job.enabled ? jobDetail(job) : '일시정지됨'} onPress={() => onEdit(job)} />)}

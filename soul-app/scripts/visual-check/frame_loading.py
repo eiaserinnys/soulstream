@@ -14,9 +14,11 @@ The script opens the public-fixture review page (?section=frameLoading) and
 walks every first-loading sample. For frame-filling samples it checks that the
 loader box centre and the spinner/text cluster centre both sit on the owning
 frame centre within 1px on both axes, and that no corner auto-refresh marker
-shows. For content-height boxes (settings section, folder cards) it checks the
-horizontal centre and that the loader's own top and bottom padding agree within
-1px. Captures are taken at iPad landscape (1180x820) and narrow (390x844).
+shows. A sample whose frame cannot be found fails instead of being compared
+with itself. For content-height boxes (settings section, folder cards list
+body) it measures the gap from the box border to the cluster above and below
+and the horizontal centre of the box against the cluster. Captures are taken
+at iPad landscape (1180x820) and narrow (390x844).
 """
 from __future__ import annotations
 
@@ -34,18 +36,19 @@ CENTRE_TOLERANCE_PX = 1.0
 
 SAMPLES = [
     {"mode": "frame", "name": "frame", "loader": "frame-loading-sample-loader", "frame": "frame-loading-sample", "kind": "center", "text": "불러오는 중…"},
-    {"mode": "settings", "name": "settings", "loader": "frame-loading-settings-loader", "kind": "inline", "text": "불러오는 중…"},
+    {"mode": "frameBare", "name": "frame-bare", "loader": "frame-loading-sample-loader", "frame": "frame-loading-sample", "kind": "center", "text": ""},
+    {"mode": "settings", "name": "settings", "loader": "frame-loading-settings-loader", "kind": "inline", "box": "parent", "text": "불러오는 중…"},
     {"mode": "board", "name": "board", "loader": "card-board-loading", "frame": "card-board-frame", "kind": "center"},
     {"mode": "boardExpanded", "name": "board-expanded", "loader": "card-board-loading", "scope": "card-board-expanded", "frame": "card-board-frame", "kind": "center"},
     {"mode": "daily", "name": "daily", "loader": "daily-loading", "frame": "daily-keyboard-frame", "kind": "center"},
     {"mode": "starred", "name": "starred", "loader": "starred-loading", "frame": "starred-refresh-frame", "kind": "center"},
-    {"mode": "folderCards", "name": "folder-cards", "loader": "folder-cards-loading", "kind": "inline"},
+    {"mode": "folderCards", "name": "folder-cards", "loader": "folder-cards-loading", "kind": "inline", "box": "folder-cards-list-box"},
     {"mode": "feed", "name": "feed", "loader": "session-feed-loading", "frame": None, "kind": "center", "text": "세션을 불러오는 중입니다."},
     {"mode": "cardDetail", "name": "card-detail", "loader": "card-detail-loading", "frame": "card-detail-scroll", "kind": "center"},
 ]
 
 METRICS_SCRIPT = r"""
-({ loaderId, frameId, scopeId }) => {
+({ loaderId, frameId, scopeId, boxId }) => {
   const round = (value) => Math.round(value * 100) / 100;
   const rect = (element) => {
     const bounds = element.getBoundingClientRect();
@@ -60,6 +63,9 @@ METRICS_SCRIPT = r"""
   const visible = (element) => {
     const bounds = element.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+  };
+  const find = (selector, from) => {
+    try { return (from || document).querySelector(selector); } catch { return null; }
   };
   const scope = scopeId ? document.querySelector(`[data-testid="${scopeId}"]`) : document;
   let loaders = [...(scope || document).querySelectorAll(`[data-testid="${loaderId}"]`)].filter(visible);
@@ -77,8 +83,20 @@ METRICS_SCRIPT = r"""
   union.centerY = round((union.top + union.bottom) / 2);
   union.width = round(union.right - union.left);
   union.height = round(union.bottom - union.top);
-  let frame = frameId ? loader.closest(`[data-testid="${frameId}"]`) : null;
-  if (!frame && !frameId) {
+
+  let box = null;
+  if (boxId === 'parent') {
+    box = loader.parentElement;
+  } else if (boxId) {
+    box = find(`[data-testid="${boxId}"]`, scope) || find(`[data-testid="${boxId}"]`);
+  }
+
+  let frame = null;
+  if (frameId) {
+    frame = loader.closest(`[data-testid="${frameId}"]`)
+      || find(`[data-testid="${frameId}"]`, scope)
+      || find(`[data-testid="${frameId}"]`);
+  } else if (frameId === null) {
     let parent = loader.parentElement;
     while (parent) {
       const style = getComputedStyle(parent);
@@ -89,15 +107,16 @@ METRICS_SCRIPT = r"""
       parent = parent.parentElement;
     }
   }
-  if (!frame) frame = loader;
+
   const style = getComputedStyle(loader);
   return {
     role: loader.getAttribute('role'),
     text: loader.innerText || '',
     loader: rect(loader),
     cluster: union,
-    frame: rect(frame),
-    frameTestId: frame.getAttribute('data-testid'),
+    box: box ? rect(box) : null,
+    frame: frame ? rect(frame) : null,
+    frameTestId: frame ? frame.getAttribute('data-testid') : null,
     paddingTop: parseFloat(style.paddingTop) || 0,
     paddingBottom: parseFloat(style.paddingBottom) || 0,
     cornerMarkers: document.querySelectorAll('[aria-label="자동 갱신 중"]').length,
@@ -127,17 +146,31 @@ def failures_for(sample: dict, metrics: dict, label: str) -> list[dict]:
         failures.append({"check": "corner marker during first load", "label": label,
                          "actual": metrics["cornerMarkers"]})
     expected_text = sample.get("text")
-    if expected_text is not None and expected_text not in metrics.get("text", ""):
-        failures.append({"check": "text", "label": label, "expected": expected_text,
-                         "actual": metrics.get("text")})
+    if expected_text is not None:
+        actual_text = metrics.get("text", "").strip()
+        if expected_text and expected_text not in actual_text:
+            failures.append({"check": "text", "label": label, "expected": expected_text,
+                             "actual": metrics.get("text")})
+        if expected_text == "" and actual_text:
+            failures.append({"check": "text should be empty", "label": label,
+                             "actual": metrics.get("text")})
     if sample["kind"] == "inline":
-        delta = abs(metrics["cluster"]["centerX"] - metrics["loader"]["centerX"])
+        box, cluster = metrics.get("box"), metrics["cluster"]
+        if not box:
+            failures.append({"check": "missing box", "label": label,
+                             "box": sample.get("box")})
+            return failures
+        top_gap = round(cluster["top"] - box["top"], 2)
+        bottom_gap = round(box["bottom"] - cluster["bottom"], 2)
+        if abs(top_gap - bottom_gap) > CENTRE_TOLERANCE_PX:
+            failures.append({"check": "inline vertical balance", "label": label,
+                             "topGap": top_gap, "bottomGap": bottom_gap})
+        delta = abs(cluster["centerX"] - box["centerX"])
         if delta > CENTRE_TOLERANCE_PX:
             failures.append({"check": "inline horizontal centre", "label": label, "delta": round(delta, 2)})
-        padding_delta = abs(metrics["paddingTop"] - metrics["paddingBottom"])
-        if padding_delta > CENTRE_TOLERANCE_PX:
-            failures.append({"check": "inline vertical padding", "label": label,
-                             "paddingTop": metrics["paddingTop"], "paddingBottom": metrics["paddingBottom"]})
+        return failures
+    if not metrics.get("frame"):
+        failures.append({"check": "missing frame", "label": label, "frame": sample.get("frame")})
         return failures
     for axis in ("centerX", "centerY"):
         delta = abs(metrics["loader"][axis] - metrics["frame"][axis])
@@ -231,6 +264,7 @@ def main() -> int:
                         "loaderId": sample["loader"],
                         "frameId": sample.get("frame"),
                         "scopeId": sample.get("scope"),
+                        "boxId": sample.get("box"),
                     })
                     sample_failures = failures_for(sample, metrics, label)
                     failures.extend(sample_failures)

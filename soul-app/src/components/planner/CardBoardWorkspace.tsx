@@ -35,7 +35,11 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
   const completed=useCompletedCards(api,folderId,cardDisplay.includeCompleted);
-  const firstLoading = loading && cards.length === 0;
+  // 보일 카드가 하나도 없을 때만 보드 가운데 부품을 세운다. 완료 카드가 먼저 와 있으면
+  // 활성 목록이 아직 없어도 그 카드 위에 스피너를 겹치지 않는다.
+  const visibleCards = cards.length + (cardDisplay.includeCompleted ? completed.cards.length : 0);
+  const firstLoading = loading && visibleCards === 0;
+  const activePending = loading && cards.length === 0;
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<BoardPosition | null>(null);
   const position = useRef<BoardPosition>({ x: 0, lanes: {} });
@@ -71,7 +75,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     { id: 'completed', label: '완료·취소 숨김', menuLabel: cardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
   ]);
   const completedCount = completed.cards.length;
-  const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed} firstLoading={firstLoading}
+  const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed} firstLoading={firstLoading} activePending={activePending}
     railOverlayWidth={expandedBoard ? 0 : railOverlayWidth}
     reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
     includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}

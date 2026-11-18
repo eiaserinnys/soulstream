@@ -21,6 +21,8 @@ const modes = [
   { value: 'settings', label: '설정 섹션' },
   { value: 'board', label: '보드 첫 로딩' },
   { value: 'boardExpanded', label: '확대 보드' },
+  { value: 'completedLane', label: '완료 칸 첫 로딩' },
+  { value: 'completedFirst', label: '완료 먼저' },
   { value: 'daily', label: '데일리' },
   { value: 'starred', label: '별표 폴더' },
   { value: 'folderCards', label: '폴더 카드' },
@@ -46,8 +48,17 @@ export function ReviewFrameLoading() {
     } as unknown as ApiClient;
   }, []);
 
+  const completedPendingApi = useMemo(() => ({
+    ...createReviewApi(),
+    listCompletedCards: () => new Promise<never>(() => {}),
+  }) as unknown as ApiClient, []);
+  const activePendingApi = useMemo(() => ({
+    ...createReviewApi(),
+    listCards: () => new Promise<never>(() => {}),
+  }) as unknown as ApiClient, []);
+
   useEffect(() => {
-    if (mode !== 'boardExpanded') return;
+    if (mode !== 'boardExpanded' && mode !== 'completedLane' && mode !== 'completedFirst') return;
     board.current?.openExpanded();
   }, [mode]);
 
@@ -80,6 +91,10 @@ export function ReviewFrameLoading() {
     }
     if (mode === 'board' || mode === 'boardExpanded') {
       return <CardBoardWorkspace ref={board} api={pendingApi} cardDisplay={{ includeCompleted: false, onChange: () => {} }} onOpen={() => {}} />;
+    }
+    if (mode === 'completedLane' || mode === 'completedFirst') {
+      return <CardBoardWorkspace ref={board} api={mode === 'completedLane' ? completedPendingApi : activePendingApi}
+        cardDisplay={{ includeCompleted: true, onChange: () => {} }} onOpen={() => {}} />;
     }
     if (mode === 'daily') return <DailyPlannerScreen active={false} date="2026-10-02" />;
     if (mode === 'starred') return <StarredFoldersWorkspace api={pendingApi} />;

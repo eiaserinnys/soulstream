@@ -19,7 +19,7 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0, firstLoading = false }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0, firstLoading = false, activePending = false }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void; hideEmptyLanes?: boolean;
@@ -28,6 +28,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   railOverlayWidth?: number;
   /** 보드 전체의 첫 로딩. 칸마다가 아니라 보드 프레임 가운데 하나만 세운다. */
   firstLoading?: boolean;
+  /** 활성 목록이 아직 오지 않았다. 빈 칸 문구를 로딩 동안 내지 않는다. */
+  activePending?: boolean;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -177,7 +179,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
         const lane = columns.length ? boardNearestLane(position.current.x, offsets) : -1;
         position.current.lane = lane >= 0 ? columns[lane]?.[0] : undefined; savePosition(); }}
       contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
-      {hideEmptyLanes && columns.length === 0 && !firstLoading ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
+      {hideEmptyLanes && columns.length === 0 && !firstLoading && !activePending ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
       {columns.map(([status, label],laneIndex) => {
@@ -203,7 +205,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
               onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
-              ListEmptyComponent={firstLoading?null:<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
+              ListEmptyComponent={firstLoading || completedFirstLoading ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
               ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="home-composer-spacer-done"/>}/>
             {completedFirstLoading?<View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="card-board-done-loading"/></View>:null}
             </View>
@@ -219,7 +221,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               }} canPress={pan.canPress}
               onStart={(event) => start(card, event)} onMove={(event) => { if (dragRef.current) { const value = { ...dragRef.current, event }; dragRef.current = value; setDrag(value); } }}
               onDrop={(event) => drop(card, event)} onFinish={finish} />)
-              : firstLoading ? null : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
+              : firstLoading || activePending ? null : <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>}
             <HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={t.cardLayout.gap} testID={`home-composer-spacer-${status}`} />
           </ScrollView>}
         </View>;
