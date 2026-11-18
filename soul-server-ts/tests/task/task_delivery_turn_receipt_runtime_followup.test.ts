@@ -273,13 +273,14 @@ describe("runtime_followup consumption proof", () => {
     ["terminal", "completed", true, false, 1],
     ["still running", "running", true, false, 0],
     ["error", "completed", true, true, 0],
-    ["foreground task", "completed", false, false, 0],
+    ["foreground task", "completed", false, false, 1],
+    ["background flag absent", "completed", undefined, false, 1],
     ["ambiguous tasks", "completed", true, false, 2],
     ["different tool", "completed", true, false, -1],
-  ] as const)("SendMessage %s records only one matching terminal background generation", async (_label, status, background, error, matches) => {
+  ] as const)("SendMessage %s records only one matching terminal generation", async (_label, status, background, error, matches) => {
     const { recorder, receipt } = makeHarness();
     const task = makeTask();
-    const entry = { taskId: "child", status, updatedAt: 1, isBackgrounded: background, toolUseId: matches === -1 ? "other" : "send-1" };
+    const entry = { taskId: "child", status, updatedAt: 1, ...(background === undefined ? {} : { isBackgrounded: background }), toolUseId: matches === -1 ? "other" : "send-1" };
     task.claudeRuntime = { updatedAt: 1, tasks: { child: entry } };
     if (matches === 2) task.claudeRuntime.tasks.other = { ...entry, taskId: "other" };
     await receipt.observe(task, { type: "tool_start", tool_name: "SendMessage", tool_use_id: "send-1", tool_input: {}, timestamp: 1 } as SSEEventPayload);
