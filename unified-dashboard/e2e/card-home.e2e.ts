@@ -451,6 +451,7 @@ for(const mode of ["목록","보드"] as const){
   if(mode==="목록")await home.getByRole("button",{name:"일반 보기",exact:true}).click();
   const viewport=mode==="목록"?home.locator('.v3-completed-collection [data-testid="completed-viewport"]'):state.board.locator('[data-board-column="done"] [data-testid="completed-viewport"]');
   const scroller=viewport.getByTestId("virtuoso-scroller");await scroller.scrollIntoViewIfNeeded();await expect(scroller.locator('[data-card-id]').first()).toBeVisible();
+  const overflowAnchor=await scroller.evaluate(element=>getComputedStyle(element).overflowAnchor);expect(overflowAnchor).toBe("none");
   if(mode==="보드"){
    const cardWidth=await scroller.locator('.v3-postit-card').first().evaluate(el=>parseFloat(getComputedStyle(el).width));
    expect(cardWidth).toBeCloseTo(256,0);
@@ -458,7 +459,7 @@ for(const mode of ["목록","보드"] as const){
   await scroller.hover();const positions:number[]=[];
   for(let i=0;i<40;i++){await page.mouse.wheel(0,100);await page.waitForTimeout(60);positions.push(await scroller.evaluate(el=>el.scrollTop));}
   const visible=await scroller.locator('[data-card-id]').evaluateAll(els=>els.filter(el=>{const r=el.getBoundingClientRect(),s=el.closest('[data-testid="virtuoso-scroller"]')!.getBoundingClientRect();return r.bottom>s.top&&r.top<s.bottom;}).length);
-  await completedCapture(page,`wheel-${mode}`,{positions,visible});
+  await completedCapture(page,`wheel-${mode}`,{positions,visible,overflowAnchor});
   expect(positions.every((position,index)=>index===0||position>=positions[index-1]-1)).toBe(true);
   expect(positions.at(-1)).toBeGreaterThanOrEqual(3600);expect(visible).toBeGreaterThan(0);
  });

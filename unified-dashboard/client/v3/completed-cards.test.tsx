@@ -13,17 +13,24 @@ it('keeps 7-day instants, local date exclusive end and existing paper widths',()
  expect(completedBounds('custom','2026-10-01','2026-10-02',now)).toEqual({completedFrom:new Date('2026-10-01T00:00:00').toISOString(),completedBefore:new Date('2026-10-03T00:00:00').toISOString()});
  expect([390,600,1100].map(width=>completedGridLayout(width,256,8,8).columns)).toEqual([1,2,3]);
 });
-it('retains cards and count during a live refresh of the same query',async()=>{
+it('refreshes preset bounds while retaining cards and reuses those bounds for later pages',async()=>{
  const now=vi.spyOn(Date,'now').mockReturnValue(1000000000);
- let resolve!:(value:{cards:typeof reviewCard[];nextCursor:null})=>void;
- const loader=vi.fn<CompletedPageLoader>().mockResolvedValueOnce({cards:[reviewCard],nextCursor:null}).mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ let resolve!:(value:{cards:typeof reviewCard[];nextCursor:string|null})=>void;
+ const newCard={...reviewCard,id:'new-completed'};
+ const loader=vi.fn<CompletedPageLoader>().mockResolvedValueOnce({cards:[reviewCard],nextCursor:null})
+  .mockImplementationOnce(()=>new Promise(done=>{resolve=done;})).mockResolvedValueOnce({cards:[],nextCursor:null});
  let browser:CompletedBrowser;const host=document.createElement('div'),root=createRoot(host);
  function Probe(){browser=useCompletedCards(undefined,true,loader);return null;}
  await act(async()=>root.render(<Probe/>));expect(browser!.loaded).toBe(true);
  now.mockReturnValue(1000005000);
  await act(()=>invalidateV3('card'));
  expect(browser!.loaded).toBe(true);expect(browser!.cards).toHaveLength(1);
- await act(async()=>resolve({cards:[reviewCard],nextCursor:null}));
+ expect(Date.parse(loader.mock.calls[1][0].completedBefore!)).toBeGreaterThan(Date.parse(loader.mock.calls[0][0].completedBefore!));
+ await act(async()=>resolve({cards:[reviewCard,newCard],nextCursor:'next'}));
+ expect(browser!.cards.map(card=>card.id)).toContain(newCard.id);
+ now.mockReturnValue(1000010000);
+ await act(async()=>browser!.loadMore());
+ expect(loader.mock.calls[2][0]).toEqual({...loader.mock.calls[1][0],cursor:'next'});
  await act(()=>root.unmount());now.mockRestore();
 });
 it('only reads done when shown and retains identical filters while deduplicating pages',async()=>{
