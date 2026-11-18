@@ -9,6 +9,7 @@ import {
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
+  type RunnerRegistrationScan,
   type RunnerRecoveryDisposition,
 } from "./runner_process_registry.js";
 import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.js";
@@ -66,14 +67,17 @@ import {
   RunnerAdoptionFailureRecovery,
   type RunnerAdoptionDisposition,
 } from "./runner_adoption_failure_recovery.js";
-import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import type { RunnerRecoveryCoordinatorOptions as BaseRunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
 import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
 import { RunnerRegistrationScanCacheSnapshot } from "./runner_registration_scan_cache_snapshot.js";
 import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
-export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
+export type RunnerRecoveryCoordinatorOptions = BaseRunnerRecoveryCoordinatorOptions & {
+  terminalizeOrphanedClaudeBackgroundTasks?: ClaudeBackgroundTaskLifecycle["terminalizeOrphanedForNode"];
+};
 
 class SuccessorTurnStartedError extends Error {}
 /**
@@ -117,6 +121,7 @@ export class RunnerRecoveryCoordinator {
   private readonly reapedSessions = new Set<string>();
   private readonly centralRetry = new Map<string, CentralCheckRetry>();
   private scanInFlight: Promise<void> | undefined;
+  private lastScan: RunnerRegistrationScan | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
   private releaseGarbageCollectionStartedAtMs: number | undefined;
   private releaseGarbageCollectionInFlight = false;
@@ -235,6 +240,8 @@ export class RunnerRecoveryCoordinator {
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopped = false;
+    const updatedBefore = new Date((this.options.now ?? Date.now)());
+    this.lastScan = undefined;
     await this.scanOnce();
     if (this.stopped) return;
     this.timer = setInterval(() => {
@@ -243,6 +250,23 @@ export class RunnerRecoveryCoordinator {
       });
     }, this.options.scanIntervalMs);
     this.timer.unref?.();
+    const terminalize = this.options.terminalizeOrphanedClaudeBackgroundTasks;
+    if (!terminalize) return;
+    const scan = this.lastScan as RunnerRegistrationScan | undefined;
+    if (!scan || scan.errors.some((failure) => !failure.sessionId)) {
+      this.options.logger.warn("orphaned Claude background sweep skipped: incomplete runner scan");
+      return;
+    }
+    const liveSessionIds = new Set([
+      ...scan.registrations.filter((registration) => registration.pidAlive)
+        .map((registration) => registration.config.sessionId),
+      ...scan.errors.map((failure) => failure.sessionId!),
+    ]);
+    void Promise.resolve().then(() => terminalize({
+      liveSessionIds, updatedBefore, limit: 1_000,
+    })).catch((err) => {
+      this.options.logger.error({ err }, "orphaned Claude background sweep failed");
+    });
   }
   async scanOnce(): Promise<void> {
     if (this.stopped) return;
@@ -283,6 +307,7 @@ export class RunnerRecoveryCoordinator {
           },
         );
       });
+      this.lastScan = scan;
       const registrationCacheMisses = this.scanCache.missCounts();
       scanRegistrations = scan.registrations;
       await observation.runAsync("unreadable", {}, async () => {

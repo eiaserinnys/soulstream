@@ -97,6 +97,19 @@ export class ClaudeBackgroundTaskGenerationRepository {
     `;
   }
 
+  async activeForNode(params: {
+    sourceNode: string; updatedBefore: Date; limit: number;
+  }): Promise<ClaudeBackgroundTaskGenerationRow[]> {
+    return await this.sql<ClaudeBackgroundTaskGenerationRow[]>`
+      SELECT * FROM claude_background_task_generations
+      WHERE source_node = ${params.sourceNode}
+        AND status IN ('pending', 'running')
+        AND updated_at < ${params.updatedBefore}
+      ORDER BY updated_at
+      LIMIT ${params.limit}
+    `;
+  }
+
   async resolve(
     sourceNode: string,
     sessionId: string,
@@ -249,6 +262,11 @@ export class ClaudeBackgroundTaskGenerationRepository {
       return { accepted: false, row: await this.require(transaction, params) };
     }
 
+    if (!params.delivery) {
+      const row = transitioned[0];
+      await this.projectLegacy(transaction, row);
+      return { accepted: true, row };
+    }
     const targetExists = params.delivery.targetSessionId
       ? await transaction<Array<{ present: number }>>`
           SELECT 1 AS present FROM sessions

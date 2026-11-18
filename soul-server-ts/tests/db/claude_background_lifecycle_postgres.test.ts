@@ -290,6 +290,31 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
     )).resolves.toBeNull();
   });
 
+  it("selects old active generations on one node and closes them without a delivery", async () => {
+    const repo = background(harness.sql);
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    const cutoff = new Date("2026-02-01T00:00:00.000Z");
+    const observe = async (sourceNode: string, taskId: string, observedAt: Date) => await repo.observeGeneration({
+      sourceNode, sessionId: "caller-session", sdkSessionId: "sdk-session", taskId,
+      initiatingToolUseId: `tool-${taskId}`, generationKey: `generation-${taskId}`,
+      relationKey: `relation-${taskId}`, completionId: `completion-${taskId}`, observedAt,
+    });
+    await observe("node-test", "old", old);
+    await observe("node-test", "new", cutoff);
+    await observe("other-node", "other", old);
+    const rows = await repo.activeGenerationsForNode({ sourceNode: "node-test", updatedBefore: cutoff, limit: 10 });
+    expect(rows.map((item) => item.task_id)).toEqual(["old"]);
+    const result = await repo.terminalizeGeneration({
+      sourceNode: "node-test", sessionId: "caller-session", sdkSessionId: "sdk-session", taskId: "old",
+      initiatingToolUseId: "tool-old", generationKey: "generation-old", relationKey: "relation-old",
+      completionId: "completion-old", status: "killed", closeReason: "runner_missing", terminalRevision: "runner-missing:generation-old",
+    });
+    expect(result).toMatchObject({ accepted: true, row: { status: "killed", notification_delivery_id: null } });
+    expect(result).not.toHaveProperty("delivery");
+    expect(await harness.sql`SELECT delivery_id FROM session_deliveries`).toHaveLength(0);
+    await expect(repo.get("node-test", "caller-session", "old")).resolves.toMatchObject({ status: "killed", close_reason: "runner_missing", notification_delivery_id: null });
+  });
+
   it("lets shutdown and dead-runner recovery race without duplicate terminal delivery", async () => {
     const shutdownWorker = makeLifecycle(harness.createPeer());
     const recoveryWorker = makeLifecycle(harness.createPeer());

@@ -327,6 +327,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
           claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId, execution),
+        terminalizeOrphanedClaudeBackgroundTasks: (params) =>
+          claudeRuntime.backgroundLifecycle!.terminalizeOrphanedForNode(params),
         completionNotifier: taskRuntime.completionNotifier,
       }
       : {}),

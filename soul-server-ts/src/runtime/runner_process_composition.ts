@@ -152,6 +152,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     sessionId: string,
     execution: ExecutionRegistration,
   ) => Promise<number>;
+  terminalizeOrphanedClaudeBackgroundTasks?: ClaudeBackgroundTaskLifecycle["terminalizeOrphanedForNode"];
   /** 죽은 러너의 백그라운드 작업을 이을 수 없을 때 부른 세션에 알리는 포트. */
   completionNotifier?: Pick<CompletionNotifier, "notifyBackgroundStopped">;
   logger: Logger;
@@ -189,6 +190,9 @@ export async function composeRunnerRecoveryCoordinator(options: {
         terminalizeClaudeBackgroundTasks:
           options.terminalizeClaudeBackgroundTasks,
       }
+      : {}),
+    ...(options.terminalizeOrphanedClaudeBackgroundTasks
+      ? { terminalizeOrphanedClaudeBackgroundTasks: options.terminalizeOrphanedClaudeBackgroundTasks }
       : {}),
     ...(options.completionNotifier
       ? {
