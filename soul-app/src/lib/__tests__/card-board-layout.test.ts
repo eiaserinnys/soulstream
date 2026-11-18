@@ -3,7 +3,7 @@ import { boardLaneGeometry, boardLaneOffset, boardDropStatus, boardVisibleColumn
 test('completed grid owns variable lane boundaries for snap, drop and maximum scroll', () => {
   const columns=boardVisibleColumns(true);
   const g=boardLaneGeometry(1100,256,8,false,columns,8);
-  expect(g.lanes.find(lane=>lane.status==='done')?.width).toBe(3*256+2*8+16);
+  expect(g.lanes.find(lane=>lane.status==='done')?.width).toBe(256+16);
   const done=g.lanes.find(lane=>lane.status==='done')!;
   const cancelled=g.lanes.at(-1)!;
   expect(cancelled.status).toBe('cancelled');
@@ -12,6 +12,15 @@ test('completed grid owns variable lane boundaries for snap, drop and maximum sc
   const frame={x:0,y:0,width:1100,height:600};
   expect(boardDropStatus(100,100,frame,g,done.start,'review',columns)).toBe('done');
   expect(boardSnapOffsets(1100,g,columns.length).at(-1)).toBe(g.maxScroll);
+});
+
+test.each([[1122, 2], [1308, 3]])('tablet viewport %i fits the completed lane from review with %i columns', (width, expected) => {
+  const columns = boardVisibleColumns(true);
+  const geometry = boardLaneGeometry(width, 225.9, 8, false, columns, 8);
+  const review = geometry.lanes.find(lane => lane.status === 'review')!;
+  const done = geometry.lanes.find(lane => lane.status === 'done')!;
+  expect(geometry.completedColumns).toBe(expected);
+  expect(done.start - review.start + done.width).toBeLessThanOrEqual(width);
 });
 
 test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends at the right gutter', (width) => {

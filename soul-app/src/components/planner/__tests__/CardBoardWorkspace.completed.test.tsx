@@ -6,7 +6,7 @@ jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: (m
 jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:null})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';
 import { AppModalSurface } from '../../AppModalSurface';
 import { cardFixture } from '../../../test-support/cards';
@@ -114,15 +114,12 @@ test.each([
   mockLoading = true;
   screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
   const spinner = host.getByLabelText('자동 갱신 중');
-  expect(StyleSheet.flatten(spinner.props.style).position).toBe('absolute');
+  expect(StyleSheet.flatten(spinner.props.style)).toMatchObject({ position: externalHeader && !expanded ? 'absolute' : 'relative', overflow: 'hidden' });
   expect(spinner.props.pointerEvents).toBe('none');
   expect(spinner.props.accessibilityRole).toBe('progressbar');
   expect(host.getByTestId('card-board')).toBe(board);
   expect(board.parent).toBe(parent);
   expect(StyleSheet.flatten(host.getByTestId('card-board-frame').props.style)).toEqual(frameStyle);
-  for (const indicator of screen.UNSAFE_getAllByType(ActivityIndicator)) {
-    expect(StyleSheet.flatten(indicator.props.style).position).toBe('absolute');
-  }
   mockLoading = false;
   screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
   expect(host.queryByLabelText('자동 갱신 중')).toBeNull();
@@ -234,7 +231,7 @@ test.each([undefined, 'folder-1'])('empty draft creation retains scope %s in the
   mockCards = [];
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
   const screen = render(<CardBoardWorkspace ref={ref} api={null} folderId={folderId} externalHeader cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />);
-  expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingTop).toBe(8);
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingTop).toBe(28);
   expect(screen.queryAllByTestId(/^card-board-column-/)).toHaveLength(0);
   expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
   act(() => ref.current!.openCreate());

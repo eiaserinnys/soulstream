@@ -13,6 +13,24 @@ import { useCardStore } from '../../../store/cardStore';
 const cards = (['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
 
+test('미도착 칸은 개수를 숨기고 도착한 빈 칸은 0을 표시한다', () => {
+  const completed = { loading: true, cards: [] } as any;
+  const board = (firstLoading: boolean, activePending: boolean, doneLoading: boolean) =>
+    <CardBoard api={null} phone={false} cards={[]} includeCompleted firstLoading={firstLoading} activePending={activePending}
+      completed={{ ...completed, loading: doneLoading }} onOpen={() => {}} />;
+  const screen = render(board(true, true, true));
+  expect(screen.queryByTestId('card-board-count-todo')).toBeNull();
+  expect(screen.queryByTestId('card-board-count-review')).toBeNull();
+  expect(screen.queryByTestId('card-board-count-done')).toBeNull();
+  screen.rerender(board(false, true, false));
+  expect(screen.queryByTestId('card-board-count-review')).toBeNull();
+  expect(screen.getByTestId('card-board-count-done').props.children).toBe('0개 표시');
+  screen.rerender(board(false, false, true));
+  expect(screen.getByTestId('card-board-count-todo').props.children).toBe('0개');
+  expect(screen.getByTestId('card-board-count-review').props.children).toBe(0);
+  expect(screen.queryByTestId('card-board-count-done')).toBeNull();
+});
+
 test('9열 순서와 개수를 유지하고 보관은 보드에서 제외한다', () => {
   const screen = render(<CardBoard api={null} cards={[...cards, cardFixture({ id: 'archived', archived: true })]} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map((column) => column.props.testID))

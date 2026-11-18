@@ -39,7 +39,7 @@ from pathlib import Path
 from playwright.sync_api import Page, sync_playwright
 
 
-VIEWPORTS = [(1180, 820), (390, 844)]
+VIEWPORTS = [(1180, 820), (390, 844), (360, 800)]
 CENTRE_TOLERANCE_PX = 1.0
 
 SAMPLES = [
@@ -276,6 +276,167 @@ def open_sample(page: Page, sample: dict) -> None:
     page.wait_for_timeout(350)
 
 
+def section_url(base: str, section: str) -> str:
+    parts = urllib.parse.urlsplit(build_url(base))
+    query = urllib.parse.parse_qs(parts.query)
+    query['section'] = [section]
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path,
+                                    urllib.parse.urlencode(query, doseq=True), parts.fragment))
+
+
+def check_board_states(page: Page, base: str, output: Path, width: int, failures: list) -> list:
+    results = []
+    for mode in ('boardExpanded', 'completedLane', 'completedFirst', 'cardDetail'):
+        label = f'{mode}-{width}'
+        try:
+            page.goto(build_url(base), wait_until='networkidle')
+            page.get_by_test_id(f'settings-segment-frame-loading-mode-{mode}').click(force=True)
+            if mode != 'cardDetail':
+                page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+            else:
+                page.get_by_test_id('card-detail-loading').wait_for(state='visible')
+            page.wait_for_timeout(500)
+            metrics = page.evaluate('''mode => {
+              const scope = mode === 'cardDetail' ? document : document.querySelector('[data-testid="card-board-expanded"]');
+              const selector = mode === 'cardDetail' ? '[data-testid^="settings-segment-card-detail-"][data-testid$="-count"]' : '[data-testid^="card-board-count-"]';
+              const counts = [...scope.querySelectorAll(selector)].map(e => e.dataset.testid);
+              const pending = counts.filter(id => mode === 'completedLane' ? id.endsWith('-done') :
+                mode === 'completedFirst' ? !id.endsWith('-done') : true);
+              const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left, right:r.right, top:r.top, bottom:r.bottom}; };
+              const done = scope.querySelector('[data-testid="card-board-column-done"]');
+              const period = scope.querySelector('[data-testid^="settings-segment-completed-period-"]');
+              const frame = scope.querySelector('[data-testid="card-board-frame"]');
+              return {counts, pending, done:done && rect(done), period:period && rect(period.parentElement), frame:frame && rect(frame)};
+            }''', mode)
+            if metrics['pending']:
+                failures.append({'check': 'pending counts', 'label': label, 'actual': metrics['pending']})
+            if width == 1180 and mode in ('completedLane', 'completedFirst'):
+                if not all(metrics.get(k) for k in ('done', 'period', 'frame')):
+                    failures.append({'check': 'completed geometry missing', 'label': label, 'metrics': metrics})
+                elif max(metrics['done']['right'], metrics['period']['right']) > metrics['frame']['right'] + 1:
+                    failures.append({'check': 'completed geometry overflow', 'label': label, 'metrics': metrics})
+            page.screenshot(path=str(output / f'board-state-{label}.png'))
+            results.append({'mode': mode, 'metrics': metrics})
+        except Exception as error:
+            failures.append({'check': 'board state', 'label': label, 'error': str(error).splitlines()[0]})
+    return results
+
+
+def check_refresh_states(page: Page, base: str, output: Path, width: int, failures: list) -> list:
+    results = []
+    for mode in ('boardInternal', 'boardExternal', 'starred', 'sidebar', 'picker', 'daily', 'boardExpanded'):
+        label = f'{mode}-{width}'
+        try:
+            page.goto(section_url(base, 'autoRefresh'), wait_until='networkidle')
+            page.get_by_test_id('review-auto-refresh').wait_for(state='visible')
+            selected = 'boardInternal' if mode == 'boardExpanded' else mode
+            page.get_by_test_id(f'settings-segment-refresh-owner-{selected}').click(force=True)
+            page.wait_for_timeout(500)
+            board_top = page.get_by_test_id('card-board-frame').first.bounding_box() if mode == 'boardExternal' else None
+            page.get_by_test_id('refresh-begin').click(force=True)
+            if mode == 'picker':
+                page.get_by_test_id('refresh-picker-open').click(force=True)
+            if mode == 'boardExpanded':
+                page.get_by_test_id('refresh-expand').click(force=True)
+            page.wait_for_timeout(700)
+            metrics = page.evaluate('''mode => {
+              const ids = {boardInternal:'card-board-auto-progress', boardExternal:'card-board-auto-progress',
+                boardExpanded:'card-board-expanded-auto-progress', starred:'starred-auto-progress', daily:'daily-auto-progress'};
+              const element = ids[mode] && document.querySelector(`[data-testid="${ids[mode]}"]`);
+              const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
+              const marker = element && rect(element);
+              const frameId = mode === 'boardExpanded' ? 'card-board-expanded' : mode.startsWith('board') ? 'card-board-workspace' : mode === 'starred' ? 'starred-refresh-frame' : 'phone-daily-body';
+              const frameElement = element && element.closest(`[data-testid="${frameId}"]`);
+              const frame = frameElement && rect(frameElement);
+              let rounded = null;
+              for (let p = element && element.parentElement; p; p = p.parentElement) {
+                const radius = parseFloat(getComputedStyle(p).borderTopRightRadius) || 0;
+                if (radius) { rounded = {rect:rect(p), radius}; break; }
+              }
+              const overlaps = element && frameElement ? [...frameElement.querySelectorAll('button,[role="button"]')].filter(e => {
+                const r=rect(e); return r.width && r.height && marker.left < r.right && marker.right > r.left && marker.top < r.bottom && marker.bottom > r.top;
+              }).map(e=>e.getAttribute('data-testid') || e.getAttribute('aria-label')) : [];
+              const phase = document.querySelector('[data-testid="refresh-phase"]');
+              return {scrollWidth:document.documentElement.scrollWidth, viewport:innerWidth, marker, frame, rounded, overlaps,
+                phase:phase && phase.textContent,
+                overflow:element && getComputedStyle(element).overflow};
+            }''', mode)
+            if not metrics['phase'] or not metrics['phase'].startswith('pending'):
+                failures.append({'check': 'refresh did not start', 'label': label, 'metrics': metrics})
+            if board_top:
+                after_top = page.get_by_test_id('card-board-frame').first.bounding_box()
+                metrics['boardTopBefore'] = board_top['y']
+                metrics['boardTopDuring'] = after_top['y'] if after_top else None
+                if not after_top or abs(after_top['y'] - board_top['y']) > 1:
+                    failures.append({'check': 'board moved during refresh', 'label': label, 'metrics': metrics})
+            if metrics['scrollWidth'] != metrics['viewport']:
+                failures.append({'check': 'document overflow', 'label': label, 'metrics': metrics})
+            expected_marker = mode in ('boardInternal', 'boardExternal', 'boardExpanded', 'starred', 'daily')
+            if expected_marker and (not metrics['marker'] or not metrics['frame']):
+                failures.append({'check': 'refresh marker missing', 'label': label, 'metrics': metrics})
+            if metrics['marker'] and metrics['frame']:
+                m, f = metrics['marker'], metrics['frame']
+                if m['left'] < f['left'] - 1 or m['right'] > f['right'] + 1 or m['top'] < f['top'] - 1 or m['bottom'] > f['bottom'] + 1:
+                    failures.append({'check': 'marker outside frame', 'label': label, 'metrics': metrics})
+                # Daily keeps its existing date-row placement by specification.
+                if metrics['overlaps'] and mode != 'daily':
+                    failures.append({'check': 'marker overlaps button', 'label': label, 'metrics': metrics})
+                if metrics['overflow'] != 'hidden':
+                    failures.append({'check': 'marker overflow not clipped', 'label': label, 'metrics': metrics})
+                rounded = metrics['rounded']
+                if rounded:
+                    r, radius = rounded['rect'], rounded['radius']
+                    # The marker's upper-right corner is farthest toward the arc.
+                    x, y = m['right'], m['top']
+                    if m['right'] > r['right'] - radius and m['top'] < r['top'] + radius and (x - (r['right'] - radius)) ** 2 + (y - (r['top'] + radius)) ** 2 > radius ** 2:
+                        failures.append({'check': 'marker intersects rounded corner', 'label': label, 'metrics': metrics})
+            page.screenshot(path=str(output / f'auto-refresh-{label}.png'))
+            results.append({'mode': mode, 'metrics': metrics})
+        except Exception as error:
+            failures.append({'check': 'refresh state', 'label': label, 'error': str(error).splitlines()[0]})
+    return results
+
+
+def check_resize(page: Page, base: str, output: Path, failures: list) -> list:
+    results = []
+    try:
+        page.goto(build_url(base), wait_until='networkidle')
+        page.get_by_test_id('settings-segment-frame-loading-mode-completedFirst').click(force=True)
+        page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+        search = page.get_by_placeholder('제목 또는 요청 검색').last
+        search.fill('갱신')
+        for width, height in ((1180, 820), (1366, 820), (390, 844), (1180, 820)):
+            page.set_viewport_size({'width': width, 'height': height})
+            page.wait_for_timeout(500)
+            metrics = page.evaluate('''() => {
+              const board = document.querySelector('[data-testid="card-board-expanded"]');
+              const done = board && board.querySelector('[data-testid="card-board-column-done"]');
+              return {viewport:innerWidth, scrollWidth:document.documentElement.scrollWidth,
+                boardWidth:board && board.getBoundingClientRect().width,
+                doneWidth:done && done.getBoundingClientRect().width};
+            }''')
+            metrics['searchValue'] = search.input_value()
+            if metrics['scrollWidth'] != width or not metrics['doneWidth'] or metrics['searchValue'] != '갱신':
+                failures.append({'check': 'resize', 'label': str(width), 'metrics': metrics})
+            results.append(metrics)
+            page.screenshot(path=str(output / f'resize-{width}.png'))
+        page.goto(section_url(base, 'autoRefresh'), wait_until='networkidle')
+        lane = page.get_by_test_id('card-board-scroll-review').first
+        lane.wait_for(state='visible')
+        lane.evaluate('(e) => { e.scrollTop = 160; }')
+        page.wait_for_timeout(200)
+        before_scroll = lane.evaluate('(e) => e.scrollTop')
+        page.set_viewport_size({'width': 390, 'height': 820})
+        page.wait_for_timeout(500)
+        after_scroll = lane.evaluate('(e) => e.scrollTop')
+        results.append({'scrollBefore': before_scroll, 'scrollAfter': after_scroll})
+        if before_scroll < 1 or abs(after_scroll - before_scroll) > 1:
+            failures.append({'check': 'resize scroll position', 'before': before_scroll, 'after': after_scroll})
+    except Exception as error:
+        failures.append({'check': 'resize', 'error': str(error).splitlines()[0]})
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Frame loading placement check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
@@ -359,6 +520,10 @@ def main() -> int:
                         "metrics": metrics,
                         "failures": sample_failures,
                     })
+                viewport_result['boardStates'] = check_board_states(page, args.base_url, output, width, failures)
+                viewport_result['refreshStates'] = check_refresh_states(page, args.base_url, output, width, failures)
+                if width == 1180:
+                    viewport_result['resize'] = check_resize(page, args.base_url, output, failures)
                 result["viewports"].append(viewport_result)
                 context.close()
         finally:

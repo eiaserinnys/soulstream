@@ -13,6 +13,6 @@ export function AutomaticRefreshIndicator({ style, testID }: { style?: StyleProp
     accessibilityRole="progressbar"
     accessibilityLabel="자동 갱신 중"
     accessibilityState={{ busy: true }}
-    style={[{ position: 'absolute' }, style]}
+    style={[{ position: 'absolute', overflow: 'hidden' }, style]}
   />;
 }

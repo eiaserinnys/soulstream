@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import type { ApiClient } from '../api/client';
 import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
@@ -45,6 +45,9 @@ export function ReviewAutoRefresh() {
       getStarredFolders: async () => { await pending.current?.promise; return { items, nextCursor: empty ? null : 'public-next' }; },
     } as ApiClient;
   }, [empty]);
+  useEffect(() => {
+    if (mode === 'daily') void api.getPlannerToday('2026-10-02').then(data => usePlannerStore.getState().setDaily('2026-10-02', data));
+  }, [api, mode]);
   // Sidebar's real owner is inactive here; this local read supplies its shared projection.
   usePlannerStarred(api, mode === 'sidebar');
   const begin = useCallback(() => {

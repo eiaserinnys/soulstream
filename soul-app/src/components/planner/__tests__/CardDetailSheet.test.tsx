@@ -2,6 +2,8 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useDraftStore } from '../../../store/draftStore';
 let mockDevice = 'phone';
+let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
 jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
@@ -103,6 +105,7 @@ function checkItem(id: number, display: CardCheckItem['display']): CardCheckItem
 
 beforeEach(async () => {
   mockDevice = 'phone';
+  mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
   await useAuthStore.persist.rehydrate();
   await useSettingsStore.persist.rehydrate();
   await useDraftStore.persist.rehydrate();
@@ -117,6 +120,19 @@ beforeEach(async () => {
   mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
+
+test('가로 카드 상세는 데이터를 받기 전 탭 개수를 숨기고 받은 빈 개수는 표시한다', async () => {
+  mockDevice = 'tablet';
+  mockDimensions = { width: 1180, height: 820, scale: 1, fontScale: 1 };
+  let resolve!: (value: CardDetail) => void;
+  const api = { getCard: jest.fn(() => new Promise<CardDetail>(done => { resolve = done; })) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  expect(screen.queryByTestId('settings-segment-card-detail-sessions-count')).toBeNull();
+  expect(screen.queryByTestId('settings-segment-card-detail-notes-count')).toBeNull();
+  await act(async () => resolve({ ...detail, sessions: [], notes: [] }));
+  await waitFor(() => expect(screen.getByTestId('settings-segment-card-detail-sessions-count').props.children).toBe(0));
+  expect(screen.getByTestId('settings-segment-card-detail-notes-count').props.children).toBe(0);
+});
 
 test.each([false, true])('질문 알림은 항목이 있는 카드의 커멘트를 연다 (저장된 항목 탭: %s)', async saved => {
   const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
