@@ -322,7 +322,7 @@
 }
 
 @media (max-width: 760px) {
-  .v3-planner-scroll {
+  .v3-planner-scroll, .v3-planner-scroll:has(> .v3-detail-pane--inline) {
     padding-right: 14px;
     padding-left: 14px;
   }

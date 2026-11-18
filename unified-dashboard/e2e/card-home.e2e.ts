@@ -12,6 +12,7 @@ const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((st
 async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean}={}){
  const cards=initialCards,reads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
+ const completedAt=new Date().toISOString();
  await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
   const Native=EventSource,sources:EventSource[]=[];let sequence=0;
   window.EventSource=class extends Native{constructor(url:string|URL,options?:EventSourceInit){super(url,options);sources.push(this);}};
@@ -28,7 +29,7 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
     if(completedOptions.delay)await new Promise(done=>setTimeout(done,completedOptions.delay));
     if(completedFailure)return route.fulfill({status:500,json:{message:"완료 카드 조회 실패 fixture"}});
    }
-   const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt:new Date().toISOString()}));
+   const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt}));
    const listed=[...cards,...completedSeeds].filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done")
     .filter(card=>!query||`${card.title} ${card.request}`.toLocaleLowerCase().includes(query));
    if(status==="done"&&completedOptions.paginate){
@@ -487,8 +488,7 @@ for(const [mode,width] of [["목록",390],["폴더",390],["접힌 보드",390],[
   const edges={notice:{left:noticeBox.x,right:noticeBox.x+noticeBox.width},search:{left:searchBox.x,right:searchBox.x+searchBox.width}};
   await completedCapture(page,`error-${mode}-${width}`,{alerts:await alert.count(),text:await alert.innerText(),...edges});
   if(mode==="접힌 보드"||mode==="폴더 보드"){
-   expect(Math.abs(edges.notice.left-edges.search.left)).toBeLessThanOrEqual(1);
-   expect(Math.abs(edges.notice.right-edges.search.right)).toBeLessThanOrEqual(1);
+   await expect(surface.locator('[data-board-column="done"] [data-testid="completed-viewport"] [role="alert"]')).toBeVisible();
   }
   await expect(alert).toContainText("완료 카드를 불러오지 못했습니다.");
   await expect(surface).not.toContainText("Error:");await expect(surface).not.toContainText("선택한 기간에 완료 카드가 없습니다");
@@ -515,4 +515,48 @@ test("완료 목록 로딩과 조작",async({page})=>{
  await home.getByRole("button",{name:"보드",exact:true}).click();await expand.click();await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toBeVisible();
  await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toHaveCount(0);await expect(expand).toBeFocused();
  await completedCapture(page,"interaction",{focusAfterTab,beforeResize,afterResize,focusRestored:await expand.evaluate(el=>el===document.activeElement)});
+});
+
+test("card1680 실시간 갱신에도 불러온 카드와 스크롤 유지",async({page},testInfo)=>{
+ await page.setViewportSize({width:1440,height:900});await page.emulateMedia({reducedMotion:"reduce"});
+ const {board}=await fixture(page,17,seed().filter(card=>card.status!=="done"),200,{paginate:true});
+ const home=page.getByTestId("card-home");await home.getByRole("switch",{name:"완료·취소 숨김"}).uncheck();
+ const done=board.locator('[data-board-column="done"]'),scroller=done.getByTestId("virtuoso-scroller");
+ await scroller.scrollIntoViewIfNeeded();
+ for(let i=0;i<2;i++){
+  await scroller.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+  await expect.poll(async()=>Number((await done.locator('.v3-detail-section-head').innerText()).match(/(\d+)개/)?.[1]??0)).toBeGreaterThanOrEqual(Math.min((i+2)*60,200));
+ }
+ await scroller.evaluate(el=>{el.scrollTop=el.scrollHeight/2;});
+ const before=await scroller.evaluate(el=>el.scrollTop),count=await done.locator('.v3-detail-section-head').innerText();
+ const response=page.waitForResponse(response=>response.url().includes('/api/cards?')&&response.url().includes('status=done'));
+ await page.evaluate(()=>{(window as unknown as {emitCard:(id:string)=>void}).emitCard('completed-grid-0');});await response;
+ await expect(done.locator('.v3-detail-section-head')).toHaveText(count);
+ await expect.poll(()=>scroller.evaluate(el=>el.scrollTop)).toBe(before);
+ await page.screenshot({path:testInfo.outputPath('scroll.png'),animations:'disabled'});
+});
+
+test("card1680 접힌 보드 완료 열은 지연 로딩 전후 같은 크기",async({page},testInfo)=>{
+ await page.setViewportSize({width:390,height:844});const {board}=await fixture(page,17,seed(),5,{delay:2000});
+ await page.getByTestId('card-home').getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const done=board.locator('[data-board-column="done"]');await done.scrollIntoViewIfNeeded();
+ await expect(done.getByText('완료 카드를 불러오는 중…')).toBeVisible();
+ const before=(await done.getByTestId('completed-viewport').boundingBox())!;
+ await page.screenshot({path:testInfo.outputPath('loading.png'),animations:'disabled'});
+ await expect(done.locator('.v3-detail-section-head')).toContainText('6개 표시');
+ const after=(await done.getByTestId('completed-viewport').boundingBox())!;
+ expect(after.width).toBeCloseTo(before.width,0);expect(after.height).toBeCloseTo(before.height,0);
+});
+
+test("card1680 폴더 390px 글자 17·18 격자 여백",async({page},testInfo)=>{
+ for(const size of [17,18]){
+  await page.setViewportSize({width:390,height:844});await fixture(page,size);
+  await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');await folder.getByRole('button',{name:'일반 보기',exact:true}).click();
+  const grid=folder.locator('.v3-postit-grid').first(),card=grid.locator('.v3-postit-card').first();await card.scrollIntoViewIfNeeded();
+  const edges=await grid.evaluate(el=>{const scroll=el.closest('.v3-planner-scroll')!,box=scroll.getBoundingClientRect(),style=getComputedStyle(scroll),grid=el.getBoundingClientRect(),card=el.querySelector('.v3-postit-card')!.getBoundingClientRect();return {contentRight:box.right-parseFloat(style.paddingRight),gridRight:grid.right,cardRight:card.right};});
+  await page.screenshot({path:testInfo.outputPath(`folder-${size}.png`),animations:'disabled'});
+  expect(edges.gridRight).toBeLessThanOrEqual(edges.contentRight+1);expect(edges.cardRight).toBeLessThanOrEqual(edges.contentRight+2);
+  await page.unrouteAll({behavior:'wait'});
+ }
 });

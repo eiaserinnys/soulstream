@@ -48,11 +48,11 @@ it("expands the actual board and restores horizontal and lane scroll and focus",
  expect(board.scrollLeft).toBe(222);expect(board.querySelector<HTMLElement>('[data-board-column="running"] .v3-card-board-lane')!.scrollTop).toBe(91);expect(document.activeElement).toBe(expand);
 });
 
-it("keeps completed search and feedback above the main board when its actual result is empty",async()=>{
+it("keeps completed search above the board and feedback inside the completed lane",async()=>{
  const staleDone={...reviewCard,id:"stale-completed",status:"done" as const};
  const completed=makeCompletedBrowser();
  await act(()=>root.render(<CardBoardWorkspace title="전체 카드" cards={[staleDone]} completed={completed} completion={{includeCompleted:true,onChange:vi.fn()}} renderCard={card=><article>{card.title}</article>}/>));
- expect(element.querySelector('[data-board-column="done"]')).toBeNull();
+ expect(element.querySelector('[data-board-column="done"] [role="alert"]')).not.toBeNull();
  const controls=element.querySelector<HTMLElement>(".v3-completed-controls")!;
  const board=element.querySelector<HTMLElement>(".v3-card-board")!;
  expect(controls).not.toBeNull();

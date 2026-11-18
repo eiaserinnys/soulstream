@@ -568,6 +568,12 @@ def open_completed_cards(page: Page) -> None:
     page.wait_for_selector('[data-testid="completed-viewport"]', state="visible", timeout=30000)
 
 
+def open_completed_board(page: Page) -> None:
+    open_card_board(page)
+    page.get_by_role("switch", name="완료·취소 숨김").click()
+    page.locator('[data-board-column="done"]').scroll_into_view_if_needed()
+
+
 def open_folder(page: Page) -> None:
     """넓은 폭은 사이드바 나무, 좁은 폭은 모바일 프로젝트 목록에서 폴더를 고른다."""
     if page.viewport_size["width"] <= 760:
@@ -759,6 +765,17 @@ def capture_scene(browser, base: str, out: Path, scene: dict, width: int, theme:
                 entry["passed"] = False
                 entry["reason"] = "이전 대화 로딩의 기존 대화가 보이지 않음"
         page.screenshot(path=str(screenshot_path(out, scene, width, theme)), animations="disabled")
+
+        if scene["key"] == "completed-board":
+            before = page.locator(scene["frame"]).bounding_box()
+            if held is None or not held.release(status=200, body={"cards": [], "nextCursor": None}):
+                raise RuntimeError("completed request was not held")
+            page.get_by_text("선택한 기간에 완료 카드가 없습니다").wait_for(state="visible")
+            after = page.locator(scene["frame"]).bounding_box()
+            entry["transition"] = {"before": before, "after": after}
+            entry["passed"] = bool(entry["passed"] and abs(before["width"] - after["width"]) <= TOLERANCE_PX
+                                   and abs(before["height"] - after["height"]) <= TOLERANCE_PX)
+            page.screenshot(path=str(screenshot_path(out, scene, width, theme, "-after")), animations="disabled")
 
         extra = scene.get("extra")
         if extra:
@@ -1104,6 +1121,13 @@ SCENES = [
         "frame": '[data-testid="completed-viewport"]',
         "mode": "content",
         "open": open_completed_cards,
+        "hold": re.compile(r"/api/cards\?.*\bstatus=done\b"),
+    },
+    {
+        "key": "completed-board",
+        "frame": '[data-board-column="done"] [data-testid="completed-viewport"]',
+        "mode": "fill",
+        "open": open_completed_board,
         "hold": re.compile(r"/api/cards\?.*\bstatus=done\b"),
     },
     {

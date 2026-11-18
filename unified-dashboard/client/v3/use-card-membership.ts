@@ -3,6 +3,7 @@ import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { getV3InvalidationSnapshot, selectV3InvalidationKey, useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { errorText } from "./v3-dashboard-utils";
 const sources=["card","folder","catalog","replay"] as const;
 const currentRevision=()=>selectV3InvalidationKey(getV3InvalidationSnapshot(),sources);
 
@@ -34,7 +35,7 @@ export function useCardMembership(folderId?:string,createdIds:readonly string[]=
         }catch(failure){
           if(!active)break;
           if(dirty||started!==currentRevision()){dirty=true;continue;}
-          setError(String(failure));
+          setError(errorText(failure));
         }
       }
       running=false;

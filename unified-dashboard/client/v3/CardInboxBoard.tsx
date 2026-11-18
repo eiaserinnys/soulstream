@@ -1,5 +1,5 @@
 import { useState,type ReactNode } from "react";
-import { Button, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
+import { FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
 import { useCardMembership } from "./use-card-membership";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { PostItCard } from "./PostItCard";
@@ -14,9 +14,7 @@ export function CardInboxBoard({actions,draftAction,createdIds=[],completion:con
   const localCompleted=useCompletedCards(undefined,completion.includeCompleted&&!controlledCompleted);
   const completed=controlledCompleted??localCompleted;
   const {cards,loading,error,retry}=useCardMembership(undefined,createdIds);
-  const notice=error?<V3ErrorNotice message="카드를 불러오지 못했습니다." detail={error}>
-    <Button size="sm" variant="ghost" onClick={retry}>다시 불러오기</Button>
-  </V3ErrorNotice>:null;
+  const notice=error?<V3ErrorNotice message="카드를 불러오지 못했습니다." detail={error} onRetry={retry}/>:null;
   // 보일 카드가 없는 동안에는 로더와 실패 안내가 같은 자리(프레임 가운데)에 선다.
   const noCards=cards.length===0&&completed.cards.length===0;
   if(loading&&noCards)return notice?<FrameNotice>{notice}</FrameNotice>:<FrameLoading label="카드를 불러오는 중…"/>;
