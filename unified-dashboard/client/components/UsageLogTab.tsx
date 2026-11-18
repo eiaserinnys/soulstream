@@ -141,7 +141,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
         </Button>
       </div>
 
-      {error && <div className="py-2 text-sm text-accent-red">❌ {error}</div>}
+      {error && <div className="py-2 text-sm text-accent-red" data-v3-selectable-content="true">❌ {error}</div>}
 
       {!loading && !error && events.length === 0 && (
         <div className="py-8 text-center text-sm text-muted-foreground">
@@ -165,15 +165,15 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
             <tbody>
               {events.map((event) => (
                 <tr key={event.eventId} className="border-t border-border/60">
-                  <td className="whitespace-nowrap px-2 py-1 tabular-nums">
+                  <td className="whitespace-nowrap px-2 py-1 tabular-nums" data-v3-selectable-content="true">
                     {clockTime(event.occurredAt)}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1" data-v3-selectable-content="true">
                     {CLIENT_LABELS[event.clientKind] ?? event.clientKind}
                   </td>
-                  <td className="px-2 py-1">{EVENT_LABELS[event.type] ?? event.type}</td>
-                  <td className="px-2 py-1 text-muted-foreground">{event.entry ?? "—"}</td>
-                  <td className="px-2 py-1">
+                  <td className="px-2 py-1" data-v3-selectable-content="true">{EVENT_LABELS[event.type] ?? event.type}</td>
+                  <td className="px-2 py-1 text-muted-foreground" data-v3-selectable-content="true">{event.entry ?? "—"}</td>
+                  <td className="px-2 py-1" data-v3-selectable-content="true">
                     {event.target === null ? (
                       <span className="text-muted-foreground">—</span>
                     ) : (
@@ -186,7 +186,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
                       </button>
                     )}
                   </td>
-                  <td className="px-2 py-1 text-muted-foreground">{summarize(event.attrs)}</td>
+                  <td className="px-2 py-1 text-muted-foreground" data-v3-selectable-content="true">{summarize(event.attrs)}</td>
                 </tr>
               ))}
             </tbody>

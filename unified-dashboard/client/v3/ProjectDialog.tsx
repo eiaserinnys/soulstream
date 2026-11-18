@@ -189,7 +189,7 @@ export function ProjectDialog({
               value={value} disabled={pending} defaultsInvalid={!assignmentValid} onChange={setValue} onEdit={openEditor} />
           )}
           </div>
-          {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
+          {error ? <p className="v3-project-star-error" role="alert" data-v3-selectable-content="true">{error}</p> : null}
         </DialogPanel>
         <DialogFooter variant="bare">
           {editor ? <>

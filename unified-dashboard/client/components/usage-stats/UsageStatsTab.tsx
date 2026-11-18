@@ -281,7 +281,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
       <PeriodButtons value={period} onChange={changePeriod} label="통계 기간" />
       <div className="usage-stats-range-controls">
         {period !== "all" ? <DashboardIconCap size="small" label="이전 기간" disabled={previousDisabled} onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
-        <p className="usage-stats-period-label" aria-live="polite">{periodLabel}</p>
+        <p className="usage-stats-period-label" aria-live="polite" data-v3-selectable-content="true">{periodLabel}</p>
         {period !== "all" ? <DashboardIconCap size="small" label="다음 기간" disabled={nextDisabled} onClick={() => shiftPeriod(1)}><ChevronRight className="size-4" aria-hidden="true" /></DashboardIconCap> : null}
       </div>
       <div className="usage-stats-filters">
@@ -310,7 +310,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
 
     {shownError ? <SettingsAlert>
       <div className="usage-stats-error-content">
-        <span>{state === "forbidden" ? "이 통계를 볼 권한이 없습니다." : "통계를 불러오지 못했습니다."}</span>
+        <span data-v3-selectable-content="true">{state === "forbidden" ? "이 통계를 볼 권한이 없습니다." : "통계를 불러오지 못했습니다."}</span>
         {state === "error" ? <Button size="sm" variant="ghost" onClick={retry}>다시 불러오기</Button> : null}
       </div>
     </SettingsAlert> : (
@@ -321,12 +321,12 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               {dateLabel}<X className="size-3" aria-hidden="true" />
             </Button> : null}
             <div className="usage-stats-summary-values">
-              <div className="usage-stats-summary-metric"><span>토큰</span><strong>{summaryValue("tokens")}</strong><span>{cacheSplit.cacheReadLine}</span></div>
-              <div className="usage-stats-summary-metric"><span>정가</span><strong>{summaryValue("cost")}</strong><span>{cacheSplit.cacheReadCostLine}</span></div>
+              <div className="usage-stats-summary-metric"><span>토큰</span><strong data-v3-selectable-content="true">{summaryValue("tokens")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadLine}</span></div>
+              <div className="usage-stats-summary-metric"><span>정가</span><strong data-v3-selectable-content="true">{summaryValue("cost")}</strong><span data-v3-selectable-content="true">{cacheSplit.cacheReadCostLine}</span></div>
             </div>
             <div className="usage-stats-summary-meta" aria-live="polite">
-              {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span>미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
-              {overviewLoading || detailLoading ? null : coverageLabel ? <span>{coverageLabel}</span> : null}
+              {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span data-v3-selectable-content="true">미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
+              {overviewLoading || detailLoading ? null : coverageLabel ? <span data-v3-selectable-content="true">{coverageLabel}</span> : null}
               {overview?.projection_status.state === "backfilling" ? <span>이전 기록 정리 중</span> : null}
             </div>
           </div>
@@ -411,7 +411,7 @@ function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
   const material = detail.input_material;
   const rows = groupUsageStatsInputMaterial(material);
   return <div className="usage-stats-input-material">
-    <p className="usage-stats-input-total">{formatUsageStatsApproximateTokens(material.observed_approximate_tokens, true)}</p>
+    <p className="usage-stats-input-total" data-v3-selectable-content="true">{formatUsageStatsApproximateTokens(material.observed_approximate_tokens, true)}</p>
     <div className="usage-stats-share-list">
       {rows.map(row => <UsageShareRow
         key={row.category}
@@ -421,7 +421,7 @@ function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
         color={row.category === "harness_internal" ? undefined : "var(--v3-accent)"}
       />)}
     </div>
-    <p className="usage-stats-input-meta">툴 호출 {detail.tool_calls.toLocaleString("ko-KR")}회</p>
-    {material.coverage.partial_samples > 0 || material.coverage.missing_samples > 0 ? <p className="usage-stats-input-meta">{USAGE_STATS_LABELS.missingInput}</p> : null}
+    <p className="usage-stats-input-meta" data-v3-selectable-content="true">툴 호출 {detail.tool_calls.toLocaleString("ko-KR")}회</p>
+    {material.coverage.partial_samples > 0 || material.coverage.missing_samples > 0 ? <p className="usage-stats-input-meta" data-v3-selectable-content="true">{USAGE_STATS_LABELS.missingInput}</p> : null}
   </div>;
 }

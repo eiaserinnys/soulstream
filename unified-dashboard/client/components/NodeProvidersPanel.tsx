@@ -114,7 +114,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: dotColor }} />
         <span className="c724-account-email">Claude</span>
-        {profile ? <span className="c724-meta-inline" title={profile.email}>{profile.email}</span> : null}
+        {profile ? <span className="c724-meta-inline" title={profile.email} data-v3-selectable-content="true">{profile.email}</span> : null}
         {profile?.has_claude_max ? <span className="c724-badge c724-badge-neutral">Max</span> : null}
         {flow.tokenStatus && !authenticated ? <span className="c724-badge c724-badge-neutral">미인증</span> : null}
       </div>
@@ -158,7 +158,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
       </div>
     </div> : null}
 
-    {flow.error ? <p className="c724-pool-error" role="alert">{flow.error}</p> : null}
+    {flow.error ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{flow.error}</p> : null}
 
     {loading ? <ProviderQuotaSkeleton /> : hasAnySlot(slots)
       ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />

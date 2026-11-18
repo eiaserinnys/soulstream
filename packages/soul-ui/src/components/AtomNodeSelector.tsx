@@ -176,7 +176,7 @@ export function AtomNodeSelector({
             </div>
           )}
           {error && (
-            <div className="px-3 py-2 text-xs text-destructive">{error}</div>
+            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>
           )}
           {!loading && !error && nodes.length === 0 && (
             <div className="px-3 py-2 text-xs text-muted-foreground">

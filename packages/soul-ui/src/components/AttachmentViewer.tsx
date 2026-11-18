@@ -273,7 +273,7 @@ export function AttachmentViewer({
         onKeyDown={handleKeyDown}
       >
         <DialogHeader className="chat-image-viewer-header">
-          <DialogTitle className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
+          <DialogTitle data-slot="attachment-name" className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
           {metadata && <p className="chat-image-viewer-metadata">{metadata}</p>}
         </DialogHeader>
         <DialogPanel
@@ -282,13 +282,13 @@ export function AttachmentViewer({
           className="chat-image-viewer-panel"
         >
           {panelContent ?? (item.availability === "missing" ? (
-            <div className="chat-attachment-state chat-image-status" role="status">첨부를 찾을 수 없습니다.</div>
+            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 찾을 수 없습니다.</div>
           ) : item.availability === "unavailable" ? (
-            <div className="chat-attachment-state chat-image-status" role="status">첨부를 사용할 수 없습니다.</div>
+            <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 사용할 수 없습니다.</div>
           ) : item.previewKind === "image" ? (
             imageFailureKey === previewKey || !imageSource ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span>{imageFailureKey === previewKey ? "이미지를 불러오지 못했습니다." : "이미지 미리보기를 사용할 수 없습니다."}</span>
+                <span data-slot="dialog-error-message">{imageFailureKey === previewKey ? "이미지를 불러오지 못했습니다." : "이미지 미리보기를 사용할 수 없습니다."}</span>
                 {imageRetryKey === previewKey && <Button variant="outline" size="sm" onClick={() => {
                   setImageFailureKey(null);
                   setImageAttempt(value => value + 1);
@@ -311,7 +311,7 @@ export function AttachmentViewer({
               <div className="chat-attachment-state chat-image-status" role="status">미리보기를 불러오는 중…</div>
             ) : text.state === "error" ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span>{text.message}</span>
+                <span data-slot="dialog-error-message">{text.message}</span>
                 {text.retryable && <Button variant="outline" size="sm" onClick={() => setRetryCount(value => value + 1)}>다시 시도</Button>}
               </div>
             ) : text.result.text.length === 0 ? (
@@ -319,7 +319,7 @@ export function AttachmentViewer({
             ) : (
               <>
                 {textFormat === "markdown" ? (
-                  <div className="chat-attachment-markdown">
+                  <div className="chat-attachment-markdown" data-slot="attachment-preview-body">
                     <MarkdownContent content={text.result.text} codeBlockLayout="document" />
                   </div>
                 ) : textFormat === "html" ? (
@@ -329,7 +329,7 @@ export function AttachmentViewer({
                     className="chat-attachment-html-frame"
                   />
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words">{text.result.text}</pre>
+                  <pre className="whitespace-pre-wrap break-words" data-slot="attachment-preview-body">{text.result.text}</pre>
                 )}
                 {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
               </>
@@ -339,7 +339,7 @@ export function AttachmentViewer({
               <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
             ) : mediaFailure ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span>{mediaFailure.message}</span>
+                <span data-slot="dialog-error-message">{mediaFailure.message}</span>
                 {mediaFailure.retryable && <Button variant="outline" size="sm" onClick={() => {
                   setMediaFailureKey(null);
                   setMediaFailureMessage(null);
@@ -348,7 +348,7 @@ export function AttachmentViewer({
                 }}>다시 시도</Button>}
               </div>
             ) : mediaSource === undefined && !localFile ? (
-              <div className="chat-attachment-state chat-image-status" role="status">미리보기를 불러오지 못했습니다.</div>
+              <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">미리보기를 불러오지 못했습니다.</div>
             ) : (
               <div className="chat-attachment-media-frame">
                 {mediaFormat === "video" ? (
@@ -424,7 +424,7 @@ export function AttachmentViewer({
                 <span className="max-sm:sr-only">{saving ? "저장 중…" : "원본 저장"}</span>
               </Button>
             )}
-            {saveMessage && <span className="chat-image-status chat-image-viewer-save-error" role="status">{saveMessage}</span>}
+            {saveMessage && <span className="chat-image-status chat-image-viewer-save-error" role="status" data-slot="dialog-error-message">{saveMessage}</span>}
           </DialogFooter>
         )}
       </DialogPopup>

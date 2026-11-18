@@ -48,8 +48,8 @@ function ProviderQuotaCell({ slot }: { slot: ProviderQuotaSlot }) {
   return <div className="c724-quota-cell">
     <div className="c724-quota-label-row">
       <span className="c724-quota-name">{slot.label}</span>
-      <span className="c724-quota-pct">{Math.round(slot.usedPercent)}%</span>
-      <span className="c724-quota-reset">{formatQuotaResetLabel(slot.resetAt, slot.usedPercent, slot.kind)}</span>
+      <span data-v3-selectable-content="true" className="c724-quota-pct">{Math.round(slot.usedPercent)}%</span>
+      <span data-v3-selectable-content="true" className="c724-quota-reset">{formatQuotaResetLabel(slot.resetAt, slot.usedPercent, slot.kind)}</span>
     </div>
     {slot.sevenDay
       ? <div className="c724-quota-bar" data-week="true"

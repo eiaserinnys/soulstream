@@ -62,7 +62,7 @@ function StorageSection({ purpose, title, request }: { request: typeof fetch; pu
         value={draft[key]} onChange={value => setDraft(current => ({ ...current, [key]: value }))} />)}
     </div>
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-      <span>비밀키: {metadata?.secretAccessKeyConfigured ? "저장됨" : "미설정"}</span>
+      <span data-v3-selectable-content="true">비밀키: {metadata?.secretAccessKeyConfigured ? "저장됨" : "미설정"}</span>
       <label className="flex items-center gap-2"><input type="checkbox" checked={deleteSecret} disabled={busy || !metadata?.secretAccessKeyConfigured} onChange={event => setDeleteSecret(event.target.checked)} />저장된 비밀키 삭제</label>
     </div>
     <div className="flex flex-wrap gap-2">
@@ -72,6 +72,6 @@ function StorageSection({ purpose, title, request }: { request: typeof fetch; pu
     </div>
     <p className="text-xs text-muted-foreground">연결 확인은 저장된 설정으로 버킷 접근을 확인합니다.</p>
     {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
-    {error && <p role="alert" className="text-xs text-accent-red">{error}</p>}
+    {error && <p role="alert" className="text-xs text-accent-red" data-v3-selectable-content="true">{error}</p>}
   </section>;
 }

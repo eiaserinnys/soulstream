@@ -534,13 +534,13 @@ export function SearchModal({
           )}
 
           {error && !loading && (
-            <div className="py-4 text-center text-sm text-accent-red">
+            <div className="py-4 text-center text-sm text-accent-red" data-v3-selectable-content="true">
               ❌ {error}
             </div>
           )}
 
           {showPartialSearchBanner && (
-            <div role="status" className="mb-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <div role="status" className="mb-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-v3-selectable-content="true">
               {partialSearchMessage}
             </div>
           )}

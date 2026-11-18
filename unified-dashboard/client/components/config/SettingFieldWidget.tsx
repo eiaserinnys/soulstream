@@ -111,7 +111,7 @@ function FieldInput({
   const disabled = field.read_only;
 
   if (field.read_only && field.read_only_display && !field.sensitive && field.value_type !== "bool") {
-    return <div data-testid="config-field-value" className="persistent-settings-read-only-value">{value}</div>;
+    return <div data-testid="config-field-value" className="persistent-settings-read-only-value" data-v3-selectable-content="true">{value}</div>;
   }
 
   if (field.value_type === "bool") {

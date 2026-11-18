@@ -256,8 +256,8 @@ export function PersistentSessionDetails({
   />;
 
   return <div className="space-y-4">
-    {visibleError ? <SettingsAlert scrollIntoView>{visibleError}</SettingsAlert> : null}
-    {nodeUnknown ? <SettingsAlert>이 세션의 노드를 알 수 없어 편집할 수 없습니다.</SettingsAlert> : null}
+    {visibleError ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">{visibleError}</span></SettingsAlert> : null}
+    {nodeUnknown ? <SettingsAlert><span data-v3-selectable-content="true">이 세션의 노드를 알 수 없어 편집할 수 없습니다.</span></SettingsAlert> : null}
     <div>
       {showsAccount ? <>
         {nameField}

@@ -189,7 +189,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       </div>
 
       {error && (
-        <div className="rounded border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
+        <div data-v3-selectable-content="true" className="rounded border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">
           {error}
         </div>
       )}
@@ -224,9 +224,9 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
               <TableRow key={user.email}>
                 <TableCell>
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{user.email}</div>
+                    <div className="truncate text-sm font-medium" data-v3-selectable-content="true">{user.email}</div>
                     {user.displayName && (
-                      <div className="truncate text-xs text-muted-foreground">{user.displayName}</div>
+                      <div className="truncate text-xs text-muted-foreground" data-v3-selectable-content="true">{user.displayName}</div>
                     )}
                   </div>
                 </TableCell>
@@ -262,7 +262,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-4">
-              {editorError && <div role="alert" className="text-sm text-accent-red">{editorError}</div>}
+              {editorError && <div role="alert" className="text-sm text-accent-red" data-v3-selectable-content="true">{editorError}</div>}
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-muted-foreground">이메일</span>
                 <Input

@@ -260,7 +260,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           onSelect={(job) => { setSelected(job); setEditor(editorFromJob(job)); setPreview([]); setError(null); setActionError(null); void loadRuns(job.job_id).catch((caught: unknown) => setError(message(caught))); }}
         /> : null}</> : !listFailed ? <p role="status" className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p> : null}
     </>}>
-        <SettingsDetailHeader
+        <SettingsDetailHeader selectableTitle={Boolean(selected)}
           title={selected ? selected.name : "새 반복 작업"}
           subtitle={selected ? `다음 실행: ${displayTime(selected.next_run_at)}` : null}
           actions={selected ? <>
@@ -270,7 +270,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           </> : null}
         />
 
-        {error ? <SettingsAlert>{error}</SettingsAlert> : null}
+        {error ? <SettingsAlert><span data-v3-selectable-content="true">{error}</span></SettingsAlert> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <SettingsField label="작업 이름"><Input className="min-w-0" aria-label="작업 이름" value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></SettingsField>
@@ -278,7 +278,7 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           <SettingsField label="오프라인 허용 초"><Input className="min-w-0" aria-label="오프라인 허용 초" type="number" min="1" value={editor.lateRunWindowSeconds} onChange={(event) => setEditor({ ...editor, lateRunWindowSeconds: event.target.value })} /></SettingsField>
         </div>
         {selected?.schedule_kind === "event"
-          ? <div className="rounded border border-border p-3 text-sm" data-testid="recurring-event-condition">{recurringJobConditionText(selected)}</div>
+          ? <div className="rounded border border-border p-3 text-sm" data-testid="recurring-event-condition" data-v3-selectable-content="true">{recurringJobConditionText(selected)}</div>
           : <RecurringScheduleEditor value={editor.schedule} scheduleKind={selected?.schedule_kind} onChange={(schedule) => setEditor((current) => ({ ...current, schedule }))} />}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editor.enabled} onChange={(event) => setEditor({ ...editor, enabled: event.target.checked })} />생성·저장 후 자동 실행</label>
         <SettingsMultilineField label="작업 내용" value={editor.prompt} onChange={(prompt) => setEditor({ ...editor, prompt })} />
@@ -314,8 +314,8 @@ export function RecurringJobsTab({ api = recurringJobsApi, assignment }: { api?:
           {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" ? <Button type="button" size="sm" variant="outline" className={busyButtonClassName} aria-disabled={busy} onClick={() => void previewSchedule()}>다음 5회 보기</Button> : null}
           <Button ref={saveButtonRef} type="button" size="sm" className={busyButtonClassName} aria-disabled={busy} disabled={selected?.archived_at != null} onClick={(event) => void save(event)}>{busy ? "저장 중..." : selected ? "변경 저장" : editor.schedule.mode === "once" ? "1회 예약 생성" : "반복 작업 생성"}</Button>
         </div>
-        {actionError ? <SettingsAlert key={actionError.key} scrollIntoView>{actionError.message}</SettingsAlert> : null}
-        {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time}>{displayTime(time)}</li>)}</ol></div> : null}
+        {actionError ? <SettingsAlert key={actionError.key} scrollIntoView><span data-v3-selectable-content="true">{actionError.message}</span></SettingsAlert> : null}
+        {editor.schedule.mode !== "once" && selected?.schedule_kind !== "event" && preview.length > 0 ? <div className="rounded border border-border bg-muted/20 p-3 text-sm"><p className="mb-1 font-medium">다음 5회</p><ol className="list-decimal space-y-1 pl-5">{preview.map((time) => <li key={time} data-v3-selectable-content="true">{displayTime(time)}</li>)}</ol></div> : null}
 
         {selected ? <RunHistory runs={runs} onOpenSession={setActiveSession} /> : null}
     </SettingsListDetailFrame>
@@ -329,7 +329,7 @@ function JobList({ title, jobs, selectedId, onSelect }: { title: string; jobs: R
 function RunHistory({ runs, onOpenSession }: { runs: RecurringJobRun[]; onOpenSession(sessionId: string): void }) {
   return <section className="rounded border border-border p-3"><h4 className="mb-2 text-sm font-medium">최근 실행</h4>{runs.length === 0 ? <p className="text-sm text-muted-foreground">아직 실행 이력이 없습니다.</p> : <ul className="space-y-2">{runs.map((run) => {
     const action = sessionAction(run);
-    return <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium">{run.state}</span><span className="ml-2 text-xs text-muted-foreground">{displayTime(run.scheduled_for ?? run.created_at)}</span>{run.reason_message || action.message ? <p className="mt-1 text-xs text-muted-foreground">{run.reason_message ?? action.message}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={!action.canOpen} onClick={() => onOpenSession(run.session_id)}>{action.label}</Button></li>;
+    return <li key={run.run_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 text-sm last:border-0 last:pb-0"><div><span className="font-medium" data-v3-selectable-content="true">{run.state}</span><span className="ml-2 text-xs text-muted-foreground" data-v3-selectable-content="true">{displayTime(run.scheduled_for ?? run.created_at)}</span>{run.reason_message || action.message ? <p className="mt-1 text-xs text-muted-foreground" data-v3-selectable-content="true">{run.reason_message ?? action.message}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={!action.canOpen} onClick={() => onOpenSession(run.session_id)}>{action.label}</Button></li>;
   })}</ul>}</section>;
 }
 

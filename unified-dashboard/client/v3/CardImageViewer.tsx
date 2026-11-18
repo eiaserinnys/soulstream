@@ -51,14 +51,14 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       onIndexChange={index => setAttachmentCursor({ key: image.attachment!.key, index })}
       onClose={onClose}
       returnFocus={returnFocus}
-      panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span>{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
+      panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span data-v3-selectable-content="true">{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
     />;
   }
 
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogPopup className="v3-surface image-viewer-popup" {...(returnFocus ? { finalFocus: () => returnFocus } : {})}>
       <DialogTitle className="sr-only">{image?.alt || "이미지"}</DialogTitle>
-      {image ? <figure className="v3-card-image-expanded" data-image-failed={imageFailed || undefined}>{imageFailed?null:<img src={image.src} alt={image.alt} className="max-w-full object-contain" onError={()=>setFailedSrc(image.src)}/>}{image.alt||imageFailed?<figcaption>{imageFailed?"파일을 불러오지 못했습니다":image.alt}</figcaption>:null}</figure> : null}
+      {image ? <figure className="v3-card-image-expanded" data-image-failed={imageFailed || undefined}>{imageFailed?null:<img src={image.src} alt={image.alt} className="max-w-full object-contain" onError={()=>setFailedSrc(image.src)}/>}{image.alt||imageFailed?<figcaption data-v3-selectable-content="true">{imageFailed?"파일을 불러오지 못했습니다":image.alt}</figcaption>:null}</figure> : null}
     </DialogPopup>
   </Dialog>;
 }

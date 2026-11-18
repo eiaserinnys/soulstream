@@ -142,7 +142,7 @@ export function FolderSettingsDialog({
                         <span className="font-medium text-[--color-text-primary]">
                           {item.folderName}
                         </span>
-                        <p className="whitespace-pre-wrap text-[--color-text-secondary]">
+                        <p data-slot="inherited-prompt-body" className="whitespace-pre-wrap text-[--color-text-secondary]">
                           {item.prompt}
                         </p>
                       </div>

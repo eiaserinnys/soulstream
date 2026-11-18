@@ -56,8 +56,8 @@ export function FolderMoveDialog({
               folders={pickerFolders} starredFolderIds={stars.folderIds} disabledFolderIds={disabledFolderIds}
               selectedFolderId={selectedFolderId} pending={movePending} onSelect={(folder) => setSelectedFolderId(folder.id)} /> : null}
           </div>
-          {stars.error ? <p className="v3-load-error" role="alert">별표 조회 실패 · {stars.error}</p> : null}
-          {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}
+          {stars.error ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">별표 조회 실패 · {stars.error}</p> : null}
+          {moveError ? <p className="v3-load-error" role="alert" data-v3-selectable-content="true">{moveError}</p> : null}
         </DialogPanel>
         <DialogFooter>
           <p className="dialog-selection-destination">{selectedFolderId ? `${pickerFolders.find(folder => folder.id === selectedFolderId)?.name}으로 이동` : "이동할 폴더를 선택하세요"}</p>

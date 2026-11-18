@@ -225,7 +225,7 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
         </div>
       )}
       {message && <div className="rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</div>}
-      {error && <div className="rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red">{error}</div>}
+      {error && <div className="rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red" data-v3-selectable-content="true">{error}</div>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" size="sm" disabled={loading || saving} onClick={() => void load()}>
           다시 불러오기

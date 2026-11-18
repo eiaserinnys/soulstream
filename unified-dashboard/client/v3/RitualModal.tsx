@@ -190,7 +190,7 @@ function RitualItemCard({
       <article className="v3-ritual-card">
         <span>미완 폴더</span>
         <h3>{item.title}</h3>
-        <p>{item.description}</p>
+        <p data-v3-selectable-content="true">{item.description}</p>
         <small>◉ {item.agentLabel}</small>
       </article>
       {error ? <V3ErrorNotice className="v3-ritual-error" message="데일리 배치를 바꾸지 못했습니다." detail={error} /> : null}

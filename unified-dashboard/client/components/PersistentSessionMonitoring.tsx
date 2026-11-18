@@ -185,13 +185,13 @@ export function PersistentSessionMonitoringView({
   return <div data-testid="persistent-session-monitoring" className="space-y-4">
     {isLoading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
     {!isLoading && hasError ? <div className="space-y-2">
-      <SettingsAlert>조회 실패: {error ?? "기록을 불러오지 못했습니다."}</SettingsAlert>
+      <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {error ?? "기록을 불러오지 못했습니다."}</span></SettingsAlert>
       <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
     </div> : null}
     {!isLoading && !hasError ? <>
       {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
       {decisionError ? <div className="space-y-2">
-        <SettingsAlert>조회 실패: {decisionError}</SettingsAlert>
+        <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {decisionError}</span></SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
       </div> : null}
       {latestDecisionText ? <SettingFieldWidget field={readField("last-decision", "마지막 판단", latestDecisionText)} value={latestDecisionText} onChange={() => undefined} /> : null}
@@ -199,15 +199,15 @@ export function PersistentSessionMonitoringView({
         <h3 className="text-sm font-medium">최근 기록</h3>
         {visibleEvents.length > 0 ? <ol className="space-y-2" aria-label="최근 세션 기록">
           {visibleEvents.map(({ event, detail }) => <li key={String(event.id)} data-testid="persistent-session-history-row" data-event-id={String(event.id)} className="min-w-0">
-            <time dateTime={event.created_at} className="block text-xs text-muted-foreground">{displayTime(event.created_at)}</time>
-            <p className="break-words text-sm text-foreground">{detail}</p>
+            <time dateTime={event.created_at} className="block text-xs text-muted-foreground" data-v3-selectable-content="true">{displayTime(event.created_at)}</time>
+            <p className="break-words text-sm text-foreground" data-v3-selectable-content="true">{detail}</p>
           </li>)}
         </ol> : generation ? <p className="text-sm text-muted-foreground">기록 없음</p> : null}
         {history.nextCursor ? <Button type="button" size="sm" variant="outline" disabled={history.loadingMore} onClick={() => void loadMore()}>
           {history.loadingMore ? "불러오는 중…" : "더 읽기"}
         </Button> : null}
         {history.error ? <div className="space-y-2">
-          <SettingsAlert>조회 실패: {history.error}</SettingsAlert>
+          <SettingsAlert><span data-v3-selectable-content="true">조회 실패: {history.error}</span></SettingsAlert>
         </div> : null}
       </section> : null}
     </> : null}

@@ -71,14 +71,14 @@ export function CogitoNodeHealthRow({
         </div>
         <StatusBadge status={node.status} />
       </div>
-      <div className={metaClass}>
+      <div className={metaClass} data-v3-selectable-content="true">
         {node.serviceStatus}
         {checked ? ` / ${checked}` : ""}
       </div>
-      {capabilityText && <div className={metaClass}>caps {capabilityText}</div>}
-      {runtimeItems.length > 0 && <div className={metaClass}>{runtimeItems.join(" / ")}</div>}
-      {dependencyText && <div className={metaClass}>deps {dependencyText}</div>}
-      {warning && <div className={metaClass}>{warning.code}: {warning.message}</div>}
+      {capabilityText && <div className={metaClass} data-v3-selectable-content="true">caps {capabilityText}</div>}
+      {runtimeItems.length > 0 && <div className={metaClass} data-v3-selectable-content="true">{runtimeItems.join(" / ")}</div>}
+      {dependencyText && <div className={metaClass} data-v3-selectable-content="true">deps {dependencyText}</div>}
+      {warning && <div className={metaClass} data-v3-selectable-content="true">{warning.code}: {warning.message}</div>}
     </div>
   );
 }
@@ -104,7 +104,7 @@ export function CogitoNodeHealthNote({ state }: { state: CogitoNodeHealthNoteSta
       </div>
       {state.kind === "loading"
         ? <div className="c724-meta-inline">Checking...</div>
-        : <p className="c724-pool-error">{state.message}</p>}
+        : <p className="c724-pool-error" data-v3-selectable-content="true">{state.message}</p>}
     </div>
   );
 }

@@ -196,7 +196,7 @@ export function ClaudeAuthLoginSheet({
     </Button> : null}
     {visibleError ? <div className="c724-login-error" role="alert">
       <AlertCircle className="size-4" aria-hidden="true" />
-      <span>{visibleError}</span>
+      <span data-v3-selectable-content="true">{visibleError}</span>
     </div> : null}
     {flow.state === "url_ready" || flow.state === "failed" || flow.state === "code_submitted" || flow.state === "verifying" ? <div className="c724-auth-code-row">
       <Input

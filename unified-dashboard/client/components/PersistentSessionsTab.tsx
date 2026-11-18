@@ -231,7 +231,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         </>}
       />
       {loadError ? <div className="mb-4 space-y-2">
-        <SettingsAlert>{loadError}</SettingsAlert>
+        <SettingsAlert><span data-v3-selectable-content="true">{loadError}</span></SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={() => void refresh({ select: selected?.session_id ?? null, keepEditor: true })}>다시 시도</Button>
       </div> : null}
       {loaded ? <SettingsListSection isEmpty={sessions.length === 0} emptyText="등록된 영구 에이전트 세션이 없습니다.">
@@ -244,12 +244,12 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         />)}
       </SettingsListSection> : loadError ? null : <p className="px-2 py-1 text-xs text-muted-foreground">불러오는 중…</p>}
     </>}>
-      {selected || defaults ? <SettingsDetailHeader
+      {selected || defaults ? <SettingsDetailHeader selectableTitle={Boolean(selected)}
         title={selected ? selected.display_name ?? "이름 없음" : "새 영구 에이전트 세션"}
         actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || details.pending || nodeUnknown} onClick={() => void release()}>영구 세션 해제</Button> : null}
       /> : null}
 
-      {error && !selected ? <SettingsAlert key={error.key} scrollIntoView>{error.message}</SettingsAlert> : null}
+      {error && !selected ? <SettingsAlert key={error.key} scrollIntoView><span data-v3-selectable-content="true">{error.message}</span></SettingsAlert> : null}
 
       {selected ? <PersistentSessionDetails
         resource={selected}
@@ -262,9 +262,9 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
         onSave={() => { void details.save(); }}
         onModelError={fail}
       /> : defaults ? <>
-        {defaults.unavailable_reason ? <SettingsAlert>{defaults.unavailable_reason}</SettingsAlert> : null}
-        {registration ? <SettingsAlert scrollIntoView>세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</SettingsAlert> : null}
-        {createUnknown ? <SettingsAlert scrollIntoView>세션이 만들어졌는지 알 수 없습니다. 일반 세션으로 만들어졌을 수 있으니 세션 목록에서 확인하고, 이 목록을 다시 읽어 주세요.</SettingsAlert> : null}
+        {defaults.unavailable_reason ? <SettingsAlert><span data-v3-selectable-content="true">{defaults.unavailable_reason}</span></SettingsAlert> : null}
+        {registration ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</span></SettingsAlert> : null}
+        {createUnknown ? <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">세션이 만들어졌는지 알 수 없습니다. 일반 세션으로 만들어졌을 수 있으니 세션 목록에서 확인하고, 이 목록을 다시 읽어 주세요.</span></SettingsAlert> : null}
         <div>
           {nameField}
           <SettingFieldWidget field={textField("node", "노드", nodeId, true)} value={nodeId} onChange={() => undefined} />
