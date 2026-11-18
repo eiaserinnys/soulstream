@@ -50,13 +50,20 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await detail.getByTestId("v3-inline-board").waitFor({ state: "visible" });
     await detail.getByRole("button", { name: "새 세션" }).waitFor({ state: "visible" });
 
-    const detailCaps = await auditVisibleCaps(detail);
-    for (const label of [
-      "상위 폴더로 이동",
-      "폴더 설명 편집",
-      "마크다운 추가",
-      "새 세션",
-    ]) {
+    // 세션 히스토리 캡은 실행 기록 자동 적재 중 잠시 크기가 0이 된다. 그 순간을
+    // 재면 캡이 사라진 것으로 보이므로, 필수 캡이 다 보일 때까지 다시 잰다.
+    const requiredDetailCaps = ["상위 폴더로 이동", "폴더 설명 편집", "마크다운 추가", "새 세션"];
+    let detailCaps = await auditVisibleCaps(detail);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (requiredDetailCaps.every((label) => detailCaps.some((cap) => cap.label === label))) break;
+      try {
+        await detail.getByRole("button", { name: "새 세션" }).waitFor({ state: "visible", timeout: 15_000 });
+      } catch {
+        break;
+      }
+      detailCaps = await auditVisibleCaps(detail);
+    }
+    for (const label of requiredDetailCaps) {
       assert(
         detailCaps.some((cap) => cap.label === label),
         `${label} 아이콘 캡이 없습니다. 보이는 캡: ${detailCaps.map((cap) => cap.label).join(" | ")}`,
