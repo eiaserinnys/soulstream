@@ -50,6 +50,8 @@ export interface McpHostOptions {
   /** Node pairing + credential administration; absent when the host does not own the store. */
   nodePairing?: import("../node_credentials/types.js").NodePairingHostOptions;
   externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
+  /** 외부 연동 회신 도구의 저장소. 없는 host는 그 도구에서만 external_access_unavailable을 낸다. */
+  externalAccess?: { sql: import("../control_plane/control_plane_types.js").SqlClient };
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;
   authBearerToken: string;
