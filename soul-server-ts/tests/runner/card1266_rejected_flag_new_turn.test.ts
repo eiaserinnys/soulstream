@@ -201,7 +201,7 @@ function setup(registrationOwner = REGISTRATION_ID) {
     leaseTimeoutMs: 120_000,
     scanIntervalMs: 15_000,
     closedTailDrainer: { drain: vi.fn(async () => {}) },
-    logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     spawner: {
       terminate,
       invalidateRegistration: vi.fn(async () => {}),

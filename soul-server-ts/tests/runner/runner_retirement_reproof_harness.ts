@@ -1,5 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 
+import { vi } from "vitest";
+
 import {
   RunnerRecoveryCoordinator,
   type RunnerRecoveryCoordinatorOptions,
@@ -196,6 +198,7 @@ function makeCoordinatorSubject(
     disposition: undefined,
   };
   const logger = {
+    debug: vi.fn(),
     error: (record: unknown) => errors.push(logMessage(record)),
     warn: (record: unknown) => errors.push(logMessage(record)),
     info: () => {},

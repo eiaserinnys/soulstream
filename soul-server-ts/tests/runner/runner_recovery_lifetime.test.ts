@@ -131,7 +131,7 @@ function makeHarness(input: {
       completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
-    logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     spawner: { terminate, invalidateRegistration, retireTerminalRegistration },
     scan: async () => structuredClone({ registrations: [scannedRegistration], errors: [] }),
     hydrate: input.hydrate ?? (async (registration) => registration),

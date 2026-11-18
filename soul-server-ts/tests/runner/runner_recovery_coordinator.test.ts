@@ -2041,8 +2041,12 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
 
     expect(result.replayed).toBe(false);
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
-    expect(subject.logger.info).toHaveBeenCalledWith(
+    expect(subject.logger.debug).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "replay", blockedBy: "runner" }),
+      "registered runner recovery skipped because the task still holds an execution",
+    );
+    expect(subject.logger.info).not.toHaveBeenCalledWith(
+      expect.anything(),
       "registered runner recovery skipped because the task still holds an execution",
     );
   });
@@ -3806,6 +3810,7 @@ function makeSubject(
   const retireTerminalRegistration = vi.fn(async () => {});
   const markReaped = vi.fn(async () => {});
   const logger = {
+    debug: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),

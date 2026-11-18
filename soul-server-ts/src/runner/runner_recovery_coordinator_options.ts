@@ -53,7 +53,7 @@ export interface RunnerRecoveryCoordinatorOptions {
    */
   hasPendingRunnerSettlement?: RunnerSettlementPendingProbe;
   closedTailDrainer: Pick<ClosedRunnerTailDrainer, "drain"> & Partial<Pick<ClosedRunnerTailDrainer, "hasActivePump">>;
-  logger: Pick<Logger, "error" | "info" | "warn">;
+  logger: Pick<Logger, "debug" | "error" | "info" | "warn">;
   spawner?: Pick<
     RunnerProcessSpawner,
     "invalidateRegistration" | "retireTerminalRegistration" | "terminate"

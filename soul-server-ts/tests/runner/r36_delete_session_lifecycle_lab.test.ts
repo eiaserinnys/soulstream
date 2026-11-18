@@ -182,6 +182,7 @@ describe("R36 delete_session lifecycle lab", () => {
       } satisfies RunnerSessionGarbageCollectorDependencies,
     );
     const logger = {
+      debug: vi.fn(),
       error: vi.fn(),
       info: vi.fn(),
       warn: vi.fn(),
