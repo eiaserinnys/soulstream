@@ -190,7 +190,8 @@ async function waitForPopupToSettle(popup: Locator) {
       const r = el.getBoundingClientRect(); const key = [r.x,r.y,r.width,r.height].join(",");
       stable = key === last ? stable + 1 : 0; last = key;
       if (performance.now() - start >= 400 && stable >= 3 && r.x >= 0 && r.right <= innerWidth + 1) resolve();
-      else if (performance.now() - start >= 1000) reject(new Error("팝오버 위치 안정화 시간 초과"));
+      // 폭을 바꾼 직후 팝오버 재배치가 1,000ms를 넘기는 경우가 있다(카드 #1651 실측).
+      else if (performance.now() - start >= 5000) reject(new Error("팝오버 위치 안정화 시간 초과"));
       else requestAnimationFrame(check);
     }; requestAnimationFrame(check);
   }));
