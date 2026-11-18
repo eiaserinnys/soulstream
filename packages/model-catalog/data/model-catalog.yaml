@@ -229,6 +229,13 @@ presets:
     supported_efforts: [low, medium, high, xhigh]
     default_effort: high
     trusted_execution: true
+  - id: gemini-4-neon
+    label: Gemini - 4 Neon
+    backend: antigravity
+    model: gemini-4-neon
+    supported_efforts: [low, medium, high, xhigh]
+    default_effort: high
+    trusted_execution: true
   - id: opencode-deepseek-v4.1-flash-free
     label: OpenCode - DeepSeek V4.1 Flash Free
     backend: opencode
@@ -384,6 +391,11 @@ models:
     rates: {input: 8, cache_read: 0.4, cache_write_5m: 10, cache_write_1h: 10, output: 40}
     source: https://developers.openai.com/api/docs/pricing?tab=suite
   - provider: antigravity
+    model: gemini-4-neon
+    display_name: Gemini 4 Neon
+    rates: {input: 3, cache_read: 0.15, cache_write_5m: null, cache_write_1h: null, output: 15}
+    source: https://ai.google.dev/gemini-api/docs/pricing
+  - provider: antigravity
     model: gemini-4-carbon
     display_name: Gemini 4 Carbon
     rates: {input: 2, cache_read: 0.1, cache_write_5m: null, cache_write_1h: null, output: 10}
@@ -419,7 +431,7 @@ models:
     rates: null
 
 price_snapshot:
-  price_version: api-list-usd-2026-11-18-v1
+  price_version: api-list-usd-2026-11-19-v1
   as_of: "2026-10-19"
   checked_at: "2026-10-19"
   currency: USD
@@ -429,7 +441,7 @@ price_snapshot:
   refreshed_model_rows:
     claude: [claude-opus-5-5, claude-fable-5-2, claude-fable-5-1, claude-sonnet-5-5]
     codex: [gpt-6.2-sol, gpt-6.2-astra, gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-6-luna]
-    antigravity: [gemini-4-carbon, gemini-4-hydrogen, gemini-4-argon, gemini-3.8-flash]
+    antigravity: [gemini-4-neon, gemini-4-carbon, gemini-4-hydrogen, gemini-4-argon, gemini-3.8-flash]
     deepseek:
       - deepseek-v4.1-flash-1017
       - deepseek-v4.1-flash
