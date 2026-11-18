@@ -24,7 +24,11 @@ export function boardLaneGeometry(viewport: number, paperWidth: number, inset: n
   const laneWidth = paperWidth + inset * 2;
   const gap = phone ? inset : inset * 3;
   const outerInset=phone?inset:0;
-  const completed=completedGridLayout(viewport-outerInset*2,paperWidth,gridGap,inset);
+  const doneIndex = columns?.findIndex(([status]) => status === 'done') ?? -1;
+  const reviewIndex = columns?.findIndex(([status]) => status === 'review') ?? -1;
+  const defaultIndex = reviewIndex >= 0 ? reviewIndex : 0;
+  const precedingWidth = !phone && doneIndex >= 0 ? Math.max(0, doneIndex - defaultIndex) * (laneWidth + gap) : 0;
+  const completed=completedGridLayout(viewport-outerInset*2-precedingWidth,paperWidth,gridGap,inset);
   let start=0;
   const lanes=(columns??BOARD_COLUMNS).map(([status])=>{
     const width=columns&&status==='done'?completed.width:laneWidth;

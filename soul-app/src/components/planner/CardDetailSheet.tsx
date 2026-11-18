@@ -265,8 +265,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const tabOptions = [
     { value: 'items' as const, label: '확인 항목', count: needsReview || undefined, countBadge: true },
     { value: 'comments' as const, label: '커멘트', dot: commentUnread },
-    { value: 'sessions' as const, label: '세션', count: tabletLandscape ? sessionIds.length : undefined },
-    { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
+    { value: 'sessions' as const, label: '세션', count: tabletLandscape && detail ? sessionIds.length : undefined },
+    { value: 'notes' as const, label: '노트', count: tabletLandscape && detail ? (detail.notes?.length ?? 0) : undefined },
   ];
   const sectionActions: PhoneRailAction[] = [
     ...(tab !== 'items' ? [{ id: 'tab-items', kind: 'view' as const, label: '확인 항목', icon: 'checkbox-outline' as const,

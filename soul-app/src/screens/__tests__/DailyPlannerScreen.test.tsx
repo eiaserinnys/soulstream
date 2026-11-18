@@ -3,7 +3,7 @@ import { useTokens } from '../../theme';
 jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 import React from 'react';
-import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import { parsePlannerToday, type PlannerTodayWire } from '../../api/plannerTypes';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -147,6 +147,7 @@ test.each(['phone', 'tabletPortrait'] as const)(
     const screen = await renderDaily(<DailyPlannerScreen date="2026-07-17" />);
     const dateStyleBefore = StyleSheet.flatten(screen.getByTestId('daily-date-row').props.style);
     const memoParentBefore = screen.getByTestId('daily-memo').parent;
+    const slot = screen.getByTestId('daily-refresh-slot');
 
     state.loading = true;
     screen.rerender(<DailyPlannerScreen date="2026-07-17" />);
@@ -156,6 +157,8 @@ test.each(['phone', 'tabletPortrait'] as const)(
 
     expect(refreshControl.props.refreshing).toBe(false);
     expect(progressStyle.position).toBe('absolute');
+    expect(screen.getByTestId('daily-refresh-slot')).toBe(slot);
+    expect(within(slot).getByTestId('daily-auto-progress')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('daily-date-row').props.style)).toEqual(dateStyleBefore);
     expect(screen.getByTestId('daily-memo').parent).toBe(memoParentBefore);
     expect(scroll.props.contentInset).toMatchObject({ top: 0 });

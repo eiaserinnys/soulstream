@@ -47,7 +47,7 @@ export function PlannerSectionHeader({
     </View>
   </CompactTouchTarget>;
   if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={[styles.title, styles.countedTitle]}>
-    {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
+    {title + (count !== undefined ? ' ' : '')}{count !== undefined ? <Text testID={countTestID}>{`${count}${countSuffix??'개'}`}</Text> : null}
   </Text>;
   if (variant === 'quiet' && onToggle) return <TouchableOpacity testID={testID} accessibilityRole="button"
     accessibilityLabel={`${title}${count !== undefined ? `, ${count}${countSuffix ?? ''}` : ''}, ${expanded ? '접기' : '펼치기'}`}

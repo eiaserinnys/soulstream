@@ -191,8 +191,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           onDrop={event=>drop(card,event)} onFinish={finish}/>;
         return <View key={status} testID={`card-board-column-${status}`} style={{ width: geometry.lanes[laneIndex].width, flexShrink: 0, gap: t.uiSpacing.sm }}>
           <View style={{ paddingHorizontal: t.uiSpacing.sm, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
-            <PlannerSectionHeader variant={status === 'todo' || phone ? 'lane' : 'board'} title={label} count={items.length} countSuffix={status==='done'?'개 표시':undefined}
-              testID={phone ? `card-board-lane-heading-${status}` : undefined} countTestID={`card-board-count-${status}`} />
+            <PlannerSectionHeader variant={status === 'todo' || phone ? 'lane' : 'board'} title={label} count={(firstLoading || (status === 'done' ? completedFirstLoading : activePending)) ? undefined : items.length} countSuffix={status==='done'?'개 표시':undefined}
+              testID={`card-board-lane-heading-${status}`} countTestID={`card-board-count-${status}`} />
           </View>
           {status==='done'?<>
             {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}

@@ -82,7 +82,7 @@ export function StarredFoldersWorkspace({ api, active = true, embedded = false, 
         />
       )}
     </ScrollView>
-    {starred.loading && !firstLoading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+    {starred.loading && !firstLoading && !pullRefreshing ? <AutomaticRefreshIndicator testID="starred-auto-progress" style={{ top: 0, right: t.foundation.pageInset }} /> : null}
     {firstLoading && !pullRefreshing ? <View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="starred-loading" /></View> : null}
     </View>
   );

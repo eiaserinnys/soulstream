@@ -6,11 +6,13 @@ jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: (m
 jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:null})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';
 import { AppModalSurface } from '../../AppModalSurface';
 import { cardFixture } from '../../../test-support/cards';
 import { useUIStore } from '../../../store/uiStore';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 // Updates left by the last step (VirtualizedList cell batches, debounce timers, mocked native
 // promises) must settle inside act before RNTL's cleanup yields to the event loop.
 const settleTimers = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
@@ -22,6 +24,42 @@ let mockDevice = 'tablet';
 let mockLoading = false;
 let mockCompletedLoading = false;
 beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
+test('외부 머리는 기존 목록의 갱신 상태를 전달하고 위 여백을 유지한다', () => {
+  const onAutoRefreshChange = jest.fn();
+  const props = { api: null, externalHeader: true, onAutoRefreshChange, cardDisplay: { includeCompleted: false, onChange: jest.fn() }, onOpen: jest.fn() };
+  const screen = render(<CardBoardWorkspace {...props} />);
+  expect(StyleSheet.flatten(screen.getByTestId('card-board-workspace').props.style).paddingTop).toBe(8);
+  expect(onAutoRefreshChange).toHaveBeenLastCalledWith(false);
+  mockLoading = true;
+  screen.rerender(<CardBoardWorkspace {...props} />);
+  expect(onAutoRefreshChange).toHaveBeenLastCalledWith(true);
+  expect(screen.queryByTestId('card-board-auto-progress')).toBeNull();
+});
+
+test('머리 갱신 자리는 쉬는 동안에도 남는다', () => {
+  const props = { api: null, cardDisplay: { includeCompleted: false, onChange: jest.fn() }, onOpen: jest.fn() };
+  const screen = render(<CardBoardWorkspace {...props} />);
+  const slot = screen.getByTestId('card-board-refresh-slot');
+  expect(screen.queryByTestId('card-board-auto-progress')).toBeNull();
+  mockLoading = true;
+  screen.rerender(<CardBoardWorkspace {...props} />);
+  expect(screen.getByTestId('card-board-refresh-slot')).toBe(slot);
+  expect(within(slot).getByTestId('card-board-auto-progress')).toBeTruthy();
+});
+
+test('듀오 외부 보드는 표시를 숨기고 확대 머리에서만 고정 칸에 표시한다', () => {
+  mockLoading = true;
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><CardBoardWorkspace ref={ref} api={null} externalHeader
+    onAutoRefreshChange={jest.fn()} cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={() => {}} /></DuoSideBandContext.Provider></ThemeProvider>);
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
+  act(() => ref.current!.openExpanded());
+  expect(screen.getAllByLabelText('자동 갱신 중')).toHaveLength(1);
+  expect(screen.getByTestId('card-board-expanded-auto-progress')).toBeTruthy();
+  expect(within(screen.getByTestId('card-board-expanded-refresh-slot')).getByTestId('card-board-expanded-auto-progress')).toBeTruthy();
+  act(() => screen.UNSAFE_getByType(AppModalSurface).props.onRequestClose());
+  expect(screen.queryByLabelText('자동 갱신 중')).toBeNull();
+});
 test('보일 카드가 없는 첫 로딩은 보드 프레임 가운데 부품 하나만 세운다', async () => {
   mockCards = []; mockLoading = true;
   const screen = render(<CardBoardWorkspace api={null} cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={() => {}} />);
@@ -113,16 +151,17 @@ test.each([
   const frameStyle = StyleSheet.flatten(host.getByTestId('card-board-frame').props.style);
   mockLoading = true;
   screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
-  const spinner = host.getByLabelText('자동 갱신 중');
-  expect(StyleSheet.flatten(spinner.props.style).position).toBe('absolute');
-  expect(spinner.props.pointerEvents).toBe('none');
-  expect(spinner.props.accessibilityRole).toBe('progressbar');
+  const spinner = host.queryByLabelText('자동 갱신 중');
+  if (externalHeader && !expanded) expect(spinner).toBeNull();
+  else {
+    expect(spinner).toBeTruthy();
+    expect(StyleSheet.flatten(spinner!.props.style)).toMatchObject({ position: 'absolute', overflow: 'hidden' });
+    expect(spinner!.props.pointerEvents).toBe('none');
+    expect(spinner!.props.accessibilityRole).toBe('progressbar');
+  }
   expect(host.getByTestId('card-board')).toBe(board);
   expect(board.parent).toBe(parent);
   expect(StyleSheet.flatten(host.getByTestId('card-board-frame').props.style)).toEqual(frameStyle);
-  for (const indicator of screen.UNSAFE_getAllByType(ActivityIndicator)) {
-    expect(StyleSheet.flatten(indicator.props.style).position).toBe('absolute');
-  }
   mockLoading = false;
   screen.rerender(<CardBoardWorkspace ref={ref} {...props} />);
   expect(host.queryByLabelText('자동 갱신 중')).toBeNull();
