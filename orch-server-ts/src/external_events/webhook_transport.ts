@@ -5,8 +5,18 @@ import ipaddr from "ipaddr.js";
 
 type Address = { address: string; family: number };
 type Resolver = (hostname: string) => Promise<Address[]>;
+
+function retryAfterHeader(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return typeof value === "string" ? value : null;
+}
 const dnsResolve: Resolver = hostname => lookup(hostname, { all: true });
-export type WebhookPost = (url: string, body: string, headers: Record<string, string>) => Promise<{ status: number; body: string }>;
+export type WebhookPost = (url: string, body: string, headers: Record<string, string>) => Promise<{
+  status: number;
+  body: string;
+  /** Raw Retry-After response header; null (or absent) when the response had none. */
+  retryAfter?: string | null;
+}>;
 export class WebhookError extends Error {
   constructor(readonly reason: string, readonly transient = false) { super(reason); }
 }
@@ -35,7 +45,7 @@ export async function postWebhook(url: string, body: string, headers: Record<str
     if (error instanceof WebhookError) throw error;
     throw new WebhookError("dns_failed", true);
   }
-  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+  return new Promise<{ status: number; body: string; retryAfter: string | null }>((resolve, reject) => {
     const req = (deps.request ?? httpsRequest)(endpoint.target, {
       method: "POST", agent: false, signal: deadline,
       servername: isIP(endpoint.hostname) ? undefined : endpoint.hostname,
@@ -54,7 +64,11 @@ export async function postWebhook(url: string, body: string, headers: Record<str
         else chunks.push(chunk);
       });
       response.on("error", () => reject(new WebhookError("network_error", true)));
-      response.on("end", () => resolve({ status, body: Buffer.concat(chunks).toString("utf8") }));
+      response.on("end", () => resolve({
+        status,
+        body: Buffer.concat(chunks).toString("utf8"),
+        retryAfter: retryAfterHeader(response.headers["retry-after"]),
+      }));
     });
     req.on("error", () => reject(new WebhookError(deadline.aborted ? "timeout" : "network_error", true)));
     req.end(body);
