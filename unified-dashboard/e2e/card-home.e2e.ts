@@ -54,6 +54,45 @@ const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-co
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
 const captureEmptyLanes=async(page:Page,name:string)=>{mkdirSync(emptyLanesOutput,{recursive:true});await page.screenshot({path:path.join(emptyLanesOutput,`${name}.png`),animations:"disabled"});};
 
+for(const [width,height] of [[390,844],[1440,900]])test(`카드 홈 완료 포함 목록 보기 높이 ${width}`,async({page})=>{
+ const artifacts=path.resolve(process.env.CARD_HOME_ARTIFACTS??output),phase=process.env.CARD_HOME_PHASE??"after";
+ mkdirSync(artifacts,{recursive:true});
+ await page.setViewportSize({width,height});await page.emulateMedia({reducedMotion:"reduce"});
+ const {board}=await fixture(page,17,seed(),5),home=page.getByTestId("card-home");
+ await home.locator('[role="switch"][aria-label="완료·취소 숨김"]').uncheck();
+ const done=board.locator('[data-board-column="done"]'),boardViewport=done.getByTestId("completed-viewport");
+ await expect(done).toContainText("6개 표시");await boardViewport.scrollIntoViewIfNeeded();
+ const boardScroller=boardViewport.getByTestId("virtuoso-scroller"),boardCard=boardScroller.locator("[data-card-id]").first();
+ await expect(boardCard).toBeVisible();
+ const boardMetrics={viewport:await boardViewport.boundingBox(),scroller:await boardScroller.boundingBox(),firstCard:await boardCard.boundingBox()};
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-board.png`),animations:"disabled"});
+ expect(boardMetrics.viewport!.height).toBeGreaterThanOrEqual(200);
+ await home.getByRole("button",{name:"일반 보기",exact:true}).click();
+ const listViewport=home.getByTestId("completed-viewport"),listScroller=listViewport.getByTestId("virtuoso-scroller");
+ await expect(home.locator(".v3-completed-collection")).toContainText("6개 표시");
+ await listViewport.scrollIntoViewIfNeeded();await expect(listScroller).toBeAttached();
+ const listCard=listScroller.locator("[data-card-id]").first();
+ const listMetrics={viewport:await listViewport.boundingBox(),scroller:await listScroller.boundingBox(),firstCard:await listCard.boundingBox()};
+ await page.screenshot({path:path.join(artifacts,`${phase}-${width}-list.png`),animations:"disabled"});
+ const metrics={board:boardMetrics,list:listMetrics,resize:null as null|{width:number;height:number;documentWidth:number;clientWidth:number}};
+ const metricsPath=path.join(artifacts,`${phase}-${width}-metrics.json`);
+ writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
+ expect(listMetrics.viewport!.height).toBeGreaterThanOrEqual(200);
+ await expect(listCard).toBeVisible();
+ expect(listMetrics.firstCard!.x).toBeGreaterThanOrEqual(listMetrics.viewport!.x);
+ expect(listMetrics.firstCard!.x+listMetrics.firstCard!.width).toBeLessThanOrEqual(listMetrics.viewport!.x+listMetrics.viewport!.width);
+ expect(listMetrics.firstCard!.y).toBeGreaterThanOrEqual(listMetrics.viewport!.y);
+ expect(listMetrics.firstCard!.y+listMetrics.firstCard!.height).toBeLessThanOrEqual(listMetrics.viewport!.y+listMetrics.viewport!.height);
+ const resized=width===390?{width:1440,height:900}:{width:390,height:844};
+ await page.setViewportSize(resized);
+ await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+ await expect.poll(async()=>(await listViewport.boundingBox())!.height).toBeGreaterThanOrEqual(200);
+ const overflow=await page.evaluate(()=>({documentWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}));
+ metrics.resize={width:resized.width,height:(await listViewport.boundingBox())!.height,...overflow};
+ writeFileSync(metricsPath,JSON.stringify(metrics,null,2));
+ if(resized.width===390)expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.clientWidth);
+});
+
 test("completed grid restores main scroll across expansion and resets after search",async({page},testInfo)=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});
  const state=await fixture(page,17,seed(),24),home=page.getByTestId("card-home");
