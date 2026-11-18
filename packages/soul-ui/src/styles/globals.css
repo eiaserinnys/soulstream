@@ -1042,6 +1042,14 @@ pre[data-markdown-code-layout="document"] {
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
 
+  html[data-webgl-glass="off"] [data-slot="dialog-popup"],
+  html[data-webgl-glass="off"] [data-slot="alert-dialog-popup"],
+  html[data-webgl-glass="off"] [data-slot="popover-popup"],
+  html[data-webgl-glass="off"] [data-slot="menu-popup"],
+  html[data-webgl-glass="off"] [data-slot="select-popup"] > .glass {
+    background: var(--popover);
+  }
+
   .glass-strong {
     background: var(--glass-surface-strong);
   }

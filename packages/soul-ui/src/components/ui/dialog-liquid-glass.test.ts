@@ -11,6 +11,14 @@ function readUiSource(fileName: string) {
 }
 
 describe("dialog liquid glass surfaces", () => {
+  it("uses the opaque popover token on all five popup surfaces when WebGL is off", () => {
+    const css = readFileSync(new URL("../../styles/globals.css", import.meta.url), "utf-8");
+    const rule = css.match(/html\[data-webgl-glass="off"\][^{]+\{\s*background:\s*var\(--popover\);\s*\}/s)?.[0] ?? "";
+    for (const slot of ["dialog-popup", "alert-dialog-popup", "popover-popup", "menu-popup", "select-popup"]) {
+      expect(rule).toContain(`[data-slot="${slot}"]`);
+    }
+    expect(rule).toMatch(/\[data-slot="select-popup"\]\s*>\s*\.glass/);
+  });
   it.each(dialogSurfaceFiles)("%s uses the shared liquid glass modal surface", (fileName) => {
     const source = readUiSource(fileName);
 
