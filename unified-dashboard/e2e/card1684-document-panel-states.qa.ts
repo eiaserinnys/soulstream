@@ -5,16 +5,19 @@
  *   node unified-dashboard/node_modules/tsx/dist/cli.mjs unified-dashboard/e2e/card1684-document-panel-states.qa.ts
  * 수정 전 캡처: 기준 커밋의 소스를 제공하는 서버를 V3_QA_BASE_URL로 지정하고
  * CARD1684_BEFORE=1 을 실행 명령 앞에 붙인다.
+ * 불변 비교 기준 캡처: CSS 변경 전 CARD1684_INVARIANT_BASELINE=1 로 실행한다.
  */
 import type { Browser, Page } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:43184";
 const before = process.env.CARD1684_BEFORE === "1";
-const output = path.resolve(`.local/card1684/${before ? "before" : "after"}`);
+const invariantBaseline = process.env.CARD1684_INVARIANT_BASELINE === "1";
+const output = path.resolve(`.local/card1684/${invariantBaseline ? "invariant-before" : before ? "before" : "after"}`);
 mkdirSync(output, { recursive: true });
 type State = "empty" | "loading" | "error" | "content" | "editor-loading";
 
@@ -104,15 +107,43 @@ async function scene(browser: Browser, width: number, state: State) {
   }
 }
 
+async function readerScene(browser: Browser, width: number) {
+  const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, reducedMotion: "reduce", colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.addInitScript({ content: "window.__name = (f) => f;" });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+  });
+  await installV3VisualQaRoutes(page, {});
+  try {
+    await page.goto(`${baseUrl}/dialogues?sample=document-reader`, { waitUntil: "domcontentloaded" });
+    const dialog = page.getByTestId("internal-document-dialog");
+    await dialog.getByText("문단 1.", { exact: false }).first().waitFor({ state: "visible", timeout: 30_000 });
+    await page.screenshot({ path: path.join(output, `reader-${width}.png`), animations: "disabled" });
+  } finally {
+    await context.close();
+  }
+}
+
 const results = await runPlaywrightLifecycle({ lockName: "card1684-document-panel", timeoutMs: 300_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
   const measurements: Record<string, Awaited<ReturnType<typeof scene>>> = {};
-  for (const width of [1440, 390]) for (const state of ["empty", "loading", "error", "content", "editor-loading"] as const) {
-    measurements[`${state}-${width}`] = await scene(browser, width, state);
+  if (invariantBaseline) {
+    measurements["content-1440"] = await scene(browser, 1440, "content");
+  } else {
+    for (const width of [1440, 390]) for (const state of ["empty", "loading", "error", "content", "editor-loading"] as const) {
+      measurements[`${state}-${width}`] = await scene(browser, width, state);
+    }
   }
+  for (const width of [1440, 390]) await readerScene(browser, width);
   return measurements;
 });
+if (invariantBaseline) {
+  console.log(`불변 비교 기준 캡처: ${output}`);
+  process.exit(0);
+}
 const failures: string[] = [];
 for (const width of [1440, 390]) {
   for (const state of ["loading", "error", "editor-loading"]) {
@@ -129,7 +160,18 @@ for (const width of [1440, 390]) {
 }
 const resize = results["content-1440"].resize as { titlePreserved: boolean; bodyVisible: boolean; overflow: number };
 if (!resize.titlePreserved || !resize.bodyVisible || resize.overflow > 0) failures.push("창 크기 변경 후 본문 또는 제목 불일치");
-const report = { before, results, failures };
+const invariants: Record<string, string> = {};
+if (!before) for (const name of ["content-1440", "reader-1440", "reader-390"]) {
+  const baselinePath = path.resolve(`.local/card1684/invariant-before/${name}.png`);
+  if (!existsSync(baselinePath)) {
+    invariants[name] = "기준 캡처 없음";
+    continue;
+  }
+  const hash = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
+  invariants[name] = hash(baselinePath) === hash(path.join(output, `${name}.png`)) ? "일치" : "불일치";
+  if (invariants[name] !== "일치") failures.push(`${name}: 변경 전후 캡처 불일치`);
+}
+const report = { before, results, invariants, failures };
 writeFileSync(path.resolve(`.local/card1684/${before ? "before/visual-result.json" : "visual-result.json"}`), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 if (failures.length) process.exitCode = 1;
