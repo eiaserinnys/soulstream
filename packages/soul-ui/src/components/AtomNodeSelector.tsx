@@ -156,7 +156,7 @@ export function AtomNodeSelector({
         </div>
 
         {/* 노드 목록 */}
-        <div className="max-h-48 overflow-y-auto">
+        <div className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
           {loading && <FrameLoading inline label="불러오는 중" />}
           {error && (
             <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>

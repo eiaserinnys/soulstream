@@ -223,20 +223,29 @@
 .v3-project-context-popover {
   width: min(380px, calc(100vw - 24px));
   max-height: var(--available-height);
+  flex-direction: column;
 }
 
 .v3-project-context-popover [data-slot="popover-viewport"] {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.v3-project-context-popover [data-slot="popover-viewport"] > [data-current] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .v3-project-context-popover .v3-project-context-editor {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: calc(var(--available-height) - var(--v3-space-8) - var(--v3-space-1));
+  flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   border: 0;

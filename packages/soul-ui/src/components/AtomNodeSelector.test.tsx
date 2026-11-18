@@ -8,6 +8,8 @@ describe("AtomNodeSelector presentation", () => {
     expect(html).toContain('data-slot="atom-node-selector-panel"');
     expect(html.indexOf("노드 선택")).toBeLessThan(html.indexOf('data-slot="atom-node-selector-panel"'));
     expect(html).toContain("루트");
+    expect(html).not.toContain("max-h-48");
+    expect(html).not.toContain("overflow-y-auto");
   });
   it("keeps the popup presentation as default", () => {
     const html = renderToStaticMarkup(<AtomNodeSelector value="" onChange={vi.fn()} open />);
