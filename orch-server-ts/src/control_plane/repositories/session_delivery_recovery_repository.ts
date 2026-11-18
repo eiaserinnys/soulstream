@@ -50,6 +50,7 @@ export class SessionDeliveryRecoveryRepository {
     attemptToken: string,
     limit = 100,
     attemptTtlMs = 15_000,
+    excludeDeliveryIds: string[] = [],
   ): Promise<PendingImmediateDeliveryRow[]> {
     return await withRecoveryTransaction(this.sql, async (transaction) => {
       return await transaction<PendingImmediateDeliveryRow[]>`
@@ -63,6 +64,7 @@ export class SessionDeliveryRecoveryRepository {
           WHERE target.node_id = ${nodeId}
             AND delivery.state = 'pending'
             AND delivery.next_attempt_at <= NOW()
+            AND NOT (delivery.delivery_id = ANY(${excludeDeliveryIds}::text[]))
           ORDER BY delivery.enqueue_sequence
           FOR UPDATE OF delivery SKIP LOCKED
           LIMIT ${limit}
