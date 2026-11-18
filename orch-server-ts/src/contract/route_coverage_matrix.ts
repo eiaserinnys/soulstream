@@ -146,7 +146,7 @@ export const tsOnlyRouteKeys = [
   "POST /api/webhooks/inbound", "GET /api/webhooks/inbound",
   "GET /api/webhooks/inbound/{id}/requests", "DELETE /api/webhooks/inbound/{id}",
   "GET /x/{key}", "POST /x/{key}/messages", "GET /x/{key}/messages/{requestId}",
-  "GET /x/{key}/history", "POST /x/{key}/stop",
+  "GET /x/{key}/history", "POST /x/{key}/stop", "POST /x/{key}/hook",
   "POST /api/mcp/host/{tool}",
   "POST /api/persistent-context/host/evaluate",
   "POST /api/attachments/sessions/multipart/init",

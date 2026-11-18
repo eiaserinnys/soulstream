@@ -153,7 +153,13 @@ describe("inbound webhook routes behind the production auth guard", () => {
     });
   }
 
-  function createGuardedApp() {
+  function createGuardedApp(
+    overrides: {
+      config?: ReturnType<typeof parseOrchServerConfig>;
+      logDestination?: { write(message: string): void };
+      corsAllowedOrigins?: string[];
+    } = {},
+  ) {
     const repository = grantRepository();
     const service = new ExternalInputService({
       sql: harness.sql as unknown as SqlClient,
@@ -163,7 +169,13 @@ describe("inbound webhook routes behind the production auth guard", () => {
       },
     });
     const app = createApp({
-      config,
+      config: overrides.config ?? config,
+      ...(overrides.logDestination === undefined
+        ? {}
+        : { logDestination: overrides.logDestination }),
+      ...(overrides.corsAllowedOrigins === undefined
+        ? {}
+        : { corsAllowedOrigins: overrides.corsAllowedOrigins }),
       // The production shape: no user token ever resolves, and node credentials
       // are the real resolver loaded from the database.
       productionAuth: {
@@ -315,4 +327,79 @@ describe("inbound webhook routes behind the production auth guard", () => {
       await app.close();
     }
   });
+
+  it("passes key-URL POSTs through the guard and keeps the key out of the logs", async () => {
+    const capture = createLogCapture();
+    const { app, repository } = createGuardedApp({
+      // Production logging and the production guard together: this is the
+      // composition the deployed process runs.
+      config: parseOrchServerConfig({
+        environment: "production",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+        authBearerToken: "production-service-token",
+      }),
+      logDestination: capture.stream,
+      corsAllowedOrigins: ["https://app.example.test"],
+    });
+    try {
+      const grant = await issueKeyGrant(repository);
+
+      const accepted = await app.inject({
+        method: "POST",
+        url: `/x/${grant.secret}/hook`,
+        payload: "{\"text\":\"가드 통과\"}",
+        headers: { "content-type": "application/json" },
+      });
+      expect(accepted.statusCode).toBe(202);
+      expect(accepted.json()).toMatchObject({ status: "accepted" });
+      expect(accepted.json()).not.toHaveProperty("detail");
+      expect(
+        Object.keys(accepted.headers)
+          .filter((header) => header.toLowerCase().startsWith("access-control-")),
+      ).toEqual([]);
+      expect(accepted.headers["referrer-policy"]).toBe("no-referrer");
+
+      const wrong = await app.inject({
+        method: "POST",
+        url: "/x/not-a-key/hook",
+        payload: "{\"text\":\"틀린 키\"}",
+      });
+      expect(wrong.statusCode).toBe(401);
+      // The route's body, not the guard's `{detail}`.
+      expect(wrong.json()).toEqual({
+        error: { code: "unauthorized", message: "Unauthorized" },
+      });
+      expect(wrong.json()).not.toHaveProperty("detail");
+
+      expect(dispatched).toBe(1);
+
+      const raw = capture.raw();
+      const secretPart = grant.secret.split("_")[2] ?? "";
+      expect(raw).not.toContain(grant.secret);
+      expect(raw).not.toContain(secretPart);
+      const records = capture.records();
+      expect(records.some((record) => record.path === "/x/:key/hook")).toBe(true);
+      for (const record of records) {
+        expect(JSON.stringify(record)).not.toContain(grant.secret);
+      }
+    } finally {
+      await app.close();
+    }
+  });
 });
+
+function createLogCapture() {
+  const chunks: string[] = [];
+  return {
+    stream: {
+      write(message: string) {
+        chunks.push(message);
+      },
+    },
+    raw: () => chunks.join(""),
+    records: (): Array<Record<string, unknown>> => chunks.join("")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>),
+  };
+}

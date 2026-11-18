@@ -7,13 +7,14 @@
 export const EXTERNAL_ACCESS_PREFIX = "/x";
 export const EXTERNAL_ACCESS_REDACTED_LOG_PATH = "/x/:redacted";
 
-/** Fastify route templates of the public link surface (design 3.2). */
+/** Fastify route templates of the public `/x` surface (design 2.7, 3.2). */
 export const externalAccessRouteTemplates = [
   "/x/:key",
   "/x/:key/messages",
   "/x/:key/messages/:requestId",
   "/x/:key/history",
   "/x/:key/stop",
+  "/x/:key/hook",
 ] as const;
 
 const externalAccessRouteTemplateSet: ReadonlySet<string> = new Set(

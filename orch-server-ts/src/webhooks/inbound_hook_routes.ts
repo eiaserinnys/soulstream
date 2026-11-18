@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import type {
-  ExternalAccessGrantRepository,
-  InboundWebhookCredential,
+import {
+  parseExternalAccessKey,
+  type ExternalAccessGrantRepository,
+  type InboundWebhookCredential,
+  type ResolveExternalAccessGrantResult,
 } from "../external_access/external_access_grant_repository.js";
 import type {
   ExternalInputDispatchLogger,
@@ -14,12 +16,14 @@ import type {
 /**
  * Inbound webhook receive routes (design 4.2-4.4).
  *
- * Two routes share one plugin scope: `POST /api/hooks/<grant_id>` admits the
- * received body as session input with the grant's preamble, and
- * `GET /api/hooks/<grant_id>/requests/<request_id>` reads the request status
- * with the same credential. This scope keeps the raw bytes for signature
- * verification: every content type is buffered at 256KiB, and the login cookie
- * and Authorization identity are never used as the caller.
+ * Three routes share one plugin scope: `POST /api/hooks/<grant_id>` admits the
+ * received body as session input with the grant's preamble, the same receive
+ * for callers that cannot set headers is `POST /x/<key>/hook` (the URL key is
+ * the only credential), and `GET /api/hooks/<grant_id>/requests/<request_id>`
+ * reads the request status with the same credential. This scope keeps the raw
+ * bytes for signature verification: every content type is buffered at 256KiB,
+ * and the login cookie and Authorization identity are never used as the
+ * caller.
  */
 
 export const INBOUND_HOOK_MAX_BODY_BYTES = 256 * 1024;
@@ -27,6 +31,7 @@ export const INBOUND_HOOK_MAX_BODY_BYTES = 256 * 1024;
 export const inboundHookRouteAuthRequirements = {
   "POST /api/hooks/:grant_id": false,
   "GET /api/hooks/:grant_id/requests/:request_id": false,
+  "POST /x/:key/hook": false,
 } as const;
 
 export interface InboundHookRouteOptions {
@@ -58,6 +63,13 @@ const ERROR_BODIES = {
 } as const;
 
 type ErrorBodyKey = keyof typeof ERROR_BODIES;
+
+/** The one credential failure both receive entrances answer. */
+const UNAUTHORIZED_GRANT: ResolveExternalAccessGrantResult = {
+  ok: false,
+  code: "unauthorized",
+  status: 401,
+};
 
 /** Default text placed before the received body when the grant has no preamble. */
 export function defaultInboundWebhookPreamble(label: string): string {
@@ -91,64 +103,42 @@ export function registerInboundHookRoutes(
     instance.post<{ Params: { grant_id: string } }>(
       "/api/hooks/:grant_id",
       { bodyLimit: INBOUND_HOOK_MAX_BODY_BYTES },
-      async (request, reply) => {
-        try {
-          const rawBody = requestBodyBuffer(request);
-          const credential = selectCredential(request.headers, rawBody);
-          if (credential === null) {
-            return sendError(reply, 401, "unauthorized");
-          }
-          const resolved = await options.grants.resolveInboundWebhookGrant(
+      async (request, reply) =>
+        await receiveInboundHook(options, request, reply, async () => {
+          const credential = selectCredential(
+            request.headers,
+            requestBodyBuffer(request),
+          );
+          if (credential === null) return UNAUTHORIZED_GRANT;
+          return await options.grants.resolveInboundWebhookGrant(
             request.params.grant_id,
             credential,
             "send",
           );
-          if (!resolved.ok) return sendResolveFailure(reply, resolved);
-          const grant = resolved.grant;
+        }),
+    );
 
-          let bodyText: string;
-          try {
-            bodyText = new TextDecoder("utf-8", { fatal: true }).decode(rawBody);
-          } catch {
-            return sendError(reply, 415, "unsupported_encoding");
-          }
-          const parsed = parseJsonObject(bodyText);
-          const messageText = parsed !== null && typeof parsed.text === "string"
-            ? parsed.text
-            : bodyText;
-          if (messageText.trim().length === 0) {
-            return sendError(reply, 400, "empty_body");
-          }
-          const preamble = grant.preamble ?? defaultInboundWebhookPreamble(grant.label);
-          const requestId = requestIdOf(request.headers, parsed);
-          const admitted = await options.service.admit(
-            grant,
-            {
-              text: `${preamble}\n\n${messageText}`,
-              ...(requestId === undefined ? {} : { request_id: requestId }),
-            },
-            { request_hash: sha256Hex(rawBody), material_body: true },
-          );
-          if (admitted.ok) {
-            return reply.code(202).send({
-              request_id: admitted.request_id,
-              status: "accepted",
-            });
-          }
-          switch (admitted.reason) {
-            case "conflict":
-              return sendError(reply, 409, "conflict");
-            case "rate_limited":
-              reply.header("retry-after", String(admitted.retry_after_seconds));
-              return sendError(reply, 429, "rate_limited");
-            case "invalid_request_id":
-              return sendError(reply, 400, "invalid_request_id");
-          }
-        } catch (error) {
-          logRouteFailure(options, request, error);
-          return sendError(reply, 503, "unavailable");
-        }
+    // The header-less key surface (design 2.7): the URL key is the only
+    // credential and the Authorization and webhook-signature headers are not
+    // read here. receiveInboundHook is the same function `/api/hooks` calls.
+    instance.post<{ Params: { key: string } }>(
+      "/x/:key/hook",
+      {
+        bodyLimit: INBOUND_HOOK_MAX_BODY_BYTES,
+        onRequest: async (_request, reply) => {
+          reply.header("referrer-policy", "no-referrer");
+        },
       },
+      async (request, reply) =>
+        await receiveInboundHook(options, request, reply, async () => {
+          const parsed = parseExternalAccessKey(request.params.key);
+          if (parsed === null) return UNAUTHORIZED_GRANT;
+          return await options.grants.resolveInboundWebhookGrant(
+            parsed.grantId,
+            { mode: "key", rawKey: request.params.key },
+            "send",
+          );
+        }),
     );
 
     instance.get<{ Params: { grant_id: string; request_id: string } }>(
@@ -185,6 +175,67 @@ export function registerInboundHookRoutes(
       },
     );
   });
+}
+
+/**
+ * Admits the received body once the caller resolved the grant (design 4.2,
+ * 4.3). Both receive routes call this one function so the body contract,
+ * idempotency order, admission and error bodies cannot drift apart.
+ */
+async function receiveInboundHook(
+  options: InboundHookRouteOptions,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  resolveGrant: () => Promise<ResolveExternalAccessGrantResult>,
+) {
+  try {
+    const resolved = await resolveGrant();
+    if (!resolved.ok) return sendResolveFailure(reply, resolved);
+    const grant = resolved.grant;
+
+    const rawBody = requestBodyBuffer(request);
+    let bodyText: string;
+    try {
+      bodyText = new TextDecoder("utf-8", { fatal: true }).decode(rawBody);
+    } catch {
+      return sendError(reply, 415, "unsupported_encoding");
+    }
+    const parsed = parseJsonObject(bodyText);
+    const messageText = parsed !== null && typeof parsed.text === "string"
+      ? parsed.text
+      : bodyText;
+    if (messageText.trim().length === 0) {
+      return sendError(reply, 400, "empty_body");
+    }
+    const preamble = grant.preamble ?? defaultInboundWebhookPreamble(grant.label);
+    const requestId = requestIdOf(request.headers, parsed);
+    const admitted = await options.service.admit(
+      grant,
+      {
+        text: `${preamble}\n\n${messageText}`,
+        ...(requestId === undefined ? {} : { request_id: requestId }),
+      },
+      { request_hash: sha256Hex(rawBody), material_body: true },
+    );
+    if (admitted.ok) {
+      return reply.code(202).send({
+        request_id: admitted.request_id,
+        status: "accepted",
+      });
+    }
+    switch (admitted.reason) {
+      case "conflict":
+        return sendError(reply, 409, "conflict");
+      case "rate_limited":
+        reply.header("retry-after", String(admitted.retry_after_seconds));
+        return sendError(reply, 429, "rate_limited");
+      case "invalid_request_id":
+        return sendError(reply, 400, "invalid_request_id");
+    }
+  } catch (error) {
+    logRouteFailure(options, request, error);
+    return sendError(reply, 503, "unavailable");
+  }
 }
 
 /**
