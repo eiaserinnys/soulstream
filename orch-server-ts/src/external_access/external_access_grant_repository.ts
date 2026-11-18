@@ -173,17 +173,19 @@ export class ExternalAccessGrantRepository {
     const parsed = parseExternalAccessKey(rawKey);
     if (parsed === null) return unauthorized();
     const rows = await this.options.sql<ExternalAccessGrantRow[]>`
-      SELECT grant.id, grant.kind, grant.owner_email, grant.label,
-             grant.target_session_id, grant.permissions, grant.auth_mode,
-             grant.key_hash, grant.signing_secret, grant.preamble,
-             grant.expires_at, grant.revoked_at, grant.created_at,
-             grant.last_used_at,
+      SELECT access_grant.id, access_grant.kind, access_grant.owner_email,
+             access_grant.label, access_grant.target_session_id,
+             access_grant.permissions, access_grant.auth_mode,
+             access_grant.key_hash, access_grant.signing_secret,
+             access_grant.preamble, access_grant.expires_at,
+             access_grant.revoked_at, access_grant.created_at,
+             access_grant.last_used_at,
              EXISTS (
                SELECT 1 FROM sessions target
-               WHERE target.session_id = grant.target_session_id
+               WHERE target.session_id = access_grant.target_session_id
              ) AS target_session_exists
-      FROM external_access_grants grant
-      WHERE grant.id = ${parsed.grantId}
+      FROM external_access_grants access_grant
+      WHERE access_grant.id = ${parsed.grantId}
     `;
     const grant = rows[0];
     if (grant === undefined || grant.target_session_exists !== true) {
