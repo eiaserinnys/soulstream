@@ -13,8 +13,8 @@ jest.mock('../../components/chat/ChatBody', () => ({ ChatBody: () => null }));
 jest.mock('../../components/events/AssistantMessage', () => ({ AssistantMessage: () => null }));
 
 async function renderReviewChat() {
-  let screen!: ReturnType<typeof render>;
-  await act(async () => { screen = render(<ReviewChat />); });
+  const screen = render(<ReviewChat />);
+  await act(async () => {});
   return screen;
 }
 

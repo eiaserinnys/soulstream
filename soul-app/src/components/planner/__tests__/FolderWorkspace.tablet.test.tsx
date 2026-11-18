@@ -523,6 +523,7 @@ test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에�
   } as PlannerFolder;
   usePlannerStore.getState().setSelectedFolderSnapshot(described);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
 
   fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), 'A 미저장 제목');

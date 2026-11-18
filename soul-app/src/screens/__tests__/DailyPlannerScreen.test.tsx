@@ -60,8 +60,8 @@ jest.mock('../../components/planner/CardAssignmentSheet', () => ({ CardAssignmen
 import { DailyPlannerScreen, type DailyPlannerScreenHandle } from '../DailyPlannerScreen';
 
 async function renderDaily(element: React.ReactElement) {
-  let screen!: ReturnType<typeof render>;
-  await act(async () => { screen = render(element); });
+  const screen = render(element);
+  await act(async () => {});
   return screen;
 }
 

@@ -137,7 +137,7 @@ test('expanded tablet keeps the mounted board and its position underneath detail
   expect(useUIStore.getState().cardBoardExpanded).toBe(false);
 });
 
-test('completed lane vertical position survives expansion and reopens at the saved location', () => {
+test('completed lane vertical position survives expansion and reopens at the saved location', async () => {
   mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo', status: 'todo' })];
   const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
   const screen = render(<CardBoardWorkspace ref={ref} api={null}
@@ -146,6 +146,7 @@ test('completed lane vertical position survives expansion and reopens at the sav
   fireEvent.scroll(screen.getByTestId('card-board-scroll-done'), { nativeEvent: {
     contentOffset: { x: 0, y: 180 }, layoutMeasurement: { width: 800, height: 500 }, contentSize: { width: 800, height: 1000 }, timestamp: 1,
   } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
   act(() => ref.current!.openExpanded());
   let expanded = within(screen.getByTestId('card-board-expanded'));
   expect(expanded.getByTestId('card-board-scroll-done').props.contentOffset).toEqual({ x: 0, y: 180 });
@@ -153,6 +154,7 @@ test('completed lane vertical position survives expansion and reopens at the sav
   fireEvent.scroll(expanded.getByTestId('card-board-scroll-done'), { nativeEvent: {
     contentOffset: { x: 0, y: 260 }, layoutMeasurement: { width: 1200, height: 700 }, contentSize: { width: 1200, height: 1000 }, timestamp: 2,
   } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
   fireEvent.press(expanded.getByLabelText('보드 확대 닫기'));
   act(() => ref.current!.openExpanded());
   expanded = within(screen.getByTestId('card-board-expanded'));
