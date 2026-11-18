@@ -21,7 +21,7 @@ export function PersistentReportUndoRow({ undo, styles }: {
   const t = useTokens();
   return <View style={styles.undoRow}>
     <Text testID="report-undo-label" style={styles.receivedLabel}>{undo.label}</Text>
-    <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" disabled={undo.busy}
+    <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" busy={undo.busy}
       accessibilityLabel="되돌리기" onPress={undo.onUndo}><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
         <UndoCountdownRing key={undo.expiresAt} expiresAt={undo.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS} />
         <Text style={styles.cancelLabel}>되돌리기</Text>
