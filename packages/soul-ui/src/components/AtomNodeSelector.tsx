@@ -7,7 +7,7 @@
  * 포지셔닝/포털/바깥 클릭/포커스 복원은 Base UI Popover 래퍼(`./ui/popover`)에 위임한다.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import { FrameLoading } from "./FrameLoading";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
@@ -35,6 +35,7 @@ export interface AtomNodeSelectorProps {
   /** nodeId, title 두 값을 함께 전달 */
   onChange: (nodeId: string, title: string) => void;
   disabled?: boolean;
+  presentation?: "popup" | "inline";
   open?: boolean;
   onOpenChange?(open: boolean): void;
   onStatusChange?(status: "loading" | "ready" | "error"): void;
@@ -46,9 +47,11 @@ export function AtomNodeSelector({
   selectedTitle,
   onChange,
   disabled = false,
+  presentation = "popup",
   open: controlledOpen, onOpenChange, onStatusChange,
 }: AtomNodeSelectorProps) {
   const [localOpen, setLocalOpen] = useState(false);
+  const inlineTriggerRef = useRef<HTMLButtonElement>(null);
   const open = controlledOpen ?? localOpen;
   const setOpen = (next: boolean) => { setLocalOpen(next); onOpenChange?.(next); };
   const [nodes, setNodes] = useState<AtomNode[]>([]);
@@ -106,35 +109,25 @@ export function AtomNodeSelector({
   const selectNode = (node: AtomNode) => {
     onChange(node.id, node.card.title);
     setOpen(false);
+    inlineTriggerRef.current?.focus();
   };
 
   const clearSelection = () => {
     onChange("", "");
     setOpen(false);
+    inlineTriggerRef.current?.focus();
   };
 
   const displayLabel = value
     ? selectedTitle || value.slice(0, 8) + "…"
     : "노드 선택...";
 
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        type="button"
-        disabled={disabled}
-        className="w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none"
-      >
-        <span className={value ? "" : "text-muted-foreground"}>
-          {displayLabel}
-        </span>
-        <span className="text-muted-foreground text-xs flex-shrink-0">▼</span>
-      </PopoverTrigger>
-      <PopoverPopup
-        align="start"
-        side="bottom"
-        sideOffset={4}
-        className="min-w-64 [--viewport-inline-padding:0] [&_[data-slot=popover-viewport]]:py-0"
-      >
+  const triggerClass = "w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
+  const triggerContent = <>
+    <span className={`${value ? "" : "text-muted-foreground"} ${presentation === "inline" ? "min-w-0 truncate" : ""}`}>{displayLabel}</span>
+    <span className="text-muted-foreground text-xs flex-shrink-0">▼</span>
+  </>;
+  const panel = <>
         {/* 브레드크럼 + 뒤로가기 버튼 */}
         <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-xs">
           {breadcrumbs.length > 1 && (
@@ -147,20 +140,16 @@ export function AtomNodeSelector({
               ←
             </button>
           )}
-          <div className="flex flex-wrap items-center gap-0.5 min-w-0">
+          <div className={`flex items-center gap-0.5 min-w-0 ${presentation === "inline" ? "overflow-hidden" : "flex-wrap"}`}>
             {breadcrumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-0.5">
+              <span key={i} className={`flex items-center gap-0.5 ${presentation === "inline" ? "min-w-0" : ""}`}>
                 {i > 0 && (
                   <span className="text-muted-foreground mx-0.5">/</span>
                 )}
                 <button
                   type="button"
                   onClick={() => navigateToBreadcrumb(i)}
-                  className={
-                    i === breadcrumbs.length - 1
-                      ? "font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:underline"
-                  }
+                  className={`${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
                 >
                   {crumb.title}
                 </button>
@@ -170,7 +159,7 @@ export function AtomNodeSelector({
         </div>
 
         {/* 노드 목록 */}
-        <div className="max-h-48 overflow-y-auto">
+        <div className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
           {loading && <FrameLoading inline label="불러오는 중" />}
           {error && (
             <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>
@@ -191,7 +180,7 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => selectNode(node)}
-                  className="flex-1 text-left text-sm px-3 py-1.5 truncate"
+                  className={`flex-1 text-left text-sm px-3 py-1.5 truncate ${presentation === "inline" ? "min-w-0" : ""}`}
                 >
                   {node.card.title}
                 </button>
@@ -219,6 +208,20 @@ export function AtomNodeSelector({
             </button>
           </div>
         )}
+  </>;
+
+  if (presentation === "inline") {
+    return <div className="min-w-0 w-full">
+      <button ref={inlineTriggerRef} type="button" data-slot="atom-node-selector-trigger" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
+      {open && <div data-slot="atom-node-selector-panel" className="w-full min-w-0 rounded-lg border border-input bg-background dark:bg-input/32">{panel}</div>}
+    </div>;
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger type="button" disabled={disabled} className={triggerClass}>{triggerContent}</PopoverTrigger>
+      <PopoverPopup align="start" side="bottom" sideOffset={4}
+        className="min-w-64 [--viewport-inline-padding:0] [&_[data-slot=popover-viewport]]:py-0">
+        {panel}
       </PopoverPopup>
     </Popover>
   );
