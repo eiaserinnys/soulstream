@@ -80,38 +80,42 @@ export async function queryEventIngressDeliveryLatency(
   const nodeId = input.node_id ?? null;
 
   const rows = await sql.begin(async (tx) => {
-    await tx`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true)`;
+    await tx`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true),
+                    set_config('enable_hashjoin', 'off', true)`;
     return await tx`
       WITH joined AS MATERIALIZED (
-        SELECT r.node_id, r.session_id, r.event_id, e.event_type,
-               e.created_at AS event_created_at, r.created_at AS committed_at,
-               r.created_at - e.created_at AS delay,
+        SELECT r.node_id, r.session_id, r.event_id, r.created_at - e.created_at AS delay,
                EXTRACT(EPOCH FROM (r.created_at - e.created_at)) * 1000 AS delay_ms
         FROM event_ingress_receipts r
         JOIN events e ON e.session_id = r.session_id AND e.id = r.event_id
         WHERE r.created_at >= ${sinceIso} AND r.created_at < ${untilIso}
           AND (${nodeId}::text IS NULL OR r.node_id = ${nodeId})
-      ), results AS (
+      ), aggregated AS (
         SELECT CASE WHEN GROUPING(node_id) = 1 THEN 'overall' ELSE 'node' END AS kind,
                node_id, count(*)::int AS count,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_ms) AS p50_ms,
-               percentile_cont(0.9) WITHIN GROUP (ORDER BY delay_ms) AS p90_ms,
-               percentile_cont(0.99) WITHIN GROUP (ORDER BY delay_ms) AS p99_ms,
-               max(delay_ms)::double precision AS max_ms,
+               percentile_cont(ARRAY[0.5, 0.9, 0.99]) WITHIN GROUP (ORDER BY delay_ms) AS percentiles,
+               max(delay_ms)::double precision AS max_ms
+        FROM joined
+        GROUP BY GROUPING SETS ((node_id), ())
+      ), results AS (
+        SELECT kind, node_id, count, percentiles[1] AS p50_ms,
+               percentiles[2] AS p90_ms, percentiles[3] AS p99_ms, max_ms,
                NULL::text AS session_id, NULL::integer AS event_id,
                NULL::text AS event_type, NULL::timestamptz AS event_created_at,
                NULL::timestamptz AS committed_at, NULL::double precision AS delay_ms,
                NULL::interval AS delay
-        FROM joined
-        GROUP BY GROUPING SETS ((node_id), ())
+        FROM aggregated
         UNION ALL
-        SELECT 'slowest', node_id, NULL::int, NULL::double precision,
+        SELECT 'slowest', slowest.node_id, NULL::int, NULL::double precision,
                NULL::double precision, NULL::double precision, NULL::double precision,
-               session_id, event_id, event_type, event_created_at, committed_at,
-               delay_ms::double precision, delay
+               slowest.session_id, slowest.event_id, e.event_type, e.created_at,
+               -- Add the elapsed interval in UTC so daylight-saving changes cannot shift it.
+               ((e.created_at AT TIME ZONE 'UTC') + slowest.delay) AT TIME ZONE 'UTC',
+               slowest.delay_ms::double precision, slowest.delay
         FROM (
           SELECT * FROM joined ORDER BY delay DESC, event_id DESC LIMIT 5
         ) slowest
+        JOIN events e ON e.session_id = slowest.session_id AND e.id = slowest.event_id
       )
       SELECT * FROM results
       ORDER BY kind, CASE WHEN kind = 'node' THEN node_id END, delay DESC, event_id DESC
