@@ -63,7 +63,7 @@ async function metrics(page: Page) {
       headItem: box(root.querySelector("#components-heads .v3-run-row")),
       body: box(root.querySelector('[data-slot="chat-body"] p')),
       input: box(root.querySelector('[data-slot="chat-input-body"]')),
-      paperclip: box(root.querySelector('button[title="Attach files"]')),
+      paperclip: box(root.querySelector('button[title="파일 첨부"]')),
       send: box(root.querySelector('[data-testid="send-button"]')),
       editor: box(root.querySelector('.v3-description-editor textarea')),
       composer: box(root.querySelector('[data-slot="chat-input-composer"]')),

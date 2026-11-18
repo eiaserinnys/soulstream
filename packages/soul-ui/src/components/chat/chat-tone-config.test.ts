@@ -28,9 +28,20 @@ describe("chat tone config", () => {
       sending: false,
       ctxCount: 2,
     })).toMatchObject({
-      modeLabel: "LLM (2 ctx)",
+      modeLabel: "LLM (맥락 2개)",
       borderColor: "chat-focus-success",
       buttonVariant: "success",
+    });
+
+    expect(resolveChatInputMode({
+      isFinished: true,
+      isLlmFinished: false,
+      sending: false,
+      ctxCount: 0,
+    })).toMatchObject({
+      modeLabel: "대화 이어가기",
+      borderColor: "focus:border-accent-blue/40",
+      buttonVariant: "default",
     });
 
     expect(resolveChatInputMode({
@@ -39,7 +50,7 @@ describe("chat tone config", () => {
       sending: false,
       ctxCount: 0,
     })).toMatchObject({
-      modeLabel: "Intervention",
+      modeLabel: "개입",
       borderColor: "chat-focus-warning",
       buttonVariant: "warning",
     });

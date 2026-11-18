@@ -183,7 +183,7 @@ test("long entry, wheel pagination, retention, rapid input and history end", asy
   await wheelToTop(page, h.scroller);
   await expect.poll(() => h.cursors.length).toBe(3);
   await wheelToTop(page, h.scroller);
-  await expect(h.root.getByText(/Beginning of conversation/)).toBeVisible();
+  await expect(h.root.getByText("대화의 시작", { exact: true })).toHaveCount(0);
   await page.mouse.wheel(0, -500);
   await page.waitForTimeout(400);
   expect(h.cursors).toEqual([null, "older-60", "older-20"]);
@@ -284,7 +284,7 @@ test("live SSE while reading history preserves the visible row", async ({ page }
     response.url().includes("/events") && (await response.text()).includes("id: 1001\n"));
   h.sendLive();
   await liveResponse;
-  await expect(h.root.getByRole("button", { name: /New Messages/ })).toBeVisible();
+  await expect(h.root.getByRole("button", { name: /새 메시지/ })).toBeVisible();
   await page.waitForTimeout(300);
   const afterPosition = await keyPosition(h.scroller, before.key);
   const after = await anchor(h.scroller).catch(() => null);

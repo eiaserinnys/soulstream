@@ -22,14 +22,14 @@ describe("ThinkingMessage", () => {
     expect(markup).toContain("text-base");
     expect(markup).toContain("첫 문단입니다.");
     expect(markup).toContain("둘째 문단입니다.");
-    expect(markup).not.toContain("Thinking");
+    expect(markup).not.toContain("💭");
     expect(markup).not.toContain("data-slot=\"chat-collapsible-content\"");
   });
 
   it("기본 대화는 기존 Thinking 접기 레이블을 유지한다", () => {
     const markup = renderToStaticMarkup(<ThinkingMessage msg={thinkingMessage} />);
 
-    expect(markup).toContain("Thinking");
+    expect(markup).toContain("💭 생각");
   });
 
   it("removes the event marker from the body and places the full-content link below it", () => {

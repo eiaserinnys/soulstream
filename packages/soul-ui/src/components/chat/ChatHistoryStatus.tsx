@@ -3,10 +3,8 @@ import type { HistoryLoadBlockReason } from "./useMessageHistoryBuffer";
 
 interface ChatHistoryStatusProps {
   loading: boolean;
-  reachedTop: boolean;
   blockedReason: HistoryLoadBlockReason | null;
   onRetry: () => void;
-  showReachedTop?: boolean;
 }
 
 /**
@@ -15,10 +13,8 @@ interface ChatHistoryStatusProps {
  */
 export function ChatHistoryStatus({
   loading,
-  reachedTop,
   blockedReason,
   onRetry,
-  showReachedTop = true,
 }: ChatHistoryStatusProps) {
   if (blockedReason !== null) {
     return (
@@ -37,14 +33,6 @@ export function ChatHistoryStatus({
 
   if (loading) {
     return <FrameLoading inline label="이전 대화를 불러오는 중" />;
-  }
-
-  if (reachedTop && showReachedTop) {
-    return (
-      <div className="px-3 py-2 text-center text-muted-foreground text-sm opacity-60">
-        {"\u2014"} Beginning of conversation {"\u2014"}
-      </div>
-    );
   }
 
   return null;

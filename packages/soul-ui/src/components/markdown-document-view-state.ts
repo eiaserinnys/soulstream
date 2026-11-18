@@ -3,11 +3,17 @@ export interface MarkdownViewportSnapshot {
   selectionOffset?: number;
 }
 
-export const DEFAULT_DOCUMENT_TITLE = "Untitled document";
+export const DEFAULT_DOCUMENT_TITLE = "제목 없는 문서";
+
+/** 이전 판이 새 문서에 저장하던 기본 제목. 이미 저장된 문서 호환용. */
+export const LEGACY_DEFAULT_DOCUMENT_TITLE = "Untitled document";
 
 export function isDefaultDocumentTitle(title: string): boolean {
   const trimmed = title.trim();
-  return trimmed === "" || trimmed.toLowerCase() === DEFAULT_DOCUMENT_TITLE.toLowerCase();
+  const normalized = trimmed.toLowerCase();
+  return trimmed === ""
+    || normalized === DEFAULT_DOCUMENT_TITLE.toLowerCase()
+    || normalized === LEGACY_DEFAULT_DOCUMENT_TITLE.toLowerCase();
 }
 
 interface ScrollMetrics {

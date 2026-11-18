@@ -739,7 +739,7 @@ function ChatViewContent({
     scrollToBottomWithBehavior("auto");
   }, [activeSessionKey, bottomScrollLocation, scrollToBottomWithBehavior]);
 
-  // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
+  // 새 이벤트 시: following이 아니면 "새 메시지" 배너 표시.
   // following 중이거나 초기 bottom focus가 아직 완료되지 않았다면 하단을 유지한다.
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
@@ -856,10 +856,8 @@ function ChatViewContent({
     () => {
       const status = transcriptFallback ?? <ChatHistoryStatus
         loading={history.loading}
-        reachedTop={history.reachedTop}
         blockedReason={history.blockedReason}
         onRetry={requestOlderManually}
-        showReachedTop={timelineItems.length > 0}
       />;
       return presentation === "manuscript" ? <div data-slot="chat-manuscript-list-header" className="flow-root pt-6">{status}</div> : status;
     },
@@ -869,9 +867,7 @@ function ChatViewContent({
       history.blockedReason,
       history.canLoadOlder,
       history.loading,
-      history.reachedTop,
       requestOlderManually,
-      timelineItems.length,
     ],
   );
   const VirtuosoHeader = useCallback(() => renderHistoryHeader(), [renderHistoryHeader]);
@@ -928,10 +924,8 @@ function ChatViewContent({
         <>
           <ChatHistoryStatus
             loading={false}
-            reachedTop={history.reachedTop}
             blockedReason={history.blockedReason}
             onRetry={requestOlderManually}
-            showReachedTop={false}
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
@@ -1069,7 +1063,7 @@ function ChatViewContent({
               onClick={scrollToBottom}
               className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              {"\u2193"} New Messages
+              {"\u2193"} 새 메시지
             </button>
           )}
         </div>
@@ -1086,7 +1080,7 @@ function ChatViewContent({
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >
-          {"\u2193"} Follow
+          {"\u2193"} 자동 스크롤
         </button>
       </div>}
 

@@ -440,7 +440,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     expect(container.querySelector<HTMLElement>('[data-slot="chat-root"]')?.dataset.chatPresentation)
       .toBe("manuscript");
-    expect(container.textContent).not.toContain("Follow");
+    expect(container.textContent).not.toContain("자동 스크롤");
     expect(container.querySelector('[data-testid="runtime-strips"]')).not.toBeNull();
     expect(chatInputMock.props?.presentation).toBe("manuscript");
     expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
@@ -480,7 +480,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     await addLiveUserMessage(1001);
 
-    expect(container.textContent).not.toContain("New Messages");
+    expect(container.textContent).not.toContain("새 메시지");
     expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
     expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
     expect(geometry.scroller.scrollTop).toBe(820);
@@ -509,7 +509,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     await addLiveUserMessage(1001);
 
-    expect(container.textContent).not.toContain("New Messages");
+    expect(container.textContent).not.toContain("새 메시지");
     expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
     expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
     expect(geometry.scroller.scrollTop).toBe(820);
@@ -638,7 +638,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
       await addLiveUserMessage(1001);
 
-      expect(container.textContent).toContain("New Messages");
+      expect(container.textContent).toContain("새 메시지");
       expect(virtuosoMock.props?.followOutput).toBe(false);
       expect(geometry.scrollTo).not.toHaveBeenCalled();
     },
@@ -1484,7 +1484,7 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(virtuosoMock.requestOlder).not.toHaveBeenCalled();
     const followButton = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Follow"),
+      (candidate) => candidate.textContent?.includes("자동 스크롤"),
     );
     flushSync(() => {
       followButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

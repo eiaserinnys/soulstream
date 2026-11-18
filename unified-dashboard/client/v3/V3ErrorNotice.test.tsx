@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -19,5 +21,11 @@ describe("V3ErrorNotice", () => {
     expect(html).not.toContain("synthetic-private-value");
     expect(html).toContain("확인");
     expect(html).not.toContain("<details open");
+  });
+
+  it("keeps Korean words whole while still allowing long tokens to wrap", () => {
+    const css = readFileSync(new URL("./v3-content-boundary.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\.v3-error-notice\s*\{[^}]*word-break:\s*keep-all;[^}]*overflow-wrap:\s*anywhere;/s);
   });
 });

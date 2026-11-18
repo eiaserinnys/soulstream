@@ -30,25 +30,25 @@ export function resolveChatInputMode(input: ChatInputModeInput): ChatInputModeVi
   const { isFinished, isLlmFinished, sending, ctxCount } = input;
 
   const placeholder = isLlmFinished
-    ? `Send with ${ctxCount} messages context...`
+    ? `메시지 ${ctxCount}개를 맥락으로 보냅니다`
     : isFinished
-      ? "Continue the conversation..."
-      : "Send a message to Claude...";
+      ? "대화를 이어서 입력하세요"
+      : "메시지를 입력하세요";
 
   const buttonLabel = sending
     ? "..."
     : isLlmFinished
-      ? "Send"
+      ? "보내기"
       : isFinished
-        ? "Send"
-        : "Intervene";
+        ? "보내기"
+        : "개입";
 
   const modeIcon = isLlmFinished ? "\u{1F916}" : isFinished ? "\u{1F4AC}" : "\u270B";
   const modeLabel = isLlmFinished
-    ? `LLM (${ctxCount} ctx)`
+    ? `LLM (맥락 ${ctxCount}개)`
     : isFinished
-      ? "New Chat"
-      : "Intervention";
+      ? "대화 이어가기"
+      : "개입";
 
   // 색상 의미는 유지하되 Button variant 정본만 호출한다.
   const borderColor = isLlmFinished

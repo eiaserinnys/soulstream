@@ -1,0 +1,68 @@
+{
+  "baseline": true,
+  "result": {
+    "baseline": true,
+    "planner": {
+      "wide": {
+        "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+        "lines": [
+          {
+            "top": 484,
+            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요."
+          }
+        ],
+        "words": [
+          "입력",
+          "내용과",
+          "연결",
+          "상태를",
+          "확인한",
+          "뒤",
+          "다시",
+          "시도하세요."
+        ],
+        "brokenWords": []
+      },
+      "narrow": {
+        "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+        "lines": [
+          {
+            "top": 370,
+            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세"
+          },
+          {
+            "top": 392,
+            "text": "요."
+          }
+        ],
+        "words": [
+          "입력",
+          "내용과",
+          "연결",
+          "상태를",
+          "확인한",
+          "뒤",
+          "다시",
+          "시도하세요."
+        ],
+        "brokenWords": [
+          "시도하세요."
+        ]
+      },
+      "narrowBox": {
+        "x": 45,
+        "y": 326,
+        "width": 294,
+        "height": 126
+      },
+      "overflow": false
+    },
+    "chat": {
+      "text": "— Beginning of conversation —",
+      "narrowVisible": true
+    },
+    "document": {
+      "label": "Loading..."
+    }
+  }
+}

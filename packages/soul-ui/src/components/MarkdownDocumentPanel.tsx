@@ -98,7 +98,7 @@ export function MarkdownDocumentPanel({
     const item = collaborativeRuntime
       .getBoardItems()
       .find((candidate) => candidate.id === `markdown:${documentId}`);
-    const nextTitle = getMetadataText(item?.metadata, "title") || "Untitled document";
+    const nextTitle = getMetadataText(item?.metadata, "title") || DEFAULT_DOCUMENT_TITLE;
     const nextBody = yText.toString();
     const nextVersion = getMetadataNumber(item?.metadata, "version") ?? 1;
     const nextDocument = { id: documentId, title: nextTitle, body: nextBody, version: nextVersion };
@@ -120,7 +120,7 @@ export function MarkdownDocumentPanel({
   const saveNow = useCallback(async () => {
     if (!documentId || loadedDocumentIdRef.current !== documentId) return;
     clearSaveTimer();
-    const currentTitle = title.trim() || "Untitled document";
+    const currentTitle = title.trim() || DEFAULT_DOCUMENT_TITLE;
     if (collaborativeRuntime) {
       collaborativeRuntime.updateMarkdownTitle(documentId, currentTitle);
       if (!yText || yText.toString() !== body) {
@@ -331,7 +331,7 @@ export function MarkdownDocumentPanel({
     setPanelError(null);
     setSaveStatus(collaborativeRuntime ? "saved" : "dirty");
     if (collaborativeRuntime && documentId) {
-      const normalized = value.trim() || "Untitled document";
+      const normalized = value.trim() || DEFAULT_DOCUMENT_TITLE;
       collaborativeRuntime.updateMarkdownTitle(documentId, normalized);
       setSavedTitle(normalized);
     }
@@ -413,7 +413,7 @@ export function MarkdownDocumentPanel({
             void saveNow();
           }}
           className="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
-          aria-label="Document title"
+          aria-label="문서 제목"
         />
         <span
           data-testid="markdown-save-status"
@@ -443,7 +443,7 @@ export function MarkdownDocumentPanel({
             </DashboardIconCap>
           )
         ) : null}
-        <span className="inline-flex" title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}><Button variant="ghost" size="icon" disabled={!canDeleteDocument} onClick={remove} title={canDeleteDocument ? "Delete document" : undefined} aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}>
+        <span className="inline-flex" title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}><Button variant="ghost" size="icon" disabled={!canDeleteDocument} onClick={remove} title={canDeleteDocument ? "문서 삭제" : undefined} aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}>
           <Trash2 className="h-4 w-4" />
         </Button></span>
       </div>
@@ -452,9 +452,9 @@ export function MarkdownDocumentPanel({
         {!document ? (
           panelError?.kind === "load"
             ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
-            : <FrameLoading label="Loading..." />
+            : <FrameLoading label="불러오는 중" />
         ) : isEditingBody ? (
-          <Suspense fallback={<FrameLoading label="Loading editor..." />}>
+          <Suspense fallback={<FrameLoading label="편집기를 불러오는 중" />}>
             <MarkdownCodeMirrorEditor
               ref={editorRef}
               value={body}
@@ -463,7 +463,7 @@ export function MarkdownDocumentPanel({
               onChange={updateBody}
               onBlur={handleEditorBlur}
               onEscape={handleEditorEscape}
-              ariaLabel="Document body"
+              ariaLabel="문서 본문"
               initialViewport={viewportRef.current}
             />
           </Suspense>
@@ -477,7 +477,7 @@ export function MarkdownDocumentPanel({
             }}
             data-testid="markdown-read-body"
           >
-            <MarkdownContent content={body || "Empty document"} codeBlockLayout="document" />
+            <MarkdownContent content={body || "빈 문서"} codeBlockLayout="document" />
           </div>
         )}
       </div>

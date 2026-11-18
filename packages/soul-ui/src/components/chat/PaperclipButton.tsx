@@ -17,7 +17,7 @@ export function PaperclipButton({ onClick, disabled, presentation = "default" }:
     <DashboardIconCap
       size="small"
       appearance={presentation === "manuscript" ? "bare" : "default"}
-      label="Attach files"
+      label="파일 첨부"
       disabled={disabled}
       onClick={onClick}
       className="self-end"

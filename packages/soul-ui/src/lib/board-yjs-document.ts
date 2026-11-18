@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 
+import { DEFAULT_DOCUMENT_TITLE } from "../components/markdown-document-view-state";
 import type {
   BoardContainerRef,
   CatalogBoardItem,
@@ -100,7 +101,7 @@ export function createMarkdownYjsDocument(
   const container = normalizeBoardContainer(containerInput);
   const folderId = resolveFolderIdForContainer(container, resolvedFolderId);
   const documentId = input.documentId ?? createDocumentId();
-  const title = input.title.trim() || "Untitled document";
+  const title = input.title.trim() || DEFAULT_DOCUMENT_TITLE;
   const body = input.body;
   const text = getOrCreateMarkdownText(doc, documentId);
   text.delete(0, text.length);
@@ -150,7 +151,7 @@ export function updateMarkdownYjsTitle(doc: Y.Doc, documentId: string, title: st
     ...current,
     metadata: {
       ...(current.metadata ?? {}),
-      title: title.trim() || "Untitled document",
+      title: title.trim() || DEFAULT_DOCUMENT_TITLE,
       version: nextMarkdownVersion(current.metadata),
     },
     updated_at: new Date().toISOString(),

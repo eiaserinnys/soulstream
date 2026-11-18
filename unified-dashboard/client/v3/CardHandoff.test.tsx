@@ -37,7 +37,7 @@ it("inherits Enter newline and Ctrl/Cmd+Enter submission from ChatInputEditor", 
     flushSync(()=>root.render(createElement(CardHandoff,{folders:[]})));
     const textbox=container.querySelector("textarea")!;
     expect(textbox.rows).toBe(1);
-    expect(container.querySelector('button[title="Attach files"]')).not.toBeNull();
+    expect(container.querySelector('button[title="파일 첨부"]')).not.toBeNull();
     // Native textarea events, as in the existing editor keyboard tests.
     const edit=(text:string)=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(textbox,text);flushSync(()=>textbox.dispatchEvent(new Event("input",{bubbles:true})));};
     const key=(options:KeyboardEventInit={})=>{const event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true,...options});flushSync(()=>textbox.dispatchEvent(event));return event;};

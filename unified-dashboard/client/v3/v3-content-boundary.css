@@ -37,6 +37,7 @@
   color: var(--destructive-foreground);
   background: color-mix(in srgb, var(--destructive) 8%, transparent);
   font-size: var(--font-size-xs);
+  word-break: keep-all;
   overflow-wrap: anywhere;
 }
 
