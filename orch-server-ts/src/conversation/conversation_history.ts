@@ -6,13 +6,23 @@ import { formatPosition } from "./conversation_position.js";
 type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 type Execution = { session_id: string; ordinal: number; first_input_is_initial_instruction: boolean };
 type CachedItem = { eventId: number; item: Item };
-type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; createdAt: number };
+type CachedExecution = { projection: ConversationProjection; lastEventId: number; items: CachedItem[]; createdAt: number; lastUsedAt: number };
 const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
 const CACHE_EXECUTIONS = 64;
-const CACHE_TTL_MS = 10 * 60_000;
+const CACHE_IDLE_MS = 10 * 60_000;
+const CACHE_MAX_AGE_MS = 60 * 60_000;
+
+// complete는 항목 없이 턴을 끝내고, tool_result는 본문 없이 활동 상태만 바꾼다.
+// tool_result의 키를 읽지 않아야 큰 TOAST payload를 불러오지 않는다.
+const HISTORY_PAYLOAD = `CASE
+  WHEN event_type IN ('complete', 'tool_result') THEN '{}'::jsonb
+  WHEN event_type = 'tool_start' THEN jsonb_strip_nulls(jsonb_build_object(
+    'tool_name', payload->'tool_name', 'input_id', payload->'input_id', 'inputId', payload->'inputId',
+    'prepared_input_id', payload->'prepared_input_id', 'preparedInputId', payload->'preparedInputId'))
+  ELSE payload END AS payload`;
 
 // 손으로 돌리는 이관 스크립트(attachment-migration/backfill_message_refs.ts, omit-inline-image-data.ts)는
-// 이미 들어간 이벤트의 payload를 바꾸지만 예외로 둔다. 그 결과는 캐시 만료(최대 10분) 뒤 반영된다.
+// 이미 들어간 이벤트의 payload를 바꾸지만 예외로 둔다. 그 결과는 캐시 만료(최대 60분) 뒤 반영된다.
 export class ConversationHistory {
   private readonly cache = new Map<string, CachedExecution>();
   private readonly locks = new Map<string, Promise<void>>();
@@ -45,17 +55,17 @@ export class ConversationHistory {
       const max = watermark?.id ?? 0;
       const now = Date.now();
       let entry = this.cache.get(key);
-      if (entry && (now - entry.createdAt >= CACHE_TTL_MS || entry.lastEventId > max)) { this.cache.delete(key); entry = undefined; }
+      if (entry && (expired(entry, now) || entry.lastEventId > max)) { this.cache.delete(key); entry = undefined; }
       if (!entry) {
         entry = { projection: new ConversationProjection(execution.first_input_is_initial_instruction),
-          lastEventId: 0, items: [], createdAt: now };
+          lastEventId: 0, items: [], createdAt: now, lastUsedAt: now };
       }
       if (entry.lastEventId < max) {
         try {
           const rows = entry.lastEventId === 0
-            ? await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+            ? await this.sql<Row[]>`SELECT id,event_type,${this.sql.unsafe(HISTORY_PAYLOAD)},created_at FROM events
               WHERE session_id=${execution.session_id} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`
-            : await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+            : await this.sql<Row[]>`SELECT id,event_type,${this.sql.unsafe(HISTORY_PAYLOAD)},created_at FROM events
               WHERE session_id=${execution.session_id} AND id > ${entry.lastEventId} AND id <= ${max} AND event_type = ANY(${TYPES}) ORDER BY id`;
           for (const row of rows) {
             row.payload = await this.enrichPayload(row.payload ?? {});
@@ -74,9 +84,10 @@ export class ConversationHistory {
   }
   private remember(key: string, entry: CachedExecution): void {
     const now = Date.now();
+    entry.lastUsedAt = now;
     this.cache.delete(key);
     this.cache.set(key, entry);
-    for (const [candidate, value] of this.cache) if (now - value.createdAt >= CACHE_TTL_MS) this.cache.delete(candidate);
+    for (const [candidate, value] of this.cache) if (expired(value, now)) this.cache.delete(candidate);
     while (this.cache.size > CACHE_EXECUTIONS) {
       const oldest = this.cache.keys().next().value;
       if (oldest === undefined) break;
@@ -122,6 +133,9 @@ export class ConversationHistory {
     const slice = history.items.slice(start, end);
     return { items: slice.map(x => x.item), ...(start > 0 ? { next_before: slice[0]!.item.id } : {}), cursor: history.cursor };
   }
+}
+function expired(entry: CachedExecution, now: number): boolean {
+  return now - entry.lastUsedAt >= CACHE_IDLE_MS || now - entry.createdAt >= CACHE_MAX_AGE_MS;
 }
 function cacheKey(execution: Execution): string {
   return `${execution.session_id}\u0000${execution.first_input_is_initial_instruction ? 1 : 0}`;
