@@ -40,7 +40,7 @@ export const ThinkingMessage = memo(function ThinkingMessage({
     <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
-        <CollapsibleContent content={body} label={"\u{1F4AD} Thinking"} />
+        <CollapsibleContent content={body} label={"\u{1F4AD} 생각"} />
         {isTruncated && !msg.truncation && (
           <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
         )}

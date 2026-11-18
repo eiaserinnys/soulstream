@@ -856,10 +856,8 @@ function ChatViewContent({
     () => {
       const status = transcriptFallback ?? <ChatHistoryStatus
         loading={history.loading}
-        reachedTop={history.reachedTop}
         blockedReason={history.blockedReason}
         onRetry={requestOlderManually}
-        showReachedTop={timelineItems.length > 0}
       />;
       return presentation === "manuscript" ? <div data-slot="chat-manuscript-list-header" className="flow-root pt-6">{status}</div> : status;
     },
@@ -869,9 +867,7 @@ function ChatViewContent({
       history.blockedReason,
       history.canLoadOlder,
       history.loading,
-      history.reachedTop,
       requestOlderManually,
-      timelineItems.length,
     ],
   );
   const VirtuosoHeader = useCallback(() => renderHistoryHeader(), [renderHistoryHeader]);
@@ -928,10 +924,8 @@ function ChatViewContent({
         <>
           <ChatHistoryStatus
             loading={false}
-            reachedTop={history.reachedTop}
             blockedReason={history.blockedReason}
             onRetry={requestOlderManually}
-            showReachedTop={false}
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
@@ -1086,7 +1080,7 @@ function ChatViewContent({
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >
-          {"\u2193"} Follow
+          {"\u2193"} 맨 아래로
         </button>
       </div>}
 

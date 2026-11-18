@@ -51,6 +51,11 @@ describe("isDefaultDocumentTitle", () => {
   it("treats empty/whitespace and the default placeholder as default", () => {
     expect(isDefaultDocumentTitle("")).toBe(true);
     expect(isDefaultDocumentTitle("   ")).toBe(true);
+    expect(isDefaultDocumentTitle("제목 없는 문서")).toBe(true);
+    expect(isDefaultDocumentTitle("  제목 없는 문서  ")).toBe(true);
+  });
+
+  it("keeps the legacy placeholder for already saved documents", () => {
     expect(isDefaultDocumentTitle("Untitled document")).toBe(true);
     expect(isDefaultDocumentTitle("  untitled DOCUMENT  ")).toBe(true);
   });

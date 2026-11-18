@@ -30,10 +30,10 @@ export function resolveChatInputMode(input: ChatInputModeInput): ChatInputModeVi
   const { isFinished, isLlmFinished, sending, ctxCount } = input;
 
   const placeholder = isLlmFinished
-    ? `Send with ${ctxCount} messages context...`
+    ? `메시지 ${ctxCount}개를 맥락으로 보냅니다`
     : isFinished
-      ? "Continue the conversation..."
-      : "Send a message to Claude...";
+      ? "대화를 이어서 입력하세요"
+      : "메시지를 입력하세요";
 
   const buttonLabel = sending
     ? "..."

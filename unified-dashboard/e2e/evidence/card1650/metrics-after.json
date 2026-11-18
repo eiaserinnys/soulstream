@@ -4,63 +4,571 @@
     "baseline": false,
     "planner": {
       "wide": {
-        "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
-        "lines": [
+        "notice": {
+          "x": 415,
+          "w": 440,
+          "h": 214,
+          "scrollOver": 0
+        },
+        "docOverflow": 0,
+        "uuidVisible": true,
+        "parts": [
           {
-            "top": 484,
-            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요."
-          }
-        ],
-        "words": [
-          "입력",
-          "내용과",
-          "연결",
-          "상태를",
-          "확인한",
-          "뒤",
-          "다시",
-          "시도하세요."
-        ],
-        "brokenWords": []
-      },
-      "narrow": {
-        "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
-        "lines": [
-          {
-            "top": 370,
-            "text": "입력 내용과 연결 상태를 확인한 뒤 다시"
+            "tag": "strong",
+            "text": "플래너를 불러오지 못했습니다.",
+            "lines": [
+              "플래너를 불러오지 못했습니다."
+            ],
+            "broken": [],
+            "overflowPx": -260,
+            "rect": {
+              "x": 428,
+              "w": 414
+            }
           },
           {
-            "top": 392,
-            "text": "시도하세요."
+            "tag": "p",
+            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+            "lines": [
+              "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요."
+            ],
+            "broken": [],
+            "overflowPx": -149,
+            "rect": {
+              "x": 428,
+              "w": 414
+            }
+          },
+          {
+            "tag": "summary",
+            "text": "기술 상세",
+            "lines": [
+              "기술 상세"
+            ],
+            "broken": [],
+            "overflowPx": -360.2,
+            "rect": {
+              "x": 428,
+              "w": 66
+            }
+          },
+          {
+            "tag": "pre",
+            "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+            "lines": [
+              "HTTP 503",
+              "요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a",
+              "민감한 정보가 포함될 수 있어 오류 원문은 표시하지",
+              "않습니다."
+            ],
+            "broken": [],
+            "overflowPx": -45.6,
+            "rect": {
+              "x": 428,
+              "w": 414
+            }
           }
-        ],
-        "words": [
-          "입력",
-          "내용과",
-          "연결",
-          "상태를",
-          "확인한",
-          "뒤",
-          "다시",
-          "시도하세요."
-        ],
-        "brokenWords": []
+        ]
       },
-      "narrowBox": {
-        "x": 45,
-        "y": 326,
-        "width": 294,
-        "height": 126
+      "narrow390": {
+        "notice": {
+          "x": 45,
+          "w": 294,
+          "h": 257,
+          "scrollOver": 0
+        },
+        "docOverflow": 0,
+        "uuidVisible": true,
+        "parts": [
+          {
+            "tag": "strong",
+            "text": "플래너를 불러오지 못했습니다.",
+            "lines": [
+              "플래너를 불러오지 못했습니다."
+            ],
+            "broken": [],
+            "overflowPx": -114,
+            "rect": {
+              "x": 58,
+              "w": 268
+            }
+          },
+          {
+            "tag": "p",
+            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+            "lines": [
+              "입력 내용과 연결 상태를 확인한 뒤 다시",
+              "시도하세요."
+            ],
+            "broken": [],
+            "overflowPx": -70,
+            "rect": {
+              "x": 58,
+              "w": 268
+            }
+          },
+          {
+            "tag": "summary",
+            "text": "기술 상세",
+            "lines": [
+              "기술 상세"
+            ],
+            "broken": [],
+            "overflowPx": -214.2,
+            "rect": {
+              "x": 58,
+              "w": 66
+            }
+          },
+          {
+            "tag": "pre",
+            "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+            "lines": [
+              "HTTP 503",
+              "요청 ID: 8dff6b9c-60a8-4c66-",
+              "961c-b5c347fa9c0a",
+              "민감한 정보가 포함될 수 있어 오류",
+              "원문은 표시하지 않습니다."
+            ],
+            "broken": [],
+            "overflowPx": -37.6,
+            "rect": {
+              "x": 58,
+              "w": 268
+            }
+          }
+        ]
       },
-      "overflow": false
+      "narrow360": {
+        "notice": {
+          "x": 45,
+          "w": 264,
+          "h": 257,
+          "scrollOver": 0
+        },
+        "docOverflow": 0,
+        "uuidVisible": true,
+        "parts": [
+          {
+            "tag": "strong",
+            "text": "플래너를 불러오지 못했습니다.",
+            "lines": [
+              "플래너를 불러오지 못했습니다."
+            ],
+            "broken": [],
+            "overflowPx": -84,
+            "rect": {
+              "x": 58,
+              "w": 238
+            }
+          },
+          {
+            "tag": "p",
+            "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+            "lines": [
+              "입력 내용과 연결 상태를 확인한 뒤 다시",
+              "시도하세요."
+            ],
+            "broken": [],
+            "overflowPx": -40,
+            "rect": {
+              "x": 58,
+              "w": 238
+            }
+          },
+          {
+            "tag": "summary",
+            "text": "기술 상세",
+            "lines": [
+              "기술 상세"
+            ],
+            "broken": [],
+            "overflowPx": -184.2,
+            "rect": {
+              "x": 58,
+              "w": 66
+            }
+          },
+          {
+            "tag": "pre",
+            "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+            "lines": [
+              "HTTP 503",
+              "요청 ID: 8dff6b9c-60a8-",
+              "4c66-961c-b5c347fa9c0a",
+              "민감한 정보가 포함될 수 있어",
+              "오류 원문은 표시하지 않습니다."
+            ],
+            "broken": [],
+            "overflowPx": -37.4,
+            "rect": {
+              "x": 58,
+              "w": 238
+            }
+          }
+        ]
+      }
     },
-    "chat": {
-      "text": "대화의 시작",
-      "narrowVisible": true
+    "cardboard-360": {
+      "notice": {
+        "x": 43,
+        "w": 274,
+        "h": 297,
+        "scrollOver": 0
+      },
+      "docOverflow": 0,
+      "uuidVisible": true,
+      "parts": [
+        {
+          "tag": "strong",
+          "text": "카드를 불러오지 못했습니다.",
+          "lines": [
+            "카드를 불러오지 못했습니다."
+          ],
+          "broken": [],
+          "overflowPx": -106,
+          "rect": {
+            "x": 56,
+            "w": 248
+          }
+        },
+        {
+          "tag": "p",
+          "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+          "lines": [
+            "입력 내용과 연결 상태를 확인한 뒤 다시",
+            "시도하세요."
+          ],
+          "broken": [],
+          "overflowPx": -50,
+          "rect": {
+            "x": 56,
+            "w": 248
+          }
+        },
+        {
+          "tag": "summary",
+          "text": "기술 상세",
+          "lines": [
+            "기술 상세"
+          ],
+          "broken": [],
+          "overflowPx": -194.2,
+          "rect": {
+            "x": 56,
+            "w": 66
+          }
+        },
+        {
+          "tag": "pre",
+          "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+          "lines": [
+            "HTTP 503",
+            "요청 ID: 8dff6b9c-60a8-4c66-",
+            "961c-b5c347fa9c0a",
+            "민감한 정보가 포함될 수 있어 오류",
+            "원문은 표시하지 않습니다."
+          ],
+          "broken": [],
+          "overflowPx": -17.6,
+          "rect": {
+            "x": 56,
+            "w": 248
+          }
+        },
+        {
+          "tag": "button",
+          "text": "다시 불러오기",
+          "lines": [
+            "다시 불러오기"
+          ],
+          "broken": [],
+          "overflowPx": -175,
+          "rect": {
+            "x": 56,
+            "w": 95
+          }
+        }
+      ]
     },
-    "document": {
+    "cardboard-390": {
+      "notice": {
+        "x": 43,
+        "w": 304,
+        "h": 275,
+        "scrollOver": 0
+      },
+      "docOverflow": 0,
+      "uuidVisible": true,
+      "parts": [
+        {
+          "tag": "strong",
+          "text": "카드를 불러오지 못했습니다.",
+          "lines": [
+            "카드를 불러오지 못했습니다."
+          ],
+          "broken": [],
+          "overflowPx": -136,
+          "rect": {
+            "x": 56,
+            "w": 278
+          }
+        },
+        {
+          "tag": "p",
+          "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+          "lines": [
+            "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요."
+          ],
+          "broken": [],
+          "overflowPx": -13,
+          "rect": {
+            "x": 56,
+            "w": 278
+          }
+        },
+        {
+          "tag": "summary",
+          "text": "기술 상세",
+          "lines": [
+            "기술 상세"
+          ],
+          "broken": [],
+          "overflowPx": -224.2,
+          "rect": {
+            "x": 56,
+            "w": 66
+          }
+        },
+        {
+          "tag": "pre",
+          "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+          "lines": [
+            "HTTP 503",
+            "요청 ID: 8dff6b9c-60a8-4c66-",
+            "961c-b5c347fa9c0a",
+            "민감한 정보가 포함될 수 있어 오류",
+            "원문은 표시하지 않습니다."
+          ],
+          "broken": [],
+          "overflowPx": -47.6,
+          "rect": {
+            "x": 56,
+            "w": 278
+          }
+        },
+        {
+          "tag": "button",
+          "text": "다시 불러오기",
+          "lines": [
+            "다시 불러오기"
+          ],
+          "broken": [],
+          "overflowPx": -205,
+          "rect": {
+            "x": 56,
+            "w": 95
+          }
+        }
+      ]
+    },
+    "cardboard-1440": {
+      "notice": {
+        "x": 415,
+        "w": 446,
+        "h": 250,
+        "scrollOver": 0
+      },
+      "docOverflow": 0,
+      "uuidVisible": true,
+      "parts": [
+        {
+          "tag": "strong",
+          "text": "카드를 불러오지 못했습니다.",
+          "lines": [
+            "카드를 불러오지 못했습니다."
+          ],
+          "broken": [],
+          "overflowPx": -278,
+          "rect": {
+            "x": 428,
+            "w": 420
+          }
+        },
+        {
+          "tag": "p",
+          "text": "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요.",
+          "lines": [
+            "입력 내용과 연결 상태를 확인한 뒤 다시 시도하세요."
+          ],
+          "broken": [],
+          "overflowPx": -155,
+          "rect": {
+            "x": 428,
+            "w": 420
+          }
+        },
+        {
+          "tag": "summary",
+          "text": "기술 상세",
+          "lines": [
+            "기술 상세"
+          ],
+          "broken": [],
+          "overflowPx": -366.2,
+          "rect": {
+            "x": 428,
+            "w": 66
+          }
+        },
+        {
+          "tag": "pre",
+          "text": "HTTP 503\n요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.",
+          "lines": [
+            "HTTP 503",
+            "요청 ID: 8dff6b9c-60a8-4c66-961c-b5c347fa9c0a",
+            "민감한 정보가 포함될 수 있어 오류 원문은 표시하지",
+            "않습니다."
+          ],
+          "broken": [],
+          "overflowPx": -51.6,
+          "rect": {
+            "x": 428,
+            "w": 420
+          }
+        },
+        {
+          "tag": "button",
+          "text": "다시 불러오기",
+          "lines": [
+            "다시 불러오기"
+          ],
+          "broken": [],
+          "overflowPx": -347,
+          "rect": {
+            "x": 428,
+            "w": 95
+          }
+        }
+      ]
+    },
+    "chatTop1440": {
+      "width": 1440,
+      "cursors": [
+        null,
+        "older-60",
+        "older-20"
+      ],
+      "beforeRelease": null,
+      "firstRow": {
+        "key": "user-msg-1",
+        "offset": 0
+      },
+      "firstRowBefore": {
+        "key": "user-msg-1",
+        "offset": 0,
+        "visible": true,
+        "scrollTop": 0
+      },
+      "firstRowAfter": {
+        "key": "user-msg-1",
+        "offset": 0,
+        "visible": true,
+        "scrollTop": 0
+      },
+      "delta": 0,
+      "markerCount": 0
+    },
+    "chatTop390": {
+      "width": 390,
+      "cursors": [
+        null,
+        "older-60",
+        "older-20"
+      ],
+      "beforeRelease": {
+        "key": "user-msg-21",
+        "offset": 26
+      },
+      "firstRow": {
+        "key": "user-msg-1",
+        "offset": 0
+      },
+      "firstRowBefore": {
+        "key": "user-msg-1",
+        "offset": 0,
+        "visible": true,
+        "scrollTop": 0
+      },
+      "firstRowAfter": {
+        "key": "user-msg-1",
+        "offset": 0,
+        "visible": true,
+        "scrollTop": 0
+      },
+      "delta": 0,
+      "markerCount": 0
+    },
+    "chatKorean1440": {
+      "placeholder": "대화를 이어서 입력하세요",
+      "followText": "↓ 맨 아래로",
+      "thinkingText": "💭 생각"
+    },
+    "chatKorean390": {
+      "placeholder": "대화를 이어서 입력하세요",
+      "followText": "↓ 맨 아래로",
+      "thinkingText": "💭 생각"
+    },
+    "documentPanel": {
+      "titleValue": "제목 없는 문서",
+      "titlePlaceholder": "제목 없는 문서",
+      "bodyText": "빈 문서",
+      "deleteTitle": "문서 삭제",
+      "deleteAria": "문서 삭제",
+      "deleteDisabled": false
+    },
+    "documentLoading": {
       "label": "불러오는 중"
+    },
+    "editorLoading": {
+      "label": "편집기를 불러오는 중",
+      "stillLoading": true
+    },
+    "fullContent1440": {
+      "before": {
+        "text": "… 전체 내용 보기",
+        "x": 1068,
+        "y": 623,
+        "w": 78,
+        "h": 16
+      },
+      "during": {
+        "text": "불러오는 중",
+        "x": 1068,
+        "y": 621,
+        "w": 69,
+        "h": 16,
+        "fontSize": "12px",
+        "disabled": true
+      }
+    },
+    "fullContent390": {
+      "before": {
+        "text": "… 전체 내용 보기",
+        "x": 64,
+        "y": 420,
+        "w": 85,
+        "h": 18
+      },
+      "during": {
+        "text": "불러오는 중",
+        "x": 64,
+        "y": 418,
+        "w": 74,
+        "h": 18,
+        "fontSize": "13px",
+        "disabled": true
+      }
     }
   }
 }

@@ -184,7 +184,7 @@ describe("MarkdownDocumentPanel restore safety", () => {
   });
 
   it("does not save title or body while the document body is still unloaded", async () => {
-    const title = container?.querySelector<HTMLInputElement>('input[aria-label="Document title"]');
+    const title = container?.querySelector<HTMLInputElement>('input[aria-label="문서 제목"]');
     expect(title).not.toBeNull();
 
     flushSync(() => {
@@ -222,13 +222,13 @@ describe("MarkdownDocumentPanel restore safety", () => {
     flushSync(() => runtime.completeInitialSync());
     await waitFor(
       () => container?.querySelector<HTMLButtonElement>(
-        'button[title="Delete document"]',
+        'button[title="문서 삭제"]',
       )?.disabled === false,
       "the synchronized delete action",
     );
 
     const synchronizedDeleteButton = container?.querySelector<HTMLButtonElement>(
-      'button[title="Delete document"]',
+      'button[title="문서 삭제"]',
     );
     flushSync(() => synchronizedDeleteButton?.click());
     await settle();

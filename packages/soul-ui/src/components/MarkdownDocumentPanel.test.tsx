@@ -297,7 +297,7 @@ describe("MarkdownDocumentPanel", () => {
     ]);
     await waitForText(container, '[data-testid="markdown-save-status"]', "저장됨");
     expect(container.querySelector('[data-testid="markdown-save-status"]')?.textContent).toBe("저장됨");
-    expect(container.querySelector('button[title="Delete document"]')).not.toBeNull();
+    expect(container.querySelector('button[title="문서 삭제"]')).not.toBeNull();
   });
 
   it("enters edit mode at the middle content anchor instead of the top", async () => {
@@ -421,7 +421,7 @@ describe("MarkdownDocumentPanel", () => {
     ({ container, root } = renderPanel());
     await waitForSelector(container, '[data-testid="markdown-read-body"]');
 
-    const deleteButton = container.querySelector<HTMLButtonElement>('button[title="Delete document"]');
+    const deleteButton = container.querySelector<HTMLButtonElement>('button[title="문서 삭제"]');
     expect(deleteButton).not.toBeNull();
     flushSync(() => deleteButton?.click());
 
@@ -600,7 +600,7 @@ describe("MarkdownDocumentPanel", () => {
     cleanupRuntime = registerBoardYjsRuntime(runtime);
     ({ container, root } = renderPanel({ folderId: "folder-a" }));
 
-    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="Document title"]');
+    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="문서 제목"]');
     flushSync(() => input.focus());
 
     const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -622,15 +622,15 @@ describe("MarkdownDocumentPanel", () => {
     const runtime = createRuntime("folder-a");
     cleanupRuntime = registerBoardYjsRuntime(runtime);
     // Reset the seeded title to the default placeholder value.
-    runtime.updateMarkdownTitle("doc-a", "Untitled document");
+    runtime.updateMarkdownTitle("doc-a", "제목 없는 문서");
     ({ container, root } = renderPanel({ folderId: "folder-a" }));
 
-    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="Document title"]');
-    await waitForCondition(() => input.value === "Untitled document");
+    const input = await waitForSelector<HTMLInputElement>(container, 'input[aria-label="문서 제목"]');
+    await waitForCondition(() => input.value === "제목 없는 문서");
     flushSync(() => input.focus());
 
     expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe("Untitled document".length);
+    expect(input.selectionEnd).toBe("제목 없는 문서".length);
   });
 
   it("toggles read/edit via the pencil and check icon buttons (🔴16)", async () => {
