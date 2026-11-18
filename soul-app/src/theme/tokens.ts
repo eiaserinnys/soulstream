@@ -105,6 +105,7 @@ export interface DesignTokens {
     sendBtn: number;
   };
   iconSize: {
+    messageSender: number;
     compact: number;
     standard: number;
     prominent: number;
@@ -264,6 +265,7 @@ export const TABLET_SHELL_LAYOUT = {
 } as const;
 
 export const DESIGN_ICON_SIZE = {
+  messageSender: 16,
   compact: 14,
   standard: 18,
   prominent: 20,

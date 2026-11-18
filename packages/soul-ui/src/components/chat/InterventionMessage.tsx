@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
+import { ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { ContextBlock } from "./ContextBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
 import { extractCallerAvatarUrl } from "./userAvatarSelectors";
@@ -32,7 +33,8 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
   return (
     <div className={manuscript ? MANUSCRIPT_USER_ROW_CLASS_NAME : "flex justify-end gap-2 px-3 py-1.5"} data-chat-manuscript-user-row={manuscript ? "true" : undefined} data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
       <div data-slot={!manuscript && attachments ? "chat-message-bubble" : undefined} data-chat-attachment-role={!manuscript && attachments ? "user" : undefined} className={cn(!manuscript && attachments && "chat-attachment-bubble", manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]")}>
-        {!manuscript && <div className="mb-1 flex items-baseline justify-end gap-1.5">
+        {manuscript && display.external && <ExternalSenderCaption sender={display.external} />}
+        {!manuscript && (display.external ? <ExternalSenderHeading sender={display.external} /> : <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {display.displayName}
           </span>
@@ -41,7 +43,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
               {display.displayId}
             </span>
           )}
-        </div>}
+        </div>)}
         <div data-slot="chat-body" className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug text-white"}>{msg.content}</div>
         {attachments}
         {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
@@ -53,6 +55,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
       </div>
       {!manuscript && <ProfileAvatar
         role="user"
+        external={display.external}
         hasPortrait={display.hasPortrait}
         fallbackEmoji={display.fallbackEmoji}
         portraitUrl={display.portraitUrl}

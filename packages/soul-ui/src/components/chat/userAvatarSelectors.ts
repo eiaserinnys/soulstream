@@ -51,6 +51,7 @@ export function pickMessageAvatarUrl(
   msgCallerInfo: CallerInfo | undefined,
   sessionAvatarUrl: string | null,
 ): string | null {
+  if (msgCallerInfo?.source === "external") return null;
   const mu = msgCallerInfo?.avatar_url;
   if (typeof mu === "string" && mu.length > 0) return mu;
   return sessionAvatarUrl;

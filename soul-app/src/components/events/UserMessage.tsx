@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -180,6 +182,11 @@ export function UserMessage({
   // 보내고 클라이언트 측이 자기 자원으로 결정 (design-principles §1 지식 경계).
   // pickUserAvatarUri 자체는 source 모름 (정적 자산을 picker가 결정하면 §1 위반).
   const isSystem = caller?.source === 'system';
+  const external = caller?.source === 'external';
+  const webhook = caller?.transport === 'webhook';
+  const externalTitle = webhook ? '웹훅' : '접속 링크';
+  const senderColor = presentation === 'manuscript' ? t.colors.textMuted
+    : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText;
 
   const { uri: avatarUri, useBearer } = pickUserAvatarUri(
     caller,
@@ -204,6 +211,14 @@ export function UserMessage({
           }] : []),
           pendingStatus === 'sending' && styles.pendingSendingBubble]}
       >
+        {external && <View style={[styles.senderLine, presentation === 'manuscript' && styles.senderLineManuscript]}>
+          {presentation === 'manuscript' && <View accessible accessibilityLabel={`외부 연동 ${externalTitle}`}>
+            {webhook ? <MaterialCommunityIcons name="webhook" size={t.iconSize.compact} color={senderColor} />
+              : <Ionicons name="link-outline" size={t.iconSize.compact} color={senderColor} />}
+          </View>}
+          <Text testID="external-sender-prefix" numberOfLines={1} style={[presentation === 'manuscript' ? styles.senderMeta : styles.senderLabel, styles.senderPrefix, { color: senderColor, opacity: presentation === 'manuscript' ? 1 : 0.6 }]}>외부 연동</Text>
+          {!!caller?.display_name && <Text numberOfLines={1} style={[presentation === 'manuscript' ? styles.senderMeta : styles.senderLabel, styles.senderName, { color: senderColor, opacity: presentation === 'manuscript' ? 1 : 0.85 }]}>{caller.display_name}</Text>}
+        </View>}
         {messageKind}
         {children}
         {children == null && content ? (
@@ -320,6 +335,11 @@ export function UserMessage({
           source={require('../../../assets/icon-symbol.png')}
           style={styles.avatar}
         />
+      ) : external ? (
+        <View style={[styles.avatar, styles.avatarFallback]} accessible accessibilityLabel={`외부 연동 ${externalTitle}`}>
+          {webhook ? <MaterialCommunityIcons name="webhook" size={t.iconSize.messageSender} color={t.colors.textMuted} />
+            : <Ionicons name="link-outline" size={t.iconSize.messageSender} color={t.colors.textMuted} />}
+        </View>
       ) : avatarUri ? (
         <Image
           source={{
@@ -402,6 +422,15 @@ function makeStyles(t: DesignTokens) {
       lineHeight: t.chatFontSize.body * 1.6,
       textAlign: 'right',
     },
+    senderLine: {
+      flexDirection: 'row', alignItems: 'center',
+      gap: t.spacing.xs, marginBottom: t.spacing.xxs,
+    },
+    senderLineManuscript: { justifyContent: 'flex-end' },
+    senderLabel: { ...t.foundation.typography.label },
+    senderMeta: { ...t.foundation.typography.meta, fontWeight: '500' },
+    senderPrefix: { flexShrink: 0 },
+    senderName: { flexShrink: 1, fontWeight: '600' },
     pendingSendingBubble: {
       opacity: 0.58,
     },
