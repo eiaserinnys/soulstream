@@ -1,8 +1,21 @@
 diff --git a/cf/src/connection.js b/cf/src/connection.js
-index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..7393c15ad2c4135326f9f18c8314f6be465c38b5 100644
+index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..22650dc2db2a720a0ff119bd0105787df0c04e27 100644
 --- a/cf/src/connection.js
 +++ b/cf/src/connection.js
-@@ -172,11 +172,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+@@ -159,6 +159,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // A closed connection can still be handed queries (reserved connections run
++    // them straight here). Fail them now instead of queueing a write that would
++    // be dropped together with the socket.
++    if (!socket)
++      return queryError(q, Errors.connection('CONNECTION_CLOSED', options, socket))
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -172,11 +178,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
          : (query = q, query.active = true)
  
        build(q)
@@ -23,11 +36,63 @@ index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..7393c15ad2c4135326f9f18c8314f6be
      } catch (error) {
        sent.length === 0 && write(Sync)
        errored(error)
+@@ -246,6 +259,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function write(x, fn) {
++    if (!socket)
++      return false
+     chunk = chunk ? Buffer.concat([chunk, x]) : Buffer.from(x)
+     if (fn || chunk.length >= 1024)
+       return nextWrite(fn)
+@@ -254,6 +269,13 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // The connection can close between scheduling and running this write; the
++    // queries already failed with the connection error, so drop what is left.
++    if (!socket) {
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      chunk = nextWriteTimer = null
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -427,6 +449,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+       error(Errors.connection('CONNECTION_DESTROYED', options))
+ 
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     if (socket) {
+       socket.removeListener('data', data)
+       socket.removeListener('connect', connected)
+@@ -440,6 +463,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     remaining = 0
+     incomings = null
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+     socket.removeListener('connect', connected)
+     idleTimer.cancel()
 diff --git a/cjs/src/connection.js b/cjs/src/connection.js
-index 07f6716702ac888215c86ad6e0071aaf55ae519c..7d243e2db9725576f2fba6c2d411831d0f8744c0 100644
+index 07f6716702ac888215c86ad6e0071aaf55ae519c..4d5324aa2afcd0fee1128e70f06ecc97aa28e51d 100644
 --- a/cjs/src/connection.js
 +++ b/cjs/src/connection.js
-@@ -170,11 +170,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+@@ -157,6 +157,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // A closed connection can still be handed queries (reserved connections run
++    // them straight here). Fail them now instead of queueing a write that would
++    // be dropped together with the socket.
++    if (!socket)
++      return queryError(q, Errors.connection('CONNECTION_CLOSED', options, socket))
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -170,11 +176,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
          : (query = q, query.active = true)
  
        build(q)
@@ -48,11 +113,63 @@ index 07f6716702ac888215c86ad6e0071aaf55ae519c..7d243e2db9725576f2fba6c2d411831d
      } catch (error) {
        sent.length === 0 && write(Sync)
        errored(error)
+@@ -244,6 +257,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function write(x, fn) {
++    if (!socket)
++      return false
+     chunk = chunk ? Buffer.concat([chunk, x]) : Buffer.from(x)
+     if (fn || chunk.length >= 1024)
+       return nextWrite(fn)
+@@ -252,6 +267,13 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // The connection can close between scheduling and running this write; the
++    // queries already failed with the connection error, so drop what is left.
++    if (!socket) {
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      chunk = nextWriteTimer = null
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -425,6 +447,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+       error(Errors.connection('CONNECTION_DESTROYED', options))
+ 
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     if (socket) {
+       socket.removeListener('data', data)
+       socket.removeListener('connect', connected)
+@@ -438,6 +461,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     remaining = 0
+     incomings = null
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+     socket.removeListener('connect', connected)
+     idleTimer.cancel()
 diff --git a/src/connection.js b/src/connection.js
-index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..def012c11e5e5f89b47137196a4db80c152f14f5 100644
+index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..1731fbeb2eec675b2d3c34aaf186334098c795b5 100644
 --- a/src/connection.js
 +++ b/src/connection.js
-@@ -170,11 +170,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+@@ -157,6 +157,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // A closed connection can still be handed queries (reserved connections run
++    // them straight here). Fail them now instead of queueing a write that would
++    // be dropped together with the socket.
++    if (!socket)
++      return queryError(q, Errors.connection('CONNECTION_CLOSED', options, socket))
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -170,11 +176,18 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
          : (query = q, query.active = true)
  
        build(q)
@@ -73,3 +190,42 @@ index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..def012c11e5e5f89b47137196a4db80c
      } catch (error) {
        sent.length === 0 && write(Sync)
        errored(error)
+@@ -244,6 +257,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function write(x, fn) {
++    if (!socket)
++      return false
+     chunk = chunk ? Buffer.concat([chunk, x]) : Buffer.from(x)
+     if (fn || chunk.length >= 1024)
+       return nextWrite(fn)
+@@ -252,6 +267,13 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // The connection can close between scheduling and running this write; the
++    // queries already failed with the connection error, so drop what is left.
++    if (!socket) {
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      chunk = nextWriteTimer = null
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -425,6 +447,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+       error(Errors.connection('CONNECTION_DESTROYED', options))
+ 
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     if (socket) {
+       socket.removeListener('data', data)
+       socket.removeListener('connect', connected)
+@@ -438,6 +461,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     remaining = 0
+     incomings = null
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+     socket.removeListener('connect', connected)
+     idleTimer.cancel()

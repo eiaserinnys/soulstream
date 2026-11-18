@@ -14,6 +14,7 @@ on:
       - 'soul-server-ts/vitest.config.ts'
       # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
       - 'orch-server-ts/src/**'
+      - 'orch-server-ts/tests/**'
       - 'packages/mcp-contract/**'
       - 'packages/db-schema/scripts/**'
       - 'packages/statechart/**'
@@ -29,6 +30,7 @@ on:
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
       - 'orch-server-ts/src/**'
+      - 'orch-server-ts/tests/**'
       - 'packages/mcp-contract/**'
       - 'packages/db-schema/scripts/**'
       - 'packages/statechart/**'
@@ -96,6 +98,7 @@ jobs:
             tests/oauth/oauth-flow.postgres.test.ts \
             tests/mcp-baselines/board-roundtrip.postgres.integration.test.ts \
             tests/page/page-repository.postgres.integration.test.ts \
+            tests/handover-postgres-terminate.postgres.test.ts \
             --minWorkers=1 --maxWorkers=2 || result=$?
           corepack pnpm --dir orch-server-ts exec vitest run \
             tests/oauth/oauth-flow.postgres.test.ts \
