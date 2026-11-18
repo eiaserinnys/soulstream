@@ -112,9 +112,45 @@ async function openSample(page: Page, sample: string) {
 async function checkRing(target: Locator, name: string) {
   const style = await target.evaluate(el => {
     const { outlineStyle, boxShadow } = getComputedStyle(el);
-    return { focused: document.activeElement === el, focusVisible: el.matches(":focus-visible"), outlineStyle, boxShadow };
+    const spread = Number(boxShadow.match(/0px 0px 0px ([\d.]+)px/)?.[1] ?? 0);
+    const clipping = ["auto", "scroll", "hidden", "clip"];
+    let clip = el.parentElement;
+    while (clip) {
+      const { overflowX, overflowY } = getComputedStyle(clip);
+      if (clipping.includes(overflowX) || clipping.includes(overflowY)) break;
+      clip = clip.parentElement;
+    }
+    const rect = el.getBoundingClientRect();
+    const clipRect = clip?.getBoundingClientRect();
+    const clipBox = clip && clipRect && {
+      left: clipRect.left + clip.clientLeft,
+      top: clipRect.top + clip.clientTop,
+      right: clipRect.left + clip.clientLeft + clip.clientWidth,
+      bottom: clipRect.top + clip.clientTop + clip.clientHeight,
+    };
+    const clearance = clipBox && {
+      left: rect.left - clipBox.left,
+      top: rect.top - clipBox.top,
+      right: clipBox.right - rect.right,
+      bottom: clipBox.bottom - rect.bottom,
+    };
+    return { focused: document.activeElement === el, focusVisible: el.matches(":focus-visible"), outlineStyle, boxShadow, spread, rect: rect.toJSON(), clipBox, clearance };
   });
-  check(`${name}: v3 focus ring`, style.focused && style.focusVisible && style.outlineStyle === "none" && style.boxShadow !== "none", style);
+  // clientWidth and clientHeight are rounded to whole pixels.
+  check(`${name}: unclipped v3 focus ring`, style.focused && style.focusVisible && style.outlineStyle === "none" &&
+    style.spread > 0 && !!style.clearance && Object.values(style.clearance).every(gap => gap + 0.5 >= style.spread), style);
+}
+
+async function checkRingAlignment(popup: Locator, name: string, width: number) {
+  const edges = await popup.locator(".v3-project-context-fields").evaluate(fields =>
+    [...fields.querySelectorAll(':scope > label, :scope > [role="group"], [data-slot="atom-node-selector-trigger"], [data-slot="atom-node-selector-panel"]')]
+      .map(el => {
+        const { left, right } = el.getBoundingClientRect();
+        return { label: el.getAttribute("data-slot") ?? el.firstChild?.textContent, left, right };
+      }));
+  const [left, right] = width === 390 ? [29, 361] : [33, 379];
+  check(`${name}: fields keep their inline alignment`, edges.length > 0 &&
+    edges.every(edge => Math.abs(edge.left - left) <= 1 && Math.abs(edge.right - right) <= 1), edges);
 }
 async function run(browser: Browser) {
   for (const [width, height] of [[390, 844], [1440, 900]]) {
@@ -149,9 +185,23 @@ async function run(browser: Browser) {
       const panel = popup.locator('[data-slot="atom-node-selector-panel"]');
       const trigger = popup.locator('[data-slot="atom-node-selector-trigger"]');
       const depth = popup.getByRole("spinbutton", { name: "깊이", exact: true });
+      const fields = [
+        ["depth", depth],
+        ["limit", popup.getByRole("spinbutton", { name: "atom 최근 자식 수" })],
+        ["mode", popup.getByRole("combobox", { name: "atom 렌더 방식" })],
+        ["titles only", popup.getByRole("checkbox", { name: "제목만 포함" })],
+      ] as const;
       const row = panel.getByRole("button", { name: "프로젝트 지식 노드 0-3", exact: true });
       await row.waitFor();
-      await checkRing(trigger, `${sample}-${width} initial trigger`);
+      const name = `${sample}-${width}`;
+      await checkRingAlignment(popup, `${name} open`, width);
+      await checkRing(trigger, `${name} open trigger`);
+      const listTabStops = await panel.locator("button:enabled").count();
+      for (let i = 0; i < listTabStops; i++) await page.keyboard.press("Tab");
+      for (const [field, locator] of fields) {
+        await page.keyboard.press("Tab");
+        await checkRing(locator, `${name} open ${field}`);
+      }
       await depth.fill("5");
       if (width === 390) {
         await trigger.focus();
@@ -166,10 +216,16 @@ async function run(browser: Browser) {
       check(`${sample}-${width}: first Escape keeps depth`, await depth.inputValue() === "5");
       check(`${sample}-${width}: first Escape focuses closed trigger`, await trigger.evaluate(el =>
         el === document.activeElement && el.getAttribute("aria-expanded") === "false"));
+      await checkRingAlignment(popup, `${name} closed`, width);
+      await checkRing(trigger, `${name} closed trigger`);
       await page.screenshot({ path: path.join(output!, `${sample}-${width}-first-escape.png`), animations: "disabled" });
-      await page.keyboard.press("Tab");
-      await checkRing(depth, `${sample}-${width} depth input`);
-      await page.screenshot({ path: path.join(output!, `${sample}-${width}-depth-ring.png`), animations: "disabled" });
+      for (const [field, locator] of fields) {
+        await page.keyboard.press("Tab");
+        await checkRing(locator, `${name} closed ${field}`);
+        if (field === "depth") {
+          await page.screenshot({ path: path.join(output!, `${sample}-${width}-depth-ring.png`), animations: "disabled" });
+        }
+      }
       await page.keyboard.press("Escape");
       await popup.waitFor({ state: "hidden" });
       check(`${sample}-${width}: second Escape closes editor`, await popup.isHidden());

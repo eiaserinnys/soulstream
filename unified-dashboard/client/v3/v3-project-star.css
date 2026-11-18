@@ -256,6 +256,10 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Give the focus ring room inside the scroll clip without moving the fields. */
+  padding: calc(var(--spacing) / 2);
+  margin: calc(var(--spacing) / -2);
+  scroll-padding-block: calc(var(--spacing) / 2);
   /* Keep the user's scroll offset when the popover reflows on resize. */
   overflow-anchor: none;
 }
