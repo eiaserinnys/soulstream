@@ -17,7 +17,7 @@ describe("session activity period repositories", () => {
     harness = undefined;
   });
 
-  it("lists event-active sessions by ID, pages without overlap, and filters events and summaries by UTC boundaries", async () => {
+  it("lists event-active sessions by recent update, pages without overlap, and filters events and summaries by UTC boundaries", async () => {
     harness = await createPagePostgresHarness();
     const { sql } = harness;
     await sql.unsafe(`
@@ -50,15 +50,15 @@ describe("session activity period repositories", () => {
     `);
 
     for (const session of [
-      { id: "a-tool-only", node: "eiaserinnys" },
-      { id: "b-node-two", node: "eias-linegames" },
-      { id: "m-no-summary", node: "eias-linegames-wsl" },
-      { id: "n-until-only", node: "eiaserinnys" },
-      { id: "z-old", node: "eiaserinnys" },
+      { id: "a-tool-only", node: "eiaserinnys", updatedAt: "2026-10-06T10:00:00Z" },
+      { id: "b-node-two", node: "eias-linegames", updatedAt: "2026-10-06T12:00:00Z" },
+      { id: "m-no-summary", node: "eias-linegames-wsl", updatedAt: "2026-10-06T12:00:00Z" },
+      { id: "n-until-only", node: "eiaserinnys", updatedAt: "2026-10-06T13:00:00Z" },
+      { id: "z-old", node: "eiaserinnys", updatedAt: "2026-10-06T14:00:00Z" },
     ]) {
       await sql`
-        INSERT INTO sessions (session_id, display_name, node_id, status, session_type)
-        VALUES (${session.id}, ${session.id}, ${session.node}, 'completed', 'agent')
+        INSERT INTO sessions (session_id, display_name, node_id, status, session_type, updated_at)
+        VALUES (${session.id}, ${session.id}, ${session.node}, 'completed', 'agent', ${new Date(session.updatedAt)})
       `;
     }
     await sql`INSERT INTO session_digests (session_id, narrative_through_event_id) VALUES ('b-node-two', 1)`;
@@ -102,8 +102,8 @@ describe("session activity period repositories", () => {
     const sessions = new SessionReadRepository(sql as never);
     const firstPage = await sessions.listSessionsSummary({ limit: 2, offset: 0, period: PERIOD });
     const secondPage = await sessions.listSessionsSummary({ limit: 2, offset: 2, period: PERIOD });
-    expect.soft(firstPage.sessions.map((row) => row.session_id)).toEqual(["a-tool-only", "b-node-two"]);
-    expect.soft(secondPage.sessions.map((row) => row.session_id)).toEqual(["m-no-summary"]);
+    expect.soft(firstPage.sessions.map((row) => row.session_id)).toEqual(["m-no-summary", "b-node-two"]);
+    expect.soft(secondPage.sessions.map((row) => row.session_id)).toEqual(["a-tool-only"]);
     expect.soft(firstPage.total).toBe(3);
     expect.soft(secondPage.total).toBe(3);
     expect.soft(new Set([...firstPage.sessions, ...secondPage.sessions].map((row) => row.node_id)).size).toBe(3);
