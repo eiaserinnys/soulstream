@@ -37,16 +37,26 @@ def main():
                     sample = page.get_by_test_id(f'external-sender-{presentation}')
                     sample.wait_for(state='visible', timeout=30000)
                     page.evaluate('document.fonts.ready')
-                    sample.screenshot(path=str(args.output / f'{platform}-{presentation}-{width}.png'))
+                    box = sample.bounding_box()
+                    scroll = page.evaluate('() => ({x: window.scrollX, y: window.scrollY})')
+                    left = max(scroll['x'], box['x'] - 16)
+                    top = max(scroll['y'], box['y'] - 16)
+                    right = min(scroll['x'] + width, box['x'] + box['width'] + 16)
+                    bottom = min(scroll['y'] + 1000, box['y'] + box['height'] + 16)
+                    page.screenshot(path=str(args.output / f'{platform}-{presentation}-{width}.png'),
+                                    clip={'x': left, 'y': top, 'width': right - left, 'height': bottom - top})
                     info = sample.evaluate('el => ({width: el.clientWidth, scroll: el.scrollWidth, text: el.innerText})')
-                    if platform == 'app':
-                        prefixes = sample.get_by_test_id('external-sender-prefix')
-                        if prefixes.count() != 3:
-                            findings.append(f'{platform} {presentation} {width}: sender prefixes missing')
-                        for prefix in prefixes.all():
-                            size = prefix.evaluate('el => ({height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight)})')
-                            if size['height'] > size['line'] + 1:
-                                findings.append(f'{platform} {presentation} {width}: sender prefix wraps')
+                    prefixes = sample.get_by_test_id('external-sender-prefix')
+                    if prefixes.count() != 3:
+                        findings.append(f'{platform} {presentation} {width}: sender prefixes missing')
+                    sizes = [prefix.evaluate('el => ({height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight)})')
+                             for prefix in prefixes.all()]
+                    if any(size['height'] > size['line'] + 1 for size in sizes):
+                        findings.append(f'{platform} {presentation} {width}: sender prefix wraps')
+                    if platform == 'web' and presentation == 'manuscript':
+                        icons = sample.locator('[data-testid="external-sender-caption"] svg')
+                        if icons.count() != 3 or any(icon.bounding_box()['width'] < 14 for icon in icons.all()):
+                            findings.append(f'{platform} {presentation} {width}: sender icon shrinks')
                     if info['scroll'] > info['width'] + 1:
                         findings.append(f'{platform} {presentation} {width}: horizontal overflow')
                     if '외부 연동' not in info['text'] or '웹훅에서' not in info['text']:

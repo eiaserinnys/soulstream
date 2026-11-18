@@ -28,6 +28,14 @@ describe('external sender', () => {
     const msg = { id: '2', treeNodeId: '2', treeNodeType: 'user_message', role: 'user', content: '본문', callerInfo: { source } } as ChatMessage;
     expect(renderToStaticMarkup(createElement(UserMessage, { msg, presentation: 'manuscript' }))).not.toContain('외부 연동');
   });
+  it.each([
+    ['access_link', '접속 링크'],
+    ['webhook', '웹훅'],
+  ] as const)('exposes the manuscript %s icon to screen readers', (transport, title) => {
+    const msg = { id: '3', treeNodeId: '3', treeNodeType: 'user_message', role: 'user', content: '본문', callerInfo: { source: 'external', transport, display_name: '외부 작업자' } } as ChatMessage;
+    const html = renderToStaticMarkup(createElement(UserMessage, { msg, presentation: 'manuscript' }));
+    expect(html).toContain(`role="img" aria-label="외부 연동 ${title}" title="${title}"`);
+  });
   it.each(['user', 'intervention'] as const)('renders %s in both presentations without issuer', role => {
     const msg = { id: '1', treeNodeId: '1', treeNodeType: role, role, content: '본문', callerInfo: { source: 'external', transport: 'webhook', display_name: '알림', issued_by: 'owner@example.com' } } as ChatMessage;
     if (role === 'intervention') expect(computeInterventionDisplay(msg, '/director.png').portraitUrl).toBeNull();
