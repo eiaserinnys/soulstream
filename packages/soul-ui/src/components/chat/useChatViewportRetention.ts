@@ -206,6 +206,16 @@ export function useChatViewportRetention({
 
   const cancelRetentionForUserInput = useCallback((event: Event) => {
     onUserViewportInputRef.current?.(event);
+    const scroller = scrollerRef.current;
+    // 맨 위에서 더 위로 굴린 휠은 viewport를 움직이지 않는다. 이미 시작한
+    // prepend 보정을 취소하면 Virtuoso의 임시 좌표가 새 기준으로 잡힌다.
+    if (event instanceof WheelEvent && event.deltaY < 0 && scroller?.scrollTop === 0) {
+      if (retentionTargetRef.current === null) {
+        recordVisuallyFirstItem();
+        scheduleVisuallyFirstItem();
+      }
+      return;
+    }
     const shouldRetarget = retentionTargetRef.current !== null;
     if (retentionFrameRef.current !== null) {
       window.cancelAnimationFrame(retentionFrameRef.current);
@@ -215,12 +225,11 @@ export function useChatViewportRetention({
     scrollObservationPendingRef.current = true;
     pendingScrollAnchorRef.current = null;
     retargetAfterUserScrollRef.current = shouldRetarget;
-    const scroller = scrollerRef.current;
     if (scroller !== null) {
       scroller.dataset.chatViewportRetentionPending = "false";
     }
     scheduleVisuallyFirstItem();
-  }, [scheduleVisuallyFirstItem]);
+  }, [recordVisuallyFirstItem, scheduleVisuallyFirstItem]);
 
   const cancelPendingRetention = useCallback(() => {
     if (retentionFrameRef.current !== null) {
