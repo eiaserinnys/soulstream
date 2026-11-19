@@ -220,16 +220,21 @@ function rectangle(locator: Locator) {
 }
 
 async function controlGeometry(root: Locator) {
-  const [follow, input, scroller] = await Promise.all([
+  const [follow, input, inputFrame, scroller] = await Promise.all([
     rectangle(followButton(root)),
     rectangle(root.locator('[data-slot="chat-input-composer"]')),
+    rectangle(root.locator('[data-testid="chat-input"]')),
     rectangle(root.locator('[data-virtuoso-scroller="true"]')),
   ]);
-  const followWrapperHeight = await followButton(root).evaluate(
-    el => el.parentElement?.getBoundingClientRect().height ?? null,
-    undefined,
-    { timeout: 5000 },
-  );
+  // 겹침 묶음(absolute)과 그 기준인 흐름 래퍼의 높이. 흐름 래퍼가 0이어야 단추가 한 줄을 차지하지 않는다.
+  const followWrapperHeight = await followButton(root).evaluate(el => {
+    const group = el.parentElement;
+    const base = group?.parentElement ?? null;
+    return {
+      base: base?.getBoundingClientRect().height ?? null,
+      group: group?.getBoundingClientRect().height ?? null,
+    };
+  }, undefined, { timeout: 5000 });
   // 목록 아래 끝과 입력창 위 끝 사이에 흐름 높이를 가진 요소가 있으면 단추가 한 줄을 차지한 것이다.
   const gap = await root.evaluate(rootEl => {
     const scroller = rootEl.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
@@ -247,7 +252,7 @@ async function controlGeometry(root: Locator) {
     }
     return { height: bottom - top, elements };
   }, undefined, { timeout: 5000 });
-  return { follow, input, scroller, followWrapperHeight, gap };
+  return { follow, input, inputFrame, scroller, followWrapperHeight, gap };
 }
 
 type ControlGeometry = Awaited<ReturnType<typeof controlGeometry>>;
@@ -266,8 +271,8 @@ function checkOverlap(
       && follow.top >= scroller.top && follow.bottom <= scroller.bottom,
     `${label} 자동 스크롤이 목록 스크롤 영역 안`,
   );
-  check(followWrapperHeight !== null && followWrapperHeight <= 0.5,
-    `${label} 자동 스크롤 감싼 요소 높이 0 (${followWrapperHeight})`);
+  check(followWrapperHeight.base !== null && followWrapperHeight.base <= 0.5,
+    `${label} 자동 스크롤 흐름 래퍼 높이 0 (${JSON.stringify(followWrapperHeight)})`);
   check(gap !== null && gap.elements.length === 0,
     `${label} 목록과 입력창 사이 높이 있는 요소 없음 (${JSON.stringify(gap)})`);
 }
@@ -283,12 +288,13 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
   }
   const checkOverlapAt = (geometry: ControlGeometry, label: string) => checkOverlap(geometry, label, check);
   async function checkBannerTogether(target: Locator, width: number, label: string) {
-    const [banner, follow, scroller] = await Promise.all([
+    const [banner, follow, scroller, inputFrame] = await Promise.all([
       rectangle(bannerButton(target)),
       rectangle(followButton(target)),
       rectangle(target.locator('[data-virtuoso-scroller="true"]')),
+      rectangle(target.locator('[data-testid="chat-input"]')),
     ]);
-    results[`together-${label}`] = { banner, follow, scroller };
+    results[`together-${label}`] = { banner, follow, scroller, inputFrame };
     const disjoint = banner.right <= follow.left || follow.right <= banner.left
       || banner.bottom <= follow.top || follow.bottom <= banner.top;
     check(disjoint, `${label} 배너와 자동 스크롤 겹침 (${JSON.stringify({ banner, follow })})`);
@@ -298,6 +304,25 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
         `${label} ${name} 목록 영역 안 (잘림 없음) (${JSON.stringify({ rect, scroller })})`);
       check(rect.left >= 0 && rect.right <= width, `${label} ${name} 화면 폭 안 (${rect.left}..${rect.right})`);
     }
+    const stackGap = follow.top - banner.bottom;
+    check(Math.abs(stackGap - 8) <= 1, `${label} 배너 아래 끝과 단추 위 끝 간격 ${stackGap.toFixed(1)}px`);
+    const centerShift = (banner.left + banner.right) / 2 - (scroller.left + scroller.right) / 2;
+    check(Math.abs(centerShift) <= 1, `${label} 배너 가로 중심과 목록 중심 차이 ${centerShift.toFixed(1)}px`);
+    const seatDifference = inputFrame.top - scroller.bottom;
+    check(Math.abs(seatDifference) <= 1, `${label} 목록 아래 끝과 입력창 위 끝 차이 ${seatDifference.toFixed(1)}px`);
+    const aboveInput = inputFrame.top - banner.bottom;
+    check(Math.abs(aboveInput - 61) <= 1, `${label} 배너 아래 끝이 입력창 위 끝에서 ${aboveInput.toFixed(1)}px`);
+    // 겹침 묶음의 빈 영역이 목록을 막지 않는지: 배너 높이에서 목록 왼쪽 + 40px 지점이 목록 안 요소여야 한다.
+    const hit = await target.evaluate((rootEl, point) => {
+      const scroller = rootEl.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
+      const el = document.elementFromPoint(point.x, point.y);
+      return {
+        hit: el ? `${el.tagName.toLowerCase()}${el.getAttribute("data-chat-item-key") ? `[${el.getAttribute("data-chat-item-key")}]` : ""}` : null,
+        inside: !!el && !!scroller && scroller.contains(el),
+      };
+    }, { x: scroller.left + 40, y: (banner.top + banner.bottom) / 2 }, { timeout: 5000 });
+    results[`hit-${label}`] = hit;
+    check(hit.inside, `${label} 배너 높이 목록 왼쪽+40px 지점이 목록 안 요소 (${JSON.stringify(hit)})`);
   }
   const screenshot = (state: string) => page.screenshot({
     path: path.join(output, `${phase}-controls-${width}-${state}.png`), animations: "disabled",
