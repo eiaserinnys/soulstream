@@ -122,19 +122,42 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
     return { kind: entry.kind, dev: 1, ino: 9000 + index, nlink: entry.nlink ?? 1, realPath: entry.realPath };
   };
 
+  // 동기·비동기 판이 같은 결과를 내도록 판정은 한 곳에 둔다.
+  const lstatFact = (path: string): HostPathFact | null => {
+    const override = systemFact(path);
+    if (override !== undefined) return override;
+    const mappedLock = lockFilePaths[path];
+    if (mappedLock) return existsSync(mappedLock) ? factOf(mappedLock) : null;
+    if (!inside(path)) return null;
+    try {
+      return factOf(path);
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveReal = (path: string): string => {
+    if (options.realPathFailures?.includes(path)) {
+      throw new Error(`EACCES: ${path}`);
+    }
+    const override = systemFact(path);
+    if (override !== undefined) {
+      if (override === null) throw new Error(`ENOENT: ${path}`);
+      return override.realPath ?? path;
+    }
+    const mappedLock = lockFilePaths[path];
+    if (mappedLock) return realpathSync(mappedLock);
+    if (!inside(path)) throw new Error(`ENOENT: ${path}`);
+    return realpathSync(path);
+  };
+
   const ports: FakeHostPorts = {
     calls,
     async lstatPath(path: string): Promise<HostPathFact | null> {
-      const override = systemFact(path);
-      if (override !== undefined) return override;
-      const mappedLock = lockFilePaths[path];
-      if (mappedLock) return existsSync(mappedLock) ? factOf(mappedLock) : null;
-      if (!inside(path)) return null;
-      try {
-        return factOf(path);
-      } catch {
-        return null;
-      }
+      return lstatFact(path);
+    },
+    lstatPathSync(path: string): HostPathFact | null {
+      return lstatFact(path);
     },
     async listDirectory(path: string) {
       const override = systemFact(path);
@@ -187,18 +210,10 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
       chmodSync(destination, mode);
     },
     async resolveRealPath(path: string): Promise<string> {
-      if (options.realPathFailures?.includes(path)) {
-        throw new Error(`EACCES: ${path}`);
-      }
-      const override = systemFact(path);
-      if (override !== undefined) {
-        if (override === null) throw new Error(`ENOENT: ${path}`);
-        return override.realPath ?? path;
-      }
-      const mappedLock = lockFilePaths[path];
-      if (mappedLock) return realpathSync(mappedLock);
-      if (!inside(path)) throw new Error(`ENOENT: ${path}`);
-      return realpathSync(path);
+      return resolveReal(path);
+    },
+    resolveRealPathSync(path: string): string {
+      return resolveReal(path);
     },
     async verifyAuthPreparation(): Promise<void> {
       calls.verifyAuthPreparation += 1;

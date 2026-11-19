@@ -132,6 +132,44 @@ describe("session isolation host ports — filesystem", () => {
     expect(typeof fact?.ino).toBe("number");
   });
 
+  it("resolveRealPathSync는 링크를 실경로로 풀고 없는 경로는 던진다", async () => {
+    const root = await makeTempDir("host-ports-realpath-sync-");
+    const { ports } = await createPorts(root);
+    const real = join(root, "real");
+    mkdirSync(real, { mode: 0o700 });
+    const link = join(root, "link");
+    symlinkSync(real, link);
+
+    expect(ports.resolveRealPathSync(link)).toBe(realpathSync(real));
+    // 비동기 판과 같은 결과를 낸다.
+    expect(ports.resolveRealPathSync(link)).toBe(await ports.resolveRealPath(link));
+    expect(() => ports.resolveRealPathSync(join(root, "missing"))).toThrow(/ENOENT/);
+  });
+
+  it("lstatPathSync는 비동기 판과 같은 사실을 돌려주고 없는 경로는 null이다", async () => {
+    const root = await makeTempDir("host-ports-lstat-sync-");
+    const { ports } = await createPorts(root);
+    const file = touch(root, "facts/file.txt", "x", 0o600);
+    const directory = join(root, "facts", "dir");
+    mkdirSync(directory, { mode: 0o700 });
+    const link = join(root, "facts", "link");
+    symlinkSync(file, link);
+    const broken = join(root, "facts", "broken");
+    symlinkSync(join(root, "facts", "gone"), broken);
+    const missing = join(root, "facts", "missing");
+
+    expect(ports.lstatPathSync(file)).toMatchObject({ kind: "file", nlink: 1 });
+    expect(ports.lstatPathSync(directory)).toMatchObject({ kind: "directory" });
+    expect(ports.lstatPathSync(link)).toMatchObject({ kind: "symlink" });
+    // 끊긴 링크도 링크 자체의 사실은 남는다(lstat은 대상을 따라가지 않는다).
+    expect(ports.lstatPathSync(broken)).toMatchObject({ kind: "symlink" });
+    expect(ports.lstatPathSync(missing)).toBeNull();
+
+    for (const path of [file, directory, link, broken, missing]) {
+      expect(ports.lstatPathSync(path)).toEqual(await ports.lstatPath(path));
+    }
+  });
+
   it("listDirectory는 이름과 종류만 돌려준다", async () => {
     const root = await makeTempDir("host-ports-listdir-");
     const { ports } = await createPorts(root);

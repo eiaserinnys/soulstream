@@ -5,7 +5,9 @@ import {
   createReadStream,
   type Dirent,
   type Stats,
+  lstatSync,
   readdirSync,
+  realpathSync,
 } from "node:fs";
 import {
   chmod,
@@ -149,6 +151,15 @@ async function lstatOrNull(path: string): Promise<Stats | null> {
   }
 }
 
+function lstatSyncOrNull(path: string): Stats | null {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (isMissingPathError(error)) return null;
+    throw error;
+  }
+}
+
 /** resolved token cache. 프로세스당 한 번만 `pnpm store path`를 부른다. */
 let mainPackageStorePathPromise: Promise<string | null> | null = null;
 
@@ -213,6 +224,10 @@ export function createIsolationHostPorts(
       return realpath(path);
     },
 
+    resolveRealPathSync(path: string): string {
+      return realpathSync(path);
+    },
+
     async verifyAuthPreparation(preparation: IsolatedAuthPreparation): Promise<void> {
       switch (preparation.kind) {
         case "codex-grant":
@@ -274,6 +289,11 @@ export function createIsolationHostPorts(
 
     async lstatPath(path: string): Promise<HostPathFact | null> {
       const stats = await lstatOrNull(path);
+      return stats === null ? null : toHostPathFact(stats);
+    },
+
+    lstatPathSync(path: string): HostPathFact | null {
+      const stats = lstatSyncOrNull(path);
       return stats === null ? null : toHostPathFact(stats);
     },
 
