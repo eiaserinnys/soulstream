@@ -5,6 +5,7 @@ import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-r
 import { createPortal } from 'react-dom';
 import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
+import { reportActionParts } from '../../../packages/wire-schema/src/persistent_report';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
 import { CARD_COMPLETION_UNDO_MS, usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
@@ -279,12 +280,6 @@ function ReportCardLink({ number, pending, lookupCards }: { number: number; pend
 }
 
 function ReportAction({ text }: { text: string }) {
-  const matches = [...text.matchAll(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g)];
-  let end = 0;
-  const parts = matches.flatMap(match => {
-    const prefix = text.slice(end, match.index);
-    end = match.index! + match[0].length;
-    return [prefix, <SourceLink key={match.index} href={match[2]} className={`text-info-foreground underline underline-offset-4 ${LINK_FOCUS}`}>{match[1]}</SourceLink>];
-  });
-  return <>{parts}{text.slice(end)}</>;
+  return <>{reportActionParts(text).map((part, i) => typeof part === "string" ? part
+    : <SourceLink key={i} href={part.url} className={`text-info-foreground underline underline-offset-4 ${LINK_FOCUS}`}>{part.label}</SourceLink>)}</>;
 }
