@@ -39,18 +39,19 @@ test('phone initially shows review even empty, snaps by lane and preserves posit
   await settleTimers();
 });
 
+// These two look at active lanes only. With completed shown the done lane always stays (CardBoard.test).
 test('main starts at the first visible lane and keeps the selected status when visible lanes shift', () => {
   const saved = jest.fn();
   const queued = cardFixture({ id: 'queued-only', status: 'queued' });
   const review = cardFixture({ id: 'review-only', status: 'review' });
-  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[queued, review]}
+  const screen = render(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[queued, review]}
     initialPosition={{ x: 0, lane: 'review', lanes: { review: 48 } }} onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
   expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
   expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
     .toEqual(['card-board-column-queued', 'card-board-column-review']);
 
-  screen.rerender(<CardBoard phone hideEmptyLanes api={null} cards={[queued]}
+  screen.rerender(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[queued]}
     onOpen={() => {}} onPositionChange={saved} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
     .toEqual(['card-board-column-queued']);
@@ -59,7 +60,7 @@ test('main starts at the first visible lane and keeps the selected status when v
 
 test('main with one non-review card opens on its first visible lane', () => {
   const saved = jest.fn();
-  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[cardFixture({ id: 'queued-only', status: 'queued' })]}
+  const screen = render(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[cardFixture({ id: 'queued-only', status: 'queued' })]}
     onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
   expect(saved.mock.calls.at(-1)[0].lane).toBe('queued');

@@ -118,6 +118,30 @@ test('a failed refresh keeps the loaded cards, and repeated retry during the rea
   expect(listCompletedCards).toHaveBeenCalledTimes(3);
   expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a']);
 });
+
+test('a period change while an earlier read runs stays loading, drops the old answer and notice, then reads the new period once',async()=>{
+  const old=cardFixture({id:'old',status:'done',completedAt:'2026-01-02'}),fresh={...old,id:'fresh'};
+  let resolve!: (value:{cards:typeof old[];nextCursor:string|null})=>void;
+  const pending=new Promise<{cards:typeof old[];nextCursor:string|null}>(done=>{resolve=done;});
+  const listCompletedCards=jest.fn().mockRejectedValueOnce(new Error('조회 실패')).mockReturnValueOnce(pending)
+    .mockResolvedValue({cards:[fresh],nextCursor:null});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  await waitFor(()=>expect(hook.result.current.error).toBe('조회 실패'));
+  // 검수 창의 「자동 요청 시작」처럼 갱신 조회가 붙잡힌 채로 기간을 바꾼다.
+  act(()=>usePlannerStore.getState().invalidate('folder'));
+  expect(listCompletedCards).toHaveBeenCalledTimes(2);
+  act(()=>hook.result.current.setPeriod('30'));
+  expect(hook.result.current).toMatchObject({loading:true,error:null,cards:[]});
+  expect(listCompletedCards).toHaveBeenCalledTimes(2);
+  await act(async()=>{resolve({cards:[old],nextCursor:null});await pending;});
+  await waitFor(()=>expect(hook.result.current.cards.map(card=>card.id)).toEqual(['fresh']));
+  expect(hook.result.current.loading).toBe(false);
+  expect(listCompletedCards).toHaveBeenCalledTimes(3);
+  const next=listCompletedCards.mock.calls[2][0];
+  expect(Date.parse(next.completedBefore)-Date.parse(next.completedFrom)).toBe(30*24*60*60*1000);
+  await settleTimers();
+});
 test('both folder reads always exclude done independently of completion visibility',async()=>{
   const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});
   const getPlannerFolder=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[],subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}});

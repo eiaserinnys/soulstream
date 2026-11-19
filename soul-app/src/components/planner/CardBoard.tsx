@@ -38,9 +38,10 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const window = useWindowDimensions();
   const active = cards.filter((card) => !card.archived);
   const visibleColumns = boardVisibleColumns(includeCompleted);
-  // 완료 조회가 실패했거나 기간이 틀리면 카드가 없어도 완료 칸을 남겨 안내와 필터를 보인다.
+  // 완료 칸은 완료 보기가 켜져 있을 때만 열 목록에 있다. 거기 있으면 카드 수, 조회 중, 오류와 상관없이 남긴다.
+  // 필터와 검색 칸이 이 칸 안에 있어서, 숨기면 0장 결과에서 되돌릴 수단이 사라진다.
   const columns = hideEmptyLanes
-    ? visibleColumns.filter(([status]) => active.some((card) => card.status === status) || (status === 'done' && !!completed?.error))
+    ? visibleColumns.filter(([status]) => status === 'done' || active.some((card) => card.status === status))
     : visibleColumns;
   const paper = createPostItRoles(t, 'compact');
   const frameRef = useRef<View>(null);

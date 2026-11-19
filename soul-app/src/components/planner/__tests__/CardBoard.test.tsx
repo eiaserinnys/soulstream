@@ -82,8 +82,9 @@ test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done'
   expect(screen.getAllByText('카드가 없습니다.').length).toBeGreaterThanOrEqual(6);
 });
 
+// 완료 보기가 켜지면 완료 칸은 늘 남는다(아래 시험). 여기서는 기본처럼 완료를 숨기고 활성 칸만 본다.
 test('main 보드는 비보관 카드가 있는 레인만 남기고 모두 비면 빈 안내를 유지한다', () => {
-  const screen = render(<CardBoard api={null} cards={[
+  const screen = render(<CardBoard api={null} includeCompleted={false} cards={[
     cardFixture({ id: 'todo-main', status: 'todo' }),
     cardFixture({ id: 'queued-main', status: 'queued' }),
     cardFixture({ id: 'archived-main', status: 'running', archived: true }),
@@ -93,7 +94,7 @@ test('main 보드는 비보관 카드가 있는 레인만 남기고 모두 비�
   expect(screen.getByTestId('postit-card-todo-main')).toBeTruthy();
   expect(screen.queryByTestId('postit-card-archived-main')).toBeNull();
 
-  screen.rerender(<CardBoard phone hideEmptyLanes api={null} cards={[]} onOpen={() => {}} />);
+  screen.rerender(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[]} onOpen={() => {}} />);
   expect(screen.queryAllByTestId(/^card-board-column-/)).toHaveLength(0);
   expect(screen.getByText('카드가 없습니다.')).toBeTruthy();
   expect(screen.getByTestId('card-board').props.snapToOffsets).toEqual([]);
@@ -106,6 +107,18 @@ test('hideEmptyLanes 이후에도 완료·취소 두 레인은 기존 토글로 
   screen.rerender(<CardBoard api={null} cards={cards} hideEmptyLanes includeCompleted onOpen={() => {}} />);
   expect(screen.getByTestId('card-board-column-done')).toBeTruthy();
   expect(screen.getByTestId('card-board-column-cancelled')).toBeTruthy();
+});
+
+test('hideEmptyLanes는 완료 보기가 켜져 있으면 완료 칸을 카드가 없어도 남기고 다른 빈 칸만 숨긴다', () => {
+  const todo = [cardFixture({ id: 'todo-only', status: 'todo' })];
+  const lanes = (screen: ReturnType<typeof render>) => screen.queryAllByTestId(/^card-board-column-/).map(column => column.props.testID);
+  const screen = render(<CardBoard api={null} cards={todo} hideEmptyLanes includeCompleted onOpen={() => {}} />);
+  expect(lanes(screen)).toEqual(['card-board-column-todo', 'card-board-column-done']);
+  screen.rerender(<CardBoard api={null} cards={todo} hideEmptyLanes includeCompleted={false} onOpen={() => {}} />);
+  expect(lanes(screen)).toEqual(['card-board-column-todo']);
+  screen.rerender(<CardBoard phone api={null} cards={[]} hideEmptyLanes includeCompleted onOpen={() => {}} />);
+  expect(lanes(screen)).toEqual(['card-board-column-done']);
+  expect(screen.queryByTestId('card-board-empty')).toBeNull();
 });
 
 test('목록 활동 원문과 요청을 표시하고 상세는 카드 탭 전까지 조회하지 않는다', async () => {

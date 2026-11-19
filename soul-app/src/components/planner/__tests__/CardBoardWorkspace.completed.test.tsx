@@ -98,9 +98,29 @@ test.each([false, true])('완료 조회 실패는 칸 안에 다시 시도를 �
   expect(lane.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
   mockCompletedError = null;
   screen.rerender(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
-  // 오류가 걷히면 원래대로: 확대 보드는 빈 칸 안내, 인라인 보드는 빈 완료 칸을 숨긴다.
-  if (expandedBoard) expect(within(within(screen.getByTestId('card-board-expanded')).getByTestId('card-board-column-done')).getByText('선택한 기간에 완료 카드가 없습니다')).toBeTruthy();
-  else expect(screen.queryByTestId('card-board-column-done')).toBeNull();
+  // 오류가 걷히고 0장이면 두 보드 모두 완료 칸에 빈 칸 안내를 낸다.
+  expect(within(host.getByTestId('card-board-column-done')).getByText('선택한 기간에 완료 카드가 없습니다')).toBeTruthy();
+  await settleTimers();
+});
+
+test.each(['tablet', 'phone'])('%s 인라인 보드는 완료 보기가 켜져 있으면 0장과 조회 중에도 완료 칸과 필터를 남긴다', async device => {
+  mockDevice = device; mockCards = [cardFixture({ id: 'todo' })];
+  const shown = (includeCompleted: boolean) => <CardBoardWorkspace api={null} cardDisplay={{ includeCompleted, onChange: jest.fn() }} onOpen={() => {}} />;
+  const screen = render(shown(true));
+  let lane = within(screen.getByTestId('card-board-column-done'));
+  expect(lane.getByTestId('settings-segment-completed-period-30')).toBeTruthy();
+  expect(lane.getByLabelText('제목 또는 요청 검색')).toBeTruthy();
+  expect(lane.getByText('선택한 기간에 완료 카드가 없습니다')).toBeTruthy();
+  expect(lane.queryByTestId('card-board-done-loading')).toBeNull();
+  mockCompletedLoading = true;
+  screen.rerender(shown(true));
+  lane = within(screen.getByTestId('card-board-column-done'));
+  expect(lane.getByTestId('settings-segment-completed-period-30')).toBeTruthy();
+  expect(lane.getByTestId('card-board-done-loading')).toBeTruthy();
+  expect(lane.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+  screen.rerender(shown(false));
+  expect(screen.queryByTestId('card-board-column-done')).toBeNull();
+  expect(screen.getByTestId('card-board-column-todo')).toBeTruthy();
   await settleTimers();
 });
 

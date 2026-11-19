@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from frame_loading import (check_completed_error, check_completed_recovered, check_period_chips,
+from frame_loading import (check_completed_error, check_completed_hidden, check_completed_lane_state,
+                           check_completed_recovered, check_initial_review_lane, check_period_chips,
                            check_refresh_kept_cards)
 
 
@@ -113,6 +114,68 @@ class RetryChecks(unittest.TestCase):
             'completed not recovered', 'completed not recovered',
             'completed refresh failure dropped cards', 'completed refresh failure dropped cards',
         ])
+
+
+def empty_lane():
+    metrics = two_rows()
+    metrics['search'] = {'left': 20, 'right': 246, 'top': 200, 'bottom': 244, 'width': 226, 'height': 44}
+    metrics['empty'] = {'left': 20, 'right': 220, 'top': 260, 'bottom': 282, 'width': 200, 'height': 22}
+    metrics['loader'] = None
+    metrics['cards'], metrics['count'], metrics['firstCard'] = 0, 0, None
+    return metrics
+
+
+def loading_lane():
+    metrics = empty_lane()
+    metrics['empty'] = None
+    metrics['loader'] = {'left': 12, 'right': 254, 'top': 250, 'bottom': 600, 'width': 242, 'height': 350}
+    return metrics
+
+
+class EmptyLaneChecks(unittest.TestCase):
+    def test_empty_loading_initial_and_hidden_pass(self):
+        failures = []
+        check_completed_lane_state(empty_lane(), 'empty', failures, 'empty')
+        check_completed_lane_state(loading_lane(), 'loading', failures, 'loading')
+        check_initial_review_lane({'first': 'card-board-column-review',
+                                   'lanes': ['card-board-column-review', 'card-board-column-done']}, 'initial', failures)
+        check_completed_hidden({'missing': 'done lane'}, 'hidden', failures)
+        self.assertEqual(failures, [])
+
+    def test_planted_violations_fail(self):
+        failures = []
+        check_completed_lane_state({'missing': 'done lane'}, 'gone', failures, 'empty')
+        self.assertEqual(checks(failures), ['completed lane missing'])
+
+        failures = []
+        metrics = empty_lane()
+        metrics['chips'][1] = None
+        metrics['search'] = None
+        metrics['empty'] = None
+        metrics['cards'] = 2
+        metrics['loader'] = loading_lane()['loader']
+        check_completed_lane_state(metrics, 'broken-empty', failures, 'empty')
+        self.assertEqual(checks(failures), ['period chips missing', 'completed search missing',
+                                            'completed empty lane shows cards', 'completed empty notice missing',
+                                            'completed loader after the read'])
+
+        failures = []
+        metrics = empty_lane()
+        metrics['empty']['top'] = 150
+        check_completed_lane_state(metrics, 'above', failures, 'empty')
+        metrics = loading_lane()
+        metrics['loader'] = None
+        metrics['empty'] = empty_lane()['empty']
+        check_completed_lane_state(metrics, 'broken-loading', failures, 'loading')
+        self.assertEqual(checks(failures), ['completed empty notice above the filters', 'completed loader missing',
+                                            'completed empty notice during a read'])
+
+        failures = []
+        check_initial_review_lane({'first': 'card-board-column-todo',
+                                   'lanes': ['card-board-column-todo', 'card-board-column-done']}, 'moved', failures)
+        check_initial_review_lane({'first': 'card-board-column-review', 'lanes': ['card-board-column-review']}, 'no-done', failures)
+        check_completed_hidden(empty_lane(), 'still-shown', failures)
+        self.assertEqual(checks(failures), ['board initial lane', 'board initial lane', 'completed lane while hidden'])
 
 
 if __name__ == '__main__':

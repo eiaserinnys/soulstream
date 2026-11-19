@@ -23,11 +23,13 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
     let active=true,dirty=false,loaded=false;
     let accumulated:Accumulated={cards:[],cursor:null};
     let params:CompletedCardParams|null=null;
-    setPage({key:'',cards:[],cursor:null});setError(null);setLoading(false);
+    // 기간이나 검색이 바뀌면 앞 결과와 안내는 새 조건에 맞지 않으니 비운다. 앞 조회가 아직 돌면
+    // 새 첫 조회가 그 뒤에 줄 서므로 조회 중 표시는 그대로 둔다(빈 칸 안내를 잠깐 내지 않는다).
+    setPage({key:'',cards:[],cursor:null});setError(null);if(!busy.current)setLoading(false);
     const load=async(mode:'initial'|'refresh'|'more')=>{
       if(!active||!api||!enabled||invalidRange)return;
       if(busy.current){if(mode==='refresh')dirty=true;else if(mode==='initial')queued.current=()=>void load('initial');return;}
-      // 안내는 다음 응답이 성공할 때 걷는다. 다시 받는 동안 안내와 단추, 완료 칸이 사라졌다 돌아오지 않는다.
+      // 다시 시도와 갱신의 안내는 다음 응답이 성공할 때 걷는다. 다시 받는 동안 안내와 단추가 사라졌다 돌아오지 않는다.
       busy.current=true;setLoading(true);
       const after=mode==='more'?accumulated.cursor:null;
       const request=mode==='more'?params!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
@@ -43,7 +45,7 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
       finally {
         busy.current=false;
         if(active){setLoading(false);if(dirty){dirty=false;void load('refresh');}}
-        else {const next=queued.current;queued.current=null;next?.();}
+        else {const next=queued.current;queued.current=null;if(next)next();else setLoading(false);}
       }
     };
     refresh.current=()=>void load('refresh');
