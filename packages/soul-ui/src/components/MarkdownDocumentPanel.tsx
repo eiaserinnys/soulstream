@@ -413,7 +413,7 @@ export function MarkdownDocumentPanel({
             titleEditingRef.current = false;
             void saveNow();
           }}
-          className="min-w-0 flex-1 rounded-md bg-transparent px-0 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
+          className="-ml-1 min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
           aria-label="문서 제목"
         />
         <span

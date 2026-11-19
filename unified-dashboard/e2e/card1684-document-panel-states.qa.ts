@@ -17,7 +17,8 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:43184";
 const before = process.env.CARD1684_BEFORE === "1";
 const invariantBaseline = process.env.CARD1684_INVARIANT_BASELINE === "1";
-const output = path.resolve(`.local/card1684/${invariantBaseline ? "invariant-before" : before ? "before" : "after"}`);
+const ringBaseline = process.env.CARD1684_RING_BASELINE === "1";
+const output = path.resolve(`.local/card1684/${ringBaseline ? "before-ring" : invariantBaseline ? "invariant-before" : before ? "before" : "after"}`);
 mkdirSync(output, { recursive: true });
 type State = "empty" | "loading" | "error" | "content" | "editor-loading";
 
@@ -190,12 +191,61 @@ async function transitionScene(browser: Browser, width: number) {
   } finally { await context.close(); }
 }
 
+async function titleFocusScene(browser: Browser, width: number, theme: "dark" | "light") {
+  const context = await browser.newContext({ viewport: { width, height: width <= 430 ? 844 : 900 }, reducedMotion: "reduce", colorScheme: theme });
+  const page = await context.newPage();
+  await page.addInitScript({ content: "window.__name = (f) => f;" });
+  await page.addInitScript((t) => { localStorage.setItem("soul-dashboard-theme", t); localStorage.setItem("ls.webglGlass", "0"); }, theme);
+  await installV3VisualQaRoutes(page, {});
+  await page.route("**/client/v3/dialogues-api.ts*", async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    if (!source.includes("value = document;")) throw new Error("샘플 문서 응답 위치를 찾지 못했습니다.");
+    const title = width === 360 ? "아주 긴 문서 제목이 들어가서 좁은 폭에서 어떻게 잘리는지 보는 제목" : "회의록 초안";
+    await route.fulfill({ response, body: source.replace("value = document;", `value = { ...document, title: ${JSON.stringify(title)}, body: "실제 문서 본문입니다." };`) });
+  });
+  try {
+    await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("markdown-read-body").waitFor({ state: "visible", timeout: 30_000 });
+    await page.waitForTimeout(400);
+    const title = page.locator('input[aria-label="문서 제목"]');
+    const measure = () => title.evaluate(el => {
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      const status = el.parentElement!.querySelector('[data-testid="markdown-save-status"]')!.getBoundingClientRect();
+      return { focusVisible: el.matches(":focus-visible"), focused: document.activeElement === el,
+        ring: style.boxShadow, leftPadding: parseFloat(style.paddingLeft), topPadding: parseFloat(style.paddingTop),
+        start: rect.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth),
+        statusGap: status.left - (rect.right - parseFloat(style.paddingRight)),
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    await title.click();
+    await page.waitForTimeout(250);
+    const clicked = await measure();
+    const box = (await title.boundingBox())!;
+    const x = Math.max(0, box.x - 12), y = Math.max(0, box.y - 12);
+    await page.screenshot({ path: path.join(output, `focus-click-${theme}-${width}.png`),
+      clip: { x, y, width: Math.min(width - x, box.width + 24), height: box.height + 24 }, animations: "disabled" });
+    await page.locator('[data-testid="v3-folder-board-document-overlay"] .v3-chat-header button:visible').last().focus();
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      if (await title.evaluate(el => document.activeElement === el)) break;
+    }
+    await page.waitForTimeout(250);
+    return { clicked, tabbed: await measure() };
+  } finally { await context.close(); }
+}
+
 const transitions: Record<number, Awaited<ReturnType<typeof transitionScene>>> = {};
+const focusChecks: Record<string, Awaited<ReturnType<typeof titleFocusScene>>> = {};
 const results = await runPlaywrightLifecycle({ lockName: "card1684-document-panel", timeoutMs: 300_000,
   launchOptions: { headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) },
 }, async ({ browser }) => {
   const measurements: Record<string, Awaited<ReturnType<typeof scene>>> = {};
-  if (invariantBaseline) {
+  if (ringBaseline) {
+    for (const theme of ["dark", "light"] as const) for (const width of [1440, 390]) focusChecks[`${theme}-${width}`] = await titleFocusScene(browser, width, theme);
+    focusChecks["dark-360"] = await titleFocusScene(browser, 360, "dark");
+  } else if (invariantBaseline) {
     measurements["content-1440"] = await scene(browser, 1440, "content");
   } else {
     for (const width of [1440, 390]) for (const state of ["empty", "loading", "error", "content", "editor-loading"] as const) {
@@ -205,8 +255,10 @@ const results = await runPlaywrightLifecycle({ lockName: "card1684-document-pane
       measurements[`light-${state}-${width}`] = await scene(browser, width, state, "light");
     }
     for (const width of [1440, 390]) transitions[width] = await transitionScene(browser, width);
+    for (const theme of ["dark", "light"] as const) for (const width of [1440, 390]) focusChecks[`${theme}-${width}`] = await titleFocusScene(browser, width, theme);
+    focusChecks["dark-360"] = await titleFocusScene(browser, 360, "dark");
   }
-  for (const width of [1440, 390]) await readerScene(browser, width);
+  if (!ringBaseline) for (const width of [1440, 390]) await readerScene(browser, width);
   return measurements;
 });
 if (invariantBaseline) {
@@ -214,6 +266,17 @@ if (invariantBaseline) {
   process.exit(0);
 }
 const failures: string[] = [];
+for (const [key, pair] of Object.entries(focusChecks)) for (const [method, m] of Object.entries(pair)) {
+  const width = Number(key.split("-")[1]);
+  if (!m.focused || !m.focusVisible || m.ring === "none" || m.leftPadding < m.topPadding || Math.abs(m.start - (width === 1440 ? 44 : 12)) > 1 || m.overflow > 0) failures.push(`focus-${key}-${method}: ${JSON.stringify(m)}`);
+  if (width === 360 && m.statusGap < 12) failures.push(`focus-${key}-${method}: 제목과 저장 상태 간격 ${m.statusGap}px`);
+}
+if (ringBaseline) {
+  writeFileSync(path.join(output, "focus-result.json"), JSON.stringify({ focusChecks, failures }, null, 2));
+  console.log(JSON.stringify({ focusChecks, failures }, null, 2));
+  if (failures.length) process.exitCode = 1;
+  process.exit();
+}
 for (const width of [1440, 390]) {
   for (const state of ["empty", "content"]) {
     const { starts, corners, toggleVisible } = results[`${state}-${width}`];
@@ -265,7 +328,7 @@ if (!before && existsSync(baselineResultPath)) {
   invariants["content-1440-layout"] = unchanged ? "시작선 이외 배치 일치" : "시작선 이외 배치 불일치";
   if (!unchanged) failures.push("content-1440: 시작선 이외 배치 불일치");
 }
-const report = { before, results, transitions, invariants, failures };
+const report = { before, results, transitions, focusChecks, invariants, failures };
 writeFileSync(path.resolve(`.local/card1684/${before ? "before/visual-result.json" : "visual-result.json"}`), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 if (failures.length) process.exitCode = 1;
