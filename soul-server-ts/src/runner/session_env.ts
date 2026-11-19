@@ -115,6 +115,7 @@ export function selectRestrictedBaseEnv(
 /**
  * §11: host 관리 환경에서 restricted CLI로 넘기지 않는 키.
  * AUTH_BEARER_TOKEN과 TEST_DATABASE_URL은 제거 뒤 승인된 값으로 다시 넣는다.
+ * 상자 밖 세션용으로 채운 TEST_DATABASE_URL도 상자 안에서는 지우고 승인값만 남긴다.
  */
 export const RESTRICTED_ENV_REMOVED_KEYS = [
   "AUTH_BEARER_TOKEN",
