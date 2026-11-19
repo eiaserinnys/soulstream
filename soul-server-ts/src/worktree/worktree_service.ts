@@ -6,14 +6,14 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
-import { WorktreeGit, type WorktreeListEntry } from "./worktree_git.js";
+import { WorktreeGit, WorktreeGitError, type WorktreeListEntry } from "./worktree_git.js";
 import {
   decodeWorktreeListCursor,
   encodeWorktreeListCursor,
   type WorktreeListCursorQuery,
 } from "./worktree_list_cursor.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
-import { removeWorktreeLocked } from "./worktree_removal.js";
+import { logRemoval, newRemovalTimings, removeWorktreeLocked, type RemovalTimings } from "./worktree_removal.js";
 import { sweepWorktrees } from "./worktree_sweep.js";
 import { defaultWorktreeSetupMode, setupSharedDependencies } from "./worktree_setup.js";
 import type {
@@ -206,11 +206,16 @@ export class WorktreeService implements WorktreeExecutionResolver {
     const page = visible.slice(offset, offset + limit);
     for (const entry of page) {
       if (entry.dirtyPath === undefined) continue;
-      entry.item.dirty = await this.options.git.inspectDirty(
-        entry.dirtyPath,
-        entry.managedPaths ?? [],
-        entry.baseRepoId,
-      );
+      try {
+        entry.item.dirty = await this.options.git.inspectDirty(
+          entry.dirtyPath,
+          entry.managedPaths ?? [],
+          entry.baseRepoId,
+        );
+      } catch (error) {
+        if (!(error instanceof WorktreeGitError)) throw error;
+        entry.item.dirty = null;
+      }
     }
     return {
       worktrees: page.map((entry) => entry.item),
@@ -474,30 +479,55 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async remove(input: { actorSessionId: string; worktreeId: string }): Promise<Record<string, unknown>> {
-    return await this.options.git.withOperationDeadline(
-      async () => await this.removeWithinDeadline(input),
-      this.options.createTimeoutMs,
-    );
+    const timings = newRemovalTimings();
+    let outcome = "failed";
+    try {
+      const result = await this.options.git.withOperationDeadline(
+        async () => await this.removeWithinDeadline(input, timings),
+        this.options.createTimeoutMs,
+      );
+      outcome = "removed";
+      return result;
+    } finally {
+      logRemoval(input.worktreeId, timings, outcome);
+    }
   }
 
   private async removeWithinDeadline(
     input: { actorSessionId: string; worktreeId: string },
+    timings: RemovalTimings,
   ): Promise<Record<string, unknown>> {
-    const [initialRecord] = await this.options.host.list({
-      actorSessionId: input.actorSessionId,
-      nodeId: this.options.nodeId,
-      worktreeId: input.worktreeId,
-    });
-    if (!initialRecord) throw worktreeNotFoundError(input.worktreeId, this.options.nodeId);
-    if (!initialRecord.removableByCaller) throw worktreeNotOwnedError(input.worktreeId);
-    if (initialRecord.state === "removed") {
-      return { worktreeId: initialRecord.id, removed: true, reused: true };
+    const precheckStart = Date.now();
+    let initialRecord: WorktreeRecord;
+    let commonDirectory: string;
+    try {
+      const [found] = await this.options.host.list({
+        actorSessionId: input.actorSessionId,
+        nodeId: this.options.nodeId,
+        worktreeId: input.worktreeId,
+      });
+      if (!found) throw worktreeNotFoundError(input.worktreeId, this.options.nodeId);
+      if (!found.removableByCaller) throw worktreeNotOwnedError(input.worktreeId);
+      if (found.state === "removed") return { worktreeId: found.id, removed: true, reused: true };
+      initialRecord = found;
+      commonDirectory = await this.options.git.commonDirectory(found.repoId);
+    } finally {
+      timings.precheck += Date.now() - precheckStart;
     }
-    const commonDirectory = await this.options.git.commonDirectory(initialRecord.repoId);
-    const removed = await this.options.lock.withLock(commonDirectory, async () =>
-      await removeWorktreeLocked({ ...this.options,
-        assertWorkspaceUnused: (path) => this.assertWorkspaceUnused(path),
-      }, initialRecord, { actorSessionId: input.actorSessionId }));
+    const lockStart = Date.now();
+    let acquired = false;
+    let removed: WorktreeRecord;
+    try {
+      removed = await this.options.lock.withLock(commonDirectory, async () => {
+        acquired = true;
+        timings.lockWait += Date.now() - lockStart;
+        return await removeWorktreeLocked({ ...this.options, timings,
+          assertWorkspaceUnused: (path) => this.assertWorkspaceUnused(path),
+        }, initialRecord, { actorSessionId: input.actorSessionId });
+      });
+    } finally {
+      if (!acquired) timings.lockWait += Date.now() - lockStart;
+    }
     return { worktreeId: removed.id, removed: true, branch: removed.branch };
   }
 
