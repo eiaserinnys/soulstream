@@ -39,6 +39,13 @@ export function overviewTargetLabel(target: OverviewTarget | null) {
   return "전체 커멘트";
 }
 
+// 받침에 따라 목적격 조사를 고른다. 제목 끝이 한글이 아니면 "을"로 둔다.
+function objectParticle(text: string): "을" | "를" {
+  const last = text.codePointAt(text.length - 1) ?? 0;
+  if (last >= 0xac00 && last <= 0xd7a3) return (last - 0xac00) % 28 === 0 ? "를" : "을";
+  return "을";
+}
+
 function readReportRoute() {
   try {
     if (window.location.hash.replace(/^#/, "") === "report") return true;
@@ -201,11 +208,12 @@ export function usePasReportOverview({
       itemId: extras.itemId ?? null,
       question: extras.question,
     };
+    const titleObject = `${card.title}${objectParticle(card.title)}`;
     const chatText = action.effect === "promote"
-      ? `#${card.number} ${card.title}을 폴더 문서로 남기고 완료했습니다.`
+      ? `#${card.number} ${titleObject} 폴더 문서로 남기고 완료했습니다.`
       : action.effect === "awaiting_verification"
-        ? `#${card.number} ${card.title}을 검증 대기로 옮겼습니다. ${action.label}.`
-        : `#${card.number} ${card.title}을 완료했습니다.`;
+        ? `#${card.number} ${titleObject} 검증 대기로 옮겼습니다. ${action.label}.`
+        : `#${card.number} ${titleObject} 완료했습니다.`;
     const chatId = appendChat(chatText, "assistant");
     setCards(list => list.map(item => item.id === card.id ? {
       ...item,
@@ -251,11 +259,18 @@ export function usePasReportOverview({
     const nextStatus: CardStatus = kind === "comment"
       ? card.status
       : kind === "answer" ? "done" : "running";
+    const targetChat = target?.kind === "item"
+      ? `${target.itemId}번 항목에 지시를 보냈습니다.`
+      : target?.kind === "session"
+        ? "담당 세션에 지시를 보냈습니다."
+        : target?.kind === "askBack"
+          ? "되묻기를 보냈습니다."
+          : "지시를 보냈습니다.";
     const chatText = kind === "comment"
       ? `#${card.number}에 커멘트를 남겼습니다.`
       : kind === "answer"
         ? `#${card.number} 질문에 다른 답을 보냈습니다.`
-        : `#${card.number}에 ${overviewTargetLabel(target)} 지시를 보냈습니다. 실행 중으로 옮겼습니다.`;
+        : `#${card.number} ${targetChat} 실행 중으로 옮겼습니다.`;
     const chatId = appendChat(chatText, "assistant");
     setCards(list => list.map(item => item.id === card.id ? {
       ...item,

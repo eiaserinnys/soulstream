@@ -493,11 +493,17 @@ try {
       assert.match(await sheetTitle(page), /^#1512 /);
       assert.equal(await bubbleCount(page), "1 / 4", "처분 뒤 말풍선 수가 1 / 4가 아닙니다");
       assert.ok((await page.locator('[data-testid="overview-undo-slot"]').innerText()).includes("되돌리기"));
+      const chatAfterOption = await page.locator(".pas-ro1707-chat-scroll").innerText();
+      assert.ok(chatAfterOption.includes("#1680 완료 목록 기간 칩의 기본 범위를 완료했습니다."),
+        `처분이 원고지 대화에 반영되지 않았습니다: ${chatAfterOption.slice(-120)}`);
       await capture(page, "03-1440-dark-after-option.png");
       await page.locator('[data-testid="overview-undo"]').click({ force: true });
       await page.waitForFunction(() => document.querySelector('[data-testid="overview-title"]')?.textContent?.includes("#1680"));
       await pause(80);
       assert.equal(await bubbleCount(page), "1 / 5", "되돌리기 뒤 말풍선 수가 1 / 5가 아닙니다");
+      const chatAfterUndo = await page.locator(".pas-ro1707-chat-scroll").innerText();
+      assert.ok(!chatAfterUndo.includes("#1680 완료 목록 기간 칩의 기본 범위를 완료했습니다."),
+        "되돌리기 뒤 원고지 대화가 남았습니다");
       assert.match(await titleRowText(page), /질문/);
       const options = page.locator(".v3-card-question-choices button");
       assert.equal(await options.count(), 3, "되돌리기 뒤 선택지가 3개가 아닙니다");
