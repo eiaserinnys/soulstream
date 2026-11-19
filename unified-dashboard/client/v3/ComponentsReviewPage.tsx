@@ -46,7 +46,6 @@ import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSession
 import { FrameLoadingReviewSample } from "./FrameLoadingReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
-import { ChatFollowControlsReviewSample } from "./ChatFollowControlsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { CardQuestionPartsSample, CardQuestionReviewSample, type CardQuestionScene } from './CardQuestionReviewSample';
@@ -332,9 +331,6 @@ export function ComponentsReviewPage() {
             </Sample>
             <Sample name="AssistantMessage contentLayout" state="일반 · structured · PAS">
               <ChatUiMessageReviewSample />
-            </Sample>
-            <Sample name="대화 스크롤 단추" state="켜짐 · 꺼짐 · 새 메시지 · 좁은 대화 칸">
-              <ChatFollowControlsReviewSample />
             </Sample>
             <Sample name="ChatUiMessage · 일반" state="첫 조각 · 글 대체 · 실제 발행본">
               <ChatUiReviewSample presentation="default" />

@@ -36,7 +36,7 @@ import {
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { projectHiddenInputTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
-import { ChatFollowControls } from "./ChatView.follow-controls";
+import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
@@ -91,6 +91,8 @@ export interface ChatViewProps {
 function isGenerationDivider(item: ChatTimelineItem): boolean {
   return item.type === "single" && item.msg.treeNodeType === "generation_started";
 }
+
+const CHAT_FOLLOW_CONTROL_CLASS = "flex select-none items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium glass-shadow-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 // 초점 대상 행은 Virtuoso 행 key로 찾고, 스크롤 상자의 보이는 영역과 겹치는지로 화면 안을 판정한다.
 function findFocusRowElement(
@@ -312,6 +314,7 @@ function ChatViewContent({
   );
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const followToggleRef = useRef<HTMLButtonElement>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [expandedToolGroups, setExpandedToolGroups] = useState<{
@@ -1068,14 +1071,34 @@ function ChatViewContent({
         </div>
       )}
 
-      {presentation === "default" && (
-        <ChatFollowControls
-          isFollowing={isFollowing}
-          showNewMessage={transcriptFallback == null && showNewMessage}
-          onToggleFollow={toggleFollow}
-          onJumpToLatest={scrollToBottom}
-        />
-      )}
+      {presentation === "default" && <div className="relative flex shrink-0 items-center justify-end pb-2">
+        {transcriptFallback == null && showNewMessage && !isFollowing && (
+          <button
+            type="button"
+            onClick={() => {
+              followToggleRef.current?.focus({ preventScroll: true });
+              scrollToBottom();
+            }}
+            className={cn("absolute left-1/2 -translate-x-1/2 border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25", CHAT_FOLLOW_CONTROL_CLASS)}
+          >
+            {"\u2193"} 새 메시지
+          </button>
+        )}
+        <button
+          ref={followToggleRef}
+          type="button"
+          onClick={toggleFollow}
+          aria-pressed={isFollowing}
+          className={cn(
+            CHAT_FOLLOW_CONTROL_CLASS,
+            isFollowing
+              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
+              : "border-glass-border glass text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {"\u2193"} 자동 스크롤
+        </button>
+      </div>}
 
       {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} variant={isManuscript ? "caption" : "default"} /> : null}
 

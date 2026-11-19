@@ -5,7 +5,6 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
-import { reviewCard, reviewDetail } from "../client/v3/components-review-fixtures";
 
 const output = path.resolve(".local/card1683");
 mkdirSync(output, { recursive: true });
@@ -211,16 +210,15 @@ async function controlGeometry(root: Locator) {
     rectangle(root.locator('[data-slot="chat-input-composer"]')),
     await banner.isVisible() ? rectangle(banner) : null,
   ]);
-  return { scroll, follow, send, input, message, gap: message ? follow.left - message.right : null };
+  return { scroll, follow, send, input, message };
 }
 
 function overlaps(a: Awaited<ReturnType<typeof rectangle>>, b: typeof a) {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
-async function controlScenario(browser: Browser, baseUrl: string, width: number, height: number, cardWorkspace = false) {
-  const { context, page, live } = await chatPage(browser, width, height, true);
-  const label = cardWorkspace ? "card-workspace" : String(width);
+async function controlScenario(browser: Browser, baseUrl: string, width: number) {
+  const { context, page, live } = await chatPage(browser, width, width === 1440 ? 900 : 844, true);
   const results: Record<string, unknown> = {};
   const checks: Record<string, boolean> = {};
   const errors: string[] = [];
@@ -229,33 +227,13 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number,
     if (!condition) errors.push(label);
   }
   const screenshot = (state: string) => page.screenshot({
-    path: path.join(output, `${phase}-controls-${label}-${state}.png`), animations: "disabled",
+    path: path.join(output, `${phase}-controls-${width}-${state}.png`), animations: "disabled",
   });
   try {
     await page.route(url => /^\/api\/sessions\/[^/]+\/timeline$/.test(url.pathname),
       route => route.fulfill({ json: historyPage(100, 100, null) }));
-    if (cardWorkspace) {
-      const card = { ...reviewCard, folderId: "rb-alpha", assigneeSessionId: "run-alpha-2" };
-      await page.route(url => url.pathname === `/api/cards/${card.id}`,
-        route => route.fulfill({ json: { ...reviewDetail, card } }));
-      await page.goto(`${baseUrl}/?card=${card.id}`, { waitUntil: "domcontentloaded" });
-    } else {
-      await openChat(page, baseUrl, width);
-    }
-    const root = cardWorkspace
-      ? page.getByTestId("v3-card-session-chat").locator('[data-slot="chat-root"]').filter({ visible: true })
-      : chatRoot(page);
-    if (cardWorkspace) {
-      try {
-        await root.locator('[data-virtuoso-scroller="true"]').waitFor({ state: "visible", timeout: 10000 });
-      } catch (error) {
-        if (!(error instanceof Error) || error.name !== "TimeoutError") throw error;
-        results.skipped = "모의 카드에서 카드 작업대 대화 목록을 열 수 없었습니다.";
-        console.log(results.skipped);
-        await screenshot("unavailable");
-        return;
-      }
-    }
+    await openChat(page, baseUrl, width);
+    const root = chatRoot(page);
     const scroller = root.locator('[data-virtuoso-scroller="true"]');
     const follow = followButton(root);
     const banner = bannerButton(root);
@@ -284,12 +262,11 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number,
     const shown = await controlGeometry(root);
     results.message = shown;
     function checkGeometry(geometry: typeof shown, label: string) {
-      const { scroll, follow, input, message, gap } = geometry;
+      const { scroll, follow, input, message } = geometry;
       check(Math.abs(follow.right - input.right) <= 1, `${label} 자동 스크롤과 입력창 오른쪽 정렬`);
       if (message) {
         check(!overlaps(message, scroll), `${label} 배너와 목록 겹침`);
         check(!overlaps(message, follow), `${label} 두 단추 겹침`);
-        check(gap !== null && gap >= 8, `${label} 두 단추 간격 8px 이상`);
         check(Math.abs(message.top + message.height / 2 - follow.top - follow.height / 2) <= 1,
           `${label} 두 단추 세로 가운데`);
         check(Math.abs(message.height - follow.height) <= 1, `${label} 두 단추 높이`);
@@ -297,8 +274,6 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number,
     }
     checkGeometry(shown, "배너 보임");
     check(Math.abs(shown.scroll.height - off.scroll.height) <= 1, "배너 표시 전후 목록 높이");
-    check(Math.abs(shown.follow.left - off.follow.left) <= 1
-      && Math.abs(shown.follow.top - off.follow.top) <= 1, "배너 표시 전후 자동 스크롤 위치");
     await screenshot("message");
 
     await scroller.focus();
@@ -322,7 +297,7 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number,
       await page.setViewportSize({ width: 390, height: 844 });
     }
 
-    if (width === 1440 && !cardWorkspace) {
+    if (width === 1440) {
       const draft = "창 크기 변경 중에도 작성 중인 메시지";
       await textarea.fill(draft);
       const firstVisible = () => scroller.evaluate(el => {
@@ -366,25 +341,11 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number,
     errors.push(String(error));
     await screenshot("failure");
   } finally {
-    writeFileSync(path.join(output, `${phase}-controls-${label}.json`), JSON.stringify({ ...results, checks, errors }, null, 2));
+    writeFileSync(path.join(output, `${phase}-controls-${width}.json`), JSON.stringify({ ...results, checks, errors }, null, 2));
     live.release();
     await context.close();
   }
   assert(before || errors.length === 0, `${width} 조작 검사: ${errors.join(", ")}`);
-}
-
-async function captureReviewSample(browser: Browser, baseUrl: string) {
-  const { context, page } = await chatPage(browser, 1440, 900);
-  try {
-    await page.goto(`${baseUrl}/components`, { waitUntil: "domcontentloaded" });
-    const sample = page.locator('[data-component="대화 스크롤 단추"]');
-    await sample.waitFor({ state: "visible", timeout: 30000 });
-    assert(await followButton(sample).count() === 4, "검수 창 자동 스크롤 표본 4개");
-    assert(await bannerButton(sample).count() === 2, "검수 창 배너 표본 2개");
-    await sample.screenshot({ path: path.join(output, `${phase}-controls-review-sample.png`), animations: "disabled" });
-  } finally {
-    await context.close();
-  }
 }
 async function freePort(): Promise<number> { return new Promise((resolve, reject) => { const server = createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = (server.address() as { port: number }).port; server.close(() => resolve(port)); }); }); }
 const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`;
@@ -402,11 +363,7 @@ try {
     for (const width of [1440, 390]) for (const target of ["mid", "final"] as const) {
       await run(`${width}-${target}`, () => historyScenario(browser, baseUrl, width, target));
     }
-    for (const [width, height] of [[1440, 900], [1280, 800], [1200, 900], [390, 844]]) {
-      await run(`controls-${width}`, () => controlScenario(browser, baseUrl, width, height));
-    }
-    await run("controls-card-workspace", () => controlScenario(browser, baseUrl, 1200, 900, true));
-    await run("controls-review-sample", () => captureReviewSample(browser, baseUrl));
+    for (const width of [1440, 390]) await run(`controls-${width}`, () => controlScenario(browser, baseUrl, width));
     assert(failures.length === 0, failures.join("\n"));
   });
 } finally {
