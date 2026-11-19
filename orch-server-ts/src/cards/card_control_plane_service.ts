@@ -95,7 +95,8 @@ export class CardControlPlaneService {
     corsAllowedOrigins: readonly string[] = [],
     private readonly onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>,
     appendTimeline?: AppendReportTimeline,
-    private readonly attachmentPreparation?: CardAttachmentSourceStoreDeps) {
+    private readonly attachmentPreparation?: CardAttachmentSourceStoreDeps,
+    private readonly control?: { defaultExecutionNodeId: string }) {
     this.repo=new CardRepository(repoSql, corsAllowedOrigins);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
     this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged,undefined,appendTimeline) : undefined;
@@ -748,7 +749,7 @@ export class CardControlPlaneService {
     await patchCardTx(sql,card,fields,actor,eventId);
   }
   private async serverDecision(sql:RepositorySql,card:CardRow,command:ServerCardCommand,params:FolderActorParams,eventId:number|null,payload?:Record<string,unknown>) {
-    const reader=cardServerEvidenceReader(sql,card,command,params);
+    const reader=cardServerEvidenceReader(sql,card,command,params,this.control?.defaultExecutionNodeId);
     const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
     for(let count=0;count<reader.maxDecisions;count++) {
       const decision=decideCardTransition(card,[],reader.evidence(),command,actor,Date.now());

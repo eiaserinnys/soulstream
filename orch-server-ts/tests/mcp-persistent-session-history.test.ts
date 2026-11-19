@@ -14,7 +14,7 @@ function setup() {
   const readPersistentSessionHistory = vi.fn(async () => ({ rows: [] as PersistentSessionHistoryRow[], nextCursor: null as number | null }));
   let ownerEmail: string | null = "owner@example.com";
   let denyFolder = false;
-  const settings = new PersistentSessionSettingsService({
+  const settings = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
     modelCatalog: repositoryModelCatalog(),
     reads: async () => ({ getSession: async (id: string) => rows.get(id) ?? null, listPersistentSessions: async () => [] }),
     access: {

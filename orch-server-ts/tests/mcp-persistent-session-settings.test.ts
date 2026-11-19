@@ -56,7 +56,7 @@ function setup() {
       buildPersistentSettingsMetadataEntry(currentSettings),
     ],
   });
-  const service = new PersistentSessionSettingsService({
+  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
     reads: async () => ({
       getSession: async (id: string) => rows.get(id) ?? null,
       listPersistentSessions: async () => [],

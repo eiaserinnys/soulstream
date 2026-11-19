@@ -35,6 +35,7 @@ describe("orch-server-ts config scaffold", () => {
   it("maps the supported environment surface and tracks the ignored folder setting", async () => {
     const config = loadOrchServerEnvironment({
       NODE_NAME: "orch-primary",
+      DEFAULT_EXECUTION_NODE_ID: "eias-linegames",
       SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
       HOST: "127.0.0.1",
       PORT: "5300",
@@ -75,6 +76,7 @@ describe("orch-server-ts config scaffold", () => {
       mcp_external_ingress_bearer_token: undefined, mcp_external_events_state_file: undefined,
       mcp_allowed_hosts: ["localhost", "127.0.0.1"],
       node_name: "orch-primary",
+      default_execution_node_id: "eias-linegames",
       host: "127.0.0.1",
       port: 5300,
       trusted_proxy: "loopback",
@@ -145,6 +147,7 @@ describe("orch-server-ts config scaffold", () => {
   it("preserves Python defaults while giving the TS listener port 5200", () => {
     expect(loadOrchServerEnvironment(minimalEnvironment())).toMatchObject({
       node_name: null,
+      default_execution_node_id: "eiaserinnys",
       port: 5200,
       trusted_proxy: "loopback",
       dashboard_dir: "",
@@ -162,6 +165,25 @@ describe("orch-server-ts config scaffold", () => {
       soul_runner_process_enabled: false,
       soul_runner_lease_timeout_ms: 1_800_000,
     });
+  });
+
+  it("separates the default execution node from the external ingress node label", () => {
+    expect(loadOrchServerEnvironment(minimalEnvironment()).default_execution_node_id).toBe("eiaserinnys");
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      DEFAULT_EXECUTION_NODE_ID: " worker-node ",
+    }).default_execution_node_id).toBe("worker-node");
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      DEFAULT_EXECUTION_NODE_ID: "  ",
+    }).default_execution_node_id).toBe("eiaserinnys");
+    const config = loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      NODE_NAME: "central-mcp",
+      DEFAULT_EXECUTION_NODE_ID: "worker-node",
+    });
+    expect(config.node_name).toBe("central-mcp");
+    expect(config.default_execution_node_id).toBe("worker-node");
   });
 
   it("accepts a positive usage summary polling interval override", () => {

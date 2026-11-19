@@ -8,9 +8,11 @@ import type { CardCommentAttachmentUploader } from "../folders/folder_routes.js"
 
 // 카드 커멘트에 붙인 인라인 첨부를 저장하고 카드 첨부 파이프라인이 해석하는 legacy
 // 파일 URL을 돌려준다. 인증된 사용자의 첨부는 R2에 소유자로 커밋한 뒤 노드 캐시와
-// 별칭을 채우고, 인증 주체가 없는 호출은 기존 노드 캐시 경로만 쓴다.
+// 별칭을 채우고, 인증 주체가 없는 호출은 기존 노드 캐시 경로만 쓴다. 첨부에 노드가
+// 없으면 조립 지점이 주입한 기본 실행 노드의 캐시를 쓴다.
 export function createCardCommentAttachmentUploader(
   attachments: AttachmentRouteOptions,
+  options: { defaultNodeId: string },
 ): CardCommentAttachmentUploader {
   return async (request, input) => {
     const content = Buffer.from(input.file.data_base64, "base64");
@@ -19,7 +21,7 @@ export function createCardCommentAttachmentUploader(
       contentType: input.file.mime || "application/octet-stream",
       content,
     };
-    const nodeId = input.nodeId ?? "eiaserinnys";
+    const nodeId = input.nodeId ?? options.defaultNodeId;
     const uploads = attachments.assetUpload;
     const actor = uploads === undefined ? null : await uploads.resolveActor(request);
     if (uploads === undefined || actor === null) {

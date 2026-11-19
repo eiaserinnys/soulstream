@@ -107,7 +107,7 @@ describe("Execute proxy and push route harnesses", () => {
           code: "AGENT_PROFILE_REQUIRED",
           message: "New execute requests require profile or agentId",
           details: {
-            hint: "Set SEOSOYOUNG_AGENT_ID or send profile/agentId in the request body",
+            hint: "Send profile or agentId in the request body",
           },
         },
       },

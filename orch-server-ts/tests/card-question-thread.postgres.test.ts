@@ -47,7 +47,7 @@ describe("card question threads keep the question open while user and assignee e
       return rows[0]!.id;
     } }, undefined, change => dispatcher.acceptMutation(change), publish, warn);
     reports = new PersistentReportService(adapted, publish);
-    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(async () => adapted), cards: async () => cards,
+    dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: new CardDispatchRepository(async () => adapted), cards: async () => cards,
       resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: null, available: false, reason: "test" }),
       launch: async () => {}, sendMessage: messages, notify: pushes, deliveryExists: async () => false,
       abandonDelivery: async () => {}, warn });

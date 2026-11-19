@@ -21,7 +21,8 @@ describe("user card execution transport",()=>{
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql.unsafe(await readFile(new URL('../../packages/db-schema/sql/migrations/113_card_orchestration.sql',import.meta.url),'utf8'));
     await h.sql`INSERT INTO folders(id,name) VALUES('work','작업'),('target','대상')`;
-    cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
+    cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx},
+      undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,{defaultExecutionNodeId:"eiaserinnys"});
   },60000);
   afterAll(async()=>h?.cleanup());
   type FailureHooks=Pick<CardExecutionOptions,"onConfirmedFailureTx"|"onConfirmedFailureCommitted">;
@@ -125,7 +126,7 @@ describe("user card execution transport",()=>{
       }
       return {type:"ack",status:"ok"};
     }};
-    const runtime=await createCardDispatchRuntime({
+    const runtime=await createCardDispatchRuntime({ defaultExecutionNodeId:"eiaserinnys",
       sqlResolver:{resolveSql:async()=>h.liveSql,close:async()=>undefined},
       router:{selectNodeForCreate:({nodeId,profileId,modelPresetId}:{nodeId:string;profileId:string;modelPresetId?:string})=>({nodeId,profileId,modelPresetId:modelPresetId??"model"}),
         createSession,routeExistingSessionPendingCommand:routeExisting,waitForCreatedSession:async()=>true} as any,

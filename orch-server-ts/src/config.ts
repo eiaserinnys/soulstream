@@ -27,6 +27,7 @@ export type OrchServerTsConfig = Omit<
 
 export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConfig> & {
   readonly node_name: string | null;
+  readonly default_execution_node_id: string;
   readonly host: string;
   readonly port: number;
   readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
@@ -67,6 +68,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "ENVIRONMENT",
   "CORS_ALLOWED_ORIGINS",
   "NODE_NAME",
+  "DEFAULT_EXECUTION_NODE_ID",
   "HOST",
   "PORT",
   "DATABASE_URL",
@@ -112,6 +114,13 @@ export type EnvironmentConfigProvider = {
   readonly requireConfig: (key: string) => Promise<unknown>;
 };
 
+/**
+ * Node that runs cards, conversations, and persistent sessions that name no node.
+ * It is separate from NODE_NAME, which labels the external MCP ingress caller.
+ * This is the only place the legacy central node value lives in the orchestrator.
+ */
+export const DEFAULT_EXECUTION_NODE_ID = "eiaserinnys";
+
 export const DEFAULT_ORCH_SERVER_PORT = 5200;
 export const DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS = 300;
 export const DEFAULT_SOUL_RUNNER_LEASE_TIMEOUT_MS = 1_800_000;
@@ -137,6 +146,8 @@ export function loadOrchServerEnvironment(
   return {
     ...loadExternalIngressEnvironment(env),
     node_name: optionalString(env.NODE_NAME),
+    default_execution_node_id:
+      (env.DEFAULT_EXECUTION_NODE_ID?.trim() ?? "") || DEFAULT_EXECUTION_NODE_ID,
     host: requiredString(env, "HOST"),
     port: parsePort(env.PORT),
     trusted_proxy: DEFAULT_TRUSTED_PROXY,

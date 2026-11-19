@@ -15,9 +15,10 @@ const command={type:'DISPATCH' as const,cardId:'card',expectedVersion:2,sessionI
 
 function harness(status='queued',options:{pending?:boolean;enabled?:boolean;lockedEnabled?:boolean;run?:boolean;capacity?:number;full?:boolean;eligible?:boolean;execution?:boolean;active?:boolean;receipt?:boolean;admitted?:boolean;termination?:boolean}={},overrides:Record<string,unknown>={}) {
   const queries:string[]=[];
+  const params:unknown[][]=[];
   const card={...row,status,...overrides};
-  const sql=Object.assign(async(strings:TemplateStringsArray)=>{
-    const query=strings.join('');queries.push(query);
+  const sql=Object.assign(async(strings:TemplateStringsArray,...values:unknown[])=>{
+    const query=strings.join('');queries.push(query);params.push(values);
     if(query.includes('SELECT * FROM cards'))return [structuredClone(card)];
     if(query.includes("setting_key='card_orchestration'"))
       return [{enabled:query.includes('FOR SHARE')?options.lockedEnabled??false:options.enabled??true,version:1}];
@@ -43,8 +44,9 @@ function harness(status='queued',options:{pending?:boolean;enabled?:boolean;lock
   Object.assign(service,{repo:{getCard:async()=>structuredClone(card)},repoSql:sql,
     core:{mutate:async(p:FolderMutateParams)=>{await p.apply(sql,1);return {idempotent:false,operation:{payload_json:p.payload}};}},
     patch:async(_sql:unknown,_row:unknown,fields:Record<string,unknown>)=>{Object.assign(card,fields);},
+    control:{defaultExecutionNodeId:'node'},
   });
-  return {service,queries,card};
+  return {service,queries,params,card};
 }
 
 it('baseline 50f25bbfc keeps the locked policy disabled failure without statusCode or code',async()=>{
@@ -55,6 +57,15 @@ it('baseline 50f25bbfc keeps the locked policy disabled failure without statusCo
   expect(error.code).toBeUndefined();
   expect(h.queries.filter(q=>q.includes("setting_key='card_orchestration'"))).toHaveLength(2);
   expect(h.queries.at(-1)).toContain('FOR SHARE');
+});
+
+it('compares the install default node and the candidate node as separate values',async()=>{
+ const h=harness('queued',{lockedEnabled:true,run:true,capacity:1});
+ await expect(h.service.recordDispatch({...command,nodeId:'node-b'})).rejects.toThrow('Card is no longer eligible');
+ const index=h.queries.findIndex(q=>q.includes('SELECT c.id FROM cards'));
+ expect(index).toBeGreaterThan(-1);
+ expect(h.params[index]).toContain('node');
+ expect(h.params[index]).toContain('node-b');
 });
 
 it('baseline 50f25bbfc rejects a nonqueued card before reading or locking policy',async()=>{

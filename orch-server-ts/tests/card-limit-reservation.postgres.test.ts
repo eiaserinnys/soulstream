@@ -18,7 +18,8 @@ beforeAll(async()=>{
   await h.sql`ALTER TABLE cards DROP CONSTRAINT cards_limit_resume_check, DROP COLUMN limit_resume_session_id, DROP COLUMN limit_resume_at`;
   await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/152_card_limit_resume.sql",import.meta.url),"utf8"));
   await h.sql`INSERT INTO folders(id,name) VALUES('reservation','한도 예약')`;
-  cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
+  cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx},
+    undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,{defaultExecutionNodeId:"eiaserinnys"});
 },60000);
 beforeEach(async()=>{
   await h.sql`DELETE FROM folder_operations`;await h.sql`DELETE FROM cards`;await h.sql`DELETE FROM sessions`;

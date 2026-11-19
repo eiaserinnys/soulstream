@@ -4,7 +4,6 @@ import { closeNodeSocketsForHandover } from "./websocket_plugin.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { ConversationCatalog } from "./conversation/conversation_catalog.js";
-import { PERSISTENT_CREATE_NODE_ID } from "./session/persistent_session_settings_service.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
@@ -819,7 +818,7 @@ export async function createLiveProductionApplication(
   });
   cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
-    broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    broadcaster:runtimeServices.sessionBroadcaster,defaultExecutionNodeId:config.default_execution_node_id,warn:context.warn,
     corsAllowedOrigins: config.cors_allowed_origins,
     onReportsChanged: updates => publishPersistentReports(updates),
     appendTimeline: (sessionId, event) => appendReportTimeline(sessionId, event),
@@ -1065,6 +1064,7 @@ export async function createLiveProductionApplication(
       productionSql,
       deadLetterStore,
       externalAccessReplySignal,
+      config.default_execution_node_id,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1529,7 +1529,11 @@ export function buildProductionRouteOptions(
   conversationSql?: SqlClient,
   deadLetterStore?: Pick<FileEventIngressDeadLetterStore, "list">,
   externalAccessReplySignal?: ExternalReplySignal,
+  defaultExecutionNodeId?: string,
 ): CreateAppOptions {
+  if (defaultExecutionNodeId === undefined) {
+    throw new Error("default execution node is required to build production routes");
+  }
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
     throw new Error("session access provider is required for resume-after-limit routes");
@@ -1566,12 +1570,13 @@ export function buildProductionRouteOptions(
     presets: providers.modelPresetAvailability,
     profiles: providers.nodeAgentProfileRoutes.provider,
     modelCatalog: providers.modelCatalog,
+    defaultExecutionNodeId,
   });
   const conversationService = conversationSql ? new ConversationService({
     sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,
     reads: async () => (await persistenceRepositoryProvider()).sessionReads,
     catalog: new ConversationCatalog({
-      defaultNodeId: PERSISTENT_CREATE_NODE_ID,
+      defaultNodeId: defaultExecutionNodeId,
       listNodes: () => runtime.registry.listAllNodes().map(node => ({ nodeId: node.nodeId, connected: node.connected })),
       listKnownForNode: nodeId => providers.modelPresetAvailability.listKnownForNode(nodeId),
       listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
@@ -1703,7 +1708,8 @@ export function buildProductionRouteOptions(
       ...(cardExecutionServiceProvider ? {cardExecutionServiceProvider} : {}),
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
       ...(cardServiceProvider ? {
-        uploadCardCommentAttachment: createCardCommentAttachmentUploader(providers.attachmentRoutes),
+        uploadCardCommentAttachment: createCardCommentAttachmentUploader(
+          providers.attachmentRoutes, { defaultNodeId: defaultExecutionNodeId }),
         sendCardSessionMessage: (request, sessionId, body) =>
           executeSessionIntervention({
             ...providers.runtime.sessionActionCommandRoutes,

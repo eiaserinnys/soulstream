@@ -51,7 +51,9 @@ describe("durable card orchestration admissions", () => {
     const sql = createFolderContentSqlAdapter(h.liveSql);
     settingsSql = sql;
     repo = new CardOrchestrationRepository(async () => sql);
-    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
+    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx },
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { defaultExecutionNodeId: "eiaserinnys" });
   }, 60000);
   afterAll(async () => h?.cleanup());
   beforeEach(async () => {

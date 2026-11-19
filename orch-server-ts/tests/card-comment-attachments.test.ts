@@ -270,7 +270,7 @@ describe("createCardCommentAttachmentUploader", () => {
 
   it("인증 주체가 없으면 노드 캐시 경로만 써서 legacy 파일 URL을 만든다", async () => {
     const { options, attachmentsTransport } = attachmentOptions();
-    const upload = createCardCommentAttachmentUploader(options);
+    const upload = createCardCommentAttachmentUploader(options, { defaultNodeId: "node-1" });
     const result = await upload({} as FastifyRequest, input);
 
     expect(attachmentsTransport.uploadAttachment).toHaveBeenCalledOnce();
@@ -283,11 +283,20 @@ describe("createCardCommentAttachmentUploader", () => {
 
   it("세션이 없으면 카드 id를 노드 캐시 세션으로 쓴다", async () => {
     const { options, attachmentsTransport } = attachmentOptions();
-    const upload = createCardCommentAttachmentUploader(options);
+    const upload = createCardCommentAttachmentUploader(options, { defaultNodeId: "node-1" });
     const result = await upload({} as FastifyRequest, { ...input, sessionId: null });
 
     expect(attachmentsTransport.uploadAttachment.mock.calls[0]![1]).toMatchObject({ sessionId: "card-1" });
     expect(result.url).toContain(encodeURIComponent("/incoming/card-1/screen.png"));
+  });
+
+  it("노드가 없는 첨부는 조립 지점이 주입한 기본 실행 노드의 캐시를 쓴다", async () => {
+    const { options } = attachmentOptions();
+    const upload = createCardCommentAttachmentUploader(options, { defaultNodeId: "worker-node" });
+    const result = await upload({} as FastifyRequest, { ...input, nodeId: null });
+
+    expect(result.url).toContain("nodeId=worker-node");
+    expect(result.url).not.toContain("nodeId=node-1");
   });
 
   it("인증된 사용자의 첨부는 소유자로 커밋하고 별칭 경로의 legacy URL을 돌려준다", async () => {
@@ -323,7 +332,7 @@ describe("createCardCommentAttachmentUploader", () => {
       commits: { putSmall },
       repository,
     } as unknown as NonNullable<AttachmentRouteOptions["assetUpload"]>);
-    const upload = createCardCommentAttachmentUploader(options);
+    const upload = createCardCommentAttachmentUploader(options, { defaultNodeId: "node-1" });
     const result = await upload({} as FastifyRequest, input);
 
     expect(requireRegistration).toHaveBeenCalledWith(expect.anything(), {

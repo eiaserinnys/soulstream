@@ -9,6 +9,8 @@ import type { AppendReportTimeline } from "../session/report_timeline_publisher.
 export function createCardControlPlaneServiceProvider(options: {
   sqlResolver: LiveDbSqlResolver;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
+  /** Node for cards that name none; injected by the card runtime assembly. */
+  defaultExecutionNodeId: string;
   onFolderHeaderUpdated?: () => Promise<void>;
   warn: (message: string) => void;
   onMutation?: (change:CardMutationChange)=>void;
@@ -38,7 +40,7 @@ export function createCardControlPlaneServiceProvider(options: {
         options.broadcaster.append({ type: "card_updated", cardId, folderId });
       },
     },options.onMutation,options.onReportsChanged,options.warn,options.corsAllowedOrigins,options.onQuestionAsked,options.appendTimeline,
-      options.attachmentPreparation);
+      options.attachmentPreparation,{defaultExecutionNodeId:options.defaultExecutionNodeId});
     return service;
   };
 }

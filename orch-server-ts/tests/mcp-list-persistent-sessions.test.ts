@@ -63,7 +63,7 @@ const HIDDEN_FOLDER_PAS = makeRow({
 
 function setup() {
   const folderAccessCalls: Array<{ request: unknown; folderId: string | null; accessEmail?: string | null }> = [];
-  const service = new PersistentSessionSettingsService({
+  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
     modelCatalog: repositoryModelCatalog(),
     reads: async () => ({
       getSession: async () => null,

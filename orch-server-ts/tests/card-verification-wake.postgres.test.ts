@@ -37,7 +37,7 @@ beforeAll(async () => {
   const sql = createFolderContentSqlAdapter(h.liveSql);
   const repo = new CardDispatchRepository(async () => sql);
   cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined, change => { changes.push(change); });
-  dispatcher = new CardDispatcher({
+  dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys",
     repository: repo, cards: async () => cards,
     resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: "model", available: true, reason: null }),
     launch: async () => {}, sendMessage: messages, notify: async () => {},

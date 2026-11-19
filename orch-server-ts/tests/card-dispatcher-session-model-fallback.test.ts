@@ -69,7 +69,7 @@ function makeDispatcher(metadata: unknown) {
     settings: vi.fn(async () => ({ nodeConcurrency: { default: 1 } })),
     queued: vi.fn(async () => []),
   };
-  const dispatcher = new CardDispatcher({
+  const dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys",
     repository: repository as never,
     cards: async () => ({ getCard, setCardStatus, updateCardNow, blockCardForLimit }) as never,
     resolveTarget: () => ({
