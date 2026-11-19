@@ -6,3 +6,12 @@
    시안 빌드의 root는 mockups/<이름>이므로 같은 범위를 명시한다. */
 @source "../../client";
 @source "..";
+
+/* 화면이 유리 틀의 안쪽 여백까지 쓰는 시안용. 바탕은 투명하게 두어
+   WallpaperLayer와 LiquidGlassCanvas가 그대로 보이게 한다. */
+.v3-mockup-bare {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
