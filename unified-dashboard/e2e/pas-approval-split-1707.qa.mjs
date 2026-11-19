@@ -305,6 +305,11 @@ try {
       await page.locator(".pas-evidence-trigger").click();
       await page.locator(".pas-split-evidence-dialog").waitFor({ state: "visible" });
       await capture(page, "02-1440-dark-evidence.png");
+      for (let index = 0; index < 5; index += 1) {
+        await page.keyboard.press("Tab");
+        const trapped = await page.evaluate(() => Boolean(document.activeElement?.closest(".pas-split-evidence-dialog")));
+        assert.ok(trapped, "증거 대화상자 안에서 Tab이 밖으로 나갔습니다");
+      }
       await closeWithEscape(page, ".pas-split-evidence-dialog");
       const focused = await active(page);
       assert.ok(focused?.className.includes("pas-evidence-trigger"), `증거를 닫은 뒤 초점이 돌아오지 않았습니다: ${JSON.stringify(focused)}`);
@@ -486,6 +491,8 @@ try {
       const tabs = mobilePage.locator(".pas-split-mobile-tabs");
       await tabs.waitFor({ state: "visible" });
       assert.equal(await mobilePage.locator(".pas-split-viewswitch").isVisible(), false);
+      assert.equal(await mobilePage.locator(".pas-clipboard-index > .dashboard-icon-cap").first().isVisible(), false,
+        "좁은 화면에서 색인 화살표가 포커스 대상으로 남았습니다");
       const box = await mobilePage.locator('[data-testid="pas-composer"]').boundingBox();
       assert.ok(box && Math.abs(box.y + box.height - 844) <= 12, `입력창이 바닥에 붙지 않았습니다: ${JSON.stringify(box)}`);
       await capture(mobilePage, "10-390-dark-board.png");
