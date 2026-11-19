@@ -5,6 +5,7 @@ import {
   projectChatAttachmentItems,
   type ChatAttachmentItem,
 } from "../lib/chat-attachment-model";
+import { useChatAttachmentLoader } from "./ChatAttachmentLoader";
 
 export interface UseChatAttachmentsResult {
   items: ChatAttachmentItem[];
@@ -20,6 +21,7 @@ export function useChatAttachments(input: {
   enabled: boolean;
 }): UseChatAttachmentsResult {
   const { sessionId, eventId, enabled } = input;
+  const loader = useChatAttachmentLoader();
   const [items, setItems] = useState<ChatAttachmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,9 +45,14 @@ export function useChatAttachments(input: {
     setError(null);
     setRetryable(false);
 
-    void loadChatAttachments({ sessionId, eventId, signal: controller.signal })
-      .then((projection) => {
-        if (active) setItems(projectChatAttachmentItems(projection));
+    const loaded: Promise<ChatAttachmentItem[]> = loader === null
+      ? loadChatAttachments({ sessionId, eventId, signal: controller.signal })
+        .then((projection) => projectChatAttachmentItems(projection))
+      : loader({ sessionId, eventId, signal: controller.signal });
+
+    void loaded
+      .then((loadedItems) => {
+        if (active) setItems(loadedItems);
       })
       .catch((requestError: unknown) => {
         if (active && !controller.signal.aborted) {
@@ -64,7 +71,7 @@ export function useChatAttachments(input: {
       active = false;
       controller.abort();
     };
-  }, [enabled, eventId, reloadVersion, sessionId]);
+  }, [enabled, eventId, loader, reloadVersion, sessionId]);
 
   return { items, loading, error, retryable, reload };
 }

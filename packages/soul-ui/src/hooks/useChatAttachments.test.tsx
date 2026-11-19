@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UseChatAttachmentsResult } from "./useChatAttachments";
 import { useChatAttachments } from "./useChatAttachments";
+import { ChatAttachmentLoaderProvider } from "./ChatAttachmentLoader";
+import type { ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";
+import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,6 +61,37 @@ describe("useChatAttachments", () => {
 
     await act(async () => requests[0]?.result.resolve(jsonResponse({ event_id: 42, items: [] })));
     expect(latest).toMatchObject({ items: [], loading: false, error: null });
+  });
+
+  it("uses a provided loader and sends no attachment request", async () => {
+    const loaded: ChatAttachmentItem = {
+      key: "review-attachment:pas-settings-1.png",
+      name: "pas-settings-1.png",
+      mimeType: "image/png",
+      byteSize: null,
+      previewKind: "image",
+      availability: "ready",
+      previewUrl: "/review-assets/pas-settings-1.png",
+      originalUrl: "/review-assets/pas-settings-1.png",
+      legacySources: [],
+      source: { kind: "asset", attachmentId: "review-attachment:pas-settings-1.png", context: { type: "session", id: "session-a" } },
+    };
+    let resolveItems!: (items: ChatAttachmentItem[]) => void;
+    const loader = vi.fn((_input: ChatAttachmentLoaderInput) =>
+      new Promise<ChatAttachmentItem[]>((resolve) => { resolveItems = resolve; }));
+    await act(() => root.render(
+      createElement(ChatAttachmentLoaderProvider, {
+        loader,
+        children: createElement(Harness, { sessionId: "session-a", eventId: 42, enabled: true }),
+      }),
+    ));
+
+    expect(latest.loading).toBe(true);
+    expect(requests).toHaveLength(0);
+    await act(async () => resolveItems([loaded]));
+    expect(latest).toMatchObject({ items: [loaded], loading: false, error: null });
+    expect(loader).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-a", eventId: 42 }));
+    expect(loader.mock.calls[0]?.[0]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("aborts the previous session projection and ignores its late response", async () => {

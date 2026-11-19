@@ -7,6 +7,11 @@ export { useTheme, useAppearancePreference, initTheme, setTheme, setAppearancePr
 export type { Appearance, Theme } from "./useTheme";
 export { useUserPreferencesSync } from "./useUserPreferencesSync";
 
+// === Chat attachments ===
+export { ChatAttachmentLoaderProvider, useChatAttachmentLoader } from "./ChatAttachmentLoader";
+export type { ChatAttachmentLoader, ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";
+export type { ChatAttachmentItem } from "../lib/chat-attachment-model";
+
 // === Input Request / Mobile ===
 export { useInputRequestTimer } from "./useInputRequestTimer";
 export { useIsMobile } from "./use-mobile";

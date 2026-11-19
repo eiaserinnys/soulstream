@@ -1,5 +1,7 @@
+import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { SessionEvent } from '../../api/types';
+import { MessageAttachmentLoaderProvider } from '../MessageAttachmentLoader';
 import type { SessionEventAttachmentResponse } from '../../../../packages/wire-schema/src/attachments';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 import { useAuthStore } from '../../store/authStore';
@@ -90,6 +92,45 @@ test('synthetic complete rows read only the remaining IDs from their shared even
   }));
   await waitFor(() => expect(result.current.phase).toBe('ready'));
   expect(result.current.items.map(item => item.key)).toEqual(['asset-2']);
+  unmount();
+});
+
+test('로더 문맥이 있으면 readContext 없이도 투영 항목을 내고 요청을 보내지 않는다', async () => {
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ event_id: 7, items: [] }));
+  const loader = jest.fn(async () => [{
+    key: 'review-image',
+    name: 'pas-settings-1.png',
+    mimeType: 'image/png',
+    byteSize: null,
+    previewKind: 'image' as const,
+    readContext: readContext,
+    source: {
+      kind: 'ready' as const, attachmentId: 'review-image',
+      previewUrl: '/assets/pas-settings-1.png', originalUrl: '/assets/pas-settings-1.png',
+    },
+  }]);
+  const { result, unmount } = renderHook(
+    () => useMessageAttachments({ event: event('7', 'user_message', { attachments: ['/incoming/photo.png'] }) }),
+    { wrapper: ({ children }) => React.createElement(MessageAttachmentLoaderProvider, { loader, children }) },
+  );
+
+  await waitFor(() => expect(result.current.phase).toBe('ready'));
+  expect(result.current.items).toHaveLength(1);
+  expect(result.current.items[0]).toMatchObject({ name: 'pas-settings-1.png', previewKind: 'image' });
+  expect(loader).toHaveBeenCalledWith(expect.objectContaining({
+    eventId: '7', signals: expect.objectContaining({ paths: ['/incoming/photo.png'], hasSignal: true }),
+  }));
+  expect(fetch).not.toHaveBeenCalled();
+  unmount();
+});
+
+test('로더 문맥이 없고 readContext도 없으면 지금처럼 idle이다', () => {
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ event_id: 8, items: [] }));
+  const { result, unmount } = renderHook(() => useMessageAttachments({
+    event: event('8', 'user_message', { attachments: ['/incoming/photo.png'] }),
+  }));
+  expect(result.current).toMatchObject({ items: [], phase: 'idle', failure: null });
+  expect(fetch).not.toHaveBeenCalled();
   unmount();
 });
 

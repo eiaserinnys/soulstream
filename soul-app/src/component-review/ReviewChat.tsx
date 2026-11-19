@@ -13,7 +13,9 @@ import { SystemEvent } from '../components/events/SystemEvent';
 import { TurnSummaryCaption } from '../components/events/TurnSummaryCaption';
 import { CollapsibleCaption, CollapsibleCaptionLine } from '../components/chat/CollapsibleCaption';
 import { LabeledDivider } from '../components/chat/LabeledDivider';
-import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
+import { AttachmentImage, ChatRefinedImageGallery, getChatAttachmentFilename, isChatImageAttachmentPath } from '../components/AttachmentImage';
+import { MessageAttachmentLoaderProvider, type MessageAttachmentLoader } from '../hooks/MessageAttachmentLoader';
+import type { AttachmentView } from '../lib/attachment-view';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
 import { createReviewApi, message, reviewComposerAttachment, sessions } from './fixtures';
@@ -34,6 +36,34 @@ const reviewImageUris = [
   Asset.fromModule(require('../../assets/icon.png')).uri,
   Asset.fromModule(require('../../assets/icon-symbol.png')).uri,
 ];
+
+/**
+ * 검수 표본의 첨부는 운영 첨부 대신 앱에 포함된 그림으로 투영한다.
+ * 실제 대화 화면은 이 문맥 없이 기존 경로를 그대로 쓴다.
+ */
+function reviewAttachmentView(path: string, index: number, eventId: string): AttachmentView {
+  const name = getChatAttachmentFilename(path);
+  const readContext = { type: 'session', id: 'review-pas-1' } as const;
+  if (!isChatImageAttachmentPath(path)) {
+    return {
+      key: `${eventId}:${path}`, name, mimeType: null, byteSize: null, previewKind: 'info', readContext,
+      source: { kind: 'unavailable', availability: 'unresolved' },
+    };
+  }
+  const previewUrl = reviewImageUris[index % reviewImageUris.length]!;
+  return {
+    key: `${eventId}:${path}`,
+    name,
+    mimeType: 'image/png',
+    byteSize: null,
+    previewKind: 'image',
+    readContext,
+    source: { kind: 'ready', attachmentId: `${eventId}:${path}`, previewUrl, originalUrl: previewUrl },
+  };
+}
+
+const reviewAttachmentLoader: MessageAttachmentLoader = async ({ eventId, signals }) =>
+  signals.paths.map((path, index) => reviewAttachmentView(path, index, eventId));
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -470,8 +500,8 @@ export function ReviewChat() {
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n```ts\nconst answer = "코드 블록 복사";\n```\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   if (sample === 'external-sender') return <ExternalSenderSamples presentation={new URLSearchParams(window.location.search).get('presentation') === 'manuscript' ? 'manuscript' : 'default'} />;
-  if (sample === 'pas-images') return <ReviewChatPasImageSample />;
-  return <>
+  if (sample === 'pas-images') return <MessageAttachmentLoaderProvider loader={reviewAttachmentLoader}><ReviewChatPasImageSample /></MessageAttachmentLoaderProvider>;
+  return <MessageAttachmentLoaderProvider loader={reviewAttachmentLoader}>
     <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">
       <ReviewPersistentChatProjection />
     </ReviewSection>
@@ -643,7 +673,7 @@ export function ReviewChat() {
         </View>
       </ScrollView>
     </ReviewSection>
-  </>;
+  </MessageAttachmentLoaderProvider>;
 }
 
 function ReviewChatPasImageSample() {

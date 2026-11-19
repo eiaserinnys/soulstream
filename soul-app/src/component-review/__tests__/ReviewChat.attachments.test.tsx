@@ -57,13 +57,24 @@ test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴
   expect(sample.getByTestId('chat-composer-box')).toBeTruthy();
 });
 
-test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 연결한다', async () => {
+test('첨부만 보낸 메시지 표본은 UserMessage에 번들 이미지와 TXT를 연결한다', async () => {
   const screen = await renderReviewChat();
   const sample = screen.getByTestId('review-chat-attachment-only-user-message');
   expect(within(sample).queryByTestId('user-message-text')).toBeNull();
   expect(within(sample).getByText('2026-10-17 서버 로그 전체.txt')).toBeTruthy();
-  expect(within(sample).getByLabelText('첨부 이미지 1')).toBeTruthy();
-  expect(within(sample).queryByLabelText('첨부 이미지 2')).toBeNull();
+  expect(within(sample).getByTestId('message-attachments-images')).toBeTruthy();
+  expect(within(sample).getByLabelText('pas-settings-1.png 크게 보기')).toBeTruthy();
+  expect(within(sample).queryByLabelText('첨부 이미지 1')).toBeNull();
+});
+
+test('대화 표본의 첨부는 번들 그림으로 투영되고 첨부 API를 부르지 않는다', async () => {
+  Object.defineProperty(window, 'location', { configurable: true, value: { search: '?sample=pas-images', origin: 'https://review.test' } });
+  const fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValue(new TypeError('network disabled'));
+  const screen = await renderReviewChat();
+  for (const testID of ['review-pas-structured-user-images', 'review-pas-single-image', 'review-pas-three-images']) {
+    expect(within(screen.getByTestId(testID)).getByTestId('message-attachments-images')).toBeTruthy();
+  }
+  expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/attachments'))).toEqual([]);
 });
 
 test('첨부만 전송 표본은 chips와 composer를 같은 간격 없는 그룹에 둔다', async () => {

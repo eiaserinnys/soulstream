@@ -10,7 +10,12 @@ import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChat
 vi.mock("@seosoyoung/soul-ui", async () => {
   const { createElement } = await import("react");
   const { useDashboardStore } = await import("@seosoyoung/soul-ui/stores/dashboard-store");
-  return { useDashboardStore, ChatView: (props: { presentation: string }) => createElement("div", { "data-presentation": props.presentation }) };
+  const { ChatAttachmentLoaderProvider } = await import("@seosoyoung/soul-ui/hooks/ChatAttachmentLoader");
+  return {
+    useDashboardStore,
+    ChatAttachmentLoaderProvider,
+    ChatView: (props: { presentation: string }) => createElement("div", { "data-presentation": props.presentation }),
+  };
 });
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -104,6 +109,33 @@ describe("manuscript review isolation", () => {
     } finally {
       act(() => root.unmount());
       useDashboardStore.setState(original);
+    }
+  });
+
+  it("표본 첨부는 같은 출처의 번들 raster 그림으로 뜨고 첨부 요청을 보내지 않는다", async () => {
+    const original = useDashboardStore.getState();
+    const fetchSpy = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.reject(new TypeError("network disabled")));
+    vi.stubGlobal("fetch", fetchSpy);
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<PersistentManuscriptChatReviewSample />));
+      const defaultColumn = host.querySelector('[data-testid="default-review-column"]');
+      const images = [...(defaultColumn?.querySelectorAll<HTMLImageElement>('[data-chat-image-role="user"] img') ?? [])];
+      expect(images.length).toBeGreaterThan(0);
+      for (const image of images) {
+        const source = new URL(image.getAttribute("src") ?? "", window.location.href);
+        expect(source.origin).toBe(window.location.origin);
+        expect(source.pathname).toMatch(/\/review-assets\/[^/]+\.png$/);
+      }
+      expect(defaultColumn?.textContent).toContain("pas-settings-1.png");
+      expect(defaultColumn?.textContent).not.toContain("첨부를 찾을 수 없거나");
+      expect(fetchSpy.mock.calls.filter((call) => String(call[0]).includes("/attachments"))).toEqual([]);
+    } finally {
+      act(() => root.unmount());
+      useDashboardStore.setState(original);
+      vi.unstubAllGlobals();
     }
   });
 });
