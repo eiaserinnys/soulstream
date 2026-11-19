@@ -6,10 +6,14 @@ import type { EventIngressQuerySql } from "../node/event_ingress_repository.js";
 import type { EventIngressEnvelope } from "../node/event_ingress_types.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
+export type SessionStatisticsFactsListener = () => void;
+
 export type ApplySessionStatisticsProjectionInput = {
   eventId: number;
   envelope: EventIngressEnvelope;
   modelCatalog: ModelCatalogSource;
+  /** Called once after facts are inserted, so a stream can announce the change. */
+  onFactsInserted?: SessionStatisticsFactsListener;
 };
 
 export async function applySessionStatisticsProjection(
@@ -24,12 +28,13 @@ export async function applySessionStatisticsProjection(
     createdAt: input.envelope.created_at,
     payload: input.envelope.payload,
   }, input.modelCatalog.snapshot());
-  await insertSessionStatisticsFacts(sql, normalized.facts);
+  await insertSessionStatisticsFacts(sql, normalized.facts, input.onFactsInserted);
 }
 
 export async function insertSessionStatisticsFacts(
   sql: EventIngressQuerySql,
   facts: readonly FactDraft[],
+  onFactsInserted?: SessionStatisticsFactsListener,
 ): Promise<void> {
   if (facts.length === 0) return;
   const rows = facts.map((fact) => ({
@@ -96,6 +101,7 @@ export async function insertSessionStatisticsFacts(
     )
     ON CONFLICT (session_id, event_id, part_key) DO NOTHING
   `;
+  onFactsInserted?.();
 }
 
 export async function assertSessionStatisticsFactsMatchSourceEvents(

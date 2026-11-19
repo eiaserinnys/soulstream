@@ -155,6 +155,7 @@ import type { SessionDeliveryRepository } from
   "./control_plane/repositories/session_delivery_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { ClaudeAccountReloginNotifier } from "./usage/claude_account_relogin_notifier.js";
+import { SessionStatisticsUpdateNotifier } from "./usage/session_statistics_update_notifier.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
@@ -388,11 +389,18 @@ export async function createLiveProductionApplication(
   const deadLetterStore = new FileEventIngressDeadLetterStore(resolve(
     dirname(fileURLToPath(import.meta.url)), "..", ".local", "event-ingress-dead-letter",
   ));
+  const sessionStatisticsUpdates = new SessionStatisticsUpdateNotifier({
+    onError: (error) => context.warn(warningMessage("Session statistics update listener failed", error)),
+  });
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
     applyCardWorkErrorEffect,
     deadLetterStore,
-    { modelCatalog: overrides.modelCatalog, warn: eventIngressWarn },
+    {
+      modelCatalog: overrides.modelCatalog,
+      warn: eventIngressWarn,
+      onSessionStatisticsFactsInserted: () => sessionStatisticsUpdates.notify(),
+    },
     applyEventFeedProjection,
   );
   const eventIngressCommitter = createCardWorkErrorIngressCommitter(
@@ -692,7 +700,10 @@ export async function createLiveProductionApplication(
       modelCatalog: overrides.modelCatalog,
       nodeCredentials: nodeCredentialStore,
       uiEventRepository,
-      usageSummaryRoutes: { service: usageSummaryService },
+      usageSummaryRoutes: {
+        service: usageSummaryService,
+        statisticsUpdates: sessionStatisticsUpdates,
+      },
       sessionStatisticsRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).sessionStatistics,
       findSessionNode: dbCatalogRepository.findSessionOwnerNodeId,

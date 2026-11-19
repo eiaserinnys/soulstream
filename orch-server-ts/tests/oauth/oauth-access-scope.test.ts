@@ -4,6 +4,8 @@ import type { SqlClient } from "../../src/control_plane/control_plane_types.js";
 import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_authenticated_user_resolver.js";
 import { createLiveDashboardAccessProvider } from "../../src/runtime/live_dashboard_access_provider.js";
 import { registerProductionAuthGuard } from "../../src/runtime/production_auth_guard.js";
+import { InMemorySseReplayBroadcaster } from "../../src/sse/replay_broadcaster.js";
+import { registerSseReplayRoutes } from "../../src/sse/sse_replay_routes.js";
 import { registerUsageSummaryRoutes } from "../../src/usage/usage_summary_routes.js";
 import { registerSessionStatisticsRoutes } from "../../src/usage/session_statistics_routes.js";
 import {
@@ -78,14 +80,16 @@ describe("OAuth resource scopes", () => {
     expect(oauthScopeForRoute("GET", "/api/folders/folder-1")).toBe("folders:read");
   });
 
-  it("maps only the usage summary and session statistics GETs to the usage read scope", () => {
+  it("maps the usage summary, usage stream and session statistics GETs to the usage read scope", () => {
     expect(oauthScopeForRoute("GET", "/api/usage/summary")).toBe("usage:read");
     expect(oauthScopeForRoute("GET", "/api/usage/summary?window=1")).toBe("usage:read");
+    expect(oauthScopeForRoute("GET", "/api/usage/stream")).toBe("usage:read");
     expect(oauthScopeForRoute("GET", "/api/session-statistics?period=week&timezone=Asia/Seoul")).toBe("usage:read");
     expect(oauthScopeForRoute("GET", "/api/session-statistics/days/2026-11-10?period=week")).toBe("usage:read");
     for (const [method, path] of [
       ["POST", "/api/usage/refresh"],
-      ["GET", "/api/usage/stream"],
+      ["POST", "/api/usage/stream"],
+      ["GET", "/api/usage/stream/x"],
       ["GET", "/api/usage/summary/x"],
       ["POST", "/api/usage/summary"],
       ["POST", "/api/session-statistics"],
@@ -95,7 +99,7 @@ describe("OAuth resource scopes", () => {
     ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
   });
 
-  it("admits a usage read token only to the usage summary route", async () => {
+  it("admits a usage read token only to the usage read routes", async () => {
     const usage: OAuthResourceAccess = { ...access, scopes: ["usage:read"] };
     const cards: OAuthResourceAccess = { ...access, scopes: ["cards:read"] };
     const app = Fastify();
@@ -110,12 +114,43 @@ describe("OAuth resource scopes", () => {
         getSummary: () => ({ generatedAt: "2026-11-09T00:00:00.000Z", collectedAt: null, nodes: [] }),
         collectOnce: async () => {},
       },
+      replayOnlyForTests: true,
     });
     const headers = { authorization: "Bearer usage-token" };
     expect((await app.inject({ method: "GET", url: "/api/usage/summary", headers })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: "/api/usage/summary", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: "/api/usage/refresh", headers })).statusCode).toBe(403);
-    expect((await app.inject({ method: "GET", url: "/api/usage/stream", headers })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/usage/stream", headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/usage/stream", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("opens the session change stream to card readers but not usage readers", async () => {
+    const usage: OAuthResourceAccess = { ...access, scopes: ["usage:read"] };
+    const cards: OAuthResourceAccess = { ...access, scopes: ["cards:read"] };
+    const app = Fastify();
+    registerProductionAuthGuard(app, {
+      resolveTokenAccess: async () => ({ ok: false, statusCode: 401, detail: "Authentication required" }),
+      resolveOAuthAccess: async request => request.headers.authorization === "Bearer usage-token"
+        ? usage
+        : request.headers.authorization === "Bearer cards-token" ? cards : null,
+    });
+    registerSseReplayRoutes(app, {
+      session: {
+        broadcaster: new InMemorySseReplayBroadcaster({ instanceId: "scope-test" }),
+        loadSnapshot: async () => ({ sessions: [], total: 0 }),
+      },
+      replayOnlyForTests: true,
+    });
+    expect(oauthScopeForRoute("GET", "/api/sessions/stream")).toBe("cards:read");
+    expect(oauthScopeForRoute("GET", "/api/sessions/stream?types=card_updated")).toBe("cards:read");
+    for (const [method, path] of [
+      ["GET", "/api/nodes/stream"],
+      ["GET", "/api/sessions/session-1/events"],
+      ["POST", "/api/sessions/stream"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
+    expect((await app.inject({ method: "GET", url: "/api/sessions/stream", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/sessions/stream", headers: { authorization: "Bearer usage-token" } })).statusCode).toBe(403);
     await app.close();
   });
 

@@ -96,7 +96,7 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
   const upper = method.toUpperCase();
   if ((path === "/api/cards" || path.startsWith("/api/cards/")) && (upper === "GET" || upper === "POST" || upper === "PATCH"))
     return "cards:read";
-  if ((upper === "GET" && (path === "/api/board-items" || path === "/api/sessions"))
+  if ((upper === "GET" && (path === "/api/board-items" || path === "/api/sessions" || path === "/api/sessions/stream"))
     || ((upper === "GET" || upper === "POST") && path === "/api/markdown-documents")
     || ((upper === "GET" || upper === "PUT" || upper === "PATCH") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
     || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
@@ -106,7 +106,7 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
     || ((upper === "GET" || upper === "HEAD")
       && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+\/content$/.test(path))) return "cards:read";
   if (upper !== "GET") return null;
-  if (path === "/api/usage/summary") return "usage:read";
+  if (path === "/api/usage/summary" || path === "/api/usage/stream") return "usage:read";
   if (path === "/api/session-statistics" || /^\/api\/session-statistics\/days\/[^/]+$/.test(path)) return "usage:read";
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;

@@ -106,6 +106,8 @@ export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
   readonly modelCatalog: ModelCatalogSource;
   /** 없으면 console.warn으로 남긴다. */
   readonly warn?: EventIngressWarnSink;
+  /** Session statistics facts were inserted; lets a stream announce the change. */
+  readonly onSessionStatisticsFactsInserted?: () => void;
 };
 
 type PendingIngressEntry = {
@@ -140,6 +142,7 @@ export class EventIngressRepository {
   private readonly retryPolicy: EventIngressRetryPolicy;
   private readonly modelCatalog: ModelCatalogSource;
   private readonly warn: EventIngressWarnSink;
+  private readonly onSessionStatisticsFactsInserted: (() => void) | undefined;
 
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
@@ -151,6 +154,7 @@ export class EventIngressRepository {
     this.retryPolicy = new EventIngressRetryPolicy(options);
     this.modelCatalog = options.modelCatalog;
     this.warn = options.warn ?? consoleEventIngressWarn;
+    this.onSessionStatisticsFactsInserted = options.onSessionStatisticsFactsInserted;
   }
 
   async commitBatch(
@@ -317,6 +321,7 @@ export class EventIngressRepository {
         eventId,
         envelope,
         modelCatalog: this.modelCatalog,
+        onFactsInserted: this.onSessionStatisticsFactsInserted,
       });
     }
 

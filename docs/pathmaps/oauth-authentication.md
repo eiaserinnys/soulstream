@@ -40,8 +40,9 @@ production auth guard checks the matching scope before route execution:
 | Request | Required scope |
 | --- | --- |
 | `GET /api/cards` and read subroutes | `cards:read` |
+| `GET /api/sessions/stream` | `cards:read` |
 | `GET /api/folders` and read subroutes | `folders:read` |
-| `GET /api/usage/summary` | `usage:read` |
+| `GET /api/usage/summary` and `GET /api/usage/stream` | `usage:read` |
 | `GET /api/session-statistics` and `GET /api/session-statistics/days/:date` | `usage:read` |
 | every other protected route | rejected for OAuth credentials |
 
