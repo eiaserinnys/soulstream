@@ -91,7 +91,7 @@ function hasLength(value, units, radius = false) {
 function cssRules(property, value) {
   const rules = [];
   if (hasColorLiteral(value)) rules.push('color-literal');
-  if ((property === 'font-size' && !/\bvar\s*\(/i.test(value) && /(?:\d*\.)?\d+(?:px|rem|em)\b/i.test(value)) ||
+  if ((['font-size', 'font'].includes(property) && !/\bvar\s*\(/i.test(value) && /(?:\d*\.)?\d+(?:px|rem|em)\b/i.test(value)) ||
       (property === 'font-family' && !/\bvar\s*\(/i.test(value) && !/^inherit(?:\s*!important)?\s*$/i.test(value.trim()))) {
     rules.push('font-literal');
   }
@@ -134,7 +134,7 @@ function collect(root, config) {
     const original = readFileSync(file, 'utf8');
     for (const [rule, pattern] of [
       ['tw-text-arbitrary', /text-\[(?=\d)/g],
-      ['tw-rounded-arbitrary', /rounded-(?:[a-z]+-)?\[/g],
+      ['tw-rounded-arbitrary', /rounded-(?:[a-z]+-)?\[(?!var\(|--)/g],
     ]) {
       for (const match of original.matchAll(pattern)) {
         const line = lineAt(original, match.index);

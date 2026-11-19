@@ -161,3 +161,17 @@ test('색 함수와 hex는 선언별로 세고 토큰을 쓰는 함수와 상속
   assert.equal(b['outline-none']['src/a.css'], 1);
   assert.equal(f.run('--init').status, 2);
 });
+
+test('둥근 모서리 임의값은 토큰을 제외하고 센다', () => {
+  const f = fixture();
+  f.write('src/a.tsx', '<div className="rounded-[var(--radius-lg)] rounded-t-[--radius] rounded-[8px] rounded-tl-[4px]" />');
+  assert.equal(f.run('--init').status, 0);
+  assert.equal(f.baseline()['tw-rounded-arbitrary']['src/a.tsx'], 2);
+});
+
+test('font 줄임 속성의 직접 크기는 세고 상속과 토큰은 제외한다', () => {
+  const f = fixture();
+  f.write('src/a.css', '.a { font: 400 16px/24px sans-serif; font: 600 1rem/1.5 sans-serif; font: inherit; font: var(--v3-type-body); }');
+  assert.equal(f.run('--init').status, 0);
+  assert.equal(f.baseline()['font-literal']['src/a.css'], 2);
+});
