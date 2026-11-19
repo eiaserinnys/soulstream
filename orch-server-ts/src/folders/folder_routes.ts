@@ -18,7 +18,7 @@ import {
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
-import { folderStarred, loadStarredProjectPageIds } from "./folder_starred.js";
+import { folderProjectPageVersion, folderStarred, loadProjectPageStates, type ProjectPageState } from "./folder_starred.js";
 
 export type { FolderAccess, FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
 
@@ -44,9 +44,9 @@ export type FolderRouteProvider = {
   listSessionAssignments: (includeSessions?: boolean) =>
     | Promise<Record<string, SessionAssignmentRecord>>
     | Record<string, SessionAssignmentRecord>;
-  listStarredProjectPageIds?: (
+  listProjectPageStates?: (
     pageIds: readonly string[],
-  ) => Promise<readonly string[]> | readonly string[];
+  ) => Promise<readonly ProjectPageState[]> | readonly ProjectPageState[];
 };
 
 export type FolderAccessProvider = {
@@ -149,13 +149,15 @@ export function registerFolderRoutes(
     const folders = [...(await options.provider.listFolders())];
     const includeSessions = queryValue(request.query, "sessions") !== "false";
     const visibleFolders = filterFolders(access, folders);
-    const [assignments, starredPageIds] = await Promise.all([
+    const [assignments, pageStates] = await Promise.all([
       options.provider.listSessionAssignments(includeSessions),
-      loadStarredProjectPageIds(options.provider.listStarredProjectPageIds, visibleFolders),
+      loadProjectPageStates(options.provider.listProjectPageStates, visibleFolders),
     ]);
 
     return reply.send({
-      folders: visibleFolders.map((folder) => ({ ...folder, starred: folderStarred(folder, starredPageIds) })),
+      folders: visibleFolders.map((folder) => ({ ...folder,
+        starred: folderStarred(folder, pageStates),
+        projectPageVersion: folderProjectPageVersion(folder, pageStates) })),
       sessions: includeSessions
         ? filterSessionAssignments(access, folders, assignments)
         : {},

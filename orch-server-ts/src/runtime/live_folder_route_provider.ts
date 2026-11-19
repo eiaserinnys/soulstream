@@ -59,17 +59,20 @@ export function createLiveFolderProvider(
       `;
       return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
     },
-    async listStarredProjectPageIds(pageIds) {
+    async listProjectPageStates(pageIds) {
       if (pageIds.length === 0) return [];
       const sql = await sqlResolver.resolveSql();
       const rows = await sql`
-        SELECT id FROM pages
+        SELECT id, version, (metadata->'starred' = 'true'::jsonb) AS starred FROM pages
         WHERE id = ANY(${[...pageIds]}::text[])
-          AND metadata->'starred' = 'true'::jsonb
       `;
       return rows.flatMap((row) => {
-        const id = stringOrNull(row.id);
-        return id === null ? [] : [id];
+        const pageId = stringOrNull(row.id);
+        return pageId === null ? [] : [{
+          pageId,
+          starred: row.starred === true,
+          version: numberValue(row.version) ?? null,
+        }];
       });
     },
     async listBoardItemIdsForSessionDeletion(sessionId) {

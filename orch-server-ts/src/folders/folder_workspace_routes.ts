@@ -6,7 +6,7 @@ import type { FolderRouteOptions } from "./folder_routes.js";
 import { isFolderAllowed, normalizeAccess } from "./folder_route_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
-import { folderStarred, loadStarredProjectPageIds } from "./folder_starred.js";
+import { folderProjectPageVersion, folderStarred, loadProjectPageStates } from "./folder_starred.js";
 
 type Scope = { folder_id: string };
 const mutations: readonly ["POST" | "PUT", string, FolderOperation][] = [
@@ -65,13 +65,15 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
             { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor },
           );
           const record = folders.find((folder) => folder.id === folderId) ?? null;
-          const starredPageIds = await loadStarredProjectPageIds(
-            options.provider.listStarredProjectPageIds,
+          const pageStates = await loadProjectPageStates(
+            options.provider.listProjectPageStates,
             record === null ? [] : [record],
           );
           return reply.send({
             ...body,
-            folder: { ...body.folder, starred: record !== null && folderStarred(record, starredPageIds) },
+            folder: { ...body.folder,
+              starred: record !== null && folderStarred(record, pageStates),
+              projectPageVersion: record === null ? null : folderProjectPageVersion(record, pageStates) },
           });
         }
         const limit = z.coerce.number().int().min(1).max(200).parse(request.query.limit ?? 50);
