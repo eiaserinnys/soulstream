@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { UsageSummarySnapshot } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import type { ApiClient } from '../../api/client';
+import { ApiHttpError } from '../../api/clientCore';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -132,4 +133,25 @@ test('node changes project the all-node response without another request', async
   expect(result.current.node?.nodeId).toBe('pas-node');
   expect(result.current.gauges[0]?.remainingPercent).toBe(73);
   expect(api.getUsageSummary).toHaveBeenCalledTimes(2);
+});
+
+test('does not restore a cleared gauge after a 401 followed by a connection failure', async () => {
+  const api = {
+    getUsageSummary: jest.fn()
+      .mockResolvedValueOnce(usage)
+      .mockRejectedValueOnce(new ApiHttpError('unauthorized', 401, ''))
+      .mockRejectedValueOnce(new Error('offline')),
+  } as unknown as ApiClient;
+  const { result } = renderHook(() => useUsageSummary({ enabled: true, nodeId: 'pas-node', api }));
+
+  await waitFor(() => expect(result.current.gauges[0]?.remainingPercent).toBe(73));
+  await act(async () => result.current.retry());
+  await waitFor(() => expect(result.current.loadState).toBe('idle'));
+  expect(result.current.gauges).toEqual([]);
+
+  await act(async () => result.current.retry());
+  await waitFor(() => expect(result.current.loadState).toBe('connectionError'));
+  expect(api.getUsageSummary).toHaveBeenCalledTimes(3);
+  expect(result.current.summary).toBeNull();
+  expect(result.current.gauges).toEqual([]);
 });
