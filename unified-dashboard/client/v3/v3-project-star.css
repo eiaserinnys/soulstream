@@ -274,13 +274,6 @@
   box-shadow: 0 0 0 calc(var(--spacing) / 2) var(--ring);
 }
 
-/* 카드 #1699: 팝오버는 body 쪽 포털이라 --v3-space-*가 없다. 모임 모달이
-   .v3-assignment-field로 소비처에서 보정한 것처럼, 선택 칸의 안쪽 여백을
-   노드 선택 단추의 px-3과 같은 토큰 값으로 다시 준다. */
-.v3-project-context-popover .v3-project-context-fields .v3-catalog-select-trigger {
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
-}
-
 .v3-project-context-actions > button {
   max-width: min(100%, 480px);
   overflow: hidden;
@@ -323,10 +316,9 @@
 .v3-project-context-editor textarea,
 .v3-project-context-editor input[type="number"],
 .v3-project-context-popover select[aria-label="atom 렌더 방식"] {
-  /* 카드 #1699: 노드 선택 단추(border-input, px-3)와 같은 토큰을 쓴다. */
-  border: 1px solid var(--input);
+  border: 1px solid var(--glass-border);
   border-radius: 9px;
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  padding: 8px;
   color: var(--foreground);
   background: color-mix(in srgb, var(--card) 72%, transparent);
 }

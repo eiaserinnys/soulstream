@@ -151,6 +151,11 @@ export function AtomNodeSelector({
     ? selectedTitle || value.slice(0, 8) + "…"
     : "노드 선택...";
 
+  // 판 안의 맨 <button>도 soul-ui Button과 같은 초점 고리를 쓴다. popup 목록은
+  // overflow-y-auto라 바깥 고리가 잘리고, inline은 행이 판 테두리에 붙어 있어
+  // inset으로 그린다.
+  const panelButtonFocus = "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
   const triggerClass = "w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
   const triggerContent = <>
     <span className={`${value ? "" : "text-muted-foreground"} ${presentation === "inline" ? "min-w-0 truncate" : ""}`}>{displayLabel}</span>
@@ -163,7 +168,7 @@ export function AtomNodeSelector({
             <button
               type="button"
               onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
-              className="flex-shrink-0 text-muted-foreground hover:text-foreground px-1"
+              className={`flex-shrink-0 text-muted-foreground hover:text-foreground px-1 ${panelButtonFocus}`}
               title="뒤로 가기"
             >
               ←
@@ -178,7 +183,7 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => navigateToBreadcrumb(i)}
-                  className={`${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
+                  className={`${panelButtonFocus} ${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
                 >
                   {crumb.title}
                 </button>
@@ -215,14 +220,14 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => selectNode(node)}
-                  className={`flex-1 text-left text-sm px-3 py-1.5 truncate ${presentation === "inline" ? "min-w-0" : ""}`}
+                  className={`flex-1 text-left text-sm px-3 py-1.5 truncate ${presentation === "inline" ? "min-w-0" : ""} ${panelButtonFocus}`}
                 >
                   {node.card.title}
                 </button>
                 <button
                   type="button"
                   onClick={() => navigateInto(node)}
-                  className="flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
+                  className={`flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 ${panelButtonFocus}`}
                   title="자식 보기"
                 >
                   ▶
@@ -237,7 +242,7 @@ export function AtomNodeSelector({
             <button
               type="button"
               onClick={clearSelection}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className={`text-xs text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
             >
               선택 해제
             </button>
