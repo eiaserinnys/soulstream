@@ -46,8 +46,9 @@ field: a search or a custom period with no match shows the empty notice below
 the filters, clearing it draws cards again, and while a period read is held
 behind 「자동 요청 시작」 every sample shows the lane, the four chips and the
 loader. With the done lane in the lane list the board still opens on the review
-lane on the header title's start line, and hiding completed cards removes the
-lane. test_frame_loading_completed.py plants violations against these judges.
+lane on the header title's start line, opening reads only the first completed
+page (the empty lane must not page by itself), and hiding completed cards
+removes the lane. test_frame_loading_completed.py plants violations against these judges.
 
 Over 500 lines on purpose: the script runs as `python3 -P <path>`, which keeps
 its folder off sys.path, so it cannot import sibling modules. The pure judges
@@ -887,6 +888,17 @@ def check_initial_review_lane(metrics: dict, label: str, failures: list) -> None
                          'first': metrics.get('first'), 'lanes': metrics.get('lanes')})
 
 
+# useCompletedCards reads 60 completed cards per page (limit: 60).
+COMPLETED_PAGE_SIZE = 60
+
+
+def check_completed_first_page(metrics: dict, label: str, failures: list) -> None:
+    """Opening the board reads one page; the next page waits for the user to scroll the done list."""
+    if metrics.get('count') != COMPLETED_PAGE_SIZE:
+        failures.append({'check': 'completed paged without scrolling', 'label': label,
+                         'count': metrics.get('count'), 'expected': COMPLETED_PAGE_SIZE})
+
+
 def check_completed_hidden(metrics: dict, label: str, failures: list) -> None:
     """With completed cards hidden the board has no done lane."""
     if metrics.get('missing') != 'done lane':
@@ -1058,6 +1070,8 @@ def check_completed_empty_lane(page: Page, base: str, output: Path, width: int, 
             board.evaluate('(e) => { e.scrollLeft = e.scrollWidth; }')
             page.wait_for_timeout(400)
             loaded = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': False})
+            # The lane stands while the first page loads; that must not pull the second page by itself.
+            check_completed_first_page(loaded, label + '-loaded', failures)
             search = lane.get_by_label('제목 또는 요청 검색')
             search.fill('맞는 카드가 없는 검색어')
             lane.get_by_text(EMPTY_COMPLETED_NOTICE).wait_for(state='visible', timeout=5000)

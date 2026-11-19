@@ -203,13 +203,15 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
           {status==='done'?<>
             {completed?<View style={{paddingHorizontal:t.uiSpacing.sm}}><CompletedCardFilters browser={completed}/></View>:null}
             <View style={{flex:1}}>
+            {/* 빈 목록에는 넘길 쪽이 없다. 칸이 빈 목록으로 먼저 서면 목록 구현이 끝에 닿았다고 보고
+                카드가 오자마자 둘째 쪽까지 부르므로, 카드가 있을 때만 넘김을 건다. */}
             <FlatList ref={completedList} key={geometry.completedColumns} testID="card-board-scroll-done" style={{flex:1}}
               contentOffset={{ x: 0, y: position.current.lanes.done ?? 0 }}
               data={items} numColumns={geometry.completedColumns} keyExtractor={card=>card.id} renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}>{renderItem(item)}</View>}
               columnWrapperStyle={geometry.completedColumns>1?{gap:paper.gap}:undefined}
               contentContainerStyle={{flexGrow:1,paddingHorizontal:t.uiSpacing.sm,paddingTop:t.uiSpacing.xs,paddingBottom:t.cardLayout.padding}}
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
-              onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
+              onEndReached={items.length ? completed?.loadMore : undefined} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
               ListEmptyComponent={firstLoading || completedFirstLoading || completed?.error ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
               ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="home-composer-spacer-done"/>}/>

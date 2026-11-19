@@ -3,10 +3,10 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
 jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: (mockActiveCards ?? mockCards).filter(card => card.status !== 'done'), loading: mockLoading, error: null, refresh: jest.fn() }) }));
-jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:mockCompletedError,invalidRange:false,retry:mockCompletedRetry})}));
+jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:mockCompletedLoadMore,resetKey:'fixture',loading:mockCompletedLoading,error:mockCompletedError,invalidRange:false,retry:mockCompletedRetry})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import { CardBoardWorkspace } from '../CardBoardWorkspace';
 import { AppModalSurface } from '../../AppModalSurface';
 import { cardFixture } from '../../../test-support/cards';
@@ -25,7 +25,8 @@ let mockLoading = false;
 let mockCompletedLoading = false;
 let mockCompletedError: string | null = null;
 const mockCompletedRetry = jest.fn();
-beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockCompletedError = null; mockCompletedRetry.mockClear(); mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
+const mockCompletedLoadMore = jest.fn();
+beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockCompletedError = null; mockCompletedRetry.mockClear(); mockCompletedLoadMore.mockClear(); mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
 test('외부 머리는 기존 목록의 갱신 상태를 전달하고 위 여백을 유지한다', () => {
   const onAutoRefreshChange = jest.fn();
   const props = { api: null, externalHeader: true, onAutoRefreshChange, cardDisplay: { includeCompleted: false, onChange: jest.fn() }, onOpen: jest.fn() };
@@ -121,6 +122,26 @@ test.each(['tablet', 'phone'])('%s 인라인 보드는 완료 보기가 켜져 �
   screen.rerender(shown(false));
   expect(screen.queryByTestId('card-board-column-done')).toBeNull();
   expect(screen.getByTestId('card-board-column-todo')).toBeTruthy();
+  await settleTimers();
+});
+
+// 칸이 빈 목록으로 먼저 서면 목록 구현이 끝에 닿았다고 보고 카드가 오자마자 둘째 쪽을 불렀다.
+// 빈 목록에는 넘길 쪽이 없으니 넘김 호출을 걸지 않는다.
+test('the inline done list does not page while it is empty, and pages once it has cards', async () => {
+  mockCards = [cardFixture({ id: 'todo' })]; mockCompletedLoading = true;
+  const shown = () => <CardBoardWorkspace api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />;
+  // RNTL events stop at the host scroll view, so call the list's own end handler as VirtualizedList would.
+  const endReached = (host: ReturnType<typeof render>) => {
+    const list = host.UNSAFE_getAllByType(FlatList).find(item => item.props.testID === 'card-board-scroll-done')!;
+    act(() => list.props.onEndReached?.({ distanceFromEnd: 0 }));
+  };
+  const screen = render(shown());
+  endReached(screen);
+  expect(mockCompletedLoadMore).not.toHaveBeenCalled();
+  mockCompletedLoading = false; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })];
+  screen.rerender(shown());
+  endReached(screen);
+  expect(mockCompletedLoadMore).toHaveBeenCalledTimes(1);
   await settleTimers();
 });
 

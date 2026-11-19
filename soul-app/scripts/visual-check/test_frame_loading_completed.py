@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from frame_loading import (check_completed_error, check_completed_hidden, check_completed_lane_state,
+from frame_loading import (check_completed_error, check_completed_first_page, check_completed_hidden,
+                           check_completed_lane_state,
                            check_completed_recovered, check_initial_review_lane, check_period_chips,
                            check_refresh_kept_cards)
 
@@ -140,6 +141,7 @@ class EmptyLaneChecks(unittest.TestCase):
         check_initial_review_lane({'first': 'card-board-column-review',
                                    'lanes': ['card-board-column-review', 'card-board-column-done']}, 'initial', failures)
         check_completed_hidden({'missing': 'done lane'}, 'hidden', failures)
+        check_completed_first_page({'count': 60}, 'first-page', failures)
         self.assertEqual(failures, [])
 
     def test_planted_violations_fail(self):
@@ -175,7 +177,10 @@ class EmptyLaneChecks(unittest.TestCase):
                                    'lanes': ['card-board-column-todo', 'card-board-column-done']}, 'moved', failures)
         check_initial_review_lane({'first': 'card-board-column-review', 'lanes': ['card-board-column-review']}, 'no-done', failures)
         check_completed_hidden(empty_lane(), 'still-shown', failures)
-        self.assertEqual(checks(failures), ['board initial lane', 'board initial lane', 'completed lane while hidden'])
+        check_completed_first_page({'count': 120}, 'second-page', failures)
+        check_completed_first_page({'missing': 'done lane'}, 'no-lane', failures)
+        self.assertEqual(checks(failures), ['board initial lane', 'board initial lane', 'completed lane while hidden',
+                                            'completed paged without scrolling', 'completed paged without scrolling'])
 
 
 if __name__ == '__main__':
