@@ -423,10 +423,7 @@ export function createDialoguesApi() {
       }
       return accessLinks(input, init);
     }
-    if (path.startsWith('/api/owned-agents')) {
-      if (new URLSearchParams(window.location.search).has('ownedAgentsVisual')) return fetch(path, init);
-      return ownedAgents(input, init);
-    }
+    if (path.startsWith('/api/owned-agents')) return ownedAgents(input, init);
     if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
     if (method === "GET" && /^\/api\/sessions\/[^/]+\/story$/.test(path) && sample?.startsWith("persistent-settings-window")) {
       persistentStoryRequestCount += 1;

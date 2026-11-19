@@ -242,7 +242,7 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
       ? <div role="status" aria-label="불러오는 중">{[0, 1].map(index => <div className="owned-agents-block" key={index}><div className="v3-run-skeleton v3-run-skeleton--title"/><div className="v3-run-skeleton v3-run-skeleton--preview"/></div>)}</div>
       : items.length === 0
         ? <p className="access-links-empty">아직 만든 웹훅이 없습니다.</p>
-        : <>{active.length > 0 ? active.map(item => row(item, false)) : <p className="access-links-empty">쓸 수 있는 웹훅이 없습니다.</p>}{past.length > 0 && <details className="config-advanced"><summary><ChevronRight className="config-advanced-marker size-4 shrink-0" aria-hidden="true"/>지난 웹훅 <span>{past.length}</span></summary>{past.map(item => row(item, true))}</details>}</>}
+        : <>{active.length > 0 ? active.map(item => row(item, false)) : <p className="access-links-empty">쓸 수 있는 웹훅이 없습니다.</p>}{past.length > 0 && <details className="config-advanced"><summary>지난 웹훅 <span>{past.length}</span></summary>{past.map(item => row(item, true))}</details>}</>}
 
     <Dialog open={creating} onOpenChange={open => { if (!open && !busy) closeCreate(); }} onOpenChangeComplete={open => { if (!open) { setIssued(null); setCopied(null); setCopyError(false); createButton.current?.focus(); } }}>
       <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
@@ -267,7 +267,7 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
           <SettingsField label="발신자 이름"><Input aria-label="발신자 이름" maxLength={80} value={label} disabled={busy} onChange={event => setLabel(event.target.value)}/></SettingsField>
           <CatalogSelectionField className="access-links-field" label="인증 방식" ariaLabel="인증 방식" value={authMode} selectedLabel={authModes.find(item => item.value === authMode)?.label} options={authModes} disabled={busy} onValueChange={value => setAuthMode(value as WebhookAuthMode)}/>
           <CatalogSelectionField className="access-links-field" label="기간" ariaLabel="기간" value={duration} selectedLabel={durations.find(item => item.value === duration)?.label} options={durations.map(item => ({ value: item.value, label: item.label }))} disabled={busy} onValueChange={setDuration}/>
-          <details className="config-advanced"><summary><ChevronRight className="config-advanced-marker size-4 shrink-0" aria-hidden="true"/>앞에 붙일 글<span>{preamble.trim() ? '직접 씀' : '기본'}</span></summary>
+          <details className="config-advanced"><summary>앞에 붙일 글<span>{preamble.trim() ? '직접 씀' : '기본'}</span></summary>
             <SettingsMultilineField label="앞에 붙일 글" labelHidden rows={3} maxLength={4000} placeholder={preamblePlaceholder(label)} value={preamble} onChange={setPreamble}/>
             <p className="access-links-hint">비워 두면 기본 글을 씁니다.</p>
           </details>

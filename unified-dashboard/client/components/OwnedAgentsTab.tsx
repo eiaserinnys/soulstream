@@ -70,7 +70,7 @@ export function OwnedAgentsTab({ request = fetch }: { request?: typeof fetch }) 
         <div className="owned-agents-row"><h3>연결 키</h3><Button variant="outline" disabled={busy} onClick={() => void issue()}>{busy ? '처리 중…' : '새 키 발급'}</Button></div>
         {!agent.keys.length && <p>발급한 키가 없습니다.</p>}
         {agent.keys.map(key => <div key={key.id} className="owned-agents-key-row">
-          <div><p className="config-inline-row" data-v3-selectable-content="true"><span>{key.revokedAt ? '폐기됨' : '사용 가능'}</span>{key.isExistingConnection && <span>기존 연결</span>}</p><p className="config-inline-row config-meta-row" data-v3-selectable-content="true"><span>생성 {date(key.createdAt)}</span><span>최근 사용 {key.lastUsedAt ? date(key.lastUsedAt) : '없음'}</span></p></div>
+          <div><p data-v3-selectable-content="true">{key.revokedAt ? '폐기됨' : '사용 가능'}{key.isExistingConnection ? ' · 기존 연결' : ''}</p><p className="owned-agents-meta" data-v3-selectable-content="true">생성 {date(key.createdAt)} · 최근 사용 {key.lastUsedAt ? date(key.lastUsedAt) : '없음'}</p></div>
           {!key.revokedAt && <Button variant="outline" disabled={busy} onClick={() => { setRevokeError(null); setRevoking({ agent, key }); }}>키 폐기</Button>}
         </div>)}
       </div>}

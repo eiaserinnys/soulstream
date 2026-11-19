@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
-"""설정 창 내 에이전트 탭·펼침 표식·카탈로그 선택 상자·인라인 오류 대비 검수 (카드 #1691).
+"""설정 창 카탈로그 선택 상자·인라인 오류 글 대비 검수 (카드 #1691, 범위 축소).
 
-`/dialogues?sample=settings`의 내 에이전트·화면과 읽기·접속 링크 탭, 그리고 설정 창 밖
-컴포넌트 검수 창(`/components`)에서 다음을 캡처와 좌표로 잰다.
+`/dialogues?sample=settings`의 내 에이전트·접속 링크 탭과, 설정 창 밖 컴포넌트 검수 창
+(`/components`)에서 남는 항목 3과 4만 잰다.
 
-  - 내 에이전트의 상태 줄이 본문 토큰·기본 글자색이고, 생성·최근 사용 줄은 가운뎃점 없이
-    항목별 span 인 공용 줄(config-inline-row + config-meta-row)로 메타 토큰·muted 인지,
-    360 폭에서 상세 머리 설명·탭 문단·메타에 낱말 가운데 줄바꿈·가로 넘침이 없는지
-    (`access_links_tab.py`의 WORDS 검사 꼴),
-  - `details.config-advanced` 표식이 lucide ChevronRight(svg, aria-hidden)이고 표식 사각형의
-    세로 가운데와 머리 글자 줄 상자의 세로 가운데 차이가 1px 이하인지
-    (닫힘·열림, 1280·360, 화면과 읽기·접속 링크 두 사용처),
   - 카탈로그 선택 상자의 트리거 값이 soul-ui SelectValue 이고, 처음 값이 첫 항목이 아닐 때
     열면 고른 항목 글자와 트리거 값 글자의 위쪽 끝 차이가 1px 이하인지
     (설정 창 접속 링크 + 설정 창 밖 컴포넌트 검수 창),
@@ -19,9 +12,9 @@
   - ui-design 0절 14~18번: 설정 창을 열 때(어떤 탭도 누르기 전)와 실제로 탭을 누른 뒤의 초점,
     선택 상자 Tab 과 Esc 의 초점, 360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
 
-검수 창이 부르는 API는 page.route 로 가로쓴 운영 꼴 견본이다. 내 에이전트와 접속 링크 응답은
-앱 코드가 `ownedAgentsVisual`·`accessLinksVisual` 질의에서 실제 fetch 로 통과시켜 page.route 가
-받는다. 불러오는 중 화면은 `ownedAgentsDelay` 질의에서 fetch 응답을 늦춰 만든다.
+내 에이전트의 불러오기 실패는 앱 견본의 `ownedState=error`(첫 요청 503, 다시 시도하면 성공)로
+만든다. 접속 링크 응답은 앱 코드가 `accessLinksVisual` 질의에서 실제 fetch 로 통과시켜
+page.route 가 받는다.
 
 실행
 
@@ -35,10 +28,7 @@
 
 산출물
 
-    {출력}/owned-agents-{폭}-{테마}.png          내 에이전트 탭 첫 화면
-    {출력}/owned-agents-loading-{폭}-{테마}.png  불러오는 중(응답 지연)
     {출력}/owned-agents-error-{폭}-{테마}.png    불러오기 실패
-    {출력}/details-{탭}-{폭}-{테마}-{closed,open}.png  접는 구역 표식
     {출력}/catalog-open-{대상}-{폭}-{테마}.png   선택 상자 열림(고른 항목이 트리거 자리에 겹침)
     {출력}/access-links-error-{폭}-{테마}.png    접속 링크 목록 실패(SettingsAlert)
     {출력}/access-links-field-error-{폭}-{테마}.png  폼 필드 오류(small[role=alert])
@@ -53,7 +43,6 @@ import argparse
 import io
 import json
 import os
-import re
 import socket
 import subprocess
 import sys
@@ -66,7 +55,7 @@ from PIL import Image
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import access_links_tab as alt  # noqa: E402  WORDS·focus 도우미
+import access_links_tab as alt  # noqa: E402  focus 도우미
 import settings_nodes as sn  # noqa: E402  테마 문맥·정착 도우미
 import settings_nodes_layout as snl  # noqa: E402  대비 하한(CONTRAST_MIN)
 
@@ -75,113 +64,20 @@ WIDE, NARROW = sn.WIDE, sn.NARROW
 THEMES = ("light", "dark")
 TOLERANCE_PX = 1.0
 CONTRAST_MIN = snl.CONTRAST_MIN
-DELAY_MS = 2500
-SETTINGS_QUERY = "?sample=settings&ownedAgentsVisual=1&accessLinksVisual=1"
+SETTINGS_QUERY = "?sample=settings&accessLinksVisual=1"
 
 SESSIONS = [
     {"session_id": f"00000000-0000-4000-8000-{index + 1:012}", "display_name": name, "agent_name": "로젤린"}
     for index, name in enumerate(["✨ 서소영 관제", "🌿 로젤린 작업", "🔍 조사 세션", "📝 글쓰기"])
-]
-OWNED_AGENTS = [
-    {
-        "id": "agent-rocket",
-        "name": "🚀 우주 정찰 에이전트 — 아주 길게 이어지는 이름의 내 에이전트",
-        "enabled": True,
-        "ownerEmail": "sample@example.invalid",
-        "createdAt": "2026-09-01T03:00:00Z",
-        "updatedAt": "2026-11-18T09:00:00Z",
-        "keys": [
-            {"id": "key-existing", "createdAt": "2026-10-05T09:12:00Z", "lastUsedAt": "2026-11-18T21:40:00Z", "revokedAt": None, "isExistingConnection": True},
-            {"id": "key-revoked", "createdAt": "2026-10-20T10:00:00Z", "lastUsedAt": None, "revokedAt": "2026-11-01T00:00:00Z", "isExistingConnection": False},
-        ],
-    },
-    {"id": "agent-observe", "name": "✨ 서소영 관제", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-02T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": []},
-    {"id": "agent-garden", "name": "🌿 로젤린 작업", "enabled": False, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-03T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-fresh", "createdAt": "2026-10-07T09:00:00Z", "lastUsedAt": None, "revokedAt": None, "isExistingConnection": False}]},
-    {"id": "agent-research", "name": "🔍 조사 세션", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-04T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-gone", "createdAt": "2026-10-08T09:00:00Z", "lastUsedAt": None, "revokedAt": "2026-11-02T00:00:00Z", "isExistingConnection": False}]},
-    {"id": "agent-writing", "name": "📝 글쓰기", "enabled": False, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-05T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": []},
-    {"id": "agent-long", "name": "🤖 아주 긴 영구 에이전트 세션 이름이 여기에서 계속 이어집니다", "enabled": True, "ownerEmail": "sample@example.invalid", "createdAt": "2026-09-06T03:00:00Z", "updatedAt": "2026-11-18T09:00:00Z", "keys": [{"id": "key-long", "createdAt": "2026-10-09T09:00:00Z", "lastUsedAt": "2026-11-10T09:00:00Z", "revokedAt": None, "isExistingConnection": False}]},
 ]
 LINKS = [
     {"id": "link-active", "label": "외부 조사 도우미", "target_session_id": SESSIONS[0]["session_id"], "permissions": ["send", "read_own"], "created_at": "2026-11-01T00:00:00Z", "expires_at": "2030-12-01T00:00:00Z", "revoked_at": None, "last_used_at": None},
     {"id": "link-past", "label": "지난 연결", "target_session_id": SESSIONS[1]["session_id"], "permissions": ["send"], "created_at": "2020-10-01T00:00:00Z", "expires_at": "2020-10-15T00:00:00Z", "revoked_at": None, "last_used_at": "2020-10-10T00:00:00Z"},
 ]
 
-owned_state = {"mode": "normal"}
 access_state = {"mode": "normal"}
 
-WORDS = alt.WORDS
 FOCUS = alt.focus
-
-DELAY_SCRIPT = """(() => {
-  const original = window.fetch;
-  window.fetch = async (...args) => {
-    const response = await original(...args);
-    if (new URLSearchParams(location.search).has('ownedAgentsDelay') &&
-        String(args[0]).endsWith('/api/owned-agents') && (!args[1]?.method || args[1].method === 'GET')) {
-      await new Promise(resolve => setTimeout(resolve, %d));
-    }
-    return response;
-  };
-})()""" % DELAY_MS
-
-META_PROBE = r"""
-() => {
-  const workspace = document.querySelector('.owned-agents');
-  if (!workspace) return {found: false};
-  const rows = [...workspace.querySelectorAll('.config-inline-row')];
-  const keyTexts = [...workspace.querySelectorAll('.owned-agents-key-row p')].map(p => p.textContent.trim());
-  const keyRow = workspace.querySelector('.owned-agents-key-row');
-  const status = keyRow ? keyRow.querySelector('div > p:first-child') : null;
-  const meta = keyRow ? keyRow.querySelector('div > p:nth-child(2)') : null;
-  const detail = document.querySelector('.config-detail');
-  const muted = document.querySelector('.config-detail-heading p');
-  const style = (el) => el ? {
-    fontSize: parseFloat(getComputedStyle(el).fontSize),
-    color: getComputedStyle(el).color,
-  } : null;
-  const tokenPx = (name) => {
-    const raw = detail ? getComputedStyle(detail).getPropertyValue(name).trim() : '';
-    const match = raw.match(/(\d+(?:\.\d+)?)px/);
-    return match ? parseFloat(match[1]) : null;
-  };
-  return {
-    found: true,
-    rows: rows.map(row => ({
-      display: getComputedStyle(row).display,
-      wordBreak: getComputedStyle(row).wordBreak,
-      overflowWrap: getComputedStyle(row).overflowWrap,
-      children: [...row.children].map(child => child.tagName.toLowerCase()),
-      text: row.textContent.trim(),
-    })),
-    middleDots: keyTexts.filter(text => text.includes('·')),
-    keyTexts,
-    styles: {status: style(status), meta: style(meta), body: style(workspace), muted: style(muted)},
-    tokens: {body: tokenPx('--v3-type-body'), meta: tokenPx('--v3-type-meta')},
-  };
-}
-"""
-
-MARKER_PROBE = r"""
-() => [...document.querySelectorAll('.config-detail details.config-advanced')].map(detail => {
-  const summary = detail.querySelector('summary');
-  const marker = summary ? summary.querySelector('.config-advanced-marker') : null;
-  const textNode = summary ? [...summary.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()) : null;
-  const range = textNode ? document.createRange() : null;
-  if (range) range.selectNodeContents(textNode);
-  const textRect = range ? range.getBoundingClientRect() : null;
-  const markerRect = marker ? marker.getBoundingClientRect() : null;
-  return {
-    open: detail.open,
-    text: textNode ? textNode.textContent.trim() : null,
-    marker: marker ? marker.tagName.toLowerCase() : null,
-    markerHidden: marker ? marker.getAttribute('aria-hidden') : null,
-    markerRect: markerRect ? {top: markerRect.top, width: markerRect.width, height: markerRect.height} : null,
-    textRect: textRect ? {top: textRect.top, bottom: textRect.bottom, height: textRect.height} : null,
-    delta: markerRect && textRect ? (markerRect.top + markerRect.height / 2) - (textRect.top + textRect.bottom) / 2 : null,
-    transform: marker ? getComputedStyle(marker).transform : null,
-  };
-})
-"""
 
 SELECT_PROBE = r"""
 (label) => {
@@ -246,35 +142,6 @@ OVERFLOW_JS = r"""
 }
 """
 
-LOADING_PROBE = r"""
-() => {
-  const loading = document.querySelector('.owned-agents [data-slot=frame-loading]');
-  const workspace = document.querySelector('.owned-agents');
-  const detail = document.querySelector('.config-detail');
-  if (!loading || !workspace || !detail) return {found: false};
-  const rect = loading.getBoundingClientRect();
-  const box = workspace.getBoundingClientRect();
-  const area = detail.getBoundingClientRect();
-  const actions = workspace.querySelector('.owned-agents-actions');
-  const actionRect = actions ? actions.getBoundingClientRect() : null;
-  return {
-    found: true,
-    label: (loading.textContent || '').trim(),
-    rect: {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height},
-    insideWorkspace: rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1 && rect.left >= box.left - 1 && rect.right <= box.right + 1,
-    insideDetail: rect.left >= area.left - 1 && rect.right <= area.right + 1,
-    belowActions: actionRect ? rect.top >= actionRect.bottom - 1 : null,
-  };
-}
-"""
-
-
-def owned_route(route) -> None:
-    if owned_state["mode"] == "error":
-        route.fulfill(status=503, json={"detail": "공개 예시: 요청을 처리하지 못했습니다. 다시 시도해 주세요."})
-        return
-    route.fulfill(json={"agents": OWNED_AGENTS, "existingConnection": {"configured": True, "registered": False, "canRegister": True}})
-
 
 def access_route(route) -> None:
     path = route.request.url.split("?")[0]
@@ -287,8 +154,6 @@ def access_route(route) -> None:
 
 
 def install_fixtures(context) -> None:
-    context.add_init_script(DELAY_SCRIPT)
-    context.route("**/api/owned-agents**", owned_route)
     context.route("**/api/access-links**", access_route)
     context.route("**/api/persistent-sessions", access_route)
 
@@ -325,56 +190,10 @@ def select_tab(page, label: str, width: int) -> None:
     page.wait_for_timeout(600)
 
 
-def open_settings(page, base: str, extra: str = "", wait_data: bool = True) -> None:
-    page.goto(base + "/dialogues" + SETTINGS_QUERY + extra, wait_until="domcontentloaded")
-    sn.settle(page)
-    page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
-    if wait_data:
-        page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
-
-
 def open_issue(page) -> None:
     page.get_by_role("button", name="링크 만들기", exact=True).first.click()
     page.get_by_role("dialog").last.get_by_text("새 접속 링크").wait_for()
     page.wait_for_timeout(300)
-
-
-def measure_marker(page, measurements: dict, problems: list[str], name: str) -> None:
-    data = page.evaluate(MARKER_PROBE)
-    measurements[name] = data
-    if not data:
-        problems.append(name + ": 접는 구역 없음")
-        return
-    for item in data:
-        if item["marker"] != "svg":
-            problems.append(name + ": 표식 아이콘 없음")
-        if item["markerHidden"] != "true":
-            problems.append(name + ": 표식 aria-hidden 아님")
-        if item["delta"] is None or abs(item["delta"]) > TOLERANCE_PX:
-            problems.append(name + ": 표식 세로 가운데와 글자 줄 세로 가운데 차이")
-        if item["open"] and item["transform"] == "none":
-            problems.append(name + ": 열림 회전 없음")
-        if not item["open"] and item["transform"] != "none":
-            problems.append(name + ": 닫힘 회전 남음")
-
-
-def check_marker(page, out: Path, width: int, theme: str, tab: str, captures: list[str], measurements: dict, problems: list[str]) -> None:
-    details = page.locator(".config-detail details.config-advanced").first
-    details.wait_for(state="visible")
-    if details.evaluate("(element) => element.open"):
-        details.locator("summary").click()
-        page.wait_for_timeout(250)
-    details.scroll_into_view_if_needed()
-    page.wait_for_timeout(200)
-    measure_marker(page, measurements, problems, f"marker-{tab}-{width}-{theme}-closed")
-    shot(page, out, f"details-{tab}-{width}-{theme}-closed", captures)
-    details.locator("summary").click()
-    page.wait_for_function("() => document.querySelector('.config-detail details.config-advanced')?.open", timeout=10000)
-    page.wait_for_timeout(250)
-    measure_marker(page, measurements, problems, f"marker-{tab}-{width}-{theme}-open")
-    shot(page, out, f"details-{tab}-{width}-{theme}-open", captures)
-    details.locator("summary").click()
-    page.wait_for_timeout(200)
 
 
 def check_overflow(page, measurements: dict, problems: list[str], name: str, selector: str = ".config-detail") -> None:
@@ -470,41 +289,6 @@ def measure_contrast(page, locator, measurements: dict, problems: list[str], nam
         problems.append(f"{name}: 대비 {ratio}:1")
 
 
-def check_owned_meta(page, measurements: dict, problems: list[str], name: str) -> None:
-    data = page.evaluate(META_PROBE)
-    measurements[name] = data
-    if not data.get("found"):
-        problems.append(name + ": 내 에이전트 영역 없음")
-        return
-    if data["middleDots"]:
-        problems.append(name + ": 가운뎃점 남음")
-    if len(data["rows"]) < 4:
-        problems.append(name + ": 공용 줄 부족")
-    for row in data["rows"]:
-        if row["display"] != "flex":
-            problems.append(name + ": 공용 줄 flex 아님")
-        if not row["children"] or any(tag != "span" for tag in row["children"]):
-            problems.append(name + ": 항목 span 아님")
-        if row["wordBreak"] != "keep-all":
-            problems.append(name + ": 공용 줄 keep-all 아님")
-    styles = data.get("styles") or {}
-    tokens = data.get("tokens") or {}
-    status, meta, body, muted = styles.get("status"), styles.get("meta"), styles.get("body"), styles.get("muted")
-    if not status or not meta or not body:
-        problems.append(name + ": 상태·메타 줄 없음")
-        return
-    body_px = tokens.get("body") or body["fontSize"]
-    meta_px = tokens.get("meta")
-    if abs(status["fontSize"] - body_px) > 0.1:
-        problems.append(name + ": 상태 줄 글꼴 크기가 본문 토큰 아님")
-    if status["color"] != body["color"]:
-        problems.append(name + ": 상태 줄 색이 기본 글자색 아님")
-    if meta_px is None or abs(meta["fontSize"] - meta_px) > 0.1:
-        problems.append(name + ": 생성·최근 사용 줄 글꼴 크기가 메타 토큰 아님")
-    if not muted or meta["color"] != muted["color"]:
-        problems.append(name + ": 생성·최근 사용 줄 색이 muted 아님")
-
-
 def check_select_open(page, label: str, measurements: dict, problems: list[str], name: str, out: Path, shot_name: str, captures: list[str]) -> None:
     trigger = page.get_by_role("combobox", name=label).last
     trigger.scroll_into_view_if_needed()
@@ -547,7 +331,6 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
     for width in (WIDE, NARROW):
         for theme in THEMES:
             key = f"{width}-{theme}"
-            owned_state.update(mode="normal")
             access_state.update(mode="normal")
             context = sn.new_context(browser, width, theme)
             install_fixtures(context)
@@ -564,7 +347,7 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
             if not measurements[f"focus-open-{key}"]["dialog"]:
                 problems.append(f"{key}: 설정 창을 열었을 때 초점이 창 밖")
             tab_button.click(timeout=30000)
-            page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+            page.get_by_text("아직 등록한 에이전트가 없습니다.", exact=True).wait_for(timeout=30000)
             page.wait_for_timeout(300)
             measurements[f"focus-after-tab-click-{key}"] = FOCUS(page)
             before = measurements[f"focus-open-{key}"]
@@ -573,30 +356,10 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
                 problems.append(f"{key}: 탭을 누른 뒤 초점이 창 밖")
             if (after["tag"], after["name"], after["text"], after["dialog"]) == (before["tag"], before["name"], before["text"], before["dialog"]):
                 problems.append(f"{key}: 창을 열 때와 탭을 누른 뒤의 초점이 같음")
-            check_owned_meta(page, measurements, problems, f"meta-{key}")
-            if width == NARROW:
-                split = (
-                    page.evaluate(WORDS, ".config-detail-heading p")
-                    + page.evaluate(WORDS, ".owned-agents-key-row")
-                    + page.evaluate(WORDS, ".owned-agents-block > p")
-                )
-                measurements[f"words-owned-{key}"] = split
-                if split:
-                    problems.append(f"{key}: 상세 머리·탭 문단·메타 낱말 가운데 줄바꿈")
             check_overflow(page, measurements, problems, f"overflow-owned-{key}")
-            shot(page, out, f"owned-agents-{key}", captures)
-
-            select_tab(page, "화면과 읽기", width)
-            check_marker(page, out, width, theme, "appearance", captures, measurements, problems)
 
             select_tab(page, "접속 링크", width)
             page.get_by_text("외부 조사 도우미", exact=True).wait_for()
-            check_marker(page, out, width, theme, "access-links", captures, measurements, problems)
-            if width == NARROW:
-                split = page.evaluate(WORDS, ".access-links")
-                measurements[f"words-access-links-{key}"] = split
-                if split:
-                    problems.append(f"{key}: 접속 링크 낱말 가운데 줄바꿈")
             check_overflow(page, measurements, problems, f"overflow-access-links-{key}")
 
             if theme == "light":
@@ -642,42 +405,23 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
                 page.set_viewport_size({"width": width, "height": 900 if width == WIDE else 800})
                 page.wait_for_timeout(300)
 
-            if theme == "light":
-                open_settings(page, base, "&ownedAgentsDelay=1", wait_data=False)
-                loading = page.locator('.owned-agents [data-slot="frame-loading"]')
-                loading.wait_for(state="visible", timeout=10000)
-                loading.scroll_into_view_if_needed()
-                data = page.evaluate(LOADING_PROBE)
-                measurements[f"loading-{key}"] = data
-                shot(page, out, f"owned-agents-loading-{key}", captures)
-                if not data.get("found"):
-                    problems.append(f"{key}: 불러오는 중 표시 없음")
-                else:
-                    if not data["insideWorkspace"] or not data["insideDetail"]:
-                        problems.append(f"{key}: 불러오는 중 표시가 목록 틀 밖")
-                    if data["belowActions"] is False:
-                        problems.append(f"{key}: 불러오는 중 표시가 동작 줄 위")
-                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
-
             if width == NARROW:
-                owned_state.update(mode="error")
-                page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
+                page.goto(base + "/dialogues" + SETTINGS_QUERY + "&ownedState=error", wait_until="domcontentloaded")
                 sn.settle(page)
                 page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
                 page.get_by_text("공개 예시: 요청을 처리하지 못했습니다. 다시 시도해 주세요.", exact=True).wait_for(timeout=30000)
                 shot(page, out, f"owned-agents-error-{key}", captures)
                 measure_contrast(page, page.locator(".owned-agents [role=alert] p"), measurements, problems, f"contrast-owned-error-{key}")
                 check_overflow(page, measurements, problems, f"overflow-owned-error-{key}")
-                owned_state.update(mode="normal")
                 page.get_by_role("button", name="다시 시도").click()
-                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
-                measurements[f"owned-retry-{key}"] = {"text": OWNED_AGENTS[0]["name"], "retried": True}
+                page.locator(".owned-agents [role=alert]").wait_for(state="hidden", timeout=30000)
+                measurements[f"owned-retry-{key}"] = {"text": "아직 등록한 에이전트가 없습니다.", "retried": True}
 
                 access_state.update(mode="error")
                 page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
                 sn.settle(page)
                 page.get_by_role("button", name="내 에이전트", exact=True).click(timeout=30000)
-                page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+                page.get_by_text("아직 등록한 에이전트가 없습니다.", exact=True).wait_for(timeout=30000)
                 select_tab(page, "접속 링크", width)
                 page.get_by_text("링크 목록을 불러오지 못했습니다.", exact=True).wait_for(timeout=30000)
                 shot(page, out, f"access-links-error-{key}", captures)

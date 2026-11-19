@@ -1,7 +1,7 @@
 import "./config/config-layout.css";
 import "../v3/v3-card-board.css";
 import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
-import { ArrowLeft, Check, ChevronRight } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";
 import { CardDispatchTab } from "./CardDispatchTab";
 /**
@@ -224,7 +224,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                     setPasDevicePreferences(next);
                   }}
                 /> : null}
-                <details className="config-advanced"><summary><ChevronRight className="config-advanced-marker size-4 shrink-0" aria-hidden="true"/>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
+                <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
               </div> : selectedTab === CHAT_TAB_NAME ? (
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
