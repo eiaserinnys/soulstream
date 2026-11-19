@@ -24,7 +24,10 @@ export interface DatabaseReleaseJournal {
   revision: number;
   history: unknown[];
   affected_services: string[];
+  additive_only?: boolean;
 }
+export function plannedSchemaWorkCount(journal: DatabaseReleaseJournal): number;
+export function requiresQuiescence(journal: DatabaseReleaseJournal): boolean;
 export function databaseReleaseJournalPath(env?: NodeJS.ProcessEnv): string;
 export function databaseReleaseJournalArchivePath(path: string, journal: DatabaseReleaseJournal): string;
 export function journalIdentity(env: NodeJS.ProcessEnv, operation: string): Record<string, unknown>;

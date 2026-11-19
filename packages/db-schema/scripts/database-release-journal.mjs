@@ -23,9 +23,23 @@ import {
   sameJson,
 } from "./database-release-plan-identity.mjs";
 import { readHanielReleaseEvidence, readStringList } from "./database-release-evidence.mjs";
+import { classifyMigrationSql } from "./migration-additive.mjs";
 
 export { fingerprintInventory, inspectUserObjectInventory };
 export const DATABASE_RELEASE_SCHEMA_VERSION = "soulstream.database-release.v1";
+
+export function plannedSchemaWorkCount(journal) {
+  const migrations = journal.planned_migrations ?? [
+    ...(journal.bootstrap_migrations ?? []), ...(journal.pending_migrations ?? []),
+  ];
+  return migrations.length
+    + (journal.required_subphases ?? []).length;
+}
+
+export function requiresQuiescence(journal) {
+  return journal.operation === "upgrade" && plannedSchemaWorkCount(journal) > 0
+    && journal.additive_only !== true;
+}
 
 function required(env, name) {
   const value = env[name]?.trim();
@@ -293,6 +307,9 @@ export async function createDatabaseReleaseJournal({
       bootstrap_migrations: bootstrap,
       pending_migrations: pending,
       planned_migrations: [...bootstrap, ...pending],
+      additive_only: pending.length > 0 && bootstrap.length === 0
+        && identity.required_subphases.length === 0
+        && plan.pending.every((item) => classifyMigrationSql(item.sql).additive),
       pre_migration_plan: planIdentity(plan),
       applied_ledger: [],
       quiescence_receipt_digest: null,
@@ -414,7 +431,7 @@ export async function assertDatabaseReleaseApplyGate({ env, operation, plan, inv
   if (!Number.isInteger(expectedRevision) || expectedRevision !== journal.revision) {
     throw new Error("JOURNAL_GATE_FAILED: journal revision differs");
   }
-  if (operation === "upgrade") {
+  if (requiresQuiescence(journal)) {
     const evidence = await readHanielReleaseEvidence({ env, journal, phase: "apply" });
     if (
       evidence.receipt_digest !== journal.quiescence_receipt_digest
