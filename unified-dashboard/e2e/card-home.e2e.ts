@@ -9,15 +9,18 @@ const emptyLanesOutput=path.resolve("../../../.local/artifacts/20261005-card-emp
 const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
-async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean}={}){
+async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean;folderPending?:boolean;webglGlass?:boolean}={}){
  const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
+ let folderFailure=completedOptions.folderFailure??false;
+ let releaseFolder=()=>{};
+ const folderGate=new Promise<void>(resolve=>{releaseFolder=resolve;});
  const completedAt=new Date().toISOString();
- await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
+ await page.addInitScript((webglGlass)=>{localStorage.setItem("ls.webglGlass",webglGlass?"1":"0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
   const Native=EventSource,sources:EventSource[]=[];let sequence=0;
   window.EventSource=class extends Native{constructor(url:string|URL,options?:EventSourceInit){super(url,options);sources.push(this);}};
   Object.assign(window,{emitCard:(cardId:string)=>sources.filter(source=>source.url.includes("/api/sessions/stream")).forEach(source=>source.dispatchEvent(new MessageEvent("card_updated",{data:JSON.stringify({type:"card_updated",cardId,folderId:"folder-amber"}),lastEventId:`card-home-${++sequence}`})))});
- });
+ },completedOptions.webglGlass??false);
  await installV3VisualQaRoutes(page,{unifiedFolderView:true,postitCards:cards});
  await page.route("**/api/auth/config",route=>route.fulfill({json:{authEnabled:true,devModeEnabled:false}}));
  await page.route("**/api/auth/status",route=>route.fulfill({json:{authenticated:true,user:{email:"home@example.test",name:"검수"}}}));
@@ -30,7 +33,8 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
     if(completedOptions.delay)await new Promise(done=>setTimeout(done,completedOptions.delay));
     if(completedFailure)return route.fulfill({status:500,json:{message:completedOptions.detail??"완료 카드 조회 실패 fixture"}});
    }
-   if(status!=="done"&&folderId&&completedOptions.folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
+   if(status!=="done"&&folderId&&completedOptions.folderPending)await folderGate;
+   if(status!=="done"&&folderId&&folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
    const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt}));
    const listed=[...cards,...completedSeeds].filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done")
     .filter(card=>!query||`${card.title} ${card.request}`.toLocaleLowerCase().includes(query));
@@ -59,7 +63,7 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
  });
  await page.goto(process.env.CARD1680_VISUAL_BASE??"/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
  const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible({timeout:20000});
- return {cards,reads,completedReads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
+ return {cards,reads,completedReads,writes,creates,board,releaseFolder,setFolderFailure:(value:boolean)=>{folderFailure=value;},setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
@@ -432,6 +436,121 @@ async function openCompletedFolder(page:Page){
   await page.getByTestId("v3-mobile-project-list").getByRole("button",{name:"소울스트림",exact:true}).click();
  }else await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
 }
+
+const card1698Dir=path.resolve(`../.local/card1698/captures/${process.env.CARD1698_PHASE??'after'}`);
+async function card1698Shot(page:Page,name:string){mkdirSync(card1698Dir,{recursive:true});return page.screenshot({path:path.join(card1698Dir,`${name}.png`),animations:'disabled'});}
+async function card1698IconPixels(page:Page,shot:Buffer){
+ const buttons=await page.getByTestId('folder-card-section').locator('.v3-card-board-workspace .v3-card-actions button').evaluateAll(nodes=>nodes.map(node=>{
+  const svg=node.querySelector('svg')!,r=svg.getBoundingClientRect();return {label:node.getAttribute('aria-label'),rect:{x:r.x,y:r.y,width:r.width,height:r.height},webgl:node.getAttribute('data-liquid-glass-webgl'),filter:getComputedStyle(node).backdropFilter};
+ }));
+ return page.evaluate(async({encoded,buttons})=>{const img=new Image();img.src=`data:image/png;base64,${encoded}`;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d')!;ctx.drawImage(img,0,0);
+  return buttons.map(button=>{const r=button.rect,x=Math.floor(r.x),y=Math.floor(r.y),w=Math.ceil(r.width),h=Math.ceil(r.height);const pixels=ctx.getImageData(x,y,w,h).data;let dark=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<100&&pixels[i+1]<100&&pixels[i+2]<100)dark++;return {...button,dark};});
+ },{encoded:shot.toString('base64'),buttons});
+}
+for(const condition of ['lens','no-filter','webgl','gpu-icon'] as const)for(const stateName of ['loading','error'] as const)test(`card1698 시간 측정 ${condition} ${stateName}`,async({page})=>{
+ test.skip(process.env.CARD1698_MEASURE!=='1','진단 실행에서만 측정');test.setTimeout(90000);
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ const state=await fixture(page,17,seed(),0,{folderFailure:stateName==='error',folderPending:stateName==='loading',webglGlass:condition==='webgl'});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section'),head=folder.locator('.v3-card-board-workspace > .v3-folder-card-head');
+ if(stateName==='error')await expect(folder.getByRole('alert')).toBeVisible();else await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();
+ if(condition==='no-filter')await page.addStyleTag({content:'.v3-card-board-workspace .v3-card-actions button { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }'});
+ if(condition==='gpu-icon')await page.addStyleTag({content:'.v3-card-board-workspace .v3-card-actions svg { transform: translateZ(0); }'});
+ const webglAvailable=await page.evaluate(()=>!!document.createElement('canvas').getContext('webgl2'));
+ const result=[];mkdirSync(card1698Dir,{recursive:true});
+ for(const delay of [0,50,150,300,1000]){
+  await head.evaluate(el=>{for(let parent=el.parentElement;parent;parent=parent.parentElement)if(parent.scrollHeight>parent.clientHeight)parent.scrollTop=0;});await page.waitForTimeout(300);
+  const start=Date.now();await head.scrollIntoViewIfNeeded();const scrolled=Date.now();if(delay)await page.waitForTimeout(delay);
+  const shot=await page.screenshot({path:path.join(card1698Dir,`timing-${condition}-${stateName}-${delay}.png`),animations:'disabled'});const captured=Date.now();
+  result.push({delay,scrollMs:scrolled-start,captureEndMs:captured-scrolled,buttons:await card1698IconPixels(page,shot)});
+ }
+ writeFileSync(path.join(card1698Dir,`timing-${condition}-${stateName}.json`),JSON.stringify({webglAvailable,result},null,2));state.releaseFolder();
+});
+for(const condition of ['lens','no-filter','all-no-filter','ancestors-no-filter','gpu-icon','gpu-actions'] as const)for(const stateName of ['loading','error'] as const)test(`card1698 프레임 측정 ${condition} ${stateName}`,async({page})=>{
+ test.skip(process.env.CARD1698_MEASURE!=='1','진단 실행에서만 측정');test.setTimeout(90000);
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ const state=await fixture(page,17,seed(),0,{folderFailure:stateName==='error',folderPending:stateName==='loading'});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section'),head=folder.locator('.v3-card-board-workspace > .v3-folder-card-head');
+ if(stateName==='error')await expect(folder.getByRole('alert')).toBeVisible();else await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();
+ if(condition==='no-filter')await page.addStyleTag({content:'.v3-card-board-workspace .v3-card-actions button { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }'});
+ if(condition==='all-no-filter')await page.addStyleTag({content:'* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }'});
+ if(condition==='ancestors-no-filter')await head.evaluate(el=>{for(let parent=el.parentElement;parent;parent=parent.parentElement){parent.style.setProperty('backdrop-filter','none','important');parent.style.setProperty('-webkit-backdrop-filter','none','important');}});
+ if(condition==='gpu-icon')await page.addStyleTag({content:'.v3-card-board-workspace .v3-card-actions svg { transform: translateZ(0); }'});
+ if(condition==='gpu-actions')await page.addStyleTag({content:'.v3-card-board-workspace .v3-card-actions { transform: translateZ(0); }'});
+ await head.evaluate(el=>{for(let parent=el.parentElement;parent;parent=parent.parentElement)if(parent.scrollHeight>parent.clientHeight)parent.scrollTop=0;});await page.waitForTimeout(500);
+ const session=await page.context().newCDPSession(page),frames:{timestamp:number;data:string}[]=[];
+ session.on('Page.screencastFrame',event=>{frames.push({timestamp:event.metadata.timestamp,data:event.data});void session.send('Page.screencastFrameAck',{sessionId:event.sessionId});});
+ await session.send('Page.startScreencast',{format:'png',everyNthFrame:1});await page.waitForTimeout(250);
+ const started=await head.evaluate(el=>{const start=Date.now();el.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});return start;});
+ await page.waitForTimeout(1200);await session.send('Page.stopScreencast');
+ const result=[];for(const frame of frames){const ms=frame.timestamp*1000-started;if(ms>=0)result.push({ms,buttons:await card1698IconPixels(page,Buffer.from(frame.data,'base64'))});}
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`frames-${condition}-${stateName}.json`),JSON.stringify(result,null,2));await session.detach();state.releaseFolder();
+});
+async function card1698Buttons(page:Page,name:string){
+ const head=page.getByTestId('folder-card-section').locator('.v3-card-board-workspace > .v3-folder-card-head');
+ await head.scrollIntoViewIfNeeded();await page.waitForTimeout(300);
+ const measurements=await head.locator('.v3-card-actions button').evaluateAll(buttons=>buttons.map(button=>{
+  const svg=button.querySelector('svg')!,rect=(el:Element)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+  const hit=(el:Element)=>{const r=el.getBoundingClientRect(),target=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {element:target?.outerHTML.slice(0,200),within:!!target&&button.contains(target)};};
+  return {label:button.getAttribute('aria-label'),button:rect(button),svg:rect(svg),buttonHit:hit(button),svgHit:hit(svg)};
+ }));
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`${name}.json`),JSON.stringify(measurements,null,2));
+ await card1698Shot(page,`${name}-viewport`);
+ await page.screenshot({path:path.join(card1698Dir,`${name}-fullpage.png`),fullPage:true,animations:'disabled'});
+ await head.locator('.v3-card-actions').screenshot({path:path.join(card1698Dir,`${name}-element.png`),animations:'disabled'});
+ for(const item of measurements){expect(item.buttonHit.within).toBe(true);expect(item.svgHit.within).toBe(true);}
+}
+for(const width of [390,1440])for(const failed of [true,false])test(`card1698 단추 진단 ${width} ${failed?'실패':'빈 목록'}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ await fixture(page,17,failed?seed():[],0,{folderFailure:failed});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section');
+ if(failed)await expect(folder.getByRole('alert')).toBeVisible();else await expect(folder.getByText('0개 표시')).toBeVisible();
+ await card1698Buttons(page,`buttons-${failed?'error':'empty'}-${width}`);
+});
+
+for(const width of [390,1440])test(`card1698 초점 링과 첫 줄 ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ await fixture(page);const home=page.getByTestId('card-home');const expand=home.getByRole('button',{name:'보드 확대',exact:true});
+ await expand.focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');await expect(expand).toBeFocused();
+ const ring=async()=>expand.evaluate(button=>{
+  const r=button.getBoundingClientRect(),clips=[];for(let el=button.parentElement;el;el=el.parentElement){
+   const style=getComputedStyle(el),box=el.getBoundingClientRect();
+   if(style.overflowX!=='visible'||style.overflowY!=='visible')clips.push({name:el.className,overflowX:style.overflowX,overflowY:style.overflowY,
+    left:box.left+el.clientLeft,right:box.left+el.clientLeft+el.clientWidth,top:box.top+el.clientTop,bottom:box.top+el.clientTop+el.clientHeight});
+  }return {ring:{left:r.left-4,right:r.right+4,top:r.top-4,bottom:r.bottom+4},clips};
+ });
+ const verifyRing=async()=>{const data=await ring();for(const clip of process.env.CARD1698_PHASE==='before'?[]:data.clips){
+  if(clip.overflowX!=='visible'){expect(data.ring.left,`${clip.name} left`).toBeGreaterThanOrEqual(clip.left-1);expect(data.ring.right,`${clip.name} right`).toBeLessThanOrEqual(clip.right+1);}
+  if(clip.overflowY!=='visible'){expect(data.ring.top,`${clip.name} top`).toBeGreaterThanOrEqual(clip.top-1);expect(data.ring.bottom,`${clip.name} bottom`).toBeLessThanOrEqual(clip.bottom+1);}
+ }return data;};
+ const geometry=async(selector:string)=>page.locator(selector).evaluate(row=>{const planner=row.closest<HTMLElement>('.v3-planner')!,scroll=planner.querySelector<HTMLElement>('.v3-planner-scroll')!,style=getComputedStyle(planner),b=planner.getBoundingClientRect(),s=scroll.getBoundingClientRect();
+  const list=planner.querySelector<HTMLElement>('.v3-today-list'),board=planner.querySelector<HTMLElement>('.v3-card-board-column');
+  return {rowTop:row.getBoundingClientRect().top,contentTop:b.top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop),scrollBottom:s.bottom,listHeight:list?.getBoundingClientRect().height,boardHeight:board?.getBoundingClientRect().height};});
+ const before=await verifyRing(),homeGeometry=await geometry('.v3-card-home .v3-folder-card-head');await card1698Shot(page,`home-focus-${width}`);
+ await page.keyboard.press('Enter');const dialog=page.getByRole('dialog',{name:'전체 카드 보드'});await expect(dialog).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'확대 닫기'})).toBeFocused();await page.keyboard.press('Escape');await expect(expand).toBeFocused();
+ const restored=await verifyRing();await card1698Shot(page,`home-restored-${width}`);
+ await home.getByRole('button',{name:'기록',exact:true}).click();const daily=page.locator('.v3-date-head');await expect(daily).toBeVisible();
+ const dailyGeometry=await geometry('.v3-date-head');await card1698Shot(page,`daily-${width}`);
+ for(const item of [homeGeometry,dailyGeometry])expect(Math.abs(item.rowTop-item.contentTop)).toBeLessThanOrEqual(1);
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`geometry-${width}.json`),JSON.stringify({before,restored,homeGeometry,dailyGeometry},null,2));
+});
+
+for(const width of [390,1440])test(`card1698 폴더 로딩 오류 복구 ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ const state=await fixture(page,17,seed(),0,{folderFailure:true,folderPending:true});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section');
+ const unknown=async(board:boolean)=>{await expect(folder).not.toContainText(/\d+개 표시|카드가 없습니다/);await expect(folder.locator('.v3-card-board, .v3-postit-grid')).toHaveCount(0);await expect(folder.getByRole('button',{name:'보드 확대'})).toHaveCount(0);
+  await expect(folder.getByRole('switch',{name:'완료·취소 숨김'})).toBeVisible();await expect(folder.getByRole('button',{name:board?'새 카드':'카드 추가',exact:true})).toBeVisible();};
+ await unknown(true);await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();await folder.locator('.v3-folder-card-head').scrollIntoViewIfNeeded();const loadingShot=await card1698Shot(page,`loading-board-${width}`);
+ if(width===390)for(const button of await card1698IconPixels(page,loadingShot))expect(button.dark,`loading ${button.label}`).toBeGreaterThan(0);
+ await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await unknown(false);await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();await card1698Shot(page,`loading-list-${width}`);
+ state.releaseFolder();await expect(folder.getByRole('alert')).toBeVisible();await unknown(false);await expect(folder.getByRole('status')).toHaveCount(0);await card1698Shot(page,`error-list-${width}`);
+ await folder.getByRole('button',{name:'보드',exact:true}).click();await unknown(true);await folder.getByRole('alert').scrollIntoViewIfNeeded();const errorShot=await card1698Shot(page,`error-board-${width}`);
+ if(width===390)for(const button of await card1698IconPixels(page,errorShot))expect(button.dark,`error ${button.label}`).toBeGreaterThan(0);
+ await card1698Buttons(page,`buttons-after-error-${width}`);
+ state.setFolderFailure(false);await folder.getByRole('button',{name:'다시 불러오기'}).click();await expect(folder.getByRole('alert')).toHaveCount(0);await expect(folder.getByText(/\d+개 표시/).first()).toBeVisible();
+ await expect(folder.locator('.v3-card-board')).toBeVisible();await expect(folder.getByRole('button',{name:'보드 확대'})).toBeVisible();await card1698Shot(page,`normal-board-${width}`);
+});
 
 for(const [folder,width] of [[false,1440],[false,390],[false,360],[true,390],[true,360]] as const){
  test(`완료 목록 폭 ${folder?"폴더":"카드 홈"} ${width}`,async({page})=>{

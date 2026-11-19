@@ -15,6 +15,34 @@ afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllG
 const row=(id:string)=>({...reviewCard,id,status:"todo" as const});
 const response=(cards:typeof reviewCard[])=>new Response(JSON.stringify({cards}),{status:200});
 const event=()=>acceptV3SessionStreamEvent({type:"card_updated",cardId:"new",folderId:reviewCard.folderId});
+it("keeps folder controls but hides unknown membership in both views and restores the board on retry",async()=>{
+ let finish!:(value:Response)=>void;
+ const fetch=vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finish=resolve;})).mockResolvedValue(response([row("loaded")]));
+ vi.stubGlobal("fetch",fetch);
+ await act(()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
+ const checkUnknown=()=>{
+  expect(element.textContent).not.toMatch(/\d+개 표시|카드가 없습니다/);
+  expect(element.querySelector('.v3-card-board')).toBeNull();
+  expect(element.querySelector('button[aria-label="보드 확대"]')).toBeNull();
+ };
+ checkUnknown();expect(element.querySelector('[role="status"]')?.textContent).toContain("카드를 불러오는 중…");
+ await act(()=>element.querySelector<HTMLButtonElement>('button[aria-label="일반 보기"]')!.click());
+ checkUnknown();expect(element.querySelector('.v3-postit-grid')).toBeNull();
+ await act(async()=>finish(new Response(JSON.stringify({message:"실패"}),{status:500})));
+ checkUnknown();expect(element.querySelector('[role="alert"]')).not.toBeNull();expect(element.querySelector('[role="status"]')).toBeNull();
+ await act(()=>element.querySelector<HTMLButtonElement>('button[aria-label="보드"]')!.click());
+ checkUnknown();
+ await act(async()=>{[...element.querySelectorAll('button')].find(button=>button.textContent==="다시 불러오기")!.click();});
+ expect(element.querySelector('.v3-card-board')).not.toBeNull();expect(element.querySelector('button[aria-label="보드 확대"]')).not.toBeNull();
+ expect(element.textContent).toContain("1개 표시");
+});
+it("keeps the known folder board when a later refresh fails",async()=>{
+ let fail=false;vi.stubGlobal("fetch",vi.fn(async()=>{if(fail)throw new Error("connection lost");return response([row("known")]);}));
+ await act(async()=>root.render(<FolderCardSection folderId={reviewCard.folderId}/>));
+ fail=true;await act(async()=>event());
+ expect(element.querySelector('[role="alert"]')).not.toBeNull();expect(element.querySelector('[data-card-id="known"]')).not.toBeNull();
+ expect(element.querySelector('button[aria-label="보드 확대"]')).not.toBeNull();expect(element.textContent).toContain("1개 표시");
+});
 it("refetches authorized global membership on SSE, coalesces duplicates and removes deleted, archived and cancelled cards",async()=>{
  let rows:CardRow[]=[row("old")];const fetch=vi.fn(async()=>response(rows));vi.stubGlobal("fetch",fetch);
  useCardStore.getState().putCards([row("unlisted")]);

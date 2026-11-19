@@ -25,6 +25,8 @@
   overflow: hidden;
   scrollbar-gutter: auto;
   padding: 0 var(--v3-space-6) var(--v3-space-5);
+  padding-top: var(--v3-space-1);
+  margin-top: calc(var(--v3-space-1) * -1);
 }
 .v3-shell .v3-planner-column--daily {
   display: flex;

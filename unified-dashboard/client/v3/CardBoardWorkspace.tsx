@@ -76,7 +76,8 @@ function restoreVerticalScroll(board:HTMLElement, positions:Partial<Record<Board
 }
 
 /** One mounted board owns its scope, option and scroll even while expanded. */
-export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=false,...boardProps}:Omit<ComponentProps<typeof CardBoard>,"completedGridSnapshot"|"onCompletedGridSnapshotChange">&{title:string;actions?:ReactNode;initialExpanded?:boolean}) {
+export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=false,boardPlaceholder,...boardProps}:Omit<ComponentProps<typeof CardBoard>,"completedGridSnapshot"|"onCompletedGridSnapshotChange">&{title:string;actions?:ReactNode;initialExpanded?:boolean;boardPlaceholder?:ReactNode}) {
+  const boardUnavailable=boardPlaceholder!==undefined;
   const [expanded,setExpanded]=useState(initialExpanded);
   const [completedGridSnapshot,setCompletedGridSnapshot]=useState<CompletedGridSnapshot|null>(null);
   const detailOpen=useCardNavigation(state=>state.cardId!==null);
@@ -190,7 +191,7 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
       mainStatuses.current=[...renderedStatuses];
     }
     previousExpanded.current=expanded;
-  },[expanded,renderedStatusKey]);
+  },[expanded,renderedStatusKey,boardUnavailable]);
 
   const content=<div ref={root} className={`v3-card-board-workspace${expanded?" is-expanded border border-glass-border glass-strong glass-chrome lg-rim":""}`}
     data-card-board-expanded={expanded} role={expanded?"dialog":undefined} aria-modal={expanded||undefined} aria-label={expanded?`${title} 보드`:undefined}
@@ -206,18 +207,18 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
       }
     }}>
-    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3><span>{boardProps.cards.filter(card=>!card.archived&&(boardProps.completion?.includeCompleted!==false||(card.status!=="done"&&card.status!=="cancelled"))).length}개 표시</span>
+    <div className="v3-detail-section-head v3-folder-card-head"><h3>{title}</h3>{!boardUnavailable?<span>{boardProps.cards.filter(card=>!card.archived&&(boardProps.completion?.includeCompleted!==false||(card.status!=="done"&&card.status!=="cancelled"))).length}개 표시</span>:null}
       <span className="v3-spacer"/>
       {boardProps.completion?<CardCompletionFilter {...boardProps.completion} hiddenCount={boardProps.cards.filter(card=>!card.archived&&card.status==="done").length}/>:null}
       <div className="v3-card-actions">{draftAction}{expanded?null:actions}
         {expanded?<DashboardIconCap size="small" label="확대 닫기" onClick={collapse}><X className="h-4 w-4"/></DashboardIconCap>
-          :<DashboardIconCap size="small" label="보드 확대" onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>}
+          :!boardUnavailable?<DashboardIconCap size="small" label="보드 확대" onClick={expand}><Maximize2 className="h-4 w-4"/></DashboardIconCap>:null}
       </div>
     </div>
-    {!expanded&&boardProps.completion?.includeCompleted&&boardProps.completed?<>
+    {!boardUnavailable&&!expanded&&boardProps.completion?.includeCompleted&&boardProps.completed?<>
       <CompletedCardBrowserControls browser={boardProps.completed}/>
     </>:null}
-    <CardBoard {...boardProps} hideEmptyLanes={!expanded} completedGridSnapshot={completedGridSnapshot} onCompletedGridSnapshotChange={rememberCompletedGridSnapshot}/>
+    {boardUnavailable?boardPlaceholder:<CardBoard {...boardProps} hideEmptyLanes={!expanded} completedGridSnapshot={completedGridSnapshot} onCompletedGridSnapshotChange={rememberCompletedGridSnapshot}/>}
   </div>;
   // Escapes backdrop-filter containing blocks while inheriting the actual shell tokens.
   const shell=root.current?.closest(".v3-shell");
