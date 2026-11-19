@@ -1079,12 +1079,13 @@ function ChatViewContent({
         </div>
       )}
 
-      {presentation === "default" && <div className="flex shrink-0 items-center justify-end pb-2">
+      {presentation === "default" && <div className="relative">
         <button
           type="button"
           onClick={toggleFollow}
           aria-pressed={isFollowing}
           className={cn(
+            "absolute bottom-[var(--panel-inset)] right-[var(--panel-inset)] z-10",
             CHAT_FOLLOW_CONTROL_CLASS,
             isFollowing
               ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"

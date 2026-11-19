@@ -1,12 +1,30 @@
 import type { Browser, Locator, Page } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
-const output = path.resolve(".local/card1683");
+// 캡처와 측정 출력, 개발 서버 기준 경로는 실행한 cwd와 상관없이 스크립트 파일 위치로 푼다.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const output = path.join(repoRoot, ".local/card1744");
+
+// 이 리포는 playwright를 선언 의존성으로 갖지 않는다. 실행기가 PLAYWRIGHT_MODULE을 넘기지
+// 않아도 돌도록 @playwright/test의 의존 경로에서 직접 푼다(run-v3-qa.mjs와 같은 방식).
+if (!process.env.PLAYWRIGHT_MODULE) {
+  try {
+    const dashboardRequire = createRequire(path.join(repoRoot, "unified-dashboard/package.json"));
+    const fromTest = createRequire(dashboardRequire.resolve("@playwright/test/package.json"));
+    const entry = fromTest.resolve("playwright");
+    const mjs = path.join(path.dirname(entry), "index.mjs");
+    process.env.PLAYWRIGHT_MODULE = pathToFileURL(existsSync(mjs) ? mjs : entry).href;
+  } catch {
+    // 해석에 실패하면 실행기의 기본 해석(import "playwright")을 그대로 쓴다.
+  }
+}
 mkdirSync(output, { recursive: true });
 // Baseline and CSS isolation preserve failing evidence without passing the normal QA run.
 const before = process.env.CARD1683_BEFORE === "1";
@@ -202,11 +220,56 @@ function rectangle(locator: Locator) {
 }
 
 async function controlGeometry(root: Locator) {
-  const [follow, input] = await Promise.all([
+  const [follow, input, scroller] = await Promise.all([
     rectangle(followButton(root)),
     rectangle(root.locator('[data-slot="chat-input-composer"]')),
+    rectangle(root.locator('[data-virtuoso-scroller="true"]')),
   ]);
-  return { follow, input };
+  const followWrapperHeight = await followButton(root).evaluate(
+    el => el.parentElement?.getBoundingClientRect().height ?? null,
+    undefined,
+    { timeout: 5000 },
+  );
+  // 목록 아래 끝과 입력창 위 끝 사이에 흐름 높이를 가진 요소가 있으면 단추가 한 줄을 차지한 것이다.
+  const gap = await root.evaluate(rootEl => {
+    const scroller = rootEl.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
+    const input = rootEl.querySelector<HTMLElement>('[data-slot="chat-input-composer"]');
+    if (!scroller || !input) return null;
+    const top = scroller.getBoundingClientRect().bottom;
+    const bottom = input.getBoundingClientRect().top;
+    const elements: string[] = [];
+    for (const el of Array.from(rootEl.querySelectorAll<HTMLElement>("*"))) {
+      if (el === scroller || el === input || scroller.contains(el) || input.contains(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height > 0.5 && rect.top >= top - 0.5 && rect.bottom <= bottom + 0.5) {
+        elements.push(`${el.tagName.toLowerCase()}${el.dataset.slot ? `[data-slot=${el.dataset.slot}]` : ""}:${rect.height.toFixed(1)}`);
+      }
+    }
+    return { height: bottom - top, elements };
+  }, undefined, { timeout: 5000 });
+  return { follow, input, scroller, followWrapperHeight, gap };
+}
+
+type ControlGeometry = Awaited<ReturnType<typeof controlGeometry>>;
+
+function checkOverlap(
+  { follow, scroller, followWrapperHeight, gap }: ControlGeometry,
+  label: string,
+  check: (condition: boolean, label: string) => void,
+) {
+  const right = scroller.right - follow.right;
+  const bottom = scroller.bottom - follow.bottom;
+  check(Math.abs(right - 15) <= 1, `${label} 자동 스크롤 오른쪽 간격 ${right.toFixed(1)}px`);
+  check(Math.abs(bottom - 15) <= 1, `${label} 자동 스크롤 아래 간격 ${bottom.toFixed(1)}px`);
+  check(
+    follow.left >= scroller.left && follow.right <= scroller.right
+      && follow.top >= scroller.top && follow.bottom <= scroller.bottom,
+    `${label} 자동 스크롤이 목록 스크롤 영역 안`,
+  );
+  check(followWrapperHeight !== null && followWrapperHeight <= 0.5,
+    `${label} 자동 스크롤 감싼 요소 높이 0 (${followWrapperHeight})`);
+  check(gap !== null && gap.elements.length === 0,
+    `${label} 목록과 입력창 사이 높이 있는 요소 없음 (${JSON.stringify(gap)})`);
 }
 
 async function controlScenario(browser: Browser, baseUrl: string, width: number) {
@@ -218,8 +281,23 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     checks[label] = condition;
     if (!condition) errors.push(label);
   }
-  function checkAlignment({ follow, input }: Awaited<ReturnType<typeof controlGeometry>>, label: string) {
-    check(Math.abs(follow.right - input.right) <= 1, `${label} 자동 스크롤과 입력창 오른쪽 정렬`);
+  const checkOverlapAt = (geometry: ControlGeometry, label: string) => checkOverlap(geometry, label, check);
+  async function checkBannerTogether(target: Locator, width: number, label: string) {
+    const [banner, follow, scroller] = await Promise.all([
+      rectangle(bannerButton(target)),
+      rectangle(followButton(target)),
+      rectangle(target.locator('[data-virtuoso-scroller="true"]')),
+    ]);
+    results[`together-${label}`] = { banner, follow, scroller };
+    const disjoint = banner.right <= follow.left || follow.right <= banner.left
+      || banner.bottom <= follow.top || follow.bottom <= banner.top;
+    check(disjoint, `${label} 배너와 자동 스크롤 겹침 (${JSON.stringify({ banner, follow })})`);
+    for (const [name, rect] of [["배너", banner], ["자동 스크롤", follow]] as const) {
+      check(rect.left >= scroller.left - 0.5 && rect.right <= scroller.right + 0.5
+        && rect.top >= scroller.top - 0.5 && rect.bottom <= scroller.bottom + 0.5,
+        `${label} ${name} 목록 영역 안 (잘림 없음) (${JSON.stringify({ rect, scroller })})`);
+      check(rect.left >= 0 && rect.right <= width, `${label} ${name} 화면 폭 안 (${rect.left}..${rect.right})`);
+    }
   }
   const screenshot = (state: string) => page.screenshot({
     path: path.join(output, `${phase}-controls-${width}-${state}.png`), animations: "disabled",
@@ -238,7 +316,7 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     await root.locator('[data-chat-item-key="user-msg-100"]').waitFor({ state: "attached", timeout: 10000 });
     const on = await controlGeometry(root);
     results.on = on;
-    checkAlignment(on, "자동 스크롤 켜짐");
+    checkOverlapAt(on, "자동 스크롤 켜짐");
     check(await follow.getAttribute("aria-pressed") === "true", "초기 자동 스크롤 aria-pressed");
     await screenshot("on");
     await follow.click();
@@ -252,14 +330,15 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     }, undefined, { timeout: 10000 });
     const off = await controlGeometry(root);
     results.off = off;
-    checkAlignment(off, "자동 스크롤 꺼짐");
+    checkOverlapAt(off, "자동 스크롤 꺼짐");
     check(!await banner.isVisible(), "새 이벤트 전 배너 표시");
     await screenshot("off");
     live.release();
     await banner.waitFor({ state: "visible", timeout: 30000 });
     const shown = await controlGeometry(root);
     results.message = shown;
-    checkAlignment(shown, "배너 보임");
+    checkOverlapAt(shown, "배너 보임");
+    await checkBannerTogether(root, width, `배너 보임 ${width}`);
     check(Math.abs(shown.follow.top - off.follow.top) <= 1
       && Math.abs(shown.follow.left - off.follow.left) <= 1, "배너 표시 전후 자동 스크롤 위치");
     await screenshot("message");
@@ -277,8 +356,9 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
       await page.waitForTimeout(200);
       const narrow = await controlGeometry(root);
       results.narrow = narrow;
-      checkAlignment(narrow, "360폭");
+      checkOverlapAt(narrow, "360폭");
       check(narrow.follow.left >= 0 && narrow.follow.right <= 360, "360폭 자동 스크롤 잘림");
+      await checkBannerTogether(root, 360, "360폭 배너");
       check(await root.evaluate(el => el.scrollWidth <= el.clientWidth + 1)
         && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "360폭 가로 스크롤");
       await screenshot("360");
@@ -306,9 +386,10 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
         const key = await firstVisible();
         const top = await scroller.evaluate(el => el.scrollTop);
         results[`resize${next}`] = { layout, key, top, original, originalScrollTop };
-        checkAlignment(layout, `크기 변경 ${next}`);
+        checkOverlapAt(layout, `크기 변경 ${next}`);
         check(layout.input.top >= 0 && layout.input.bottom <= height, `크기 변경 ${next} 입력창 화면 안`);
         check(await banner.isVisible(), `크기 변경 ${next} 배너 유지`);
+        await checkBannerTogether(root, next, `크기 변경 ${next} 배너`);
         check(key !== null && key === original, `크기 변경 ${next} 첫 행 유지 (${original} → ${key})`);
         check(Math.abs(top - originalScrollTop) <= 2, `크기 변경 ${next} 스크롤 위치 유지`);
         check(await textarea.inputValue() === draft, `크기 변경 ${next} 입력 유지`);
@@ -336,7 +417,7 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
 }
 async function freePort(): Promise<number> { return new Promise((resolve, reject) => { const server = createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = (server.address() as { port: number }).port; server.close(() => resolve(port)); }); }); }
 const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`;
-const server = spawn("corepack", ["pnpm", "--dir", "unified-dashboard", "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { env: { ...process.env, VITE_API_BASE: "http://127.0.0.1:5200" }, stdio: "inherit", detached: true });
+const server = spawn("corepack", ["pnpm", "--dir", "unified-dashboard", "dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: repoRoot, env: { ...process.env, VITE_API_BASE: "http://127.0.0.1:5200" }, stdio: "inherit", detached: true });
 try {
   let ready = false;
   for (let i = 0; i < 100; i++) { if (server.exitCode !== null) throw new Error(`개발 서버 종료: ${server.exitCode}`); try { if ((await fetch(baseUrl)).ok) { ready = true; break; } } catch {} await pause(200); }
