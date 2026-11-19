@@ -20,9 +20,6 @@
   padding: var(--v3-space-2) 0 var(--v3-space-4);
 }
 .pas-ro1707-chat-scroll::-webkit-scrollbar { display: none; }
-.pas-ro1707-chat-turn { display: flex; flex-direction: column; gap: var(--v3-space-1); min-width: 0; }
-.pas-ro1707-chat-meta { display: flex; align-items: baseline; gap: var(--v3-space-2); font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-tertiary); }
-.pas-ro1707-chat-meta time { font-variant-numeric: tabular-nums; }
 .pas-ro1707-inline-bubble { flex: none; min-width: 0; }
 
 .pas-ro1707-bubble[data-bubble="true"] { z-index: var(--v3-layer-panel); }
@@ -229,6 +226,8 @@
   word-break: keep-all;
 }
 .pas-ro1707-question { display: flex; flex-direction: column; gap: var(--v3-space-2); }
+/* 원 요청을 위에서 한 번만 보여 주므로 질문 배경의 같은 문단은 감춘다. */
+.pas-ro1707-question .v3-card-question-background { display: none; }
 .pas-ro1707-question-actions { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }
 
 .pas-ro1707-evidence {
@@ -366,10 +365,18 @@
   outline: none;
 }
 .pas-ro1707-field textarea::placeholder { color: var(--v3-text-tertiary); }
-.pas-ro1707-dock-actions { display: flex; flex-direction: column; justify-content: flex-end; gap: var(--v3-space-2); min-width: 0; }
-.pas-ro1707-stamps { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--v3-space-2); min-height: var(--v3-action-size); }
-.pas-ro1707-dock-note { font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-tertiary); text-align: end; }
-.pas-ro1707-undo-slot { display: flex; align-items: center; justify-content: flex-end; gap: var(--v3-space-2); min-height: var(--v3-action-size); }
+.pas-ro1707-dock-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+  min-width: 0;
+  min-height: var(--v3-action-size);
+}
+.pas-ro1707-stamps { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: var(--v3-space-2); min-height: var(--v3-action-size); }
+.pas-ro1707-dock-note { font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-tertiary); text-align: start; }
+.pas-ro1707-undo-slot { display: flex; align-items: center; justify-content: flex-end; gap: var(--v3-space-1); min-height: var(--v3-action-size); }
 .pas-ro1707-undo-note { font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-tertiary); }
 
 /* 태블릿: 위 두 열, 아래 전폭 세션 열 */
@@ -379,6 +386,11 @@
     grid-template-rows: minmax(0, 1fr) minmax(0, 0.85fr);
   }
   .pas-ro1707-col[data-column="3"] { grid-column: 1 / -1; border-top: 1px solid var(--persistent-session-line); }
+}
+/* 세로형 태블릿은 시트를 더 열고 요청 칸에 높이를 더 준다. */
+@media (min-width: 768px) and (max-width: 1179px) {
+  .pas-ro1707-sheet-panel { height: min(980px, calc(100dvh - 160px)); }
+  .pas-ro1707-cols { grid-template-rows: minmax(0, 1.35fr) minmax(0, 0.75fr); }
 }
 @media (max-width: 899px) {
   .pas-ro1707-dock { grid-template-columns: minmax(0, 1fr); }

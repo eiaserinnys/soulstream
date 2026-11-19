@@ -8,10 +8,11 @@ export function PasReportOverviewMockup() {
   const openTriggerRef = useRef<HTMLButtonElement>(null);
   const taskToggleRef = useRef<HTMLButtonElement>(null);
   const overview = usePasReportOverview({ returnFocus: openTriggerRef, fallbackFocus: taskToggleRef });
+  const promotedIds = new Set(overview.cards.filter(card => card.promoted).map(card => card.id));
 
   return <>
     <PasReportOverviewScreen card={overview.activeCard} pendingCards={overview.pendingCards} chatLog={overview.chatLog}
-      taskCards={overview.taskCards} openTriggerRef={openTriggerRef} taskToggleRef={taskToggleRef}
+      taskCards={overview.taskCards} promotedIds={promotedIds} openTriggerRef={openTriggerRef} taskToggleRef={taskToggleRef}
       onPrev={() => overview.goPending(-1)} onNext={() => overview.goPending(1)}
       onOpenOverview={() => overview.openOverview(overview.activeCard.id)}
       onOpenCard={cardId => overview.openOverview(cardId)}>

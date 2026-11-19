@@ -93,6 +93,7 @@ export interface OverviewScenario {
   primary: OverviewAction | null;
   secondary: OverviewAction | null;
   documentId?: string;
+  promoted?: boolean;
 }
 
 function checkItem(id: number, title: string, result: string, caveat: string | null = null): CardCheckItem {

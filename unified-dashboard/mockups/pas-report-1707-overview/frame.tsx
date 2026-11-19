@@ -7,6 +7,7 @@ import { PasReportOverviewMockup } from "../../client/v3/pas-report-overview-170
 import {
   DOCUMENTS,
   MOCK_SESSION_ID,
+  PROMOTED_DOCUMENT_ID,
 } from "../../client/v3/pas-report-overview-1707/pas-report-overview-1707-data";
 
 // 폴더 문서 리더가 부르는 본문. 문서 id가 그대로 API 경로가 된다.
@@ -14,9 +15,24 @@ mockApi(Object.fromEntries(
   Object.entries(DOCUMENTS).map(([id, document]) => [`GET /api/markdown-documents/${id}`, document]),
 ));
 
+// 리더의 실패 안내와 재시도를 검수할 수 있도록, 승격 문서에만 한 번짜리 500 스위치를 둔다.
+(window as unknown as { __pasRo1707FailDocumentOnce?: boolean }).__pasRo1707FailDocumentOnce = false;
+mockApi({
+  [`GET /api/markdown-documents/${PROMOTED_DOCUMENT_ID}`]: () => {
+    const state = window as unknown as { __pasRo1707FailDocumentOnce?: boolean };
+    if (state.__pasRo1707FailDocumentOnce) {
+      state.__pasRo1707FailDocumentOnce = false;
+      return new Response(JSON.stringify({ error: "mockup: injected document failure" }), {
+        status: 500, headers: { "Content-Type": "application/json" },
+      });
+    }
+    return DOCUMENTS[PROMOTED_DOCUMENT_ID];
+  },
+});
+
 // 메인 원고지 대화 입력이 부르는 주입 경로. 응답이 와야 입력 대기가 풀린다.
 mockApi({
-  [`POST /api/sessions/${MOCK_SESSION_ID}/intervene`]: ({ body }) => {
+  [`POST /api/sessions/${MOCK_SESSION_ID}/intervene`]: ({ body }: { body: unknown }) => {
     const text = (body as { text?: string } | null)?.text?.trim() ?? "";
     if (text) window.dispatchEvent(new CustomEvent("pas-ro1707:pas-chat", { detail: { text } }));
     return { delivered: true, reason: "card_question_answered", consumeWhen: null };

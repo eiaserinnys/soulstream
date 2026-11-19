@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import {
+  Badge,
   Button,
   Dialog,
   DialogHeader,
@@ -17,6 +18,7 @@ import { StatusChip } from "../StatusChip";
 import { OverviewEvidenceArt } from "./OverviewEvidenceArt";
 import {
   AGENTS,
+  PROMOTED_DOCUMENT_ID,
   agentPortrait,
   isPendingCard,
   overviewStatusLabel,
@@ -31,7 +33,7 @@ function questionViewOf(card: OverviewScenario): CardQuestionView | null {
   return {
     id: `question-${card.number}`,
     title: null,
-    background: card.question.background,
+    background: "",
     kind: card.question.kind,
     options: card.question.options.map(option => ({
       label: option.label,
@@ -142,14 +144,14 @@ export function OverviewSheet({
     if (onSendInstruction()) focusInput();
   };
 
-  const onComposerKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onComposerKey = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     send();
   };
 
-  const onSheetKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const onSheetKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       if (evidenceOpen || readerId) return;
       event.stopPropagation();
@@ -216,6 +218,7 @@ export function OverviewSheet({
           <h1 id="pas-ro1707-sheet-title" className="pas-ro1707-sheet-title" data-testid="overview-title">#{card.number} {card.title}</h1>
           <StatusChip label={overviewStatusLabel(card)} tone={card.status === "blocked" ? "question" : card.status} />
           <span className="pas-ro1707-sheet-kind">{card.kind}</span>
+          {card.promoted ? <Badge variant="info" size="sm">폴더 문서</Badge> : null}
           <span className="pas-ro1707-icon-seat">
             <button type="button" className="pas-ro1707-arrow" aria-label="보고 창 닫기" onClick={onClose}>
               <X className="size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
@@ -258,6 +261,9 @@ export function OverviewSheet({
             </button>
             {card.documentId ? <Button variant="outline" className="pas-ro1707-reader-open" onClick={() => openReader(card.documentId!)}>
               설계 문서 전문 읽기
+            </Button> : null}
+            {card.promoted ? <Button variant="outline" className="pas-ro1707-reader-open" onClick={() => openReader(PROMOTED_DOCUMENT_ID)}>
+              등록한 폴더 문서 열기
             </Button> : null}
           </div>
         </section>
@@ -320,9 +326,9 @@ export function OverviewSheet({
                 <X className="size-3.5" strokeWidth={1.6} absoluteStrokeWidth aria-hidden="true" />
               </button> : null}
             </span>
-            <span className="pas-ro1707-target-hint">
-              {target ? "지시를 보내면 실행 중으로 옮깁니다." : "전체 커멘트로 남깁니다."}
-            </span>
+            {target ? <span className="pas-ro1707-target-hint">
+              {target.kind === "answer" ? "답을 보내면 완료로 옮깁니다." : "지시를 보내면 실행 중으로 옮깁니다."}
+            </span> : null}
           </div>
           <div className="pas-ro1707-field">
             <textarea ref={inputRef} rows={1} value={composer} aria-label="안건에 남길 지시" placeholder="안건에 남길 지시"
@@ -344,6 +350,7 @@ export function OverviewSheet({
             {undo ? <><span className="pas-ro1707-undo-note">방금 처분</span>
               <Button size="xs" variant="ghost" onClick={onUndo} data-testid="overview-undo">되돌리기</Button></> : null}
             {undo?.documentId ? <Button size="xs" variant="ghost" onClick={() => openReader(undo.documentId!)}>문서 열기</Button> : null}
+            {card.promoted && !undo ? <Button size="xs" variant="ghost" onClick={() => openReader(PROMOTED_DOCUMENT_ID)}>등록한 폴더 문서 열기</Button> : null}
           </div>
         </div>
       </div>

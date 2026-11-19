@@ -52,7 +52,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   let body: unknown = null;
   if (typeof init?.body === "string") { try { body = JSON.parse(init.body); } catch { body = init.body; } }
-  return new Response(JSON.stringify(handler({ url, method, body })), {
+  const result = handler({ url, method, body });
+  if (result instanceof Response) return result;
+  return new Response(JSON.stringify(result), {
     status: 200, headers: { "Content-Type": "application/json" },
   });
 };

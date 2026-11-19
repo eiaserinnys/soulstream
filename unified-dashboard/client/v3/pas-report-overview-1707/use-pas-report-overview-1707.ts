@@ -24,6 +24,7 @@ export interface OverviewUndo {
   cardId: string;
   previousStatus: CardStatus;
   previousBlockedKind: "question" | null;
+  previousPromoted: boolean;
   previousActiveId: string;
   chatId: string | null;
   commentId: string | null;
@@ -54,6 +55,11 @@ function readReportRoute() {
   }
   try {
     if (window.parent !== window && window.parent.location.hash.replace(/^#/, "") === "report") return true;
+  } catch {
+    /* 교차 출처 부모 */
+  }
+  try {
+    if (window.parent !== window && new URLSearchParams(window.parent.location.search).get("view") === "report") return true;
   } catch {
     /* 교차 출처 부모 */
   }
@@ -144,6 +150,7 @@ export function usePasReportOverview({
   const openOverview = useCallback((cardId?: string) => {
     if (cardId && cards.some(card => card.id === cardId)) setActiveId(cardId);
     setTarget(null);
+    setComposer("");
     setOpen(true);
   }, [cards]);
 
@@ -164,6 +171,7 @@ export function usePasReportOverview({
   const setActive = useCallback((cardId: string) => {
     setActiveId(cardId);
     setTarget(null);
+    setComposer("");
   }, []);
 
   const stepWithin = useCallback((list: OverviewScenario[], step: number) => {
@@ -172,6 +180,7 @@ export function usePasReportOverview({
     const next = list[(index + step + list.length) % list.length]!;
     setActiveId(next.id);
     setTarget(null);
+    setComposer("");
   }, [activeCard]);
 
   const go = useCallback((step: number) => stepWithin(stripCards, step), [stepWithin, stripCards]);
@@ -219,12 +228,14 @@ export function usePasReportOverview({
       ...item,
       status: nextStatus,
       blockedKind: null,
+      promoted: action.effect === "promote" ? true : item.promoted,
       comments: comment ? [...item.comments, comment] : item.comments,
     } : item));
     setUndo({
       cardId: card.id,
       previousStatus: card.status,
       previousBlockedKind: card.blockedKind,
+      previousPromoted: Boolean(card.promoted),
       previousActiveId: card.id,
       chatId,
       commentId,
@@ -233,6 +244,7 @@ export function usePasReportOverview({
     const remaining = cards.filter(item => item.id !== card.id && isPendingCard(item));
     setActiveId(remaining[0]?.id ?? card.id);
     setTarget(null);
+    setComposer("");
     return true;
   }, [cards, activeId, appendChat, guard]);
 
@@ -290,6 +302,7 @@ export function usePasReportOverview({
       cardId: card.id,
       previousStatus: card.status,
       previousBlockedKind: card.blockedKind,
+      previousPromoted: Boolean(card.promoted),
       previousActiveId: card.id,
       chatId,
       commentId,
@@ -310,10 +323,13 @@ export function usePasReportOverview({
       ...card,
       status: undo.previousStatus,
       blockedKind: undo.previousBlockedKind,
+      promoted: undo.previousPromoted,
       comments: undo.commentId ? card.comments.filter(comment => comment.id !== undo.commentId) : card.comments,
     } : card));
     if (undo.chatId) setChatLog(log => log.filter(turn => turn.id !== undo.chatId));
     setActiveId(undo.previousActiveId);
+    setTarget(null);
+    setComposer("");
     setUndo(null);
     setQuestionReset(value => value + 1);
   }, [undo]);

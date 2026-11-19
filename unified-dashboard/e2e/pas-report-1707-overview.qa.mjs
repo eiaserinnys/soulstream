@@ -353,17 +353,49 @@ async function drawerText(page) {
 
 function scanForbidden(text, label) {
   const hits = [];
+  // 검사기 자신도 검사 대상이므로 금지 문자는 소스에 그대로 적지 않고 코드포인트로 만든다.
+  const char = code => String.fromCharCode(code);
+  const verbTrails = [0xb2e4, 0xc558, 0xc544, 0xc740, 0xc744, 0xb294, 0xd600, 0xd788, 0xc790, 0xace0, 0xc9c0, 0xac8c, 0xc74c, 0xae30, 0xc778, 0xc5ec, 0xc600];
   const rules = [
-    ["가운뎃점", /·/],
-    ["엠 대시", /—/],
-    ["수평선 대시", /―/],
+    ["가운뎃점", new RegExp(char(0xb7))],
+    ["엠 대시", new RegExp(char(0x2014))],
+    ["수평선 대시", new RegExp(char(0x2015))],
     ["세 하이픈 수평선", /(^|\n)---(\n|$)/],
-    ["박다 계열", /박(다|았|아|은|을|는|혀|히|자|고|지|게|음|기|인|여|였)/],
+    ["금지 동사", new RegExp(char(0xbc15) + "(?:" + verbTrails.map(char).join("|") + ")")],
   ];
   for (const [name, pattern] of rules) {
     if (pattern.test(text)) hits.push(`${label}: ${name}`);
   }
   return hits;
+}
+
+async function firstChoiceReport(page) {
+  return page.evaluate(() => {
+    const choice = document.querySelector(".v3-card-question-choices button");
+    const column = document.querySelector('[data-testid="overview-col-1"]');
+    const colScroll = column?.querySelector(".pas-ro1707-col-scroll");
+    const cols = document.querySelector(".pas-ro1707-cols");
+    const dock = document.querySelector('[data-testid="overview-dock"]');
+    const panel = document.querySelector(".pas-ro1707-sheet-panel");
+    if (!choice || !colScroll || !cols || !dock || !panel) return { error: "missing" };
+    // 좁은 폭에서는 col-scroll이 overflow visible이라 실제 보이는 칸은 cols 스크롤 상자다.
+    const mobile = getComputedStyle(cols).display === "block";
+    const viewport = (mobile ? cols : colScroll).getBoundingClientRect();
+    const choiceRect = choice.getBoundingClientRect();
+    const dockRect = dock.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const x = choiceRect.left + choiceRect.width / 2;
+    const y = choiceRect.top + choiceRect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      text: (choice.textContent ?? "").replace(/\s+/g, " ").trim(),
+      choice: { top: Math.round(choiceRect.top * 10) / 10, bottom: Math.round(choiceRect.bottom * 10) / 10 },
+      viewport: { top: Math.round(viewport.top * 10) / 10, bottom: Math.round(viewport.bottom * 10) / 10 },
+      centerHit: Boolean(hit && (hit === choice || choice.contains(hit))),
+      dockGap: Math.round((panelRect.bottom - dockRect.bottom) * 10) / 10,
+      scrollTop: mobile ? cols.scrollTop : colScroll.scrollTop,
+    };
+  });
 }
 
 const { server, base } = await startStaticServer();
@@ -399,6 +431,7 @@ try {
       assert.equal(await page.getByRole("button", { name: "작업 목록", exact: true }).count(), 1);
       const screenText = (await page.locator('[data-testid="pas-report-overview-screen"]').innerText()).replace(/\s+/g, " ");
       assert.ok(!screenText.includes("세션 중단"), "메인 화면에 세션 중단이 있습니다");
+      assert.equal(await page.locator(".pas-ro1707-chat-meta").count(), 0, "메인 대화에 chat-meta 래퍼가 남았습니다");
       const composer = await page.locator('[data-testid="chat-input"]').boundingBox();
       assert.ok(composer, "메인 입력창이 없습니다");
       assert.ok(900 - (composer.y + composer.height) >= 24, `메인 입력창 아래 여백이 부족합니다: ${JSON.stringify(composer)}`);
@@ -447,6 +480,12 @@ try {
       const col3 = (await page.locator('[data-testid="overview-col-3"]').innerText()).replace(/\s+/g, " ");
       assert.ok(col1.includes("원 요청") && col1.includes("확인 항목") && col1.includes("대표 시각 증거"));
       assert.ok(col1.includes("최근 7일") && col1.includes("최근 14일") && col1.includes("전체 기간") && col1.includes("권함"));
+      const dockText = (await page.locator('[data-testid="overview-dock"]').innerText()).replace(/\s+/g, " ");
+      assert.ok(!dockText.includes("전체 커멘트로 남깁니다."), `기본 도크에 중복 안내가 남았습니다: ${dockText.slice(0, 120)}`);
+      assert.equal((col1.match(/원 요청/g) ?? []).length, 1, "원 요청 제목이 한 번이 아닙니다");
+      const questionText = (await page.locator(".pas-ro1707-question").innerText()).replace(/\s+/g, " ");
+      assert.equal((questionText.match(/88건/g) ?? []).length, 1, `질문 배경이 88건을 되풀이합니다: ${questionText.slice(0, 160)}`);
+      assert.equal(await page.locator(".pas-ro1707-question .v3-card-question-background").isVisible(), false, "질문 배경이 다시 보입니다");
       assert.equal(await page.locator('[data-testid="overview-comment"]').count(), 2, "1680 커멘트가 2건이 아닙니다");
       assert.equal(await page.locator('[data-testid="overview-turn"]').count(), 3, "1680 세션 대화가 3턴이 아닙니다");
       assert.ok(col3.includes("완료 목록 기간 집계 세션"), "담당 세션 이름이 없습니다");
@@ -695,6 +734,85 @@ try {
       return "해시 #report와 질의 view=report 두 진입, 닫으면 #pas";
     });
 
+    await step("R2 호스트 질의 view=report가 자식에서 열림", async () => {
+      await page.goto(`${base}/index.html?theme=dark&view=report`, { waitUntil: "domcontentloaded" });
+      const hostFrame = page.frameLocator(".mockup-host-frame");
+      await hostFrame.locator('[data-testid="pas-report-overview-screen"]').waitFor({ state: "visible" });
+      await hostFrame.locator('[data-testid="overview-sheet"]').waitFor({ state: "visible" });
+      const childSrc = await page.locator(".mockup-host-frame").getAttribute("src");
+      assert.ok(childSrc && !childSrc.includes("view=report"), `자식 주소에 view가 복사되었습니다: ${childSrc}`);
+      const hostTitle = (await hostFrame.locator('[data-testid="overview-title"]').innerText()).replace(/\s+/g, " ").trim();
+      assert.match(hostTitle, /^#1680 /);
+      return "부모 질의 view=report만으로 자식 조감 시트가 열림";
+    });
+
+    await step("R2 카드 전환에서 초안 분리", async () => {
+      await page.goto(`${base}/frame.html?theme=dark&glass=css#report`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector('[data-testid="overview-sheet"]', { state: "visible" });
+      const composer = page.locator(".pas-ro1707-field textarea");
+      await composer.fill("카드 사이에 남으면 안 되는 초안");
+      await page.locator(".pas-ro1707-chip", { hasText: "#1512" }).click({ force: true });
+      await page.waitForFunction(() => document.querySelector('[data-testid="overview-title"]')?.textContent?.includes("#1512"));
+      assert.equal(await composer.inputValue(), "", "카드를 바꾸면 이전 초안이 남습니다");
+      await composer.fill("두 번째 초안");
+      await page.locator(".pas-ro1707-strip .pas-ro1707-arrow[aria-label='다음 안건']").click({ force: true });
+      await page.waitForFunction(() => document.querySelector('[data-testid="overview-title"]')?.textContent?.includes("#1387"));
+      assert.equal(await composer.inputValue(), "", "앞뒤로 넘겨도 이전 초안이 남습니다");
+      return "칩과 앞뒤 넘김 두 전환에서 초안 0";
+    });
+
+    await step("R2 승격 20초 뒤 배지와 폴더 문서 재열기, 500 뒤 재시도", async () => {
+      assert.match(await sheetTitle(page), /^#1387 /);
+      await page.locator('[data-testid="overview-primary"]').click({ force: true });
+      await page.waitForFunction(() => {
+        const title = document.querySelector('[data-testid="overview-title"]')?.textContent;
+        return Boolean(title) && !title.includes("#1387");
+      });
+      await pause(80);
+      assert.equal(await page.locator('[data-testid="overview-undo"]').count(), 1, "승격 직후 되돌리기가 없습니다");
+      await page.waitForFunction(() => {
+        const slot = document.querySelector('[data-testid="overview-undo-slot"]');
+        return Boolean(slot) && !slot.textContent.includes("되돌리기");
+      }, undefined, { timeout: 25_000 });
+      assert.equal(await page.locator('[data-testid="overview-undo"]').count(), 0, "20초 뒤 되돌리기가 남았습니다");
+      await closeSheet(page);
+
+      await openTaskDrawer(page);
+      const promotedRow = page.locator('.v3-card-summary-row[data-card-id="overview-1387"]');
+      await promotedRow.waitFor({ state: "visible" });
+      assert.equal(await promotedRow.getAttribute("data-has-badge"), "true", "작업 목록 카드에 배지 자리가 없습니다");
+      assert.ok((await promotedRow.innerText()).includes("폴더 문서"), "작업 목록에 폴더 문서 배지가 없습니다");
+      await capture(page, "11-1440-dark-drawer-promoted.png");
+      await promotedRow.click({ force: true });
+      await page.waitForSelector('[data-testid="overview-sheet"]', { state: "visible" });
+      await page.waitForFunction(() => document.querySelector('[data-testid="overview-title"]')?.textContent?.includes("#1387"));
+      await pause(80);
+      assert.ok((await titleRowText(page)).includes("폴더 문서"), "시트 헤더에 폴더 문서 배지가 없습니다");
+      assert.equal(await page.locator('[data-testid="overview-col-1"] .pas-ro1707-reader-open', { hasText: "등록한 폴더 문서 열기" }).count(), 1,
+        "첫 열에 등록 문서 열기 단추가 없습니다");
+      const dockDocument = page.locator('.pas-ro1707-dock .pas-ro1707-undo-slot button', { hasText: "등록한 폴더 문서 열기" });
+      assert.equal(await dockDocument.count(), 1, "도크에 등록 문서 열기 단추가 없습니다");
+
+      await page.evaluate(() => { window.__pasRo1707FailDocumentOnce = true; });
+      await dockDocument.click({ force: true });
+      const reader = page.locator('[data-testid="internal-document-dialog"]');
+      await reader.waitFor({ state: "visible" });
+      await page.waitForFunction(() => document.querySelector('[data-testid="internal-document-dialog"]')?.textContent?.includes("문서를 불러오지 못했습니다"));
+      await capture(page, "12-1440-dark-document-error.png");
+      await page.getByRole("button", { name: "문서 닫기" }).click({ force: true });
+      await reader.waitFor({ state: "hidden" });
+      await pause(100);
+
+      await dockDocument.click({ force: true });
+      await reader.waitFor({ state: "visible" });
+      await page.waitForFunction(() => document.querySelector('[data-testid="internal-document-dialog"]')?.textContent?.includes("접수"));
+      const recovered = (await reader.innerText()).replace(/\s+/g, " ");
+      assert.ok(recovered.includes("턴 안 상호작용 3단계 도입 설계안"), "재시도한 문서 제목이 없습니다");
+      await page.getByRole("button", { name: "문서 닫기" }).click({ force: true });
+      await reader.waitFor({ state: "hidden" });
+      return "20초 뒤 헤더와 작업 목록 배지, 등록 문서 열기 단추 두 곳, 500 오류 뒤 재시도 성공";
+    });
+
     await context.close();
 
     const responsiveContext = await browser.newContext({ reducedMotion: "reduce", timezoneId: "Asia/Seoul" });
@@ -769,6 +887,33 @@ try {
       return `3열 ${JSON.stringify(geometryNotes.columnTops1440Final)}, 1440 시트 ${JSON.stringify(sheetBox)}, 390 시트 ${JSON.stringify(geometryNotes.sheet390)}`;
     });
 
+    await step("R4 첫 선택지 전체 노출과 도크 하단 간격", async () => {
+      const notes = [];
+      for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 780]]) {
+        await openMain(responsive, { width, height, theme: "dark", hash: "#report" });
+        await responsive.waitForSelector('[data-testid="overview-sheet"]', { state: "visible" });
+        await responsive.waitForSelector(".v3-card-question-choices button", { state: "visible" });
+        assert.match(await sheetTitle(responsive), /^#1680 /);
+        await responsive.evaluate(() => {
+          for (const element of document.querySelectorAll(".pas-ro1707-cols, .pas-ro1707-col-scroll")) element.scrollTop = 0;
+        });
+        await pause(120);
+        const report = await firstChoiceReport(responsive);
+        assert.ok(!report.error, `${width} 첫 선택지 측정 실패: ${JSON.stringify(report)}`);
+        assert.ok(report.text.includes("최근 7일"), `${width} 첫 선택지가 최근 7일이 아닙니다: ${report.text}`);
+        assert.equal(report.scrollTop, 0, `${width} 첫 열 스크롤이 0이 아닙니다: ${report.scrollTop}`);
+        assert.ok(report.choice.top >= report.viewport.top - 0.5, `${width} 첫 선택지 위가 잘렸습니다: ${JSON.stringify(report)}`);
+        assert.ok(report.choice.bottom <= report.viewport.bottom + 0.5, `${width} 첫 선택지 아래가 잘렸습니다: ${JSON.stringify(report)}`);
+        assert.ok(report.centerHit, `${width} 첫 선택지 가운데가 가려졌습니다: ${JSON.stringify(report)}`);
+        assert.ok(report.dockGap <= 16, `${width} 도크 아래 간격이 16px를 넘습니다: ${report.dockGap}`);
+        notes.push(`${width}: 선택지 아래 ${report.choice.bottom}, 칸 아래 ${report.viewport.bottom}, 도크 ${report.dockGap}px`);
+        if (width === 820 || width === 390) await capture(responsive, `13-${width}-first-choice.png`);
+        await closeSheet(responsive);
+      }
+      geometryNotes.firstChoice = notes;
+      return notes.join(", ");
+    });
+
     await step("R4 창 크기 바꾸기에서 입력과 스크롤 유지", async () => {
       await openMain(responsive, { width: 1440, height: 900, theme: "dark" });
       await openSheet(responsive);
@@ -801,7 +946,7 @@ try {
       return `입력 유지, 첫 열 스크롤 ${scrollBefore} -> ${at820.scroll} -> ${back.scroll}`;
     });
 
-    await step("R5 금지 문장부호와 박다 계열 0", async () => {
+    await step("R5 금지 문장부호와 금지 동사 0", async () => {
       await openMain(responsive, { width: 1440, height: 900, theme: "dark" });
       await openSheet(responsive);
       await openChip(responsive, 1408);
@@ -818,6 +963,11 @@ try {
         "mockups/pas-report-1707-overview/index.html",
         "mockups/pas-report-1707-overview/frame.html",
         "mockups/pas-report-1707-overview/frame.tsx",
+        "mockups/_shell/mock-env.ts",
+        "client/v3/CardRow.tsx",
+        "client/v3/PersistentSessionTaskList.tsx",
+        "client/v3/v3-persistent-task-list.css",
+        "e2e/pas-report-1707-overview.qa.mjs",
       ];
       for (const file of files) {
         const text = readFileSync(resolve(dashboardDir, file), "utf8");

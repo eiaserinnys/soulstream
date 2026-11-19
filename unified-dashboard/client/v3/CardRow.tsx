@@ -13,7 +13,7 @@ import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 type SummaryRowWrapper = (row: ReactElement, titleRef: RefObject<HTMLSpanElement | null>) => ReactNode;
-export function CardRow({card,folderLabel,handle,variant="default",onOpenCard,summaryNumberTemplate,summaryRowWrapper}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void;summaryNumberTemplate?:string;summaryRowWrapper?:SummaryRowWrapper}) {
+export function CardRow({card,folderLabel,handle,variant="default",onOpenCard,summaryNumberTemplate,summaryRowWrapper,summaryBadge}:{card:Card;folders?:readonly CatalogFolder[];placement?:"inline"|"overlay";handle?:ReactNode;showQueueAction?:boolean;folderLabel?:string;variant?:"default"|"summary";onOpenCard?(cardId:string):void;summaryNumberTemplate?:string;summaryRowWrapper?:SummaryRowWrapper;summaryBadge?:ReactNode}) {
  const open=useCardNavigation(s=>s.open);
  const currentCard=useCardStore(s=>s.byId[card.id]??card);
  const pendingConfirmations=useCardStore(s=>s.pendingItemConfirmations[card.id]??NO_PENDING_CONFIRMATIONS);
@@ -21,15 +21,16 @@ export function CardRow({card,folderLabel,handle,variant="default",onOpenCard,su
  const assignee=useDashboardStore(s=>s.catalog?.sessionList?.find(session=>session.agentSessionId===currentCard.assigneeSessionId));
  const detail=useCardStore(s=>s.details[currentCard.id]);
  return <CardRowView card={currentCard} pendingConfirmations={pendingConfirmations} folderLabel={folderLabel} handle={handle} assignee={assignee} detail={detail}
-  onOpen={()=>onOpenCard?onOpenCard(currentCard.id):open(currentCard.id,"overlay")} completion={completion} variant={variant} summaryNumberTemplate={summaryNumberTemplate} summaryRowWrapper={summaryRowWrapper} />;
+  onOpen={()=>onOpenCard?onOpenCard(currentCard.id):open(currentCard.id,"overlay")} completion={completion} variant={variant} summaryNumberTemplate={summaryNumberTemplate} summaryRowWrapper={summaryRowWrapper} summaryBadge={summaryBadge} />;
 }
 /** Shared row presentation; the operational wrapper owns navigation and completion. */
-export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion,pendingConfirmations=NO_PENDING_CONFIRMATIONS,variant="default",summaryNumberTemplate,summaryRowWrapper}: {
+export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,completion,pendingConfirmations=NO_PENDING_CONFIRMATIONS,variant="default",summaryNumberTemplate,summaryRowWrapper,summaryBadge}: {
  card:Card;folderLabel?:string;handle?:ReactNode;assignee?:SessionSummary;detail?:CardDetail;
  onOpen():void;completion?:{pending:boolean;onComplete():void};
  variant?:"default"|"summary";
  summaryNumberTemplate?:string;
  summaryRowWrapper?:SummaryRowWrapper;
+ summaryBadge?:ReactNode;
  pendingConfirmations?:Readonly<Record<number,boolean>>;
 }) {
  const summaryTitleRef=useRef<HTMLSpanElement>(null);
@@ -39,10 +40,12 @@ export function CardRowView({card,folderLabel,handle,assignee,detail,onOpen,comp
  if(variant==="summary") {
   const hasNumber=card.number!==undefined&&card.number!==null;
   const hasAssignee=card.assigneeKind!==null&&Boolean(agentId||card.assigneeUserId);
+  const hasBadge=Boolean(summaryBadge);
   const row=<button type="button" className="v3-card-summary-row" data-card-id={card.id} data-has-number={hasNumber||undefined}
-   data-has-assignee={hasAssignee||undefined} aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
+   data-has-assignee={hasAssignee||undefined} data-has-badge={hasBadge||undefined} aria-label={`카드 ${card.title} 열기`} onClick={onOpen}>
    {hasNumber?<span className="v3-card-summary-number-slot"><span className="v3-card-summary-number-reserve" aria-hidden="true">{summaryNumberTemplate??`#${card.number}`}</span><span className="v3-card-summary-number">#{card.number}</span></span>:null}
    <span ref={summaryTitleRef} className="v3-card-summary-title">{card.title}</span>
+   {hasBadge?<span className="v3-card-summary-badge">{summaryBadge}</span>:null}
    {hasAssignee?<span className="v3-card-summary-avatar"><ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji={card.assigneeKind==="human"?"👤":"🤖"}/></span>:null}
   </button>;
   return summaryRowWrapper ? summaryRowWrapper(row,summaryTitleRef) : row;

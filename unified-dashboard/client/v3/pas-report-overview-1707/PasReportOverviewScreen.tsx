@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ChevronLeft, ChevronRight, ListTodo, Maximize2, X } from "lucide-react";
 import {
+  Badge,
   ChatInput,
   DashboardIconCap,
   PersistentSessionPortraitIcon,
@@ -102,12 +103,13 @@ function ReportBubble({
 }
 
 export function PasReportOverviewScreen({
-  card, pendingCards, chatLog, taskCards, openTriggerRef, taskToggleRef, onPrev, onNext, onOpenOverview, onOpenCard, children,
+  card, pendingCards, chatLog, taskCards, promotedIds, openTriggerRef, taskToggleRef, onPrev, onNext, onOpenOverview, onOpenCard, children,
 }: {
   card: OverviewScenario;
   pendingCards: readonly OverviewScenario[];
   chatLog: readonly OverviewChatTurn[];
   taskCards: readonly CardRow[];
+  promotedIds: ReadonlySet<string>;
   openTriggerRef: RefObject<HTMLButtonElement | null>;
   taskToggleRef: RefObject<HTMLButtonElement | null>;
   onPrev(): void;
@@ -158,13 +160,7 @@ export function PasReportOverviewScreen({
       {bubble && !bubbleRect ? <div className="pas-ro1707-inline-bubble">{bubble}</div> : null}
       <div data-slot="chat-root" data-chat-presentation="manuscript" data-testid="chat-view" className="pas-ro1707-chat">
         <div ref={chatScrollRef} className="pas-ro1707-chat-scroll" role="log" aria-label="영구 세션 대화" style={chatTypographyStyle}>
-          {chatLog.map(turn => <div className="pas-ro1707-chat-turn" data-role={turn.role} key={turn.id}>
-            <div className="pas-ro1707-chat-meta">
-              <span>{turn.role === "assistant" ? "서소영" : "나"}</span>
-              <time>{turn.time}</time>
-            </div>
-            <ChatMessageItem msg={toChatMessage(turn)} sessionId={MOCK_SESSION_ID} presentation="manuscript" />
-          </div>)}
+          {chatLog.map(turn => <ChatMessageItem key={turn.id} msg={toChatMessage(turn)} sessionId={MOCK_SESSION_ID} presentation="manuscript" />)}
         </div>
         <ChatInput presentation="manuscript" composerAnchorRef={composerAnchorRef} />
       </div>
@@ -182,7 +178,8 @@ export function PasReportOverviewScreen({
         </DashboardIconCap>
       </div>
       <div className="persistent-session-task-scroll">
-        <PersistentSessionTaskList cards={[...taskCards]} onOpenCard={cardId => { setTasksOpen(false); onOpenCard(cardId); }} />
+        <PersistentSessionTaskList cards={[...taskCards]} onOpenCard={cardId => { setTasksOpen(false); onOpenCard(cardId); }}
+          summaryBadge={taskCard => promotedIds.has(taskCard.id) ? <Badge variant="info" size="sm">폴더 문서</Badge> : null} />
       </div>
       <p className="pas-ro1707-hold">보류함 {HOLD_COUNT}개 (변동 없음)</p>
     </aside>}

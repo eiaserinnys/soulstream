@@ -2,7 +2,7 @@ import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/card
 import { Button, DisclosureActionIcon, FrameLoading } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useEffect, useState, type CSSProperties, type ReactElement, type RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
 import { cardStatusLabel } from "./CardActions";
 import { CardRow as CardRowComponent } from "./CardRow";
 import { PersistentTaskTooltipPanel } from "./PersistentTaskTooltipPanel";
@@ -147,20 +147,20 @@ export function groupPersistentSessionTasks(cards: readonly CardRow[]): Persiste
   });
 }
 
-export function PersistentSessionTaskList({cards,onOpenCard}: {
-  cards?: readonly CardRow[]; onOpenCard(cardId: string): void;
+export function PersistentSessionTaskList({cards,onOpenCard,summaryBadge}: {
+  cards?: readonly CardRow[]; onOpenCard(cardId: string): void; summaryBadge?(card: CardRow): ReactNode;
 }) {
-  if (cards !== undefined) return <TaskListContent cards={cards} onOpenCard={onOpenCard}/>;
-  return <ConnectedTaskList onOpenCard={onOpenCard}/>;
+  if (cards !== undefined) return <TaskListContent cards={cards} onOpenCard={onOpenCard} summaryBadge={summaryBadge}/>;
+  return <ConnectedTaskList onOpenCard={onOpenCard} summaryBadge={summaryBadge}/>;
 }
 
-function ConnectedTaskList({onOpenCard}:{onOpenCard(cardId:string):void}) {
+function ConnectedTaskList({onOpenCard,summaryBadge}:{onOpenCard(cardId:string):void;summaryBadge?(card:CardRow):ReactNode}) {
   const membership = useCardMembership(undefined);
-  return <TaskListContent cards={membership.cards} loading={membership.loading} error={membership.error} retry={membership.retry} onOpenCard={onOpenCard}/>;
+  return <TaskListContent cards={membership.cards} loading={membership.loading} error={membership.error} retry={membership.retry} onOpenCard={onOpenCard} summaryBadge={summaryBadge}/>;
 }
 
-function TaskListContent({cards,loading,error,retry,onOpenCard}: {
-  cards: readonly CardRow[]; loading?: boolean; error?: string | null; retry?:()=>void; onOpenCard(cardId:string):void;
+function TaskListContent({cards,loading,error,retry,onOpenCard,summaryBadge}: {
+  cards: readonly CardRow[]; loading?: boolean; error?: string | null; retry?:()=>void; onOpenCard(cardId:string):void; summaryBadge?(card:CardRow):ReactNode;
 }) {
   const [collapsedGroups,setCollapsedGroups]=useState(readCollapsedTaskGroups);
   const tooltipsEnabled = usePersistentTaskTooltips();
@@ -169,7 +169,12 @@ function TaskListContent({cards,loading,error,retry,onOpenCard}: {
     catch { /* Keep the task list usable when storage is unavailable. */ }
   },[collapsedGroups]);
   const groups = groupPersistentSessionTasks(cards);
-  const numberedCards=groups.flatMap(group=>group.cards).filter(card=>card.number!==undefined&&card.number!==null);
+  // 폴더 문서로 남긴 카드는 완료로 빠져 기본 묶음에 들지 않는다. 배지가 붙는 카드만
+  // 별도의 완료 묶음으로 남겨, 처분 뒤에도 작업 목록에서 다시 열 수 있게 한다.
+  const promotedCards = summaryBadge
+    ? cards.filter(card => !(TASK_STATUSES as readonly string[]).includes(card.status) && Boolean(summaryBadge(card)))
+    : [];
+  const numberedCards=[...groups.flatMap(group=>group.cards),...promotedCards].filter(card=>card.number!==undefined&&card.number!==null);
   const widestNumber=numberedCards.reduce<number|null>((widest,card)=>widest===null||String(card.number).length>String(widest).length?card.number!:widest,null);
   const summaryNumberTemplate=widestNumber===null?undefined:`#${widestNumber}`;
   return <Tooltip.Provider delay={300}><div className="v3-persistent-task-list" data-testid="persistent-session-task-list" aria-busy={loading&&!error||undefined}>
@@ -188,8 +193,18 @@ function TaskListContent({cards,loading,error,retry,onOpenCard}: {
           </button>
         </h3></div>
         {expanded?<div className="v3-run-list">{group.cards.map(card=><CardRowComponent key={card.id} card={card} variant="summary" summaryNumberTemplate={summaryNumberTemplate} onOpenCard={onOpenCard}
+          summaryBadge={summaryBadge?.(card)}
           summaryRowWrapper={tooltipsEnabled ? (row,titleRef)=><PersistentTaskTooltip card={card} row={row} titleRef={titleRef}/> : undefined}/>)}</div>:null}
       </section>;
     }):null}
+    {!error&&promotedCards.length>0?<section data-task-status-group="done" aria-label="완료">
+      <div className="v3-detail-section-head v3-persistent-task-group-label"><h3>
+        <span className="v3-persistent-task-group-name">완료</span>{" "}
+        <span className="v3-persistent-task-group-count">{promotedCards.length}개</span>
+      </h3></div>
+      <div className="v3-run-list">{promotedCards.map(card=><CardRowComponent key={card.id} card={card} variant="summary" summaryNumberTemplate={summaryNumberTemplate} onOpenCard={onOpenCard}
+        summaryBadge={summaryBadge?.(card)}
+        summaryRowWrapper={tooltipsEnabled ? (row,titleRef)=><PersistentTaskTooltip card={card} row={row} titleRef={titleRef}/> : undefined}/>)}</div>
+    </section>:null}
   </div></Tooltip.Provider>;
 }
