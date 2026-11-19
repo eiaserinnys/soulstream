@@ -15,6 +15,10 @@ on:
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
+      - 'scripts/check-ui-css.mjs'
+      - 'scripts/check-ui-css.test.mjs'
+      - 'scripts/ui-css-check.config.json'
+      - 'scripts/ui-css-baseline.json'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -33,6 +37,10 @@ on:
       - 'chrome-extension/**'
       - 'scripts/tests/**'
       - 'scripts/verify-*.mjs'
+      - 'scripts/check-ui-css.mjs'
+      - 'scripts/check-ui-css.test.mjs'
+      - 'scripts/ui-css-check.config.json'
+      - 'scripts/ui-css-baseline.json'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -147,7 +155,7 @@ jobs:
           elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
             corepack pnpm --dir packages/search-contract test
           elif [[ "${{ matrix.package }}" == "scripts" ]]; then
-            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs
           elif [[ "${{ matrix.kind }}" == "python" ]]; then
             python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
@@ -193,6 +201,9 @@ jobs:
 
       - name: Typecheck active TypeScript packages
         run: corepack pnpm --filter '*' --recursive --if-present typecheck
+
+      - name: Check UI CSS baseline
+        run: node scripts/check-ui-css.mjs
 
       - name: Build orch-server-ts bundle (includes verify:bundle)
         run: corepack pnpm --dir orch-server-ts build

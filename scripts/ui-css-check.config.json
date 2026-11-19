@@ -1,0 +1,23 @@
+{
+  "cssRoots": ["unified-dashboard/client", "packages/soul-ui/src", "soul-desktop/src"],
+  "tsxRoots": ["unified-dashboard/client", "packages/soul-ui/src", "soul-desktop/src"],
+  "tsxExclude": [".test.", ".spec.", "/__tests__/", "/tests/", "/test/", "/e2e/", "/qa/", ".qa.", ".stories."],
+  "tokenFiles": [
+    "unified-dashboard/client/v3/v3-visual-tokens.css",
+    "unified-dashboard/client/v3/v3-visual-system.css",
+    "unified-dashboard/client/globals.css",
+    "packages/soul-ui/src/styles/globals.css"
+  ],
+  "selectionPolicyFiles": ["unified-dashboard/client/v3/v3-selection-policy.css"],
+  "baseline": "scripts/ui-css-baseline.json",
+  "rules": {
+    "color-literal": {"enabled": true, "hint": "--v3-text-primary, --v3-glass-panel, --v3-stroke-default 또는 Tailwind 테마 색을 쓴다."},
+    "font-literal": {"enabled": true, "hint": "--v3-type-body, --v3-type-meta 같은 글자 토큰을 쓴다."},
+    "radius-literal": {"enabled": false, "hint": "프로젝트의 곡률 토큰을 쓴다."},
+    "spacing-literal": {"enabled": true, "hint": "--v3-space-1, --v3-space-2 같은 간격 토큰을 쓴다."},
+    "selection-outside-policy": {"enabled": true, "hint": "v3-selection-policy.css의 선택자 목록에 더한다."},
+    "outline-none": {"enabled": true, "hint": ":focus-visible 모양을 프로젝트 초점 스타일로 함께 둔다."},
+    "tw-text-arbitrary": {"enabled": true, "hint": "text-sm 같은 스케일 클래스나 --v3-type-body 같은 토큰을 쓴다."},
+    "tw-rounded-arbitrary": {"enabled": true, "hint": "rounded-md, rounded-lg 같은 스케일 클래스를 쓴다."}
+  }
+}
