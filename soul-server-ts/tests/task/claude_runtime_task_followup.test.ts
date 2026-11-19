@@ -61,6 +61,7 @@ function makeNativeTranscriptReconciliation(
   inspectNativeTaskNotification: ReturnType<typeof vi.fn>,
   recordRuntimeFollowupRelationConsumed = vi.fn(async () => true),
   inspectInput = vi.fn(),
+  generationId = "toolu-native",
 ) {
   const task = makeTask();
   task.status = "completed";
@@ -84,7 +85,7 @@ function makeNativeTranscriptReconciliation(
   } as never);
   const identity = buildClaudeBackgroundGenerationIdentity({
     sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
-    sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+    sdkTaskId: "task-native", initiatingToolUseId: generationId,
   });
   const terminal = {
     type: "claude_runtime_task_updated", task_id: "task-native",
@@ -92,7 +93,7 @@ function makeNativeTranscriptReconciliation(
   } as unknown as SSEEventPayload;
   attachClaudeBackgroundProvenance(terminal, "sdk_membership");
   attachClaudeBackgroundDeliveryMetadata(terminal, {
-    initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+    initiatingToolUseId: generationId, deliveryId: identity.deliveryId,
     completionId: identity.completionId, relationKey: identity.relationKey,
     producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
     source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
@@ -286,7 +287,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention).not.toHaveBeenCalled();
   });
 
-  it("lets one SDK-native notification assistant consume the exact durable relation without synthetic follow-up", async () => {
+  it.each(["toolu-native", "toolu-native#r1"])("lets an SDK-native notification consume generation %s", async (generationId) => {
     const task = makeTask();
     task.status = "completed";
     task.claudeRuntime!.tasks["task-native"] = {
@@ -306,17 +307,17 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     } as never);
     const identity = buildClaudeBackgroundGenerationIdentity({
       sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
-      sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+      sdkTaskId: "task-native", initiatingToolUseId: generationId,
     });
     const terminal = {
       type: "claude_runtime_task_updated",
       task_id: "task-native",
       session_id: "sdk-sess-1",
-      patch: { status: "completed", is_backgrounded: true },
+      patch: { status: "completed", is_backgrounded: true, tool_use_id: "toolu-native" },
     } as unknown as SSEEventPayload;
     attachClaudeBackgroundProvenance(terminal, "sdk_membership");
     attachClaudeBackgroundDeliveryMetadata(terminal, {
-      initiatingToolUseId: "toolu-native",
+      initiatingToolUseId: generationId,
       deliveryId: identity.deliveryId, completionId: identity.completionId,
       relationKey: identity.relationKey, producerTerminalRevision: "1",
       deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
@@ -340,7 +341,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
 
     expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
       task,
-      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: generationId },
       "assistant-native",
     );
     expect(addIntervention).not.toHaveBeenCalled();
@@ -568,7 +569,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention).not.toHaveBeenCalled();
   });
 
-  it("reconciles the exact published assistant after its transcript append becomes visible", async () => {
+  it.each(["toolu-native", "toolu-native#r1"])("reconciles transcript with native id for generation %s", async (generationId) => {
     const proof = {
       kind: "completed" as const,
       inputUuid: "input-native",
@@ -577,7 +578,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const inspectNativeTaskNotification = vi.fn()
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(proof);
-    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification);
+    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification, undefined, undefined, generationId);
 
     await fixture.controller.collectDetached(fixture.task, fixture.terminal);
     await fixture.controller.collectDetached(fixture.task, fixture.assistant);
@@ -597,7 +598,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
     expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
       fixture.task,
-      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: generationId },
       "assistant-native",
     );
     expect(fixture.addIntervention).not.toHaveBeenCalled();

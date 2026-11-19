@@ -24,8 +24,10 @@ import {
   buildFollowupKey,
   type PendingRuntimeTaskFollowup,
 } from "./claude_runtime_task_followup_prompt.js";
-import { buildClaudeBackgroundGenerationIdentity } from
-  "./claude_background_generation_identity.js";
+import {
+  buildClaudeBackgroundGenerationIdentity,
+  originalClaudeBackgroundToolUseId,
+} from "./claude_background_generation_identity.js";
 import { CLAUDE_BACKGROUND_UNRECOVERABLE_SENTENCE } from
   "./claude_background_retention_notice.js";
 import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
@@ -143,8 +145,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       readClaudeSdkSessionMetadata(event)?.sessionId;
     if (eventSdkSessionId && eventSdkSessionId !== sdkSessionId) return undefined;
     const durableDelivery = readClaudeBackgroundDeliveryMetadata(event);
-    const initiatingToolUseId = asString(payload.tool_use_id) ??
-      asString(patch.tool_use_id) ?? durableDelivery?.initiatingToolUseId ??
+    const initiatingToolUseId = durableDelivery?.initiatingToolUseId ??
+      asString(payload.tool_use_id) ?? asString(patch.tool_use_id) ??
       runtimeTask?.toolUseId;
     if (!sdkSessionId || !initiatingToolUseId) return undefined;
     const identity = buildClaudeBackgroundGenerationIdentity({
@@ -155,7 +157,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       initiatingToolUseId,
     });
     if (this.flushedGenerationKeys.has(identity.generationKey)) return undefined;
-    const exactRuntimeTask = runtimeTask?.toolUseId === initiatingToolUseId
+    const originalToolUseId = originalClaudeBackgroundToolUseId(initiatingToolUseId);
+    const exactRuntimeTask = runtimeTask?.toolUseId === originalToolUseId
       ? runtimeTask
       : undefined;
     const status = asString(payload.status) ?? asString(patch.status) ??
@@ -198,7 +201,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         exactRuntimeTask?.summary ?? previous?.summary,
       description:
         asString(patch.description) ?? exactRuntimeTask?.description ?? previous?.description,
-      toolUseId: initiatingToolUseId,
+      toolUseId: originalToolUseId,
       error:
         asString(payload.error) ?? asString(patch.error) ??
         exactRuntimeTask?.error ?? previous?.error,
@@ -550,7 +553,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       if (!inputUuid || !parsed) return;
       const candidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
         item.sessionId === task.agentSessionId && item.phase === "awaiting-input" &&
-        item.taskId === parsed.taskId && item.initiatingToolUseId === parsed.toolUseId
+        item.taskId === parsed.taskId &&
+        originalClaudeBackgroundToolUseId(item.initiatingToolUseId) === originalClaudeBackgroundToolUseId(parsed.toolUseId)
       );
       if (candidates.length !== 1) return;
       candidates[0]!.phase = "awaiting-assistant";
@@ -691,7 +695,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
               task.agentSessionId,
               {
                 taskId: candidate.taskId,
-                initiatingToolUseId: candidate.initiatingToolUseId,
+                initiatingToolUseId: originalClaudeBackgroundToolUseId(candidate.initiatingToolUseId),
                 expectedAssistantUuid: snapshot.assistantUuid,
               },
             )
