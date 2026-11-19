@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import { FrameLoading } from "./FrameLoading";
+import { Button } from "./ui/button";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
 
 interface AtomNode {
@@ -60,8 +61,12 @@ export function AtomNodeSelector({
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([
     { nodeId: null, title: "루트" },
   ]);
+  // 다시 시도 결과에 따라 초점을 옮길 곳. 목록이 그려진 뒤 효과에서 처리한다.
+  const [pendingFocus, setPendingFocus] = useState<"first-node" | "retry" | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const retryButtonRef = useRef<HTMLButtonElement>(null);
 
-  const loadNodes = async (nodeId: string | null) => {
+  const loadNodes = async (nodeId: string | null): Promise<boolean> => {
     setLoading(true);
     onStatusChange?.("loading");
     setError(null);
@@ -75,14 +80,38 @@ export function AtomNodeSelector({
       const data = (await res.json()) as { children: AtomNode[] };
       setNodes(data.children ?? []);
       onStatusChange?.("ready");
+      return true;
     } catch {
       setError("노드를 불러오지 못했습니다");
       onStatusChange?.("error");
       setNodes([]);
+      return false;
     } finally {
       setLoading(false);
     }
   };
+
+  // 실패한 단계(지금 빵부스러기의 마지막 노드)를 다시 불러온다.
+  const retryLoad = async () => {
+    const ok = await loadNodes(breadcrumbs[breadcrumbs.length - 1].nodeId);
+    setPendingFocus(ok ? "first-node" : "retry");
+  };
+
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const target = pendingFocus === "first-node"
+      ? listRef.current?.querySelector<HTMLButtonElement>("button")
+      : retryButtonRef.current;
+    target?.focus();
+    // 감싼 Popover의 포커스 관리자는 초점이 잠깐 body로 떨어진 사이 팝업으로
+    // 되돌아갈 수 있다. 한 프레임 뒤 한 번 더 잡아 그 되돌림을 이긴다.
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        if (target?.isConnected && document.activeElement !== target) target.focus();
+      });
+    }
+    setPendingFocus(null);
+  }, [pendingFocus]);
 
   // 열릴 때 브레드크럼 초기화 및 루트 노드 로드
   useEffect(() => {
@@ -122,6 +151,11 @@ export function AtomNodeSelector({
     ? selectedTitle || value.slice(0, 8) + "…"
     : "노드 선택...";
 
+  // 판 안의 맨 <button>도 soul-ui Button과 같은 초점 고리를 쓴다. popup 목록은
+  // overflow-y-auto라 바깥 고리가 잘리고, inline은 행이 판 테두리에 붙어 있어
+  // inset으로 그린다.
+  const panelButtonFocus = "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
   const triggerClass = "w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
   const triggerContent = <>
     <span className={`${value ? "" : "text-muted-foreground"} ${presentation === "inline" ? "min-w-0 truncate" : ""}`}>{displayLabel}</span>
@@ -134,7 +168,7 @@ export function AtomNodeSelector({
             <button
               type="button"
               onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
-              className="flex-shrink-0 text-muted-foreground hover:text-foreground px-1"
+              className={`flex-shrink-0 text-muted-foreground hover:text-foreground px-1 ${panelButtonFocus}`}
               title="뒤로 가기"
             >
               ←
@@ -149,7 +183,7 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => navigateToBreadcrumb(i)}
-                  className={`${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
+                  className={`${panelButtonFocus} ${presentation === "inline" ? "truncate" : ""} ${i === breadcrumbs.length - 1 ? "font-medium" : "text-muted-foreground hover:text-foreground hover:underline"}`}
                 >
                   {crumb.title}
                 </button>
@@ -159,10 +193,16 @@ export function AtomNodeSelector({
         </div>
 
         {/* 노드 목록 */}
-        <div className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
+        <div ref={listRef} className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
           {loading && <FrameLoading inline label="불러오는 중" />}
           {error && (
-            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>
+            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">
+              <div>{error}</div>
+              <Button ref={retryButtonRef} variant="outline" size="sm" className="mt-1.5"
+                onClick={() => { void retryLoad(); }}>
+                다시 시도
+              </Button>
+            </div>
           )}
           {!loading && !error && nodes.length === 0 && (
             <div className="px-3 py-2 text-xs text-muted-foreground">
@@ -180,14 +220,14 @@ export function AtomNodeSelector({
                 <button
                   type="button"
                   onClick={() => selectNode(node)}
-                  className={`flex-1 text-left text-sm px-3 py-1.5 truncate ${presentation === "inline" ? "min-w-0" : ""}`}
+                  className={`flex-1 text-left text-sm px-3 py-1.5 truncate ${presentation === "inline" ? "min-w-0" : ""} ${panelButtonFocus}`}
                 >
                   {node.card.title}
                 </button>
                 <button
                   type="button"
                   onClick={() => navigateInto(node)}
-                  className="flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
+                  className={`flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 ${panelButtonFocus}`}
                   title="자식 보기"
                 >
                   ▶
@@ -202,7 +242,7 @@ export function AtomNodeSelector({
             <button
               type="button"
               onClick={clearSelection}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className={`text-xs text-muted-foreground hover:text-foreground ${panelButtonFocus}`}
             >
               선택 해제
             </button>
