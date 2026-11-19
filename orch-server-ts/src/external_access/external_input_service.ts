@@ -165,6 +165,7 @@ export class ExternalInputService {
   private readonly tokenBucket: ExternalAccessTokenBucket;
   private readonly newRequestId: () => string;
   private readonly now: () => Date;
+  private readonly pendingDispatches = new Set<Promise<void>>();
 
   constructor(private readonly options: ExternalInputServiceOptions) {
     this.tokenBucket = options.tokenBucket ?? new ExternalAccessTokenBucket();
@@ -263,31 +264,10 @@ export class ExternalInputService {
     if (admitted.conflict) return { ok: false, reason: "conflict" };
 
     await this.options.grants.touchLastUsedAt(grant.id);
-    // Admission is the durable point: whatever the dispatch outcome, the
-    // caller keeps the accepted answer and the ledger owns the retry. The
-    // warning is the only trace, so it carries no key material.
-    try {
-      const response = await this.options.dispatch(
-        admitted.receipt.target_session_id,
-        {
-          ...admitted.receipt.payload,
-          caller_info: admitted.receipt.caller_info,
-        },
-      );
-      const status = responseStatus(response);
-      if (status !== undefined && (status < 200 || status >= 300)) {
-        this.warnDispatchFailure(
-          admitted.receipt.grant_id,
-          admitted.receipt.request_id,
-          status,
-        );
-      }
-    } catch {
-      this.warnDispatchFailure(
-        admitted.receipt.grant_id,
-        admitted.receipt.request_id,
-      );
-    }
+    // Admission is the durable point: the caller gets the accepted answer
+    // now and the delivery runs behind it. A failed or interrupted dispatch
+    // is retried by the ledger recovery, not by this caller.
+    this.startDispatch(admitted.receipt);
     return {
       ok: true,
       request_id: admitted.receipt.request_id,
@@ -432,6 +412,43 @@ export class ExternalInputService {
       });
     }
     return summaries;
+  }
+
+  /**
+   * Waits until every dispatch this service started has settled. Never
+   * rejects. Tests wait on it; shutdown does not, because the ledger
+   * re-sends an interrupted delivery.
+   */
+  async settleDispatches(): Promise<void> {
+    while (this.pendingDispatches.size > 0) {
+      await Promise.allSettled([...this.pendingDispatches]);
+    }
+  }
+
+  /**
+   * Starts the dispatch without waiting for it. The warning is the only
+   * trace of a failure, so it carries no key material.
+   */
+  private startDispatch(receipt: ExternalInputReceiptRow): void {
+    const task = (async () => {
+      try {
+        const response = await this.options.dispatch(
+          receipt.target_session_id,
+          { ...receipt.payload, caller_info: receipt.caller_info },
+        );
+        const status = responseStatus(response);
+        if (status !== undefined && (status < 200 || status >= 300)) {
+          this.warnDispatchFailure(receipt.grant_id, receipt.request_id, status);
+        }
+      } catch {
+        this.warnDispatchFailure(receipt.grant_id, receipt.request_id);
+      }
+    })();
+    this.pendingDispatches.add(task);
+    const forget = () => {
+      this.pendingDispatches.delete(task);
+    };
+    void task.then(forget, forget);
   }
 
   private warnDispatchFailure(
