@@ -279,6 +279,23 @@ try {
       return { rail: "1512" };
     });
 
+    await check("Tab 순서와 Esc 닫기", async () => {
+      const active = () => page.evaluate(() => document.activeElement?.closest(".pas-rt1707-rail-item")?.textContent?.replace(/\s+/g, " ").trim() ?? null);
+      await page.keyboard.press("Tab");
+      await wait(150);
+      assert((await active())?.includes("#1387"), `Tab이 다음 레일 항목으로 가지 않았다: ${await active()}`);
+      await page.keyboard.press("Shift+Tab");
+      await wait(150);
+      assert((await active())?.includes("#1512"), `Shift+Tab이 앞 레일 항목으로 가지 않았다: ${await active()}`);
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[data-testid="pas-report-thread-dialog"]', { state: "hidden", timeout: 8_000 });
+      await wait(250);
+      const focused = await page.evaluate(() => document.activeElement?.textContent?.trim() ?? null);
+      assert(focused === "보고 창 열기", `Esc 뒤 초점이 보고 창 열기로 돌아오지 않았다: ${focused}`);
+      await openFromBubble(page);
+      return { tab: "1512 to 1387", escape: true };
+    });
+
     await check("부탁 장 했어와 저녁 재확인", async () => {
       await clickText(page, ".pas-rt1707-stamps button", "했어");
       assert((await reportStatus(page)) === "완료", `했어 뒤 상태가 완료가 아니다: ${await reportStatus(page)}`);
@@ -428,13 +445,40 @@ try {
       return padding;
     });
 
+    await check("창 크기 바꾸기", async () => {
+      const input = page.locator(".pas-rt1707-decide-input textarea");
+      await input.fill("리사이즈 확인");
+      await page.locator(".pas-rt1707-thread-scroll").evaluate((element) => { element.scrollTop = 160; });
+      await wait(200);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(500);
+      const narrowDialog = await rect(page, '[data-testid="pas-report-thread-dialog"]');
+      const narrowRail = await rect(page, ".pas-rt1707-rail");
+      const narrowThread = await rect(page, ".pas-rt1707-thread");
+      assert(narrowDialog && narrowDialog.right <= 390.5 && narrowDialog.bottom <= 844 - 72 + 0.5,
+        `좁힌 뒤 보고 창이 화면과 코멘트 자리를 벗어난다 ${JSON.stringify(narrowDialog)}`);
+      assert(narrowRail.bottom <= narrowThread.top + 1, `좁힌 뒤 레일이 스레드 위에 서지 않는다 ${narrowRail.bottom} ${narrowThread.top}`);
+      assert((await input.inputValue()) === "리사이즈 확인", "좁히는 동안 결재 입력 글이 사라졌다");
+      const narrowScroll = await page.locator(".pas-rt1707-thread-scroll").evaluate((element) => element.scrollTop);
+      assert(narrowScroll > 0, "좁히는 동안 스레드 스크롤 위치가 맨 위로 돌아갔다");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await wait(500);
+      const wideRail = await rect(page, ".pas-rt1707-rail");
+      const wideThread = await rect(page, ".pas-rt1707-thread");
+      assert(Math.abs(wideRail.top - wideThread.top) <= 1, `넓힌 뒤 레일과 스레드 위가 어긋난다 ${wideRail.top} ${wideThread.top}`);
+      assert((await input.inputValue()) === "리사이즈 확인", "넓히는 동안 결재 입력 글이 사라졌다");
+      await input.fill("");
+      return { narrowScroll, preserved: true };
+    });
+
     await page.close();
   });
 
   await check("금지 문장 부호와 어휘 없음", () => {
     const repoRoot = execFileSync("git", ["-C", dashboardDir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+    const base = execFileSync("git", ["-C", repoRoot, "merge-base", "HEAD", "origin/main"], { encoding: "utf8" }).trim();
     const files = [...new Set([
-      ...execFileSync("git", ["-C", repoRoot, "diff", "--name-only", "HEAD"], { encoding: "utf8" }).split("\n"),
+      ...execFileSync("git", ["-C", repoRoot, "diff", "--name-only", base], { encoding: "utf8" }).split("\n"),
       ...execFileSync("git", ["-C", repoRoot, "ls-files", "--others", "--exclude-standard"], { encoding: "utf8" }).split("\n"),
     ].map((line) => line.trim()).filter(Boolean))];
     const punctuation = new RegExp("[\\u00B7\\u2014\\u2015]");
