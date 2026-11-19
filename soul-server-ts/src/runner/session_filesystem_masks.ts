@@ -66,10 +66,25 @@ const ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES = new Set([
   ".cache",
   "target",
   ".next",
+  // 빌드·시험·도구 산출물. 세션 `.env` 설정의 원본이 놓이는 곳이 아니고,
+  // 훑으면 디렉터리 수만 크게 늘린다.
+  "public",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".vite",
+  ".turbo",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".mypy_cache",
+  ".tox",
+  ".gradle",
+  "site-packages",
 ]);
 
 /** 뿌리(깊이 0)에서 내려가는 최대 깊이. 그보다 깊은 항목은 보지 않는다. */
-const ENV_MASK_SCAN_MAX_DEPTH = 8;
+const ENV_MASK_SCAN_MAX_DEPTH = 5;
 
 /** 예시·틀 파일은 가리지 않는다. */
 const ENV_MASK_SCAN_EXCLUDED_SUFFIXES = [".example", ".sample", ".template"] as const;
@@ -642,10 +657,17 @@ export async function prepareIsolationMasks(
     }
     return [...resolved];
   };
-  // 모든 세션에 같은 제외. 캐시된 탐색 결과에도 같게 적용되므로 탐색 자체에서 뺀다.
+  const roots = dedupeRoots(scanRoots);
+  // 모든 세션에 같은 제외. 캐시된 탐색 결과에도 같게 적용되므로 탐색 자체에서
+  // 뺀다. `.local` 아래 쓰기 경로는 호스트 작업 폴더뿐 아니라 어떤 뿌리에서
+  // 연 것이든 세션의 작업 공간이므로 뿌리마다 걸어 둔다.
   const commonExclusions = await resolveExclusions([
     join(hostRoot, ".local/tmp"),
     join(hostRoot, ".local/artifacts"),
+    ...roots.flatMap((root) => [
+      join(root, ".local/tmp"),
+      join(root, ".local/artifacts"),
+    ]),
     join(input.homeDirectory, input.policy.filesystem.isolatedCacheRelativeRoot),
   ]);
   // 세션마다 다른 쓰기 경로. 캐시를 나눠 써도 결과가 캐시 없이 훑은 것과 같도록
@@ -666,11 +688,10 @@ export async function prepareIsolationMasks(
     ...input.attachedWorktrees.map((attachment) => attachment.canonicalPath),
   ]);
 
-  const roots = dedupeRoots(scanRoots)
-    .filter((root) =>
-      !commonExclusions.some((candidate) => isPathAtOrUnder(root, candidate)),
-    );
-  const scan = await scanEnvMaskRoots(roots, ports, commonExclusions);
+  const filteredRoots = roots.filter((root) =>
+    !commonExclusions.some((candidate) => isPathAtOrUnder(root, candidate)),
+  );
+  const scan = await scanEnvMaskRoots(filteredRoots, ports, commonExclusions);
   const scannedFiles = scan.files;
   let maskedCount = 0;
   for (const rootScan of scan.rootScans) {
@@ -699,7 +720,7 @@ export async function prepareIsolationMasks(
     masks: [...directories.values()].sort(byPath).concat([...files.values()].sort(byPath)),
     rebindings,
     envScan: {
-      roots: roots.length,
+      roots: filteredRoots.length,
       files: scannedFiles,
       masked: maskedCount,
       cacheHits: scan.cacheHits,
