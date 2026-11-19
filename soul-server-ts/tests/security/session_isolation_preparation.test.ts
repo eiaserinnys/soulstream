@@ -803,6 +803,93 @@ describe("prepareIsolationPlan", () => {
     }
   });
 
+  it("masks .env files up to depth five from the root and stops before depth six", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const atLimit = touch(
+      fixture.root,
+      join(fixture.workspace, "a", "b", "c", "d", ".env"),
+      "A=1",
+      0o600,
+    );
+    const beyond = touch(
+      fixture.root,
+      join(fixture.workspace, "a", "b", "c", "d", "e", ".env"),
+      "B=2",
+      0o600,
+    );
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    // 깊이 0~4 디렉터리를 나열하므로 깊이 5의 파일까지 찾는다.
+    expect(masked.has(atLimit)).toBe(true);
+    expect(masked.has(beyond)).toBe(false);
+  });
+
+  it("skips build output directory names in the recursive .env scan", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const repoDir = join(fixture.workspace, ".projects", "site");
+    const skipped = [
+      join(fixture.workspace, "public", ".env"),
+      join(fixture.workspace, "dist", ".env"),
+      join(repoDir, "public", ".env"),
+      join(repoDir, "dist", ".env"),
+    ];
+    for (const path of skipped) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
+    const kept = [
+      join(fixture.workspace, "site-src", ".env"),
+      join(repoDir, "src", ".env"),
+    ];
+    for (const path of kept) {
+      touch(fixture.root, path, "B=2", 0o600);
+    }
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    for (const path of skipped) {
+      expect(masked.has(path), path).toBe(false);
+    }
+    for (const path of kept) {
+      expect(masked.has(path), path).toBe(true);
+    }
+  });
+
+  it("excludes .local scratch directories under every re-exposed scan root", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const reexposed = join(fixture.sensitive, "logs");
+    mkdirSync(reexposed, { recursive: true, mode: 0o700 });
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [reexposed],
+      },
+    };
+    const excluded = [
+      join(reexposed, ".local", "tmp", ".env"),
+      join(reexposed, ".local", "artifacts", ".env"),
+    ];
+    for (const path of excluded) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
+    const kept = join(reexposed, "conf", ".env");
+    touch(fixture.root, kept, "B=2", 0o600);
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
+
+    for (const path of excluded) {
+      expect(masked.has(path), path).toBe(false);
+    }
+    expect(masked.has(kept)).toBe(true);
+  });
+
   it("reuses the recursive .env scan per root for five minutes and rescans after expiry", async () => {
     clearEnvMaskScanCache();
     vi.useFakeTimers();
