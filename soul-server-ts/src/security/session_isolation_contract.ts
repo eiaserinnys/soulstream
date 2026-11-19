@@ -295,6 +295,11 @@ export interface IsolationHostPorts {
   copyFile(source: string, destination: string, mode: number): Promise<void>;
   /** bind 원본의 정규 절대 경로. 존재하지 않으면 거절한다. */
   resolveRealPath(path: string): Promise<string>;
+  /**
+   * `resolveRealPath`의 동기 판. libuv 스레드풀(기본 4)을 쓰지 않아야 하는
+   * 대량 순회(`.env` 가림 탐색) 전용이다. 실패는 비동기 판과 같이 던진다.
+   */
+  resolveRealPathSync(path: string): string;
   /** 인증 재료가 실제로 있는지 확인한다. 토큰 원문은 읽지 않는다. */
   verifyAuthPreparation(preparation: IsolatedAuthPreparation): Promise<void>;
   /** restricted 자식에게 줄 GH 자격 증명 환경. 메모리에서만 쓴다. */
@@ -308,6 +313,8 @@ export interface IsolationHostPorts {
   ): Promise<readonly ResolvedMcpServer[]>;
   /** 메타데이터만 읽는다. 파일 내용(비밀)은 읽지 않는다. 없으면 null. */
   lstatPath(path: string): Promise<HostPathFact | null>;
+  /** `lstatPath`의 동기 판. 같은 null 조건(없는 경로만 null)을 쓴다. */
+  lstatPathSync(path: string): HostPathFact | null;
   /** 이름과 종류만 읽는다. 파일 내용은 읽지 않는다. */
   listDirectory(path: string): Promise<HostDirectoryEntry[]>;
   /**

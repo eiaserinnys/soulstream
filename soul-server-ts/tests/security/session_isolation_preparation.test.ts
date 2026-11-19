@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
 } from "node:fs";
@@ -825,6 +826,17 @@ describe("prepareIsolationPlan", () => {
       const firstPlan = await prepare();
       expect(lastScan()).toMatchObject({ cache: "miss" });
       expect(lastScan().cacheMisses).toBeGreaterThan(0);
+      // 로그 요약에 계측 필드가 실린다.
+      expect(lastScan().walkedRoots + lastScan().joinedRoots).toBe(
+        lastScan().cacheMisses,
+      );
+      expect(lastScan().walkedRoots).toBeGreaterThan(0);
+      expect(lastScan().joinedRoots).toBe(0);
+      expect(lastScan().directories).toBeGreaterThan(0);
+      expect(lastScan().listMs).toBeGreaterThanOrEqual(0);
+      expect(lastScan().linkMs).toBeGreaterThanOrEqual(0);
+      expect(lastScan().yieldMs).toBeGreaterThanOrEqual(0);
+      expect(lastScan().yields).toBeGreaterThanOrEqual(0);
       expect(firstPlan.spec.masks).toContainEqual({
         path: join(first, ".env"),
         kind: "file",
@@ -873,10 +885,93 @@ describe("prepareIsolationPlan", () => {
     // 같은 뿌리를 동시에 훑어도 디렉터리 나열은 한 번이고, 두 요청은 그 결과를
     // 나눠 쓴다. 함께 기다린 요청은 캐시에서 되쓴 것이 아니므로 miss로 센다.
     expect(listings.filter((path) => path === workspaceRoot)).toHaveLength(1);
-    expect(first).toMatchObject({ cacheHits: 0, cacheMisses: 1 });
-    expect(second).toMatchObject({ cacheHits: 0, cacheMisses: 1 });
+    expect(first).toMatchObject({
+      cacheHits: 0,
+      cacheMisses: 1,
+      walkedRoots: 1,
+      joinedRoots: 0,
+    });
+    expect(second).toMatchObject({
+      cacheHits: 0,
+      cacheMisses: 1,
+      walkedRoots: 0,
+      joinedRoots: 1,
+    });
+    // 함께 기다린 쪽은 시간·양보 계측을 겹쳐 세지 않는다.
+    expect(second).toMatchObject({ listMs: 0, linkMs: 0, yields: 0, yieldMs: 0 });
     expect(second.files).toBe(first.files);
+    expect(second.directories).toBe(first.directories);
     expect(second.rootScans).toEqual(first.rootScans);
+  });
+
+  it("resolves env mask symlinks through sync ports only", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const workspaceRoot = await fixture.ports.resolveRealPath(fixture.workspace);
+    const target = touch(
+      fixture.root,
+      join(fixture.workspace, "secrets", "real.env"),
+      "A=1",
+      0o600,
+    );
+    const link = join(fixture.workspace, "secrets", ".env");
+    symlinkSync(target, link);
+
+    const resolveRealPath = vi.spyOn(fixture.ports, "resolveRealPath");
+    const lstatPath = vi.spyOn(fixture.ports, "lstatPath");
+
+    const scan = await scanEnvMaskRoots([workspaceRoot], fixture.ports, []);
+
+    // 스캔 안의 await는 양보뿐이다. 링크 확인이 비동기 포트(스레드풀)로
+    // 돌아가면 서비스의 다른 파일 작업 뒤에 줄을 선다.
+    expect(resolveRealPath).not.toHaveBeenCalled();
+    expect(lstatPath).not.toHaveBeenCalled();
+    expect(scan.rootScans[0]?.entries).toContainEqual({
+      source: link,
+      path: realpathSync(target),
+      kind: "file",
+    });
+  });
+
+  it("yields between slow directory listings and reports finite scan metrics", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const slowRoot = join(fixture.root, "slow");
+    mkdirSync(join(slowRoot, "a", "b"), { recursive: true, mode: 0o700 });
+    touch(fixture.root, "slow/a/.env", "A=1", 0o600);
+
+    const listDirectorySync = fixture.ports.listDirectorySync.bind(fixture.ports);
+    fixture.ports.listDirectorySync = (path) => {
+      const started = performance.now();
+      while (performance.now() - started < 12) {
+        // 디스크를 기다리는 나열처럼 시간을 쓴다.
+      }
+      return listDirectorySync(path);
+    };
+
+    const scan = await scanEnvMaskRoots([slowRoot], fixture.ports, []);
+
+    expect(scan.walkedRoots).toBe(1);
+    expect(scan.joinedRoots).toBe(0);
+    expect(scan.directories).toBeGreaterThanOrEqual(2);
+    expect(scan.yields).toBeGreaterThanOrEqual(1);
+    expect(scan.yieldMs).toBeGreaterThanOrEqual(0);
+    for (const value of [
+      scan.directories,
+      scan.files,
+      scan.listMs,
+      scan.linkMs,
+      scan.yields,
+      scan.yieldMs,
+    ]) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+    expect(scan.rootScans[0]?.entries).toContainEqual({
+      source: join(slowRoot, "a", ".env"),
+      path: join(slowRoot, "a", ".env"),
+      kind: "file",
+    });
   });
 
   it("applies session-specific write paths to the cached scan list", async () => {
