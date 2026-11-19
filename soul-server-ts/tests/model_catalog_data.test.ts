@@ -123,6 +123,9 @@ type PresetExpectation = {
   default_effort?: string;
   trusted_execution?: boolean;
   env?: Record<string, string>;
+  context_window?: number;
+  context_window_aliases?: string[];
+  context_window_prefixes?: string[];
 };
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -276,6 +279,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "kimi-3": {
     label: "Kimi - 3",
@@ -284,6 +288,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "kimi-3.1-pro": {
     label: "Kimi - 3.1 Pro",
@@ -292,6 +297,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "deepseek-flash-4.1": {
     label: "DeepSeek - Flash 4.1",
@@ -302,6 +308,9 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     usage_provider: "opencode_go",
     supported_efforts: ["xhigh", "max"],
     default_effort: "max",
+    context_window: 262_144,
+    context_window_aliases: ["deepseek-v4.1-flash-1017"],
+    context_window_prefixes: ["deepseek-", "opencode/deepseek-"],
     env: {
       ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
       ANTHROPIC_API_KEY: "${OPENCODE_GO_API_KEY}",
@@ -456,6 +465,9 @@ describe("repository model catalogue data", () => {
         "default_effort",
         "trusted_execution",
         "env",
+        "context_window",
+        "context_window_aliases",
+        "context_window_prefixes",
       ] as const) {
         if (preset[key] !== undefined) actual[key] = preset[key];
       }

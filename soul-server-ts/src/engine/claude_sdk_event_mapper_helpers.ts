@@ -21,8 +21,6 @@ const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
   "tool_responses",
   "tool_response_chunks",
 ]);
-/** OpenCode Go와 호환 엔드포인트는 modelUsage에 contextWindow를 주지 않는다. */
-const DEEPSEEK_COMPATIBLE_CONTEXT_WINDOW = 262_144;
 
 export function messageContent(message: Record<string, unknown>): unknown[] {
   const nested = asRecord(message.message);
@@ -131,6 +129,7 @@ export function makeContextUsageEvent(
   usage: unknown,
   modelUsage: unknown,
   model: string | undefined,
+  catalog?: ModelCatalogConfig,
 ): ClaudeClientEvent | undefined {
   const record = asRecord(usage);
   if (!record) return undefined;
@@ -148,7 +147,7 @@ export function makeContextUsageEvent(
     ?? asNumber(record.cacheReadInputTokens)
     ?? 0;
   const usedTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
-  const maxTokens = resolveContextWindow(modelUsage, model);
+  const maxTokens = resolveContextWindow(modelUsage, model, catalog);
   if (maxTokens === undefined) return undefined;
   const percent = contextUsagePercent(usedTokens, maxTokens);
   if (percent === undefined) return undefined;
@@ -164,6 +163,7 @@ export function makeContextUsageEvent(
 function resolveContextWindow(
   modelUsage: unknown,
   model: string | undefined,
+  catalog: ModelCatalogConfig | undefined,
 ): number | undefined {
   const records = asRecord(modelUsage);
   const candidates = Object.entries(records ?? {})
@@ -187,28 +187,44 @@ function resolveContextWindow(
   const windows = new Set(candidates.map((candidate) => candidate.contextWindow));
   const declared = windows.size === 1 ? candidates[0]?.contextWindow : undefined;
   if (declared !== undefined) return declared;
-  return resolveCompatibleModelContextWindow(model, records);
-}
-
-function resolveCompatibleModelContextWindow(
-  model: string | undefined,
-  records: Record<string, unknown> | undefined,
-): number | undefined {
-  const modelIds = [
+  return resolveCatalogueContextWindow(catalog, [
     ...(model === undefined ? [] : [model]),
-    ...(records === undefined ? [] : Object.keys(records)),
-  ];
-  return modelIds.some(isDeepSeekCompatibleModelId)
-    ? DEEPSEEK_COMPATIBLE_CONTEXT_WINDOW
-    : undefined;
+    ...Object.keys(records ?? {}),
+  ]);
 }
 
-function isDeepSeekCompatibleModelId(modelId: string): boolean {
-  const normalized = modelId.trim().toLowerCase();
-  return normalized.startsWith("deepseek-")
-    || normalized.startsWith("opencode/deepseek-")
-    || normalized === "kimi-for-coding"
-    || normalized === "k3";
+/**
+ * Context window for reported model names when the SDK omitted one. Presets opt
+ * in with `context_window` plus the reported names that use it. Names matching
+ * presets that declare different windows yield no value: agreement decides, not
+ * catalogue order.
+ */
+function resolveCatalogueContextWindow(
+  catalog: ModelCatalogConfig | undefined,
+  modelIds: readonly string[],
+): number | undefined {
+  if (catalog === undefined) return undefined;
+  const names = [...new Set(
+    modelIds.map((modelId) => modelId.trim().toLowerCase()).filter((name) => name.length > 0),
+  )];
+  if (names.length === 0) return undefined;
+
+  const windows = new Set<number>();
+  for (const preset of catalog.presets) {
+    const window = preset.context_window;
+    if (window === undefined) continue;
+    const model = preset.model.trim().toLowerCase();
+    const aliases = (preset.context_window_aliases ?? [])
+      .map((alias) => alias.trim().toLowerCase());
+    const prefixes = (preset.context_window_prefixes ?? [])
+      .map((prefix) => prefix.trim().toLowerCase());
+    const matched = names.some((name) =>
+      name === model
+      || aliases.includes(name)
+      || prefixes.some((prefix) => name.startsWith(prefix)));
+    if (matched) windows.add(window);
+  }
+  return windows.size === 1 ? [...windows][0] : undefined;
 }
 
 /**
@@ -410,6 +426,7 @@ export function mapClaudeResultMessage(
     iterationUsage.resultLastIterationUsage ?? iterationUsage.latestIterationUsage,
     message.modelUsage,
     context.latestIterationModel,
+    context.catalog,
   );
 
   if (!success) {
