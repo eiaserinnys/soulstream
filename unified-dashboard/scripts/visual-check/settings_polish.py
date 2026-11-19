@@ -14,10 +14,10 @@
   - 카탈로그 선택 상자의 트리거 값이 soul-ui SelectValue 이고, 처음 값이 첫 항목이 아닐 때
     열면 고른 항목 글자와 트리거 값 글자의 위쪽 끝 차이가 1px 이하인지
     (설정 창 접속 링크 + 설정 창 밖 컴포넌트 검수 창),
-  - 라이트·다크에서 인라인 오류 글의 계산된 글자색과 실제 바탕색(투명도 합성)의 대비가 4.5:1 이상인지
-    (내 에이전트 불러오기 실패, SettingsAlert, 접속 링크 폼 small[role=alert]),
-  - ui-design 0절 14~18번: 설정 창을 열 때·탭을 누른 뒤 초점, 선택 상자 Tab 과 Esc 의 초점,
-    360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
+  - 라이트·다크에서 인라인 오류 글의 계산된 글자색과 뷰포트 전체 캡처의 실제 바탕 화소 대비가
+    4.5:1 이상인지 (내 에이전트 불러오기 실패, SettingsAlert, 접속 링크 폼 small[role=alert]),
+  - ui-design 0절 14~18번: 설정 창을 열 때(어떤 탭도 누르기 전)와 실제로 탭을 누른 뒤의 초점,
+    선택 상자 Tab 과 Esc 의 초점, 360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
 
 검수 창이 부르는 API는 page.route 로 가로쓴 운영 꼴 견본이다. 내 에이전트와 접속 링크 응답은
 앱 코드가 `ownedAgentsVisual`·`accessLinksVisual` 질의에서 실제 fetch 로 통과시켜 page.route 가
@@ -50,21 +50,25 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import time
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import access_links_tab as alt  # noqa: E402  WORDS·focus 도우미
 import settings_nodes as sn  # noqa: E402  테마 문맥·정착 도우미
-import settings_nodes_layout as snl  # noqa: E402  대비 계산기(CONTRAST_JS)
+import settings_nodes_layout as snl  # noqa: E402  대비 하한(CONTRAST_MIN)
 
 ROOT = Path(__file__).resolve().parents[3]
 WIDE, NARROW = sn.WIDE, sn.NARROW
@@ -207,6 +211,20 @@ SELECT_PROBE = r"""
     listboxVisible: Boolean(listbox),
     delta: valueText && itemText ? itemText.top - valueText.top : null,
   };
+}
+"""
+
+FG_PROBE = r"""
+(el) => {
+  const css = getComputedStyle(el).color;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext('2d');
+  context.fillStyle = css;
+  context.fillRect(0, 0, 1, 1);
+  const data = context.getImageData(0, 0, 1, 1).data;
+  return {css, rgb: [data[0], data[1], data[2]]};
 }
 """
 
@@ -369,13 +387,87 @@ def check_overflow(page, measurements: dict, problems: list[str], name: str, sel
         problems.append(name + ": 가로 넘침")
 
 
-def measure_contrast(page, locator, measurements: dict, problems: list[str], name: str) -> None:
-    locator.first.wait_for(state="visible")
-    locator.first.scroll_into_view_if_needed()
-    data = locator.first.evaluate(snl.CONTRAST_JS)
-    measurements[name] = data
-    if data["ratio"] < CONTRAST_MIN:
-        problems.append(f"{name}: 대비 {data['ratio']}:1")
+INK_DISTANCE = 40
+
+
+def relative_luminance(rgb: tuple[int, int, int]) -> float:
+    def channel(value: int) -> float:
+        value = value / 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+
+
+def contrast_ratio(one: tuple[int, int, int], other: tuple[int, int, int]) -> float:
+    high, low = sorted((relative_luminance(one), relative_luminance(other)), reverse=True)
+    return round((high + 0.05) / (low + 0.05), 2)
+
+
+def band_pixels(image: Image.Image, band: tuple[int, int, int, int]) -> list[tuple[int, int, int]]:
+    left, top, right, bottom = band
+    return [
+        image.getpixel((x, y))
+        for y in range(max(0, top), min(image.height, bottom))
+        for x in range(max(0, left), min(image.width, right))
+    ]
+
+
+def measure_contrast(page, locator, measurements: dict, problems: list[str], name: str, region: str = "outside") -> None:
+    """계산된 글자색과 뷰포트 전체 캡처의 실제 바탕 화소로 대비를 잰다.
+
+    clip·locator.screenshot 은 DPR 2 이상에서 유리 층을 놓쳐 흰 바탕이 나오므로 쓰지 않는다.
+    바탕은 글 상자 가장자리 바로 곁(region="outside")이나 안쪽 여백(region="inside")의
+    글자 잉크가 없는 화소 가운데 가장 많은 색이다.
+    """
+    element = locator.first
+    element.wait_for(state="visible")
+    element.scroll_into_view_if_needed()
+    page.wait_for_timeout(250)
+    box = element.bounding_box()
+    if not box:
+        problems.append(name + ": 글 상자 없음")
+        return
+    viewport = page.evaluate("() => ({width: innerWidth, height: innerHeight})")
+    foreground = element.evaluate(FG_PROBE)
+    fg = tuple(foreground["rgb"])
+    image = Image.open(io.BytesIO(page.screenshot(animations="disabled"))).convert("RGB")
+    scale = image.width / viewport["width"]
+    left, top = box["x"] * scale, box["y"] * scale
+    right, bottom = (box["x"] + box["width"]) * scale, (box["y"] + box["height"]) * scale
+    gap, thickness, inset = 2 * scale, 3 * scale, 3 * scale
+    if region == "inside":
+        bands = [
+            (left + inset, top + inset, right - inset, top + inset + thickness),
+            (left + inset, bottom - inset - thickness, right - inset, bottom - inset),
+            (left + inset, top + inset + thickness, left + inset + thickness, bottom - inset - thickness),
+            (right - inset - thickness, top + inset + thickness, right - inset, bottom - inset - thickness),
+        ]
+    else:
+        bands = [
+            (left, top - gap - thickness, right, top - gap),
+            (left, bottom + gap, right, bottom + gap + thickness),
+            (left - gap - thickness, top, left - gap, bottom),
+            (right + gap, top, right + gap + thickness, bottom),
+        ]
+    sampled = [pixel for band in bands for pixel in band_pixels(image, tuple(int(round(value)) for value in band))]
+    ink_free = [pixel for pixel in sampled if sum((one - other) ** 2 for one, other in zip(pixel, fg)) > INK_DISTANCE ** 2]
+    if not ink_free:
+        problems.append(name + ": 바탕 화소 없음")
+        return
+    bg, bg_count = Counter(ink_free).most_common(1)[0]
+    ratio = contrast_ratio(fg, bg)
+    measurements[name] = {
+        "fg": "#%02x%02x%02x" % fg,
+        "fg_css": foreground["css"],
+        "bg_pixel": "#%02x%02x%02x" % bg,
+        "ratio": ratio,
+        "sample": region,
+        "bg_count": bg_count,
+        "sample_count": len(ink_free),
+        "scale": scale,
+    }
+    if ratio < CONTRAST_MIN:
+        problems.append(f"{name}: 대비 {ratio}:1")
 
 
 def check_owned_meta(page, measurements: dict, problems: list[str], name: str) -> None:
@@ -463,11 +555,24 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
             page_errors: list[str] = []
             page.on("pageerror", lambda error: page_errors.append(str(error)))
 
-            open_settings(page, base)
+            page.goto(base + "/dialogues" + SETTINGS_QUERY, wait_until="domcontentloaded")
+            sn.settle(page)
+            tab_button = page.get_by_role("button", name="내 에이전트", exact=True).first
+            tab_button.wait_for(state="visible", timeout=30000)
+            page.wait_for_timeout(300)
             measurements[f"focus-open-{key}"] = FOCUS(page)
             if not measurements[f"focus-open-{key}"]["dialog"]:
                 problems.append(f"{key}: 설정 창을 열었을 때 초점이 창 밖")
+            tab_button.click(timeout=30000)
+            page.get_by_text(OWNED_AGENTS[0]["name"], exact=True).wait_for(timeout=30000)
+            page.wait_for_timeout(300)
             measurements[f"focus-after-tab-click-{key}"] = FOCUS(page)
+            before = measurements[f"focus-open-{key}"]
+            after = measurements[f"focus-after-tab-click-{key}"]
+            if not after["dialog"]:
+                problems.append(f"{key}: 탭을 누른 뒤 초점이 창 밖")
+            if (after["tag"], after["name"], after["text"], after["dialog"]) == (before["tag"], before["name"], before["text"], before["dialog"]):
+                problems.append(f"{key}: 창을 열 때와 탭을 누른 뒤의 초점이 같음")
             check_owned_meta(page, measurements, problems, f"meta-{key}")
             if width == NARROW:
                 split = (
@@ -576,7 +681,7 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
                 select_tab(page, "접속 링크", width)
                 page.get_by_text("링크 목록을 불러오지 못했습니다.", exact=True).wait_for(timeout=30000)
                 shot(page, out, f"access-links-error-{key}", captures)
-                measure_contrast(page, page.locator(".access-links [role=alert]"), measurements, problems, f"contrast-settings-alert-{key}")
+                measure_contrast(page, page.locator(".access-links [role=alert]"), measurements, problems, f"contrast-settings-alert-{key}", region="inside")
                 access_state.update(mode="normal")
                 page.get_by_role("button", name="다시 시도").click()
                 page.get_by_text("외부 조사 도우미", exact=True).wait_for(timeout=30000)

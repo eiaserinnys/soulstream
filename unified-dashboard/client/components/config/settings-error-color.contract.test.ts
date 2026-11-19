@@ -50,4 +50,19 @@ describe("settings inline error text color contract", () => {
   it.each(TARGETS)("uses --destructive-foreground for inline error text in %s", (name) => {
     expect(violations(source(name))).toEqual([]);
   });
+
+  const lightOverride =
+    /:root:not\(\.dark\)\s+\.approved-dialog\s*\{[^}]*--destructive-foreground\s*:\s*var\(--color-red-800\)/;
+
+  it("redefines --destructive-foreground to red-800 in the light approved-dialog scope", () => {
+    expect(lightOverride.test(source("./config-layout.css"))).toBe(true);
+  });
+
+  it("catches a missing override or one that also hits the dark theme", () => {
+    expect(lightOverride.test(":root { --destructive-foreground: var(--color-red-700); }")).toBe(false);
+    expect(lightOverride.test(".dark .approved-dialog { --destructive-foreground: var(--color-red-800); }")).toBe(false);
+    expect(
+      lightOverride.test(":root:not(.dark) .approved-dialog { --destructive-foreground: var(--color-red-700); }"),
+    ).toBe(false);
+  });
 });
