@@ -1403,6 +1403,35 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     });
   });
 
+  it("claims queued rows without a time condition when no cutoff is known", async () => {
+    await register("delivery-queued-future", "relation-queued-future", {
+      targetSessionId: "caller-session",
+    });
+    await repository.claimAttemptForTarget(
+      "delivery-queued-future",
+      "caller-session",
+      "worker-before-crash",
+    );
+    await repository.beginDispatch("delivery-queued-future", "worker-before-crash");
+    await repository.markQueued("delivery-queued-future", "worker-before-crash");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET queued_at = NOW() + INTERVAL '1 hour'
+      WHERE delivery_id = 'delivery-queued-future'
+    `;
+
+    const claimed = await repository.recovery.claimQueuedAfterNodeRestart(
+      "node-test",
+      "restart-worker-no-cutoff",
+      10,
+      60_000,
+    );
+
+    expect(claimed.map((row) => row.delivery_id)).toEqual([
+      "delivery-queued-future",
+    ]);
+  });
+
   it("returns an accepted SDK input to pending while its assistant transcript is unproven", async () => {
     await register("delivery-input-pending", "relation-input-pending", {
       targetSessionId: "caller-session",
