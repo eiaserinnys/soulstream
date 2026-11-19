@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
-import type { ScheduleCreateInput, SoulstreamSchedule } from "../../src/schedule/schedule_models.js";
+import type { ScheduleCreateInput, SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 
 const logger = pino({ level: "silent" });
 

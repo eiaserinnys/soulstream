@@ -13,7 +13,7 @@ import { AntigravityEventMapper } from "../../src/engine/antigravity/events.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
 import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
-import type { ScheduleCreateInput, SoulstreamSchedule } from "../../src/schedule/schedule_models.js";
+import type { ScheduleCreateInput, SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
 import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";

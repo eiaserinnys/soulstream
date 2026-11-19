@@ -5,7 +5,7 @@ import {
   parseOrchServerConfig,
   registerSessionResumeAfterLimitRoutes,
 } from "../src/index.js";
-import type { SoulstreamSchedule } from "../src/schedule/schedule_types.js";
+import type { SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 
 const config = parseOrchServerConfig({

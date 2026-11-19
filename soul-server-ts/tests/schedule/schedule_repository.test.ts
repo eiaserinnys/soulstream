@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SoulstreamScheduleRepository } from "../../../orch-server-ts/src/schedule/schedule_repository.js";
-import type { SqlClient } from "../../../orch-server-ts/src/schedule/schedule_types.js";
+import type { FolderContentSql as SqlClient } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 
 interface MockCall {
   fragments: string[];

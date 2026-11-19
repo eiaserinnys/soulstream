@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import type { SqlClient } from "../../src/db/session_db.js";
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
-import type { ScheduleCreateInput } from "../../src/schedule/schedule_models.js";
+import type { ScheduleCreateInput } from "@soulstream/wire-schema/schedule";
 import { SoulstreamScheduleRepository } from "../../../orch-server-ts/src/schedule/schedule_repository.js";
 import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
 

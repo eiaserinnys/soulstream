@@ -1,3 +1,5 @@
+import type { ResumeDispatchDecision } from "@soulstream/wire-schema/schedule";
+
 /**
  * Whether a due ResumeAfterLimit reservation should wake its session is a
  * store-owned decision: the schedule row, the session row and the limit-window
@@ -23,11 +25,6 @@ export interface ResumeDispatchFacts {
   /** The node is already launching or running this session's local task. */
   localTaskBusy: boolean;
 }
-
-export type ResumeDispatchDecision =
-  | { decision: "fire"; reason: null }
-  | { decision: "defer"; reason: string }
-  | { decision: "close"; reason: string };
 
 export function decideResumeDispatch(
   facts: ResumeDispatchFacts,

@@ -249,6 +249,7 @@ def test_event_append_batch_accepts_running_transition_effect() -> None:
         {
             "kind": "running_transition",
             "review_state": "none",
+            "expected_terminal_event_id": 42,
             "updated_at": "2026-08-11T00:00:00.000Z",
         }
     )
