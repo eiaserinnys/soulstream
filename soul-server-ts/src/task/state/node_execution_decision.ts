@@ -37,7 +37,6 @@ export interface NodeExecutionFactsOptions {
   stopRequested?: boolean;
 }
 
-/** Task 필드를 판정 입력으로 모은다. */
 export function nodeExecutionFactsFromTask(
   task: NodeExecutionTaskFields,
   options: NodeExecutionFactsOptions = {},
@@ -52,7 +51,7 @@ export function nodeExecutionFactsFromTask(
     hasStartBarrier: task.executionActivation !== undefined
       || task.executionPromise !== undefined,
     hasRegistration: task.executionRegistration !== undefined,
-    runnerTerminalFact: task.runnerTerminalFact ?? "none",
+    hasRunnerTerminalFact: task.runnerTerminalFact !== undefined,
     retention: retained ? (options.retentionKind ?? "claude_background") : "none",
     releasing: task.runnerReleaseClaim !== undefined,
     hydratedFromDb: task.hydratedFromDb === true,

@@ -1,6 +1,4 @@
-import { setup } from "xstate";
-
-import { NODE_EXECUTION_PHASES, type NodeExecutionPhase } from "./node_execution_machine.js";
+import type { NodeExecutionPhase } from "./node_execution_machine.js";
 
 /** 바깥에서 오는 요청 넷이다. */
 export const NODE_REQUEST_KINDS = ["stop", "intervene", "delete", "resume"] as const;
@@ -70,12 +68,6 @@ const cell = (
   test: string,
 ): NodeRequestCell => ({ disposition, basis, note, test });
 
-/**
- * 실행 상태 x 요청 종류의 처분 표다. 기계는 이 표에서 만든다. 칸을 빼면 형 검사가 막는다.
- * 요청의 운영 진입 함수는 멈춤 `TaskManager.cancelTask`, 지시 `addIntervention`,
- * 삭제 `deleteTask`, 재개 `ensureRunning`(명시적 시작 의도)이다.
- * 러너 없이 올린 활성 task의 멈춤과 삭제는 종료 기록을 만드는 처분이다.
- */
 export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> = {
   idle: {
     stop: cell(
@@ -364,56 +356,3 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
     ),
   },
 };
-
-const REQUEST_EVENT: Readonly<Record<NodeRequestKind, "STOP" | "INTERVENE" | "DELETE" | "RESUME">> = {
-  stop: "STOP",
-  intervene: "INTERVENE",
-  delete: "DELETE",
-  resume: "RESUME",
-};
-
-export type NodeRequestEventType = (typeof REQUEST_EVENT)[NodeRequestKind];
-
-export interface NodeRequestEvent {
-  type: NodeRequestEventType;
-}
-
-export const NODE_REQUEST_EVENTS: Readonly<Record<NodeRequestKind, NodeRequestEventType>> =
-  REQUEST_EVENT;
-
-function phaseStates() {
-  const states: Record<string, unknown> = {};
-  for (const phase of NODE_EXECUTION_PHASES) {
-    const on: Record<string, unknown> = {};
-    for (const request of NODE_REQUEST_KINDS) {
-      const entry = NODE_REQUEST_TABLE[phase][request];
-      on[REQUEST_EVENT[request]] = {
-        actions: {
-          type: "verdict",
-          params: { disposition: entry.disposition },
-        },
-        description: entry.note,
-      };
-    }
-    states[phase] = { description: phase, on };
-  }
-  return states;
-}
-
-/**
- * 바깥 요청 칸의 기계다. 상태가 실행 상태이고 사건이 요청이다.
- * 어느 상태도 전이하지 않고 처분만 낸다.
- */
-export const nodeRequestMachine = setup({
-  types: {
-    events: {} as NodeRequestEvent,
-  },
-  actions: {
-    verdict: () => {},
-  },
-}).createMachine({
-  id: "nodeRequest",
-  initial: "idle",
-  description: "실행 상태마다 멈춤, 지시, 삭제, 재개 요청의 처분을 정한다",
-  states: phaseStates() as never,
-});

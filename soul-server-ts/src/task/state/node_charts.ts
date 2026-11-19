@@ -21,7 +21,7 @@ import { nodeInstructionRows } from "./node_instruction_decision.js";
 import {
   NODE_REQUEST_BOUNDARY_TEST_FILES,
   NODE_REQUEST_KINDS,
-  nodeRequestMachine,
+  NODE_REQUEST_TABLE,
 } from "./node_request_machine.js";
 import { decideNodeResponse } from "./node_response_decision.js";
 import { nodeResponseMachine } from "./node_response_machine.js";
@@ -97,9 +97,15 @@ function validateDescriptions(): void {
     nodeExecutionMachine,
     nodeResponseMachine,
     nodeBarrierMachine,
-    nodeRequestMachine,
   ]) {
     walk(machine.root as typeof nodeBarrierMachine.root);
+  }
+  for (const phase of NODE_EXECUTION_PHASES) {
+    for (const request of NODE_REQUEST_KINDS) {
+      if (!NODE_REQUEST_TABLE[phase][request].note.trim()) {
+        throw new Error(`Missing request description: ${phase} ${request}`);
+      }
+    }
   }
 }
 
