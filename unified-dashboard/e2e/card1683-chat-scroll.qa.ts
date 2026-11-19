@@ -202,19 +202,11 @@ function rectangle(locator: Locator) {
 }
 
 async function controlGeometry(root: Locator) {
-  const banner = bannerButton(root);
-  const [scroll, follow, send, input, message] = await Promise.all([
-    rectangle(root.locator('[data-virtuoso-scroller="true"]')),
+  const [follow, input] = await Promise.all([
     rectangle(followButton(root)),
-    rectangle(root.getByTestId("send-button")),
     rectangle(root.locator('[data-slot="chat-input-composer"]')),
-    await banner.isVisible() ? rectangle(banner) : null,
   ]);
-  return { scroll, follow, send, input, message };
-}
-
-function overlaps(a: Awaited<ReturnType<typeof rectangle>>, b: typeof a) {
-  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  return { follow, input };
 }
 
 async function controlScenario(browser: Browser, baseUrl: string, width: number) {
@@ -225,6 +217,9 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
   function check(condition: boolean, label: string) {
     checks[label] = condition;
     if (!condition) errors.push(label);
+  }
+  function checkAlignment({ follow, input }: Awaited<ReturnType<typeof controlGeometry>>, label: string) {
+    check(Math.abs(follow.right - input.right) <= 1, `${label} 자동 스크롤과 입력창 오른쪽 정렬`);
   }
   const screenshot = (state: string) => page.screenshot({
     path: path.join(output, `${phase}-controls-${width}-${state}.png`), animations: "disabled",
@@ -241,7 +236,9 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     const focused = (locator: Locator) => locator.evaluate(el => el === el.ownerDocument.activeElement);
     await follow.waitFor({ state: "visible" });
     await root.locator('[data-chat-item-key="user-msg-100"]').waitFor({ state: "attached", timeout: 10000 });
-    results.on = await controlGeometry(root);
+    const on = await controlGeometry(root);
+    results.on = on;
+    checkAlignment(on, "자동 스크롤 켜짐");
     check(await follow.getAttribute("aria-pressed") === "true", "초기 자동 스크롤 aria-pressed");
     await screenshot("on");
     await follow.click();
@@ -255,25 +252,16 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     }, undefined, { timeout: 10000 });
     const off = await controlGeometry(root);
     results.off = off;
+    checkAlignment(off, "자동 스크롤 꺼짐");
     check(!await banner.isVisible(), "새 이벤트 전 배너 표시");
     await screenshot("off");
     live.release();
     await banner.waitFor({ state: "visible", timeout: 30000 });
     const shown = await controlGeometry(root);
     results.message = shown;
-    function checkGeometry(geometry: typeof shown, label: string) {
-      const { scroll, follow, input, message } = geometry;
-      check(Math.abs(follow.right - input.right) <= 1, `${label} 자동 스크롤과 입력창 오른쪽 정렬`);
-      if (message) {
-        check(!overlaps(message, scroll), `${label} 배너와 목록 겹침`);
-        check(!overlaps(message, follow), `${label} 두 단추 겹침`);
-        check(Math.abs(message.top + message.height / 2 - follow.top - follow.height / 2) <= 1,
-          `${label} 두 단추 세로 가운데`);
-        check(Math.abs(message.height - follow.height) <= 1, `${label} 두 단추 높이`);
-      }
-    }
-    checkGeometry(shown, "배너 보임");
-    check(Math.abs(shown.scroll.height - off.scroll.height) <= 1, "배너 표시 전후 목록 높이");
+    checkAlignment(shown, "배너 보임");
+    check(Math.abs(shown.follow.top - off.follow.top) <= 1
+      && Math.abs(shown.follow.left - off.follow.left) <= 1, "배너 표시 전후 자동 스크롤 위치");
     await screenshot("message");
 
     await scroller.focus();
@@ -289,8 +277,8 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
       await page.waitForTimeout(200);
       const narrow = await controlGeometry(root);
       results.narrow = narrow;
-      checkGeometry(narrow, "360폭");
-      check(narrow.message !== null && narrow.message.left >= 0 && narrow.follow.right <= 360, "360폭 단추 잘림");
+      checkAlignment(narrow, "360폭");
+      check(narrow.follow.left >= 0 && narrow.follow.right <= 360, "360폭 자동 스크롤 잘림");
       check(await root.evaluate(el => el.scrollWidth <= el.clientWidth + 1)
         && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "360폭 가로 스크롤");
       await screenshot("360");
@@ -318,9 +306,9 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
         const key = await firstVisible();
         const top = await scroller.evaluate(el => el.scrollTop);
         results[`resize${next}`] = { layout, key, top, original, originalScrollTop };
-        checkGeometry(layout, `크기 변경 ${next}`);
+        checkAlignment(layout, `크기 변경 ${next}`);
         check(layout.input.top >= 0 && layout.input.bottom <= height, `크기 변경 ${next} 입력창 화면 안`);
-        check(layout.message !== null, `크기 변경 ${next} 배너 유지`);
+        check(await banner.isVisible(), `크기 변경 ${next} 배너 유지`);
         check(key !== null && key === original, `크기 변경 ${next} 첫 행 유지 (${original} → ${key})`);
         check(Math.abs(top - originalScrollTop) <= 2, `크기 변경 ${next} 스크롤 위치 유지`);
         check(await textarea.inputValue() === draft, `크기 변경 ${next} 입력 유지`);
@@ -331,7 +319,6 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     await banner.focus();
     await page.keyboard.press("Enter");
     await banner.waitFor({ state: "hidden" });
-    check(await focused(follow), "새 메시지로 이동 뒤 자동 스크롤 단추 초점");
     check(await follow.getAttribute("aria-pressed") === "true", "새 메시지로 이동 뒤 자동 스크롤 on");
     await root.getByText("새 응답이 도착했습니다.", { exact: false }).waitFor({ state: "visible" });
     await follow.click();

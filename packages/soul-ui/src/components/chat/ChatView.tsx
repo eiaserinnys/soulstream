@@ -314,7 +314,6 @@ function ChatViewContent({
   );
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const followToggleRef = useRef<HTMLButtonElement>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [expandedToolGroups, setExpandedToolGroups] = useState<{
@@ -1058,8 +1057,9 @@ function ChatViewContent({
       )}
       </>}
 
-      {presentation === "manuscript" && transcriptFallback == null && showNewMessage && !isFollowing && (
+      {transcriptFallback == null && showNewMessage && !isFollowing && (
         <div className="relative">
+          {presentation === "manuscript" ? (
             <DashboardIconCap
               appearance="bare"
               label="새 메시지로 이동"
@@ -1068,24 +1068,19 @@ function ChatViewContent({
             >
               <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
             </DashboardIconCap>
+          ) : (
+            <button
+              onClick={scrollToBottom}
+              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {"\u2193"} 새 메시지
+            </button>
+          )}
         </div>
       )}
 
-      {presentation === "default" && <div className="relative flex shrink-0 items-center justify-end pb-2">
-        {transcriptFallback == null && showNewMessage && !isFollowing && (
-          <button
-            type="button"
-            onClick={() => {
-              followToggleRef.current?.focus({ preventScroll: true });
-              scrollToBottom();
-            }}
-            className={cn("absolute left-1/2 -translate-x-1/2 border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25", CHAT_FOLLOW_CONTROL_CLASS)}
-          >
-            {"\u2193"} 새 메시지
-          </button>
-        )}
+      {presentation === "default" && <div className="flex shrink-0 items-center justify-end pb-2">
         <button
-          ref={followToggleRef}
           type="button"
           onClick={toggleFollow}
           aria-pressed={isFollowing}
