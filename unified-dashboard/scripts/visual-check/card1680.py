@@ -103,11 +103,40 @@ try:
             for state in ('board-off', 'board-on', 'list-on', 'list-off'):
                 before = data['normal-before'].get(name, {}).get(state, {}).get('children', [])
                 after = data['normal-after'].get(name, {}).get(state, {}).get('children', [])
-                same = bool(before) and len(before) == len(after) and all(
-                    a['name'] == b['name'] and all(abs(a[key] - b[key]) <= 1 for key in ('top', 'bottom', 'height', 'left', 'right'))
-                    for a, b in zip(before, after)
-                )
-                comparisons.append({'case': name, 'state': state, 'passed': same})
+                same = bool(before) and len(before) == len(after)
+                differences = []
+                if not same:
+                    differences.append({'field': 'children', 'before': len(before), 'after': len(after), 'reason': '측정 누락 또는 자식 수 변경', 'excluded': False})
+                if same:
+                    for index, (old, new) in enumerate(zip(before, after)):
+                        if old['name'] != new['name']:
+                            same = False
+                            differences.append({'child': index, 'field': 'name', 'before': old['name'], 'after': new['name'], 'reason': '자식 구조 변경', 'excluded': False})
+                        for field in ('top', 'bottom', 'height', 'left', 'right'):
+                            if abs(old[field] - new[field]) <= 1:
+                                continue
+                            reason = '확인되지 않은 차이'
+                            excluded = False
+                            if width == 390 and field in ('left', 'right'):
+                                reason, excluded = '390px 폴더 좌우 여백 수정', True
+                            elif cards == 'none' and state == 'board-on' and field in ('bottom', 'height'):
+                                reason, excluded = '카드가 없어도 완료 열 표시', True
+                            elif (width == 390 and field in ('bottom', 'height') and index == len(before) - 1
+                                  and ((state == 'board-on' and old['name'] == 'div.v3-card-board-workspace')
+                                       or (state == 'list-on' and old['name'] == 'div.v3-postit-grid.v3-completed-collection'))
+                                  and new['right'] - new['left'] > old['right'] - old['left']
+                                  and abs((new[field] - old[field]) + 40) <= 1):
+                                reason, excluded = '390px 여백 수정으로 완료 조작줄 한 줄 감소', True
+                            differences.append({'child': index, 'field': field, 'before': old[field], 'after': new[field], 'reason': reason, 'excluded': excluded})
+                            if not excluded:
+                                same = False
+                    for index in range(1, len(before)):
+                        old_gap = before[index]['top'] - before[index - 1]['bottom']
+                        new_gap = after[index]['top'] - after[index - 1]['bottom']
+                        if abs(old_gap - new_gap) > 1:
+                            same = False
+                            differences.append({'child': index, 'field': 'gap', 'before': old_gap, 'after': new_gap, 'reason': '자식 사이 세로 간격 변경', 'excluded': False})
+                comparisons.append({'case': name, 'state': state, 'passed': same, 'differences': differences})
     report = {'commands': results, 'captures': data, 'checks': {
         '14_focus': interaction.get('openedFocus', {}).get('inside') is True and interaction.get('focusRestored') is True,
         '15_tab_escape': interaction.get('tab', {}).get('visible') is True and interaction.get('escapeClosed') is True,
