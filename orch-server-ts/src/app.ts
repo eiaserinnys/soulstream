@@ -112,6 +112,10 @@ import {
   type NodeClaudeAuthRouteOptions,
 } from "./node/node_claude_auth_routes.js";
 import {
+  registerClaudeCentralRoutes,
+  type ClaudeCentralRouteOptions,
+} from "./claude_central/routes.js";
+import {
   registerNodeSnapshotRoutes,
   type NodeSnapshotRouteOptions,
 } from "./node/node_snapshot_routes.js";
@@ -228,6 +232,7 @@ export type CreateAppOptions = {
   cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
   cardOrchestrationDecisionRoutes?:CardOrchestrationDecisionRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
+  claudeCentralRoutes?: ClaudeCentralRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   agentProfileRoutes?: AgentProfileRouteOptions;
   contextBundleRoutes?: ContextBundleRouteOptions;
@@ -303,6 +308,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeClaudeAuthRoutes !== undefined) {
     registerNodeClaudeAuthRoutes(app, options.nodeClaudeAuthRoutes);
+  }
+  if (options.claudeCentralRoutes !== undefined) {
+    registerClaudeCentralRoutes(app, options.claudeCentralRoutes);
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);

@@ -688,6 +688,10 @@
     {
       "id": "170_recurring_job_model_preset_fallbacks.sql",
       "sha256": "59efd5a41351626631199d0028418bc1411f174831e720c99a7f66feeeb0de7d"
+    },
+    {
+      "id": "171_claude_central_accounts.sql",
+      "sha256": "c13f0d7c2af007264d65ec3aa926bf485b4520c867b085d68f5f0853f1c96702"
     }
   ]
 }

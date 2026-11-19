@@ -193,6 +193,68 @@ describe("UsageSummaryService", () => {
     ]);
   });
 
+  it("merges central pool accounts across every node regardless of shared account groups", async () => {
+    const centralId = "11111111-1111-4111-8111-111111111111";
+    const localOnlyId = "22222222-2222-4222-8222-222222222222";
+    const centralLocal = {
+      ...poolAccount(centralId),
+      source: "central" as const,
+      usage: { five_hour: { used_percent: 10, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:00:00.000Z",
+    };
+    const localOnly = {
+      ...poolAccount(localOnlyId),
+      usage: { five_hour: { used_percent: 40, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:00:00.000Z",
+    };
+    const centralFresh = {
+      ...poolAccount(centralId),
+      source: "central" as const,
+      usage: { five_hour: { used_percent: 90, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:30:00.000Z",
+    };
+    const sameLocalIdOnPeer = {
+      ...poolAccount(localOnlyId),
+      usage: { five_hour: { used_percent: 99, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:30:00.000Z",
+    };
+    const registry = fakeRegistry(["pool-a", "pool-b"]);
+    registry.getConnectedNode("pool-a")!.capabilities = { claude_account_pool_v1: true };
+    registry.getConnectedNode("pool-b")!.capabilities = { claude_account_pool_v1: true };
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node }: { node: { nodeId: string } }) => {
+        const response = successResponse(0);
+        Object.assign(response.data.providers.claude, {
+          mode: "pool",
+          accounts: node.nodeId === "pool-a"
+            ? [centralLocal, localOnly]
+            : [centralFresh, sameLocalIdOnPeer],
+          pool: null,
+          fable_pool: null,
+        });
+        return response;
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => new Date("2026-10-28T04:00:00.000Z"),
+    });
+    await service.collectOnce();
+
+    const summaryAccounts = service.getSummary().nodes
+      .find((node) => node.nodeId === "pool-a")?.providers.claude?.accounts ?? [];
+    const correlated = service.getClaudePoolAccountsForAvailability("pool-a", summaryAccounts);
+
+    expect(correlated).toMatchObject([
+      { id: centralId, source: "central", usage: centralFresh.usage, observed_at: centralFresh.observed_at },
+      { id: localOnlyId, usage: localOnly.usage, observed_at: localOnly.observed_at },
+    ]);
+    expect(correlated).toHaveLength(2);
+  });
+
   it("retains a later Fable peer block alongside an earlier all-scope local block", () => {
     const accountId = "11111111-1111-4111-8111-111111111111";
     const local = {

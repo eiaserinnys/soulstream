@@ -9,7 +9,7 @@ type AuthState = "ok" | "idle" | "needs_relogin" | "logging_in";
 
 function snapshot(
   state: AuthState,
-  options: { nodeId?: string; accountId?: string; enabled?: boolean } = {},
+  options: { nodeId?: string; accountId?: string; enabled?: boolean; source?: "central" | "local" } = {},
 ): UsageSummarySnapshot {
   const account = {
     id: options.accountId ?? "account-a",
@@ -22,6 +22,7 @@ function snapshot(
     observed_at: null,
     blocked: null,
     active_sessions: 0,
+    ...(options.source === undefined ? {} : { source: options.source }),
   };
   return {
     generatedAt: "2026-10-28T00:00:00.000Z",
@@ -92,5 +93,14 @@ describe("ClaudeAccountReloginNotifier", () => {
     notifier.observe(snapshot("needs_relogin"));
 
     expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not notify for a central-pool account synced into a node snapshot", () => {
+    const { notify, notifier } = createNotifier();
+
+    notifier.observe(snapshot("ok", { source: "central" }));
+    notifier.observe(snapshot("needs_relogin", { source: "central" }));
+
+    expect(notify).not.toHaveBeenCalled();
   });
 });

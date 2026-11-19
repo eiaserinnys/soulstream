@@ -520,6 +520,29 @@ CREATE INDEX IF NOT EXISTS idx_claude_background_generations_active_session
     )
     WHERE status IN ('pending', 'running');
 
+-- Central Claude account pool (card #1734). One row per account the
+-- orchestrator signs in to directly; it owns token refresh and usage sampling
+-- and pushes snapshots to worker nodes.
+CREATE TABLE IF NOT EXISTS claude_central_accounts (
+    id UUID PRIMARY KEY,
+    email TEXT NOT NULL,
+    plan TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    priority INTEGER NOT NULL DEFAULT 0,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at TIMESTAMPTZ,
+    token_lifetime_sec INTEGER,
+    scopes TEXT,
+    auth_state TEXT NOT NULL DEFAULT 'ok',
+    relogin_reason TEXT,
+    refreshed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT claude_central_accounts_auth_state_check
+        CHECK (auth_state IN ('ok', 'needs_relogin'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_claude_background_generations_task_resolution
     ON claude_background_task_generations(
         source_node,

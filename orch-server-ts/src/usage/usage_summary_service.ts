@@ -302,19 +302,36 @@ export class UsageSummaryService {
     accounts: readonly UsageSummaryClaudeAccount[],
   ): readonly ClaudePoolAvailabilityAccount[] {
     if (!supportsClaudeAccountPool(this.registry.getConnectedNode(nodeId)?.capabilities)) return accounts;
+    const peerAccounts: Array<readonly UsageSummaryClaudeAccount[]> = [];
+    const includedNodeIds = new Set<string>([nodeId]);
+
     const group = this.sharedAccountGroups.find((candidate) =>
       candidate.provider === "claude" && candidate.nodeIds.includes(nodeId));
-    if (group === undefined) return accounts;
+    if (group !== undefined) {
+      for (const memberNodeId of group.nodeIds) {
+        if (memberNodeId === nodeId) continue;
+        const member = this.registry.getConnectedNode(memberNodeId);
+        if (!supportsClaudeAccountPool(member?.capabilities)) continue;
+        const provider = this.nodes.get(memberNodeId)?.snapshot?.providers.claude;
+        if (provider?.mode === "pool" && provider.accounts !== undefined) {
+          peerAccounts.push(provider.accounts);
+          includedNodeIds.add(memberNodeId);
+        }
+      }
+    }
 
-    const peerAccounts = group.nodeIds.flatMap((memberNodeId) => {
-      if (memberNodeId === nodeId) return [];
-      const member = this.registry.getConnectedNode(memberNodeId);
-      if (!supportsClaudeAccountPool(member?.capabilities)) return [];
-      const provider = this.nodes.get(memberNodeId)?.snapshot?.providers.claude;
-      return provider?.mode === "pool" && provider.accounts !== undefined
-        ? [provider.accounts]
-        : [];
-    });
+    // 중앙 풀 계정(source === "central")은 공유 계정 그룹 설정과 상관없이
+    // 모든 노드에 걸쳐 계정 id로 하나로 합친다.
+    for (const peer of this.registry.listConnectedNodes()) {
+      if (includedNodeIds.has(peer.nodeId)) continue;
+      if (!supportsClaudeAccountPool(peer.capabilities)) continue;
+      const provider = this.nodes.get(peer.nodeId)?.snapshot?.providers.claude;
+      if (provider?.mode !== "pool" || provider.accounts === undefined) continue;
+      const central = provider.accounts.filter((account) => account.source === "central");
+      if (central.length > 0) peerAccounts.push(central);
+    }
+
+    if (peerAccounts.length === 0) return accounts;
     return mergeClaudePoolObservations(accounts, peerAccounts);
   }
 
