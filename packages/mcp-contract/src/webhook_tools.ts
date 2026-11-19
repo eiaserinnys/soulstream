@@ -62,6 +62,12 @@ function isHttpsUrl(value: string): boolean {
 const callerSchema = { caller_session_id: z.string().min(1).optional() };
 const directionSchema = z.enum(["inbound", "outbound"]);
 
+/**
+ * 받을 주소로 한 번 보내는 도구의 노드 전달 상한. orch의 전송 상한(10초)보다 길어야
+ * 노드가 먼저 끊고 orch만 등록을 끝내 signing_secret을 잃는 일이 없다.
+ */
+const OUTBOUND_SEND_TIMEOUT_MS = 30_000;
+
 const OWNER_NOTE =
   "소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.";
 
@@ -82,7 +88,7 @@ export const webhookTools = {
     },
   },
   create_outbound_webhook: {
-    name: "create_outbound_webhook", audience: "internal",
+    name: "create_outbound_webhook", audience: "internal", timeoutMs: OUTBOUND_SEND_TIMEOUT_MS,
     config: {
       description: `대상 세션의 답변, 질문, 종료를 외부 주소로 보내는 아웃바운드 구독을 등록한다. 받을 주소는 https 공개 주소여야 하고, 등록 전에 보낸 verification 요청의 challenge를 그대로 돌려줘야 한다. ${OWNER_NOTE} signing_secret은 이 결과에만 한 번 나온다.`,
       inputSchema: { ...outboundWebhookCreateFields, ...callerSchema },
@@ -105,7 +111,7 @@ export const webhookTools = {
     },
   },
   redeliver_outbound_webhook: {
-    name: "redeliver_outbound_webhook", audience: "internal",
+    name: "redeliver_outbound_webhook", audience: "internal", timeoutMs: OUTBOUND_SEND_TIMEOUT_MS,
     config: {
       description: `아웃바운드 구독의 전달 기록 하나를 지금 다시 보내고 그 결과(outcome)를 돌려준다. 꺼진 구독은 다시 보내지 않는다. ${OWNER_NOTE}`,
       inputSchema: { id: z.string().min(1), delivery_id: z.string().min(1), ...callerSchema },

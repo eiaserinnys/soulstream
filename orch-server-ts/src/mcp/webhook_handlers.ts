@@ -147,11 +147,18 @@ function invalidRequest(error: z.ZodError): string {
 function logSafeFailure(options: McpHostOptions, tool: WebhookToolName, error: unknown): void {
   const fields: Record<string, unknown> = { tool };
   if (typeof error === "object" && error !== null) {
-    const candidate = error as { code?: unknown; constraint?: unknown; name?: unknown };
+    const candidate = error as {
+      code?: unknown;
+      constraint?: unknown;
+      constraint_name?: unknown;
+      name?: unknown;
+    };
     if (typeof candidate.code === "string" || typeof candidate.code === "number") {
       fields.error_code = String(candidate.code);
     }
-    if (typeof candidate.constraint === "string") fields.constraint = candidate.constraint;
+    // postgres.js names it `constraint_name`.
+    const constraint = candidate.constraint_name ?? candidate.constraint;
+    if (typeof constraint === "string") fields.constraint = constraint;
     if (typeof candidate.name === "string") fields.error_name = candidate.name;
   }
   options.cluster.logger.warn(fields, "webhook tool failed");
