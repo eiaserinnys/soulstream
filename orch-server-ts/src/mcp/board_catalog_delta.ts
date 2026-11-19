@@ -16,8 +16,8 @@ export type CatalogSessionAssignment = SessionAssignmentRecord;
 
 export type CatalogSessionsDelta =
   Record<string, CatalogSessionAssignment | null>;
-export type CatalogBoardItemsDelta =
-  Record<string, CatalogBoardItemRow | null>;
+export type CatalogBoardItemsDelta<T = CatalogBoardItemRow> =
+  Record<string, T | null>;
 
 export interface CatalogMutationDelta {
   readonly sessionIds?: readonly string[];

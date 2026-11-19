@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isTerminalSessionStatus } from "../session/session_status.js";
 
 import {
   compileRecurringSchedule,
@@ -406,7 +407,7 @@ export class RecurringJobService {
         message: "The previously observed session was deleted. Open or restore that existing session manually; no replacement was created.",
       });
     }
-    const saved = session.status === "completed" || session.status === "error" || session.status === "interrupted"
+    const saved = isTerminalSessionStatus(session.status)
       ? await saveRecurringRun(this.options.repository, run, session.status, now, null)
       : await saveRecurringRun(this.options.repository, run, "running", now, null);
     const job = await this.options.repository.getJob(run.jobId);

@@ -1,4 +1,5 @@
 import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
+import { isTerminalSessionStatus } from "../session/session_status.js";
 import type { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
 import type { McpCallContext } from "./types.js";
 import type { McpSessionRow } from "./session_read_adapter.js";
@@ -22,7 +23,7 @@ export class SessionConsumptionBoundary {
     const batch = [];
     for (const { session, reflectedRevision } of observations) {
       if (session.caller_session_id !== callerSessionId) continue;
-      if (!["completed", "error", "interrupted"].includes(session.status)) continue;
+      if (!isTerminalSessionStatus(session.status)) continue;
       if (reflectedRevision === null || session.last_event_id === null || reflectedRevision !== session.last_event_id) continue;
       const key = `${session.session_id}:${reflectedRevision}`;
       if (seen.has(key)) continue;

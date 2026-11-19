@@ -1,3 +1,4 @@
+import { isTerminalSessionStatus } from "../session/session_status.js";
 import { CardOrchestrationWorkers } from "./card_orchestration_workers.js";
 import { randomUUID } from "node:crypto";
 import type {
@@ -334,7 +335,7 @@ export class CardOrchestrationCoordinator {
       const session = await this.options.repository.session(run);
       if (
         !session ||
-        !["completed", "error", "interrupted"].includes(session.status)
+        !isTerminalSessionStatus(session.status)
       ) {
         if (await this.options.repository.workExpired(run, !!session)) {
           await this.options.repository.finish(

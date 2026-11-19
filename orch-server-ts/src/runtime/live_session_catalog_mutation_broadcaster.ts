@@ -8,7 +8,7 @@ import type {
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
-import { deletedBoardItemsDelta, type CatalogBoardItemsDelta } from "./catalog_delta_broadcaster.js";
+import { boardItemsDelta, type CatalogBoardItemsDelta } from "../mcp/board_catalog_delta.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 
 export function withSessionCatalogMutationBroadcasts(
@@ -50,7 +50,7 @@ export function withSessionCatalogMutationBroadcasts(
       if (outcome === "deleted") {
         await broadcastCatalogSnapshot(folderProvider, broadcaster, {
           sessionsDelta: { [sessionId]: null },
-          boardItemsDelta: deletedBoardItemsDelta(deletedBoardItemIds),
+          boardItemsDelta: boardItemsDelta([], deletedBoardItemIds),
         });
       }
       return outcome;

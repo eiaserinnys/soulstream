@@ -108,7 +108,8 @@ import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_reposit
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import { broadcastTargetedSessionCatalogDelta } from
   "./runtime/live_session_catalog_mutation_broadcaster.js";
-import { deletedBoardItemsDelta } from "./runtime/catalog_delta_broadcaster.js";
+import { boardItemsDelta } from "./mcp/board_catalog_delta.js";
+import { isTerminalSessionStatus } from "./session/session_status.js";
 import {
   createLiveSearchDbConnectionFactory,
   createLiveDbSqlResolver,
@@ -505,10 +506,7 @@ export async function createLiveProductionApplication(
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   const markdownDocuments = new MarkdownDocumentService(sqlResolver, async mutation => {
     await broadcastCatalogDelta(dbCatalogRepository.folderRouteProvider, runtimeServices.sessionBroadcaster, {
-      boardItemsDelta: Object.fromEntries([
-        ...(mutation.boardItems ?? []).map(item => [item.id, item] as const),
-        ...(mutation.deletedBoardItemIds ?? []).map(id => [id, null] as const),
-      ]),
+      boardItemsDelta: boardItemsDelta(mutation.boardItems, mutation.deletedBoardItemIds),
     });
     for (const folderId of mutation.folderIds) runtimeServices.sessionBroadcaster.append({ type: "folder_updated", folderId });
     runtimeServices.sessionBroadcaster.append({ type: "page_updated", page_id: mutation.documentId, version: mutation.version });
@@ -899,7 +897,7 @@ export async function createLiveProductionApplication(
         if (!row) return null;
         const rawStatus = row.status;
         return {
-          status: rawStatus === "completed" || rawStatus === "error" || rawStatus === "interrupted"
+          status: isTerminalSessionStatus(rawStatus)
             ? rawStatus
             : "running",
         };
