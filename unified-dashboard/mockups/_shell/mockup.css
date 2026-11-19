@@ -7,9 +7,11 @@
 @source "../../client";
 @source "..";
 
-/* 화면이 유리 틀의 안쪽 여백까지 쓰는 시안용. 유리 표면과 배경은 그대로 둔다.
-   components-review.css의 .v3-components-main 규칙보다 세게 잡아 순서와 무관하게 만든다. */
-.v3-components-main.v3-components-main--bare {
-  padding: 0;
+/* 화면이 유리 틀의 안쪽 여백까지 쓰는 시안용. 바탕은 투명하게 두어
+   WallpaperLayer와 LiquidGlassCanvas가 그대로 보이게 한다. */
+.v3-mockup-bare {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  background: transparent;
 }

@@ -1,12 +1,12 @@
 import type { RefObject } from "react";
-import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { Button, Checkbox, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronLeft, ChevronRight, Maximize2, Stamp } from "lucide-react";
 
 import { EvidenceArt } from "./EvidenceArt";
 import type { Agenda } from "./pas-split-1707-data";
 
 export function PasSplitClipboard({
-  agenda, pending, checked, onSelect, onMove, onToggleCheck, onInstruct, onEvidence, onPrimary, evidenceTriggerRef,
+  agenda, pending, checked, onSelect, onMove, onToggleCheck, onInstruct, onAnswer, onEvidence, onPrimary, evidenceTriggerRef,
 }: {
   agenda: Agenda | null;
   pending: Agenda[];
@@ -15,6 +15,7 @@ export function PasSplitClipboard({
   onMove(delta: number): void;
   onToggleCheck(agendaId: string, checkId: string): void;
   onInstruct(agenda: Agenda, label: string): void;
+  onAnswer(agenda: Agenda, option: string): void;
   onEvidence(agendaId: string): void;
   onPrimary(agenda: Agenda): void;
   evidenceTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -56,8 +57,8 @@ export function PasSplitClipboard({
             const done = Boolean(checked[key]);
             return <li className="pas-check-row" key={check.id} data-done={done || undefined}>
               <label className="pas-check-label">
-                <input type="checkbox" className="pas-check-input" checked={done}
-                  onChange={() => onToggleCheck(agenda.id, check.id)}/>
+                <Checkbox variant="card-item" aria-label={check.label} checked={done}
+                  onCheckedChange={() => onToggleCheck(agenda.id, check.id)}/>
                 <span className="pas-check-text">{check.label}</span>
               </label>
               <Button variant="ghost" size="sm" className="pas-check-instruct"
@@ -83,13 +84,18 @@ export function PasSplitClipboard({
 
       <footer className="pas-sheet-actions">
         {agenda.question ? <>
+          <span className="pas-question-label">{agenda.question.label}</span>
           <div className="pas-question-options" role="group" aria-label="응답 선택">
-            {agenda.question.options.map(option => <Button key={option} variant="outline" size="sm"
-              onClick={() => onInstruct(agenda, `#${agenda.number} ${option} 응답`)}>{option}</Button>)}
+            {agenda.question.options.map(option => <Button key={option.label}
+              variant={option.recommended ? "default" : "outline"} size="sm"
+              data-question-option={option.label}
+              onClick={() => onAnswer(agenda, option.label)}>
+              {option.label}{option.recommended ? " (권함)" : ""}
+            </Button>)}
           </div>
           <span className="pas-sheet-spacer"/>
           <Button variant="ghost" size="sm" onClick={() => onInstruct(agenda, `#${agenda.number} 되묻기`)}>되묻기</Button>
-          <Button variant="default" size="sm" onClick={() => onInstruct(agenda, `#${agenda.number} 자유 응답`)}>자유 응답</Button>
+          <Button variant="outline" size="sm" onClick={() => onInstruct(agenda, `#${agenda.number} 자유 응답`)}>자유 응답</Button>
         </> : <>
           <span className="pas-sheet-counter">{index + 1} / {pending.length}</span>
           <span className="pas-sheet-spacer"/>

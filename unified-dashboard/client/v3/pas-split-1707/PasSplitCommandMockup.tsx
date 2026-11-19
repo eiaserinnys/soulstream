@@ -3,8 +3,9 @@ import {
   Button, DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle,
   SwayCharacter, ThemeToggle,
 } from "@seosoyoung/soul-ui";
-import { House, ListTodo, RotateCcw } from "lucide-react";
+import { ListTodo, RotateCcw } from "lucide-react";
 
+import { CardWorkspace } from "../CardWorkspace";
 import { DocumentReaderDialog } from "../DocumentReaderDialog";
 import "../persistent-session-screen.css";
 import { EvidenceArt } from "./EvidenceArt";
@@ -14,8 +15,9 @@ import { PasSplitComposer } from "./PasSplitComposer";
 import { PasSplitHome } from "./PasSplitHome";
 import { PasSplitTaskDrawer, type TaskDrawerGroup } from "./PasSplitTaskDrawer";
 import {
-  AGENDAS, AWAITING_CARDS, FOLDER_DOCUMENTS, HOLD_COUNT, INITIAL_CHAT, PROMOTED_DOCUMENT,
-  QUEUED_CARDS, RUNNING_CARDS, type Agenda, type AgendaStatus, type ChatTurn, type FolderDocument,
+  AGENDAS, AWAITING_CARDS, FOLDER_DOCUMENTS, HOLD_COUNT, HOME_CARDS, HOME_FOLDERS, INITIAL_CHAT,
+  PROMOTED_DOCUMENT, QUEUED_CARDS, RUNNING_CARDS, homeCardDetail,
+  type Agenda, type AgendaStatus, type ChatTurn, type FolderDocument,
 } from "./pas-split-1707-data";
 import "./v3-pas-split-1707.css";
 
@@ -78,6 +80,18 @@ function useElementSize<T extends HTMLElement>(): [(node: T | null) => void, { w
   return [ref, size];
 }
 
+function useNarrowScreen(): boolean {
+  const query = "(max-width: 767px)";
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setNarrow(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  return narrow;
+}
+
 export function PasSplitCommandMockup() {
   const [route, setRoute] = useState<Route>(readRoute);
   const [agendas, setAgendas] = useState<Agenda[]>(AGENDAS);
@@ -91,6 +105,7 @@ export function PasSplitCommandMockup() {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [evidenceAgendaId, setEvidenceAgendaId] = useState<string | null>(null);
   const [readerDocId, setReaderDocId] = useState<string | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("board");
   const [characterRef, characterSize] = useElementSize<HTMLDivElement>();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -98,6 +113,7 @@ export function PasSplitCommandMockup() {
   const taskToggleRef = useRef<HTMLButtonElement | null>(null);
   const docTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const chatSeq = useRef(0);
+  const narrow = useNarrowScreen();
 
   useEffect(() => {
     const onChange = () => setRoute(readRoute());
@@ -135,8 +151,9 @@ export function PasSplitCommandMockup() {
     if (next) setActiveId(next.id);
   }, [activeId, pending]);
 
+  const isPas = route === "pas" || route === "pas-chat";
   const boardVisible = route === "pas" && pending.length > 0;
-  const quietMode = !boardVisible;
+  const quietMode = isPas && !boardVisible;
 
   useEffect(() => {
     if (!boardVisible) return;
@@ -147,25 +164,25 @@ export function PasSplitCommandMockup() {
       if (element instanceof HTMLElement
         && (element.tagName === "INPUT" || element.tagName === "TEXTAREA"
           || element.tagName === "SELECT" || element.isContentEditable)) return;
-      if (evidenceAgendaId || readerDocId || tasksOpen) return;
+      if (evidenceAgendaId || readerDocId || tasksOpen || selectedCardId) return;
       event.preventDefault();
       move(event.key === "ArrowRight" ? 1 : -1);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [boardVisible, evidenceAgendaId, move, readerDocId, tasksOpen]);
+  }, [boardVisible, evidenceAgendaId, move, readerDocId, selectedCardId, tasksOpen]);
 
   useEffect(() => {
     if (!tasksOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || evidenceAgendaId || readerDocId) return;
+      if (event.key !== "Escape" || evidenceAgendaId || readerDocId || selectedCardId) return;
       event.stopPropagation();
       setTasksOpen(false);
       window.requestAnimationFrame(() => taskToggleRef.current?.focus());
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [evidenceAgendaId, readerDocId, tasksOpen]);
+  }, [evidenceAgendaId, readerDocId, selectedCardId, tasksOpen]);
 
   const toggleCheck = (agendaId: string, checkId: string) => {
     const key = `${agendaId}:${checkId}`;
@@ -192,6 +209,10 @@ export function PasSplitCommandMockup() {
     const remaining = pending.filter(item => item.id !== agenda.id);
     setActiveId(remaining[Math.min(Math.max(currentIndex, 0), remaining.length - 1)]?.id ?? null);
     setTarget(current => current?.agendaId === agenda.id ? null : current);
+  };
+
+  const answerQuestion = (agenda: Agenda, option: string) => {
+    dispose(agenda, "done", `#${agenda.number} 선택지 ${option}${objectParticle(option)} 골라 완료했습니다.`);
   };
 
   const runPrimary = (agenda: Agenda) => {
@@ -289,8 +310,8 @@ export function PasSplitCommandMockup() {
     { id: "hold", label: "보류", count: HOLD_COUNT, cards: [] },
   ], [awaitingCards, pending, runningCards]);
 
-  const isPas = route === "pas" || route === "pas-chat";
   const evidenceAgenda = agendas.find(agenda => agenda.id === evidenceAgendaId) ?? null;
+  const selectedCard = selectedCardId ? HOME_CARDS.find(card => card.id === selectedCardId) ?? null : null;
 
   const closeTasks = () => {
     setTasksOpen(false);
@@ -298,7 +319,7 @@ export function PasSplitCommandMockup() {
   };
 
   return <div className="persistent-session-screen pas-split-app" data-testid="pas-split-app" data-route={route}>
-    <header className="persistent-session-header pas-split-header">
+    <header className="persistent-session-header pas-split-header" data-testid="v3-global-toolbar">
       <div className="persistent-session-brand">
         <span>소울스트림</span>
         <strong>{isPas ? "서소영" : "오늘"}</strong>
@@ -310,18 +331,22 @@ export function PasSplitCommandMockup() {
           onClick={() => navigate("home")}>홈</button>
       </nav>
       <div className="dashboard-toolbar-actions">
-        <DashboardIconCap className="pas-split-home-cap" label="홈" appearance="bare" onClick={() => navigate("home")}>
-          <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/>
-        </DashboardIconCap>
-        {isPas ? <DashboardIconCap ref={taskToggleRef} label="작업 목록" appearance="bare" aria-expanded={tasksOpen}
+        <DashboardIconCap ref={taskToggleRef} label="작업 목록" appearance="bare" aria-expanded={tasksOpen}
           onClick={() => setTasksOpen(value => !value)}>
           <ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/>
-        </DashboardIconCap> : null}
+        </DashboardIconCap>
         <ThemeToggle variant="chrome" appearance="bare"/>
       </div>
     </header>
 
     {isPas ? <main className="pas-split-body" data-mode={quietMode ? "quiet" : "board"} data-mobile-tab={mobileTab}>
+      {undo ? <div className="pas-split-undo" role="status" data-testid="pas-split-toast">
+        <span>{undo.message}</span>
+        <Button variant="ghost" size="sm" onClick={undoLast}>
+          <RotateCcw className="size-4" aria-hidden="true"/>되돌리기
+        </Button>
+      </div> : null}
+
       <div className="pas-split-viewbar">
         <div className="pas-split-viewswitch" role="group" aria-label="PAS 보기">
           <button type="button" data-active={boardVisible || undefined} disabled={pending.length === 0}
@@ -344,7 +369,7 @@ export function PasSplitCommandMockup() {
           motionEnabled active={!document.hidden} assetBaseUrl="/characters/seosoyoung"/> : null}
       </div> : null}
 
-      {boardVisible && pending.length > 0 ? <section className="pas-split-clipboard" aria-label="브리핑 서류판">
+      {boardVisible && pending.length > 0 ? <section className="pas-split-clipboard glass-strong glass-chrome lg-rim" aria-label="브리핑 서류판">
         <PasSplitClipboard
           agenda={active}
           pending={pending}
@@ -353,6 +378,7 @@ export function PasSplitCommandMockup() {
           onMove={move}
           onToggleCheck={toggleCheck}
           onInstruct={instruct}
+          onAnswer={answerQuestion}
           onEvidence={openEvidence}
           onPrimary={runPrimary}
           evidenceTriggerRef={evidenceTriggerRef}
@@ -367,27 +393,25 @@ export function PasSplitCommandMockup() {
         <PasSplitComposer target={target} value={composer} inputRef={textareaRef}
           onChange={setComposer} onSend={send} onClearTarget={clearTarget}/>
       </div>
-
-      {tasksOpen ? <PasSplitTaskDrawer groups={taskGroups} onClose={closeTasks}/> : null}
     </main> : <PasSplitHome
-      route={route}
+      route={route === "folder-docs" ? "folder-docs" : "home"}
       documents={documents}
-      pendingCount={pending.length}
-      runningCount={runningCards.length}
-      awaitingCount={awaitingCards.length}
-      queuedCount={QUEUED_CARDS.length}
-      holdCount={HOLD_COUNT}
       onNavigate={navigate}
       onOpenDocument={openDocument}
+      onOpenCard={setSelectedCardId}
       docTriggerRefs={docTriggerRefs}
     />}
 
-    {undo ? <div className="pas-split-toast glass-strong glass-chrome lg-rim" role="status" data-testid="pas-split-toast">
-      <span>{undo.message}</span>
-      <Button variant="ghost" size="sm" onClick={undoLast}>
-        <RotateCcw className="size-4" aria-hidden="true"/>되돌리기
-      </Button>
-    </div> : null}
+    {tasksOpen ? <PasSplitTaskDrawer groups={taskGroups} onClose={closeTasks}/> : null}
+
+    {selectedCard ? <CardWorkspace cardId={selectedCard.id} folders={HOME_FOLDERS}
+      sampleDetail={homeCardDetail(selectedCard)}
+      onClose={() => setSelectedCardId(null)}
+      onOpenSession={() => {}}
+      mobileMode={narrow} mobileTab="projects"
+      activeSession={undefined} chatInputDisabled historyEnabled={false}
+      sessionStreamActive={false} sessionConnectionStatus="disconnected"
+      reconnectSession={() => {}} onAcknowledgedReview={() => {}}/> : null}
 
     <Dialog open={evidenceAgenda !== null} onOpenChange={open => { if (!open) closeEvidence(); }}>
       <DialogPopup className="v3-surface pas-split-evidence-dialog max-w-2xl">
