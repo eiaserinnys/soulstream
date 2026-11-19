@@ -1057,43 +1057,49 @@ function ChatViewContent({
       )}
       </>}
 
-      {transcriptFallback == null && showNewMessage && !isFollowing && (
+      {transcriptFallback == null && (presentation === "default" || (showNewMessage && !isFollowing)) && (
         <div className="relative">
-          {presentation === "manuscript" ? (
-            <DashboardIconCap
-              appearance="bare"
-              label="새 메시지로 이동"
-              onClick={scrollToBottom}
-              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 text-muted-foreground v3-pas-floating-cap"
-            >
-              <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
-            </DashboardIconCap>
-          ) : (
-            <button
-              onClick={scrollToBottom}
-              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {"\u2193"} 새 메시지
-            </button>
-          )}
+          {/* 배너와 단추를 아래에서 위로 쌓는 겹침 묶음. 흐름 높이가 없어 목록이 그만큼 넓고,
+              묶음의 빈 영역은 pointer-events-none이라 목록의 클릭·선택·휠을 막지 않는다. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 px-[var(--panel-inset)] pb-[var(--panel-inset)]">
+            {showNewMessage && !isFollowing && (
+              presentation === "manuscript" ? (
+                <DashboardIconCap
+                  appearance="bare"
+                  label="새 메시지로 이동"
+                  onClick={scrollToBottom}
+                  className="pointer-events-auto text-muted-foreground v3-pas-floating-cap"
+                >
+                  <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+                </DashboardIconCap>
+              ) : (
+                <button
+                  onClick={scrollToBottom}
+                  className="pointer-events-auto rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {"\u2193"} 새 메시지
+                </button>
+              )
+            )}
+            {presentation === "default" && (
+              <button
+                type="button"
+                onClick={toggleFollow}
+                aria-pressed={isFollowing}
+                className={cn(
+                  "pointer-events-auto self-end",
+                  CHAT_FOLLOW_CONTROL_CLASS,
+                  isFollowing
+                    ? "border-accent-blue/30 glass bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
+                    : "border-glass-border glass text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {"\u2193"} 자동 스크롤
+              </button>
+            )}
+          </div>
         </div>
       )}
-
-      {presentation === "default" && <div className="flex shrink-0 items-center justify-end pb-2">
-        <button
-          type="button"
-          onClick={toggleFollow}
-          aria-pressed={isFollowing}
-          className={cn(
-            CHAT_FOLLOW_CONTROL_CLASS,
-            isFollowing
-              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
-              : "border-glass-border glass text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {"\u2193"} 자동 스크롤
-        </button>
-      </div>}
 
       {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} variant={isManuscript ? "caption" : "default"} /> : null}
 
