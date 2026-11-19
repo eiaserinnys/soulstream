@@ -22,6 +22,8 @@ import {
   readDatabaseReleaseJournal,
   runDatabaseRelease,
 } from "../../../packages/db-schema/scripts/release-executor.mjs";
+import { assertDatabaseReleaseApplyGate, writeDatabaseReleaseJournal } from
+  "../../../packages/db-schema/scripts/database-release-journal.mjs";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 
@@ -140,6 +142,103 @@ async function setHanielState(env: ReturnType<typeof environment>, state: string
 }
 
 describe("database release executor", () => {
+  async function assertAdditiveApply() {
+    const directory = makeTempDirSync("soul-release-additive-");
+    directories.push(directory);
+    const env = environment(directory);
+    const pending = [{ ...migration("170_add.sql", 170), sql: "ALTER TABLE t ADD COLUMN IF NOT EXISTS v text" }];
+    const initial = plan({ pending });
+    expect(await preflight(env, pending)).toMatchObject({ pending_count: 1, pending_additive_only: true });
+    const journal = await readDatabaseReleaseJournal(databaseReleaseJournalPath(env));
+    expect(journal.additive_only).toBe(true);
+    let ledger: Array<Record<string, unknown>> = [];
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ ledger, pending: ledger.length ? [] : pending }),
+      migrationRun: async (_mode, options) => {
+        await assertDatabaseReleaseApplyGate({ env: options.env, operation: "upgrade", plan: initial, inventory: populatedInventory() });
+        ledger = pending.map((item) => ({ ...item, release_id: env.HANIEL_RELEASE_ID }));
+      },
+    })).resolves.toMatchObject({ status: "applied" });
+  }
+
+  async function assertAdditiveRecoveryAndLegacy() {
+    const directory = makeTempDirSync("soul-release-additive-recovery-");
+    directories.push(directory);
+    const env = environment(directory);
+    const pending = [{ ...migration("170_add.sql", 170), sql: "CREATE TABLE IF NOT EXISTS t (id int)" }];
+    await preflight(env, pending);
+    await expect(runDatabaseRelease("apply", {
+      env,
+      inventoryRead: async () => populatedInventory(),
+      planRead: async () => plan({ pending }),
+      migrationRun: async () => { throw new Error("failed"); },
+    })).rejects.toThrow("APPLY_FAILED");
+    const recoveryEnv = { ...env, HANIEL_DATABASE_OPERATION: "recovery", HANIEL_FAILED_DATABASE_OPERATION: "upgrade" };
+    await expect(runDatabaseRelease("recover", { env: recoveryEnv })).resolves.toMatchObject({ recovered: true });
+
+    for (const legacy of [false, true]) {
+      const dir = makeTempDirSync("soul-release-not-additive-");
+      directories.push(dir);
+      const destructiveEnv = environment(dir);
+      const migrations = [{ ...migration("160_drop.sql", 160), sql: legacy
+        ? "CREATE TABLE IF NOT EXISTS t (id int)" : "DROP TABLE t" }];
+      const report = await preflight(destructiveEnv, migrations);
+      if (legacy) {
+        const path = databaseReleaseJournalPath(destructiveEnv);
+        const { additive_only: _omitted, ...oldJournal } = await readDatabaseReleaseJournal(path);
+        await writeDatabaseReleaseJournal(path, oldJournal);
+        expect((await preflight(destructiveEnv, migrations)).pending_additive_only).toBe(false);
+      } else {
+        expect(report).toMatchObject({ pending_count: 1, pending_additive_only: false });
+      }
+      await expect(runDatabaseRelease("apply", {
+        env: destructiveEnv,
+        inventoryRead: async () => populatedInventory(),
+        planRead: async () => plan({ pending: migrations }),
+        migrationRun: vi.fn(),
+      })).rejects.toThrow("QUIESCENCE_REQUIRED");
+      await expect(runDatabaseRelease("recover", {
+        env: { ...destructiveEnv, HANIEL_DATABASE_OPERATION: "recovery", HANIEL_FAILED_DATABASE_OPERATION: "upgrade" },
+      })).rejects.toThrow("RECOVERY_FORBIDDEN");
+    }
+  }
+
+  async function assertNonAdditivePlans() {
+    const additive = { ...migration("170_add.sql", 170), sql: "CREATE TABLE IF NOT EXISTS t (id int)" };
+    const destructive = { ...migration("160_drop.sql", 160), sql: "DROP TABLE t" };
+    for (const scenario of ["mixed", "bootstrap", "empty", "subphase"]) {
+      const directory = makeTempDirSync(`soul-release-${scenario}-`);
+      directories.push(directory);
+      const env = environment(directory);
+      if (scenario === "subphase") env.HANIEL_DATABASE_REQUIRED_SUBPHASES = '["task"]';
+      const pending = scenario === "empty" ? [] : scenario === "mixed" ? [additive, destructive] : [additive];
+      const bootstrap = scenario === "bootstrap" ? [destructive] : [];
+      expect(await preflight(env, pending, bootstrap)).toMatchObject({ pending_additive_only: false });
+    }
+  }
+
+  async function assertRealAdditiveApply() {
+    const testDatabaseUrl = await startIsolatedPostgres();
+    const installDir = makeTempDirSync("soul-release-additive-install-");
+    const upgradeDir = makeTempDirSync("soul-release-additive-real-");
+    directories.push(installDir, upgradeDir);
+    const databaseEnv = { TEST_DATABASE_URL: testDatabaseUrl, DATABASE_URL: testDatabaseUrl };
+    const freshEnv = { ...environment(installDir, "fresh_install"), ...databaseEnv };
+    await runDatabaseRelease("preflight", { env: freshEnv });
+    await runDatabaseRelease("apply", { env: freshEnv });
+    const sql = postgres(testDatabaseUrl, { max: 1 });
+    try {
+      await sql`DROP TABLE claude_central_accounts`;
+      await sql`DELETE FROM schema_migrations WHERE migration_id = '171_claude_central_accounts.sql'`;
+    } finally { await sql.end({ timeout: 5 }); }
+    const env = { ...environment(upgradeDir), ...databaseEnv };
+    expect(await runDatabaseRelease("preflight", { env })).toMatchObject({ pending_count: 1, pending_additive_only: true });
+    await expect(runDatabaseRelease("apply", { env })).resolves.toMatchObject({ status: "applied" });
+    await expect(runDatabaseRelease("verify", { env })).resolves.toMatchObject({ status: "verified" });
+  }
+
   it("routes every known DB writer through the executor and pins paired Haniel", () => {
     const files = {
       applySchema: readFileSync(new URL("../../scripts/apply-schema.mjs", import.meta.url), "utf8"),
@@ -196,6 +295,8 @@ describe("database release executor", () => {
   });
 
   it("writes an identity-bound atomic journal during preflight and requires quiescence evidence to apply it", async () => {
+    await assertAdditiveApply();
+    await assertNonAdditivePlans();
     const directory = makeTempDirSync("soul-release-journal-");
     directories.push(directory);
     const env = environment(directory);
@@ -458,6 +559,7 @@ describe("database release executor", () => {
   });
 
   itWithDatabase("reconciles a real PostgreSQL commit after journal update loss", async () => {
+    await assertRealAdditiveApply();
     const testDatabaseUrl = await startIsolatedPostgres();
     const sql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     expect(await inspectUserObjectInventory(sql)).toMatchObject(emptyInventory());
@@ -508,6 +610,7 @@ describe("database release executor", () => {
   });
 
   it("closes a failed upgrade journal without restoring the database", async () => {
+    await assertAdditiveRecoveryAndLegacy();
     const directory = makeTempDirSync("soul-release-recovery-");
     directories.push(directory);
     const env = await writeReceipt(environment(directory));

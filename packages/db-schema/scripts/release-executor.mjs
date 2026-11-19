@@ -12,7 +12,9 @@ import {
   databaseReleaseJournalPath,
   inspectUserObjectInventory,
   journalIdentity,
+  plannedSchemaWorkCount,
   readDatabaseReleaseJournal,
+  requiresQuiescence,
   transitionDatabaseReleaseJournal,
 } from "./database-release-journal.mjs";
 import {
@@ -125,16 +127,6 @@ async function probe(context) {
   return await probeDatabaseOperation(context, databaseReleaseSuccess);
 }
 
-/**
- * The schema work this release will do: planned SQL migrations (bootstrap and
- * pending) plus required subphases. Preflight reports it and apply skips the
- * quiescence evidence only when it is zero, so the two conditions stay one rule.
- */
-function plannedSchemaWorkCount(journal) {
-  return (journal.planned_migrations ?? []).length
-    + (journal.required_subphases ?? []).length;
-}
-
 async function preflight(context, options) {
   const path = databaseReleaseJournalPath(context.env);
   let existing = null;
@@ -179,9 +171,8 @@ async function preflight(context, options) {
     }
   }
   return result(context, operation, path, journal.status, "preflight", {
-    // Lets Haniel skip writer quiescence and restarts exactly when apply will
-    // skip the evidence: no planned migrations and no required subphases.
     pending_count: plannedSchemaWorkCount(journal),
+    pending_additive_only: journal.additive_only === true,
   });
 }
 
@@ -247,14 +238,11 @@ async function apply(context, options) {
   }
   const allowed = journal.status === "preflight_complete" || retryableNone;
   if (!allowed) throw new Error("JOURNAL_GATE_FAILED: release phases are incomplete");
-  // An upgrade with no planned migrations and no required subphases has no
-  // schema work: it needs no writer quiescence evidence and must not open a
-  // database writer gate. This is the same rule preflight reports as
-  // pending_count === 0.
+  // An empty upgrade does not need to open a database writer gate at all.
   const skippedMigrationRun =
     journal.operation === "upgrade" && plannedSchemaWorkCount(journal) === 0;
   let evidence = null;
-  if (journal.operation === "upgrade" && !skippedMigrationRun) {
+  if (requiresQuiescence(journal)) {
     evidence = await readHanielReleaseEvidence({
       env: context.env,
       journal,
@@ -362,10 +350,12 @@ async function recover(context) {
   ) {
     throw new Error("RECOVERY_FORBIDDEN: failed operation identity differs");
   }
-  try {
-    await readHanielReleaseEvidence({ env: context.env, journal, phase: "recovery" });
-  } catch (error) {
-    throw stableError("RECOVERY_FORBIDDEN", error);
+  if (requiresQuiescence(journal)) {
+    try {
+      await readHanielReleaseEvidence({ env: context.env, journal, phase: "recovery" });
+    } catch (error) {
+      throw stableError("RECOVERY_FORBIDDEN", error);
+    }
   }
   journal = await transitionFrom(path, journal, "recovered", {
     phase: "recovery",
