@@ -6,7 +6,7 @@ import { performance } from "node:perf_hooks";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Logger } from "pino";
 
-import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { renameWithTransientRetry } from "@soulstream/atomic-file-rename";
 import {
   inspectRunnerDurableState,
   probeRunnerDurableRetention,

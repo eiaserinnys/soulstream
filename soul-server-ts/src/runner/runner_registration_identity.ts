@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { writeFileAtomically } from "../atomic_file_rename.js";
+import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";

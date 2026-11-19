@@ -7,7 +7,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 
-import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { renameWithTransientRetry } from "@soulstream/atomic-file-rename";
 import { advanceUnacknowledgedSourceSequence } from "../event_outbox_recovery.js";
 import {
   appendEventOutboxQuarantine,

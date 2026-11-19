@@ -10,7 +10,7 @@ import {
   isTransientRenameError,
   renameWithTransientRetrySync,
   type SyncRenameRetryOptions,
-} from "../atomic_file_rename.js";
+} from "@soulstream/atomic-file-rename";
 import { isProcessAlive } from "./runner_process_lock.js";
 import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 

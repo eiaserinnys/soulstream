@@ -48,6 +48,9 @@ importers:
       '@soulstream/agent-profile-contract':
         specifier: workspace:*
         version: link:../packages/agent-profile-contract
+      '@soulstream/atomic-file-rename':
+        specifier: workspace:*
+        version: link:../packages/atomic-file-rename
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
@@ -145,6 +148,8 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+
+  packages/atomic-file-rename: {}
 
   packages/chat-ui:
     devDependencies:
@@ -456,6 +461,9 @@ importers:
       '@soulstream/agent-profile-contract':
         specifier: workspace:*
         version: link:../packages/agent-profile-contract
+      '@soulstream/atomic-file-rename':
+        specifier: workspace:*
+        version: link:../packages/atomic-file-rename
       '@soulstream/chat-ui':
         specifier: workspace:*
         version: link:../packages/chat-ui

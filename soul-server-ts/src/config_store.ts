@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { renameWithTransientRetrySync } from "./atomic_file_rename.js";
+import { renameWithTransientRetrySync } from "@soulstream/atomic-file-rename";
 
 type MaybePromise<T> = T | Promise<T>;
 

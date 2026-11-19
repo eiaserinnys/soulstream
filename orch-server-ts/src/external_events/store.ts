@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
-import { writeFileAtomically } from "../atomic_file_rename.js";
+import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import { recordSchema, type SubscriptionRecord } from "./contracts.js";
 
 const stateSchema = z.object({ version: z.literal(1), subscriptions: z.array(recordSchema) });

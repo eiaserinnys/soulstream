@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { renameWithTransientRetry } from "@soulstream/atomic-file-rename";
 
 const READY_MARKER = ".runner-release.json";
 const HASH_DOMAIN = "soulstream.runner.release.v1\0";

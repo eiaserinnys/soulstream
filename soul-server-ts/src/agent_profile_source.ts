@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import { writeFileAtomically } from "./atomic_file_rename.js";
+import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import {
   AgentRegistry,
   AgentAtomContextSchema,
