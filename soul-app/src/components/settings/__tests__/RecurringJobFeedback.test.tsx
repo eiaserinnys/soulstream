@@ -102,6 +102,7 @@ test('저장 서버 실패 안내는 첫 줄에 저장 동작을 밝히고 오�
   const alert = await screen.findByText(/^저장하지 못했습니다\./);
   expect(alert.props.children.split('\n')[0]).toBe('저장하지 못했습니다.');
   expect(alert.props.children).toContain('HTTP 503');
+  expect(alert.props.children).not.toContain('오류 원문은 표시하지 않습니다');
 });
 
 test('지금 실행 서버 실패 안내는 첫 줄에 실행 동작을 밝힌다', async () => {

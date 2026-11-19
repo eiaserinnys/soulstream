@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
-import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 import * as ImagePicker from 'expo-image-picker';
 import { createApiClient } from '../api/client';
 import { AIBackendSettingsSection } from '../components/settings/AIBackendSettingsSection';
@@ -122,9 +121,10 @@ export function SettingsContent({
       setTestResult({ ok: true, msg: `연결됨: ${config.mode} 모드` });
     } catch (error: any) {
       if (revision !== testRevision.current) return;
+      const raw = error?.message ?? String(error);
       setTestResult({
         ok: false,
-        msg: `연결 실패: ${safeErrorDetail(error?.message ?? String(error))}`,
+        msg: `연결 실패: ${raw.trim() ? raw : '알 수 없는 오류'}`,
       });
     } finally {
       if (revision === testRevision.current) setTesting(false);
@@ -198,7 +198,8 @@ export function SettingsContent({
       applyUserPreferences(saved.preferences);
       setBackgroundStatus('이 기기와 서버에 사진을 적용했습니다.');
     } catch (error: any) {
-      if (revision === preferencesRevision.current && identity.current.serverUrl === scope.serverUrl && identity.current.jwt === scope.jwt) Alert.alert('배경 저장 실패', safeErrorDetail(error?.message ?? String(error)));
+      const raw = error?.message ?? String(error);
+      if (revision === preferencesRevision.current && identity.current.serverUrl === scope.serverUrl && identity.current.jwt === scope.jwt) Alert.alert('배경 저장 실패', raw.trim() ? raw : '알 수 없는 오류');
     } finally {
       if (pickerRequest === backgroundRequest.current) { backgroundPending.current = false; setSavingBackground(false); }
     }

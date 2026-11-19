@@ -25,7 +25,6 @@ import { useTokens } from '../../theme';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import { SettingsOptionRow as OptionRow } from './SettingsOptionRow';
 import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
-import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
 import { SettingsSection } from './SettingsSection';
 import {
   SettingsAction as Action,
@@ -426,7 +425,8 @@ function localErrorMessage(cause: unknown): string | null {
   return null;
 }
 function errorDetail(cause: unknown): string {
-  return safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return message.trim() ? message : '알 수 없는 오류';
 }
 function errorMessage(cause: unknown): string {
   return localErrorMessage(cause) ?? errorDetail(cause);

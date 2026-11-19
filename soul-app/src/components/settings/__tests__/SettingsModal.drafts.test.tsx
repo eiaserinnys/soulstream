@@ -77,19 +77,19 @@ test('사진 선택 연타와 취소는 기존 배경을 보존한다', async ()
   expect(api.uploadUserBackground).not.toHaveBeenCalled();
 });
 
-test('배경 업로드 실패는 성공으로 표시하지 않고 정제된 오류만 보여준다', async () => {
+test('배경 업로드 실패는 성공으로 표시하지 않고 오류 원문을 보여준다', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
   jest.mocked(ImagePicker.requestMediaLibraryPermissionsAsync).mockResolvedValue({ granted: true } as never);
   jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://chosen.jpg' }] } as never);
-  api.uploadUserBackground.mockRejectedValueOnce(new Error('HTTP 403 Authorization: Bearer synthetic-auth Cookie=synthetic-cookie password=synthetic-password token=synthetic-token api_key=synthetic-key https://user:synthetic-userinfo@test.invalid/?key=synthetic-query'));
+  const message = 'HTTP 403 Authorization: Bearer synthetic-auth Cookie=synthetic-cookie password=synthetic-password token=synthetic-token api_key=synthetic-key https://user:synthetic-userinfo@test.invalid/?key=synthetic-query';
+  api.uploadUserBackground.mockRejectedValueOnce(new Error(message));
   const screen = render(<SettingsModal visible onClose={jest.fn()} />);
   await act(async () => {});
   if (mockDeviceType === 'phone') fireEvent(screen.getByTestId('settings-safe-area'), 'layout', { nativeEvent: { layout: { width: 390 } } });
   fireEvent.press(screen.getByTestId('settings-category-display'));
   await act(async () => fireEvent.press(screen.getByTestId('settings-upload-background')));
   expect(api.putUserPreferences).not.toHaveBeenCalled();
-  expect(alert).toHaveBeenCalledWith('배경 저장 실패', 'HTTP 403\n민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.');
-  expect(JSON.stringify(alert.mock.calls)).not.toContain('synthetic-');
+  expect(alert).toHaveBeenCalledWith('배경 저장 실패', message);
   expect(JSON.stringify(screen.toJSON())).not.toContain('synthetic-');
   expect(screen.getByTestId('settings-upload-background')).toBeEnabled();
   alert.mockRestore();

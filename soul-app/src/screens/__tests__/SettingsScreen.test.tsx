@@ -182,7 +182,7 @@ describe('SettingsScreen — 익명 연결 테스트', () => {
     fireEvent.changeText(screen.getByTestId('settings-server-input'), OTHER_SERVER_URL);
     fireEvent.press(screen.getByTestId('settings-test-connection'));
 
-    expect(await screen.findByText(/연결 실패: HTTP 401/)).toBeTruthy();
+    expect(await screen.findByText(/연결 실패: \[getConfig\] HTTP 401/)).toBeTruthy();
     const targetRequest = fetchMock.mock.calls.find(([input]) =>
       String(input) === `${OTHER_SERVER_URL}/api/config`);
     expect(targetRequest).toBeDefined();
