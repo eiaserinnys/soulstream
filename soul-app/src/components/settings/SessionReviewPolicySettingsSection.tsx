@@ -20,7 +20,6 @@ import { GlassButton } from '../GlassSurface';
 import { FrameLoading } from '../FrameLoading';
 import { SettingsSection } from './SettingsSection';
 import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
-import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
 
 const SOURCE_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const UNSAFE_SOURCE_COPY = /\b(?:user_id|email|display_name|ingress|mcp|parent)\b|권한|도구|상위\s*요청|알림|·/i;
@@ -377,7 +376,7 @@ function errorMessage(cause: unknown, fallback: string): string {
       // Fall through to the stable client-facing fallback.
     }
   }
-  return cause instanceof Error && cause.message ? safeErrorDetail(cause.message) : fallback;
+  return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
 }
 
 function formatTimestamp(value: string): string {

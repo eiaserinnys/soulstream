@@ -1,8 +1,7 @@
 import { ApiHttpError } from '../../api/clientCore';
-import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
 
 export interface PersistentSessionFailure {
-  /** User-facing reason, already stripped of anything unsafe to show. */
+  /** User-facing reason, including the original error when no code matches. */
   text: string;
   /** Set only for PERSISTENT_REGISTRATION_FAILED: the plain session exists, registration did not finish. */
   createdSession: { session_id: string; display_name: string | null } | null;
@@ -40,9 +39,10 @@ export function describePersistentFailure(cause: unknown, op: 'load' | 'save' | 
   const createdSession = code === 'PERSISTENT_REGISTRATION_FAILED' && typeof created?.session_id === 'string'
     ? { session_id: created.session_id, display_name: typeof created.display_name === 'string' ? created.display_name : null }
     : null;
+  const message = cause instanceof Error ? cause.message : String(cause);
   let text = code === 'INVALID_REQUEST' && op === 'instruction'
     ? '지속 지시 내용을 확인해 주세요.'
-    : (code && CODE_TEXT[code]) || safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
+    : (code && CODE_TEXT[code]) || (message.trim() ? message : '알 수 없는 오류');
   // Rename, settings and the model switch are saved one after another, so a server-side failure can leave part of them saved.
   if (op === 'save' && http && http.status >= 500) text += ' 일부 변경이 저장됐을 수 있습니다. 다시 읽거나 저장해 주세요.';
   return { text, createdSession, responseLost: op === 'create' && !http };

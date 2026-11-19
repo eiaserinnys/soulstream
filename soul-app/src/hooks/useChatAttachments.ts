@@ -5,7 +5,6 @@ import { ActionSheetIOS, DocumentPicker, ImagePicker } from './attachmentPickers
 import type { ApiClient } from '../api/client';
 import type { NativeUploadFile } from '../api/nativeUpload';
 import { NATIVE_MULTIPART_THRESHOLD_BYTES } from '../api/nativeMultipartUpload';
-import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 
 export interface ChatAttachment {
   path: string;
@@ -38,7 +37,7 @@ export interface UseChatAttachmentsResult {
   attachments: ChatAttachment[];
   uploading: boolean;
   attachmentsReady: boolean;
-  /** Safe diagnostic text only; callers can display this without raw error data. */
+  /** Original error detail for callers to display. */
   error: string | null;
   pickAttachment: () => void;
   uploadAttachment: (file: AttachmentUploadInput) => Promise<void>;
@@ -124,8 +123,10 @@ export function useChatAttachments(
         }));
       } catch (cause) {
         if (!active || revision !== generation.current) return;
-        const message = safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
-        setError(message); RNAlert.alert('첨부 실패', message);
+        const raw = cause instanceof Error ? cause.message : String(cause);
+        const detail = raw.trim() ? raw : '알 수 없는 오류';
+        setError(detail);
+        RNAlert.alert('첨부 실패', detail);
       } finally { if (active && revision === generation.current) setUploading(false); }
     })();
     return () => {
@@ -181,9 +182,10 @@ export function useChatAttachments(
           : [...prev, uploaded]);
       } catch (e: any) {
         if (revision !== generation.current) return;
-        const message = safeErrorDetail(e?.message ?? String(e));
-        setError(message);
-        RNAlert.alert('첨부 실패', message);
+        const raw = e?.message ?? String(e);
+        const detail = raw.trim() ? raw : '알 수 없는 오류';
+        setError(detail);
+        RNAlert.alert('첨부 실패', detail);
       } finally {
         activeUploads.current.delete(controller);
         if (revision === generation.current) setUploading(false);
@@ -244,7 +246,8 @@ export function useChatAttachments(
             });
           }
         } catch (e: any) {
-          RNAlert.alert('첨부 실패', safeErrorDetail(e?.message ?? String(e)));
+          const raw = e?.message ?? String(e);
+          RNAlert.alert('첨부 실패', raw.trim() ? raw : '알 수 없는 오류');
         } finally {
           if (pickerRevision === generation.current) { pickerPending.current = false; setUploading(false); }
         }
