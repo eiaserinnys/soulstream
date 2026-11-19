@@ -9,9 +9,10 @@ const emptyLanesOutput=path.resolve("../../../.local/artifacts/20261005-card-emp
 const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
-async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean}={}){
- const cards=initialCards,reads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
+async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean}={}){
+ const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
+ const completedAt=new Date().toISOString();
  await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
   const Native=EventSource,sources:EventSource[]=[];let sequence=0;
   window.EventSource=class extends Native{constructor(url:string|URL,options?:EventSourceInit){super(url,options);sources.push(this);}};
@@ -25,10 +26,12 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
   if(route.request().method()==="GET"){
    const url=new URL(route.request().url()),folderId=url.searchParams.get("folderId"),status=url.searchParams.get("status"),query=(url.searchParams.get("q")??"").toLocaleLowerCase();
    if(status==="done"){
+    completedReads.push(url.search);
     if(completedOptions.delay)await new Promise(done=>setTimeout(done,completedOptions.delay));
-    if(completedFailure)return route.fulfill({status:500,json:{message:"완료 카드 조회 실패 fixture"}});
+    if(completedFailure)return route.fulfill({status:500,json:{message:completedOptions.detail??"완료 카드 조회 실패 fixture"}});
    }
-   const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt:new Date().toISOString()}));
+   if(status!=="done"&&folderId&&completedOptions.folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
+   const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt}));
    const listed=[...cards,...completedSeeds].filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done")
     .filter(card=>!query||`${card.title} ${card.request}`.toLocaleLowerCase().includes(query));
    if(status==="done"&&completedOptions.paginate){
@@ -54,9 +57,9 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
   return route.fulfill({json:{card,reports:[{id:"report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
    questions:card.id==="home-3-0"?[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]:[],sessions:[]}});
  });
- await page.goto("/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
+ await page.goto(process.env.CARD1680_VISUAL_BASE??"/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
  const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible({timeout:20000});
- return {cards,reads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
+ return {cards,reads,completedReads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
@@ -487,8 +490,7 @@ for(const [mode,width] of [["목록",390],["폴더",390],["접힌 보드",390],[
   const edges={notice:{left:noticeBox.x,right:noticeBox.x+noticeBox.width},search:{left:searchBox.x,right:searchBox.x+searchBox.width}};
   await completedCapture(page,`error-${mode}-${width}`,{alerts:await alert.count(),text:await alert.innerText(),...edges});
   if(mode==="접힌 보드"||mode==="폴더 보드"){
-   expect(Math.abs(edges.notice.left-edges.search.left)).toBeLessThanOrEqual(1);
-   expect(Math.abs(edges.notice.right-edges.search.right)).toBeLessThanOrEqual(1);
+   await expect(surface.locator('[data-board-column="done"] [data-testid="completed-viewport"] [role="alert"]')).toBeVisible();
   }
   await expect(alert).toContainText("완료 카드를 불러오지 못했습니다.");
   await expect(surface).not.toContainText("Error:");await expect(surface).not.toContainText("선택한 기간에 완료 카드가 없습니다");
@@ -516,3 +518,232 @@ test("완료 목록 로딩과 조작",async({page})=>{
  await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"전체 카드 보드"})).toHaveCount(0);await expect(expand).toBeFocused();
  await completedCapture(page,"interaction",{focusAfterTab,beforeResize,afterResize,focusRestored:await expand.evaluate(el=>el===document.activeElement)});
 });
+
+test("card1680 실시간 갱신에도 불러온 카드와 스크롤 유지",async({page})=>{
+ await page.setViewportSize({width:1440,height:900});await page.emulateMedia({reducedMotion:"reduce"});
+ const {board,completedReads}=await fixture(page,17,seed().filter(card=>card.status!=="done"),200,{paginate:true});
+ const home=page.getByTestId("card-home");await home.getByRole("switch",{name:"완료·취소 숨김"}).uncheck();
+ const done=board.locator('[data-board-column="done"]'),scroller=done.getByTestId("virtuoso-scroller");
+ await scroller.scrollIntoViewIfNeeded();
+ for(let i=0;i<2;i++){
+  const previousHeight=await scroller.evaluate(el=>el.scrollHeight);
+  await scroller.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+  await expect.poll(async()=>Number((await done.locator('.v3-detail-section-head').innerText()).match(/(\d+)개/)?.[1]??0)).toBeGreaterThanOrEqual(Math.min((i+2)*60,200));
+  await expect.poll(()=>scroller.evaluate(el=>el.scrollHeight)).toBeGreaterThan(previousHeight);
+ }
+ await scroller.evaluate(el=>{el.scrollTop=el.scrollHeight/2;});
+ const captureDir=path.resolve('../.local/card1680/captures/after');mkdirSync(captureDir,{recursive:true});
+ const before=await scroller.evaluate(el=>el.scrollTop),count=await done.locator('.v3-detail-section-head span').textContent(),requestCount=completedReads.length;
+ await page.screenshot({path:path.join(captureDir,'scroll-before.png'),animations:'disabled'});
+ const response=page.waitForResponse(response=>response.url().includes('/api/cards?')&&response.url().includes('status=done'));
+ await page.evaluate(()=>{(window as unknown as {emitCard:(id:string)=>void}).emitCard('completed-grid-0');});await response;
+ await expect(done.locator('.v3-detail-section-head span')).toHaveText(count!);
+ await expect.poll(()=>scroller.evaluate(el=>el.scrollTop)).toBe(before);
+ await page.waitForTimeout(300);
+ const requests=completedReads.slice(requestCount);
+ expect(requests).toHaveLength(1);expect(new URLSearchParams(requests[0]).has('cursor')).toBe(false);
+ const after=await scroller.evaluate(el=>el.scrollTop),afterCount=await done.locator('.v3-detail-section-head span').textContent();
+ await page.screenshot({path:path.join(captureDir,'scroll-after.png'),animations:'disabled'});
+ writeFileSync(path.join(captureDir,'scroll.json'),JSON.stringify({before,after,count,afterCount,requests},null,2));
+});
+
+test("card1680 접힌 보드 완료 열은 지연 로딩 전후 같은 크기",async({page},testInfo)=>{
+ await page.setViewportSize({width:390,height:844});const {board}=await fixture(page,17,seed(),5,{delay:2000});
+ await page.getByTestId('card-home').getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const done=board.locator('[data-board-column="done"]');await done.scrollIntoViewIfNeeded();
+ await expect(done.getByText('완료 카드를 불러오는 중…')).toBeVisible();
+ const before=(await done.getByTestId('completed-viewport').boundingBox())!;
+ await page.screenshot({path:testInfo.outputPath('loading.png'),animations:'disabled'});
+ await expect(done.locator('.v3-detail-section-head')).toContainText('6개 표시');
+ const after=(await done.getByTestId('completed-viewport').boundingBox())!;
+ expect(after.width).toBeCloseTo(before.width,0);expect(after.height).toBeCloseTo(before.height,0);
+});
+
+test("card1680 폴더 390px 글자 17·18 격자 여백",async({page},testInfo)=>{
+ for(const size of [17,18]){
+  await page.setViewportSize({width:390,height:844});await fixture(page,size);
+  await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');await folder.getByRole('button',{name:'일반 보기',exact:true}).click();
+  const grid=folder.locator('.v3-postit-grid').first(),card=grid.locator('.v3-postit-card').first();await card.scrollIntoViewIfNeeded();
+  const edges=await grid.evaluate(el=>{const scroll=el.closest('.v3-planner-scroll')!,box=scroll.getBoundingClientRect(),style=getComputedStyle(scroll),grid=el.getBoundingClientRect(),card=el.querySelector('.v3-postit-card')!.getBoundingClientRect();return {contentRight:box.right-parseFloat(style.paddingRight),gridRight:grid.right,cardRight:card.right};});
+  await page.screenshot({path:testInfo.outputPath(`folder-${size}.png`),animations:'disabled'});
+  expect(edges.gridRight).toBeLessThanOrEqual(edges.contentRight+1);expect(edges.cardRight).toBeLessThanOrEqual(edges.contentRight+2);
+  await page.unrouteAll({behavior:'wait'});
+ }
+});
+
+const visualPhase=process.env.CARD1680_VISUAL_PHASE??'after';
+const visualDir=path.resolve(`../.local/card1680/captures/${visualPhase}`);
+const visualSave=(name:string,data:unknown)=>{mkdirSync(visualDir,{recursive:true});writeFileSync(path.join(visualDir,`${name}.json`),JSON.stringify(data,null,2));};
+const visualShot=async(page:Page,name:string)=>{mkdirSync(visualDir,{recursive:true});await page.screenshot({path:path.join(visualDir,`${name}.png`),animations:'disabled'});};
+
+test('visual1680 폴더 여백과 좌표',async({page})=>{
+ for(const size of [17,18]){
+  await page.setViewportSize({width:390,height:844});await fixture(page,size);
+  await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');await folder.getByRole('button',{name:'일반 보기',exact:true}).click();
+  const grid=folder.locator('.v3-postit-grid').first(),card=grid.locator('.v3-postit-card').first();await card.scrollIntoViewIfNeeded();
+  const edges=await grid.evaluate(el=>{const scroll=el.closest('.v3-planner-scroll')!,bounds=scroll.getBoundingClientRect(),style=getComputedStyle(scroll),grid=el.getBoundingClientRect(),card=el.querySelector('.v3-postit-card')!.getBoundingClientRect();return {contentRight:bounds.right-parseFloat(style.paddingRight),gridRight:grid.right,cardRight:card.right,paddingRight:style.paddingRight};});
+  await visualShot(page,`folder-${size}`);visualSave(`folder-${size}`,edges);
+  if(visualPhase==='after'){expect(edges.gridRight).toBeLessThanOrEqual(edges.contentRight+1);expect(edges.cardRight).toBeLessThanOrEqual(edges.contentRight+2);}
+  await page.unrouteAll({behavior:'wait'});
+ }
+});
+
+for(const width of [1440,390])test(`visual1680 완료 보드 로딩 ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});
+ const {board}=await fixture(page,17,seed().filter(card=>card.status==='done'),5,{delay:3000});
+ await page.getByTestId('card-home').getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const loader=page.getByText('완료 카드를 불러오는 중…');await expect(loader).toBeVisible();
+ if(visualPhase==='after')await board.locator('[data-board-column="done"]').scrollIntoViewIfNeeded();
+ await visualShot(page,`loading-${width}`);
+ const lane=board.locator('[data-board-column="done"] [data-testid="completed-viewport"]');
+ const before=await lane.count()?await lane.boundingBox():null;
+ await expect(loader).toHaveCount(0,{timeout:10000});
+ const after=await lane.count()?await lane.boundingBox():null;
+ await visualShot(page,`loaded-${width}`);visualSave(`loading-${width}`,{before,after});
+ if(visualPhase==='after'){expect(before!.width).toBeCloseTo(after!.width,0);expect(before!.height).toBeCloseTo(after!.height,0);}
+});
+
+for(const mode of ['list','folder','board'] as const)test(`visual1680 오류 ${mode}`,async({page})=>{
+ test.skip(visualPhase==='before','오류 표본은 변경 후 검수');
+ await page.setViewportSize({width:390,height:844});const state=await fixture(page,17,seed(),5,{fail:true});
+ let surface=page.getByTestId('card-home');
+ if(mode==='folder'){await openCompletedFolder(page);surface=page.getByTestId('folder-card-section');}
+ await surface.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ if(mode!=='board')await surface.getByRole('button',{name:'일반 보기',exact:true}).click();
+ const alert=surface.getByRole('alert');await expect(alert).toHaveCount(1);await alert.scrollIntoViewIfNeeded();
+ await expect(alert.getByRole('button',{name:'다시 불러오기'})).toBeVisible();
+ await expect(alert).not.toContainText('Error:');await visualShot(page,`error-${mode}-closed`);
+ await alert.getByText('기술 상세').click();await visualShot(page,`error-${mode}-open`);
+ const text=await alert.innerText();state.setCompletedFailure(false);
+ await alert.getByRole('button',{name:'다시 불러오기'}).click();
+ await expect(surface.locator('[data-card-id="home-5-0"]')).toBeVisible();
+ visualSave(`error-${mode}`,{text,retryRecovered:true,errorPrefix:text.includes('Error:')});
+});
+
+for(const width of [1440,390])test(`visual1680 오류 표본 ${width}`,async({page})=>{
+ test.skip(visualPhase==='before','표본은 변경 후 추가');
+ await page.setViewportSize({width,height:width===390?844:900});await fixture(page);
+ await page.goto(new URL('/components',page.url()).toString());
+ const sample=page.locator('[data-component="V3ErrorNotice"]');await expect(sample).toBeVisible();await sample.scrollIntoViewIfNeeded();
+ await page.waitForTimeout(1000);
+ const detail=sample.locator('details').first();
+ if(!await detail.evaluate(el=>el.hasAttribute('open')))await detail.locator('summary').click();
+ await expect(detail.locator('pre')).toBeVisible();await expect(sample).not.toContainText('Error:');
+ await visualShot(page,`components-${width}`);visualSave(`components-${width}`,{text:await sample.innerText()});
+});
+
+test('visual1680 초점 키보드 최소 폭과 창 크기',async({page})=>{
+ test.skip(visualPhase==='before','조작 계약은 변경 후 검수');
+ await page.setViewportSize({width:360,height:844});const state=await fixture(page,18,seed(),12);
+ const home=page.getByTestId('card-home');await home.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const search=home.getByRole('textbox',{name:'제목 또는 요청 검색'});await search.fill('완료');await expect(search).toHaveValue('완료');
+ await search.focus();await page.keyboard.press('Tab');const tab=await page.evaluate(()=>({tag:document.activeElement?.tagName,visible:!!(document.activeElement as HTMLElement)?.getClientRects().length}));
+ expect(tab.visible).toBe(true);expect(tab.tag).not.toBe('BODY');
+ const narrow=await page.evaluate(()=>({width:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth}));expect(narrow.scrollWidth).toBeLessThanOrEqual(narrow.width);
+ const expand=home.getByRole('button',{name:'보드 확대',exact:true});await expand.click();
+ const dialog=page.getByRole('dialog',{name:'전체 카드 보드'});await expect(dialog).toBeVisible();
+ const openedFocus=await page.evaluate(()=>({inside:!!document.activeElement?.closest('[role=dialog]'),tag:document.activeElement?.tagName}));expect(openedFocus.inside).toBe(true);
+ await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(expand).toBeFocused();
+ const scroller=state.board.locator('[data-board-column="done"] [data-testid="virtuoso-scroller"]');await expect(scroller).toBeAttached();
+ await scroller.evaluate(el=>{el.scrollTop=100;});const beforeScroll=await scroller.evaluate(el=>el.scrollTop);
+ await page.setViewportSize({width:1440,height:900});await expect(search).toHaveValue('완료');
+ const afterScroll=await scroller.evaluate(el=>el.scrollTop);expect(afterScroll).toBe(beforeScroll);
+ await visualShot(page,'interaction-1440');visualSave('interaction',{tab,openedFocus,focusRestored:true,escapeClosed:true,narrow,beforeScroll,afterScroll,value:await search.inputValue()});
+});
+
+const longCompletedError='카드 요청 실패 (500): GET https://soulstream.example/api/cards?status=done&completedFrom=2026-11-11T21%3A42%3A03.038Z\n'+
+ 'TypeError: Failed to fetch dynamically imported module https://soulstream.example/assets/use-completed-cards-Bx7d9QeR2kLmNoPqRsTuVwXyZ.js\n'+
+ Array.from({length:8},(_,i)=>`    at loadCompletedPage (https://soulstream.example/assets/index-${i}a8f3c2d1.js:${1200+i}:${17+i})`).join('\n');
+async function measureLongError(page:Page,width:number,height:number,folder=false,verify=true,name?:string){
+ await page.setViewportSize({width,height});await fixture(page,17,seed(),0,{fail:true,detail:longCompletedError});
+ let surface=page.getByTestId('card-home');if(folder){await openCompletedFolder(page);surface=page.getByTestId('folder-card-section');}
+ await surface.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+ const col=surface.locator('[data-board-column="done"]'),alert=col.getByRole('alert');await expect(alert).toBeVisible();
+ await col.scrollIntoViewIfNeeded();await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
+ const data=await col.evaluate(c=>{const rect=(selector:string)=>{const r=c.querySelector(selector)!.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};const pre=c.querySelector('pre')!;const viewport=c.querySelector('[data-testid="completed-viewport"]')!;
+  return {viewport:rect('[data-testid="completed-viewport"]'),notice:rect('.v3-error-notice'),button:rect('.v3-error-notice-actions button'),pre:rect('pre'),preScroll:{height:pre.scrollHeight,client:pre.clientHeight},viewportOverflow:getComputedStyle(viewport).overflow};});
+ if(name){await visualShot(page,name);visualSave(name,data);}
+ if(verify){expect(data.notice.bottom).toBeLessThanOrEqual(data.viewport.bottom+1);expect(data.button.bottom).toBeLessThanOrEqual(data.viewport.bottom+1);expect(data.pre.bottom).toBeLessThanOrEqual(data.button.top+1);expect(data.preScroll.height).toBeGreaterThan(data.preScroll.client);expect(data.viewportOverflow).toBe('hidden');}
+ return data;
+}
+async function measureFolderError(page:Page,width:number,verify=true,name?:string){
+ await page.setViewportSize({width,height:width===390?844:900});await fixture(page,17,seed(),0,{folderFailure:true});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section'),alert=folder.getByRole('alert').first();await expect(alert).toBeVisible();await alert.scrollIntoViewIfNeeded();
+ const board=await folder.evaluate(f=>{const notice=f.querySelector('.v3-error-notice')!.getBoundingClientRect(),head=f.querySelector('.v3-card-board-workspace > .v3-detail-section-head')!.getBoundingClientRect();return {noticeBottom:notice.bottom,headTop:head.top,gap:head.top-notice.bottom};});
+ if(name)await visualShot(page,`${name}-board`);
+ await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await alert.scrollIntoViewIfNeeded();
+ const list=await folder.evaluate(f=>{const notice=f.querySelector('.v3-error-notice')!.getBoundingClientRect(),head=f.querySelector(':scope > .v3-folder-card-head')!.getBoundingClientRect();return {noticeTop:notice.top,headBottom:head.bottom,gap:notice.top-head.bottom};});
+ if(name){await visualShot(page,`${name}-list`);visualSave(name,{board,list});}
+ if(verify){expect(board.gap).toBeGreaterThan(0);expect(Math.abs(board.gap-list.gap)).toBeLessThanOrEqual(1);}
+ return {board,list};
+}
+async function measureRitualError(page:Page,width:number,verify=true,name?:string){
+ await page.setViewportSize({width,height:width===390?844:900});await fixture(page);
+ await page.locator('.v3-card-inbox').getByRole('button',{name:'기록',exact:true}).click();await page.locator('.v3-date-head').waitFor({state:'visible'});
+ const historyMatcher=(url:URL)=>url.pathname==='/api/planner/daily-history';
+ await page.route(historyMatcher,route=>route.fulfill({status:500,json:{message:'플래너 기록 조회 실패 (500): daily-history upstream timeout after 30000ms'}}));
+ await page.getByTestId('v3-planner-scroll').getByRole('button',{name:'아침 정리',exact:true}).click();
+ const alert=page.getByRole('dialog').getByRole('alert');await expect(alert).toBeVisible();await page.waitForTimeout(300);
+ await page.screenshot({animations:'disabled'});
+ const closed=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
+ if(name)await visualShot(page,`${name}-closed`);
+ await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
+ const opened=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
+ if(name){await visualShot(page,`${name}-open`);visualSave(name,{closed,opened});}
+ if(verify){
+  expect(['start','left']).toContain(opened.align);expect(opened.width).toBeCloseTo(closed.width,0);expect(opened.width).toBeCloseTo(opened.containerWidth,0);
+  await page.unroute(historyMatcher);await alert.getByRole('button',{name:'다시 시도'}).click();await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+ }
+ return {closed,opened};
+}
+for(const [width,height] of [[390,844],[1366,768]])test(`card1680 긴 오류 상세가 완료 열 안에 유지 ${width}`,async({page})=>{await measureLongError(page,width,height);});
+test('card1680 폴더 오류와 머리 간격이 보기마다 같다',async({page})=>{await measureFolderError(page,390);});
+test('card1680 아침 정리 오류 정렬과 폭 유지',async({page})=>{await measureRitualError(page,390);});
+
+for(const theme of ['light','dark'] as const){
+ for(const width of [390,1440])test(`visual1680-review board-error-long ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,width,width===390?844:900,false,visualPhase==='review-after',`board-error-long-${theme}-${width}`);});
+ test(`visual1680-review board-error-size ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,1366,768,false,visualPhase==='review-after',`board-error-size-${theme}-1366`);});
+ test(`visual1680-review folder-board-long ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,390,844,true,visualPhase==='review-after',`folder-board-long-${theme}-390`);});
+ for(const width of [390,1440])test(`visual1680-review folder-error-board ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureFolderError(page,width,visualPhase==='review-after',`folder-error-board-${theme}-${width}`);});
+ for(const width of [390,1440])test(`visual1680-review ritual-error ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureRitualError(page,width,visualPhase==='review-after',`ritual-error-${theme}-${width}`);});
+}
+
+test('card1680 정상 폴더 진행 격자와 완료 묶음 간격',async({page})=>{
+ for(const width of [390,1440]){
+  await page.setViewportSize({width,height:width===390?844:900});await fixture(page);await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');await folder.getByRole('button',{name:'일반 보기',exact:true}).click();
+  await folder.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+  const grid=folder.locator(':scope > .v3-postit-grid').first(),completed=folder.locator(':scope > .v3-completed-collection');
+  await expect(completed).toBeVisible();
+  const gap=await completed.evaluate(el=>el.getBoundingClientRect().top-el.previousElementSibling!.getBoundingClientRect().bottom);
+  expect(Math.abs(gap)).toBeLessThanOrEqual(1);await expect(grid).toBeAttached();
+  await page.unrouteAll({behavior:'wait'});
+ }
+});
+
+type NormalCards='present'|'none'|'doneOnly';
+for(const width of [390,1440])for(const mode of ['present','none','doneOnly'] as NormalCards[]){
+ test(`visual1680-normal ${mode} ${width}`,async({page})=>{
+  await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await page.setViewportSize({width,height:width===390?844:900});
+  const cards=mode==='none'?[]:mode==='doneOnly'?seed().filter(card=>card.status==='done'):seed();
+  await fixture(page,17,cards);await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');const result:Record<string,unknown>={};
+  const snap=async(key:string)=>{
+   await page.waitForTimeout(500);await expect(folder.getByText(/불러오는 중/)).toHaveCount(0,{timeout:15000});await page.waitForTimeout(300);await folder.scrollIntoViewIfNeeded();
+   result[key]=await page.evaluate(()=>{const sec=document.querySelector('[data-testid="v3-folder-cards-section"]')!,fc=sec.querySelector('[data-testid="folder-card-section"]')!,top=sec.getBoundingClientRect().top;
+    const rect=(el:Element)=>{const r=el.getBoundingClientRect();return {top:Math.round((r.top-top)*10)/10,bottom:Math.round((r.bottom-top)*10)/10,height:Math.round(r.height*10)/10,left:Math.round(r.left*10)/10,right:Math.round(r.right*10)/10};};
+    const name=(el:Element)=>`${el.tagName.toLowerCase()}.${el.className.toString().trim().split(/\s+/).filter(c=>c.startsWith('v3-')).slice(0,2).join('.')}`;
+    return {section:rect(sec),container:rect(fc),children:[...fc.children].map(el=>({name:name(el),...rect(el)}))};});
+   if(key==='list-on')await folder.locator(':scope > .v3-completed-collection').evaluate(el=>{
+    el.scrollIntoView({block:'start',inline:'nearest'});
+    const scroll=el.closest<HTMLElement>('.v3-planner-scroll');if(scroll)scroll.scrollTop-=scroll.clientHeight/2;
+   });
+   await visualShot(page,`normal-${mode}-${width}-${key}`);
+  };
+  await snap('board-off');await folder.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();await snap('board-on');
+  await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await snap('list-on');
+  await folder.getByRole('switch',{name:'완료·취소 숨김'}).check();await snap('list-off');visualSave(`normal-${mode}-${width}`,result);
+ });
+}

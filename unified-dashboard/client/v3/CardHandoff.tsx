@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { errorText } from "./v3-dashboard-utils";
 import { useDashboardStore, appendAttachmentPathNotes, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { CardHandoffView } from "./CardHandoffView";
 import { useFileUpload } from "@seosoyoung/soul-ui/hooks/useFileUpload";
@@ -46,7 +47,7 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
    if (defaults && id===changeId.current) {
     setSelection(s=>({...s,nodeId:defaults.nodeId??s.nodeId,agentId:defaults.agentId??s.agentId,modelPreset:defaults.modelPreset??s.modelPreset}));
    }
-  } catch (e) {setError(String(e));}
+  } catch (e) {setError(errorText(e));}
  };
  const submit = async () => {
   if (!canSubmit) return;
@@ -60,7 +61,7 @@ export function CardHandoff({folders}: {folders: readonly CatalogFolder[]}) {
    const store = useDashboardStore.getState();
    if (store.drafts[submittedKey]===submittedText) store.clearDraft(submittedKey);
    resetLocal();setUploadSessionId(crypto.randomUUID());
-  } catch (e) {setError(String(e));} finally {setPending(false);}
+  } catch (e) {setError(errorText(e));} finally {setPending(false);}
  };
  const folder = folders.find(f=>f.id===selection.folderId);
  return <CardHandoffView

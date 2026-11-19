@@ -17,7 +17,7 @@ export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser
 
 export function CompletedCardBrowserFeedback({browser}:{browser:CompletedBrowser}) {
   if(browser.invalidRange)return <p role="alert" className="v3-card-board-empty">시작일과 종료일을 확인해 주세요.</p>;
-  if(browser.error)return <V3ErrorNotice message="완료 카드를 불러오지 못했습니다." detail={browser.error}><Button variant="ghost" size="sm" onClick={browser.retry}>다시 불러오기</Button></V3ErrorNotice>;
+  if(browser.error)return <V3ErrorNotice message="완료 카드를 불러오지 못했습니다." detail={browser.error} onRetry={browser.retry}/>;
   if(browser.cards.length)return null;
   if(!browser.loaded)return <FrameLoading label="완료 카드를 불러오는 중…"/>;
   return <p className="v3-card-board-empty" role="status">선택한 기간에 완료 카드가 없습니다</p>;

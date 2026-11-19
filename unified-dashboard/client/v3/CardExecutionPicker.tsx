@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "./v3-dashboard-utils";
 import { Button, FrameLoading, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -29,7 +30,7 @@ export function useCardExecutionPicker({selection,onChange,onError,disabled,open
    const response=await fetch(`/api/nodes/${encodeURIComponent(node.nodeId)}/agents`,{credentials:"same-origin",headers:{Accept:"application/json"}});
    if(!response.ok)throw new Error(`에이전트 목록을 불러오지 못했습니다 (${response.status})`);
    const payload=await response.json() as {agents:AgentInfo[]};return [node.nodeId,payload.agents] as const;
-  })).then(entries=>{if(active)setByNode(Object.fromEntries(entries));}).catch(e=>{if(active)errorRef.current(String(e));});
+  })).then(entries=>{if(active)setByNode(Object.fromEntries(entries));}).catch(e=>{if(active)errorRef.current(errorText(e));});
   return ()=>{active=false;};
  },[connected]);
  const agents=useMemo(()=>{

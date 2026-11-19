@@ -4,7 +4,7 @@ import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Maximize2, X } from "lucide-react";
 import { CardBoard, boardColumns } from "./CardBoard";
 import { CardCompletionFilter } from "./CardCompletionFilter";
-import { CompletedCardBrowserControls, CompletedCardBrowserFeedback, type CompletedGridSnapshot } from "./CompletedCardGrid";
+import { CompletedCardBrowserControls, type CompletedGridSnapshot } from "./CompletedCardGrid";
 import { CardBoardLayerContext } from "./card-board-layer";
 import { useCardNavigation } from "./card-navigation";
 
@@ -92,7 +92,7 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
   const previousCompletedResetKey=useRef(completedResetKey);
   const completionStatuses=boardColumns.filter(({status})=>boardProps.completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled"));
   const populatedStatuses=completionStatuses.filter(({status})=>status==="done"&&boardProps.completed
-    ?boardProps.completed.cards.length>0
+    ?true
     :boardProps.cards.some(card=>!card.archived&&card.status===status));
   const renderedStatuses=expanded?completionStatuses.map(({status})=>status):populatedStatuses.map(({status})=>status);
   const renderedStatusKey=renderedStatuses.join(",");
@@ -216,7 +216,6 @@ export function CardBoardWorkspace({title,actions,draftAction,initialExpanded=fa
     </div>
     {!expanded&&boardProps.completion?.includeCompleted&&boardProps.completed?<>
       <CompletedCardBrowserControls browser={boardProps.completed}/>
-      <CompletedCardBrowserFeedback browser={boardProps.completed}/>
     </>:null}
     <CardBoard {...boardProps} hideEmptyLanes={!expanded} completedGridSnapshot={completedGridSnapshot} onCompletedGridSnapshotChange={rememberCompletedGridSnapshot}/>
   </div>;

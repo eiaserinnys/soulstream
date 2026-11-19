@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { completedBounds,localDate,type CompletedCardParams,type CompletedPeriod } from "@seosoyoung/soul-ui/cards/completed-cards";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 type Page={cards:CardRow[];nextCursor:string|null};
+type Accumulated={cards:CardRow[];cursor:string|null};
 export type CompletedPageLoader=(params:CompletedCardParams)=>Promise<Page>;
 const loadPage:CompletedPageLoader=params=>cardRequest<Page>(`/api/cards?${new URLSearchParams({status:"done",...Object.fromEntries(Object.entries(params).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]))})}`);
+
+export function mergeCompletedRefresh(first:Page,previous:Accumulated):Accumulated {
+  if(!first.nextCursor)return {cards:first.cards,cursor:null};
+  const last=first.cards.at(-1)?.completedAt;
+  const ids=new Set(first.cards.map(card=>card.id));
+  const tail=previous.cards.filter(card=>!ids.has(card.id)&&(!card.completedAt||!last||card.completedAt<=last));
+  return {cards:[...first.cards,...tail],cursor:tail.length?previous.cursor:first.nextCursor};
+}
+
 export function useCompletedCards(folderId:string|undefined,enabled:boolean,loader:CompletedPageLoader=loadPage) {
   const revision=useV3InvalidationKey(["card","folder","catalog","replay"]);
   const [period,setPeriod]=useState<CompletedPeriod>("7");
@@ -13,31 +23,47 @@ export function useCompletedCards(folderId:string|undefined,enabled:boolean,load
   const [search,setSearch]=useState(""),[q,setQ]=useState("");
   useEffect(()=>{const timer=setTimeout(()=>setQ(search.trim()),250);return()=>clearTimeout(timer);},[search]);
   const invalidRange=period==="custom"&&!completedBounds(period,start,end,0);
-  const key=JSON.stringify([folderId,period,start,end,q]),resetKey=`${key}:${revision}`;
+  const key=JSON.stringify([folderId,period,start,end,q]);
   const [page,setPage]=useState<{key:string;cards:CardRow[];cursor:string|null}>({key:"",cards:[],cursor:null});
   const [loading,setLoading]=useState(false),[error,setError]=useState<string|null>(null);
-  const generation=useRef(0),busy=useRef(false),cursor=useRef<string|null>(null);
-  const pageParams=useRef<CompletedCardParams|null>(null);
-  const fetchPage=useCallback(async(after?:string)=>{
-    if(!enabled||invalidRange||busy.current)return;
-    const current=generation.current;busy.current=true;setLoading(true);setError(null);
-    const params=after?pageParams.current!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
-    if(!after)pageParams.current=params;
-    try {
-      const result=await loader({...params,...(after?{cursor:after}:{})});
-      if(current!==generation.current)return;
-      cursor.current=result.nextCursor;
-      setPage(previous=>({key,cursor:result.nextCursor,cards:[...new Map([...(after&&previous.key===key?previous.cards:[]),...result.cards].map(card=>[card.id,card])).values()]}));
-    }catch(cause){if(current===generation.current)setError(cause instanceof Error?cause.message:String(cause));}
-    finally{if(current===generation.current){busy.current=false;setLoading(false);}}
-  },[enabled,invalidRange,folderId,period,start,end,q,key,loader]);
+  const busy=useRef(false),queued=useRef<(()=>void)|null>(null);
+  const refresh=useRef<()=>void>(()=>{}),more=useRef<()=>void>(()=>{}),retry=useRef<()=>void>(()=>{});
   useEffect(()=>{
-    generation.current++;busy.current=false;cursor.current=null;setError(null);setLoading(false);
-    if(enabled&&!invalidRange)void fetchPage();
-    return()=>{generation.current++;};
-  },[fetchPage,revision]);
-  return {cards:enabled&&page.key===key?page.cards:[],loading,error,invalidRange,loaded:enabled&&!invalidRange&&page.key===key,resetKey,
+    let active=true,dirty=false,loaded=false;
+    let accumulated:Accumulated={cards:[],cursor:null};
+    let params:CompletedCardParams|null=null;
+    setPage({key:"",cards:[],cursor:null});setError(null);setLoading(false);
+    const load=async(mode:"initial"|"refresh"|"more")=>{
+      if(!active||!enabled||invalidRange)return;
+      if(busy.current){if(mode==="refresh")dirty=true;else if(mode==="initial")queued.current=()=>void load("initial");return;}
+      busy.current=true;setLoading(true);setError(null);
+      const after=mode==="more"?accumulated.cursor:null;
+      const request=mode==="more"?params!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
+      if(mode!=="more")params=request;
+      try {
+        const result=await loader({...request,...(after?{cursor:after}:{})});
+        if(!active)return;
+        accumulated=mode==="refresh"?mergeCompletedRefresh(result,accumulated):mode==="more"
+          ?{cards:[...new Map([...accumulated.cards,...result.cards].map(card=>[card.id,card])).values()],cursor:result.nextCursor}
+          :{cards:result.cards,cursor:result.nextCursor};
+        loaded=true;setPage({key,...accumulated});
+      }catch(cause){if(active)setError(cause instanceof Error?cause.message:String(cause));}
+      finally {
+        busy.current=false;
+        if(active){setLoading(false);if(dirty){dirty=false;void load("refresh");}}
+        else {const next=queued.current;queued.current=null;next?.();}
+      }
+    };
+    refresh.current=()=>void load("refresh");
+    more.current=()=>{if(accumulated.cursor)void load("more");};
+    retry.current=()=>void load(loaded?"refresh":"initial");
+    if(enabled&&!invalidRange)void load("initial");
+    return()=>{active=false;queued.current=null;};
+  },[key,enabled,invalidRange,folderId,period,start,end,q,loader]);
+  const previousRevision=useRef(revision);
+  useEffect(()=>{if(previousRevision.current!==revision){previousRevision.current=revision;refresh.current();}},[revision]);
+  return {cards:enabled&&page.key===key?page.cards:[],loading,error,invalidRange,loaded:enabled&&!invalidRange&&page.key===key,resetKey:key,
     period,setPeriod,start,setStart,end,setEnd,search,setSearch,
-    loadMore:()=>{if(cursor.current)void fetchPage(cursor.current);},retry:()=>void fetchPage(),hasMore:!!page.cursor};
+    loadMore:()=>more.current(),retry:()=>retry.current(),hasMore:enabled&&page.key===key&&!!page.cursor};
 }
 export type CompletedBrowser=ReturnType<typeof useCompletedCards>;

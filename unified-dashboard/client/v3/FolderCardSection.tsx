@@ -1,6 +1,7 @@
 import {CardCreateDialog} from "./CardCreateDialog";
 import { useState } from "react";
-import { Button, DashboardIconCap, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 import { LayoutDashboard, List, Plus } from "lucide-react";
 import { PostItCard, PostItGrid } from "./PostItCard";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
@@ -26,7 +27,7 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
     <DashboardIconCap size="small" label="카드 추가" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>
    </div></div>:null}
   {adding?<CardCreateDialog folders={folders} initialFolderId={folderId} onCreated={id=>setCreatedIds(ids=>[...ids,id])} onClose={()=>setAdding(false)}/>:null}
-  {membership.error?<p role="alert" className="v3-card-error">{membership.error}<Button size="sm" variant="ghost" onClick={membership.retry}>다시 불러오기</Button></p>:null}
+  {membership.error?<V3ErrorNotice message="카드를 불러오지 못했습니다." detail={membership.error} onRetry={membership.retry}/>:null}
   {board?<CardBoardWorkspace title="현재 폴더 카드" cards={cards} completed={completed}
     actions={<DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap>}
     draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}
