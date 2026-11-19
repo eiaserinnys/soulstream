@@ -394,7 +394,7 @@ try {
       await page.evaluate(() => { window.__pasDocFail = true; });
       await page.locator(".pas-rt1707-document-row button").click();
       await page.waitForSelector('[data-testid="internal-document-dialog"]');
-      await wait(300);
+      await page.waitForFunction(() => document.querySelector('[data-testid="internal-document-dialog"]')?.textContent?.includes("문서를 불러오지 못했습니다"), null, { timeout: 8_000 });
       assert((await textOf(page, '[data-testid="internal-document-dialog"]'))?.includes("문서를 불러오지 못했습니다"),
         "문서 조회 500에서 실패 안내가 보이지 않는다");
       await page.keyboard.press("Escape");
@@ -403,7 +403,7 @@ try {
       await page.evaluate(() => { window.__pasDocFail = false; });
       await page.locator(".pas-rt1707-document-row button").click();
       await page.waitForSelector('[data-testid="internal-document-dialog"]');
-      await wait(300);
+      await page.waitForFunction(() => document.querySelector('[data-testid="internal-document-dialog"]')?.textContent?.includes("턴 안 상호작용 3단계 도입 설계안"), null, { timeout: 8_000 });
       const documentText = await textOf(page, '[data-testid="internal-document-dialog"]');
       assert(documentText?.includes("턴 안 상호작용 3단계 도입 설계안"), "설계 문서 본문이 보이지 않는다");
       assert(documentText?.includes("1단계, 접수"), "설계 문서의 단계가 보이지 않는다");
@@ -417,6 +417,7 @@ try {
       assert((await keptRail.locator('[data-slot="badge"]').filter({ hasText: "참고" }).count()) === 1, "레일에 참고 배지가 없다");
       await page.locator(".pas-rt1707-document-row button").click();
       await page.waitForSelector('[data-testid="internal-document-dialog"]');
+      await page.waitForFunction(() => document.querySelector('[data-testid="internal-document-dialog"]')?.textContent?.includes("3단계 도입 설계안"), null, { timeout: 8_000 });
       const again = await textOf(page, '[data-testid="internal-document-dialog"]');
       assert(again?.includes("3단계 도입 설계안"), "보관 뒤 문서를 다시 읽을 수 없다");
       await page.keyboard.press("Escape");
