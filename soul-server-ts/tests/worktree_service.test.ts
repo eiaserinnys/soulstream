@@ -43,6 +43,8 @@ function fixture(active: string[] = []) {
   git(repo, "init", "-b", "main");
   git(repo, "config", "user.email", "test@example.com");
   git(repo, "config", "user.name", "Test");
+  writeFileSync(join(projectsRoot, "empty-ignore"), "");
+  git(repo, "config", "core.excludesFile", join(projectsRoot, "empty-ignore"));
   writeFileSync(join(repo, ".gitignore"), "dist/\nnode_modules/\n");
   writeFileSync(join(repo, "README.md"), "base\n");
   mkdirSync(join(repo, "packages", "ui"), { recursive: true });
@@ -181,6 +183,19 @@ describe("WorktreeService", () => {
       .rejects.toMatchObject({ code: "WORKTREE_DIRTY" });
     expect(readFileSync(join(path, "README.md"), "utf8")).toBe("preserve change");
     expect(git(repo, "worktree", "list", "--porcelain")).toContain(path);
+  });
+
+  it("removes a worktree containing only an untracked root .local directory", async () => {
+    const { service, repo, host } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "local-only", mode: "new" });
+    const path = String(created.path), id = String(created.worktreeId);
+    mkdirSync(join(path, ".local"));
+    writeFileSync(join(path, ".local", "capture.txt"), "capture");
+
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: id })).resolves.toMatchObject({ removed: true });
+    expect(existsSync(path)).toBe(false);
+    expect(host.records.get(id)?.state).toBe("removed");
+    expect(git(repo, "worktree", "list", "--porcelain")).not.toContain(path);
   });
 
   it("preserves tracked deletions while worktree metadata still exists", async () => {
