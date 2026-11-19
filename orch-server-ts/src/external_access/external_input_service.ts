@@ -165,6 +165,9 @@ export class ExternalInputService {
   private readonly tokenBucket: ExternalAccessTokenBucket;
   private readonly newRequestId: () => string;
   private readonly now: () => Date;
+  private readonly pendingDispatches = new Set<Promise<void>>();
+  /** Tail of each target session's dispatch line. */
+  private readonly dispatchTails = new Map<string, Promise<void>>();
 
   constructor(private readonly options: ExternalInputServiceOptions) {
     this.tokenBucket = options.tokenBucket ?? new ExternalAccessTokenBucket();
@@ -263,31 +266,10 @@ export class ExternalInputService {
     if (admitted.conflict) return { ok: false, reason: "conflict" };
 
     await this.options.grants.touchLastUsedAt(grant.id);
-    // Admission is the durable point: whatever the dispatch outcome, the
-    // caller keeps the accepted answer and the ledger owns the retry. The
-    // warning is the only trace, so it carries no key material.
-    try {
-      const response = await this.options.dispatch(
-        admitted.receipt.target_session_id,
-        {
-          ...admitted.receipt.payload,
-          caller_info: admitted.receipt.caller_info,
-        },
-      );
-      const status = responseStatus(response);
-      if (status !== undefined && (status < 200 || status >= 300)) {
-        this.warnDispatchFailure(
-          admitted.receipt.grant_id,
-          admitted.receipt.request_id,
-          status,
-        );
-      }
-    } catch {
-      this.warnDispatchFailure(
-        admitted.receipt.grant_id,
-        admitted.receipt.request_id,
-      );
-    }
+    // Admission is the durable point: the caller gets the accepted answer
+    // now and the delivery runs behind it. A failed or interrupted dispatch
+    // is retried by the ledger recovery, not by this caller.
+    this.startDispatch(admitted.receipt);
     return {
       ok: true,
       request_id: admitted.receipt.request_id,
@@ -432,6 +414,59 @@ export class ExternalInputService {
       });
     }
     return summaries;
+  }
+
+  /**
+   * Waits until every dispatch this service started, queued ones included,
+   * has settled. Never rejects. Tests wait on it; shutdown does not, because
+   * the ledger re-sends an interrupted delivery.
+   */
+  async settleDispatches(): Promise<void> {
+    while (this.pendingDispatches.size > 0) {
+      await Promise.allSettled([...this.pendingDispatches]);
+    }
+  }
+
+  /** Number of target sessions that still have a dispatch line. */
+  queuedDispatchTargetCount(): number {
+    return this.dispatchTails.size;
+  }
+
+  /**
+   * Starts the dispatch without waiting for it. Dispatches to one target
+   * session run one after another in admission order, so a sender that waits
+   * for each 202 keeps its input order; other targets do not wait.
+   */
+  private startDispatch(receipt: ExternalInputReceiptRow): void {
+    const target = receipt.target_session_id;
+    const run = () => this.runDispatch(receipt);
+    const previous = this.dispatchTails.get(target);
+    // Both branches of `then` run the next dispatch, so an earlier failure
+    // never stops the line.
+    const task = previous === undefined ? run() : previous.then(run, run);
+    this.dispatchTails.set(target, task);
+    this.pendingDispatches.add(task);
+    const forget = () => {
+      this.pendingDispatches.delete(task);
+      if (this.dispatchTails.get(target) === task) this.dispatchTails.delete(target);
+    };
+    void task.then(forget, forget);
+  }
+
+  /** The warning is the only trace of a failure, so it carries no key material. */
+  private async runDispatch(receipt: ExternalInputReceiptRow): Promise<void> {
+    try {
+      const response = await this.options.dispatch(
+        receipt.target_session_id,
+        { ...receipt.payload, caller_info: receipt.caller_info },
+      );
+      const status = responseStatus(response);
+      if (status !== undefined && (status < 200 || status >= 300)) {
+        this.warnDispatchFailure(receipt.grant_id, receipt.request_id, status);
+      }
+    } catch {
+      this.warnDispatchFailure(receipt.grant_id, receipt.request_id);
+    }
   }
 
   private warnDispatchFailure(

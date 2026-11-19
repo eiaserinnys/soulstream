@@ -273,6 +273,7 @@ describe("ExternalInputService.admit", () => {
       text: "재등록 확인",
       request_id: "req-redispatch",
     });
+    await service.settleDispatches();
 
     expect(result).toMatchObject({ ok: true, status: "accepted" });
     const deliveries = await harness.sql<
