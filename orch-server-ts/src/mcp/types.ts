@@ -56,6 +56,14 @@ export interface McpHostOptions {
     /** 대기 중인 상태 조회를 깨우는 프로세스 안 신호기. 없어도 회신은 그대로 저장된다. */
     replySignal?: import("../external_access/external_reply_signal.js").ExternalReplySignal;
   };
+  /**
+   * 웹훅 관리 도구가 부르는 공용 명령 층. 설정 화면 경로와 같은 인스턴스다.
+   * 칸이 없으면 그 방향의 도구가 webhooks_unavailable을 낸다.
+   */
+  webhooks?: {
+    inbound?: import("../webhooks/webhook_management.js").InboundWebhookManagement;
+    outbound?: import("../webhooks/webhook_management.js").OutboundWebhookManagement;
+  };
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;
   authBearerToken: string;

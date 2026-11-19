@@ -14,6 +14,7 @@ import { liveCardTools } from "./live_card_view_tools.js";
 import { skillTools } from "./skills_tools.js";
 import { persistentSessionSettingsTools } from "./persistent_session_settings_tools.js";
 import { nodePairingTools } from "./node_pairing_tools.js";
+import { webhookTools } from "./webhook_tools.js";
 
 /** Mirrors the MCP SDK tool annotations without importing the SDK. */
 export interface McpToolAnnotations {
@@ -63,6 +64,7 @@ export const mcpTools = {
   ...sessionTools,
   ...persistentSessionSettingsTools,
   ...nodePairingTools,
+  ...webhookTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

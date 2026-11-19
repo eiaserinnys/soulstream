@@ -2179,6 +2179,68 @@
     "name": "create_folder"
   },
   {
+    "description": "대상 세션에 외부 입력을 넣는 인바운드 웹훅을 만든다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다. secret과 key_url(key 방식만)은 이 결과에만 한 번 나오고 다시 볼 수 없다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "auth_mode": {
+          "enum": [
+            "key",
+            "signature"
+          ],
+          "type": "string"
+        },
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "anyOf": [
+            {
+              "maximum": 31536000,
+              "minimum": 60,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "preamble": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_session_id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_session_id",
+        "label",
+        "auth_mode"
+      ],
+      "type": "object"
+    },
+    "name": "create_inbound_webhook"
+  },
+  {
     "description": "폴더에 마크다운 문서를 생성.",
     "execution": {
       "taskSupport": "forbidden"
@@ -2212,6 +2274,55 @@
       "type": "object"
     },
     "name": "create_markdown_document"
+  },
+  {
+    "description": "대상 세션의 답변, 질문, 종료를 외부 주소로 보내는 아웃바운드 구독을 등록한다. 받을 주소는 https 공개 주소여야 하고, 등록 전에 보낸 verification 요청의 challenge를 그대로 돌려줘야 한다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다. signing_secret은 이 결과에만 한 번 나온다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "event_types": {
+          "items": {
+            "enum": [
+              "session.reply",
+              "session.question",
+              "session.failed",
+              "session.ended"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "label": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "target_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_session_id",
+        "label",
+        "url",
+        "event_types"
+      ],
+      "type": "object"
+    },
+    "name": "create_outbound_webhook"
   },
   {
     "description": "새 페이지를 생성한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
@@ -2582,6 +2693,33 @@
       "type": "object"
     },
     "name": "delete_markdown_document"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true
+    },
+    "description": "아웃바운드 구독과 그 전달 기록을 지운다. 되돌릴 수 없다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "delete_outbound_webhook"
   },
   {
     "annotations": {
@@ -4377,6 +4515,84 @@
       "type": "object"
     },
     "name": "list_user_messages"
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "웹훅 하나의 최근 활동을 본다. inbound는 받은 요청(limit 기본 20, 최대 50), outbound는 전달 기록이고 state로 거를 수 있다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "inbound",
+            "outbound"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "delivered",
+            "dead"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "list_webhook_activity"
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "호출 세션 소유자의 인바운드 웹훅(상태와 최근 수신 요약 포함) 또는 아웃바운드 구독 목록을 본다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다. secret, signing_secret, key_url은 싣지 않는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "inbound",
+            "outbound"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "type": "object"
+    },
+    "name": "list_webhooks"
   },
   {
     "description": "노드의 Git worktree 발견 목록과 Soulstream 소유 상태를 조회한다. 네트워크 fetch는 하지 않는다. 기본은 제거된(removed) 기록을 빼고 20건씩 돌려주며 nextCursor로 다음 쪽을 잇는다. total은 거른 뒤 전체 건수다. repo_id로 한 리포만 보고, worktree_id로 한 건(제거된 기록 포함)을 보며 전체 ID가 필요하다. include_removed=true면 제거된 기록도 넣는다.",
@@ -6822,6 +7038,35 @@
     "name": "put_report_entry"
   },
   {
+    "description": "아웃바운드 구독의 전달 기록 하나를 지금 다시 보내고 그 결과(outcome)를 돌려준다. 꺼진 구독은 다시 보내지 않는다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "delivery_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "delivery_id"
+      ],
+      "type": "object"
+    },
+    "name": "redeliver_outbound_webhook"
+  },
+  {
     "description": "본 TS 노드의 Level 0 브리프를 반환한다. 파일은 생성하지 않는다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -7287,6 +7532,35 @@
       "type": "object"
     },
     "name": "resolve_attachment"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true
+    },
+    "description": "인바운드 웹훅 하나를 폐기한다. 폐기 뒤 그 웹훅으로 들어오는 요청은 거절된다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "revoke_inbound_webhook"
   },
   {
     "description": "노드 자격 증명을 취소합니다. 이미 취소된 자격 증명은 같은 취소 시각을 돌려줍니다.",
@@ -7959,6 +8233,37 @@
       "type": "object"
     },
     "name": "set_folder_system_prompt"
+  },
+  {
+    "annotations": {
+      "idempotentHint": true
+    },
+    "description": "아웃바운드 구독을 끄거나 켠다. 꺼진 동안에는 외부 주소로 보내지 않는다. 소유자는 호출 세션의 소유자이고, 그 사람의 설정 화면 웹훅 탭에 같은 목록으로 보인다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "caller_session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "active"
+      ],
+      "type": "object"
+    },
+    "name": "set_outbound_webhook_active"
   },
   {
     "description": "세션 표시 이름 설정. 빈 문자열 → 제거. CatalogService 경유로 broadcastCatalog 자동.",
