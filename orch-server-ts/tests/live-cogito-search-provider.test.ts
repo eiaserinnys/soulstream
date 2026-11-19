@@ -4,10 +4,33 @@ import {
   createLiveCogitoSearchProvider,
   type LiveSearchSql,
 } from "../src/index.js";
+import { loadCandidateRows } from "../src/runtime/live_session_search_candidates.js";
 
 type SqlCall = { text: string; values: unknown[] };
 
 describe("live Cogito search provider", () => {
+  it("keeps lexical link joins in the query and folder filters in the bindings", async () => {
+    const harness = createSqlHarness(() => []);
+    await loadCandidateRows({
+      sql: harness.sql,
+      variants: [{ query: "needle", kind: "original" }],
+      params: {
+        q: "needle", top_k: 5, search_session_id: true,
+        include_turn_summaries: false, include_highlight: false, include_story: false,
+        allowedFolderIds: ["visible-folder"],
+      },
+      eventTypes: ["user_message"], candidateLimit: 5, activeQuery: {},
+      deadlineAt: Date.now() + 10_000, productSessionSearch: true, backendCatalog: [],
+    });
+
+    expect(harness.calls).toHaveLength(1);
+    expect(harness.calls[0]?.text).toContain("primary_session_item.membership_kind = 'primary'");
+    expect(harness.calls[0]?.text).toContain("linked_card ON TRUE");
+    expect(harness.calls[0]?.values[1]).toEqual(["original"]);
+    expect(harness.calls[0]?.values).toContainEqual(["visible-folder"]);
+    expect(harness.calls[0]?.values.some(isSqlFragment)).toBe(false);
+  });
+
   it("reports document-index and projection timing without changing the public payload", async () => {
     const harness = createSqlHarness(() => []);
     const observations: Array<Record<string, unknown>> = [];
@@ -1075,10 +1098,26 @@ function createSqlHarness(
   const sql = Object.assign((
     strings: TemplateStringsArray,
     ...values: unknown[]
-  ) => run(strings.join("?"), values), {
-    unsafe: (text: string, values: readonly unknown[] = []) => run(text, [...values]),
+  ) => {
+    const bindings: unknown[] = [];
+    const text = strings.reduce((result, part, index) => {
+      if (index === 0) return part;
+      const value = values[index - 1];
+      if (isSqlFragment(value)) return result + value.sqlFragment + part;
+      bindings.push(value);
+      return result + "?" + part;
+    }, "");
+    return run(text, bindings);
+  }, {
+    unsafe: (text: string, values?: readonly unknown[]) => values === undefined
+      ? { sqlFragment: text }
+      : run(text, [...values]),
   }) as unknown as LiveSearchSql;
   return { sql, calls };
+}
+
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
 }
 
 function connectionFactoryFor(sql: LiveSearchSql) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LiveSessionDocumentSearch } from "../src/runtime/live_session_document_search.js";
+import { LiveSessionDocumentSearch, loadSessionDocumentCandidateRows } from "../src/runtime/live_session_document_search.js";
 import type { LiveSearchSql } from "../src/runtime/live_db_sql.js";
 import {
   SessionDocumentSearchIndex,
@@ -10,6 +10,27 @@ import {
 } from "../src/search/session_document_search_index.js";
 
 describe("session document search index", () => {
+  it("keeps document link joins in the query and folder filters in the bindings", async () => {
+    const { sql, calls } = createRefreshSql(() => []);
+    await loadSessionDocumentCandidateRows({
+      sql, sessionIds: ["session-a"],
+      params: {
+        q: "needle", top_k: 5, search_session_id: true,
+        include_turn_summaries: false, include_highlight: false, include_story: false,
+        allowedFolderIds: ["visible-folder"],
+      },
+      activeQuery: {}, deadlineAt: Date.now() + 10_000,
+      signal: new AbortController().signal, backendCatalog: [], limit: 5,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toContain("primary_session_item.membership_kind = 'primary'");
+    expect(calls[0]?.text).toContain("linked_card ON TRUE");
+    expect(calls[0]?.values[0]).toEqual(["session-a"]);
+    expect(calls[0]?.values).toContainEqual(["visible-folder"]);
+    expect(calls[0]?.values.some(isSqlFragment)).toBe(false);
+  });
+
   it("matches Python character bigrams and whitespace normalization", () => {
     expect([...bigramTermFrequencies("A 한글 😀")]).toEqual([
       ["A한", 1],
@@ -399,13 +420,25 @@ function createRefreshSql(
 ) {
   const calls: { readonly text: string; readonly values: unknown[] }[] = [];
   const sql = Object.assign((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const text = strings.join("?");
-    calls.push({ text, values });
-    return Object.assign(Promise.resolve(respond(text, values)), {
+    const bindings: unknown[] = [];
+    const text = strings.reduce((result, part, index) => {
+      if (index === 0) return part;
+      const value = values[index - 1];
+      if (isSqlFragment(value)) return result + value.sqlFragment + part;
+      bindings.push(value);
+      return result + "?" + part;
+    }, "");
+    calls.push({ text, values: bindings });
+    return Object.assign(Promise.resolve(respond(text, bindings)), {
       cancel: () => undefined,
     });
   }, {
+    unsafe: (text: string) => ({ sqlFragment: text }),
     setStatementTimeout: async (_timeoutMs: number) => undefined,
   }) as unknown as LiveSearchSql;
   return { sql, calls };
+}
+
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
 }
