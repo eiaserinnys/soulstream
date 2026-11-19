@@ -142,7 +142,7 @@ test('a period change while an earlier read runs stays loading, drops the old an
   expect(Date.parse(next.completedBefore)-Date.parse(next.completedFrom)).toBe(30*24*60*60*1000);
   await settleTimers();
 });
-test('an invalid range entered while an earlier read runs shows the range notice without the loader',async()=>{
+test('an invalid range entered while an earlier read runs shows the notice without the loader, and a valid period after it loads again',async()=>{
   let resolve!: (value:{cards:never[];nextCursor:string|null})=>void;
   const pending=new Promise<{cards:never[];nextCursor:string|null}>(done=>{resolve=done;});
   const listCompletedCards=jest.fn().mockReturnValueOnce(pending).mockResolvedValue({cards:[],nextCursor:null});
@@ -151,9 +151,12 @@ test('an invalid range entered while an earlier read runs shows the range notice
   expect(hook.result.current.loading).toBe(true);
   act(()=>{hook.result.current.setPeriod('custom');hook.result.current.setStart('2026-12-31');hook.result.current.setEnd('2026-01-01');});
   expect(hook.result.current).toMatchObject({invalidRange:true,loading:false,error:'시작일과 종료일을 확인해 주세요.'});
+  // 앞 조회가 아직 돌 때 읽을 수 있는 기간으로 돌아오면 새 조회가 줄 서므로 다시 조회 중이다.
+  act(()=>hook.result.current.setPeriod('7'));
+  expect(hook.result.current).toMatchObject({invalidRange:false,loading:true,error:null});
   await act(async()=>{resolve({cards:[],nextCursor:null});await pending;});
-  expect(hook.result.current.loading).toBe(false);
-  expect(listCompletedCards).toHaveBeenCalledTimes(1);
+  await waitFor(()=>expect(listCompletedCards).toHaveBeenCalledTimes(2));
+  await waitFor(()=>expect(hook.result.current.loading).toBe(false));
   await settleTimers();
 });
 test('both folder reads always exclude done independently of completion visibility',async()=>{

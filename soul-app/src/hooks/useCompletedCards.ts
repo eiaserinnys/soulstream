@@ -24,8 +24,8 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
     let accumulated:Accumulated={cards:[],cursor:null};
     let params:CompletedCardParams|null=null;
     // 기간이나 검색이 바뀌면 앞 결과와 안내는 새 조건에 맞지 않으니 비운다. 앞 조회가 아직 돌고 새 첫 조회를
-    // 보낼 수 있으면 그 뒤에 줄 서므로 조회 중 표시는 그대로 둔다(빈 칸 안내를 잠깐 내지 않는다).
-    setPage({key:'',cards:[],cursor:null});setError(null);if(!busy.current||!api||!enabled||invalidRange)setLoading(false);
+    // 보낼 수 있으면 그 뒤에 줄 서므로 조회 중이다(빈 칸 안내를 잠깐 내지 않는다). 아니면 조회 중이 아니다.
+    setPage({key:'',cards:[],cursor:null});setError(null);setLoading(busy.current&&!!api&&enabled&&!invalidRange);
     const load=async(mode:'initial'|'refresh'|'more')=>{
       if(!active||!api||!enabled||invalidRange)return;
       if(busy.current){if(mode==='refresh')dirty=true;else if(mode==='initial')queued.current=()=>void load('initial');return;}
