@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { CatalogState, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
-  buildContinueSessionPrompt,
   resolveContinueSessionTarget,
 } from "./continue-session";
 
@@ -29,12 +28,6 @@ function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 describe("continue-session helpers", () => {
-  it("builds the prompt with the source session id", () => {
-    expect(buildContinueSessionPrompt("session-a")).toBe(
-      "세션 session-a의 기록을 조회해 맥락을 파악한 뒤, 사용자의 지시를 대기해주세요.",
-    );
-  });
-
   it("inherits the same node, agent, and folder from the original session", () => {
     expect(resolveContinueSessionTarget({
       session: session(),

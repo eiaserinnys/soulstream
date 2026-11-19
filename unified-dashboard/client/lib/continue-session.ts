@@ -25,10 +25,6 @@ export interface ContinueSessionTarget {
   folderId?: string | null;
 }
 
-export function buildContinueSessionPrompt(sessionId: string): string {
-  return `세션 ${sessionId}의 기록을 조회해 맥락을 파악한 뒤, 사용자의 지시를 대기해주세요.`;
-}
-
 export function resolveContinueSessionTarget({
   session,
   catalog,
