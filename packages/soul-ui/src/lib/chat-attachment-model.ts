@@ -1,7 +1,9 @@
-import type {
-  AttachmentReadContext,
-  SessionEventAttachmentResponse,
-  SessionEventAttachmentView,
+import {
+  SAFE_RASTER_PREVIEW_MIME_TYPES,
+  SAFE_TEXT_PREVIEW_MIME_TYPES,
+  type AttachmentReadContext,
+  type SessionEventAttachmentResponse,
+  type SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
 import { orchestratorFetch } from "./orchestrator-connection";
 
@@ -67,32 +69,6 @@ export function attachmentTextFormat(
   }
   return "plain";
 }
-
-const SAFE_RASTER_PREVIEW_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/avif",
-]);
-
-const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "application/json",
-  "text/javascript",
-  "application/javascript",
-  "text/typescript",
-  "application/typescript",
-  "text/x-python",
-  "text/x-script.python",
-  "text/x-shellscript",
-  "text/x-csrc",
-  "text/x-c++src",
-  "text/x-java-source",
-  "text/css",
-  "text/csv",
-]);
 
 export class ChatAttachmentRequestError extends Error {
   constructor(readonly status: number, readonly networkError = false) {

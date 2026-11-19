@@ -1,14 +1,11 @@
 import path from "node:path";
 
-import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
+import {
+  SAFE_RASTER_PREVIEW_MIME_TYPES,
+  SAFE_TEXT_PREVIEW_MIME_TYPES,
+  type AttachmentDescriptor,
+} from "@soulstream/wire-schema/attachments";
 
-const SAFE_INLINE_RASTER_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/avif",
-]);
 const SAFE_INLINE_MEDIA_MIME_TYPES = new Set([
   "video/mp4",
   "video/webm",
@@ -45,23 +42,6 @@ const MEDIA_MIME_TYPES_BY_EXTENSION: Readonly<Record<string, string>> = {
   ".oga": "audio/ogg",
   ".opus": "audio/ogg",
 };
-const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "application/json",
-  "text/javascript",
-  "application/javascript",
-  "text/typescript",
-  "application/typescript",
-  "text/x-python",
-  "text/x-script.python",
-  "text/x-shellscript",
-  "text/x-csrc",
-  "text/x-c++src",
-  "text/x-java-source",
-  "text/css",
-  "text/csv",
-]);
 const MIME_TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
 
 export type ParsedAttachmentRange = {
@@ -101,7 +81,7 @@ export function normalizedMimeType(value: string): string {
 export function previewInfo(
   mimeType: string,
 ): { kind: AttachmentDescriptor["preview_kind"]; mimeType: string | null } {
-  if (SAFE_INLINE_RASTER_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
+  if (SAFE_RASTER_PREVIEW_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
   if (mimeType === "text/markdown" || mimeType === "text/html") {
     return { kind: "text", mimeType };
   }
@@ -128,7 +108,7 @@ export function responseHeaders(
   const effectiveBaseMimeType = inferredMimeType ?? baseMimeType;
   const contentType = inferredMimeType ?? responseMimeType(asset.mimeType);
   const inline = !download && (
-    SAFE_INLINE_RASTER_MIME_TYPES.has(effectiveBaseMimeType) ||
+    SAFE_RASTER_PREVIEW_MIME_TYPES.has(effectiveBaseMimeType) ||
     effectiveBaseMimeType === "text/plain" ||
     SAFE_INLINE_MEDIA_MIME_TYPES.has(effectiveBaseMimeType)
   );

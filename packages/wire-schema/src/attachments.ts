@@ -83,3 +83,29 @@ export interface SessionEventAttachmentResponse {
   event_id: number;
   items: SessionEventAttachmentView[];
 }
+
+export const SAFE_RASTER_PREVIEW_MIME_TYPES: ReadonlySet<string> = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
+
+export const SAFE_TEXT_PREVIEW_MIME_TYPES: ReadonlySet<string> = new Set([
+  "text/plain",
+  "text/markdown",
+  "application/json",
+  "text/javascript",
+  "application/javascript",
+  "text/typescript",
+  "application/typescript",
+  "text/x-python",
+  "text/x-script.python",
+  "text/x-shellscript",
+  "text/x-csrc",
+  "text/x-c++src",
+  "text/x-java-source",
+  "text/css",
+  "text/csv",
+]);
