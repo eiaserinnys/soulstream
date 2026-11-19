@@ -234,7 +234,7 @@ describe("production orchestrator entrypoint", () => {
     expect(sqlResolver.close).toHaveBeenCalledOnce();
     expect(shutdownStages).toEqual([
       "maintenance_stop", "session_reconciliation_close", "recurring_scheduler_stop",
-      "usage_summary_stop", "card_dispatch_drain", "turn_summary_drain",
+      "usage_summary_stop", "claude_central_stop", "card_dispatch_drain", "turn_summary_drain",
       "push_notifier_close", "db_catalog_close",
     ]);
   });

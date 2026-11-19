@@ -7,6 +7,8 @@ export type UsageSummaryClaudeAccount = {
   readonly enabled: boolean;
   readonly priority: number | null;
   readonly auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
+  /** "central"이면 중앙 풀 계정. 없으면 로컬 계정으로 본다. */
+  readonly source?: "central" | "local";
   readonly usage: {
     readonly five_hour: unknown;
     readonly seven_day: unknown;

@@ -19,6 +19,8 @@ export class ClaudeAccountReloginNotifier {
   observe(snapshot: UsageSummarySnapshot): void {
     for (const node of snapshot.nodes) {
       for (const account of node.providers.claude?.accounts ?? []) {
+        // 중앙 계정은 오케스트레이터가 직접 알린다. 노드 스냅샷 알림은 겹치지 않게 건너뛴다.
+        if (account.source === "central") continue;
         const key = `${node.nodeId}\u0000${account.id}`;
         const previous = this.previousAuthStates.get(key);
         this.previousAuthStates.set(key, account.auth_state);

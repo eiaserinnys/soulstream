@@ -157,6 +157,9 @@ import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_conf
 import { ClaudeAccountReloginNotifier } from "./usage/claude_account_relogin_notifier.js";
 import { SessionStatisticsUpdateNotifier } from "./usage/session_statistics_update_notifier.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
+import { createSqlClaudeCentralAccountRepository } from "./claude_central/account_repository.js";
+import { createSqlClaudeCentralSettingsRepository } from "./claude_central/settings_repository.js";
+import { ClaudeCentralService } from "./claude_central/service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
 import { ChildSessionCheckRepository } from "./session/child_session_check_repository.js";
@@ -471,6 +474,8 @@ export async function createLiveProductionApplication(
   const claudeAccountReloginNotifier = new ClaudeAccountReloginNotifier((alert) => {
     void pushNotifier.notifyClaudeAccountRelogin(alert);
   });
+  // 노드 등록 이벤트 싱크가 런타임 서비스 생성 전에 조립되므로 먼저 선언하고 뒤에서 채운다.
+  let claudeCentralService: ClaudeCentralService | undefined;
   let publishReconciledSessionUpdate:
     NonNullable<Parameters<typeof createSessionReconciliationSink>[0]["publishSessionUpdate"]>
       = () => undefined;
@@ -581,6 +586,7 @@ export async function createLiveProductionApplication(
       async (events) => (await persistenceRepositoryProvider()).persistentReports!.acceptNodeEvents(events),
       (events) => childSessionCheckService?.acceptNodeEvents(events),
       (events) => { if (backgroundActive) outboundWebhookService?.accept(events); },
+      (events) => { if (backgroundActive) claudeCentralService?.acceptNodeEvents(events); },
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
@@ -657,6 +663,26 @@ export async function createLiveProductionApplication(
     }];
     runtimeServices.routeOptions.nodeWsRoute.eventSink?.(events);
   };
+  claudeCentralService = new ClaudeCentralService({
+    repository: createSqlClaudeCentralAccountRepository({
+      resolveSql: () => sqlResolver.resolveSql(),
+    }),
+    settingsRepository: createSqlClaudeCentralSettingsRepository({
+      resolveSql: () => sqlResolver.resolveSql(),
+    }),
+    registry,
+    bridge: runtimeServices.sessionBridge,
+    clientId: () => config.claude_oauth_client_id,
+    notifyRelogin: (alert) => {
+      // 중앙 계정은 노드 하나에 매이지 않으므로 기본 실행 노드의 소유자에게 알린다(기존 문구 그대로).
+      void pushNotifier.notifyClaudeAccountRelogin({
+        nodeId: config.default_execution_node_id,
+        accountId: alert.accountId,
+        accountEmail: alert.accountEmail,
+      });
+    },
+    onWarning: (message, error) => context.warn(warningMessage(message, error)),
+  });
   const memoryStats = createOrchestratorMemoryStatsCollector({
     sessionBroadcaster: runtimeServices.sessionBroadcaster,
     sessionCache: registry.sessionCache,
@@ -1090,6 +1116,7 @@ export async function createLiveProductionApplication(
         ...(inboundWebhookManagement === undefined ? {} : { inbound: inboundWebhookManagement }),
         outbound: outboundWebhookManagement,
       },
+      claudeCentralService,
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1275,6 +1302,7 @@ export async function createLiveProductionApplication(
       await cardDispatchRuntime.dispatcher.dispatch();
       if (!backgroundActive) return;
       usageSummaryService.start(); maintenanceService.start(); turnSummaryPipeline?.start?.();
+      claudeCentralService?.start();
       lifecycle.markReady();
       documentIndexWarmupTimer = setTimeout(() => {
         documentIndexWarmupTimer = undefined;
@@ -1301,6 +1329,7 @@ export async function createLiveProductionApplication(
     await providers.sessionStatisticsRoutes.stopBackground?.();
     await recurringJobScheduler?.stop();
     await usageSummaryService.stop();
+    claudeCentralService?.stop();
     await cardDispatchRuntime.dispatcher.pause();
     await turnSummaryPipeline?.drain();
     await externalEventsTarget?.pauseWrites();
@@ -1340,6 +1369,7 @@ export async function createLiveProductionApplication(
       await runShutdownStep("session_reconciliation_close", () => sessionReconciliation.close());
       await runShutdownStep("recurring_scheduler_stop", () => recurringJobScheduler?.stop());
       await runShutdownStep("usage_summary_stop", () => usageSummaryService.stop());
+      await runShutdownStep("claude_central_stop", () => claudeCentralService?.stop());
       await runShutdownStep("card_dispatch_drain", () => cardDispatchRuntime.dispatcher.drain());
       await runShutdownStep("turn_summary_drain", () => turnSummaryPipeline?.drain());
     }
@@ -1556,6 +1586,7 @@ export function buildProductionRouteOptions(
   externalAccessReplySignal?: ExternalReplySignal,
   defaultExecutionNodeId?: string,
   webhooks?: McpHostOptions["webhooks"],
+  claudeCentral?: ClaudeCentralService,
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -1875,6 +1906,9 @@ export function buildProductionRouteOptions(
     usageSummaryRoutes: providers.usageSummaryRoutes,
     sessionStatisticsRoutes: providers.sessionStatisticsRoutes,
     uiEventRoutes: providers.uiEventRoutes,
+    ...(claudeCentral === undefined
+      ? {}
+      : { claudeCentralRoutes: { service: claudeCentral } }),
   };
 }
 
