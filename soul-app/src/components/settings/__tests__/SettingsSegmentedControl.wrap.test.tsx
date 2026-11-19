@@ -59,12 +59,13 @@ test('wrap moves whole natural-width buttons and keeps each label on one line', 
   expect(onChange).toHaveBeenCalledWith('custom');
 });
 
-test('the actual completed filter opts into wrapping and retains period selection', () => {
+test('the actual completed filter opts into even rows and retains period selection', () => {
   const setPeriod = jest.fn();
   const browser = { period: '7', setPeriod, search: '', setSearch: jest.fn(), error: null } as unknown as CompletedBrowser;
   const screen = render(<CompletedCardFilters browser={browser} />);
   const custom = screen.getByTestId('settings-segment-completed-period-custom');
-  expect(StyleSheet.flatten(custom.props.style)).toMatchObject({ flexShrink: 0 });
+  expect(StyleSheet.flatten(custom.props.style)).toMatchObject({ flexShrink: 0, flexBasis: '50%' });
+  expect(screen.getByTestId('settings-segment-completed-period-measure', { includeHiddenElements: true })).toBeTruthy();
   fireEvent.press(custom);
   expect(setPeriod).toHaveBeenCalledWith('custom');
 });

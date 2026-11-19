@@ -39,18 +39,19 @@ test('phone initially shows review even empty, snaps by lane and preserves posit
   await settleTimers();
 });
 
+// These two look at active lanes only. With completed shown the done lane always stays (CardBoard.test).
 test('main starts at the first visible lane and keeps the selected status when visible lanes shift', () => {
   const saved = jest.fn();
   const queued = cardFixture({ id: 'queued-only', status: 'queued' });
   const review = cardFixture({ id: 'review-only', status: 'review' });
-  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[queued, review]}
+  const screen = render(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[queued, review]}
     initialPosition={{ x: 0, lane: 'review', lanes: { review: 48 } }} onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
   expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
   expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
     .toEqual(['card-board-column-queued', 'card-board-column-review']);
 
-  screen.rerender(<CardBoard phone hideEmptyLanes api={null} cards={[queued]}
+  screen.rerender(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[queued]}
     onOpen={() => {}} onPositionChange={saved} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID))
     .toEqual(['card-board-column-queued']);
@@ -59,11 +60,26 @@ test('main starts at the first visible lane and keeps the selected status when v
 
 test('main with one non-review card opens on its first visible lane', () => {
   const saved = jest.fn();
-  const screen = render(<CardBoard phone hideEmptyLanes api={null} cards={[cardFixture({ id: 'queued-only', status: 'queued' })]}
+  const screen = render(<CardBoard phone hideEmptyLanes includeCompleted={false} api={null} cards={[cardFixture({ id: 'queued-only', status: 'queued' })]}
     onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
   expect(saved.mock.calls.at(-1)[0].lane).toBe('queued');
   expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(1);
+});
+
+test('with completed shown, a board whose active list arrives after the first layout still opens on the review lane', () => {
+  const saved = jest.fn();
+  // The workspace hands the same empty position until the board reports one.
+  const start = { x: 0, lanes: {} };
+  const late = [cardFixture({ id: 'todo-late', status: 'todo' }), cardFixture({ id: 'review-late', status: 'review' })];
+  const screen = render(<CardBoard phone hideEmptyLanes includeCompleted activePending api={null} cards={[]}
+    initialPosition={start} onOpen={() => {}} onPositionChange={saved} />);
+  fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
+  expect(screen.getAllByTestId(/^card-board-column-/).map(column => column.props.testID)).toEqual(['card-board-column-done']);
+  screen.rerender(<CardBoard phone hideEmptyLanes includeCompleted api={null} cards={late}
+    initialPosition={start} onOpen={() => {}} onPositionChange={saved} />);
+  expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
+  expect(saved.mock.calls.every(([position]) => position.lane !== 'done')).toBe(true);
 });
 
 test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 가장 가까운 보류 칸으로 되돌린다', () => {

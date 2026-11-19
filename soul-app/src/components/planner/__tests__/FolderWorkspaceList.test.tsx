@@ -1,7 +1,7 @@
 jest.mock('@expo/vector-icons/Ionicons',()=> 'Ionicons');
 import React from 'react';
 import {FlatList,Text} from 'react-native';
-import {act,render,waitFor} from '@testing-library/react-native';
+import {act,fireEvent,render,waitFor} from '@testing-library/react-native';
 import type {ApiClient} from '../../../api/client';
 import {cardFixture} from '../../../test-support/cards';
 import {FolderWorkspaceList, isListNearEnd} from '../FolderWorkspaceList';
@@ -50,5 +50,17 @@ test('폴더 목록 스크롤·레이아웃·콘텐츠 높이 변화가 끝 근�
  onNearEnd.mockClear();
  act(()=>getList().props.onContentSizeChange(390,1200));
  expect(onNearEnd).not.toHaveBeenCalled();
+ await settleTimers();
+});
+
+test('완료 조회 실패는 빈 안내 대신 오류와 다시 시도를 내고, 다시 받으면 카드가 그려진다',async()=>{
+ const listCompletedCards=jest.fn().mockRejectedValueOnce(new Error('완료 조회 실패')).mockResolvedValue({cards:[cardFixture({id:'done-1',status:'done'})],nextCursor:null});
+ const screen=render(<FolderWorkspaceList api={{listCompletedCards} as unknown as ApiClient} folderId="folder-1" active cardDisplay={{includeCompleted:true,onChange:()=>{}}} header={<Text>폴더 카드 머리</Text>} footer={<Text>세션</Text>} contentContainerStyle={{padding:16}}/>);
+ await waitFor(()=>expect(screen.getByText('완료 조회 실패')).toBeTruthy());
+ expect(screen.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+ await act(async()=>{fireEvent.press(screen.getByLabelText('완료 카드 다시 조회'));});
+ await waitFor(()=>expect(screen.UNSAFE_getByType(FlatList).props.data).toHaveLength(1));
+ expect(screen.queryByText('완료 조회 실패')).toBeNull();
+ expect(screen.queryByLabelText('완료 카드 다시 조회')).toBeNull();
  await settleTimers();
 });

@@ -29,7 +29,7 @@ const modes = [
 ] as const;
 type Mode = typeof modes[number]['value'];
 
-function DuoRefreshReview({ api, board, begin, finish, phase, frame }: { api: ApiClient; board: React.RefObject<CardBoardWorkspaceHandle | null>; begin(): void; finish(): void; phase: string; frame: 'outer-portrait' | 'inner-landscape' }) {
+function DuoRefreshReview({ api, board, begin, finish, phase, frame, includeCompleted }: { api: ApiClient; board: React.RefObject<CardBoardWorkspaceHandle | null>; begin(): void; finish(): void; phase: string; frame: 'outer-portrait' | 'inner-landscape'; includeCompleted: boolean }) {
   const t = useTokens();
   const size = frame === 'outer-portrait' ? { width: 466, height: 678 } : { width: 951, height: 669 };
   const insets = { top: 24, right: 84, bottom: 24, left: 0 };
@@ -46,7 +46,7 @@ function DuoRefreshReview({ api, board, begin, finish, phase, frame }: { api: Ap
           <GlassButton testID="duo-refresh-expand" onPress={() => board.current?.openExpanded()}><Text>보드 확대</Text></GlassButton>
           <Text testID="duo-refresh-phase">{phase}</Text>
         </View>
-        <View style={{ flex: 1, paddingRight: insets.right }}><CardBoardWorkspace ref={board} api={api} externalHeader cardDisplay={{ includeCompleted: false, onChange: () => {} }} onOpen={() => {}} /></View>
+        <View style={{ flex: 1, paddingRight: insets.right }}><CardBoardWorkspace ref={board} api={api} externalHeader cardDisplay={{ includeCompleted, onChange: () => {} }} onOpen={() => {}} /></View>
         <DuoRailOverride />
       </View>
     </ThemeProvider></DuoSideBandContext.Provider></SafeAreaInsetsContext.Provider></SafeAreaFrameContext.Provider></DuoTopBandContext.Provider>;
@@ -59,8 +59,10 @@ export function ReviewAutoRefresh() {
   const query = new URLSearchParams(window.location.search);
   const alignment = query.has('boardAlignment') || query.has('duoFrame');
   const manyCompleted = query.has('manyCompleted');
+  // ?completedError: 첫 완료 조회 실패, ?completedError=refresh: 불러온 뒤 첫 갱신 실패.
+  const completedError = query.has('completedError') ? query.get('completedError') === 'refresh' ? 'refresh' as const : 'initial' as const : undefined;
   const [refreshing, setRefreshing] = useState(false);
-  const [includeCompleted, setIncludeCompleted] = useState(manyCompleted);
+  const [includeCompleted, setIncludeCompleted] = useState(manyCompleted || completedError !== undefined);
   const [mode, setMode] = useState<Mode>('boardInternal');
   const [empty, setEmpty] = useState(false);
   const [phase, setPhase] = useState<'before' | 'pending' | 'after'>('before');
@@ -69,7 +71,7 @@ export function ReviewAutoRefresh() {
   const pending = useRef<{ promise: Promise<void>; resolve(): void } | null>(null);
   const board = useRef<CardBoardWorkspaceHandle>(null);
   const api = useMemo(() => {
-    const base = createReviewApi('normal', { manyCompleted });
+    const base = createReviewApi('normal', { manyCompleted, completedError });
     const statuses = alignment ? ['todo', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold'] as const : ['todo', 'review'] as const;
     const cards = empty ? [] : statuses.flatMap(status => Array.from({ length: 12 }, (_, index) => ({
       ...makeCard(status), id: `refresh-${status}-${index}`, title: `갱신 전후 같은 카드 ${index + 1}`,
@@ -84,7 +86,7 @@ export function ReviewAutoRefresh() {
       listCompletedCards: async params => { await pending.current?.promise; return base.listCompletedCards(params); },
       getStarredFolders: async () => { await pending.current?.promise; return { items, nextCursor: empty ? null : 'public-next' }; },
     } as ApiClient;
-  }, [empty, alignment, manyCompleted]);
+  }, [empty, alignment, manyCompleted, completedError]);
   useEffect(() => {
     if (mode === 'daily') void api.getPlannerToday('2026-10-02').then(data => usePlannerStore.getState().setDaily('2026-10-02', data));
   }, [api, mode]);
@@ -105,7 +107,7 @@ export function ReviewAutoRefresh() {
     setPhase('after'); setCycles(value => value + 1);
   }, []);
   const frame = new URLSearchParams(window.location.search).get('duoFrame');
-  if (frame === 'outer-portrait' || frame === 'inner-landscape') return <DuoRefreshReview api={api} board={board} begin={begin} finish={finish} phase={phase} frame={frame} />;
+  if (frame === 'outer-portrait' || frame === 'inner-landscape') return <DuoRefreshReview api={api} board={board} begin={begin} finish={finish} phase={phase} frame={frame} includeCompleted={includeCompleted} />;
   return <View testID="review-auto-refresh" style={{ flex: 1 }}>
     <View style={{ padding: t.cardLayout.padding, gap: t.uiSpacing.sm }}>
       <SettingsSegmentedControl<Mode> id="refresh-owner" value={mode} options={modes} onChange={setMode} />

@@ -151,6 +151,8 @@ export const fixtureOptions = [
 ] as const;
 
 export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; emptyCards?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
+  /** 완료 조회 실패 재현. initial은 첫 조회가, refresh는 불러온 뒤 첫 갱신이 한 번 실패하고 그 뒤는 성공한다. */
+  completedError?: 'initial' | 'refresh';
   directCardTouch?: boolean;
   board?: BoardFixture;
   folderSessionPages?: FolderSessionPageScenario;
@@ -217,6 +219,7 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     if (options.completed === 'none' ? card.status === 'done' : card.status !== 'done') cards.delete(id);
   }
   if (options.folderSessionPages === 'short') cards.clear();
+  let firstPageCalls = 0;
   const read = async <T,>(value: T): Promise<T> => {
     if (state === 'error') throw new Error('공개 예시: 목록을 불러오지 못했습니다.');
     if (state === 'loading') return new Promise(() => {});
@@ -255,6 +258,9 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
     getFolderBoardItems:async()=>read([]),
     listCards: async (folderId,query) => read({ cards: state === 'empty' ? [] : [...cards.values()].filter((card) => (!folderId || card.folderId === folderId)&&(query?.includeCompleted!==false||card.status!=='done')) }),
     listCompletedCards:async params=>{
+      // 쪽 넘김(cursor)은 세지 않고 첫 쪽 조회만 센다. 첫 조회, 그다음이 갱신이다.
+      if(!params.cursor)firstPageCalls+=1;
+      if(options.completedError&&!params.cursor&&firstPageCalls===(options.completedError==='initial'?1:2))throw new Error('공개 예시: 완료 카드를 불러오지 못했습니다.');
       const filtered=state==='empty'?[]:[...cards.values()].filter(card=>card.status==='done'&&(!params.folderId||card.folderId===params.folderId)&&(!params.completedFrom||card.completedAt!>=params.completedFrom)&&(!params.completedBefore||card.completedAt!<params.completedBefore)&&(`${card.title} ${card.request}`.toLocaleLowerCase().includes((params.q??'').toLocaleLowerCase()))).sort((a,b)=>(b.completedAt??'').localeCompare(a.completedAt??'')||b.id.localeCompare(a.id));
       const offset=Number(params.cursor??0),limit=params.limit??60;
       return read({cards:filtered.slice(offset,offset+limit),nextCursor:offset+limit<filtered.length?String(offset+limit):null});
