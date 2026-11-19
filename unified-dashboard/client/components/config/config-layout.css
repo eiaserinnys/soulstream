@@ -1,4 +1,6 @@
 /* Approved settings shell. DialogPopup owns the outer frame and insets. */
+/* 라이트에서는 유리 층(.glass__warp)이 표면을 회색으로 덮어 오류 글 대비가 떨어지므로, 이 범위의 오류 글자를 한 단계 짙게 둔다. */
+:root:not(.dark) .approved-dialog { --destructive-foreground: var(--color-red-800); }
 .config-dialog { height:min(var(--container-3xl), calc(100dvh - var(--v3-space-8) * 2)); }
 .config-dialog > [data-slot="dialog-header"] { border-bottom:1px solid var(--border); }
 .config-dialog [data-slot="dialog-description"] { word-break:keep-all; overflow-wrap:break-word; }

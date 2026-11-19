@@ -1,5 +1,5 @@
 import { Fragment, useId, type ReactNode, type Ref } from "react";
-import { Select, SelectItem, SelectPopup, SelectSeparator, SelectTrigger } from "../../../packages/soul-ui/src/components/ui/select";
+import { Select, SelectItem, SelectPopup, SelectSeparator, SelectTrigger, SelectValue } from "../../../packages/soul-ui/src/components/ui/select";
 
 /** Agent and model catalogs share the trigger, keyboard handling and option surface. */
 export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, options, disabled,
@@ -18,7 +18,7 @@ export function CatalogSelectionField({ label, ariaLabel, value, selectedLabel, 
       <Select value={value} disabled={disabled} modal={false} onValueChange={next => onValueChange(next ?? "")} onOpenChangeComplete={onOpenChangeComplete}>
         <SelectTrigger ref={triggerRef} id={id} className={`v3-catalog-select-trigger ${triggerClassName ?? ""}`}
           aria-label={ariaLabel} aria-invalid={invalid || undefined}>
-          <span className="flex-1 truncate">{selectedLabel}</span>
+          <SelectValue>{selectedLabel}</SelectValue>
         </SelectTrigger>
         <SelectPopup>{options.map(option => <Fragment key={option.value}>{option.separatorBefore && <SelectSeparator/>}<SelectItem value={option.value} disabled={option.disabled}>
           {option.label}

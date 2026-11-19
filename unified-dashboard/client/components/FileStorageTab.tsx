@@ -72,6 +72,6 @@ function StorageSection({ purpose, title, request }: { request: typeof fetch; pu
     </div>
     <p className="text-xs text-muted-foreground">연결 확인은 저장된 설정으로 버킷 접근을 확인합니다.</p>
     {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
-    {error && <p role="alert" className="text-xs text-accent-red" data-v3-selectable-content="true">{error}</p>}
+    {error && <p role="alert" className="text-xs text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
   </section>;
 }

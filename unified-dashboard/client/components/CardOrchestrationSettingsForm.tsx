@@ -286,7 +286,7 @@ export function CardOrchestrationSettingsForm({
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-accent-red">
+        <p role="alert" className="text-destructive-foreground">
           {error}
         </p>
       ) : null}

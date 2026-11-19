@@ -23,7 +23,7 @@ export function ConfigResultMessage({ result }: { result: SaveResponse | null })
         </p>
       )}
       {result.errors.length > 0 && (
-        <p className="text-accent-red" data-v3-selectable-content="true">
+        <p className="text-destructive-foreground" data-v3-selectable-content="true">
           ❌ {result.errors.join(", ")}
         </p>
       )}

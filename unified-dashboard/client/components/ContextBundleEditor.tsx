@@ -202,7 +202,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
             </div>
           </div>
         )}
-        {error && <p role="alert" className="mt-3 rounded bg-accent-red/10 px-3 py-2 text-sm text-accent-red">{error}</p>}
+        {error && <p role="alert" className="mt-3 rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">{error}</p>}
         {message && <p role="status" className="mt-3 rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
       </div>
     </div>

@@ -55,7 +55,7 @@ export function OwnedAgentsTab({ request = fetch }: { request?: typeof fetch }) 
   return <div className="owned-agents">
     <div className="owned-agents-actions"><Button onClick={() => { setEditorError(null); setEditor({ id: null, name: '' }); }} disabled={busy}>에이전트 추가</Button></div>
     {loading && <FrameLoading inline label="불러오는 중…" />}
-    {error && <div role="alert"><p data-v3-selectable-content="true">{error}</p><Button variant="outline" disabled={busy} onClick={() => void load()}>다시 시도</Button></div>}
+    {error && <div role="alert"><p className="text-destructive-foreground" data-v3-selectable-content="true">{error}</p><Button variant="outline" disabled={busy} onClick={() => void load()}>다시 시도</Button></div>}
     {existing && <div className="owned-agents-block">
       {existing.canRegister ? <><p>현재 연결의 주소와 키를 그대로 사용해 내 에이전트로 등록합니다.</p><Button variant="outline" disabled={busy} onClick={() => void mutate(async () => { await api.registerExisting(); await load(); })}>기존 연결 등록</Button></> : <p>{existing.registered ? '기존 연결이 등록되어 있습니다.' : existing.configured ? '기존 연결 등록은 관리자에게 요청해 주세요.' : '등록할 기존 연결이 없습니다.'}</p>}
     </div>}
@@ -78,19 +78,19 @@ export function OwnedAgentsTab({ request = fetch }: { request?: typeof fetch }) 
     <Dialog open={editor !== null} onOpenChange={open => { if (!open && !busy) setEditor(null); }}>
       <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }}>
         <DialogHeader><DialogTitle>{editor?.id ? '이름 변경' : '에이전트 추가'}</DialogTitle><DialogDescription>설정에서 알아보기 쉬운 이름을 입력하세요.</DialogDescription></DialogHeader>
-        <DialogPanel><label htmlFor="owned-agent-name">에이전트 이름</label><Input id="owned-agent-name" value={editor?.name ?? ''} disabled={busy} onChange={e => setEditor(current => current && { ...current, name: e.target.value })}/>{editorError && <p role="alert" data-v3-selectable-content="true">{editorError}</p>}</DialogPanel>
+        <DialogPanel><label htmlFor="owned-agent-name">에이전트 이름</label><Input id="owned-agent-name" value={editor?.name ?? ''} disabled={busy} onChange={e => setEditor(current => current && { ...current, name: e.target.value })}/>{editorError && <p role="alert" className="text-destructive-foreground" data-v3-selectable-content="true">{editorError}</p>}</DialogPanel>
         <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setEditor(null)}>취소</Button><Button disabled={busy || !editor?.name.trim()} onClick={() => void mutate(async () => { if (!editor) return; if (editor.id) await api.update(editor.id, { name: editor.name.trim() }); else await api.create(editor.name.trim()); if (alive.current) setEditor(null); await load(); }, setEditorError)}>{busy ? '저장 중…' : '저장'}</Button></DialogFooter>
       </DialogPopup>
     </Dialog>
     {token !== null && <Dialog open onOpenChange={open => { if (!open) closeKey(); }}>
       <DialogPopup className="approved-dialog"><DialogHeader><DialogTitle>새 연결 키</DialogTitle><DialogDescription>닫으면 다시 볼 수 없습니다. 지금 복사해 안전한 곳에 보관하세요.</DialogDescription></DialogHeader>
-        <DialogPanel><p className="owned-agents-token" data-testid="owned-agent-token" data-v3-selectable-content="true">{token}</p>{copyError && <p role="alert" data-v3-selectable-content="true">복사하지 못했습니다. 다시 복사해 주세요.</p>}</DialogPanel>
+        <DialogPanel><p className="owned-agents-token" data-testid="owned-agent-token" data-v3-selectable-content="true">{token}</p>{copyError && <p role="alert" className="text-destructive-foreground" data-v3-selectable-content="true">복사하지 못했습니다. 다시 복사해 주세요.</p>}</DialogPanel>
         <DialogFooter><Button variant="outline" onClick={closeKey}>닫기</Button><Button onClick={() => { const value = token; void navigator.clipboard.writeText(value).then(() => setCopied(true)).catch(() => setCopyError(true)); }}>{copied ? '복사됨' : '복사'}</Button></DialogFooter>
       </DialogPopup>
     </Dialog>}
     <Dialog open={revoking !== null} onOpenChange={open => { if (!open && !busy) setRevoking(null); }}>
       <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }}><DialogHeader><DialogTitle>연결 키 폐기</DialogTitle><DialogDescription>{revoking?.agent.name}의 이 키를 사용하는 연결은 더 이상 요청할 수 없습니다.</DialogDescription></DialogHeader>
-        <DialogPanel>{revokeError && <p role="alert" data-v3-selectable-content="true">{revokeError}</p>}</DialogPanel>
+        <DialogPanel>{revokeError && <p role="alert" className="text-destructive-foreground" data-v3-selectable-content="true">{revokeError}</p>}</DialogPanel>
         <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setRevoking(null)}>취소</Button><Button variant="destructive" disabled={busy} onClick={() => void mutate(async () => { if (!revoking) return; await api.revokeKey(revoking.agent.id, revoking.key.id); if (alive.current) setRevoking(null); await load(); }, setRevokeError)}>{busy ? '폐기 중…' : '폐기'}</Button></DialogFooter>
       </DialogPopup>
     </Dialog>
