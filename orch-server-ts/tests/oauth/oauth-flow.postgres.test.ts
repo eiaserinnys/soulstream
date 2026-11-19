@@ -554,7 +554,9 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     });
     const folders = await api.inject({ method: "GET", url: "/api/folders", headers });
     expect(folders.statusCode).toBe(200);
-    expect(folders.json().folders).toEqual([{ id: "folder-allowed", starred: false }]);
+    expect(folders.json().folders).toEqual([
+      { id: "folder-allowed", starred: false, projectPageVersion: null },
+    ]);
     expect((await api.inject({ method: "GET", url: "/api/cards/private-card", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "GET", url: "/api/folders/folder-private", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "POST", url: "/api/sessions", headers })).statusCode).toBe(403);
