@@ -39,7 +39,7 @@ import {
 import {
   RUNNER_RECOVERY_DISPOSITIONS,
   type RunnerRecoveryFacts,
-} from "../../src/runner/state/runner_recovery_machine.js";
+} from "../../src/runner/state/runner_recovery_decision.js";
 import { decideRunnerRecovery } from "../../src/runner/state/runner_recovery_decision.js";
 
 function recovery(facts: Partial<RunnerRecoveryFacts>): string {

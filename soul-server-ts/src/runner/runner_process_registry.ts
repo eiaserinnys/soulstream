@@ -32,9 +32,9 @@ import {
   type RunnerRecoveryStorage,
 } from "./runner_recovery_storage.js";
 import { decideRunnerRecovery } from "./state/runner_recovery_decision.js";
-import type { RunnerRecoveryDisposition } from "./state/runner_recovery_machine.js";
+import type { RunnerRecoveryDisposition } from "./state/runner_recovery_decision.js";
 
-export type { RunnerRecoveryDisposition } from "./state/runner_recovery_machine.js";
+export type { RunnerRecoveryDisposition } from "./state/runner_recovery_decision.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 

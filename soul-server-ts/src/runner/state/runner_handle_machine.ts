@@ -1,6 +1,6 @@
 import { setup } from "xstate";
 
-import type { RunnerRecoveryDisposition } from "./runner_recovery_machine.js";
+import type { RunnerRecoveryDisposition } from "./runner_recovery_decision.js";
 
 /** 이미 붙은 러너의 백그라운드 작업 보유를 물은 결과다. */
 export type RunnerHandleDetachedBackground = "not_probed" | "retained" | "absent";

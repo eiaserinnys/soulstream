@@ -26,7 +26,7 @@ import type {
   RunnerLifecycleStep,
 } from "../../../../src/runner/state/runner_lifecycle_machine.js";
 import { decideRunnerRecovery } from "../../../../src/runner/state/runner_recovery_decision.js";
-import type { RunnerRecoveryDisposition, RunnerRecoveryFacts } from "../../../../src/runner/state/runner_recovery_machine.js";
+import type { RunnerRecoveryDisposition, RunnerRecoveryFacts } from "../../../../src/runner/state/runner_recovery_decision.js";
 
 export interface ProductDecisions {
   nodePhase(facts: NodeExecutionFacts): NodeExecutionPhase;
