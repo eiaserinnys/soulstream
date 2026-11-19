@@ -6,3 +6,14 @@
    시안 빌드의 root는 mockups/<이름>이므로 같은 범위를 명시한다. */
 @source "../../client";
 @source "..";
+
+/* 시안이 화면 전체를 직접 세울 때(mountMockup 의 surface: "bare"):
+   운영의 유리 본문 틀을 벗기고 여백과 스크롤만 없앤다. 기존 시안의 기본값은 그대로다. */
+.v3-components-main.mockup-main--bare {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

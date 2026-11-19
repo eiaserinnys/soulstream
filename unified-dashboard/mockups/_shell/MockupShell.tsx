@@ -21,9 +21,12 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
 
-function Surface({ children }: { children: ReactNode }) {
+/** glass: 운영과 같은 유리 본문 틀. bare: 시안이 화면 전체를 직접 세울 때. */
+export type MockupSurface = "glass" | "bare";
+
+function Surface({ children, surface = "glass" }: { children: ReactNode; surface?: MockupSurface }) {
   const surfaceRef = useRef<HTMLElement>(null);
-  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
+  const webglActive = useGlassSurface(surfaceRef, { enabled: surface === "glass" });
 
   useEffect(() => {
     setAppearancePreference(initialAppearance, { persist: false });
@@ -43,25 +46,25 @@ function Surface({ children }: { children: ReactNode }) {
     style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px`, "--v3-outer-inset": `${V3_OUTER_INSET_PX}px` } as CSSProperties}>
     <WallpaperLayer />
     <LiquidGlassCanvas />
-    <main ref={surfaceRef} className="v3-components-main glass-strong glass-chrome"
+    <main ref={surfaceRef} className={`v3-components-main glass-strong glass-chrome${surface === "bare" ? " mockup-main--bare" : ""}`}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}>
       {children}
     </main>
   </div>;
 }
 
-export function MockupShell({ children }: { children: ReactNode }) {
+export function MockupShell({ children, surface }: { children: ReactNode; surface?: MockupSurface }) {
   return <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <ToastProvider>
-        <LiquidGlassProvider renderDefaultCanvas={false}><Surface>{children}</Surface></LiquidGlassProvider>
+        <LiquidGlassProvider renderDefaultCanvas={false}><Surface surface={surface}>{children}</Surface></LiquidGlassProvider>
       </ToastProvider>
     </AuthProvider>
   </QueryClientProvider>;
 }
 
-export function mountMockup(children: ReactNode) {
+export function mountMockup(children: ReactNode, options?: { surface?: MockupSurface }) {
   const root = document.getElementById("root");
   if (!root) throw new Error("#root 가 없습니다.");
-  createRoot(root).render(<StrictMode><MockupShell>{children}</MockupShell></StrictMode>);
+  createRoot(root).render(<StrictMode><MockupShell surface={options?.surface}>{children}</MockupShell></StrictMode>);
 }
