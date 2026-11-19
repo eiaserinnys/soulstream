@@ -70,7 +70,7 @@ const usageFixtureAntigravityQuotas = (): UsageSummaryQuota[] => [
 const usageFixturePoolAccounts: ClaudeAccount[] = [
   {
     id: "sample-main",
-    email: "eiaserinnys@gmail.com",
+    email: "director@example.com",
     plan: "Max 20x",
     enabled: true,
     priority: 1,
@@ -86,7 +86,7 @@ const usageFixturePoolAccounts: ClaudeAccount[] = [
   },
   {
     id: "sample-secondary",
-    email: "eiaserinnys.sub@gmail.com",
+    email: "director.sub@example.com",
     plan: "Max 5x",
     enabled: true,
     priority: 2,

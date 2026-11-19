@@ -58,7 +58,7 @@ function sampleAccounts(): ClaudeAccountList {
   const accounts: ClaudeAccount[] = [
     {
       id: "sample-main",
-      email: "eiaserinnys@gmail.com",
+      email: "director@example.com",
       plan: "Max 20x",
       enabled: true,
       priority: 1,
@@ -75,7 +75,7 @@ function sampleAccounts(): ClaudeAccountList {
     },
     {
       id: "sample-secondary",
-      email: "eiaserinnys.sub@gmail.com",
+      email: "director.sub@example.com",
       plan: "Max 5x",
       enabled: true,
       priority: 2,
@@ -92,7 +92,7 @@ function sampleAccounts(): ClaudeAccountList {
     },
     {
       id: "sample-backup",
-      email: "eiaserinnys.backup@gmail.com",
+      email: "director.backup@example.com",
       plan: "Pro",
       enabled: true,
       priority: 3,
@@ -104,7 +104,7 @@ function sampleAccounts(): ClaudeAccountList {
     },
     {
       id: "sample-logging-in",
-      email: "eiaserinnys.login@gmail.com",
+      email: "director.login@example.com",
       plan: "Max 5x",
       enabled: true,
       priority: 4,

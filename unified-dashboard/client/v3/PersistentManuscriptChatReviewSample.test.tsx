@@ -62,6 +62,14 @@ describe("manuscript review isolation", () => {
     try {
       act(() => root.render(<PersistentManuscriptChatReviewSample />));
       const flattened = flattenTree(useDashboardStore.getState().tree);
+      const imageMessage = flattened.find(message => message.content.includes("첫 번째 iPhone PAS 시안입니다."));
+      const imageUrls = [...(imageMessage?.content ?? "").matchAll(/!\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1]);
+      expect(imageUrls).toHaveLength(2);
+      for (const url of imageUrls) {
+        const asset = new URL(url, window.location.href);
+        expect(asset.origin).toBe(window.location.origin);
+        expect(asset.pathname).toMatch(/\/review-assets\/[^/]+\.svg$/);
+      }
       const sampleMessages = flattened.filter(message =>
         message.deliveryId === "00000000-0000-4000-8000-000000002251"
         || message.deliveryId === "00000000-0000-4000-8000-000000002252"
@@ -84,7 +92,7 @@ describe("manuscript review isolation", () => {
       expect(humanMessage).toMatchObject({
         role: "user",
         callerInfo: { source: "browser" },
-        attachmentPaths: [expect.any(String)],
+        attachmentPaths: ["/srv/soulstream/incoming/review-sample/pas-settings-1.png"],
         attachmentNodeId: "eiaserinnys",
       });
       expect(defaultColumn?.textContent).toContain("PAS 완료 알림입니다.");
