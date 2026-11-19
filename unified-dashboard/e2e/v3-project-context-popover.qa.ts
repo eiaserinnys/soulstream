@@ -1,4 +1,5 @@
 import type { Browser, Locator, Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
@@ -20,6 +21,10 @@ async function setup(browser: Browser, width: number, height: number, theme = "d
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme as "dark" | "light", reducedMotion: "reduce" });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
+  // tsx가 함수 인자를 변환하며 남기는 __name 호출이 페이지에서 터지지 않게 한다.
+  // 이 스크립트가 실패하면 아래 테마·Service Worker 스텁도 함께 실패해, 실제
+  // dist/sw.js가 등록되어 페이지가 스스로 다시 뜬다(다른 카드 QA와 같은 보정).
+  await page.addInitScript({ content: "window.__name = (f) => f;" });
   await page.addInitScript(({ theme, glass }) => {
     localStorage.setItem("soul-dashboard-theme", theme);
     localStorage.setItem("ls.webglGlass", glass ? "1" : "0");
@@ -47,9 +52,8 @@ async function setup(browser: Browser, width: number, height: number, theme = "d
   await page.route("**/api/status", route => route.fulfill({ json: { atom_enabled: true, is_draining: false } }));
   return page;
 }
-async function measure(page: Page, name: string) {
-  await page.waitForTimeout(350);
-  const data = await page.evaluate(() => {
+function readMeasurements(page: Page) {
+  return page.evaluate(() => {
     const popup = document.querySelector(".v3-project-context-popover");
     const viewport = popup?.querySelector('[data-slot="popover-viewport"]');
     const fields = popup?.querySelector(".v3-project-context-fields");
@@ -74,6 +78,10 @@ async function measure(page: Page, name: string) {
       availableHeight: popup && getComputedStyle(popup).getPropertyValue("--available-height"),
     };
   });
+}
+async function measure(page: Page, name: string) {
+  await page.waitForTimeout(350);
+  const data = await readMeasurements(page);
   metrics[name] = data;
   const p = data.popup, a = data.actions;
   check(`${name}: popup viewport`, !!p && p.x >= -1 && p.y >= -1 && p.right <= data.width + 1 && p.bottom <= data.height + 1, p);
@@ -91,14 +99,30 @@ async function measure(page: Page, name: string) {
   await page.screenshot({ path: path.join(output!, `${name}.png`), animations: "disabled", timeout: 15_000 });
 }
 async function scenario(browser: Browser, name: string, width: number, height: number, theme: string, glass: boolean, run: (page: Page) => Promise<void>) {
+  // 좁혀 볼 때만 쓴다. 기본 실행은 전 시나리오를 돈다.
+  const only = process.env.V3_PROJECT_CONTEXT_ONLY;
+  if (only && !name.startsWith(only)) return;
   let page: Page | undefined;
+  // 페이지가 다시 뜨거나 스크립트가 터진 흔적을 남겨, 빈 화면이 났을 때 원인을 가른다.
+  const events: { kind: string; detail: string }[] = [];
   try {
     page = await setup(browser, width, height, theme, glass);
+    const observed = page;
+    observed.on("framenavigated", frame => {
+      if (frame === observed.mainFrame() && events.length < 20) events.push({ kind: "navigated", detail: frame.url() });
+    });
+    observed.on("pageerror", error => { if (events.length < 20) events.push({ kind: "pageerror", detail: String(error).slice(0, 300) }); });
+    observed.on("console", message => {
+      if (message.type() === "error" && events.length < 20) events.push({ kind: "console", detail: message.text().slice(0, 300) });
+    });
+    observed.on("crash", () => events.push({ kind: "crash", detail: "" }));
     await run(page);
   } catch (error) {
-    check(`${name}: execution`, false, String(error));
+    metrics[`${name}-events`] = events;
+    check(`${name}: execution`, false, { error: String(error), events });
     if (page) await page.screenshot({ path: path.join(output!, `${name}-error.png`), timeout: 5000 }).catch(() => {});
   } finally {
+    metrics[`${name}-events`] = events;
     await page?.context().close();
   }
 }
@@ -107,6 +131,102 @@ async function openSample(page: Page, sample: string) {
   await page.getByTestId("v3-project-context").waitFor();
   await page.waitForTimeout(1500);
   await page.locator(".v3-project-context-popover").waitFor({ state: "visible" });
+}
+
+// 카드 #1699: 컨텍스트 편집기의 노드 요청은 검수 창의 fixture(api.request)가
+// 저장한 Response를 지나므로, setup()이 건 Response 변환 위에 한 겹 더 얹어
+// 지정한 호출만 실패시킨다.
+async function failFixtureAtomCalls(page: Page, failCalls: number[]) {
+  await page.addInitScript({ content: `
+    const PreviousResponse = window.Response;
+    let atomCalls = 0;
+    window.__qaAtomCalls = 0;
+    const failCalls = ${JSON.stringify(failCalls)};
+    window.Response = class extends PreviousResponse {
+      constructor(body, init) {
+        if (typeof body === "string" && body.includes('"sample-atom-card"')) {
+          const call = atomCalls++;
+          window.__qaAtomCalls = atomCalls;
+          if (failCalls.includes(call)) {
+            super(JSON.stringify({ detail: "오류" }), { status: 503 });
+            return;
+          }
+        }
+        super(body, init);
+      }
+    };
+  ` });
+}
+
+// 폴더 설정 창은 실제 fetch를 쓰므로 라우트를 바꿔 실패를 만든다.
+async function installNodeRoutes(page: Page, options: { failRootTimes?: number; failChildrenOf?: string } = {}) {
+  let rootFailures = options.failRootTimes ?? 0;
+  let childFailed = false;
+  await page.route("**/api/atom/nodes**", route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const match = pathname.match(/nodes\/([^/]+)\/children/);
+    if (!match && rootFailures > 0) {
+      rootFailures -= 1;
+      return route.fulfill({ status: 503, json: { detail: "오류" } });
+    }
+    if (match && options.failChildrenOf && match[1] === options.failChildrenOf && !childFailed) {
+      childFailed = true;
+      return route.fulfill({ status: 503, json: { detail: "오류" } });
+    }
+    const depth = match ? Number(match[1].split("-")[0]) + 1 : 0;
+    return route.fulfill({ json: { children: children(depth) } });
+  });
+}
+
+type BoxMetrics = {
+  slot: string; paddingLeft: number; paddingRight: number; borderLeftWidth: number; borderRightWidth: number;
+  borderColor: string; textStart: number; rect: { left: number; right: number; top: number; bottom: number; width: number; height: number };
+};
+
+// 필드의 계산된 스타일에서 글자 시작 x(테두리 왼쪽 + border + padding-left)와 테두리 색을 잰다.
+async function measureBoxes(scope: Locator, selectors: readonly string[]): Promise<BoxMetrics[]> {
+  return scope.evaluate((root, list) => list.flatMap(selector =>
+    [...root.querySelectorAll(selector)].map(el => {
+      const style = getComputedStyle(el);
+      const borderLeft = parseFloat(style.borderLeftWidth);
+      const rect = el.getBoundingClientRect();
+      return {
+        slot: el.getAttribute("aria-label") ?? el.getAttribute("data-slot") ?? el.tagName.toLowerCase(),
+        paddingLeft: parseFloat(style.paddingLeft),
+        paddingRight: parseFloat(style.paddingRight),
+        borderLeftWidth: borderLeft,
+        borderRightWidth: parseFloat(style.borderRightWidth),
+        borderColor: style.borderTopColor,
+        textStart: rect.left + borderLeft + parseFloat(style.paddingLeft),
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height },
+      };
+    })), selectors as string[]);
+}
+
+const settingsReference: { paddingLeft: number; paddingRight: number; borderColor: string | null } = {
+  paddingLeft: 0, paddingRight: 0, borderColor: null,
+};
+const defaultsFieldBoxes: Record<string, BoxMetrics[]> = {};
+
+function checkDefaultsFields(name: string, boxes: BoxMetrics[]) {
+  defaultsFieldBoxes[name] = boxes;
+  metrics[`${name}-select-boxes`] = boxes;
+  check(`${name}: select fields present`, boxes.length >= 2, boxes.map(box => box.slot));
+  const paddings = boxes.map(box => box.paddingLeft);
+  check(`${name}: select padding-left/right consistent`, boxes.every(box => Math.abs(box.paddingLeft - box.paddingRight) <= 0.5)
+    && Math.max(...paddings) - Math.min(...paddings) <= 1, boxes.map(box => ({ slot: box.slot, paddingLeft: box.paddingLeft, paddingRight: box.paddingRight })));
+  // 열이 나뉘면 절대 x가 다르므로, 칸 왼쪽 테두리에서 글자 시작까지의 거리로 비교한다.
+  const textOffsets = boxes.map(box => box.textStart - box.rect.left);
+  check(`${name}: select text starts on one line`, textOffsets.length > 0 && Math.max(...textOffsets) - Math.min(...textOffsets) <= 1, textOffsets);
+}
+
+function compareDefaultsWithSettings() {
+  for (const [name, boxes] of Object.entries(defaultsFieldBoxes)) {
+    check(`${name}: select padding matches the settings window`,
+      settingsReference.paddingLeft > 0 && boxes.every(box =>
+        Math.abs(box.paddingLeft - settingsReference.paddingLeft) <= 1 && Math.abs(box.paddingRight - settingsReference.paddingRight) <= 1),
+      { settings: settingsReference, fields: boxes.map(box => ({ slot: box.slot, paddingLeft: box.paddingLeft, paddingRight: box.paddingRight })) });
+  }
 }
 
 async function checkRing(target: Locator, name: string) {
@@ -289,6 +409,163 @@ async function run(browser: Browser) {
       await measure(page, `defaults-edit-${width}`);
     });
   }
+  // 카드 #1699: 기본 실행 설정 선택 칸의 안쪽 여백과 화살표, 글자 시작선.
+  for (const [width, height, theme] of [[1440, 900, "light"], [390, 844, "light"], [360, 844, "light"], [360, 844, "dark"]] as const) {
+    const name = `defaults-add-${width}-${theme}`;
+    await scenario(browser, name, width, height, theme, true, async page => {
+      await openSample(page, "defaults-add");
+      await measure(page, name);
+      const popup = page.locator(".v3-project-context-popover");
+      const boxes = await measureBoxes(popup, ['[data-slot="select-trigger"]']);
+      checkDefaultsFields(name, boxes);
+      const arrows = await popup.evaluate(root =>
+        [...root.querySelectorAll('[data-slot="select-trigger"]')].map(trigger => {
+          const icon = trigger.querySelector('[data-slot="select-icon"]') ?? trigger.querySelector("svg");
+          const rect = trigger.getBoundingClientRect();
+          const iconRect = icon?.getBoundingClientRect();
+          return {
+            label: trigger.getAttribute("aria-label"),
+            innerRight: rect.right - parseFloat(getComputedStyle(trigger).borderRightWidth),
+            iconRight: iconRect?.right ?? null,
+          };
+        }));
+      check(`${name}: arrows stay inside the border`,
+        arrows.length > 0 && arrows.every(arrow => arrow.iconRight !== null && arrow.iconRight <= arrow.innerRight + 0.5), arrows);
+    });
+  }
+  await scenario(browser, "defaults-edit-390-light", 390, 844, "light", true, async page => {
+    await openSample(page, "defaults-edit");
+    await measure(page, "defaults-edit-390-light");
+    checkDefaultsFields("defaults-edit-390-light", await measureBoxes(page.locator(".v3-project-context-popover"), ['[data-slot="select-trigger"]']));
+  });
+  // 카드 #1699: 내용 입력(textarea), 숫자 칸, 렌더 방식 칸, 노드 선택 단추의 테두리와 글자 시작선.
+  for (const [width, height, theme] of [[1440, 900, "light"], [390, 844, "light"], [360, 844, "light"], [360, 844, "dark"]] as const) {
+    const name = `atom-fields-${width}-${theme}`;
+    await scenario(browser, name, width, height, theme, true, async page => {
+      await openSample(page, "atom-add");
+      await measure(page, name);
+      const popup = page.locator(".v3-project-context-popover");
+      await popup.getByText(/프로젝트 지식 노드 0-1/, { exact: true }).first().waitFor();
+      // 노드 선택 단추는 열릴 때 초점을 받아 테두리가 --ring이 된다. 초점이 없는
+      // 상태의 테두리 색(둘 다 --input)을 견주려고 초점을 풀고 잰다.
+      await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur?.(); });
+      const boxes = await measureBoxes(popup, [
+        '[data-slot="atom-node-selector-trigger"]',
+        'input[type="number"]:not([aria-label])',
+        '[aria-label="atom 최근 자식 수"]',
+        'select[aria-label="atom 렌더 방식"]',
+        "textarea",
+      ]);
+      metrics[`${name}-boxes`] = boxes;
+      const nodeButton = boxes.find(box => box.slot === "atom-node-selector-trigger");
+      const fields = boxes.filter(box => box.slot !== "textarea");
+      check(`${name}: four fields present`, !!nodeButton && fields.length === 4, boxes.map(box => box.slot));
+      check(`${name}: field borders use the node selector token`,
+        !!nodeButton && fields.every(box => box.borderColor === nodeButton.borderColor),
+        boxes.map(box => ({ slot: box.slot, color: box.borderColor })));
+      const offsets = fields.map(box => box.textStart - box.rect.left);
+      check(`${name}: field text starts on one line`, fields.length === 4 && Math.max(...offsets) - Math.min(...offsets) <= 1, offsets);
+      if (boxes.some(box => box.slot === "textarea")) {
+        check(`${name}: textarea border uses the node selector token`,
+          !!nodeButton && boxes.filter(box => box.slot === "textarea").every(box => box.borderColor === nodeButton.borderColor), boxes);
+      } else {
+        check(`${name}: content textarea`, true, "이 폼에는 내용 입력 textarea가 없다(측정 대상 없음)");
+      }
+    });
+  }
+  // 카드 #1699: 노드 목록 실패 뒤 「다시 시도」. 루트/하위 단계, 컨텍스트 팝오버/폴더 설정 창.
+  await scenario(browser, "node-retry-390", 390, 844, "dark", true, async page => {
+    await failFixtureAtomCalls(page, [0, 1]);
+    await page.addInitScript({ content: `
+      window.__qaFocusLog = [];
+      document.addEventListener("focusin", event => {
+        const el = event.target;
+        window.__qaFocusLog.push(el.getAttribute?.("data-slot") || el.tagName + "." + String(el.className).slice(0, 40));
+      }, true);
+    ` });
+    await page.goto(`${base}/dialogues?sample=atom-add`);
+    await page.getByTestId("v3-project-context").waitFor();
+    await page.waitForTimeout(1500);
+    const popup = page.locator(".v3-project-context-popover");
+    await popup.waitFor({ state: "visible" });
+    const panel = popup.locator('[data-slot="atom-node-selector-panel"]');
+    const error = popup.getByText("노드를 불러오지 못했습니다", { exact: true });
+    await error.waitFor();
+    const retry = panel.getByRole("button", { name: "다시 시도" });
+    await retry.waitFor();
+    check("node-retry-390: retry button in the same panel", await retry.count() === 1);
+    const popupBox = await popup.evaluate(el => el.getBoundingClientRect().toJSON());
+    const retryBox = await retry.evaluate(el => el.getBoundingClientRect().toJSON());
+    check("node-retry-390: retry button inside the popover",
+      retryBox.left >= popupBox.left - 1 && retryBox.right <= popupBox.right + 1
+      && retryBox.top >= popupBox.top - 1 && retryBox.bottom <= popupBox.bottom + 1, { popupBox, retryBox });
+    await page.screenshot({ path: path.join(output, "node-retry-390-error.png"), animations: "disabled" });
+    await retry.click();
+    // 두 번째 요청이 끝난 뒤에 잰다. 클릭 직후의 error.waitFor()는 아직 사라지기
+    // 전의 오류를 그대로 만나 곧바로 돌아오므로, 요청 횟수로 끝을 가른다.
+    await page.waitForFunction(() => (window as unknown as { __qaAtomCalls?: number }).__qaAtomCalls === 2);
+    await error.waitFor();
+    await page.waitForTimeout(150);
+    check("node-retry-390: focus stays on retry after another failure",
+      await retry.evaluate(el => el === document.activeElement),
+      await page.evaluate(() => ({
+        active: document.activeElement?.outerHTML.slice(0, 160) ?? null,
+        focusLog: (window as unknown as { __qaFocusLog?: string[] }).__qaFocusLog?.slice(-8) ?? [],
+      })));
+    await page.screenshot({ path: path.join(output, "node-retry-390-failure-again.png"), animations: "disabled" });
+    await retry.click();
+    const firstNode = panel.locator("button").filter({ hasText: "프로젝트 컨텍스트에서 긴 노드 제목" }).first();
+    await firstNode.waitFor();
+    await page.waitForTimeout(100);
+    check("node-retry-390: list after success", await error.count() === 0);
+    check("node-retry-390: focus moves to the first node", await firstNode.evaluate(el => el === document.activeElement));
+    await page.screenshot({ path: path.join(output, "node-retry-390-success.png"), animations: "disabled" });
+  });
+  await scenario(browser, "node-retry-sublevel-390", 390, 844, "dark", true, async page => {
+    await failFixtureAtomCalls(page, [1]);
+    await openSample(page, "atom-add");
+    const popup = page.locator(".v3-project-context-popover");
+    const panel = popup.locator('[data-slot="atom-node-selector-panel"]');
+    const row = panel.getByRole("button", { name: "프로젝트 지식 노드 0-3", exact: true });
+    await row.waitFor();
+    await panel.locator('[title="자식 보기"]').nth(3).click();
+    const error = popup.getByText("노드를 불러오지 못했습니다", { exact: true });
+    await error.waitFor();
+    const retry = panel.getByRole("button", { name: "다시 시도" });
+    await retry.waitFor();
+    check("node-retry-sublevel-390: failed level covered by retry", await error.isVisible());
+    // 들어간 단계(0-3)의 이름이 빵부스러기에 남아 있어야 한다.
+    check("node-retry-sublevel-390: breadcrumb keeps the level",
+      await panel.getByRole("button", { name: "프로젝트 지식 노드 0-3", exact: true }).count() === 1);
+    await page.screenshot({ path: path.join(output, "node-retry-sublevel-390-error.png"), animations: "disabled" });
+    await retry.click();
+    await panel.getByRole("button", { name: "프로젝트 지식 노드 1-1", exact: true }).waitFor();
+    await page.waitForTimeout(100);
+    check("node-retry-sublevel-390: retried the same level", await panel.getByRole("button", { name: "프로젝트 지식 노드 0-1", exact: true }).count() === 0);
+    const firstChild = panel.locator("button").filter({ hasText: "프로젝트 컨텍스트에서 긴 노드 제목" }).last();
+    check("node-retry-sublevel-390: focus moves to the first child", await firstChild.evaluate(el => el === document.activeElement));
+    await page.screenshot({ path: path.join(output, "node-retry-sublevel-390-success.png"), animations: "disabled" });
+  });
+  await scenario(browser, "folder-settings-retry-1440", 1440, 900, "dark", true, async page => {
+    await installNodeRoutes(page, { failRootTimes: 1 });
+    await page.goto(`${base}/dialogues?sample=folder-settings`);
+    await page.getByText("atom 트리 주입").waitFor();
+    await page.waitForTimeout(1500);
+    await page.getByRole("button", { name: /노드 선택/ }).click();
+    const error = page.getByText("노드를 불러오지 못했습니다", { exact: true });
+    await error.waitFor();
+    const retry = page.locator('[data-slot="popover-popup"]').getByRole("button", { name: "다시 시도" });
+    await retry.waitFor();
+    check("folder-settings-retry-1440: retry visible", await retry.isVisible());
+    await page.screenshot({ path: path.join(output, "folder-settings-retry-1440-error.png"), animations: "disabled" });
+    await retry.click();
+    await page.getByText("프로젝트 지식 노드 0-1", { exact: true }).waitFor();
+    await page.waitForTimeout(100);
+    check("folder-settings-retry-1440: list after success", await error.count() === 0);
+    const firstNode = page.locator('[data-slot="popover-popup"] button').filter({ hasText: "프로젝트 컨텍스트에서 긴 노드 제목" }).first();
+    check("folder-settings-retry-1440: focus moves to the first node", await firstNode.evaluate(el => el === document.activeElement));
+    await page.screenshot({ path: path.join(output, "folder-settings-retry-1440-success.png"), animations: "disabled" });
+  });
   await scenario(browser, "minimum-360", 360, 844, "dark", true, async page => {
     await openSample(page, "atom-add");
     await measure(page, "atom-add-open-360-dark-glass");
@@ -353,12 +630,27 @@ async function run(browser: Browser) {
     await page.goto(`${base}/dialogues?sample=folder-settings`);
     await page.getByText("atom 트리 주입").waitFor();
     await page.waitForTimeout(1500);
+    // 카드 #1699: 설정 창의 같은 칸(노드 선택)을 기본 실행 설정 선택 칸의 기준으로 잰다.
+    const reference = await page.getByRole("button", { name: /노드 선택/ }).first().evaluate(el => {
+      const style = getComputedStyle(el);
+      return {
+        paddingLeft: parseFloat(style.paddingLeft),
+        paddingRight: parseFloat(style.paddingRight),
+        borderColor: style.borderTopColor,
+      };
+    });
+    settingsReference.paddingLeft = reference.paddingLeft;
+    settingsReference.paddingRight = reference.paddingRight;
+    settingsReference.borderColor = reference.borderColor;
+    check("folder settings: node selection field padding", reference.paddingLeft > 0 && reference.paddingRight > 0, reference);
+    metrics["folder-settings-reference"] = { nodeSelection: reference };
     await page.getByRole("button", { name: /노드 선택/ }).click();
     await page.getByText("프로젝트 지식 노드 0-1", { exact: true }).waitFor();
     check("folder settings: popup", await page.locator('[data-slot="popover-popup"] [title="자식 보기"]').count() > 0);
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(output!, "folder-settings-1440.png"), animations: "disabled", timeout: 15_000 });
   });
+  compareDefaultsWithSettings();
 }
 async function runWithScrollbars(browser: Browser) {
   for (const [width, height] of [[390, 844], [1440, 900]]) {
@@ -387,6 +679,12 @@ try {
   }, ({ browser }: { browser: Browser }) => runWithScrollbars(browser));
 } catch (error) { check("script execution", false, String(error)); }
 writeFileSync(path.join(output, "metrics.json"), JSON.stringify({ checks, metrics }, null, 2));
+writeFileSync(path.join(output, "summary.json"), JSON.stringify({
+  pass: checks.every(c => c.ok),
+  head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  generated_at: new Date().toISOString(),
+  checks,
+}, null, 2));
 console.table(checks.filter(c => !c.ok));
 console.log(`${checks.filter(c => c.ok).length}/${checks.length} checks passed; ${output}`);
 if (!recordOnly && checks.some(c => !c.ok)) process.exitCode = 1;

@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import { FrameLoading } from "./FrameLoading";
+import { Button } from "./ui/button";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
 
 interface AtomNode {
@@ -60,8 +61,12 @@ export function AtomNodeSelector({
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([
     { nodeId: null, title: "루트" },
   ]);
+  // 다시 시도 결과에 따라 초점을 옮길 곳. 목록이 그려진 뒤 효과에서 처리한다.
+  const [pendingFocus, setPendingFocus] = useState<"first-node" | "retry" | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const retryButtonRef = useRef<HTMLButtonElement>(null);
 
-  const loadNodes = async (nodeId: string | null) => {
+  const loadNodes = async (nodeId: string | null): Promise<boolean> => {
     setLoading(true);
     onStatusChange?.("loading");
     setError(null);
@@ -75,14 +80,38 @@ export function AtomNodeSelector({
       const data = (await res.json()) as { children: AtomNode[] };
       setNodes(data.children ?? []);
       onStatusChange?.("ready");
+      return true;
     } catch {
       setError("노드를 불러오지 못했습니다");
       onStatusChange?.("error");
       setNodes([]);
+      return false;
     } finally {
       setLoading(false);
     }
   };
+
+  // 실패한 단계(지금 빵부스러기의 마지막 노드)를 다시 불러온다.
+  const retryLoad = async () => {
+    const ok = await loadNodes(breadcrumbs[breadcrumbs.length - 1].nodeId);
+    setPendingFocus(ok ? "first-node" : "retry");
+  };
+
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const target = pendingFocus === "first-node"
+      ? listRef.current?.querySelector<HTMLButtonElement>("button")
+      : retryButtonRef.current;
+    target?.focus();
+    // 감싼 Popover의 포커스 관리자는 초점이 잠깐 body로 떨어진 사이 팝업으로
+    // 되돌아갈 수 있다. 한 프레임 뒤 한 번 더 잡아 그 되돌림을 이긴다.
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        if (target?.isConnected && document.activeElement !== target) target.focus();
+      });
+    }
+    setPendingFocus(null);
+  }, [pendingFocus]);
 
   // 열릴 때 브레드크럼 초기화 및 루트 노드 로드
   useEffect(() => {
@@ -159,10 +188,16 @@ export function AtomNodeSelector({
         </div>
 
         {/* 노드 목록 */}
-        <div className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
+        <div ref={listRef} className={presentation === "popup" ? "max-h-48 overflow-y-auto" : undefined}>
           {loading && <FrameLoading inline label="불러오는 중" />}
           {error && (
-            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">{error}</div>
+            <div className="px-3 py-2 text-xs text-destructive" data-slot="dialog-error-message">
+              <div>{error}</div>
+              <Button ref={retryButtonRef} variant="outline" size="sm" className="mt-1.5"
+                onClick={() => { void retryLoad(); }}>
+                다시 시도
+              </Button>
+            </div>
           )}
           {!loading && !error && nodes.length === 0 && (
             <div className="px-3 py-2 text-xs text-muted-foreground">
