@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Asset } from 'expo-asset';
 import { ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatBody } from '../components/chat/ChatBody';
@@ -29,11 +30,10 @@ import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
 
-// 검수 창 번들은 로컬 서버에서 열린다. 표본이 외부 주소를 부르면 캡처 검사의
-// External request 검사가 늘 실패하므로 현재 주소를 쓴다.
-const reviewOrigin = typeof window === 'undefined'
-  ? 'https://soulstream.eiaserinnys.me'
-  : window.location?.origin ?? 'https://soulstream.eiaserinnys.me';
+const reviewImageUris = [
+  Asset.fromModule(require('../../assets/icon.png')).uri,
+  Asset.fromModule(require('../../assets/icon-symbol.png')).uri,
+];
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -54,12 +54,12 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
 });
 
 const pasImagePaths = [
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png',
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png',
+  '/srv/soulstream/incoming/review-sample/pas-settings-1.png',
+  '/srv/soulstream/incoming/review-sample/pas-settings-2.png',
 ];
 const pas251LandscapeImagePaths = [
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-12.820Z-IMG_0168-f8f7698dacb14f55a405e3fcb0a5e4ae.jpg',
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg',
+  '/srv/soulstream/incoming/review-sample/IMG_0168.jpg',
+  '/srv/soulstream/incoming/review-sample/IMG_0169.jpg',
 ];
 
 const PAS_REVIEW_COMPLETION_DELIVERY_ID = '00000000-0000-4000-8000-000000002251';
@@ -140,7 +140,7 @@ export const persistentChatEvents: SessionEvent[] = [
     node_id: 'eiaserinnys',
   } },
   { id: '929', type: 'assistant_message', data: {
-    text: `![정사각 썸네일](${reviewOrigin}/icon-192.png)`,
+    text: `![정사각 썸네일](${reviewImageUris[0]})`,
   } },
   { id: '930', type: 'session_notification', data: {
     delivery_id: PAS_REVIEW_COMPLETION_DELIVERY_ID,
@@ -648,19 +648,18 @@ export function ReviewChat() {
 
 function ReviewChatPasImageSample() {
   const t = useTokens();
-  const attachmentUrl = (path: string) => `${reviewOrigin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
   const assistantText = [
     '링크만 붙였군요. 비교 이미지를 바로 보여드리겠습니다.',
     '',
     '기존 배치',
     '',
-    `![기존 폰 배치](${attachmentUrl(pasImagePaths[0])})`,
+    `![기존 폰 배치](${reviewImageUris[0]})`,
     '',
     '변경 시안: ‘세션 스토리’ 버튼을 둘째 줄로 옮깁니다.',
     '',
-    `![폰 변경 시안](${attachmentUrl(pasImagePaths[1])})`,
+    `![폰 변경 시안](${reviewImageUris[1]})`,
     '',
-    `![정사각 앱 아이콘](${reviewOrigin}/icon-192.png)`,
+    `![정사각 앱 아이콘](${reviewImageUris[0]})`,
   ].join('\n');
   const session = { ...sessions[0], nodeId: 'eiaserinnys' };
   return <ScrollView testID="review-pas-chat-images" style={{ flex: 1, backgroundColor: t.colors.background }}

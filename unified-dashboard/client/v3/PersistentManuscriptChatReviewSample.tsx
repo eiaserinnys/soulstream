@@ -11,13 +11,16 @@ import type { PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 const REVIEW_SESSION = "components-review-manuscript";
 const PAS_8309_IMAGE_URLS = [
-  "https://soulstream.eiaserinnys.me/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png",
-  "https://soulstream.eiaserinnys.me/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png",
+  new URL("./review-assets/pas-settings-1.svg?no-inline", import.meta.url).href,
+  new URL("./review-assets/pas-settings-2.svg?no-inline", import.meta.url).href,
 ];
-const PAS_8309_ATTACHMENT_PATHS = PAS_8309_IMAGE_URLS.map(url => decodeURIComponent(new URL(url).searchParams.get("path")!));
+const PAS_8309_ATTACHMENT_PATHS = [
+  "/srv/soulstream/incoming/review-sample/pas-settings-1.png",
+  "/srv/soulstream/incoming/review-sample/pas-settings-2.png",
+];
 const PAS_251_LANDSCAPE_ATTACHMENT_PATHS = [
-  "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-12.820Z-IMG_0168-f8f7698dacb14f55a405e3fcb0a5e4ae.jpg",
-  "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg",
+  "/srv/soulstream/incoming/review-sample/IMG_0168.jpg",
+  "/srv/soulstream/incoming/review-sample/IMG_0169.jpg",
 ];
 const PAS_REVIEW_COMPLETION_DELIVERY_ID = "00000000-0000-4000-8000-000000002251";
 const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = "00000000-0000-4000-8000-000000002252";

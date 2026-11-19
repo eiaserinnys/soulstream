@@ -1,16 +1,18 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
+import { Asset } from 'expo-asset';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { getChatRowHorizontalInset } from '../../components/chat/ChatBody.styles';
 import { useTokens } from '../../theme';
 import { useSettingsStore } from '../../store/settingsStore';
-import { ReviewChat } from '../ReviewChat';
+import { ReviewChat, persistentChatEvents } from '../ReviewChat';
+import { AssistantMessage } from '../../components/events/AssistantMessage';
 import { TodayCardComposer } from '../../components/planner/TodayCardComposer';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../components/chat/ChatBody', () => ({ ChatBody: () => null }));
-jest.mock('../../components/events/AssistantMessage', () => ({ AssistantMessage: () => null }));
+jest.mock('../../components/events/AssistantMessage', () => ({ AssistantMessage: jest.fn(() => null) }));
 
 async function renderReviewChat() {
   const screen = render(<ReviewChat />);
@@ -29,6 +31,21 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  Object.defineProperty(window, 'location', { configurable: true, value: { search: '', origin: 'https://review.test' } });
+});
+
+test('PAS 이미지 표본은 앱에 포함된 이미지와 중립 첨부 경로를 쓴다', async () => {
+  Object.defineProperty(window, 'location', { configurable: true, value: { search: '?sample=pas-images', origin: 'https://review.test' } });
+  const screen = await renderReviewChat();
+  const calls = jest.mocked(AssistantMessage).mock.calls;
+  const sample = calls.map(([props]) => props.event).find(event => event.id === '8309');
+  const text = sample?.data.text as string;
+  expect(text).toContain(Asset.fromModule(require('../../../assets/icon.png')).uri);
+  expect(text).toContain(Asset.fromModule(require('../../../assets/icon-symbol.png')).uri);
+  expect(text).not.toContain('/api/attachments/files');
+  expect(persistentChatEvents.find(event => event.id === '933')?.data.attachments)
+    .toEqual(['/srv/soulstream/incoming/review-sample/pas-settings-1.png']);
+  expect(within(screen.getByTestId('review-pas-single-image')).getByText('pas-settings-1.png')).toBeTruthy();
 });
 
 test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴다', async () => {
