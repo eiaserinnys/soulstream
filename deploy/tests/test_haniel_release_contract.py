@@ -195,6 +195,22 @@ class SoulstreamReleaseContractTest(unittest.TestCase):
                 or manifest.migration.apply.command != DEPLOY_COMMAND
             )
 
+    def test_soul_server_services_are_adopted_across_haniel_self_update(self) -> None:
+        central = ReleaseManifest.load(MANIFEST_PATH)
+        worker = ReleaseManifest.load(WORKER_MANIFEST_PATH)
+
+        self.assertEqual(
+            worker.service_restart_strategies["soulstream-server"].mode, "adopt"
+        )
+        self.assertEqual(
+            central.service_restart_strategies["soulstream-soul-server-ts"].mode,
+            "adopt",
+        )
+        self.assertEqual(
+            central.service_restart_strategies["soulstream-orch-server"].mode,
+            "overlap",
+        )
+
     def test_actual_manifest_commands_do_not_use_bare_pnpm_or_tsx(self) -> None:
         for path in (
             MANIFEST_PATH,
