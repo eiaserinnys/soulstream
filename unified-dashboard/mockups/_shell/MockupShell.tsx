@@ -46,10 +46,14 @@ function Surface({ children, surface = "glass" }: { children: ReactNode; surface
     style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px`, "--v3-outer-inset": `${V3_OUTER_INSET_PX}px` } as CSSProperties}>
     <WallpaperLayer />
     <LiquidGlassCanvas />
-    <main ref={surfaceRef} className={`v3-components-main glass-strong glass-chrome${surface === "bare" ? " mockup-main--bare" : ""}`}
-      data-liquid-glass-webgl={webglActive ? "true" : undefined}>
-      {children}
-    </main>
+    {surface === "bare" ? (
+      <main ref={surfaceRef} className="v3-mockup-bare">{children}</main>
+    ) : (
+      <main ref={surfaceRef} className="v3-components-main glass-strong glass-chrome"
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}>
+        {children}
+      </main>
+    )}
   </div>;
 }
 

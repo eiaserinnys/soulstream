@@ -14,7 +14,7 @@ export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
   variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch,
-  appearance = 'default',
+  appearance = 'default', extraActions, showPersistentEntry = true,
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
@@ -29,12 +29,18 @@ export function V3GlobalToolbar({
   appearance?: "default" | "bare";
   showWeeklyUsage?: boolean;
   onToggleUsage?(): void;
+  /** 우측 기본 진입 앞에 끼울 시안 전용 진입. 운영 호출은 넘기지 않는다. */
+  extraActions?: ReactNode;
+  /** 서버를 부르는 상시 세션 진입을 숨긴다. 기본값은 운영과 같은 표시. */
+  showPersistentEntry?: boolean;
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
+  const brandButtonRef = useRef<HTMLButtonElement>(null);
+  const brandRef = onOpenHome ? brandButtonRef : brandCapsuleRef;
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
-  const brandWebglActive = useGlassSurface(brandCapsuleRef, { enabled: true });
+  const brandWebglActive = useGlassSurface(brandRef, { enabled: true });
   const searchWebglActive = useGlassSurface(searchCapsuleRef, { enabled: true });
-  useLiquidLens(brandCapsuleRef, { scale: 18, enabled: !brandWebglActive });
+  useLiquidLens(brandRef, { scale: 18, enabled: !brandWebglActive });
   useLiquidLens(searchCapsuleRef, { scale: 18, enabled: !searchWebglActive });
 
   useEffect(() => {
@@ -68,16 +74,33 @@ export function V3GlobalToolbar({
     </div>
   </header>;
 
+  const brandClassName = "dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim";
   return (
     <header className="dashboard-floating-toolbar v3-global-toolbar" data-testid="v3-global-toolbar">
-      <div
-        ref={brandCapsuleRef}
-        className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
-        data-liquid-glass-webgl={brandWebglActive ? "true" : undefined}
-      >
-        <span aria-hidden="true" className="dashboard-brand-orb" />
-        <span className="font-semibold text-foreground">Soulstream</span>
-      </div>
+      {onOpenHome ? (
+        <button
+          ref={brandButtonRef}
+          type="button"
+          className={brandClassName}
+          data-liquid-glass-webgl={brandWebglActive ? "true" : undefined}
+          onClick={onOpenHome}
+          aria-label="홈 열기"
+          title="홈 열기"
+          data-testid="brand-home"
+        >
+          <span aria-hidden="true" className="dashboard-brand-orb" />
+          <span className="font-semibold text-foreground">Soulstream</span>
+        </button>
+      ) : (
+        <div
+          ref={brandCapsuleRef}
+          className={brandClassName}
+          data-liquid-glass-webgl={brandWebglActive ? "true" : undefined}
+        >
+          <span aria-hidden="true" className="dashboard-brand-orb" />
+          <span className="font-semibold text-foreground">Soulstream</span>
+        </div>
+      )}
       <button
         ref={searchCapsuleRef}
         type="button"
@@ -91,7 +114,8 @@ export function V3GlobalToolbar({
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">
-        <PersistentSessionEntry/>
+        {showPersistentEntry ? <PersistentSessionEntry/> : null}
+        {extraActions}
         <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" appearance={appearance} />
       </div>

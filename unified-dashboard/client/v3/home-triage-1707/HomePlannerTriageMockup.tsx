@@ -5,6 +5,8 @@ import { FolderTree, ListChecks, MessageSquare, type LucideIcon } from "lucide-r
 import { useGlassSurface } from "@seosoyoung/soul-ui";
 
 import "./v3-home-triage-1707.css";
+import { CardWorkspace } from "../CardWorkspace";
+import { useMobilePlannerMode } from "../MobilePlannerTabs";
 import { AssigneeSessionPanel } from "./AssigneeSessionPanel";
 import { KanbanBoard, PostItBoardGrid } from "./BoardViews";
 import { FolderNav } from "./FolderNav";
@@ -13,8 +15,11 @@ import { TriageLedger } from "./TriageLedger";
 import { TriageToolbar } from "./TriageToolbar";
 import {
   backgroundBoardCards,
+  boardCardToCardDetail,
+  catalogFolders,
   mockupFolders,
   triageCardToBoardCard,
+  triageCardToCardDetail,
   triageCards,
   watchCards,
   type SessionMessage,
@@ -25,6 +30,7 @@ type View = "home" | "pas";
 type HomeTab = "triage" | "grid" | "board";
 type MobileTab = "triage" | "folders" | "session";
 type CardState = "pending" | "watched" | "done";
+type UndoEntry = { message: string; previous: Record<string, CardState> };
 
 const HOME_TABS: readonly { id: HomeTab; label: string }[] = [
   { id: "triage", label: "트리아지 장부" },
@@ -82,10 +88,12 @@ export function HomePlannerTriageMockup() {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>(INITIAL_STATES);
   const [selectedId, setSelectedId] = useState<string | null>(triageCards[0]?.id ?? null);
   const [shelfOpen, setShelfOpen] = useState(false);
-  const [undoCard, setUndoCard] = useState<TriageCard | null>(null);
+  const [undo, setUndo] = useState<UndoEntry | null>(null);
+  const [selectedBoardCardId, setSelectedBoardCardId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [extraMessages, setExtraMessages] = useState<Record<string, SessionMessage[]>>({});
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const mobileMode = useMobilePlannerMode();
 
   const pendingAll = useMemo(() => ALL_CARDS.filter(card => cardStates[card.id] === "pending"), [cardStates]);
   const watched = useMemo(() => ALL_CARDS.filter(card => cardStates[card.id] === "watched"), [cardStates]);
@@ -111,8 +119,16 @@ export function HomePlannerTriageMockup() {
     [boardCards, folder],
   );
 
-  const reviewCount = pendingAll.filter(card => card.kind === "검수 대기").length;
+  const reviewCount = pendingAll.length;
   const folderName = folder ? mockupFolders.find(entry => entry.id === folder)?.name ?? null : null;
+
+  const boardDetail = useMemo(() => {
+    if (!selectedBoardCardId) return undefined;
+    const triageCard = ALL_CARDS.find(card => card.id === selectedBoardCardId);
+    if (triageCard) return triageCardToCardDetail(triageCard);
+    const boardCard = backgroundBoardCards.find(card => card.id === selectedBoardCardId);
+    return boardCard ? boardCardToCardDetail(boardCard) : undefined;
+  }, [selectedBoardCardId]);
 
   useEffect(() => {
     const applyHash = () => {
@@ -161,7 +177,7 @@ export function HomePlannerTriageMockup() {
       if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-      if (document.querySelector("dialog[open]")) return;
+      if (document.querySelector('[data-slot="dialog-popup"], [data-testid="v3-card-workspace"]')) return;
       if (event.key === "ArrowDown" || event.key === "j") {
         event.preventDefault();
         move(1);
@@ -179,27 +195,46 @@ export function HomePlannerTriageMockup() {
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
-  const shelve = (card: TriageCard) => {
+  const selectNext = (card: TriageCard) => {
     const index = visiblePending.findIndex(item => item.id === card.id);
-    setCardStates(prev => ({ ...prev, [card.id]: "watched" }));
-    setUndoCard(card);
     const rest = visiblePending.filter(item => item.id !== card.id);
     const next = rest[Math.min(Math.max(index, 0), rest.length - 1)];
     setSelectedId(next?.id ?? null);
   };
 
-  const undo = () => {
-    if (!undoCard) return;
-    setCardStates(prev => ({ ...prev, [undoCard.id]: "pending" }));
-    setSelectedId(undoCard.id);
-    setUndoCard(null);
+  const shelve = (card: TriageCard) => {
+    setCardStates(prev => ({ ...prev, [card.id]: "watched" }));
+    setUndo({
+      message: `#${card.number} 카드를 지켜보는 중 선반으로 옮겼습니다.`,
+      previous: { [card.id]: "pending" },
+    });
+    selectNext(card);
+  };
+
+  const undoLast = () => {
+    if (!undo) return;
+    setCardStates(prev => ({ ...prev, ...undo.previous }));
+    const first = Object.keys(undo.previous)[0];
+    if (first) setSelectedId(first);
+    setUndo(null);
   };
 
   const complete = (card: TriageCard) => {
     setCardStates(prev => ({ ...prev, [card.id]: "done" }));
-    setUndoCard(null);
-    const rest = visiblePending.filter(item => item.id !== card.id);
-    setSelectedId(rest[0]?.id ?? null);
+    setUndo({
+      message: `#${card.number} 카드를 완료로 옮겼습니다.`,
+      previous: { [card.id]: cardStates[card.id] ?? "pending" },
+    });
+    selectNext(card);
+  };
+
+  const answer = (card: TriageCard) => {
+    setCardStates(prev => ({ ...prev, [card.id]: "done" }));
+    setUndo({
+      message: `#${card.number} 질문에 답하고 완료로 옮겼습니다.`,
+      previous: { [card.id]: "pending" },
+    });
+    selectNext(card);
   };
 
   const completeAllWatched = () => {
@@ -208,21 +243,16 @@ export function HomePlannerTriageMockup() {
       for (const card of watched) next[card.id] = "done";
       return next;
     });
+    setUndo({
+      message: `지켜보는 카드 ${watched.length}건을 완료로 옮겼습니다.`,
+      previous: Object.fromEntries(watched.map(card => [card.id, "watched" as const])),
+    });
     setShelfOpen(false);
-    setUndoCard(null);
   };
 
   const primary = (card: TriageCard) => complete(card);
 
-  const answer = (card: TriageCard) => complete(card);
-
-  const openCard = (id: string) => {
-    const card = ALL_CARDS.find(item => item.id === id);
-    if (!card || cardStates[card.id] !== "pending") return;
-    setSelectedId(id);
-    navigate("triage");
-    setMobileTab("triage");
-  };
+  const openBoardCard = (id: string) => setSelectedBoardCardId(id);
 
   const draft = selected ? drafts[selected.id] ?? "" : "";
   const messages = selected ? [...selected.session.messages, ...(extraMessages[selected.id] ?? [])] : [];
@@ -243,7 +273,12 @@ export function HomePlannerTriageMockup() {
     setDrafts(prev => ({ ...prev, [selected.id]: "" }));
   };
 
-  const emptyState = <div className="v3-ht-empty"><p>이 폴더에 보여 줄 카드가 없습니다.</p><p>다른 폴더를 고르세요.</p></div>;
+  const emptyState = (
+    <div className="v3-ht-empty">
+      <p>{folder ? "이 폴더에 보여 줄 카드가 없습니다." : "확인할 안건을 모두 처리했습니다."}</p>
+      <p>{folder ? "다른 폴더를 고르세요." : "지켜보는 중 선반에서 남은 카드를 마저 처리할 수 있습니다."}</p>
+    </div>
+  );
 
   return (
     <div
@@ -304,21 +339,22 @@ export function HomePlannerTriageMockup() {
                     onReopen={card => {
                       setCardStates(prev => ({ ...prev, [card.id]: "pending" }));
                       setSelectedId(card.id);
-                      setUndoCard(null);
+                      setUndo(null);
                     }}
                     onComplete={complete}
                     onCompleteAll={completeAllWatched}
-                    undo={undoCard}
-                    onUndo={undo}
+                    folderSelected={folder !== null}
+                    undo={undo}
+                    onUndo={undoLast}
                   />
                 ) : null}
                 {tab === "grid" ? (
-                  visiblePending.length === 0 ? emptyState
-                    : <PostItBoardGrid cards={visiblePending} onOpen={openCard} />
+                  visibleBoard.length === 0 ? emptyState
+                    : <PostItBoardGrid cards={visibleBoard} onOpen={openBoardCard} />
                 ) : null}
                 {tab === "board" ? (
                   visibleBoard.length === 0 ? emptyState
-                    : <KanbanBoard cards={visibleBoard} onOpen={openCard} />
+                    : <KanbanBoard cards={visibleBoard} onOpen={openBoardCard} />
                 ) : null}
               </div>
             </main>
@@ -346,6 +382,26 @@ export function HomePlannerTriageMockup() {
         <PasScreen reviewCount={reviewCount} onGoHome={() => navigate("triage")} />
       )}
       {view === "home" ? <MobileTabs active={mobileTab} onSelect={setMobileTab} /> : null}
+      {boardDetail ? (
+        <CardWorkspace
+          cardId={boardDetail.card.id}
+          sampleDetail={boardDetail}
+          folders={catalogFolders}
+          onClose={() => setSelectedBoardCardId(null)}
+          onCloseChat={() => setSelectedBoardCardId(null)}
+          onOpenSession={() => {}}
+          mobileMode={mobileMode}
+          mobileTab="task"
+          activeSession={undefined}
+          chatInputDisabled
+          historyEnabled={false}
+          sessionStreamActive={false}
+          sessionConnectionStatus="disconnected"
+          reconnectSession={() => {}}
+          onAcknowledgedReview={() => {}}
+          loadDisplaySettings={false}
+        />
+      ) : null}
     </div>
   );
 }

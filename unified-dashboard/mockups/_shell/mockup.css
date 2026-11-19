@@ -8,12 +8,12 @@
 @source "..";
 
 /* 시안이 화면 전체를 직접 세울 때(mountMockup 의 surface: "bare"):
-   운영의 유리 본문 틀을 벗기고 여백과 스크롤만 없앤다. 기존 시안의 기본값은 그대로다. */
-.v3-components-main.mockup-main--bare {
+   운영의 유리 본문 틀을 벗긴다. .v3-components-main 을 붙이지 않아
+   components-review.css 가 정하는 유리 표면 변수(--glass-chrome-surface-strong)도 상속하지 않는다. */
+.v3-mockup-bare {
+  width: 100%;
+  height: 100%;
   padding: 0;
   overflow: hidden;
   background: transparent;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }

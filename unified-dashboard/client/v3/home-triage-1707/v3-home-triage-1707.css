@@ -9,8 +9,8 @@
   --ht-gap: var(--v3-space-4);
   --ht-radius-pane: 24px;
   --ht-radius-control: 12px;
-  --ht-thumb-width: 128px;
-  --ht-thumb-height: 80px;
+  --v3-navigation-width: var(--ht-nav-width);
+  --v3-main-columns-outer-margin: var(--ht-outer);
   position: relative;
   height: 100%;
   overflow: hidden;
@@ -56,9 +56,16 @@
   --glass-chrome-surface-strong: color-mix(in srgb, var(--background) 72%, transparent);
 }
 
-.v3-ht-nav { margin: var(--ht-top) 0 var(--ht-outer) var(--ht-outer); }
+.v3-home-triage-1707 .v3-navigation.v3-ht-nav {
+  width: var(--ht-nav-width);
+  margin: var(--ht-top) 0 var(--ht-outer) var(--ht-outer);
+  --glass-chrome-surface-strong: color-mix(in srgb, var(--background) 72%, transparent);
+}
 .v3-ht-planner { margin: var(--ht-top) 0 var(--ht-outer); }
 .v3-ht-session { margin: var(--ht-top) var(--ht-outer) var(--ht-outer) 0; }
+
+.v3-ht-all-cards { width: 100%; }
+.v3-ht-all-cards[aria-pressed="true"] { background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--foreground); }
 
 /* 도구 막대의 PAS 진입. 운영 캡슐과 같은 높이와 모서리를 쓴다. */
 .v3-home-triage-1707 .v3-ht-pas-entry {
@@ -249,17 +256,7 @@
 .v3-ht-choice[data-recommended] { border-color: var(--v3-stroke-selected); }
 .v3-ht-choice-hint { color: var(--v3-accent); font: var(--v3-type-meta) var(--v3-font-family); }
 
-.v3-ht-choice-direct {
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--v3-accent);
-  font: var(--v3-type-meta) var(--v3-font-family);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
+.v3-ht-direct-row { display: flex; align-items: center; gap: var(--v3-space-2); }
 
 .v3-ht-items { display: flex; flex-direction: column; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
 
@@ -280,33 +277,36 @@
 .v3-ht-item[data-state="changed"] .v3-ht-item-state { color: var(--v3-favorite); }
 .v3-ht-item[data-state="todo"] .v3-ht-item-state { color: var(--v3-error); }
 
-.v3-ht-evidence { display: flex; flex-wrap: wrap; gap: var(--v3-space-3); }
+.v3-ht-evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--v3-space-3); }
 
 .v3-ht-evidence-thumb {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: var(--v3-space-1);
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: var(--v3-space-2);
+  border: 1px solid var(--v3-stroke-default);
+  border-radius: var(--v3-space-2);
+  background: var(--v3-glass-detail);
   color: var(--v3-text-secondary);
-  font: var(--v3-type-meta) var(--v3-font-family);
   text-align: left;
   cursor: pointer;
 }
 
+.v3-ht-evidence-thumb:hover { border-color: var(--v3-stroke-hover); }
+
 .v3-ht-thumb {
   display: block;
-  width: var(--ht-thumb-width);
-  height: var(--ht-thumb-height);
-  padding: var(--v3-space-1);
-  border: 1px solid var(--v3-stroke-default);
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: var(--v3-space-2);
   border-radius: var(--v3-space-2);
   background: var(--persistent-session-paper);
   overflow: hidden;
 }
 
-.v3-ht-thumb-label { max-width: var(--ht-thumb-width); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.v3-ht-thumb .v3-ht-diagram { font-size: 14px; }
+.v3-ht-thumb-label { overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); white-space: nowrap; text-overflow: ellipsis; }
 
 .v3-ht-actions { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }
 
@@ -428,42 +428,33 @@
 .v3-ht-session-empty { display: grid; place-items: center; flex: 1; padding: var(--v3-space-6); color: var(--v3-text-secondary); text-align: center; }
 .v3-ht-session-empty p { margin: 0; font: var(--v3-type-body) var(--v3-font-family); }
 
-/* 입력창 */
-.v3-ht-composer { display: flex; align-items: flex-end; gap: var(--v3-space-2); padding: var(--v3-space-3) var(--v3-space-4) var(--v3-space-4); border-top: 1px solid var(--v3-stroke-default); }
-
-.v3-ht-composer textarea {
-  flex: 1;
-  min-width: 0;
-  min-height: var(--v3-action-size);
-  max-height: calc(var(--v3-space-8) * 4);
-  padding: var(--v3-space-2) var(--v3-space-3);
-  border: 1px solid var(--v3-stroke-default);
-  border-radius: var(--ht-radius-control);
-  background: var(--v3-glass-dense);
-  color: var(--foreground);
-  font: var(--v3-type-body) var(--v3-font-family);
-  line-height: var(--v3-space-5);
-  resize: none;
+/* 입력창. 정본 ChatInputComposer 를 감싸고, 발행 화면의 고정 코멘트 단추 자리를 비운다. */
+.v3-ht-composer {
+  padding: var(--v3-space-3) var(--v3-space-4) var(--v3-space-4);
+  padding-inline-end: 116px;
+  border-top: 1px solid var(--v3-stroke-default);
 }
 
-.v3-ht-composer textarea:focus-visible { border-color: var(--v3-stroke-selected); }
+.v3-ht-composer [data-slot="chat-input-composer"] { width: 100%; }
 
-/* 근거 크게 보기 대화상자 */
+/* 근거 크게 보기 대화상자. 정본 DialogPopup 이 가운데에 세운다. */
 .v3-ht-dialog {
-  width: min(720px, calc(100vw - var(--v3-space-6) * 2));
-  max-height: calc(100dvh - var(--v3-space-6) * 2);
-  padding: 0;
-  border: 1px solid var(--v3-stroke-default);
+  width: 100%;
+  max-width: min(720px, calc(100vw - 2rem));
   border-radius: var(--ht-radius-pane);
   color: var(--foreground);
 }
 
-.v3-ht-dialog::backdrop { background: color-mix(in srgb, var(--background) 64%, transparent); backdrop-filter: blur(2px); }
-.v3-ht-dialog-body { display: flex; flex-direction: column; gap: var(--v3-space-3); padding: var(--v3-space-4); }
-.v3-ht-dialog-head { display: flex; align-items: flex-start; gap: var(--v3-space-3); }
+.v3-ht-dialog-head {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--v3-space-3);
+  padding: var(--v3-space-4);
+}
 .v3-ht-dialog-head > div { flex: 1; min-width: 0; }
-.v3-ht-dialog-head h2 { margin: 0; font: var(--v3-type-section) var(--v3-font-family); }
-.v3-ht-dialog-head p { margin: var(--v3-space-1) 0 0; color: var(--muted-foreground); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-ht-dialog-head [data-slot="dialog-title"] { font: var(--v3-type-section) var(--v3-font-family); }
+.v3-ht-dialog-head [data-slot="dialog-description"] { margin-top: var(--v3-space-1); color: var(--muted-foreground); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-ht-dialog-body { display: flex; flex-direction: column; gap: var(--v3-space-3); padding: 0 var(--v3-space-4) var(--v3-space-4); }
 
 .v3-ht-evidence-canvas {
   width: 100%;
@@ -525,12 +516,14 @@
 .v3-home-triage-1707 .v3-mobile-tabs { display: none; }
 
 @media (max-width: 900px) {
-  .v3-home-triage-1707 .v3-ht-panes { display: flex; flex-direction: column; padding-bottom: 58px; }
+  /* 코멘트 단추(아래 16px, 높이 64px)가 탭 줄 위로 22px 솟으므로 그만큼 더 비운다. */
+  .v3-home-triage-1707 .v3-ht-panes { display: flex; flex-direction: column; padding-bottom: 68px; }
   .v3-home-triage-1707 .v3-ht-slot { display: none; }
   .v3-home-triage-1707 .v3-ht-slot.is-mobile-active { display: flex; flex: 1; min-height: 0; }
-  .v3-home-triage-1707 .v3-ht-nav,
+  .v3-home-triage-1707 .v3-navigation.v3-ht-nav { display: flex; width: auto; margin: 72px 14px 12px; }
   .v3-home-triage-1707 .v3-ht-planner,
   .v3-home-triage-1707 .v3-ht-session { margin: 72px 14px 12px; border-radius: 20px; }
+  .v3-home-triage-1707 .v3-navigation.v3-ht-nav { border-radius: 20px; }
 
   .v3-home-triage-1707 .v3-ht-planner-head { flex-direction: column; align-items: flex-start; gap: var(--v3-space-2); padding: var(--v3-space-4) var(--v3-space-4) var(--v3-space-2); }
   .v3-home-triage-1707 .v3-ht-switch { width: 100%; }
@@ -560,6 +553,8 @@
     display: grid;
     height: 58px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* 발행 검수 하네스의 고정 코멘트 단추(112x64, 오른쪽 16px)가 탭을 덮지 않게 비운다. */
+    padding-inline-end: 132px;
     border-radius: 0;
   }
 
@@ -572,12 +567,16 @@
     gap: calc(var(--v3-space-1) / 2);
     border: 0;
     background: transparent;
-    color: var(--muted-foreground);
+    color: var(--v3-text-secondary);
     font: var(--v3-type-meta) var(--v3-font-family);
     cursor: pointer;
   }
 
-  .v3-home-triage-1707 .v3-mobile-tab.is-active { color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .v3-home-triage-1707 .v3-mobile-tab.is-active {
+    color: var(--foreground);
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    box-shadow: inset 0 2px 0 0 var(--primary);
+  }
 }
 
 @media (max-width: 560px) {

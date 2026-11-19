@@ -1,5 +1,11 @@
 // 시안 C 의 견본 데이터. 회사 업무나 민감 정보 없이 화면 구조만 확인한다.
-import type { CardColor } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
+import type {
+  CardCheckItem,
+  CardColor,
+  CardDetail,
+  CardRow,
+} from "@seosoyoung/soul-ui/cards/card-types";
 
 export type TriageTone = "question" | "review" | "running" | "blocked" | "done" | "queued" | "open";
 export type TriageKind = "질문" | "검수 대기" | "부탁" | "관찰";
@@ -98,8 +104,10 @@ export interface BoardCard {
   folderLabel: string;
   status: BoardStatus;
   color: CardColor;
-  assigneeName: string;
-  assigneeEmoji: string;
+  agentId: string;
+  agentName: string;
+  node: string;
+  portraitUrl: string;
   activity: string;
 }
 
@@ -113,6 +121,17 @@ export const mockupFolders: readonly FolderEntry[] = [
   { id: "dashboard", name: "🖥️ 대시보드", count: 11 },
   { id: "misc", name: "📦 미분류", count: 9 },
 ];
+
+/** 정본 ProjectNavigationTree 와 CardDetailPane 이 쓰는 폴더 목록. */
+export const catalogFolders: readonly CatalogFolder[] = mockupFolders.map((folder, index) => ({
+  id: folder.id,
+  name: folder.name,
+  sortOrder: index,
+  parentFolderId: null,
+  status: "open",
+  version: 1,
+  archived: false,
+}));
 
 export const MOCK_TODAY = "2026-11-19";
 
@@ -161,7 +180,7 @@ const kiki: TriageSession = {
 };
 
 const ariella: TriageSession = {
-  agentName: "아리에라",
+  agentName: "아리엘라",
   agentId: "ariella",
   preset: "gpt-5.1-codex",
   node: "silent-manari-ts",
@@ -246,7 +265,7 @@ const watcherContext: TriageSession = {
 };
 
 const watcherSystem: TriageSession = {
-  agentName: "아리에라",
+  agentName: "아리엘라",
   agentId: "ariella",
   preset: "gpt-5.1-codex",
   node: "silent-manari-ts",
@@ -482,20 +501,28 @@ const doneTitles = [
   "보드 스크롤 그림자",
 ] as const;
 
-const agents: readonly [string, string, string][] = [
-  ["로젤린", "🗡️", "deepseek-flash-4.1"],
-  ["키키", "🐈", "claude-sonnet-4.5"],
-  ["아리에라", "🦋", "gpt-5.1-codex"],
-  ["세라피엘", "🪽", "claude-opus-4.5"],
+const boardAgents: readonly { agentName: string; agentId: string; node: string }[] = [
+  { agentName: "로젤린", agentId: "roselin", node: "eiaserinnys" },
+  { agentName: "키키", agentId: "kiki", node: "eias-linegames" },
+  { agentName: "아리엘라", agentId: "ariella", node: "silent-manari-ts" },
+  { agentName: "세라피엘", agentId: "selaphiel", node: "eias-linegames-wsl" },
 ];
 
 function folderName(folderId: string): string {
   return mockupFolders.find(folder => folder.id === folderId)?.name ?? "📦 미분류";
 }
 
+function boardAgent(index: number): typeof boardAgents[number] {
+  return boardAgents[index % boardAgents.length]!;
+}
+
+function agentPortrait(agentId: string, node: string): string {
+  return `/api/nodes/${node}/agents/${agentId}/portrait`;
+}
+
 export const backgroundBoardCards: readonly BoardCard[] = [
   ...boardTitles.map(([number, title, folderId, status, color], index) => {
-    const [name, emoji] = agents[index % agents.length]!;
+    const agent = boardAgent(index);
     return {
       id: `board-${number}`,
       number,
@@ -504,35 +531,47 @@ export const backgroundBoardCards: readonly BoardCard[] = [
       folderLabel: folderName(folderId),
       status,
       color,
-      assigneeName: name,
-      assigneeEmoji: emoji,
+      agentId: agent.agentId,
+      agentName: agent.agentName,
+      node: agent.node,
+      portraitUrl: agentPortrait(agent.agentId, agent.node),
       activity: "최근 실행 기록을 확인했습니다.",
     };
   }),
-  ...holdTitles.map((title, index) => ({
-    id: `hold-${index + 1}`,
-    number: 1560 + index,
-    title,
-    folderId: "misc",
-    folderLabel: folderName("misc"),
-    status: "on_hold" as const,
-    color: "lavender" as const,
-    assigneeName: "로젤린",
-    assigneeEmoji: "🗡️",
-    activity: "보류 이유를 적어 두었습니다.",
-  })),
-  ...doneTitles.map((title, index) => ({
-    id: `done-${index + 1}`,
-    number: 1540 + index,
-    title,
-    folderId: index % 2 === 0 ? "dashboard" : "soulstream",
-    folderLabel: folderName(index % 2 === 0 ? "dashboard" : "soulstream"),
-    status: "done" as const,
-    color: "mint" as const,
-    assigneeName: "아리에라",
-    assigneeEmoji: "🦋",
-    activity: "완료 보고를 남겼습니다.",
-  })),
+  ...holdTitles.map((title, index) => {
+    const agent = boardAgent(0);
+    return {
+      id: `hold-${index + 1}`,
+      number: 1560 + index,
+      title,
+      folderId: "misc",
+      folderLabel: folderName("misc"),
+      status: "on_hold" as const,
+      color: "lavender" as const,
+      agentId: agent.agentId,
+      agentName: agent.agentName,
+      node: agent.node,
+      portraitUrl: agentPortrait(agent.agentId, agent.node),
+      activity: "보류 이유를 적어 두었습니다.",
+    };
+  }),
+  ...doneTitles.map((title, index) => {
+    const agent = boardAgent(2);
+    return {
+      id: `done-${index + 1}`,
+      number: 1540 + index,
+      title,
+      folderId: index % 2 === 0 ? "dashboard" : "soulstream",
+      folderLabel: folderName(index % 2 === 0 ? "dashboard" : "soulstream"),
+      status: "done" as const,
+      color: "mint" as const,
+      agentId: agent.agentId,
+      agentName: agent.agentName,
+      node: agent.node,
+      portraitUrl: agentPortrait(agent.agentId, agent.node),
+      activity: "완료 보고를 남겼습니다.",
+    };
+  }),
 ];
 
 export const pasMessages: readonly SessionMessage[] = [
@@ -540,6 +579,18 @@ export const pasMessages: readonly SessionMessage[] = [
   { id: "pas-2", role: "user", text: "질문 하나만 먼저 볼게요.", time: "03:14" },
   { id: "pas-3", role: "agent", text: "완료 목록 기간 칩의 기본값을 묻는 안건입니다. 홈에서 넘겨 보시면 담당 세션 기록까지 함께 보입니다.", time: "03:15" },
 ];
+
+export const pasSessionSummary: SessionSummary = {
+  agentSessionId: "mockup-seosoyoung",
+  status: "running",
+  eventCount: pasMessages.length,
+  agentId: "seosoyoung",
+  agentName: "서소영",
+  agentPortraitUrl: "/api/nodes/eias-linegames/agents/seosoyoung/portrait",
+  nodeId: "eias-linegames",
+  createdAt: `${MOCK_TODAY}T03:00:00Z`,
+  updatedAt: `${MOCK_TODAY}T03:15:00Z`,
+};
 
 export function boardStatusLabel(status: BoardStatus): string {
   switch (status) {
@@ -562,8 +613,170 @@ export function triageCardToBoardCard(card: TriageCard): BoardCard {
     folderLabel: card.folderLabel,
     status: card.boardStatus,
     color: card.color,
-    assigneeName: card.session.agentName,
-    assigneeEmoji: card.session.emoji,
+    agentId: card.session.agentId,
+    agentName: card.session.agentName,
+    node: card.session.node,
+    portraitUrl: card.session.portraitUrl,
     activity: card.items[0]?.result ?? "확인 항목을 정리했습니다.",
   };
+}
+
+function sessionStatus(session: TriageSession): SessionSummary["status"] {
+  if (session.status === "completed") return "completed";
+  if (session.status === "offline") return "unknown";
+  return "running";
+}
+
+/** 담당 세션 머리와 카드 초상이 같은 에이전트를 가리키도록 만든다. */
+export function triageSessionSummary(session: TriageSession): SessionSummary {
+  return {
+    agentSessionId: `mockup-${session.agentId}`,
+    status: sessionStatus(session),
+    eventCount: session.messages.length,
+    agentId: session.agentId,
+    agentName: session.agentName,
+    agentPortraitUrl: session.portraitUrl,
+    nodeId: session.node,
+    modelPreset: session.preset,
+    createdAt: `${MOCK_TODAY}T09:00:00Z`,
+    updatedAt: `${MOCK_TODAY}T09:30:00Z`,
+  };
+}
+
+export function boardCardSessionSummary(card: BoardCard): SessionSummary {
+  return {
+    agentSessionId: `mockup-${card.agentId}`,
+    status: "completed",
+    eventCount: 1,
+    agentId: card.agentId,
+    agentName: card.agentName,
+    agentPortraitUrl: card.portraitUrl,
+    nodeId: card.node,
+    createdAt: `${MOCK_TODAY}T09:00:00Z`,
+    updatedAt: `${MOCK_TODAY}T09:30:00Z`,
+  };
+}
+
+const CARD_TIME = `${MOCK_TODAY}T09:30:00Z`;
+
+function checkItem(
+  item: TriageItem,
+  id: number,
+): CardCheckItem {
+  const display = item.state === "done" ? "confirmed"
+    : item.state === "changed" ? "changed"
+      : item.state === "todo" ? "todo" : "dropped";
+  return {
+    id,
+    title: item.title,
+    state: item.state === "todo" || item.state === "caveat" ? "todo" : "done",
+    result: item.result,
+    evidence: [],
+    caveat: item.state === "caveat" ? item.result : null,
+    rev: 1,
+    confirmed: item.state === "done" || item.state === "changed" ? { at: CARD_TIME, rev: 1 } : null,
+    fixOpen: 0,
+    reopened: null,
+    from: null,
+    createdAt: CARD_TIME,
+    reportedAt: CARD_TIME,
+    display,
+  };
+}
+
+function cardRowBase(card: BoardCard, activity: string): CardRow {
+  return {
+    id: card.id,
+    number: card.number,
+    folderId: card.folderId,
+    title: card.title,
+    request: card.title,
+    brief: activity,
+    attachments: [],
+    status: card.status,
+    color: card.color,
+    blockedKind: card.status === "blocked" ? "question" : null,
+    blockedDetail: null,
+    positionKey: String(card.number),
+    queuePositionKey: null,
+    assigneeKind: "session",
+    assigneeAgentId: card.agentId,
+    assigneeUserId: null,
+    assigneeSessionId: `mockup-${card.agentId}`,
+    nodeId: card.node,
+    modelPreset: null,
+    version: 1,
+    archived: false,
+    createdAt: `${MOCK_TODAY}T09:00:00Z`,
+    updatedAt: CARD_TIME,
+    latestActivity: { kind: "report", body: activity, format: "markdown", createdAt: CARD_TIME },
+    items: [],
+    now: null,
+  };
+}
+
+export function boardCardToCardRow(card: BoardCard): CardRow {
+  return cardRowBase(card, card.activity);
+}
+
+export function triageCardToCardRow(card: TriageCard): CardRow {
+  const activity = card.items[0]?.result ?? card.scope;
+  return {
+    ...cardRowBase(triageCardToBoardCard(card), activity),
+    request: card.request,
+    brief: card.scope,
+    items: card.items.map((item, index) => checkItem(item, index + 1)),
+    now: card.question
+      ? { text: "질문에 답해 주세요", turn: "user", ask: card.question.intro, updatedAt: CARD_TIME, sessionId: null }
+      : null,
+  };
+}
+
+function linkedSession(card: CardRow, summary: SessionSummary) {
+  return {
+    sessionId: summary.agentSessionId,
+    cardId: card.id,
+    displayName: summary.agentName ?? null,
+    nodeId: card.nodeId!,
+    agentId: card.assigneeAgentId!,
+    status: summary.status,
+    createdAt: card.createdAt,
+    callerSessionId: null,
+    updatedAt: card.updatedAt,
+  };
+}
+
+function detailFor(card: CardRow, summary: SessionSummary, body: string): CardDetail {
+  return {
+    card,
+    reports: [{ id: `${card.id}-report`, title: "완료 보고", format: "markdown", body, createdAt: card.createdAt, sessionId: null }],
+    questions: [],
+    sessions: [linkedSession(card, summary)],
+    comments: [],
+    notes: [],
+    nowHistory: [],
+  };
+}
+
+export function triageCardToCardDetail(card: TriageCard): CardDetail {
+  const row = triageCardToCardRow(card);
+  const summary = triageSessionSummary(card.session);
+  const detail = detailFor(row, summary, card.items[0]?.result ?? card.scope);
+  return {
+    ...detail,
+    questions: card.question ? [{
+      id: `${card.id}-question`,
+      text: card.question.intro,
+      options: card.question.choices.map(choice => choice.label),
+      answer: null,
+      askedAt: row.createdAt,
+      answeredAt: null,
+    }] : [],
+  };
+}
+
+export function boardCardToCardDetail(card: BoardCard): CardDetail {
+  const row = boardCardToCardRow(card);
+  const summary = boardCardSessionSummary(card);
+  return detailFor(row, summary, card.activity);
 }
