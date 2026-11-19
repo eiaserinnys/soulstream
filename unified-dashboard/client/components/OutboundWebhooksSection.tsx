@@ -278,6 +278,7 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
                 {item.last_status !== null ? <span>응답 {item.last_status}</span> : item.last_error !== null ? <span>{lastErrorText(item.last_error)}</span> : null}
                 {item.state === 'pending' && <span>다음 시도 {formatClock(item.next_attempt_at)}</span>}
               </p>
+              {redeliverNotice?.id === item.id && <p className="webhooks-danger">{redeliverNotice.text}</p>}
             </div>
             {item.state === 'dead' && detail?.active === true && <Button
               ref={element => { if (element) redeliverButtons.current.set(item.id, element); else redeliverButtons.current.delete(item.id); }}
@@ -287,7 +288,6 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
               onClick={() => void redeliver(item)}
             >{redeliverBusy === item.id ? '보내는 중…' : '다시 보내기'}</Button>}
           </div>
-          {redeliverNotice?.id === item.id && <p className="webhooks-danger">{redeliverNotice.text}</p>}
         </div>;
       })}</>;
 
@@ -303,7 +303,7 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
         : <>{items.map(row)}</>}
 
     <Dialog open={creating} onOpenChange={open => { if (!open && !busy) closeCreate(); }} onOpenChangeComplete={open => { if (!open) { setCreated(null); setCopied(null); setCopyError(false); createButton.current?.focus(); } }}>
-      <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
+      <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
         <DialogHeader>
           <DialogTitle>{created ? '주소를 등록했습니다' : '나가는 웹훅 등록'}</DialogTitle>
           <DialogDescription>{created ? '서명 비밀은 지금 한 번만 보입니다. 닫기 전에 복사하세요.' : '등록한 주소는 대상 세션의 답변 전체를 받습니다.'}</DialogDescription>
@@ -342,7 +342,7 @@ export function OutboundWebhooksSection({ api, items, error, reload, names, sess
     </Dialog>
 
     <Dialog open={detail !== null} onOpenChange={open => { if (!open && !busy) closeDetail(); }} onOpenChangeComplete={open => { if (!open) (rowButtons.current.get(returnFocus.current) ?? createButton.current)?.focus(); }}>
-      <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }} initialFocus={selectedFilter}>
+      <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={selectedFilter}>
         {confirming ? <>
           <DialogHeader><DialogTitle>나가는 웹훅 삭제</DialogTitle><DialogDescription className="access-links-revoke-description">“{detail?.label}”로 더는 보내지 않고 전달 기록도 지웁니다.</DialogDescription></DialogHeader>
           {deleteError && <DialogPanel><SettingsAlert><span data-v3-selectable-content="true">지금은 삭제하지 못했습니다. 다시 시도하세요.</span></SettingsAlert></DialogPanel>}

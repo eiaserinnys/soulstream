@@ -224,11 +224,13 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
     : requests.length === 0
       ? <p className="access-links-empty">아직 받은 요청이 없습니다.</p>
       : <>{requests.map(item => <div className="owned-agents-block" key={item.request_id}>
-        <p className={`webhooks-record-title${item.status === 'failed' ? ' webhooks-danger' : ''}`}>{inboundRequestStatusLabel(item)}</p>
-        <p className="owned-agents-meta access-links-meta" data-v3-selectable-content="true">
-          <span>{formatClock(item.received_at)}</span>
-          <span className="webhooks-request-id" title={item.request_id}>{item.request_id}</span>
-        </p>
+        <div className="access-links-copy">
+          <p className={`webhooks-record-title${item.status === 'failed' ? ' webhooks-danger' : ''}`}>{inboundRequestStatusLabel(item)}</p>
+          <p className="owned-agents-meta access-links-meta" data-v3-selectable-content="true">
+            <span>{formatClock(item.received_at)}</span>
+            <span className="webhooks-request-id" title={item.request_id}>{item.request_id}</span>
+          </p>
+        </div>
       </div>)}</>;
 
   return <section className="webhooks-section" aria-label="들어오는 웹훅">
@@ -243,7 +245,7 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
         : <>{active.length > 0 ? active.map(item => row(item, false)) : <p className="access-links-empty">쓸 수 있는 웹훅이 없습니다.</p>}{past.length > 0 && <details className="config-advanced"><summary>지난 웹훅 <span>{past.length}</span></summary>{past.map(item => row(item, true))}</details>}</>}
 
     <Dialog open={creating} onOpenChange={open => { if (!open && !busy) closeCreate(); }} onOpenChangeComplete={open => { if (!open) { setIssued(null); setCopied(null); setCopyError(false); createButton.current?.focus(); } }}>
-      <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
+      <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={targetButton}>
         <DialogHeader>
           <DialogTitle>{issued ? '웹훅을 만들었습니다' : '들어오는 웹훅 만들기'}</DialogTitle>
           <DialogDescription>{issued
@@ -266,7 +268,7 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
           <CatalogSelectionField className="access-links-field" label="인증 방식" ariaLabel="인증 방식" value={authMode} selectedLabel={authModes.find(item => item.value === authMode)?.label} options={authModes} disabled={busy} onValueChange={value => setAuthMode(value as WebhookAuthMode)}/>
           <CatalogSelectionField className="access-links-field" label="기간" ariaLabel="기간" value={duration} selectedLabel={durations.find(item => item.value === duration)?.label} options={durations.map(item => ({ value: item.value, label: item.label }))} disabled={busy} onValueChange={setDuration}/>
           <details className="config-advanced"><summary>앞에 붙일 글<span>{preamble.trim() ? '직접 씀' : '기본'}</span></summary>
-            <SettingsMultilineField label="앞에 붙일 글" rows={3} maxLength={4000} placeholder={preamblePlaceholder(label)} value={preamble} onChange={setPreamble}/>
+            <SettingsMultilineField label="앞에 붙일 글" labelHidden rows={3} maxLength={4000} placeholder={preamblePlaceholder(label)} value={preamble} onChange={setPreamble}/>
             <p className="access-links-hint">비워 두면 기본 글을 씁니다.</p>
           </details>
           {formError && <SettingsAlert scrollIntoView><span data-v3-selectable-content="true">{formError}</span></SettingsAlert>}
@@ -278,7 +280,7 @@ export function InboundWebhooksSection({ api, items, error, reload, names, sessi
     </Dialog>
 
     <Dialog open={selected !== null} onOpenChange={open => { if (!open && !busy) closeDetail(); }} onOpenChangeComplete={open => { if (!open) (rowButtons.current.get(returnFocus.current) ?? createButton.current)?.focus(); }}>
-      <DialogPopup className="approved-dialog" closeProps={{ disabled: busy }} initialFocus={selected?.state === 'active' ? addressCopy : refreshButton}>
+      <DialogPopup className="approved-dialog webhooks-dialog" closeProps={{ disabled: busy }} initialFocus={selected?.state === 'active' ? addressCopy : refreshButton}>
         {confirming ? <>
           <DialogHeader><DialogTitle>웹훅 폐기</DialogTitle><DialogDescription className="access-links-revoke-description">“{selected?.label}”으로 들어오는 새 요청을 바로 막습니다. 이미 받은 요청의 작업은 이어집니다.</DialogDescription></DialogHeader>
           {revokeError && <DialogPanel><SettingsAlert><span data-v3-selectable-content="true">지금은 폐기하지 못했습니다. 다시 시도하세요.</span></SettingsAlert></DialogPanel>}

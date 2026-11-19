@@ -115,18 +115,19 @@ export function SettingsAlert({ children, scrollIntoView = false }: { children: 
  * 프로젝트 한 줄 입력 부품(soul-ui Input, inputControlClassName)의 표면 span도
  * 그리드 항목이라 같은 이유로 min-width를 0으로 둔다.
  */
-export function SettingsField({ label, children }: { label: string; children: ReactNode }) {
+export function SettingsField({ label, hideLabel = false, children }: { label: string; hideLabel?: boolean; children: ReactNode }) {
   return (
     <label className="grid min-w-0 gap-1 text-sm [&>input]:w-full [&>input]:min-w-0 [&>[data-slot=input-control]]:min-w-0">
-      <span className="text-muted-foreground">{label}</span>
+      <span className={hideLabel ? "sr-only" : "text-muted-foreground"}>{label}</span>
       {children}
     </label>
   );
 }
 
 /** 여러 줄 입력. 한 줄 입력(soul-ui Input)과 같은 표면과 포커스 모양을 쓰고 크기 조절은 끈다. */
-export function SettingsMultilineField({ label, value, rows = 5, placeholder, maxLength, onChange }: {
+export function SettingsMultilineField({ label, labelHidden = false, value, rows = 5, placeholder, maxLength, onChange }: {
   label: string;
+  labelHidden?: boolean;
   value: string;
   rows?: number;
   placeholder?: string;
@@ -134,7 +135,7 @@ export function SettingsMultilineField({ label, value, rows = 5, placeholder, ma
   onChange(value: string): void;
 }) {
   return (
-    <SettingsField label={label}>
+    <SettingsField label={label} hideLabel={labelHidden}>
       <span className={inputControlClassName} data-slot="input-control">
         <textarea
           aria-label={label}

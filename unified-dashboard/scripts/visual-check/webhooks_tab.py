@@ -36,6 +36,21 @@ SHARED = load_module('webhooks_shared', 'webhooks_shared.py')
 SESSIONS = SHARED.SESSIONS
 LONG_LABEL = SHARED.LONG_SENDER
 
+RECORD_TITLES = """() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+  return d ? [...d.querySelectorAll('.webhooks-record-title')].map(el => el.textContent.trim()) : []; }"""
+
+DIALOG_TYPE = """() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop(); if (!d) return null;
+  const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; document.body.appendChild(el); const color = getComputedStyle(el).color; el.remove(); return color; };
+  const cs = el => el ? getComputedStyle(el) : null;
+  const value = d.querySelector('.webhooks-value > .owned-agents-meta');
+  const meta = d.querySelector('.owned-agents-block .owned-agents-meta, .owned-agents-key-row .owned-agents-meta');
+  const status = d.querySelector('[role=status]');
+  return {valueSize: cs(value)?.fontSize ?? null, valueColor: cs(value)?.color ?? null,
+    metaSize: cs(meta)?.fontSize ?? null, metaColor: cs(meta)?.color ?? null,
+    statusGap: status ? getComputedStyle(status).rowGap : null,
+    muted: probe('--muted-foreground'),
+    danger: probe('--destructive-foreground')}; }"""
+
 WORDS = '''root => { const out = []; const roots = root ? [document.querySelector(root)] : [...document.querySelectorAll('.webhooks, [role=dialog][data-open]')].slice(-1);
           for (const r of roots) { if (!r) continue; const walker = document.createTreeWalker(r, NodeFilter.SHOW_TEXT);
             let n; while ((n = walker.nextNode())) { const el = n.parentElement; const s = getComputedStyle(el);
@@ -175,12 +190,14 @@ def main():
                       if (clipped && clipped !== root) return false;
                       return b.left < r.left - 1 || b.right > r.right + 1;
                     }).map(el => ({tag:el.tagName, cls:String(el.className).slice(0,80), left:el.getBoundingClientRect().left, right:el.getBoundingClientRect().right}));
-                    return {title:root.querySelector('[data-slot=dialog-title]')?.textContent || '웹훅', left:r.left, right:r.right, scroll:root.scrollWidth, client:root.clientWidth, escaped:escaped.slice(0,20)};
+                    // 행 단추는 시안 2절 1대로 좌우 8px 씩 밖으로 나가는 것이 정상이다. 그만큼만 scrollWidth 초과를 봐준다.
+                    const bleed = Math.max(0, ...[...root.querySelectorAll('.webhooks-row')].map(el => el.getBoundingClientRect().right - r.right));
+                    return {title:root.querySelector('[data-slot=dialog-title]')?.textContent || '웹훅', left:r.left, right:r.right, scroll:root.scrollWidth, client:root.clientWidth, bleed, overflowed:root.scrollWidth > root.clientWidth + 1 + bleed, escaped:escaped.slice(0,20)};
                   });
                   return {page:document.documentElement.scrollWidth, viewport:document.documentElement.clientWidth, bounds};
                 }""")
                 measurements[name] = result
-                if result['page'] > result['viewport'] + 1 or any(x['scroll'] > x['client'] + 1 or x['escaped'] for x in result['bounds']):
+                if result['page'] > result['viewport'] + 1 or any(x['overflowed'] or x['escaped'] for x in result['bounds']):
                     problems.append(name + ': 가로 넘침')
 
             def check_words(name, root=None):
@@ -188,6 +205,18 @@ def main():
                 measurements[name] = split_words
                 if split_words:
                     problems.append(name + ': 낱말 가운데 줄바꿈')
+
+            def expect_dialog_type(name, *, value=False, meta=False, status=False):
+                data = page.evaluate(DIALOG_TYPE)
+                measurements[name] = data
+                if value:
+                    if data['valueSize'] != '14px' or data['valueColor'] != data['muted']:
+                        problems.append(f'{name}: 값 행 이름이 14px 보조색이 아님')
+                if meta:
+                    if data['metaSize'] != '12px' or data['metaColor'] != data['muted']:
+                        problems.append(f'{name}: 기록 둘째 줄이 12px 보조색이 아님')
+                if status and data['statusGap'] != '16px':
+                    problems.append(f'{name}: 뼈대 두 칸 사이가 16px이 아님')
 
             def choose(label, field='대상 세션'):
                 page.get_by_role('combobox', name=field).click()
@@ -238,13 +267,34 @@ def main():
                 state.update(SHARED.initial_state())
                 open_tab(width)
                 shot(f'tab-{width}-closed')
+                geom = page.evaluate("""() => {
+                  const rect = el => { const b = el.getBoundingClientRect(); return {l: Math.round(b.left * 10) / 10, r: Math.round(b.right * 10) / 10}; };
+                  const section = document.querySelector('.webhooks-section');
+                  const block = section.querySelector('.owned-agents-block');
+                  const row = block.querySelector('.webhooks-row');
+                  return {block: rect(block), row: rect(row), chevron: rect(row.querySelector('.webhooks-chevron')),
+                    create: rect(section.querySelector('.owned-agents-row button'))}; }""")
+                measurements[f'row-geometry-{width}'] = geom
+                if abs(geom['row']['l'] - (geom['block']['l'] - 8)) > 1 or abs(geom['row']['r'] - (geom['block']['r'] + 8)) > 1:
+                    problems.append(f'{width}: 행 단추가 양쪽 8px 밖으로 나가지 않음')
+                if abs(geom['chevron']['r'] - geom['create']['r']) > 1:
+                    problems.append(f'{width}: 화살표 오른쪽 끝선이 만들기 단추 끝선과 다름')
                 if width == 360:
                     check_words(f'words-tab-{width}-closed', '.webhooks')
                 page.get_by_text('지난 웹훅', exact=False).first.click()
                 shot(f'tab-{width}-expanded')
                 if width == 360:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.wait_for_timeout(200)
+                    scrolled = page.evaluate("""() => {
+                      const section = document.querySelectorAll('.webhooks-section')[1];
+                      section.scrollIntoView({block: 'end'});
+                      const moved = []; let el = section.parentElement;
+                      while (el) { if (el.scrollTop) moved.push({cls: String(el.className).slice(0, 60), top: el.scrollTop}); el = el.parentElement; }
+                      return moved; }""")
+                    page.wait_for_timeout(300)
+                    visible = page.locator('.webhooks-section').nth(1).evaluate("el => { const b = el.getBoundingClientRect(); return b.top >= -1 && b.bottom <= innerHeight + 1; }")
+                    measurements[f'tab-{width}-bottom'] = {'scrolled': scrolled, 'visible': visible}
+                    if not scrolled or not visible:
+                        problems.append(f'{width}: 나가는 웹훅 목록까지 스크롤 칸을 내리지 못함')
                     shot(f'tab-{width}-bottom')
                     overflow(f'tab-{width}')
                     check_words(f'words-tab-{width}-expanded', '.webhooks')
@@ -258,12 +308,43 @@ def main():
                 page.get_by_label('세션 ID').blur()
                 page.get_by_text('세션 ID 형식이 아닙니다.').wait_for()
                 shot(f'inbound-create-{width}-id-invalid')
+                error_color = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; document.body.appendChild(el);
+                    const color = getComputedStyle(el).color; el.remove(); return color; };
+                  const alert = d.querySelector('small[role=alert]');
+                  return {alert: alert ? getComputedStyle(alert).color : null, token: probe('--destructive-foreground')}; }""")
+                measurements[f'inbound-error-color-{width}'] = error_color
+                if error_color['alert'] != error_color['token']:
+                    problems.append(f'{width}: 칸 아래 오류 색이 --destructive-foreground 와 다름')
+                if width == 1440:
+                    page.evaluate("() => document.documentElement.classList.add('dark')")
+                    page.wait_for_timeout(150)
+                    dark_color = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                      const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; document.body.appendChild(el);
+                        const color = getComputedStyle(el).color; el.remove(); return color; };
+                      const alert = d.querySelector('small[role=alert]');
+                      return {alert: alert ? getComputedStyle(alert).color : null, token: probe('--destructive-foreground')}; }""")
+                    measurements['inbound-error-color-dark'] = dark_color
+                    if dark_color['alert'] != dark_color['token']:
+                        problems.append('다크: 칸 아래 오류 색이 --destructive-foreground 와 다름')
+                    shot('inbound-create-1440-id-invalid-dark')
+                    page.evaluate("() => document.documentElement.classList.remove('dark')")
+                    page.wait_for_timeout(150)
                 page.get_by_label('세션 ID').fill(SESSIONS[0]['session_id'])
                 page.get_by_label('발신자 이름').fill('검수용 발신자')
                 choose('서명 (Standard Webhooks)', '인증 방식')
                 choose('1년', '기간')
                 page.get_by_text('앞에 붙일 글', exact=False).first.click()
                 shot(f'inbound-create-{width}-preamble-empty')
+                label_state = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const label = [...d.querySelectorAll('.config-advanced > label > span')].find(el => el.textContent.trim() === '앞에 붙일 글');
+                  const box = label?.getBoundingClientRect();
+                  return {found: Boolean(label), srOnly: Boolean(label?.classList.contains('sr-only')),
+                    width: box?.width ?? null, height: box?.height ?? null,
+                    textarea: Boolean(d.querySelector('textarea[aria-label="앞에 붙일 글"]'))}; }""")
+                measurements[f'preamble-label-{width}'] = label_state
+                if not (label_state['found'] and label_state['srOnly'] and (label_state['width'] or 0) <= 1 and label_state['textarea']):
+                    problems.append(f'{width}: 앞에 붙일 글 칸 이름이 보이거나 접근 이름이 없음')
                 page.get_by_label('앞에 붙일 글').fill('외부에서 온 자료입니다.')
                 shot(f'inbound-create-{width}-filled')
                 if width == 360:
@@ -284,6 +365,7 @@ def main():
                 dialog().locator('.owned-agents-token').first.wait_for()
                 wait_focus("() => document.activeElement?.getAttribute('aria-label') === '서명 비밀 복사'")
                 expect_focus(f'inbound-secret-focus-{width}', label='서명 비밀 복사', title='웹훅을 만들었습니다')
+                expect_dialog_type(f'inbound-secret-type-{width}', value=True)
                 shot(f'inbound-secret-{width}-signature')
                 if width == 360:
                     overflow(f'inbound-secret-{width}')
@@ -327,6 +409,20 @@ def main():
                 for text in ['접수됨', '처리 중', '마감 없이 멈춤', '완료', '전달 실패']:
                     if not page.get_by_text(text, exact=True).first.is_visible():
                         problems.append(f'{width}: 요청 상태 {text} 없음')
+                expect_dialog_type(f'inbound-detail-type-{width}', value=True, meta=True)
+                detail_geom = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const rect = el => el?.getBoundingClientRect();
+                  const headRow = d.querySelector('.webhooks-records-head')?.parentElement;
+                  const refresh = headRow?.querySelector('button');
+                  const title = d.querySelector('.webhooks-record-title');
+                  const meta = title?.parentElement?.querySelector('.owned-agents-meta');
+                  return {rightDiff: headRow && refresh ? rect(headRow).right - rect(refresh).right : null,
+                    lineGap: title && meta ? rect(meta).top - rect(title).bottom : null}; }""")
+                measurements[f'inbound-detail-geometry-{width}'] = detail_geom
+                if detail_geom['rightDiff'] is None or abs(detail_geom['rightDiff']) > 1:
+                    problems.append(f'{width}: 최근 요청 새로 고침이 오른쪽 끝선에 붙지 않음')
+                if detail_geom['lineGap'] is None or abs(detail_geom['lineGap']) > 1:
+                    problems.append(f'{width}: 요청 항목 두 줄 간격이 전달 항목과 다름')
                 shot(f'inbound-detail-{width}')
                 if width == 360:
                     overflow(f'inbound-detail-{width}')
@@ -401,6 +497,7 @@ def main():
                 dialog().get_by_role('button', name='등록', exact=True).click()
                 dialog().locator('.owned-agents-token').first.wait_for()
                 wait_focus("() => document.activeElement?.getAttribute('aria-label') === '서명 비밀 복사'")
+                expect_dialog_type(f'outbound-secret-type-{width}', value=True)
                 shot(f'outbound-secret-{width}')
                 if width == 360:
                     overflow(f'outbound-secret-{width}')
@@ -410,15 +507,45 @@ def main():
                 open_row('요약 받는 주소')
                 wait_focus("() => document.activeElement?.textContent?.trim() === '전체'")
                 expect_focus(f'outbound-detail-focus-{width}', text='전체', title='요약 받는 주소', pressed='true')
+                dialog().locator('.webhooks-record-title').first.wait_for()
+                expect_dialog_type(f'outbound-detail-type-{width}', meta=True)
+                outbound_geom = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const rect = el => el?.getBoundingClientRect();
+                  const switchRow = d.querySelector('.webhooks-switch-name')?.parentElement;
+                  const toggle = d.querySelector('[role=switch]');
+                  const filterRow = d.querySelector('.webhooks-filter-row');
+                  const refresh = filterRow?.querySelector('button[aria-label="새로 고침"]');
+                  const title = d.querySelector('.webhooks-record-title');
+                  const meta = title?.parentElement?.querySelector('.owned-agents-meta');
+                  return {switchRightDiff: switchRow && toggle ? rect(switchRow).right - rect(toggle).right : null,
+                    refreshRightDiff: filterRow && refresh ? rect(filterRow).right - rect(refresh).right : null,
+                    lineGap: title && meta ? rect(meta).top - rect(title).bottom : null}; }""")
+                measurements[f'outbound-detail-geometry-{width}'] = outbound_geom
+                if outbound_geom['switchRightDiff'] is None or abs(outbound_geom['switchRightDiff']) > 1:
+                    problems.append(f'{width}: 소식 보내기 스위치가 오른쪽 끝선에 붙지 않음')
+                if outbound_geom['refreshRightDiff'] is None or abs(outbound_geom['refreshRightDiff']) > 1:
+                    problems.append(f'{width}: 전달 기록 새로 고침이 오른쪽 끝선에 붙지 않음')
+                if outbound_geom['lineGap'] is None or abs(outbound_geom['lineGap']) > 1:
+                    problems.append(f'{width}: 전달 항목 두 줄 간격이 요청 항목과 다름')
                 shot(f'outbound-detail-{width}')
                 if width == 360:
                     overflow(f'outbound-detail-{width}')
                 dialog().get_by_role('button', name='실패', exact=True).click()
-                page.wait_for_timeout(300)
+                page.wait_for_function("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  return Boolean(d) && d.querySelectorAll('.webhooks-record-title').length === 2; }""", timeout=10000)
+                dead_titles = page.evaluate(RECORD_TITLES)
+                measurements[f'outbound-dead-rows-{width}'] = dead_titles
+                if len(dead_titles) != 2 or any(not title.endswith('실패') for title in dead_titles):
+                    problems.append(f'{width}: 실패 거름 목록이 2건이 아님: {dead_titles}')
                 shot(f'outbound-detail-{width}-dead')
                 state['redeliver'] = 'delivered'
                 dialog().get_by_role('button', name='다시 보내기').first.click()
-                page.wait_for_timeout(400)
+                page.wait_for_function("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  return Boolean(d) && d.querySelectorAll('.webhooks-record-title').length === 1; }""", timeout=15000)
+                remaining = page.evaluate(RECORD_TITLES)
+                measurements[f'outbound-redelivered-rows-{width}'] = remaining
+                if remaining != ['답변실패']:
+                    problems.append(f'{width}: 다시 보낸 건이 실패 거름에서 빠지지 않음: {remaining}')
                 shot(f'outbound-detail-{width}-redelivered')
                 state['patch'] = 503
                 dialog().get_by_role('switch', name='소식 보내기').click()
@@ -438,6 +565,19 @@ def main():
                 page.get_by_text('연속으로 20번 실패해 꺼졌습니다.').wait_for()
                 if dialog().get_by_role('button', name='다시 보내기').count():
                     problems.append(f'{width}: 꺼진 구독에 다시 보내기 단추')
+                keep = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const cs = el => el ? getComputedStyle(el) : null;
+                  const reason = d.querySelector('p.webhooks-danger');
+                  const hint = d.querySelector('.access-links-hint');
+                  return {reasonBreak: cs(reason)?.wordBreak ?? null, hintBreak: cs(hint)?.wordBreak ?? null,
+                    reasonSize: cs(reason)?.fontSize ?? null}; }""")
+                measurements[f'outbound-disabled-keep-{width}'] = keep
+                if keep['reasonBreak'] != 'keep-all' or keep['hintBreak'] != 'keep-all':
+                    problems.append(f'{width}: 꺼진 사유와 안내 줄에 keep-all 이 걸리지 않음')
+                if keep['reasonSize'] != '12px':
+                    problems.append(f'{width}: 꺼진 사유 줄이 12px 메타가 아님')
+                if width == 360:
+                    check_words(f'words-outbound-detail-{width}-disabled')
                 shot(f'outbound-detail-{width}-disabled')
                 close_detail()
 
@@ -453,17 +593,27 @@ def main():
                 expect_focus(f'deleted-focus-{width}', row='꺼진 수집기')
                 shot(f'delete-{width}-done')
 
+                state['deliveries'] = SHARED.new_deliveries()
                 open_row('요약 받는 주소')
                 wait_focus("() => document.activeElement?.textContent?.trim() === '전체'")
                 dialog().get_by_role('button', name='대기', exact=True).click()
-                page.wait_for_timeout(300)
+                page.wait_for_function("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const rows = d ? [...d.querySelectorAll('.webhooks-record-title')] : [];
+                  return rows.length === 1 && rows[0].textContent.includes('대기'); }""", timeout=10000)
+                pending_rows = page.evaluate(RECORD_TITLES)
+                measurements[f'pending-rows-{width}'] = pending_rows
+                if len(pending_rows) != 1 or '대기' not in pending_rows[0]:
+                    problems.append(f'{width}: 대기 거름 목록이 1건이 아님: {pending_rows}')
                 next_width = 360 if width == 1440 else 1440
                 page.set_viewport_size({'width': next_width, 'height': 800 if next_width == 360 else 1000})
                 page.wait_for_timeout(300)
                 pressed = page.evaluate("() => [...document.querySelectorAll('[role=dialog][data-open] [aria-pressed]')].filter(el => el.getAttribute('aria-pressed') === 'true').map(el => el.textContent.trim())")
-                measurements[f'resize-{width}-to-{next_width}'] = {'pressed': pressed, 'focus': focus(page)}
+                resized_rows = page.evaluate(RECORD_TITLES)
+                measurements[f'resize-{width}-to-{next_width}'] = {'pressed': pressed, 'rows': resized_rows, 'focus': focus(page)}
                 if pressed != ['대기']:
                     problems.append(f'{width}→{next_width}: 거름 유지 안 됨')
+                if resized_rows != pending_rows:
+                    problems.append(f'{width}→{next_width}: 거른 목록 내용이 바뀜: {resized_rows}')
                 shot(f'resize-{width}-to-{next_width}')
                 overflow(f'resize-{width}-to-{next_width}')
                 if next_width == 360:
@@ -474,27 +624,28 @@ def main():
                 flow(1440 if args.phase == 'wide' else 360)
 
             if args.phase == 'states':
-                state.update(SHARED.initial_state())
-                state['inboundList'] = 'error'
-                open_tab(360, wait=None)
-                page.get_by_text('웹훅 목록을 불러오지 못했습니다.').wait_for()
-                if not page.get_by_text('요약 받는 주소').is_visible():
-                    problems.append('states: 한쪽 목록 오류에 다른 쪽이 사라짐')
-                shot('list-inbound-error-360')
-                state['inboundList'] = 'normal'
-                state['inbound'] = []
-                state['outbound'] = []
-                open_tab(360, wait='아직 만든 웹훅이 없습니다.')
-                page.get_by_text('아직 등록한 주소가 없습니다.').wait_for()
-                shot('list-empty-360')
-                state.update(SHARED.initial_state())
-                open_tab(360, extra='&webhooksDelay=1', wait=None)
-                page.get_by_role('status', name='불러오는 중').first.wait_for()
-                shot('list-loading-360')
-                page.get_by_role('status', name='불러오는 중').first.wait_for(state='hidden', timeout=10000)
-                state['outboundList'] = 'empty'
-                open_tab(360, wait='아직 등록한 주소가 없습니다.')
-                shot('list-outbound-empty-360')
+                for width in (1440, 360):
+                    state.update(SHARED.initial_state())
+                    state['inboundList'] = 'error'
+                    open_tab(width, wait=None)
+                    page.get_by_text('웹훅 목록을 불러오지 못했습니다.').wait_for()
+                    if not page.get_by_text('요약 받는 주소').is_visible():
+                        problems.append('states: 한쪽 목록 오류에 다른 쪽이 사라짐')
+                    shot(f'list-inbound-error-{width}')
+                    state['inboundList'] = 'normal'
+                    state['inbound'] = []
+                    state['outbound'] = []
+                    open_tab(width, wait='아직 만든 웹훅이 없습니다.')
+                    page.get_by_text('아직 등록한 주소가 없습니다.').wait_for()
+                    shot(f'list-empty-{width}')
+                    state.update(SHARED.initial_state())
+                    open_tab(width, extra='&webhooksDelay=1', wait=None)
+                    page.get_by_role('status', name='불러오는 중').first.wait_for()
+                    shot(f'list-loading-{width}')
+                    page.get_by_role('status', name='불러오는 중').first.wait_for(state='hidden', timeout=10000)
+                    state['outboundList'] = 'empty'
+                    open_tab(width, wait='아직 등록한 주소가 없습니다.')
+                    shot(f'list-outbound-empty-{width}')
 
             if args.phase.startswith('details-'):
                 width = 1440 if args.phase == 'details-wide' else 360
@@ -514,6 +665,7 @@ def main():
                 open_tab(width, extra='&requestsDelay=1')
                 open_row('n8n 메일 요약')
                 page.get_by_role('status', name='불러오는 중').last.wait_for()
+                expect_dialog_type(f'requests-loading-type-{width}', status=True)
                 shot(f'requests-loading-{width}')
                 page.get_by_role('status', name='불러오는 중').last.wait_for(state='hidden', timeout=10000)
                 close_detail()
@@ -526,6 +678,7 @@ def main():
                 open_tab(width, extra='&deliveriesDelay=1')
                 open_row('요약 받는 주소')
                 page.get_by_role('status', name='불러오는 중').last.wait_for()
+                expect_dialog_type(f'deliveries-loading-type-{width}', status=True)
                 shot(f'deliveries-loading-{width}')
                 page.get_by_role('status', name='불러오는 중').last.wait_for(state='hidden', timeout=10000)
                 close_detail()
@@ -545,6 +698,16 @@ def main():
                 open_row('요약 받는 주소')
                 dialog().get_by_role('button', name='다시 보내기').first.click()
                 page.get_by_text('다시 보냈지만 실패했습니다.').wait_for()
+                notice = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
+                  const el = [...d.querySelectorAll('p.webhooks-danger')].find(item => item.textContent.includes('다시 보냈지만'));
+                  const meta = el?.previousElementSibling; const style = el ? getComputedStyle(el) : null;
+                  return {size: style?.fontSize ?? null, wordBreak: style?.wordBreak ?? null,
+                    gap: el && meta ? el.getBoundingClientRect().top - meta.getBoundingClientRect().bottom : null}; }""")
+                measurements[f'redeliver-dead-notice-{width}'] = notice
+                if notice['size'] != '12px' or notice['wordBreak'] != 'keep-all':
+                    problems.append(f'{width}: 다시 보내기 결과 줄이 12px keep-all 메타가 아님')
+                if notice['gap'] is None or abs(notice['gap']) > 1:
+                    problems.append(f'{width}: 다시 보내기 결과 줄이 둘째 줄 바로 아래에 붙지 않음')
                 shot(f'redeliver-dead-{width}')
                 state['redeliver'] = 'skipped'
                 dialog().get_by_role('button', name='다시 보내기').first.click()

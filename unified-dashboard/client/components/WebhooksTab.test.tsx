@@ -179,6 +179,11 @@ it('keeps the other section when one list fails and retries it alone', async () 
 it('locks the create button, sends trimmed fields and shows the key once', async () => {
   await render();
   await click('웹훅 만들기');
+  const popup = document.querySelector('[role="dialog"][data-open]')!;
+  expect(popup.classList.contains('webhooks-dialog')).toBe(true);
+  const preambleLabel = [...popup.querySelectorAll('.config-advanced > label > span')].find(el => el.textContent === '앞에 붙일 글');
+  expect(preambleLabel?.classList.contains('sr-only')).toBe(true);
+  expect(popup.querySelector('textarea[aria-label="앞에 붙일 글"]')).toBeTruthy();
   expect(button('만들기', true).disabled).toBe(true);
   await chooseManual('bad');
   expect(button('만들기', true).disabled).toBe(true);
@@ -292,6 +297,7 @@ it('shows the empty inbound request state and the record error', async () => {
 it('locks registration until target, name, https address and one event are present', async () => {
   await render();
   await click('주소 등록');
+  expect(document.querySelector('[role="dialog"][data-open]')?.classList.contains('webhooks-dialog')).toBe(true);
   const boxes = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
   expect(boxes.map(box => box.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'false']);
   expect(button('등록', true).disabled).toBe(true);

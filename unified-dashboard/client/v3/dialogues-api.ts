@@ -409,7 +409,7 @@ export function createDialoguesApi() {
     requests.push({ path, method });
     if (method !== "GET") record(`${method} ${path}`);
     if (path.startsWith('/api/webhooks')) {
-      if (new URLSearchParams(window.location.search).has('webhooksVisual')) return fetch(path, init);
+      if (new URLSearchParams(window.location.search).has('webhooksVisual')) return fetch(input, init);
       return webhooks(input, init);
     }
     if (path.startsWith('/api/access-links') || (sample === 'settings' && path === '/api/persistent-sessions' && method === 'GET')) {
