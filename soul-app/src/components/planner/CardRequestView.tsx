@@ -34,7 +34,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
   const attachments = [...legacy, ...files.map((file) => ({ name: file.name,
     url: cardAttachmentUrl(serverUrl, file.nodeId, file.path), image: file.mimeType.startsWith('image/') }))];
   const bodyLinks = extractCardBodyLinks(text);
-  const renderMarkdown = numberOfLines === undefined && bodyLinks.some(link => !!parseExactAttachmentLink(link.href, serverUrl));
+  const renderMarkdown = numberOfLines === undefined;
   const links = [...bodyLinks, ...attachments.map(({ url: href, name: label }) => ({ href, label }))];
   const openContentLink = useOpenContentLink(context, links);
   const internal = (url: string) => !!parseExactAttachmentLink(url, serverUrl);
@@ -42,7 +42,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
   const images = attachments.filter((attachment) => attachment.image);
   const sources = images.map((image) => source(image.url));
   // Full body attachment taps must not also fold the surrounding timeline entry.
-  const ownsBodyTouches = numberOfLines === undefined && links.some(link => internal(link.href));
+  const ownsBodyTouches = numberOfLines === undefined;
   const webClickBoundary = ownsBodyTouches && Platform.OS === 'web' ? { onClick: (event: { stopPropagation(): void }) => event.stopPropagation() } : {};
   return <AttachmentBlockProvider links={links}><View style={styles.bodyStack} {...webClickBoundary} onStartShouldSetResponder={() => ownsBodyTouches} onResponderTerminationRequest={() => true}>
     {displayText && renderMarkdown ? segmentCardReportImages(displayText).map((part, index) => part.kind === 'markdown'

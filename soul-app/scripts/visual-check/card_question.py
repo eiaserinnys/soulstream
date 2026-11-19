@@ -1145,6 +1145,23 @@ def focus_lifetime_checks(page: Page, base: str, width: int, output: Path, resul
             record(result, 14, "판 다르게 답하기 뒤 초점", label, False, {"reason": "다르게 답하기 단추 없음"})
 
 
+def capture_comment_copy(page: Page, base: str, width: int, theme: str, output: Path, result: dict) -> None:
+    """커멘트 탭에서 코드 복사 단추와 실제 클립보드 내용을 확인한다."""
+    label = f"comment-copy-{width}-{theme}"
+    goto(page, base, "card", "ga", False, theme, width)
+    open_comments_tab(page)
+    bubble = page.get_by_test_id("user-message-bubble").filter(has_text="다른 카드들도 같은 방식")
+    button = bubble.get_by_label("코드 복사")
+    if count(button) == 0:
+        record(result, 19, "커멘트 코드 복사", label, False, {"reason": "복사 단추 없음"})
+        return
+    button.scroll_into_view_if_needed()
+    page.screenshot(path=str(output / f"{label}.png"))
+    button.click()
+    copied = page.evaluate("navigator.clipboard.readText()")
+    record(result, 19, "커멘트 코드 복사", label, copied == "echo soulstream", {"clipboard": copied})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Card question sheet visual check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
@@ -1183,6 +1200,7 @@ def main() -> int:
                         viewport={"width": width, "height": height},
                         color_scheme=theme,
                         device_scale_factor=1,
+                        permissions=["clipboard-read", "clipboard-write"],
                     )
                     page = context.new_page()
                     page.set_default_timeout(15000)
@@ -1197,6 +1215,7 @@ def main() -> int:
                             result["states"].append(capture_state(
                                 page, args.base_url, *state, width, theme, output, result,
                             ))
+                        capture_comment_copy(page, args.base_url, width, theme, output, result)
                         # 카드 #1197: 긴 질문 장에서 한 줄 카드 장으로 넘길 때 판 높이가 지금 장을 따른다.
                         result["states"].append(measure_paging(page, args.base_url, width, theme, output, result))
                         if theme == "light":

@@ -71,7 +71,7 @@ function buildSample(scene: SceneId): Sample {
   const cardId = `review-question-${scene}`;
   const base = { cardId, sessionId: AGENT_SESSION };
   const secretTitle = '에이전트 접속 비밀값을 숨길까요?';
-  const secretText = '에이전트 세션을 띄울 때마다 도구 접속 비밀값 9개가 실행 명령에 그대로 적힙니다. 서버 안의 다른 프로그램이 뚫리면 읽힐 수 있고, 처음부터 그랬습니다. 바깥으로 샌 흔적은 없습니다.';
+  const secretText = '에이전트 세션을 띄울 때마다 도구 접속 비밀값 9개가 실행 명령에 그대로 적힙니다. 서버 안의 다른 프로그램이 뚫리면 읽힐 수 있고, 처음부터 그랬습니다. 바깥으로 샌 흔적은 없습니다.\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)';
   switch (scene) {
     case 'ga':
       return { cardTitle: '에이전트 세션 실행 명령의 접속 비밀값 정리', cardNumber: 1132, entryTitle: secretTitle,
@@ -81,7 +81,7 @@ function buildSample(scene: SceneId): Sample {
           answer: null, askedAt: at(10) },
         // 질문 뒤에 일반 커멘트를 두어 열린 질문이 기록 맨 아래에 붙는 모습(계약 10번)을 화면에 드러낸다.
         comments: [{ id: 'c-after-question', cardId, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
-          body: '다른 카드들도 같은 방식으로 정리해 주세요.', createdAt: at(16) }] };
+          body: '다른 카드들도 같은 방식으로 정리해 주세요.\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)', createdAt: at(16) }] };
     case 'na':
       return { cardTitle: '에이전트 세션 실행 명령의 접속 비밀값 정리', cardNumber: 1132, entryTitle: secretTitle,
         question: { ...base, id: 'q-secret', kind: 'choice', title: secretTitle, text: secretText,
@@ -89,7 +89,7 @@ function buildSample(scene: SceneId): Sample {
           attachments: [{ type: 'image', label: '지금 실행 명령에 보이는 모습', url: evidenceUrl }],
           answer: null, askedAt: at(10) },
         comments: [{ id: 'c-ask-back', cardId, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', questionId: 'q-secret',
-          body: '파일로 옮기면 지금 도는 에이전트는 어떻게 되나요?', createdAt: at(12) }] };
+          body: '파일로 옮기면 지금 도는 에이전트는 어떻게 되나요?\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)', createdAt: at(12) }] };
     case 'da':
       return { cardTitle: '에이전트 세션 실행 명령의 접속 비밀값 정리', cardNumber: 1132, entryTitle: secretTitle,
         question: { ...base, id: 'q-secret', kind: 'choice', title: secretTitle, text: secretText,

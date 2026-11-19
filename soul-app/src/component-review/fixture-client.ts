@@ -86,7 +86,7 @@ const entryShellApi = {
       notes: [{
         id: 'public-content-link-note', cardId, authorKind: 'user', authorId: 'public-user',
         sessionId: null, kind: 'note',
-        body: `[문서 노트 열기](${contentLinkOrigin()}/api/markdown-documents/public-content-document)`,
+        body: `[문서 노트 열기](${contentLinkOrigin()}/api/markdown-documents/public-content-document)\n\n[카드](/?card=public-shell-card-owner) · [첨부](/?attachment=review-file&context_type=card&context_id=public-shell-card-owner)\n\n\`\`\`bash\necho soulstream\n\`\`\``,
         createdAt: '2026-10-12T00:00:00Z',
       }],
     };

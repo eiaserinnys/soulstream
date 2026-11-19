@@ -27,6 +27,9 @@ import { ImageViewerModal } from './ImageViewerModal';
 import { PlannerMarkdownText } from './planner/PlannerMarkdownText';
 import { attachmentImageSource } from '../lib/attachment-image-source';
 import { WebView } from 'react-native-webview';
+import { webViewContentLinks } from '../lib/webview-content-links';
+import { useOpenContentLink } from '../hooks/useOpenContentLink';
+import { useSettingsStore } from '../store/settingsStore';
 
 export type AttachmentOriginalSaveHandler = (
   view: AttachmentView,
@@ -86,6 +89,8 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
 }
 
 function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView; textContent?: AttachmentTextContent }) {
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const openContentLink = useOpenContentLink(item.readContext);
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const html = isHtmlAttachmentView(item);
@@ -134,12 +139,12 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       const read = item.loadMedia
         ? item.loadMedia(controller.signal)
         : typeof api.readAttachmentMedia === 'function'
-          ? api.readAttachmentMedia(source.attachmentId, item.readContext, controller.signal, {
+          ? api.readAttachmentMedia(source.attachmentId, item.readContext!, controller.signal, {
             mimeType: item.mimeType,
             name: item.name,
           })
           : Promise.resolve({
-            uri: attachmentContentUrl(source.attachmentId, item.readContext),
+            uri: attachmentContentUrl(source.attachmentId, item.readContext!),
             mimeType: attachmentMediaMimeType(item),
           });
       void read
@@ -170,7 +175,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
     const read = item.loadText
       ? item.loadText(controller.signal)
       : createApiClient(scope.serverUrl, { authScope: scope })
-        .readAttachmentText(source.attachmentId, item.readContext, controller.signal);
+        .readAttachmentText(source.attachmentId, item.readContext!, controller.signal);
     void read
       .then(({ text, truncated }) => {
         if (!controller.signal.aborted) setState(html ? { kind: 'html', text, truncated }
@@ -265,7 +270,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
     if (current.kind === 'html') {
       return <>
         <WebView testID="attachment-preview-html" source={{ html: htmlDocument ?? '' }}
-          originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}
+          {...webViewContentLinks(serverUrl, openContentLink)} javaScriptEnabled allowFileAccess={false}
           scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: LIGHT_COLORS.background }} />
         {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted, padding: tokens.spacing.sm }}>앞부분만 표시</Text> : null}
       </>;

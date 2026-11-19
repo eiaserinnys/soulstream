@@ -1,3 +1,4 @@
+jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, props, props.markdown) }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 import React, { useState } from 'react';

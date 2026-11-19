@@ -8,6 +8,7 @@ import { ImageViewerModal } from '../components/ImageViewerModal';
 
 interface ContentLinkImageHost {
   openImage(source: ImageURISource): void;
+  closeAttachment(): void;
   openAttachment(view: AttachmentView, items?: readonly AttachmentView[], initialIndex?: number, restoreFocus?: () => void): void;
 }
 
@@ -35,7 +36,7 @@ export function ContentLinkProvider({ children }: { children: React.ReactNode })
     restoreAttachmentFocus.current = restoreFocus;
     setAttachment({ item: next, items, initialIndex });
   }, []);
-  const value = useMemo(() => ({ openImage, openAttachment }), [openAttachment, openImage]);
+  const value = useMemo(() => ({ openImage, openAttachment, closeAttachment }), [closeAttachment, openAttachment, openImage]);
 
   return <ContentLinkImageContext.Provider value={value}>
     {children}

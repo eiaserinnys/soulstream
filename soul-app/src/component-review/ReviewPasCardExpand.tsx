@@ -56,7 +56,7 @@ function createPreviewItems(): CardCheckItem[] {
 const initialEntries: (PersistentReportEntry & { card_id: string; card_status: string })[] = [
   { key: 'card_preview', kind: 'see', title: card.title.slice(0, 24) + '…', context: card.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'review', updated_at: at },
   { key: 'card_preview_2', kind: 'see', title: secondCard.title.slice(0, 24) + '…', context: secondCard.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [532], card_id: secondCard.id, card_status: 'review', updated_at: at },
-  { key: 'cq_preview', question_id: 'preview-question', kind: 'ask', title: '입력 위치 확인', context: '추가 커멘트를 장 안에서 바로 쓸까요?', action: '', options: ['장 안에서', '카드에서'], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
+  { key: 'cq_preview', question_id: 'preview-question', kind: 'ask', title: '입력 위치 확인', context: '추가 커멘트를 장 안에서 바로 쓸까요?\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)', action: '', options: ['장 안에서', '카드에서'], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
   { key: 'card_blocked_preview', kind: 'see', title: '외부 권한 확인', context: '외부 권한 확인이 필요해 작업이 멈췄습니다.', action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
 ];
 const noop = () => {};
@@ -64,7 +64,7 @@ function reviewEntries() {
   return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('singleCard') === '1'
     ? [initialEntries[0]] : initialEntries;
 }
-const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
+const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
 export function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void = () => {},
   onReportAnswered?: (key: string) => void): ApiClient {
@@ -72,7 +72,7 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
   let details: Record<string, CardDetail> = {
     [card.id]: { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
       { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },
-      { id: 'preview-agent', cardId: card.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
+      { id: 'preview-agent', cardId: card.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '결과와 증거를 장 안에 모았습니다.\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)', createdAt: '2026-10-05T08:01:00Z' },
     ] },
     [secondCard.id]: { card: { ...secondCard }, reports: [], questions: [], sessions: [], nowHistory: [], comments: [] },
   };

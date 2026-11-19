@@ -46,7 +46,7 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
     questions: [{ id: 'width-question', cardId: widthCard.id, sessionId: 'public-session', text: '확인해 주시겠습니까?', options: null, answer: null, askedAt: at }],
     reports: [{ id: 'width-report', cardId: widthCard.id, title: '이미지 없는 보고', format: 'markdown', createdAt: at,
       body: '**이미지 없는 한국어 보고입니다.** 자세히를 눌러도 질문과 같은 넓은 말풍선 안에서 본문을 읽을 수 있어야 합니다.\n\n접힌 보고와 펼친 보고의 가로 폭을 비교합니다. 다시 접은 뒤에도 폭과 아바타, 본문 여백이 그대로 유지되는지 확인합니다.' }],
-    comments: [{ id: 'width-comment', cardId: widthCard.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '확인했습니다.', createdAt: at }],
+    comments: [{ id: 'width-comment', cardId: widthCard.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '확인했습니다.\n\n```bash\necho soulstream\n```\n\n[카드](/?card=review-card) · [첨부](/?attachment=review-file&context_type=card&context_id=review-card)', createdAt: at }],
   };
   const attachmentCard = cardFixture({ id: 'review-card-attachments', request: '카드 첨부 검수', status: 'review', assigneeAgentId: null, nodeId: 'public-node', createdAt: at });
   const cardContext = { type: 'card' as const, id: attachmentCard.id };

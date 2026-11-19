@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { webViewContentLinks } from '../../lib/webview-content-links';
+import { useSettingsStore } from '../../store/settingsStore';
 import type {
   BoardItem,
   CustomViewDocument,
@@ -287,6 +289,8 @@ function InlineCustomView({
   bindings: ReturnType<typeof buildCustomViewBindings>;
   styles: ReturnType<typeof makeStyles>;
 }) {
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const openContentLink = useOpenContentLink();
   const [document, setDocument] = useState<CustomViewDocument | null>(null);
   const [error, setError] = useState(false);
   const scopeGeneration = useAuthScopeGeneration();
@@ -313,7 +317,7 @@ function InlineCustomView({
     <WebView
       testID="task-board-custom-view"
       source={{ html: renderCustomViewHtml(document.html, bindings) }}
-      originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']}
+      {...webViewContentLinks(serverUrl, openContentLink)}
       javaScriptEnabled
       allowFileAccess={false}
       scrollEnabled

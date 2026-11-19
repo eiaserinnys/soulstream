@@ -1,3 +1,4 @@
+jest.mock('../navigationRef', () => ({ navigationRef: { isReady: () => false } }));
 import fs from 'node:fs';
 import path from 'node:path';
 import React from 'react';

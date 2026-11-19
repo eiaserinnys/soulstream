@@ -171,12 +171,12 @@ export function CardCheckItemRow({
           {item.display === 'changed' && item.reopened ? (
             <View style={styles.changedReason}><Text style={styles.reopened}>확인한 뒤 바뀜</Text><Text style={styles.result} testID={`card-check-item-${item.id}-reopened`}>{item.reopened}</Text></View>
           ) : null}
-          {item.result ? <Text style={[styles.result, item.display === 'dropped' && styles.droppedResult]}>{item.result}</Text> : null}
+          {item.result ? <Text selectable style={[styles.result, item.display === 'dropped' && styles.droppedResult]}>{item.result}</Text> : null}
           {item.caveat ? <View testID={`card-check-item-${item.id}-caveat-row`} style={styles.caveatRow}>
             <View testID={`card-check-item-${item.id}-caveat-icon-frame`} style={styles.caveatIconFrame}>
               <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
             </View>
-            <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
+            <Text selectable style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
           </View> : null}
           {item.evidence.length ? (
             <View style={styles.evidence}>

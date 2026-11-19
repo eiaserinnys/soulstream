@@ -1,3 +1,4 @@
+jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, props, props.markdown) }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'expansion-operation-id') }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const mockOpenCardLink = jest.fn();
