@@ -40,6 +40,8 @@
 !/packages/soul-ui/src/lib/standalone-image-line.ts
 !/packages/soul-ui/src/lib/internal-link.ts
 !/packages/soul-ui/src/lib/markdown-document-heading.ts
+!/packages/soul-ui/src/lib/recurring-schedule.ts
+!/packages/soul-ui/src/lib/rate-limit-notice.ts
 !/packages/wire-schema
 /packages/wire-schema/*
 !/packages/wire-schema/src

@@ -39,11 +39,10 @@ import { RecurringSchedulePicker } from './RecurringSchedulePicker';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import {
   defaultRecurringSchedule,
-  recurringEventConditionText,
   recurringScheduleExpressions,
   recurringScheduleFromExpressions,
   type RecurringScheduleDraft,
-} from './recurringSchedule';
+} from '../../../../packages/soul-ui/src/lib/recurring-schedule';
 
 type EditorDraft = {
   name: string;
@@ -408,6 +407,13 @@ function sessionAction(run: RecurringJobRunDto): { label: string; canOpen: boole
 function emptyDraft(): EditorDraft { return { name: '', prompt: '', timezone: 'Asia/Seoul', schedule: defaultRecurringSchedule(), nodeId: '', agentId: '', modelPreset: null, folderId: '', lateRunWindowSeconds: '1800', enabled: true }; }
 function draftFromJob(job: RecurringJobDto): EditorDraft { return { name: job.name, prompt: job.prompt, timezone: job.timezone, schedule: recurringScheduleFromExpressions(job.schedule_expressions), nodeId: job.node_id, agentId: job.agent_id, modelPreset: job.model_preset, folderId: job.folder_id, lateRunWindowSeconds: String(job.late_run_window_seconds), enabled: job.enabled }; }
 function writeFromDraft(draft: EditorDraft, scheduleKind: NonNullable<RecurringJobDto['schedule_kind']>): RecurringJobWrite { const late = Number(draft.lateRunWindowSeconds); if (!Number.isSafeInteger(late) || late < 1) throw new Error('오프라인 허용 초는 1 이상의 정수여야 합니다.'); return { name: draft.name.trim(), prompt: draft.prompt.trim(), timezone: draft.timezone.trim(), ...(scheduleKind === 'recurring' ? { schedule_expressions: recurringScheduleExpressions(draft.schedule) } : {}), node_id: draft.nodeId.trim(), agent_id: draft.agentId.trim(), model_preset: draft.modelPreset, folder_id: draft.folderId.trim(), late_run_window_seconds: late, enabled: draft.enabled }; }
+function recurringEventConditionText(
+  eventTrigger: { node_id: string; repeat: boolean } | null | undefined,
+  executionNodeId: string,
+): string {
+  const nodeId = eventTrigger?.node_id ?? executionNodeId;
+  return `${nodeId}가 붙으면 · ${eventTrigger?.repeat ? '매번' : '1회'}`;
+}
 function jobDetail(job: RecurringJobDto): string {
   if (job.schedule_kind === 'once') return `1회 · ${formatTime(job.run_at ?? job.next_run_at)}`;
   if (job.schedule_kind === 'event') return recurringEventConditionText(job.event_trigger, job.node_id);

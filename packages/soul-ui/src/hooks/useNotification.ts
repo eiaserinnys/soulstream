@@ -12,7 +12,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
 import { formatRetryingErrorHistory } from "../shared/sse-events";
-import { formatRateLimitNotice } from "../shared/rate-limit-notice";
+import { formatRateLimitNotice } from "../lib/rate-limit-notice";
 import { useUiEventTracker } from "../lib/ui-events";
 
 /**
