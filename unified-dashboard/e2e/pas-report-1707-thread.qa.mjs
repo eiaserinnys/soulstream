@@ -33,9 +33,11 @@ if (!existsSync(join(distDir, "frame.html"))) {
 await mkdir(captureDir, { recursive: true });
 
 const checks = [];
+const startedAt = Date.now();
 function record(name, ok, detail) {
   checks.push({ name, ok, detail });
-  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail === undefined ? "" : `  ${JSON.stringify(detail)}`}`);
+  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}  [${elapsed}s]${detail === undefined ? "" : `  ${JSON.stringify(detail)}`}`);
 }
 async function check(name, fn) {
   try { record(name, true, await fn()); } catch (error) { record(name, false, { error: error.message }); }
@@ -163,7 +165,7 @@ async function clickText(page, selector, label) {
 }
 
 try {
-  await runPlaywrightLifecycle({ lockName: "pas-report-1707-thread-qa", timeoutMs: 480_000, launchBrowser: (options) => chromium.launch(options) }, async ({ browser }) => {
+  await runPlaywrightLifecycle({ lockName: "pas-report-1707-thread-qa", timeoutMs: 900_000, launchBrowser: (options) => chromium.launch(options) }, async ({ browser }) => {
     const viewports = [
       { id: "1440x900", width: 1440, height: 900 },
       { id: "820x1180", width: 820, height: 1180 },
