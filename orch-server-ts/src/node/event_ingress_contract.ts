@@ -53,14 +53,12 @@ export type EventAppendBatch = {
   events: EventIngressEnvelope[];
 };
 
-type EventAppendAckEvent = WireEventAppendAck["events"][number];
-
 export type EventAppendAck = Pick<
   WireEventAppendAck,
   "type" | "stream_id" | "acked_through"
 > & { events: EventAppendAcknowledgement[] };
 
-export type EventAppendAcknowledgement = EventAppendAckEvent;
+export type EventAppendAcknowledgement = WireEventAppendAck["events"][number];
 
 type WireShape<T> = { [K in keyof T]: T[K] };
 
@@ -95,15 +93,14 @@ export type EventSessionEffectApplication = {
   rejectionReason?: EventSessionRejectionReason;
 };
 
-type DerivedEventSessionEffectApplicationWire = {
-  applied: WireEventSessionEffectApplication["applied"];
+export type EventSessionEffectApplicationWire = {
+  applied: boolean;
   canonical_session: EventCanonicalSessionProjection;
   canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
+  /** One-release response compatibility for a legacy execution_acquire. */
   canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
   rejection_reason?: EventSessionRejectionReason;
 };
-
-export type EventSessionEffectApplicationWire = DerivedEventSessionEffectApplicationWire;
 
 /**
  * 사건의 등록 번호와 세션의 지금 execution_registration_id가 달랐던 수신의
