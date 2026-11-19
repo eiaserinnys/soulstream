@@ -1,3 +1,9 @@
+import type {
+  EventAppendAck as WireEventAppendAck,
+  EventCanonicalExecutionOwnershipProjection as WireEventCanonicalExecutionOwnershipProjection,
+  EventCanonicalExecutionRegistrationProjection as WireEventCanonicalExecutionRegistrationProjection,
+  EventCanonicalSessionProjection as WireEventCanonicalSessionProjection,
+} from "@soulstream/wire-schema";
 import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
 import type {
   EventOutboxQuarantineInput,
@@ -24,64 +30,29 @@ export type EventIngressRejection = {
   source_seq: number;
 };
 
-export type EventAppendAck = {
-  type: "event_append_ack";
-  stream_id: string;
-  acked_through: number;
-  events: Array<EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement>;
-};
+type EventAppendAckEvent = WireEventAppendAck["events"][number];
 
-export type EventAppendDeadLetterAcknowledgement = {
-  source_seq: number;
-  dead_letter: {
-    code: string;
-    reason: string;
-    rejected_at: string;
-  };
-};
+export type EventAppendAck = Pick<
+  WireEventAppendAck,
+  "type" | "stream_id" | "acked_through"
+> & { events: Array<EventAppendAcknowledgement | EventAppendDeadLetterAcknowledgement> };
 
-export type EventCanonicalSessionProjection = {
-  status: string;
-  termination_reason: string | null;
-  termination_detail: string | null;
-  review_state: string;
-  last_assistant_text: string | null;
-  termination_event_id: number | null;
-  updated_at: string;
-  last_event_id: number | null;
-};
+export type EventAppendDeadLetterAcknowledgement =
+  Extract<EventAppendAckEvent, { dead_letter: unknown }>;
 
-export type EventCanonicalExecutionRegistrationProjection = {
-  registration_id: string;
-  execution_command_id: string;
-};
+type WireShape<T> = { [K in keyof T]: T[K] };
 
-/** One-release ACK compatibility for a legacy execution_acquire record. */
-export type EventCanonicalExecutionOwnershipProjection = {
-  ownership_generation: number;
-  owner_kind: "runner_process" | "adopted_runner" | "in_process";
-  manifest_id: string;
-  runtime_env_identity?: string;
-  registration_id: string | null;
-  pid: number | null;
-  start_identity: string | null;
-  execution_command_id: string | null;
-  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
-  failure_reason: string | null;
-};
+export type EventCanonicalSessionProjection =
+  WireShape<WireEventCanonicalSessionProjection>;
 
-export type EventAppendAcknowledgement = {
-  source_seq: number;
-  event_id: number;
-  effect_application?: {
-    applied: boolean;
-    /** 적용하지 않았을 때 서버가 실어 보내는 사유다. 없을 수 있다. */
-    rejection_reason?: string;
-    canonical_session: EventCanonicalSessionProjection;
-    canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
-    canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
-  };
-};
+export type EventCanonicalExecutionRegistrationProjection =
+  WireShape<WireEventCanonicalExecutionRegistrationProjection>;
+
+export type EventCanonicalExecutionOwnershipProjection =
+  WireShape<WireEventCanonicalExecutionOwnershipProjection>;
+
+export type EventAppendAcknowledgement =
+  Extract<EventAppendAckEvent, { event_id: number }>;
 
 export class EventOutboxDeadLetterError extends Error {
   constructor(
