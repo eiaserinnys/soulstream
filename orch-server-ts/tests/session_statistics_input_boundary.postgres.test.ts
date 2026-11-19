@@ -93,6 +93,52 @@ describePostgres("session statistics input boundary mapping", () => {
     expect(temporary?.material).toBeNull();
   });
 
+  it("keeps interval boundaries and excludes unrelated or future boundaries for both read purposes", async () => {
+    const sessionId = "input-boundary-intervals";
+    await seedSession(sessionId);
+    for (const eventId of [5, 10, 15, 30, 35, 45]) {
+      await seedEvent(sessionId, eventId);
+    }
+    await sql`
+      INSERT INTO session_statistics_facts (
+        session_id, event_id, part_key, fact_kind, recorded_at, source_event_type,
+        normalization_version, provider, quality, input_id, boundary_type
+      ) VALUES
+        (${sessionId}, 5, 'boundary', 'boundary', '2026-10-18T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-a', 'command_started'),
+        (${sessionId}, 10, 'boundary', 'boundary', '2026-10-18T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-a', 'input'),
+        (${sessionId}, 15, 'boundary', 'boundary', '2026-10-18T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-a', 'command_started'),
+        (${sessionId}, 30, 'boundary', 'boundary', '2026-10-18T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-b', 'input'),
+        (${sessionId}, 35, 'boundary', 'boundary', '2026-10-18T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-b', 'command_started'),
+        (${sessionId}, 45, 'boundary', 'boundary', '2026-10-21T00:00:00Z', 'user_message', 1, 'codex', '[]'::jsonb, 'i-b', 'command_started')
+    `;
+    await seedUsage(sessionId, 20, { candidateType: "complete", accountingKey: "cmd-a", inputId: "i-a" });
+    await seedUsage(sessionId, 40, { candidateType: "complete", accountingKey: "cmd-b", inputId: "i-b" });
+
+    const range = { recordedAtFrom: RECORDED_AT, recordedAtBefore: AS_OF };
+    await sql.begin(async (transaction) => {
+      for (const readPurpose of [
+        { kind: "overview" } as const,
+        { kind: "day", ...range } as const,
+      ]) {
+        await createCanonicalSessionStatisticsFacts(
+          transaction as unknown as EventIngressQuerySql,
+          [sessionId],
+          range,
+          { asOf: AS_OF, readPurpose },
+        );
+        const boundaries = await transaction`
+          SELECT session_id, event_id::int AS event_id, part_key
+          FROM pg_temp.scoped_facts
+          WHERE fact_kind = 'boundary'
+          ORDER BY session_id, event_id, part_key
+        `;
+        expect(boundaries).toEqual([10, 15, 30, 35].map((eventId) => ({
+          session_id: sessionId, event_id: eventId, part_key: "boundary",
+        })));
+      }
+    });
+  });
+
   it("keeps exact input boundaries ahead of their position", async () => {
     const sessionId = "input-boundary-exact-future";
     await seedSession(sessionId);

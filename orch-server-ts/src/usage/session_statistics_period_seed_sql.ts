@@ -222,16 +222,25 @@ export function createSessionStatisticsPeriodSeedCtes(
         LIMIT 1
       ) AS next_boundary ON true
     ),
+    -- #1725: Keep the type filter outside the LATERAL barrier so each input uses the (session_id, input_id) index.
     exact_input_boundary_facts AS (
       SELECT boundary.*
-      FROM relevant_event_positions AS position
-      JOIN session_statistics_facts AS boundary
-        ON boundary.session_id = position.session_id
-       AND boundary.input_id = position.input_id
-      WHERE position.input_id IS NOT NULL
-        AND boundary.fact_kind = 'boundary'
-        AND boundary.boundary_type = 'input'
-        AND boundary.recorded_at < ${asOf}::timestamptz
+      FROM (
+        SELECT DISTINCT session_id, input_id
+        FROM relevant_event_positions
+        WHERE input_id IS NOT NULL
+      ) AS input
+      JOIN LATERAL (
+        SELECT candidate.*
+        FROM session_statistics_facts AS candidate
+        WHERE candidate.session_id = input.session_id
+          AND candidate.input_id = input.input_id
+          AND candidate.input_id IS NOT NULL
+          AND candidate.fact_kind = 'boundary'
+          AND candidate.recorded_at < ${asOf}::timestamptz
+        OFFSET 0
+      ) AS boundary ON true
+      WHERE boundary.boundary_type = 'input'
     ),
     interval_input_starts AS (
       SELECT * FROM previous_input_boundary_facts
@@ -256,14 +265,16 @@ export function createSessionStatisticsPeriodSeedCtes(
         ORDER BY later_input.event_id ASC
         LIMIT 1
       ) AS next_input ON true
+      -- #1725: A concrete upper bound and LATERAL barrier keep the interval in the index scan.
       JOIN LATERAL (
         SELECT interval_boundary.*
         FROM session_statistics_facts AS interval_boundary
         WHERE interval_boundary.session_id = input_start.session_id
           AND interval_boundary.fact_kind = 'boundary'
           AND interval_boundary.event_id >= input_start.event_id
-          AND (next_input.event_id IS NULL OR interval_boundary.event_id < next_input.event_id)
+          AND interval_boundary.event_id < COALESCE(next_input.event_id, 9223372036854775807)
           AND interval_boundary.recorded_at < ${asOf}::timestamptz
+        OFFSET 0
       ) AS boundary ON true
     ),
     boundary_facts AS (
