@@ -60,11 +60,8 @@ export function nodeExecutionFactsOf(g: G, codex: boolean): NodeExecutionFacts {
     hasStartBarrier: g.ex === "gate" || g.ex === "resume_w",
     // 잇기 대기는 등록을 다시 세우는 중이라 등록이 없는 것으로 본다.
     hasRegistration: g.ex === "turn" || g.ex === "stopping" || g.ex === "replay",
-    runnerTerminalFact: !learnedEnd
-      ? "none"
-      : g.life === "ended" || g.life === "ended_l"
-        ? "completed"
-        : g.life === "reaped" ? "reaped" : "none",
+    hasRunnerTerminalFact: learnedEnd
+      && (g.life === "ended" || g.life === "ended_l" || g.life === "reaped"),
     retention: g.life === "held" ? (codex ? "codex_command" : "claude_background") : "none",
     releasing: false,
     hydratedFromDb: false,

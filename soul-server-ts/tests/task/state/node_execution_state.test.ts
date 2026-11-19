@@ -9,7 +9,6 @@ import {
 import {
   NODE_EXECUTION_PHASES,
   NODE_RETENTION_KINDS,
-  NODE_RUNNER_TERMINAL_FACTS,
   type NodeExecutionFacts,
 } from "../../../src/task/state/node_execution_machine.js";
 
@@ -20,7 +19,7 @@ const BASE: NodeExecutionFacts = {
   offlineReplay: false,
   hasStartBarrier: false,
   hasRegistration: false,
-  runnerTerminalFact: "none",
+  hasRunnerTerminalFact: false,
   retention: "none",
   releasing: false,
   hydratedFromDb: false,
@@ -59,7 +58,7 @@ describe("node execution phase projection", () => {
     for (const offlineReplay of bools)
     for (const hasStartBarrier of bools)
     for (const hasRegistration of bools)
-    for (const runnerTerminalFact of NODE_RUNNER_TERMINAL_FACTS)
+    for (const hasRunnerTerminalFact of bools)
     for (const retention of NODE_RETENTION_KINDS)
     for (const releasing of bools)
     for (const hydratedFromDb of bools)
@@ -71,7 +70,7 @@ describe("node execution phase projection", () => {
         offlineReplay,
         hasStartBarrier,
         hasRegistration,
-        runnerTerminalFact,
+        hasRunnerTerminalFact,
         retention,
         releasing,
         hydratedFromDb,
@@ -81,7 +80,7 @@ describe("node execution phase projection", () => {
       seen.add(result);
       count += 1;
     }
-    expect(count).toBe(2 ** 9 * 5 * 3);
+    expect(count).toBe(2 ** 10 * 3);
     expect([...seen].sort()).toEqual([...NODE_EXECUTION_PHASES].sort());
   });
 
@@ -117,7 +116,7 @@ describe("node execution phase projection", () => {
       active: true,
       hasRunner: true,
       hasRegistration: true,
-      runnerTerminalFact: "completed",
+      hasRunnerTerminalFact: true,
     })).toBe("terminating");
     expect(phase({ active: true, hasRunner: true, hasRegistration: true, stopRequested: true }))
       .toBe("stopping");

@@ -52,7 +52,7 @@ export function nodeExecutionFactsFromTask(
     hasStartBarrier: task.executionActivation !== undefined
       || task.executionPromise !== undefined,
     hasRegistration: task.executionRegistration !== undefined,
-    runnerTerminalFact: task.runnerTerminalFact ?? "none",
+    hasRunnerTerminalFact: task.runnerTerminalFact !== undefined,
     retention: retained ? (options.retentionKind ?? "claude_background") : "none",
     releasing: task.runnerReleaseClaim !== undefined,
     hydratedFromDb: task.hydratedFromDb === true,

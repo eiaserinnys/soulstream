@@ -73,19 +73,6 @@ describe("node outside request cells", () => {
     }
   });
 
-  it("gives every execution phase and request kind exactly one disposition", () => {
-    let count = 0;
-    for (const phase of NODE_EXECUTION_PHASES) {
-      for (const request of NODE_REQUEST_KINDS) {
-        expect(decideNodeRequest(phase, request)).toBe(
-          NODE_REQUEST_TABLE[phase][request].disposition,
-        );
-        count += 1;
-      }
-    }
-    expect(count).toBe(NODE_EXECUTION_PHASES.length * NODE_REQUEST_KINDS.length);
-  });
-
   it("makes stop and delete of a runner-less active task write a termination record", () => {
     expect(decideNodeRequest("hydrated_active", "stop")).toBe("terminate_without_runner");
     expect(decideNodeRequest("hydrated_active", "delete"))

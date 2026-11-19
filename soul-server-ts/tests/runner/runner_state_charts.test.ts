@@ -180,8 +180,6 @@ describe("runner state charts", () => {
     expect(check({ terminalRetained: true, registrationAppliedAndTurnRunning: true }))
       .toBe("keep");
     expect(check({ registrationAppliedAndTurnRunning: true })).toBe("adopt");
-    expect(check({ adoptResponse: "applied", registrationAppliedAndTurnRunning: true }))
-      .toBe("adopt");
     expect(check({})).toBe("keep");
   });
 

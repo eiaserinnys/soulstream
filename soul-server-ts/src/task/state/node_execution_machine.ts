@@ -1,15 +1,5 @@
 import { setup } from "xstate";
 
-/** 러너가 남긴 종료 사실이다. `none`은 아직 없음이다. */
-export const NODE_RUNNER_TERMINAL_FACTS = [
-  "none",
-  "completed",
-  "failed",
-  "reaped",
-  "closed",
-] as const;
-export type NodeRunnerTerminalFact = (typeof NODE_RUNNER_TERMINAL_FACTS)[number];
-
 /**
  * 종료 뒤 정상 보유의 종류다. 클로드의 남은 백그라운드 작업,
  * 코덱스의 남은 명령, 없음이다. 해제 중은 `releasing` 사실로 따로 받는다.
@@ -35,8 +25,8 @@ export interface NodeExecutionFacts {
   hasStartBarrier: boolean;
   /** 중앙이 적용한 실행 등록(executionRegistration)이 있다. */
   hasRegistration: boolean;
-  /** 러너가 남긴 종료 사실(runnerTerminalFact). */
-  runnerTerminalFact: NodeRunnerTerminalFact;
+  /** 러너가 남긴 종료 사실(runnerTerminalFact)이 있다. */
+  hasRunnerTerminalFact: boolean;
   /** 종료 뒤 정상 보유의 종류(runnerRetainedForDetachedWork와 엔진). */
   retention: NodeRetentionKind;
   /** 러너 해제 청구가 걸려 있다(runnerReleaseClaim). */
@@ -96,7 +86,7 @@ export const nodeExecutionMachine = setup({
     starting: ({ event }) => event.active && !event.hasRunner,
     replaying: ({ event }) => event.hasRunner && event.offlineReplay,
     terminating: ({ event }) =>
-      event.hasRunner && (!event.active || event.runnerTerminalFact !== "none"),
+      event.hasRunner && (!event.active || event.hasRunnerTerminalFact),
     registering: ({ event }) => event.active && event.hasRunner && !event.hasRegistration,
     running: ({ event }) => event.active && event.hasRunner && event.hasRegistration,
     idle: ({ event }) => !event.active && !event.hasRunner,

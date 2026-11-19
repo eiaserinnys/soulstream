@@ -11,7 +11,6 @@ export type RunnerCentralLookup =
 /** 직전 잇기 전이의 응답이다. */
 export type RunnerAdoptResponse =
   | "none"
-  | "applied"
   | "retryable_rejection"
   | "terminal_rejection";
 
@@ -47,7 +46,6 @@ export const RUNNER_CENTRAL_LOOKUPS: readonly RunnerCentralLookup[] = [
 
 export const RUNNER_ADOPT_RESPONSES: readonly RunnerAdoptResponse[] = [
   "none",
-  "applied",
   "retryable_rejection",
   "terminal_rejection",
 ];

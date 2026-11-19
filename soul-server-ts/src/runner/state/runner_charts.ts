@@ -122,7 +122,6 @@ export const RUNNER_ADOPT_RESPONSE_LABELS: Readonly<
   Record<RunnerAdoptResponse, string>
 > = {
   none: "없음",
-  applied: "적용",
   retryable_rejection: "다시 될 수 있는 거절",
   terminal_rejection: "다시 될 까닭 없는 거절",
 };
