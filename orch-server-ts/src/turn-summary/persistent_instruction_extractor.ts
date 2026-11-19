@@ -78,8 +78,8 @@ export function createPersistentInstructionExtractor(options: {
         buildPersistentInstructionPrompt(input),
         {
           ...config,
-          model: "gpt-6.2-sol",
-          reasoningEffort: "high",
+          model: config.instructionExtractionModel,
+          reasoningEffort: config.instructionExtractionReasoningEffort,
         },
         {
           maxAttempts: 1,

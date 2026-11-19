@@ -154,6 +154,8 @@ describe("live persistent instruction extractor wiring", () => {
       model: "gpt-5.6-luna",
       storyModel: "gpt-5.6-luna",
       reasoningEffort: "high",
+      instructionExtractionModel: "gpt-6.2-sol",
+      instructionExtractionReasoningEffort: "high",
       timeoutMs: 1_234,
       maxAttempts: 2,
       codexConcurrencyLimit: 3,
