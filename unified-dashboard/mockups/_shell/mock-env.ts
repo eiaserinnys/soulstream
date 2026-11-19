@@ -81,8 +81,9 @@ window.EventSource = new Proxy(RealEventSource, {
 // 앞의 것은 묶음 기준으로 옮기고, 뒤의 것은 등록한 그림으로 바꾼다.
 const images: { pattern: RegExp; file: string }[] = [];
 
-/** 서버가 주던 그림 주소를 묶음 안의 파일로 바꾼다. file은 묶음 기준 상대 경로다. */
-export function mockImages(routes: { pattern: RegExp; file: string }[]) { images.push(...routes); }
+/** 서버가 주던 그림 주소를 묶음 안의 파일로 바꾼다. file은 묶음 기준 상대 경로다.
+ *  시안이 등록한 구체 경로가 기본 초상 같은 넓은 규칙보다 먼저 잡히도록 앞에 둔다. */
+export function mockImages(routes: { pattern: RegExp; file: string }[]) { images.unshift(...routes); }
 
 const bundleBase = new URL(".", document.baseURI).pathname;
 function relocated(src: string): string {

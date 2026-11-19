@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="세라피엘 초상">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8ecff"/>
+      <stop offset="1" stop-color="#7aa7d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M64 34c-11 0-19 9-19 20s8 20 19 20 19-9 19-20-8-20-19-20z" fill="#fff8e8"/>
+  <path d="M40 62C24 56 16 42 18 26c14 2 25 12 30 26z" fill="#ffffff" opacity=".85"/>
+  <path d="M88 62c16-6 24-20 22-36-14 2-25 12-30 26z" fill="#ffffff" opacity=".85"/>
+  <path d="M64 74v34" stroke="#4f739c" stroke-width="3" stroke-linecap="round"/>
+  <path d="M52 108h24" stroke="#4f739c" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="64" cy="20" r="7" fill="none" stroke="#fff6d2" stroke-width="3"/>
+  <circle cx="64" cy="53" r="2.5" fill="#4f739c"/>
+  <circle cx="54" cy="52" r="2.5" fill="#4f739c"/>
+</svg>

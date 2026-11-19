@@ -7,8 +7,10 @@
 @source "../../client";
 @source "..";
 
-/* 전체 화면 시안이 유리를 직접 그릴 때는 바깥 겉틀의 여백과 상자를 비운다. */
-.v3-components-main.mockup-main--bare {
-  padding: 0;
-  overflow: hidden;
+/* 전체 화면 시안이 유리를 직접 그릴 때는 운영 겉틀을 물려받지 않는다.
+   components-review.css의 유리 변수 덮어쓰기가 도구 막대까지 번지지 않도록
+   .v3-components-main을 아예 쓰지 않고 이 자리만 채운다. */
+.v3-mockup-bare {
+  width: 100%;
+  height: 100%;
 }

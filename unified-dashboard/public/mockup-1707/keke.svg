@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="케케 초상">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6b54a"/>
+      <stop offset="1" stop-color="#b95d1c"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <circle cx="64" cy="58" r="30" fill="#ffe2b8"/>
+  <path d="M34 58c0-18 13-30 30-30s30 12 30 30c-8-8-18-12-30-12s-22 4-30 12z" fill="#5b351b"/>
+  <rect x="42" y="52" width="18" height="14" rx="7" fill="#2d241d"/>
+  <rect x="68" y="52" width="18" height="14" rx="7" fill="#2d241d"/>
+  <path d="M60 58h8" stroke="#2d241d" stroke-width="3"/>
+  <path d="M54 76c6 6 14 6 20 0" stroke="#7a4424" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <path d="M24 112l20-24 12 8 8-6 20 22z" fill="#3a6f5a"/>
+  <circle cx="102" cy="30" r="8" fill="#fff3d6" opacity=".9"/>
+</svg>

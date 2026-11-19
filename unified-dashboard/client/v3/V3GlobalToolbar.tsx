@@ -15,6 +15,7 @@ export function V3GlobalToolbar({
   onOpenSearch,
   variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch,
   appearance = 'default',
+  centerSlot,
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
@@ -29,6 +30,8 @@ export function V3GlobalToolbar({
   appearance?: "default" | "bare";
   showWeeklyUsage?: boolean;
   onToggleUsage?(): void;
+  /** 가운데 칸에 검색 대신 화면 전환 같은 다른 조작을 놓는다. 없으면 기존 검색을 그린다. */
+  centerSlot?: ReactNode;
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
@@ -78,7 +81,7 @@ export function V3GlobalToolbar({
         <span aria-hidden="true" className="dashboard-brand-orb" />
         <span className="font-semibold text-foreground">Soulstream</span>
       </div>
-      <button
+      {centerSlot ?? <button
         ref={searchCapsuleRef}
         type="button"
         className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
@@ -89,7 +92,7 @@ export function V3GlobalToolbar({
         <Search className="h-4 w-4 shrink-0" />
         <span className="truncate">세션 검색</span>
         <kbd>⌘K</kbd>
-      </button>
+      </button>}
       <div className="dashboard-toolbar-actions">
         <PersistentSessionEntry/>
         <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig} />

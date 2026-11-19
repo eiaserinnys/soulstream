@@ -1,27 +1,17 @@
-import { useRef, useState, type ReactNode } from "react";
-import { Button, ProfileAvatar } from "@seosoyoung/soul-ui";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, ProfileAvatar, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { LayoutDashboard, List, Library } from "lucide-react";
+import { CardBoardWorkspace } from "../CardBoardWorkspace";
+import { ProjectNavigationTree } from "../ProjectNavigationTree";
 import { PostItCardView, PostItGrid } from "../PostItCardPresentation";
 import { StatusChip } from "../StatusChip";
 import { GlassPanel } from "./GlassPanel";
-import { FOLDERS, pendingCard, toCardRow, type PendingDoc, type ScenarioCard } from "./approval-desk-data";
+import { pendingCard, portraitUrl, toCardRow, type PendingDoc, type ScenarioCard } from "./approval-desk-data";
 
 const TONE = { question: "question", task: "running", review: "review" } as const;
 
-const BOARD_COLUMNS: { key: string; label: string; count: number }[] = [
-  { key: "todo", label: "드래프트", count: 0 },
-  { key: "queued", label: "대기", count: 2 },
-  { key: "running", label: "실행 중", count: 3 },
-  { key: "blocked", label: "막힘", count: 0 },
-  { key: "awaiting_verification", label: "검증 대기", count: 0 },
-  { key: "review", label: "검수 대기", count: 5 },
-  { key: "on_hold", label: "보류", count: 18 },
-  { key: "done", label: "완료", count: 12 },
-  { key: "cancelled", label: "취소", count: 0 },
-];
-
 function portraitFor(card: ScenarioCard) {
-  return <ProfileAvatar role="assistant" hasPortrait portraitUrl={`/api/nodes/eiaserinnys/agents/${card.assignee.agentId}/portrait`} fallbackEmoji="🤖" />;
+  return <ProfileAvatar role="assistant" hasPortrait portraitUrl={portraitUrl(card.assignee.agentId)} fallbackEmoji="🤖" />;
 }
 
 function CardTile({ card, onOpen, statusContent, variant = "default", supplement }: {
@@ -29,7 +19,8 @@ function CardTile({ card, onOpen, statusContent, variant = "default", supplement
   onOpen(trigger: HTMLElement): void;
   statusContent: ReactNode;
   variant?: "default" | "compact";
-  supplement?: string;
+  /** null이면 폴더 이름을 감춘다. 보드의 좁은 카드에서 담당 이름 자리를 비켜 준다. */
+  supplement?: string | null;
 }) {
   const seat = useRef<HTMLDivElement>(null);
   const row = toCardRow(card);
@@ -38,17 +29,26 @@ function CardTile({ card, onOpen, statusContent, variant = "default", supplement
       color={row.color} fontSize={17} variant={variant}
       activity={{ kind: card.activityKind, text: card.activity }}
       assigneeName={card.assignee.name} avatar={portraitFor(card)}
-      statusContent={statusContent} supplement={supplement ?? card.folder}
+      statusContent={statusContent} supplement={supplement === null ? undefined : supplement ?? card.folder}
       onOpen={() => { if (seat.current) onOpen(seat.current); }} />
   </div>;
 }
 
-export function HomePlannerScreen({ pending, progress, queue, onHold, completed, referenceView, boardView, onToggleReference, onToggleBoard, onOpenDesk, onOpenPending, onOpenCard }: {
+function cardStatusContent(card: ScenarioCard) {
+  if (card.status === "done") return <StatusChip label={card.reference ? "참고" : "완료"} tone="done" />;
+  if (card.status === "on_hold") return <StatusChip label="보류" tone="open" />;
+  if (card.status === "running") return <StatusChip label="실행 중" tone="running" />;
+  if (card.status === "review") return <StatusChip label="검수 대기" tone="review" />;
+  return <StatusChip label="대기" tone="open" />;
+}
+
+export function HomePlannerScreen({ pending, progress, queue, onHold, completed, folders, referenceView, boardView, onToggleReference, onToggleBoard, onOpenDesk, onOpenPending, onOpenCard }: {
   pending: PendingDoc[];
   progress: ScenarioCard[];
   queue: ScenarioCard[];
   onHold: ScenarioCard[];
   completed: ScenarioCard[];
+  folders: readonly CatalogFolder[];
   referenceView: boolean;
   boardView: boolean;
   onToggleReference(): void;
@@ -57,26 +57,48 @@ export function HomePlannerScreen({ pending, progress, queue, onHold, completed,
   onOpenPending(doc: PendingDoc, trigger: HTMLElement): void;
   onOpenCard(card: ScenarioCard, trigger: HTMLElement): void;
 }) {
-  const [activeFolder, setActiveFolder] = useState<string>(FOLDERS[0]);
-  const [holdExpanded, setHoldExpanded] = useState(false);
-  const references = completed.filter(card => card.reference);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const inFolder = (folderId: string) => activeFolderId === null || folderId === activeFolderId;
+  const filteredPending = pending.filter(doc => inFolder(doc.folderId));
+  const filteredProgress = progress.filter(card => inFolder(card.folderId));
+  const filteredQueue = queue.filter(card => inFolder(card.folderId));
+  const filteredOnHold = onHold.filter(card => inFolder(card.folderId));
+  const filteredCompleted = completed.filter(card => inFolder(card.folderId));
+  const references = filteredCompleted.filter(card => card.reference);
+  const boardEntries = useMemo<{ card: ScenarioCard; doc?: PendingDoc }[]>(() => [
+    ...filteredPending.map(doc => ({ card: pendingCard(doc), doc })),
+    ...filteredProgress.map(card => ({ card })),
+    ...filteredQueue.map(card => ({ card })),
+    ...filteredOnHold.map(card => ({ card })),
+    ...filteredCompleted.map(card => ({ card })),
+  ], [filteredPending, filteredProgress, filteredQueue, filteredOnHold, filteredCompleted]);
+  const boardCardById = new Map(boardEntries.map(entry => [entry.card.id, entry]));
+
+  const renderBoardCard = (row: ReturnType<typeof toCardRow>) => {
+    const entry = boardCardById.get(row.id);
+    if (!entry) return null;
+    const { card } = entry;
+    return <CardTile key={card.id} card={card} variant="compact" supplement={null}
+      statusContent={cardStatusContent(card)}
+      onOpen={trigger => entry.doc ? onOpenPending(entry.doc, trigger) : onOpenCard(card, trigger)} />;
+  };
 
   return <div className="ad1707-screen ad1707-home" data-screen="home">
     <div className="ad1707-home-shell">
-      <GlassPanel as="aside" className="v3-navigation ad1707-nav" aria-label="폴더">
+      <GlassPanel as="aside" className="v3-navigation ad1707-nav border border-glass-border" aria-label="폴더">
         <div className="v3-navigation-scroll">
           <div className="v3-brand"><span aria-hidden="true">✨</span><strong>소울스트림</strong></div>
           <h2>폴더</h2>
           <div className="v3-nav-list">
-            {FOLDERS.map(folder => <button key={folder} type="button"
-              className={folder === activeFolder ? "is-active" : undefined}
-              aria-current={folder === activeFolder ? "true" : undefined}
-              onClick={() => setActiveFolder(folder)}>{folder}</button>)}
+            <ProjectNavigationTree folders={folders} selectedFolderId={activeFolderId}
+              isExpanded={() => false} onToggleExpanded={() => {}}
+              onSelect={folder => setActiveFolderId(current => current === folder.id ? null : folder.id)}
+              onContextMenu={event => event.preventDefault()} onReorder={async () => {}} />
           </div>
         </div>
       </GlassPanel>
 
-      <main className="ad1707-home-main">
+      <GlassPanel as="main" className="v3-planner ad1707-home-main border border-glass-border">
         <header className="ad1707-home-head">
           <h1>홈 플래너</h1>
           <div className="ad1707-home-actions">
@@ -102,41 +124,16 @@ export function HomePlannerScreen({ pending, progress, queue, onHold, completed,
               onOpen={trigger => onOpenCard(card, trigger)} />)}
           </PostItGrid> : <p className="ad1707-empty">참고로 갈무리한 카드가 없습니다.</p>}
         </section> : boardView ? <section className="ad1707-home-group ad1707-board-view" aria-label="카드 보드">
-          <div className="ad1707-board" role="list">
-            {BOARD_COLUMNS.map(column => {
-              const cards = column.key === "queued" ? queue
-                : column.key === "running" ? progress
-                : column.key === "review" ? [] : column.key === "on_hold" ? onHold
-                : column.key === "done" ? completed : [];
-              const count = column.key === "review" ? pending.length
-                : column.key === "done" ? completed.length
-                : column.key === "on_hold" ? onHold.length : column.count;
-              const shown = column.key === "on_hold" && !holdExpanded ? cards.slice(0, 3) : cards;
-              return <section key={column.key} className="ad1707-board-column" role="listitem" data-board-column={column.key}>
-                <div className="v3-detail-section-head">
-                  <h3>{column.label}</h3><span>{count}개</span>
-                </div>
-                <div className="ad1707-board-lane">
-                  {column.key === "review" ? pending.map(doc => <CardTile key={doc.id} card={pendingCard(doc)} variant="compact"
-                    statusContent={<StatusChip label={doc.kindLabel} tone={TONE[doc.kind]} />}
-                    onOpen={trigger => onOpenPending(doc, trigger)} />) : shown.map(card => <CardTile key={card.id} card={card} variant="compact"
-                    statusContent={<StatusChip label={card.status === "done" ? (card.reference ? "참고" : "완료") : card.status === "on_hold" ? "보류" : card.status === "running" ? "실행 중" : "대기"} tone={card.status === "done" ? "done" : card.status === "on_hold" ? "open" : "running"} />}
-                    onOpen={trigger => onOpenCard(card, trigger)} />)}
-                  {column.key === "on_hold" && !holdExpanded && onHold.length > 3 ? <Button variant="ghost" size="sm"
-                    className="ad1707-board-more" onClick={() => setHoldExpanded(true)}>나머지 {onHold.length - 3}건 더 보기</Button> : null}
-                  {count === 0 ? <p className="v3-card-board-empty">카드가 없습니다</p> : null}
-                </div>
-              </section>;
-            })}
-          </div>
+          <CardBoardWorkspace title="카드 보드" cards={boardEntries.map(entry => toCardRow(entry.card))}
+            renderCard={renderBoardCard} completion={{ includeCompleted: true, onChange: () => {} }} />
         </section> : <>
           <section className="ad1707-home-group" data-card-group="attention" aria-label="확인할 것">
             <div className="v3-section-head ad1707-group-head">
-              <h2>확인할 것</h2><span>{pending.length}</span><span className="v3-spacer" />
+              <h2>확인할 것</h2><span>{filteredPending.length}</span><span className="v3-spacer" />
               <Button variant="glass" size="sm" onClick={onOpenDesk}>결재 데스크로 넘겨 보기</Button>
             </div>
             <PostItGrid fontSize={17}>
-              {pending.map(doc => <CardTile key={doc.id} card={pendingCard(doc)}
+              {filteredPending.map(doc => <CardTile key={doc.id} card={pendingCard(doc)}
                 statusContent={doc.scheduledUntil
                   ? <StatusChip label={`다시 보기 예약 ${doc.scheduledUntil}`} tone="open" />
                   : <StatusChip label={doc.kindLabel} tone={TONE[doc.kind]} />}
@@ -144,23 +141,23 @@ export function HomePlannerScreen({ pending, progress, queue, onHold, completed,
             </PostItGrid>
           </section>
           <section className="ad1707-home-group" data-card-group="running" aria-label="진행 중">
-            <div className="v3-section-head ad1707-group-head"><h2>진행 중</h2><span>{progress.length}</span></div>
+            <div className="v3-section-head ad1707-group-head"><h2>진행 중</h2><span>{filteredProgress.length}</span></div>
             <PostItGrid fontSize={17}>
-              {progress.map(card => <CardTile key={card.id} card={card}
+              {filteredProgress.map(card => <CardTile key={card.id} card={card}
                 statusContent={<StatusChip label="실행 중" tone="running" />}
                 onOpen={trigger => onOpenCard(card, trigger)} />)}
             </PostItGrid>
           </section>
           <section className="ad1707-home-group" data-card-group="queued" aria-label="대기열">
-            <div className="v3-section-head ad1707-group-head"><h2>대기열</h2><span>{queue.length}</span></div>
+            <div className="v3-section-head ad1707-group-head"><h2>대기열</h2><span>{filteredQueue.length}</span></div>
             <PostItGrid fontSize={17}>
-              {queue.map(card => <CardTile key={card.id} card={card}
+              {filteredQueue.map(card => <CardTile key={card.id} card={card}
                 statusContent={<StatusChip label="대기" tone="open" />}
                 onOpen={trigger => onOpenCard(card, trigger)} />)}
             </PostItGrid>
           </section>
         </>}
-      </main>
+      </GlassPanel>
     </div>
   </div>;
 }

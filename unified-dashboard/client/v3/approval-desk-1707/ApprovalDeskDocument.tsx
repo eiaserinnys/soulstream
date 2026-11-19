@@ -1,29 +1,47 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button, ProfileAvatar } from "@seosoyoung/soul-ui";
 import { ExternalLink, FileText, Paperclip } from "lucide-react";
 import { StatusChip } from "../StatusChip";
 import { GlassPanel } from "./GlassPanel";
 import { EvidenceArt } from "./EvidenceArt";
-import type { EvidenceSpec, PendingDoc } from "./approval-desk-data";
+import { portraitUrl, type EvidenceSpec, type PendingDoc } from "./approval-desk-data";
 
 const TONE = { question: "question", task: "running", review: "review" } as const;
+export type QuestionAction = "different" | "ask";
 
-export function ApprovalDeskDocument({ doc, onOpenEvidence, onSupplement, onAnswer }: {
+const QUESTION_ACTION_LABEL: Record<QuestionAction, string> = {
+  different: "다르게 답하기",
+  ask: "되묻기",
+};
+
+export function ApprovalDeskDocument({ doc, questionAction, onOpenEvidence, onSupplement, onAnswer, onQuestionActionSubmit, onQuestionActionCancel, onOpenDocument }: {
   doc: PendingDoc;
+  questionAction: QuestionAction | null;
   onOpenEvidence(evidence: EvidenceSpec, trigger: HTMLButtonElement): void;
   onSupplement(doc: PendingDoc, note: string): void;
   onAnswer(doc: PendingDoc, option: string): void;
+  onQuestionActionSubmit(doc: PendingDoc, action: QuestionAction, note: string): void;
+  onQuestionActionCancel(): void;
+  onOpenDocument(documentId: string): void;
 }) {
   const [openItem, setOpenItem] = useState<number | null>(null);
   const [note, setNote] = useState("");
+  const [questionNote, setQuestionNote] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const questionInputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     setOpenItem(null);
     setNote("");
+    setQuestionNote("");
   }, [doc.id]);
   useEffect(() => {
     if (openItem !== null) inputRef.current?.focus();
   }, [openItem]);
+  useEffect(() => {
+    // 처분을 바꾸면 앞서 적던 글은 그 처분의 것이 아니므로 비운다.
+    setQuestionNote("");
+    if (questionAction) questionInputRef.current?.focus();
+  }, [questionAction]);
 
   const submitNote = (event: FormEvent) => {
     event.preventDefault();
@@ -32,6 +50,28 @@ export function ApprovalDeskDocument({ doc, onOpenEvidence, onSupplement, onAnsw
     onSupplement(doc, trimmed);
     setOpenItem(null);
     setNote("");
+  };
+
+  const submitQuestionAction = (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!questionAction) return;
+    const trimmed = questionNote.trim();
+    if (!trimmed) return;
+    onQuestionActionSubmit(doc, questionAction, trimmed);
+    setQuestionNote("");
+  };
+
+  const onQuestionInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onQuestionActionCancel();
+      return;
+    }
+    if (event.key !== "Enter" || event.shiftKey) return;
+    // 한글 IME 조합 중의 Enter는 글자 확정이지 전송이 아니다.
+    if (event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    submitQuestionAction();
   };
 
   return <div className="ad1707-doc-seat">
@@ -67,6 +107,18 @@ export function ApprovalDeskDocument({ doc, onOpenEvidence, onSupplement, onAnsw
                 <span className="ad1707-option-desc">{option.description}</span>
               </Button>)}
             </div>
+            {questionAction ? <form className="ad1707-inline-fix ad1707-question-action" onSubmit={submitQuestionAction}>
+              <label className="ad1707-sr-only" htmlFor={`ad1707-question-${doc.id}`}>{QUESTION_ACTION_LABEL[questionAction]}</label>
+              <strong className="ad1707-question-action-title">{QUESTION_ACTION_LABEL[questionAction]}</strong>
+              <textarea id={`ad1707-question-${doc.id}`} ref={questionInputRef} rows={3} value={questionNote}
+                placeholder={questionAction === "different" ? "다르게 답할 내용을 적어 주세요." : "되물을 내용을 적어 주세요."}
+                onChange={event => setQuestionNote(event.target.value)}
+                onKeyDown={onQuestionInputKeyDown} />
+              <div className="ad1707-inline-fix-actions">
+                <Button size="xs" variant="ghost" type="button" onClick={onQuestionActionCancel}>취소</Button>
+                <Button size="xs" type="submit" disabled={!questionNote.trim()}>보내기</Button>
+              </div>
+            </form> : null}
           </section> : null}
 
           {doc.kind === "task" && doc.steps ? <section className="ad1707-section" aria-label="실행 단계">
@@ -124,7 +176,8 @@ export function ApprovalDeskDocument({ doc, onOpenEvidence, onSupplement, onAnsw
             </button>)}
           </div>
 
-          {doc.document ? <button type="button" className="ad1707-link-card" aria-label={`${doc.document.title} 발행 문서 열기`}>
+          {doc.document ? <button type="button" className="ad1707-link-card" aria-label={`${doc.document.title} 발행 문서 열기`}
+            onClick={() => onOpenDocument(doc.document!.id)}>
             <FileText className="size-5" strokeWidth={1.5} aria-hidden="true" />
             <span className="ad1707-link-copy">
               <strong>{doc.document.title}</strong>
@@ -134,7 +187,7 @@ export function ApprovalDeskDocument({ doc, onOpenEvidence, onSupplement, onAnsw
           </button> : null}
 
           <div className="ad1707-assignee">
-            <ProfileAvatar role="assistant" hasPortrait portraitUrl="/api/nodes/eiaserinnys/agents/roselin/portrait"
+            <ProfileAvatar role="assistant" hasPortrait portraitUrl={portraitUrl(doc.assignee.agentId)}
               fallbackEmoji="🤖" />
             <div className="ad1707-assignee-copy">
               <strong>{doc.assignee.name}</strong>

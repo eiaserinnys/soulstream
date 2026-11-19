@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronLeft, ChevronRight, Undo2 } from "lucide-react";
-import { ApprovalDeskDocument } from "./ApprovalDeskDocument";
+import { ApprovalDeskDocument, type QuestionAction } from "./ApprovalDeskDocument";
 import { ApprovalDeskStampBar, type DispositionKind } from "./ApprovalDeskStampBar";
-import type { OverlayDetail } from "./CardSessionOverlay";
 import { EvidenceDialog } from "./EvidenceDialog";
+import { GlassPanel } from "./GlassPanel";
 import type { EvidenceSpec, PendingDoc } from "./approval-desk-data";
 
 export interface DeskAction {
@@ -20,15 +20,21 @@ const ACTION_LABEL: Record<DispositionKind, string> = {
   approve: "승인 완료로 넘겼습니다",
 };
 
-export function ApprovalDeskScreen({ docs, current, onSelect, onDispose, onUndo, lastAction, onOpenHome, onOpenOverlay }: {
+export function ApprovalDeskScreen({ docs, current, questionAction, onSelect, onDispose, onUndo, lastAction, onOpenHome, onOpenOverlay, onQuestionAction, onQuestionActionSubmit, onQuestionActionCancel, onOpenDocument, onReset }: {
   docs: PendingDoc[];
   current: PendingDoc | null;
+  questionAction: QuestionAction | null;
   onSelect(id: string): void;
   onDispose(doc: PendingDoc, kind: DispositionKind, detail?: string): void;
   onUndo(): void;
   lastAction: DeskAction | null;
   onOpenHome(): void;
-  onOpenOverlay(detail: OverlayDetail, trigger: HTMLElement): void;
+  onOpenOverlay(doc: PendingDoc, trigger: HTMLElement): void;
+  onQuestionAction(kind: QuestionAction): void;
+  onQuestionActionSubmit(doc: PendingDoc, action: QuestionAction, note: string): void;
+  onQuestionActionCancel(): void;
+  onOpenDocument(documentId: string): void;
+  onReset(): void;
 }) {
   const [evidence, setEvidence] = useState<EvidenceSpec | null>(null);
   const evidenceTrigger = useRef<HTMLButtonElement | null>(null);
@@ -57,23 +63,13 @@ export function ApprovalDeskScreen({ docs, current, onSelect, onDispose, onUndo,
   };
   const showOverlay = () => {
     if (!current || !overlayTrigger.current) return;
-    onOpenOverlay({
-      number: current.number,
-      title: current.title,
-      folder: current.folder,
-      statusLabel: current.kindLabel,
-      statusTone: current.kind === "question" ? "question" : current.kind === "task" ? "running" : "review",
-      request: current.request,
-      checks: current.checks?.map(check => ({ title: check.title, result: check.result })),
-      assignee: current.assignee,
-      messages: current.messages,
-    }, overlayTrigger.current);
+    onOpenOverlay(current, overlayTrigger.current);
   };
 
   return <div className="ad1707-screen ad1707-desk" data-screen="desk">
     <div className="ad1707-desk-scroll">
-      <div className="ad1707-desk-inner">
-        <div className="ad1707-filmstrip-row">
+      <div className={`ad1707-desk-inner${docs.length === 0 ? " is-empty" : ""}`}>
+        {docs.length > 0 ? <div className="ad1707-filmstrip-row">
           <DashboardIconCap label="앞 서류" disabled={index <= 0} onClick={() => index > 0 && onSelect(docs[index - 1]!.id)}>
             <ChevronLeft className="size-5" strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
           </DashboardIconCap>
@@ -94,16 +90,22 @@ export function ApprovalDeskScreen({ docs, current, onSelect, onDispose, onUndo,
           </DashboardIconCap>
           <Button ref={overlayTrigger} variant="glass" size="sm" className="ad1707-overlay-trigger"
             disabled={!current} onClick={showOverlay}>전체 카드와 세션 열기</Button>
-        </div>
+        </div> : null}
 
-        {current ? <ApprovalDeskDocument doc={current}
+        {current ? <ApprovalDeskDocument doc={current} questionAction={questionAction}
           onOpenEvidence={(next, trigger) => { evidenceTrigger.current = trigger; setEvidence(next); }}
           onSupplement={(doc, note) => onDispose(doc, "supplement", note)}
-          onAnswer={(doc, option) => onDispose(doc, "approve", option)} /> : <div className="ad1707-desk-empty">
+          onAnswer={(doc, option) => onDispose(doc, "approve", option)}
+          onQuestionActionSubmit={onQuestionActionSubmit}
+          onQuestionActionCancel={onQuestionActionCancel}
+          onOpenDocument={onOpenDocument} /> : <GlassPanel as="section" className="ad1707-desk-empty border border-glass-border" aria-label="결재 데스크 빈 상태">
           <h2>오늘 넘길 서류를 모두 넘겼습니다</h2>
           <p>확인할 것과 참고 서재는 홈 플래너에서 이어 볼 수 있습니다.</p>
-          <Button variant="glass" onClick={onOpenHome}>홈 플래너 열기</Button>
-        </div>}
+          <div className="ad1707-desk-empty-actions">
+            <Button variant="glass" onClick={onOpenHome}>홈 플래너 보기</Button>
+            <Button variant="outline" onClick={onReset}>예시 5건 다시 불러오기</Button>
+          </div>
+        </GlassPanel>}
       </div>
     </div>
 
@@ -117,7 +119,7 @@ export function ApprovalDeskScreen({ docs, current, onSelect, onDispose, onUndo,
     </div> : null}
 
     {current ? <div className="ad1707-stamp-seat">
-      <ApprovalDeskStampBar doc={current} onDispose={onDispose} />
+      <ApprovalDeskStampBar doc={current} onDispose={onDispose} onQuestionAction={onQuestionAction} />
     </div> : null}
 
     <EvidenceDialog evidence={evidence} onClose={closeEvidence} />

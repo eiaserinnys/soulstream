@@ -47,7 +47,7 @@ function Surface({ children, surface }: { children: ReactNode; surface: MockupSu
     <WallpaperLayer />
     <LiquidGlassCanvas />
     <main ref={surfaceRef}
-      className={surface === "bare" ? "v3-components-main mockup-main--bare" : "v3-components-main glass-strong glass-chrome"}
+      className={surface === "bare" ? "v3-mockup-bare" : "v3-components-main glass-strong glass-chrome"}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}>
       {children}
     </main>

@@ -1,17 +1,125 @@
 import { useEffect, useRef, useState } from "react";
+import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
+import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
 import { ApprovalDeskToolbar, type DashboardScreen } from "./ApprovalDeskToolbar";
 import { ApprovalDeskScreen, type DeskAction } from "./ApprovalDeskScreen";
 import { HomePlannerScreen } from "./HomePlannerScreen";
 import { PasBriefingScreen } from "./PasBriefingScreen";
-import { CardSessionOverlay, type OverlayDetail } from "./CardSessionOverlay";
+import { DocumentReaderDialog } from "../DocumentReaderDialog";
+import { CardWorkspace } from "../CardWorkspace";
+import { useMobilePlannerMode } from "../MobilePlannerTabs";
+import type { MobilePlannerTab } from "../mobile-planner-state";
 import type { DispositionKind } from "./ApprovalDeskStampBar";
+import type { QuestionAction } from "./ApprovalDeskDocument";
 import {
-  COMPLETED_CARDS, ON_HOLD_CARDS, PENDING_DOCS, PROGRESS_CARDS, QUEUE_CARDS,
-  pendingCard, type PendingDoc, type ScenarioCard,
+  COMPLETED_CARDS, FOLDERS, ON_HOLD_CARDS, PENDING_DOCS, PROGRESS_CARDS, QUEUE_CARDS,
+  pendingCard, portraitUrl, toCardRow, type AgentAssignee, type PendingDoc, type ScenarioCard,
 } from "./approval-desk-data";
+import "../v3-folder-workspace.css";
 import "../v3-postit-cards.css";
 import "../v3-card-board.css";
 import "./v3-approval-desk-1707.css";
+
+const MOCK_NOW = "2026-11-19T09:00:00.000Z";
+
+const PAS_SESSION: SessionSummary = {
+  agentSessionId: "mock-pas-seosoyoung",
+  displayName: "PAS 대화",
+  status: "running",
+  eventCount: 3,
+  agentId: "seosoyoung",
+  agentName: "서소영",
+  nodeId: "eiaserinnys",
+  modelLabel: "Sol",
+  backend: "codex",
+  agentPortraitUrl: portraitUrl("seosoyoung"),
+  createdAt: MOCK_NOW,
+  updatedAt: MOCK_NOW,
+  prompt: "결재 데스크 브리핑",
+};
+
+function sessionFor(assignee: AgentAssignee, cardId: string): SessionSummary {
+  return {
+    agentSessionId: `mock-${cardId}-${assignee.agentId}`,
+    displayName: assignee.session,
+    status: "completed",
+    eventCount: 0,
+    agentId: assignee.agentId,
+    agentName: assignee.name,
+    nodeId: "eiaserinnys",
+    modelLabel: "Sol",
+    backend: "codex",
+    agentPortraitUrl: portraitUrl(assignee.agentId),
+    createdAt: MOCK_NOW,
+    updatedAt: MOCK_NOW,
+    prompt: assignee.role,
+  };
+}
+
+function linkedSession(assignee: AgentAssignee, cardId: string): CardDetail["sessions"][number] {
+  const session = sessionFor(assignee, cardId);
+  return {
+    sessionId: session.agentSessionId,
+    cardId,
+    displayName: session.displayName ?? null,
+    nodeId: session.nodeId!,
+    agentId: assignee.agentId,
+    status: "completed",
+    createdAt: MOCK_NOW,
+    updatedAt: MOCK_NOW,
+    callerSessionId: null,
+  };
+}
+
+function detailForPending(doc: PendingDoc): CardDetail {
+  const row = toCardRow(pendingCard(doc));
+  const session = sessionFor(doc.assignee, row.id);
+  return {
+    card: row,
+    reports: doc.kind === "review" ? [{
+      id: `report-${doc.number}`, title: doc.title, format: "markdown",
+      body: doc.request, sessionId: session.agentSessionId, createdAt: row.createdAt,
+    }] : [],
+    questions: doc.kind === "question" ? [{
+      id: `question-${doc.number}`, text: doc.title,
+      options: doc.options?.map(option => option.label) ?? null,
+      answer: null, askedAt: row.createdAt, answeredAt: null,
+    }] : [],
+    sessions: [linkedSession(doc.assignee, row.id)],
+    comments: doc.messages.map((message, index) => ({
+      id: `comment-${doc.number}-${index}`, cardId: row.id,
+      authorKind: message.role === "user" ? "user" : "agent",
+      authorId: message.role === "user" ? "director" : doc.assignee.agentId,
+      sessionId: message.role === "user" ? null : session.agentSessionId,
+      kind: "comment", body: message.text, createdAt: row.createdAt,
+    })),
+    notes: [],
+    nowHistory: [],
+  };
+}
+
+function detailForCard(card: ScenarioCard): CardDetail {
+  const row = toCardRow(card);
+  const session = sessionFor(card.assignee, row.id);
+  return {
+    card: row,
+    reports: [{
+      id: `report-${card.number}`, title: card.title, format: "markdown",
+      body: card.activity, sessionId: session.agentSessionId, createdAt: row.createdAt,
+    }],
+    questions: [],
+    sessions: [linkedSession(card.assignee, row.id)],
+    comments: [{
+      id: `comment-${card.number}`, cardId: row.id,
+      authorKind: card.activityKind === "instruction" ? "user" : "agent",
+      authorId: card.activityKind === "instruction" ? "director" : card.assignee.agentId,
+      sessionId: card.activityKind === "instruction" ? null : session.agentSessionId,
+      kind: "comment", body: card.activity, createdAt: row.createdAt,
+    }],
+    notes: [],
+    nowHistory: [],
+  };
+}
 
 function readScreen(): DashboardScreen {
   const hash = window.location.hash.replace(/^#/, "");
@@ -36,7 +144,7 @@ function completedCard(doc: PendingDoc, reference: boolean, detail?: string): Sc
     ...pendingCard(doc),
     status: "done",
     activityKind: "report",
-    activity: reference ? "참고 서재로 갈무리했습니다." : detail ? `${detail}로 답했습니다.` : "승인 완료로 넘겼습니다.",
+    activity: reference ? doc.referenceSummary : detail ? `${detail}로 답했습니다.` : "승인 완료로 넘겼습니다.",
     reference,
   };
 }
@@ -49,9 +157,23 @@ export function ApprovalDeskDashboardMockup() {
   const [completed, setCompleted] = useState<ScenarioCard[]>(COMPLETED_CARDS);
   const [deskId, setDeskId] = useState<string>(PENDING_DOCS[0]!.id);
   const [lastAction, setLastAction] = useState<DeskAction | null>(null);
+  const [questionAction, setQuestionAction] = useState<QuestionAction | null>(null);
   const [referenceView, setReferenceView] = useState(false);
-  const [overlay, setOverlay] = useState<OverlayDetail | null>(null);
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<CardDetail | null>(null);
+  const [overlaySession, setOverlaySession] = useState<SessionSummary | undefined>(undefined);
+  const [mobileTab, setMobileTab] = useState<MobilePlannerTab>("projects");
   const overlayTrigger = useRef<HTMLElement | null>(null);
+  // 겹 눌림 한 번이 다음 서류까지 넘기지 않도록, 최근 처분 뒤 400ms 동안 모든 처분을 막는다.
+  const lastDispose = useRef({ id: null as string | null, at: 0 });
+  const mobileMode = useMobilePlannerMode();
+
+  useEffect(() => {
+    if (!useDashboardStore.getState().activeSessionKey) {
+      useDashboardStore.getState().setActiveSession(PAS_SESSION.agentSessionId);
+      useDashboardStore.getState().setActiveSessionSummary(PAS_SESSION);
+    }
+  }, []);
 
   useEffect(() => {
     const onHash = () => {
@@ -68,6 +190,9 @@ export function ApprovalDeskDashboardMockup() {
   useEffect(() => {
     if (!current && deskDocs.length > 0) setDeskId(deskDocs[0]!.id);
   }, [current, deskDocs]);
+  useEffect(() => {
+    setQuestionAction(null);
+  }, [deskId]);
 
   const navigate = (next: DashboardScreen) => {
     setScreen(next);
@@ -75,11 +200,21 @@ export function ApprovalDeskDashboardMockup() {
     if (window.location.hash !== `#${next}`) window.location.hash = next;
   };
 
+  const restorePasSession = () => {
+    useDashboardStore.getState().setActiveSession(PAS_SESSION.agentSessionId);
+    useDashboardStore.getState().setActiveSessionSummary(PAS_SESSION);
+  };
+
   const dispose = (doc: PendingDoc, kind: DispositionKind, detail?: string) => {
+    const now = Date.now();
+    if (now - lastDispose.current.at < 400) return;
+    if (!pending.some(item => item.id === doc.id)) return;
+    lastDispose.current = { id: doc.id, at: now };
     setLastAction({ doc, kind, detail });
     const index = deskDocs.findIndex(item => item.id === doc.id);
     const next = deskDocs[index + 1] ?? deskDocs[index - 1] ?? null;
     setDeskId(next?.id ?? "");
+    setQuestionAction(null);
     if (kind === "snooze") {
       setPending(items => items.map(item => item.id === doc.id ? { ...item, scheduledUntil: detail ?? "다시 보기" } : item));
       return;
@@ -89,8 +224,15 @@ export function ApprovalDeskDashboardMockup() {
     else setCompleted(items => [completedCard(doc, kind === "reference", detail), ...items]);
   };
 
+  const submitQuestionAction = (doc: PendingDoc, action: QuestionAction, note: string) => {
+    const label = action === "different" ? "다르게 답하기" : "되묻기";
+    setQuestionAction(null);
+    dispose(doc, "supplement", `${label}: ${note}`);
+  };
+
   const undo = () => {
     if (!lastAction) return;
+    lastDispose.current = { id: null, at: 0 };
     const { doc, kind } = lastAction;
     setPending(items => {
       const restored = { ...doc, scheduledUntil: undefined };
@@ -102,43 +244,46 @@ export function ApprovalDeskDashboardMockup() {
     if (kind === "supplement") setProgress(items => items.filter(card => card.id !== `card-${doc.number}`));
     if (kind === "reference" || kind === "approve") setCompleted(items => items.filter(card => card.id !== `card-${doc.number}`));
     setDeskId(doc.id);
+    setQuestionAction(null);
     setLastAction(null);
   };
 
-  const openPending = (doc: PendingDoc, trigger: HTMLElement) => {
+  const resetDemo = () => {
+    lastDispose.current = { id: null, at: 0 };
+    setPending(PENDING_DOCS);
+    setProgress(PROGRESS_CARDS);
+    setCompleted(COMPLETED_CARDS);
+    setDeskId(PENDING_DOCS[0]!.id);
+    setLastAction(null);
+    setQuestionAction(null);
+    setOverlay(null);
+    setOverlaySession(undefined);
+    setReferenceView(false);
+    navigate("desk");
+  };
+
+  const activateOverlay = (detail: CardDetail, assignee: AgentAssignee, trigger: HTMLElement) => {
     overlayTrigger.current = trigger;
-    setOverlay({
-      number: doc.number,
-      title: doc.title,
-      folder: doc.folder,
-      statusLabel: doc.kindLabel,
-      statusTone: doc.kind === "question" ? "question" : doc.kind === "task" ? "running" : "review",
-      request: doc.request,
-      checks: doc.checks?.map(check => ({ title: check.title, result: check.result })),
-      assignee: doc.assignee,
-      messages: doc.messages,
-    });
+    const session = sessionFor(assignee, detail.card.id);
+    useDashboardStore.getState().setActiveSession(session.agentSessionId);
+    useDashboardStore.getState().setActiveSessionSummary(session);
+    setOverlaySession(session);
+    setMobileTab("projects");
+    setOverlay(detail);
+  };
+
+  const openPending = (doc: PendingDoc, trigger: HTMLElement) => {
+    activateOverlay(detailForPending(doc), doc.assignee, trigger);
   };
 
   const openCard = (card: ScenarioCard, trigger: HTMLElement) => {
-    overlayTrigger.current = trigger;
-    setOverlay({
-      number: card.number,
-      title: card.title,
-      folder: card.folder,
-      statusLabel: card.status === "done" ? (card.reference ? "참고" : "완료") : card.status === "on_hold" ? "보류" : "실행 중",
-      statusTone: card.status === "done" ? "done" : card.status === "on_hold" ? "open" : "running",
-      request: card.activity,
-      assignee: card.assignee,
-      messages: [
-        { role: card.activityKind === "instruction" ? "user" : "assistant", text: card.activity, time: "최근" },
-        { role: "assistant", text: "이 카드는 시안 흐름을 보여 주기 위한 대표 카드입니다.", time: "최근" },
-      ],
-    });
+    activateOverlay(detailForCard(card), card.assignee, trigger);
   };
 
   const closeOverlay = () => {
     setOverlay(null);
+    setOverlaySession(undefined);
+    restorePasSession();
     requestAnimationFrame(() => overlayTrigger.current?.focus());
   };
 
@@ -153,15 +298,30 @@ export function ApprovalDeskDashboardMockup() {
 
   return <>
     <ApprovalDeskToolbar screen={screen} deskCount={deskDocs.length} onNavigate={navigate} />
-    {screen === "desk" ? <ApprovalDeskScreen docs={deskDocs} current={current}
+    {screen === "desk" ? <ApprovalDeskScreen docs={deskDocs} current={current} questionAction={questionAction}
       onSelect={setDeskId} onDispose={dispose} onUndo={undo} lastAction={lastAction}
-      onOpenHome={() => navigate("home")} onOpenOverlay={openPending} /> : null}
+      onOpenHome={() => navigate("home")} onOpenOverlay={openPending}
+      onQuestionAction={setQuestionAction} onQuestionActionSubmit={submitQuestionAction}
+      onQuestionActionCancel={() => setQuestionAction(null)} onOpenDocument={setDocumentId}
+      onReset={resetDemo} /> : null}
     {screen === "home" || screen === "board" ? <HomePlannerScreen pending={pending}
       progress={progress} queue={QUEUE_CARDS} onHold={ON_HOLD_CARDS} completed={completed}
-      referenceView={referenceView} boardView={screen === "board"}
+      folders={FOLDERS} referenceView={referenceView} boardView={screen === "board"}
       onToggleReference={toggleReference} onToggleBoard={() => navigate(screen === "board" ? "home" : "board")}
       onOpenDesk={() => navigate("desk")} onOpenPending={openPending} onOpenCard={openCard} /> : null}
     {screen === "pas" ? <PasBriefingScreen deskCount={deskDocs.length} onOpenDesk={() => navigate("desk")} /> : null}
-    <CardSessionOverlay detail={overlay} onClose={closeOverlay} />
+    {overlay ? <CardWorkspace cardId={overlay.card.id} sampleDetail={overlay} folders={FOLDERS}
+      onClose={closeOverlay} onCloseChat={() => setMobileTab("today")}
+      onOpenSession={session => {
+        useDashboardStore.getState().setActiveSession(session.agentSessionId);
+        useDashboardStore.getState().setActiveSessionSummary(session);
+        setOverlaySession(session);
+        setMobileTab("chat");
+      }}
+      mobileMode={mobileMode} mobileTab={mobileTab} activeSession={overlaySession}
+      chatInputDisabled historyEnabled={false} sessionStreamActive={false}
+      sessionConnectionStatus="disconnected" reconnectSession={() => {}}
+      onAcknowledgedReview={() => {}} loadDisplaySettings={false} /> : null}
+    <DocumentReaderDialog documentId={documentId} onClose={() => setDocumentId(null)} />
   </>;
 }

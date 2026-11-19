@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="로젤린 초상">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241a3d"/>
+      <stop offset="1" stop-color="#0d0a18"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M64 18c-18 0-30 14-30 32 0 12 5 21 13 27l-9 33h52l-9-33c8-6 13-15 13-27 0-18-12-32-30-32z" fill="#c9c4e8"/>
+  <path d="M34 50c0-20 13-34 30-34s30 14 30 34c-5-9-15-15-30-15s-25 6-30 15z" fill="#4b3d78"/>
+  <path d="M64 36v30" stroke="#9d8fc7" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="64" cy="72" r="4" fill="#f4d58d"/>
+  <path d="M92 20l6 18-14 10 8-28z" fill="#e7e2ff"/>
+  <circle cx="30" cy="96" r="3" fill="#8f7bd1"/>
+  <circle cx="100" cy="98" r="2" fill="#8f7bd1"/>
+</svg>

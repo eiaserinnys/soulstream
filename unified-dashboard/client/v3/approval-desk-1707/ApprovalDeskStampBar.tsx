@@ -8,9 +8,10 @@ export type DispositionKind = "supplement" | "snooze" | "reference" | "approve";
 
 const SNOOZE_OPTIONS = ["내일 오전 9시", "3일 뒤", "다음 주 월요일"];
 
-export function ApprovalDeskStampBar({ doc, onDispose }: {
+export function ApprovalDeskStampBar({ doc, onDispose, onQuestionAction }: {
   doc: PendingDoc;
   onDispose(doc: PendingDoc, kind: DispositionKind, detail?: string): void;
+  onQuestionAction(kind: "different" | "ask"): void;
 }) {
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -44,10 +45,10 @@ export function ApprovalDeskStampBar({ doc, onDispose }: {
   return <GlassPanel as="div" webgl className="ad1707-stamp-bar" role="group" aria-label="결재 처분">
     <div className="ad1707-stamp-group">
       {doc.kind === "question" ? <>
-        <Button variant="outline" size="lg" className="ad1707-stamp-button" onClick={() => onDispose(doc, "supplement", "다르게 답하기")}>
+        <Button variant="outline" size="lg" className="ad1707-stamp-button" onClick={() => onQuestionAction("different")}>
           <PencilLine className="size-4" aria-hidden="true" />다르게 답하기
         </Button>
-        <Button variant="outline" size="lg" className="ad1707-stamp-button" onClick={() => onDispose(doc, "supplement", "되묻기")}>
+        <Button variant="outline" size="lg" className="ad1707-stamp-button" onClick={() => onQuestionAction("ask")}>
           <CornerDownRight className="size-4" aria-hidden="true" />되묻기
         </Button>
       </> : <Button variant="outline" size="lg" className="ad1707-stamp-button" onClick={() => onDispose(doc, "supplement", "보완 지시")}>
