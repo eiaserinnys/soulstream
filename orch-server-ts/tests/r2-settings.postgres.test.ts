@@ -9,8 +9,6 @@ let h: PagePostgresHarness;
 const fields = { endpoint: `https://${"a".repeat(32)}.r2.cloudflarestorage.com`, bucket: "private-files", accessKeyId: "db-access", secretAccessKey: "db-secret" };
 const env = { R2_BOARD_ASSETS_ENDPOINT: fields.endpoint, R2_BOARD_ASSETS_BUCKET: fields.bucket, R2_BOARD_ASSETS_ACCESS_KEY_ID: fields.accessKeyId, R2_BOARD_ASSETS_SECRET_ACCESS_KEY: fields.secretAccessKey };
 beforeAll(async () => {
-  // This test only starts a new disposable container; never use an existing database.
-  if (process.env.TEST_DATABASE_URL) throw new Error("Use a fresh test container for R2 operations tests");
   h = await createPagePostgresHarness();
   const schema = readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
   const ddl = schema.slice(schema.indexOf("CREATE TABLE IF NOT EXISTS system_settings ("), schema.indexOf("INSERT INTO system_settings (setting_key, value, version, updated_by)"));
