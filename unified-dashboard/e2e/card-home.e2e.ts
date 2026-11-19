@@ -10,7 +10,7 @@ const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
 async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean;folderPending?:boolean;webglGlass?:boolean}={}){
- const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
+ const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;endpoint:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
  let folderFailure=completedOptions.folderFailure??false;
  let releaseFolder=()=>{};
@@ -52,11 +52,12 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
   const request=route.request(),parts=new URL(request.url()).pathname.split("/"),card=cards.find(card=>card.id===parts[3]);
   if(!card)return route.fulfill({status:404,json:{message:"fixture 카드 없음"}});
   if(request.method()==="POST"){
-   const body=request.postDataJSON();writes.push({id:card.id,body});
+   const body=request.postDataJSON();writes.push({id:card.id,endpoint:`/${parts[4]}`,body});
    if(delay)await new Promise(done=>setTimeout(done,600));
    if(failure)return route.fulfill({status:409,json:{message:"fixture version conflict"}});
    if(body.expectedVersion!==card.version)return route.fulfill({status:409,json:{message:"expectedVersion 불일치"}});
-   card.status=body.status;card.version++;
+   card.status=parts[4]==="execute"?"running":body.status;card.version++;
+   if(parts[4]==="execute")return route.fulfill({json:{card,execution:{requestId:`request-${card.id}`,sessionId:"home-session",state:"started"}}});
   }else reads.push(card.id);
   return route.fulfill({json:{card,reports:[{id:"report",title:"보고",body:"보고",format:"markdown",createdAt:card.createdAt,sessionId:null}],
    questions:card.id==="home-3-0"?[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]:[],sessions:[]}});
@@ -240,6 +241,7 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect.poll(()=>completedScroller.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);
  const mainCompletedScroll=await completedScroller.evaluate(element=>element.scrollTop);
  const mainScroll=await board.evaluate(element=>element.scrollLeft),mainRunningScroll=await runningLane.evaluate(element=>element.scrollTop),mainDoneX=(await mainDone.boundingBox())!.x;
+ const anchor=await board.evaluate(element=>{const left=element.getBoundingClientRect().left+element.clientLeft+(parseFloat(getComputedStyle(element).paddingLeft)||0);const column=[...element.querySelectorAll<HTMLElement>("[data-board-column]")].find(item=>item.getBoundingClientRect().right>left)!;return {status:column.dataset.boardColumn!,x:column.getBoundingClientRect().x};});
  await home.getByRole("button",{name:"보드 확대",exact:true}).click();
  const expanded=page.getByRole("dialog",{name:"전체 카드 보드",exact:true}),expandedBoard=expanded.locator(".v3-card-board");
  await expect(expanded).toBeVisible();
@@ -252,7 +254,7 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect(expandedActions.getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
  await expect(expandedActions.getByRole("button",{name:"기록",exact:true})).toHaveCount(0);
  await expect(expandedRunningLane).toHaveJSProperty("scrollTop",mainRunningScroll);
- expect(Math.abs((await expandedDone.boundingBox())!.x-mainDoneX)).toBeLessThanOrEqual(1);
+ expect(Math.abs((await expandedBoard.locator(`[data-board-column="${anchor.status}"]`).boundingBox())!.x-anchor.x)).toBeLessThanOrEqual(1);
  await expandedBoard.evaluate(element=>element.scrollLeft=element.scrollWidth);
  await expandedCompletedScroller.hover();await page.mouse.wheel(0,-720);
  await expect.poll(()=>expandedCompletedScroller.evaluate(element=>element.scrollTop)).toBeLessThan(mainCompletedScroll);
@@ -314,7 +316,8 @@ for(const [width,font] of [[390,17],[1210,14],[1440,17],[1920,18]])test(`product
  const folder=page.getByTestId("folder-card-section");await folder.scrollIntoViewIfNeeded();await expect(folder.locator('[data-card-status="done"]')).toHaveCount(0);
  await capture(page,`after-folder-${width}-font${font}`);
  const review=folder.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.click({button:"right"});
- await page.locator('[data-slot="menu-popup"]').getByRole("menuitem",{name:"완료",exact:true}).click();
+ if(width===390)await page.getByTestId("v3-context-menu-mobile").getByRole("button",{name:"완료",exact:true}).click();
+ else await page.locator('[data-slot="menu-popup"]').getByRole("menuitem",{name:"완료",exact:true}).click();
  await expect(folder.locator('[data-card-id="home-4-0"]')).toHaveCount(0);
  await folder.getByRole("switch",{name:"완료·취소 숨김"}).uncheck();await expect(folder.locator('[data-card-status="done"]')).toHaveCount(2);
  expect(state.writes).toHaveLength(1);writeFileSync(path.join(output,`metrics-${width}-font${font}.json`),JSON.stringify({metrics,expandedRect,restoredHorizontal:old,reads:state.reads,writes:state.writes},null,2));
@@ -356,15 +359,16 @@ test("new drafts and SSE membership appear without re-entry and preserve failed 
 test("pending and failed status saves block duplicates and retry without a reason",async({page})=>{
  await page.setViewportSize({width:1440,height:1000});const state=await fixture(page),review=state.board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.getByRole("button",{name:"카드 상태 변경",exact:true}).click();const picker=page.locator('[data-card-status-picker]');
  state.setFailure(true);state.setDelay(true);const save=picker.getByRole("button",{name:"실행 중",exact:true});await save.click();await expect(save).toBeDisabled();expect(state.writes).toHaveLength(1);
- await expect(picker.getByRole("alert")).toContainText("fixture version conflict");state.setFailure(false);state.setDelay(false);await picker.getByRole("button",{name:"갱신 후 재시도"}).click();await expect(save).toBeEnabled();await save.click();
- await expect(state.board.locator('[data-board-column="running"] [data-card-id="home-4-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(2);expect(state.writes[1].body).toMatchObject({status:"running",expectedVersion:reviewCard.version});expect(state.writes[1].body).not.toHaveProperty("reason");
+ await expect(picker.getByRole("alert").first()).toHaveText("카드가 변경되었습니다. 최신 상태를 확인해 주세요.");
+ const retry=picker.getByRole("button",{name:"다시 시도",exact:true});await expect(retry).toBeVisible();state.setFailure(false);state.setDelay(false);await retry.click();
+ await expect(state.board.locator('[data-board-column="running"] [data-card-id="home-4-0"]')).toHaveCount(1);expect(state.writes).toHaveLength(2);expect(state.writes[1]).toMatchObject({id:"home-4-0",endpoint:"/execute",body:{expectedVersion:reviewCard.version}});expect(state.writes[1].body).not.toHaveProperty("status");expect(state.writes[1].body).not.toHaveProperty("reason");
 });
 
 test.describe("touch alternative",()=>{
  test.use({hasTouch:true,viewport:{width:390,height:844}});
  test("the existing status chip exposes the same free transition",async({page})=>{
   const state=await fixture(page),review=state.board.locator('[data-card-id="home-4-0"]');await review.scrollIntoViewIfNeeded();await review.getByRole("button",{name:"카드 상태 변경",exact:true}).tap();
-  await page.locator('[data-card-status-picker]').getByRole("button",{name:"완료",exact:true}).tap();await expect(state.board.locator('[data-card-id="home-4-0"]')).toHaveCount(0);expect(state.writes).toHaveLength(1);expect(state.writes[0].body).toMatchObject({status:"done",expectedVersion:reviewCard.version});await expect(page.getByTestId("card-detail")).toHaveCount(0);writeFileSync(path.join(output,"touch-menu.json"),JSON.stringify(state.writes,null,2));
+  await page.locator('[data-card-status-picker]').getByRole("button",{name:"완료",exact:true}).tap();await expect(state.board.locator('[data-card-id="home-4-0"]')).toHaveCount(0);expect(state.writes).toHaveLength(1);expect(state.writes[0]).toMatchObject({id:"home-4-0",endpoint:"/status",body:{status:"done",expectedVersion:reviewCard.version}});await expect(page.getByTestId("card-detail")).toHaveCount(0);writeFileSync(path.join(output,"touch-menu.json"),JSON.stringify(state.writes,null,2));
  });
 });
 
