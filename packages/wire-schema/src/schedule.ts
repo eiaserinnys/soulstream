@@ -1,7 +1,5 @@
-import type { FolderContentSql } from "../board/folder_content_sql.js";
-
-export type SqlClient = FolderContentSql;
 export type SoulstreamScheduleKind = "wakeup" | "cron";
+
 export type SoulstreamScheduleStatus =
   | "active"
   | "dispatching"
@@ -54,7 +52,18 @@ export interface ClaimedSchedule {
   claimToken: string;
 }
 
+export type ResumeDispatchDecision =
+  | { decision: "fire"; reason: null }
+  | { decision: "defer"; reason: string }
+  | { decision: "close"; reason: string };
+
+export type CancelScheduleOutcome =
+  | "cancelled"
+  | "already_firing"
+  | "not_cancellable"
+  | "not_found";
+
 export interface CancelScheduleResult {
-  outcome: "cancelled" | "already_firing" | "not_cancellable" | "not_found";
+  outcome: CancelScheduleOutcome;
   schedule: SoulstreamSchedule | null;
 }

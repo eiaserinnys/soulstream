@@ -3,7 +3,7 @@ import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-pre
 import { describe, expect, it, vi } from "vitest";
 
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
-import type { SoulstreamSchedule } from "../../src/schedule/schedule_models.js";
+import type { SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 
 const logger = pino({ level: "silent" });
 

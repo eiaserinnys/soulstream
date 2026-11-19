@@ -1,22 +1,20 @@
-import type { SqlClient } from "./schedule_types.js";
+import type { FolderContentSql } from "../board/folder_content_sql.js";
 import {
   hasContinuousLimitWindow,
   originalTerminalEventId,
   type ResumeScheduleIdentity,
 } from "./resume_after_limit_continuity.js";
-import {
-  decideResumeDispatch as decideResumeDispatchFromFacts,
-  type ResumeDispatchDecision,
-} from "./resume_dispatch_decision.js";
+import { decideResumeDispatch as decideResumeDispatchFromFacts } from "./resume_dispatch_decision.js";
 
 import type {
   CancelScheduleResult,
   ClaimedSchedule,
+  ResumeDispatchDecision,
   ScheduleCreateInput,
   SoulstreamSchedule,
   SoulstreamScheduleKind,
   SoulstreamScheduleStatus,
-} from "./schedule_types.js";
+} from "@soulstream/wire-schema/schedule";
 
 interface ScheduleRow extends Record<string, unknown> {
   schedule_id: string;
@@ -52,7 +50,7 @@ interface CancelScheduleRow extends ScheduleRow {
 }
 
 export class SoulstreamScheduleRepository {
-  constructor(private readonly sql: SqlClient) {}
+  constructor(private readonly sql: FolderContentSql) {}
 
   async isCardOrchestrationManaged(sessionId:string):Promise<boolean>{return (await this.sql`SELECT s.session_id FROM sessions s WHERE s.session_id=${sessionId} AND s.card_id IS NOT NULL AND EXISTS(SELECT 1 FROM system_settings WHERE setting_key='card_orchestration' AND (value->>'enabled')::boolean)`).length>0;}
   async createSchedule(params: ScheduleCreateInput): Promise<SoulstreamSchedule> {

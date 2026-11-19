@@ -7,7 +7,7 @@ import type {
   ResumeDispatchDecision,
   ScheduleCreateInput,
   SoulstreamSchedule,
-} from "./schedule_models.js";
+} from "@soulstream/wire-schema/schedule";
 
 /** Matches the persistence host transport deadline. */
 const SCHEDULE_HOST_TIMEOUT_MS = 10_000;

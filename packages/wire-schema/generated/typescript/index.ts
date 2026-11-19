@@ -1575,6 +1575,7 @@ export interface EventAppendBatch {
         | {
             kind: "running_transition";
             review_state: string;
+            expected_terminal_event_id?: number | null;
             updated_at: string;
           }
         | {
@@ -1652,6 +1653,7 @@ export interface EventAppendBatch {
         | {
             kind: "running_transition";
             review_state: string;
+            expected_terminal_event_id?: number | null;
             updated_at: string;
           }
         | {

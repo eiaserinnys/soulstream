@@ -20,14 +20,16 @@ import {
   nextRunAtFromSchedules,
   scheduleToDeletedEvent,
   scheduleToUpdatedEvent,
-  type ClaimedSchedule,
-  type ScheduleCreateInput,
   type ScheduleDeleteResponse,
   type ScheduleListResponse,
-  type ResumeDispatchDecision,
-  type SoulstreamSchedule,
 } from "./schedule_models.js";
 import type { ScheduleHostClient } from "./schedule_host_client.js";
+import type {
+  ClaimedSchedule,
+  ResumeDispatchDecision,
+  ScheduleCreateInput,
+  SoulstreamSchedule,
+} from "@soulstream/wire-schema/schedule";
 
 const SCHEDULE_TOOL_NAMES = new Set([
   "ScheduleWakeup",

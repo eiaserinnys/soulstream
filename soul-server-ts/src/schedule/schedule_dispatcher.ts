@@ -12,7 +12,7 @@ import {
 } from "../task/persistent_keepalive_marker.js";
 
 import type { SoulstreamScheduleService } from "./schedule_service.js";
-import type { SoulstreamSchedule } from "./schedule_models.js";
+import type { SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 
 export interface ScheduleDispatcherConfig {
   nodeId: string;

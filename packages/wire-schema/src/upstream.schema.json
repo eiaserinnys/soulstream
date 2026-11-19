@@ -794,6 +794,10 @@
                     "properties": {
                       "kind": { "const": "running_transition" },
                       "review_state": { "type": "string", "minLength": 1 },
+                      "expected_terminal_event_id": {
+                        "type": ["integer", "null"],
+                        "minimum": 1
+                      },
                       "updated_at": { "type": "string", "format": "date-time" }
                     }
                   },

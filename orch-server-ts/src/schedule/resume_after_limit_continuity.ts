@@ -1,4 +1,5 @@
-import type { SoulstreamSchedule, SqlClient } from "./schedule_types.js";
+import type { SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
+import type { FolderContentSql } from "../board/folder_content_sql.js";
 
 export type ResumeScheduleIdentity = Pick<
   SoulstreamSchedule,
@@ -34,7 +35,7 @@ export function latestValidResetAt(events: LimitEvent[]): string | null {
 
 /** The orchestrator store owns the continuity policy for both routes and dispatch. */
 export async function hasContinuousLimitWindow(
-  sql: SqlClient,
+  sql: FolderContentSql,
   schedule: ResumeScheduleIdentity,
   expectedCurrentTerminalId: number,
 ): Promise<boolean> {

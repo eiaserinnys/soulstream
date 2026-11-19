@@ -17,7 +17,7 @@ import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import type { OrchProxyConfig } from "../../src/mcp/runtime.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
-import type { ScheduleCreateInput, SoulstreamSchedule } from "../../src/schedule/schedule_models.js";
+import type { ScheduleCreateInput, SoulstreamSchedule } from "@soulstream/wire-schema/schedule";
 import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
 import type { CompletionNotifier } from "../../src/task/completion_notifier.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";

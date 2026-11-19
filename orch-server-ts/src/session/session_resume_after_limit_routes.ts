@@ -14,7 +14,7 @@ import type {
   ScheduleCreateInput,
   SoulstreamSchedule,
   SoulstreamScheduleStatus,
-} from "../schedule/schedule_types.js";
+} from "@soulstream/wire-schema/schedule";
 import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
