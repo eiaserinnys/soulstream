@@ -278,7 +278,12 @@ export async function createDatabaseReleaseJournal({
         assertDatabaseReleaseIdentity(current, identity);
         return current;
       } catch {
-        if (TERMINAL.has(current.status)) {
+        // An upgrade with no planned schema work cannot have changed the
+        // database, even if its outer attempt failed before recovery finished.
+        // Keep same-request retries under the existing identity rules.
+        const abandonedNoOp = current.request_id !== identity.request_id
+          && current.operation === "upgrade" && plannedSchemaWorkCount(current) === 0;
+        if (TERMINAL.has(current.status) || abandonedNoOp) {
           await rotateTerminalJournal(path, current);
         } else {
           await retireRecoveredPreflightJournal({

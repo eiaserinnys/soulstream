@@ -180,6 +180,104 @@ describe.sequential("database release review regressions", () => {
     })).rejects.toThrow("JOURNAL_IDENTITY_CONFLICT");
   });
 
+  it("archives an abandoned no-op upgrade before a new preflight, even if recovery failed", async () => {
+    const directory = tempDirectory("release-abandoned-noop-");
+    const firstEnv = environment(directory, "request-first");
+    const path = databaseReleaseJournalPath(firstEnv);
+    const reads = { inventoryRead: async () => inventory(), planRead: async () => plan([]) };
+    await runDatabaseRelease("preflight", { env: firstEnv, ...reads });
+    await runDatabaseRelease("apply", { env: firstEnv, ...reads });
+    const abandonedBytes = await readFile(path, "utf8");
+    expect(JSON.parse(abandonedBytes)).toMatchObject({
+      operation: "upgrade", status: "applied", planned_migrations: [],
+      quiescence_receipt_digest: null,
+    });
+
+    const nextEnv = {
+      ...environment(directory, "request-next"),
+      HANIEL_TARGET_HEAD: "3".repeat(40),
+      HANIEL_DATABASE_CONTRACT_DIGEST: "c".repeat(64),
+    };
+    await writeFile(nextEnv.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify({
+      request_id: nextEnv.HANIEL_REQUEST_ID,
+      repo: nextEnv.HANIEL_DEPLOY_REPO,
+      release_id: nextEnv.HANIEL_RELEASE_ID,
+      previous_head: nextEnv.HANIEL_PREVIOUS_HEAD,
+      target_head: nextEnv.HANIEL_TARGET_HEAD,
+      manifest_digest: nextEnv.HANIEL_MANIFEST_DIGEST,
+      expected_operation: "upgrade",
+      state: "preflight",
+      recovered: false,
+      previous_attempts: [{
+        request_id: firstEnv.HANIEL_REQUEST_ID,
+        repo: firstEnv.HANIEL_DEPLOY_REPO,
+        release_id: firstEnv.HANIEL_RELEASE_ID,
+        previous_head: firstEnv.HANIEL_PREVIOUS_HEAD,
+        target_head: firstEnv.HANIEL_TARGET_HEAD,
+        manifest_digest: firstEnv.HANIEL_MANIFEST_DIGEST,
+        expected_operation: "upgrade",
+        operation: "upgrade",
+        database_journal_path: path,
+        state: "failed",
+        recovered: false,
+      }],
+    }), "utf8");
+
+    await expect(runDatabaseRelease("preflight", {
+      env: nextEnv, inventoryRead: async () => inventory(), planRead: async () => plan(),
+    })).resolves.toMatchObject({ request_id: "request-next", status: "preflight_complete" });
+    expect(await readDatabaseReleaseJournal(path)).toMatchObject({
+      request_id: "request-next", database_contract_checksum: "c".repeat(64),
+    });
+    const archives = (await readdir(directory)).filter((name) => name.startsWith("database-release.archive-"));
+    expect(archives).toHaveLength(1);
+    expect(await readFile(join(directory, archives[0]!), "utf8")).toBe(abandonedBytes);
+  });
+
+  it("keeps the existing gate for an abandoned upgrade with planned work", async () => {
+    const directory = tempDirectory("release-abandoned-work-");
+    const firstEnv = environment(directory, "request-first");
+    const path = databaseReleaseJournalPath(firstEnv);
+    await runDatabaseRelease("preflight", {
+      env: firstEnv, inventoryRead: async () => inventory(), planRead: async () => plan(),
+    });
+    const first = await readDatabaseReleaseJournal(path);
+    await writeDatabaseReleaseJournal(path, { ...first, status: "applied" });
+    const abandonedBytes = await readFile(path, "utf8");
+    const nextEnv = { ...environment(directory, "request-next"), HANIEL_TARGET_HEAD: "3".repeat(40) };
+    await writeFile(nextEnv.HANIEL_DEPLOYMENT_JOURNAL, JSON.stringify({
+      request_id: nextEnv.HANIEL_REQUEST_ID,
+      repo: nextEnv.HANIEL_DEPLOY_REPO,
+      release_id: nextEnv.HANIEL_RELEASE_ID,
+      previous_head: nextEnv.HANIEL_PREVIOUS_HEAD,
+      target_head: nextEnv.HANIEL_TARGET_HEAD,
+      manifest_digest: nextEnv.HANIEL_MANIFEST_DIGEST,
+      expected_operation: "upgrade",
+      state: "preflight",
+      recovered: false,
+      previous_attempts: [{
+        request_id: firstEnv.HANIEL_REQUEST_ID,
+        repo: firstEnv.HANIEL_DEPLOY_REPO,
+        release_id: firstEnv.HANIEL_RELEASE_ID,
+        previous_head: firstEnv.HANIEL_PREVIOUS_HEAD,
+        target_head: firstEnv.HANIEL_TARGET_HEAD,
+        manifest_digest: firstEnv.HANIEL_MANIFEST_DIGEST,
+        expected_operation: "upgrade",
+        operation: "upgrade",
+        database_journal_path: path,
+        state: "failed",
+        recovered: false,
+      }],
+    }), "utf8");
+
+    await expect(runDatabaseRelease("preflight", {
+      env: nextEnv, inventoryRead: async () => inventory(), planRead: async () => plan(),
+    })).rejects.toThrow("JOURNAL_IDENTITY_CONFLICT: recovered outer attempt differs");
+    expect(await readFile(path, "utf8")).toBe(abandonedBytes);
+    expect((await readdir(directory)).filter((name) => name.startsWith("database-release.archive-")))
+      .toHaveLength(0);
+  });
+
   it("reclassifies a different-identity release after a terminal fresh install", async () => {
     const directory = tempDirectory("release-sequential-operation-");
     const firstEnv = environment(directory, "request-fresh", "fresh_install");
