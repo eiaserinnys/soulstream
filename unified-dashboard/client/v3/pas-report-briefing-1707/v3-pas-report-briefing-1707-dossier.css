@@ -433,12 +433,15 @@
   gap: var(--v3-space-2);
   min-width: 0;
 }
-.pas-rb-choice {
+.pas-rb-stamps [data-slot="button"] {
   width: auto;
   max-width: 100%;
+  height: auto;
   min-height: var(--v3-action-size);
   gap: var(--v3-space-1);
   padding: var(--v3-space-1) var(--v3-space-3);
+  border-radius: var(--radius-lg);
+  font: var(--v3-type-body) var(--v3-font-family);
   white-space: nowrap;
 }
 .pas-rb-choice[data-selected="true"]:disabled { opacity: 1; }

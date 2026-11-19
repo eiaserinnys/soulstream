@@ -471,6 +471,28 @@ async function navigateAgenda(page, number) {
   await pause(120);
 }
 
+async function stampButtonSizes(page, label) {
+  const buttons = await page.locator(".pas-rb-stamps button").evaluateAll(elements => elements
+    .filter(element => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    })
+    .map(element => ({
+      text: (element.textContent || "").trim().replace(/\s+/g, " "),
+      height: element.getBoundingClientRect().height,
+      radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+    })));
+  assert.ok(buttons.length > 0, `${label} 결재 단추 없음`);
+  assert.ok(buttons.every(button => button.height >= 44), `${label} 단추 높이: ${JSON.stringify(buttons)}`);
+  const heights = buttons.map(button => button.height);
+  const radii = buttons.map(button => button.radius);
+  assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `${label} 높이 차이: ${JSON.stringify(buttons)}`);
+  assert.ok(radii.every(Number.isFinite) && Math.max(...radii) - Math.min(...radii) <= 1,
+    `${label} 모서리 차이: ${JSON.stringify(buttons)}`);
+  return buttons;
+}
+
 async function assertDialogInsideViewport(page, label) {
   const box = await page.evaluate(() => {
     const rect = document.querySelector('[data-testid="pas-rb-dialog"]')?.getBoundingClientRect();
@@ -551,6 +573,25 @@ try {
     const pageErrors = [];
     page.on("pageerror", error => pageErrors.push(error.message));
 
+    await step("RA1 결재 단추 크기와 모서리", async () => {
+      const summaries = [];
+      for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 780]]) {
+        await openRoute(page, { width, height, theme: "dark", hash: "report" });
+        for (const number of [1680, 1512, 1387, 1408, 1112]) {
+          await navigateAgenda(page, number);
+          const buttons = await stampButtonSizes(page, `${width} #${number}`);
+          summaries.push(`${width} #${number}: ${buttons.map(button => `${button.text}=${button.height}/${button.radius}`).join(", ")}`);
+        }
+        await navigateAgenda(page, 1680);
+        await page.getByTestId("pas-rb-choice").filter({ hasText: "최근 7일" }).click();
+        await page.getByTestId("pas-rb-undo").waitFor({ state: "visible" });
+        const buttons = await stampButtonSizes(page, `${width} #1680 처분 후`);
+        assert.ok(buttons.some(button => button.text === "되돌리기"), `${width} 되돌리기 단추 없음`);
+        summaries.push(`${width} 되돌리기: ${buttons.map(button => `${button.text}=${button.height}/${button.radius}`).join(", ")}`);
+      }
+      return summaries.join("; ");
+    });
+
     await step("D1 네 폭 두 테마 화면과 겹침", async () => {
       const summaries = [];
       for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 780]]) {
@@ -591,6 +632,11 @@ try {
         assert.ok(report.insideViewport, `${width} 선택지 중심이 화면 밖 ${JSON.stringify(report)}`);
         assert.ok(report.hit, `${width} 선택지 중심이 다른 요소에 가림 ${JSON.stringify(report)}`);
         assert.ok(report.emptyBelow !== null && report.emptyBelow <= 16, `${width} 하단 빈 띠 ${JSON.stringify(report)}`);
+        const overflow = await overflowReport(page);
+        assert.equal(overflow.documentScroll, overflow.documentClient, `${width} 문서 가로 넘침 ${JSON.stringify(overflow)}`);
+        assert.equal(overflow.bodyScroll, overflow.bodyClient, `${width} 본문 가로 넘침 ${JSON.stringify(overflow)}`);
+        assert.equal(overflow.appScroll, overflow.appClient, `${width} 화면 가로 넘침 ${JSON.stringify(overflow)}`);
+        assert.equal(overflow.offenders.length, 0, `${width} 화면 밖 요소 ${JSON.stringify(overflow)}`);
         const focused = await active(page);
         assert.equal(focused?.choice, "최근 7일", `${width} 첫 초점 ${JSON.stringify(focused)}`);
         await capture(page, `a1-1680-${width}.png`);
