@@ -6,3 +6,9 @@
    시안 빌드의 root는 mockups/<이름>이므로 같은 범위를 명시한다. */
 @source "../../client";
 @source "..";
+
+/* 전체 화면 시안이 유리를 직접 그릴 때는 바깥 겉틀의 여백과 상자를 비운다. */
+.v3-components-main.mockup-main--bare {
+  padding: 0;
+  overflow: hidden;
+}
