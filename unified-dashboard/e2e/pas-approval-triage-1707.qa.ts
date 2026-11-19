@@ -273,6 +273,87 @@ async function completeByPrimary(page: Page, number: number): Promise<void> {
   await page.waitForTimeout(120);
 }
 
+async function checkBoardAndPasLayout(browser: Browser, base: string, shots: string[]): Promise<void> {
+  const failures: string[] = [];
+  for (const [width, height] of [[1440, 900], [820, 1180]] as const) {
+    const opened = await open(browser, base, width, height, "dark", "#board");
+    const page = opened.page;
+    const metrics = await page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>(".v3-ht-planner");
+      const scroll = document.querySelector<HTMLElement>(".v3-ht-planner-scroll");
+      const wrapper = document.querySelector<HTMLElement>(".v3-ht-board-scroll");
+      const board = document.querySelector<HTMLElement>(".v3-ht-board-scroll .v3-card-board");
+      const columns = document.querySelectorAll<HTMLElement>(".v3-ht-board-scroll .v3-card-board-column");
+      if (!panel || !scroll || !wrapper || !board || !columns.length) throw new Error("보드 구성 요소가 없습니다");
+      const measuredColumns: { status: string | undefined; bottom: number; height: number }[] = [];
+      for (const column of columns) {
+        const rect = column.getBoundingClientRect();
+        measuredColumns.push({ status: column.dataset.boardColumn, bottom: rect.bottom, height: rect.height });
+      }
+      return {
+        panelBottom: panel.getBoundingClientRect().bottom,
+        contentBottom: scroll.getBoundingClientRect().bottom - parseFloat(getComputedStyle(scroll).paddingBottom),
+        wrapperBottom: wrapper.getBoundingClientRect().bottom,
+        boardBottom: board.getBoundingClientRect().bottom,
+        columns: measuredColumns,
+      };
+    });
+    console.log(`C12 ${width}x${height} ${JSON.stringify(metrics)}`);
+    if (Math.abs(metrics.contentBottom - metrics.wrapperBottom) > 2) failures.push(`C12 ${width} 래퍼 하단 차이 ${metrics.contentBottom - metrics.wrapperBottom}px`);
+    for (const column of metrics.columns) {
+      if (Math.abs(metrics.contentBottom - column.bottom) > 8 || metrics.panelBottom - column.bottom > 36 || column.height < 500) {
+        failures.push(`C12 ${width} ${column.status} 내용 하단 차이 ${metrics.contentBottom - column.bottom}px, 패널 하단 차이 ${metrics.panelBottom - column.bottom}px, 높이 ${column.height}px`);
+      }
+    }
+    shots.push(await capture(page, `${width}-dark-board-fill`));
+    if (width === 820) {
+      await page.getByTestId("v3-ht-mobile-tab-session").click();
+      await page.getByTestId("v3-ht-mobile-tab-triage").click();
+      assert(await page.getByTestId("v3-ht-board").isVisible(), "820 탭 전환 뒤 보드가 보이지 않습니다");
+    }
+    await opened.close();
+  }
+
+  for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 800]] as const) {
+    const opened = await open(browser, base, width, height, "dark", "#pas");
+    const page = opened.page;
+    const metrics = await page.evaluate(box => {
+      const messages = document.querySelector<HTMLElement>(".v3-ht-pas-messages");
+      const composer = document.querySelector<HTMLElement>('.v3-ht-pas-chat .v3-ht-composer [data-slot="chat-input-composer"]');
+      const input = document.querySelector<HTMLElement>(".v3-ht-pas-chat .v3-ht-composer textarea");
+      const send = document.querySelector<HTMLElement>('.v3-ht-pas-chat .v3-ht-composer [data-testid="send-button"]');
+      if (!messages || !composer || !input || !send) throw new Error("PAS 입력 구성 요소가 없습니다");
+      const target = { left: window.innerWidth - box.right - box.width, right: window.innerWidth - box.right, top: window.innerHeight - box.bottom - box.height, bottom: window.innerHeight - box.bottom };
+      const inputRect = input.getBoundingClientRect();
+      const sendRect = send.getBoundingClientRect();
+      return {
+        messagesRight: messages.getBoundingClientRect().right - parseFloat(getComputedStyle(messages).paddingRight),
+        composerRight: composer.getBoundingClientRect().right,
+        target,
+        input: { rect: [inputRect.left, inputRect.top, inputRect.right, inputRect.bottom], width: Math.max(0, Math.min(inputRect.right, target.right) - Math.max(inputRect.left, target.left)), height: Math.max(0, Math.min(inputRect.bottom, target.bottom) - Math.max(inputRect.top, target.top)) },
+        send: { rect: [sendRect.left, sendRect.top, sendRect.right, sendRect.bottom], width: Math.max(0, Math.min(sendRect.right, target.right) - Math.max(sendRect.left, target.left)), height: Math.max(0, Math.min(sendRect.bottom, target.bottom) - Math.max(sendRect.top, target.top)) },
+      };
+    }, COMMENT_BOX);
+    console.log(`C13 ${width}x${height} ${JSON.stringify(metrics)}`);
+    if (width === 1440 && Math.abs(metrics.messagesRight - metrics.composerRight) > 2) failures.push(`C13 1440 오른쪽 끝 차이 ${metrics.messagesRight - metrics.composerRight}px`);
+    if (width !== 1440) {
+      for (const [name, rect] of [["input", metrics.input], ["send", metrics.send]] as const) {
+        if (rect.width > 0 && rect.height > 0) failures.push(`C13 ${width} ${name} 코멘트 영역과 ${rect.width}x${rect.height}px 겹침`);
+      }
+      await installCommentButton(page);
+      await page.locator(".v3-ht-pas-chat textarea").fill("확인했습니다");
+      await page.locator('.v3-ht-pas-chat [data-testid="send-button"]').click();
+      assert((await page.getByTestId("v3-ht-pas-transcript").innerText()).includes("확인했습니다"), `${width} PAS 메시지 전송 실패`);
+      assert(await commentButtonClicks(page) === 0, `${width} 코멘트 단추가 전송 클릭을 가로챘습니다`);
+      await removeCommentButton(page);
+    }
+    shots.push(await capture(page, `${width}-dark-pas-layout`));
+    await opened.close();
+  }
+  assert(failures.length === 0, failures.join("; "));
+  pass("C12/C13: 보드 패널 채움과 PAS 입력 끝선 및 코멘트 단추 회피");
+}
+
 async function main() {
   const port = await freePort();
   const server: ChildProcess = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1", "--directory", "dist-mockups"], { stdio: "ignore" });
@@ -282,6 +363,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const shots: string[] = [];
   try {
+    await checkBoardAndPasLayout(browser, base, shots);
     // A. 1440 다크: 기본 장부, 키보드, 질문 카드, 대비, 근거 대화상자
     const home = await open(browser, base, 1440, 900, "dark");
     const page = home.page;
@@ -696,6 +778,8 @@ async function main() {
         C9: "pass",
         C10: "pass",
         C11: "pass",
+        C12: "pass",
+        C13: "pass",
         portraits: "pass",
         board: "7 columns, on_hold 18, review 3, done 12, total 45",
         workspace: "background #1690 opens CardWorkspace from grid and board",

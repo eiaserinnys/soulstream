@@ -322,7 +322,7 @@ export function HomePlannerTriageMockup() {
                   ))}
                 </div>
               </header>
-              <div className="v3-ht-planner-scroll">
+              <div className="v3-ht-planner-scroll" data-board={tab === "board" && visibleBoard.length > 0 ? "true" : undefined}>
                 {tab === "triage" ? (
                   <TriageLedger
                     pending={visiblePending}
