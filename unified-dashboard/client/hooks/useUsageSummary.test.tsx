@@ -178,4 +178,29 @@ describe("useUsageSummary", () => {
     expect(currentState().textContent).toContain("none:");
     expect(currentState().textContent).not.toContain("claude=73");
   });
+
+  it("does not restore a cleared gauge after a 401 followed by a connection failure", async () => {
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(usage))
+      .mockResolvedValueOnce(new Response("unauthorized", { status: 401 }))
+      .mockRejectedValueOnce(new Error("offline"));
+    const props: Props = { enabled: true, nodeId: "pas-node", scopeKey: "account-a", request };
+
+    await render(props);
+    await settle();
+    expect(currentState().textContent).toContain("claude=73");
+
+    const retry = container.querySelector("button") as HTMLButtonElement;
+    await act(async () => retry.click());
+    await settle();
+    expect(currentState().dataset.loadState).toBe("idle");
+    expect(currentState().firstElementChild?.getAttribute("data-gauge-count")).toBe("0");
+
+    await act(async () => retry.click());
+    await settle();
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(currentState().dataset.loadState).toBe("connectionError");
+    expect(currentState().firstElementChild?.getAttribute("data-gauge-count")).toBe("0");
+    expect(currentState().textContent).not.toContain("claude=73");
+  });
 });

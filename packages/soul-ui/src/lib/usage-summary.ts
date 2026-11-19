@@ -116,6 +116,50 @@ export type UsageSummarySnapshot = {
   readonly nodes: readonly UsageSummaryNode[];
 };
 
+export type UsageSummaryRequestOutcome = "idle" | "success" | "serverPending" | "connectionError";
+export type UsageSummaryLoadState = "idle" | "ready" | "serverPending" | "connectionError";
+export type UsageSummaryState = {
+  scopeKey: string;
+  lastSuccess: UsageSummarySnapshot | null;
+  hideSummary: boolean;
+  outcome: UsageSummaryRequestOutcome;
+  loading: boolean;
+  evaluatedAtMs: number;
+};
+
+type UsageSummaryOutcome =
+  | { scopeKey: string; outcome: "success"; status: null; summary: UsageSummarySnapshot }
+  | { scopeKey: string; outcome: "error"; status: number | null; summary: null };
+
+export function applyUsageSummaryOutcome(
+  prev: UsageSummaryState,
+  result: UsageSummaryOutcome,
+): UsageSummaryState {
+  const scoped: UsageSummaryState = prev.scopeKey === result.scopeKey ? prev : {
+    scopeKey: result.scopeKey,
+    lastSuccess: null,
+    hideSummary: false,
+    outcome: "idle",
+    loading: false,
+    evaluatedAtMs: 0,
+  };
+  if (result.outcome === "success") {
+    return { ...scoped, lastSuccess: result.summary, hideSummary: false, outcome: "success", loading: false };
+  }
+  if (result.status === 401) {
+    return { ...scoped, lastSuccess: null, hideSummary: false, outcome: "idle", loading: false };
+  }
+  if (result.status === 404) {
+    return { ...scoped, hideSummary: true, outcome: "serverPending", loading: false };
+  }
+  return { ...scoped, hideSummary: false, outcome: "connectionError", loading: false };
+}
+
+export function usageSummaryLoadState(outcome: UsageSummaryRequestOutcome, hasNode: boolean): UsageSummaryLoadState {
+  if (outcome === "success") return hasNode ? "ready" : "serverPending";
+  return outcome;
+}
+
 export type UsageSummaryGauge = {
   readonly id: "claude" | "fable" | "codex" | "antigravity";
   readonly label: string;
