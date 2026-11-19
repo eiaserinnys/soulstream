@@ -155,6 +155,49 @@ async function decideBand(page) {
     return { decideBottom: decide.getBoundingClientRect().bottom, buttonBottom: bottom, band: decide.getBoundingClientRect().bottom - bottom };
   });
 }
+async function decisionButtons(page) {
+  const buttons = await page.evaluate(() => [...document.querySelectorAll(".pas-rt1707-decide-actions button")]
+    .filter((button) => {
+      const box = button.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    })
+    .map((button) => {
+      const box = button.getBoundingClientRect();
+      const label = button.querySelector(":scope > span");
+      const range = document.createRange();
+      if (label) range.selectNodeContents(label);
+      return {
+        text: button.textContent.trim(),
+        top: box.top,
+        height: box.height,
+        choice: button.classList.contains("pas-rt1707-choice"),
+        labelRects: label?.getClientRects().length ?? 0,
+        textRects: label ? range.getClientRects().length : 0,
+      };
+    }));
+  assert(buttons.length > 0, "결재 단추가 없다");
+  for (const button of buttons) {
+    assert(button.height >= 44, `결재 단추 높이가 44px 미만이다: ${JSON.stringify(button)}`);
+    for (const other of buttons) {
+      if (Math.abs(button.top - other.top) <= 1) {
+        assert(Math.abs(button.height - other.height) <= 1, `같은 줄 단추의 높이가 다르다: ${JSON.stringify([button, other])}`);
+      }
+    }
+  }
+  return buttons;
+}
+async function choiceButtons(page) {
+  const buttons = (await decisionButtons(page)).filter((button) => button.choice);
+  assert(buttons.length === 3, `선택지가 세 개가 아니다: ${JSON.stringify(buttons)}`);
+  for (const button of buttons) {
+    assert(button.height <= 46 && button.labelRects === 1 && button.textRects === 1,
+      `선택지 글이 한 줄이 아니거나 높이가 46px를 넘는다: ${JSON.stringify(button)}`);
+  }
+  const heights = buttons.map((button) => button.height);
+  assert(Math.max(...heights) - Math.min(...heights) <= 1, `선택지 높이가 다르다: ${JSON.stringify(buttons)}`);
+  return buttons;
+}
 async function selectRail(page, number) {
   await (await railItem(page, number)).click();
   await wait(250);
@@ -241,6 +284,25 @@ try {
           await page.screenshot({ path: join(captureDir, `${viewport.id}-${theme}-report.png`) });
           return { dialog: { width: dialog.width, height: dialog.height }, portraits: images.portraits.length, band: band.band, choiceCenter: center };
         });
+        if (theme === "dark") {
+          await check(`${viewport.id} 선택지와 결재 단추 크기`, async () => {
+            const choices = await choiceButtons(page);
+            const agendas = {};
+            for (const number of [1680, 1512, 1387, 1408, 1112]) {
+              await selectRail(page, number);
+              const before = await decisionButtons(page);
+              await page.locator(".pas-rt1707-stamps button").first().click();
+              await wait(300);
+              const after = await decisionButtons(page);
+              assert(after.some((button) => button.text === "되돌리기"), `#${number} 처분 뒤 되돌리기 단추가 없다`);
+              agendas[number] = { before, after };
+              await page.locator(".pas-rt1707-undo-slot button").click();
+              await wait(300);
+            }
+            await selectRail(page, 1680);
+            return { choices, agendas };
+          });
+        }
         await check(`${viewport.id} ${theme} 닫기와 초점`, async () => {
           await page.keyboard.press("Escape");
           await page.waitForSelector('[data-testid="pas-report-thread-dialog"]', { state: "hidden", timeout: 8_000 });
@@ -321,6 +383,7 @@ try {
       assert(Math.abs(before.title.top - after.title.top) <= 0.5, `제목이 ${after.title.top - before.title.top}px 움직였다`);
       assert(Math.abs(before.decide.top - after.decide.top) <= 0.5, `결재 상자가 ${after.decide.top - before.decide.top}px 움직였다`);
       assert(Math.abs(before.undo.height - after.undo.height) <= 0.5, `되돌리기 자리 높이가 달라졌다`);
+      assert(before.undo.height === 44 && after.undo.height === 44, `되돌리기 자리 높이가 44px가 아니다: ${before.undo.height}, ${after.undo.height}`);
       assert((await textOf(page, ".pas-rt1707-undo-slot button")) === "되돌리기", "되돌리기 단추가 없다");
       await page.locator(".pas-rt1707-undo-slot button").click();
       await wait(350);
