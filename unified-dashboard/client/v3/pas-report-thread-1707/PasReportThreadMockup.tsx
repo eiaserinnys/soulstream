@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Button, DashboardIconCap, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
+import { Badge, Button, DashboardIconCap, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, useDashboardStore, useIsMobile } from "@seosoyoung/soul-ui";
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
@@ -31,12 +31,13 @@ import {
 import "./v3-pas-report-thread-1707.css";
 
 type ChatLine = { id: string; role: "user" | "assistant"; content: string; timestamp: number };
-type UndoRecord = { agendaId: string; status: AgendaStatus; answer: string | null; eventIds: string[]; chatIds: string[]; label: string };
+type UndoRecord = { agendaId: string; status: AgendaStatus; answer: string | null; kept: boolean; eventIds: string[]; chatIds: string[]; label: string };
 
 function readReportRoute() {
   try {
     if (window.location.hash === "#report") return true;
     if (new URLSearchParams(window.location.search).get("view") === "report") return true;
+    if (window.parent !== window && new URLSearchParams(window.parent.location.search).get("view") === "report") return true;
     if (window.parent !== window && window.parent.location.hash === "#report") return true;
   } catch { return false; }
   return false;
@@ -92,6 +93,7 @@ export function PasReportThreadMockup() {
   const pending = agendas.filter((agenda) => agenda.status === "review");
   const pendingIndex = pending.findIndex((agenda) => agenda.id === activeAgenda.id);
   const taskCards = useMemo(() => taskCardsFor(agendas), [agendas]);
+  const keptAgendas = useMemo(() => agendas.filter((agenda) => agenda.keptAsReference === true), [agendas]);
 
   useEffect(() => {
     useDashboardStore.getState().setActiveSessionSummary({ status: "completed" } as never);
@@ -149,8 +151,10 @@ export function PasReportThreadMockup() {
     const nextStatus = STATUS_AFTER[disposition];
     const chatId = `chat-act-${++seq.current}`;
     const snapshot: UndoRecord = { agendaId: agenda.id, status: agenda.status, answer: questionAnswers[agenda.id] ?? null,
-      eventIds: [], chatIds: [chatId], label: dispositionLabel(disposition) };
-    setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, status: nextStatus } : item));
+      kept: agenda.keptAsReference === true, eventIds: [], chatIds: [chatId], label: dispositionLabel(disposition) };
+    setAgendas((previous) => previous.map((item) => item.id === agenda.id
+      ? { ...item, status: nextStatus, keptAsReference: disposition === "keep" ? true : item.keptAsReference === true }
+      : item));
     if (disposition === "done" && agenda.question) setQuestionAnswers((previous) => ({ ...previous, [agenda.id]: "했어" }));
     addChat({ id: chatId, role: "assistant", content: chatMessageText(agenda, disposition), timestamp: Date.now() });
     setUndo(snapshot);
@@ -162,7 +166,8 @@ export function PasReportThreadMockup() {
     setQuestionAnswers((previous) => ({ ...previous, [agenda.id]: label }));
     setAgendas((previous) => previous.map((item) => item.id === agenda.id ? { ...item, status: "done" } : item));
     addChat({ id: chatId, role: "assistant", content: `#${agenda.number} ${agenda.title}의 답을 "${label}"로 받았습니다. 이 안건을 완료로 처분했습니다.`, timestamp: Date.now() });
-    setUndo({ agendaId: agenda.id, status: agenda.status, answer: null, eventIds: [], chatIds: [chatId], label });
+    setUndo({ agendaId: agenda.id, status: agenda.status, answer: null, kept: agenda.keptAsReference === true,
+      eventIds: [], chatIds: [chatId], label });
   };
 
   const sendInstruction = () => {
@@ -176,7 +181,7 @@ export function PasReportThreadMockup() {
       ? { ...agenda, status: "running", events: [...agenda.events, event] } : agenda));
     addChat({ id: chatId, role: "user", content: `#${activeAgenda.number} ${label}${text}`, timestamp: Date.now() });
     setUndo({ agendaId: activeAgenda.id, status: activeAgenda.status, answer: questionAnswers[activeAgenda.id] ?? null,
-      eventIds: [eventId], chatIds: [chatId], label: "지시 보내기" });
+      kept: activeAgenda.keptAsReference === true, eventIds: [eventId], chatIds: [chatId], label: "지시 보내기" });
     setInstruction("");
     setTarget(null);
   };
@@ -184,7 +189,8 @@ export function PasReportThreadMockup() {
   const undoLast = () => {
     if (!undo) return;
     setAgendas((previous) => previous.map((agenda) => agenda.id === undo.agendaId
-      ? { ...agenda, status: undo.status, events: agenda.events.filter((event) => !undo.eventIds.includes(event.id)) } : agenda));
+      ? { ...agenda, status: undo.status, keptAsReference: undo.kept,
+        events: agenda.events.filter((event) => !undo.eventIds.includes(event.id)) } : agenda));
     setQuestionAnswers((previous) => ({ ...previous, [undo.agendaId]: undo.answer }));
     setChat((previous) => previous.filter((line) => !undo.chatIds.includes(line.id)));
     setActiveId(undo.agendaId);
@@ -260,7 +266,21 @@ export function PasReportThreadMockup() {
       <div className="persistent-session-task-head"><h2>작업</h2>
         <DashboardIconCap appearance="bare" label="작업 목록 닫기" onClick={() => setTasksOpen(false)}><X className="size-5" strokeWidth={1.4} absoluteStrokeWidth /></DashboardIconCap>
       </div>
-      <div className="persistent-session-task-scroll"><PersistentSessionTaskList cards={taskCards} onOpenCard={openTaskCard} /></div>
+      <div className="persistent-session-task-scroll">
+        <PersistentSessionTaskList cards={taskCards} onOpenCard={openTaskCard} />
+        {keptAgendas.length > 0 ? <section className="pas-rt1707-kept" aria-label="참고 문서">
+          <div className="pas-rt1707-kept-head"><h3>참고 문서</h3><span>{keptAgendas.length}개</span></div>
+          <div className="pas-rt1707-kept-list">
+            {keptAgendas.map((agenda) => <button key={agenda.id} type="button" className="pas-rt1707-kept-card"
+              data-card-id={agenda.id} onClick={() => openTaskCard(agenda.id)}
+              aria-label={`${agenda.number}번 ${agenda.title} 참고 문서 열기`}>
+              <span className="pas-rt1707-kept-number">#{agenda.number}</span>
+              <span className="pas-rt1707-kept-title">{agenda.title}</span>
+              <Badge variant="info" size="sm">참고</Badge>
+            </button>)}
+          </div>
+        </section> : null}
+      </div>
       <p className="pas-rt1707-hold-note">보류함 {INITIAL_HOLD_COUNT}개 (변동 없음)</p>
     </aside>}
     <PasReportThreadReport agendas={agendas} activeId={activeAgenda.id} open={reportOpen} onSelect={selectAgenda} onClose={closeReport} openTriggerRef={openTriggerRef}

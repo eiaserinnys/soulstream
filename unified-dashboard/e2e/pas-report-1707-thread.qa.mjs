@@ -47,6 +47,12 @@ const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 const server = createServer(async (request, response) => {
   const path = decodeURIComponent((request.url ?? "/").split("?")[0]);
+  // 발행 호스트가 iframe 바깥 주소로 보고 창을 여는지 확인하는 검수용 껍데기.
+  if (path === "/host.html") {
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end('<!doctype html><html lang="ko"><body style="margin:0"><iframe src="/frame.html?theme=dark" title="시안 C" style="border:0;width:100vw;height:100vh"></iframe></body></html>');
+    return;
+  }
   const file = join(distDir, path === "/" ? "index.html" : path);
   if (!file.startsWith(distDir) || !existsSync(file)) { response.writeHead(404); response.end("not found"); return; }
   const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".json": "application/json", ".woff2": "font/woff2", ".jpg": "image/jpeg", ".svg": "image/svg+xml" };
@@ -133,6 +139,20 @@ async function railItem(page, number) {
 async function reportStatus(page) {
   return textOf(page, '[data-testid="pas-report-thread-dialog"] .pas-rt1707-report-heading [data-slot="status-chip"]');
 }
+async function decideBand(page) {
+  return page.evaluate(() => {
+    const decide = document.querySelector(".pas-rt1707-decide");
+    if (!decide) return null;
+    const visible = [...document.querySelectorAll(".pas-rt1707-decide-actions button")].filter((button) => {
+      const box = button.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    if (visible.length === 0) return null;
+    const bottom = Math.max(...visible.map((button) => button.getBoundingClientRect().bottom));
+    return { decideBottom: decide.getBoundingClientRect().bottom, buttonBottom: bottom, band: decide.getBoundingClientRect().bottom - bottom };
+  });
+}
 async function selectRail(page, number) {
   await (await railItem(page, number)).click();
   await wait(250);
@@ -195,10 +215,27 @@ try {
           const images = await imageReport(page);
           assert(images.broken.length === 0, `깨진 그림: ${images.broken.join(", ")}`);
           assert(images.portraits.length >= 4, `서로 다른 초상이 4개 미만: ${images.portraits.join(", ")}`);
+          assert((await reportStatus(page)) === "질문", `미처분 질문 안건의 머리 상태가 질문이 아니다: ${await reportStatus(page)}`);
+          const railChips = await page.locator('.pas-rt1707-rail-item [data-slot="status-chip"]').count();
+          assert(railChips === 0, `미결 레일에 상태 칩이 ${railChips}개 남았다`);
+          assert(!(await page.content()).includes("중간에 보탠 커멘트 없이 결과까지 왔습니다"), "중복 문단이 남았다");
+          const firstOption = page.locator(".pas-rt1707-decide .pas-rt1707-choice").first();
+          const optionBox = await firstOption.boundingBox();
+          assert(optionBox, "결재 상자에 첫 선택지가 없다");
+          const center = { x: optionBox.x + optionBox.width / 2, y: optionBox.y + optionBox.height / 2 };
+          assert(center.x >= 0 && center.x <= viewport.width && center.y >= 0 && center.y <= viewport.height,
+            `첫 선택지 중심이 화면 밖이다 ${JSON.stringify(center)}`);
+          const hit = await page.evaluate(({ x, y }) => {
+            const element = document.elementFromPoint(x, y);
+            return { inChoice: Boolean(element?.closest(".pas-rt1707-decide .pas-rt1707-choice")), tag: element?.tagName ?? null };
+          }, center);
+          assert(hit.inChoice, `첫 선택지 중심을 눌러도 선택지가 맞지 않는다: ${JSON.stringify(hit)}`);
+          const band = await decideBand(page);
+          assert(band && band.band <= 16, `결재 상자 아래 빈 띠가 16px를 넘는다: ${JSON.stringify(band)}`);
           const unmockedList = await unmocked(page);
           assert(unmockedList.length === 0, `가짜 응답 없는 호출: ${unmockedList.join(", ")}`);
           await page.screenshot({ path: join(captureDir, `${viewport.id}-${theme}-report.png`) });
-          return { dialog: { width: dialog.width, height: dialog.height }, portraits: images.portraits.length };
+          return { dialog: { width: dialog.width, height: dialog.height }, portraits: images.portraits.length, band: band.band, choiceCenter: center };
         });
         await check(`${viewport.id} ${theme} 닫기와 초점`, async () => {
           await page.keyboard.press("Escape");
@@ -226,6 +263,28 @@ try {
       return { hash };
     });
 
+    await check("호스트 ?view=report로 보고 창 열기", async () => {
+      const hostPage = await newPage(browser, { width: 1200, height: 900 }, "dark");
+      await hostPage.goto(`${base}/host.html?view=report`, { waitUntil: "networkidle" });
+      const frame = hostPage.frameLocator("iframe");
+      await frame.locator('[data-testid="pas-report-thread-dialog"]').waitFor({ timeout: 10_000 });
+      assert(await frame.locator('[data-testid="pas-report-thread-dialog"]').isVisible(), "호스트 view=report가 보고 창을 열지 않았다");
+      await hostPage.close();
+      return { host: "view=report" };
+    });
+
+    await check("모든 안건 결재 상자 아래 빈 띠", async () => {
+      const bands = {};
+      for (const number of [1680, 1512, 1387, 1408, 1112]) {
+        await selectRail(page, number);
+        const band = await decideBand(page);
+        assert(band && band.band <= 16, `#${number} 결재 상자 아래 빈 띠가 16px를 넘는다: ${JSON.stringify(band)}`);
+        bands[number] = band.band;
+      }
+      await selectRail(page, 1680);
+      return bands;
+    });
+
     let stable;
     await check("질문 답과 고정 높이 되돌리기", async () => {
       const before = {
@@ -233,9 +292,11 @@ try {
         decide: await rect(page, ".pas-rt1707-decide"),
         undo: await rect(page, ".pas-rt1707-undo-slot"),
       };
-      await clickText(page, ".v3-card-question-choices button", "최근 7일 유지");
+      await clickText(page, ".pas-rt1707-decide .pas-rt1707-choice", "최근 7일 유지");
       await wait(350);
       assert((await reportStatus(page)) === "완료", `답을 고른 뒤 상태가 완료가 아니다: ${await reportStatus(page)}`);
+      assert((await textOf(page, ".pas-rt1707-answer-line"))?.includes("받은 답: 최근 7일 유지"), "받은 답 줄이 서지 않았다");
+      assert((await (await railItem(page, 1680)).textContent())?.includes("완료"), "레일에 완료 상태가 표시되지 않는다");
       const after = {
         title: await rect(page, ".pas-rt1707-report-title"),
         decide: await rect(page, ".pas-rt1707-decide"),
@@ -247,13 +308,14 @@ try {
       assert((await textOf(page, ".pas-rt1707-undo-slot button")) === "되돌리기", "되돌리기 단추가 없다");
       await page.locator(".pas-rt1707-undo-slot button").click();
       await wait(350);
-      assert((await reportStatus(page)) === "검수 대기", `되돌린 뒤 상태가 검수 대기가 아니다: ${await reportStatus(page)}`);
+      assert((await reportStatus(page)) === "질문", `되돌린 뒤 상태가 질문이 아니다: ${await reportStatus(page)}`);
+      assert((await page.locator('.pas-rt1707-rail-item [data-slot="status-chip"]').count()) === 0, "되돌린 뒤 레일에 상태 칩이 남았다");
       stable = { titleShift: after.title.top - before.title.top, decideShift: after.decide.top - before.decide.top, undoHeight: after.undo.height };
       return stable;
     });
 
     await check("답을 남기고 화면에 반영", async () => {
-      await clickText(page, ".v3-card-question-choices button", "최근 7일 유지");
+      await clickText(page, ".pas-rt1707-decide .pas-rt1707-choice", "최근 7일 유지");
       await wait(300);
       assert((await reportStatus(page)) === "완료", "답이 다시 완료로 바뀌지 않았다");
       await page.keyboard.press("Escape");
@@ -313,6 +375,16 @@ try {
 
     await check("설계 문서 열람과 참고 보관", async () => {
       await selectRail(page, 1387);
+      await page.evaluate(() => { window.__pasDocFail = true; });
+      await page.locator(".pas-rt1707-document-row button").click();
+      await page.waitForSelector('[data-testid="internal-document-dialog"]');
+      await wait(300);
+      assert((await textOf(page, '[data-testid="internal-document-dialog"]'))?.includes("문서를 불러오지 못했습니다"),
+        "문서 조회 500에서 실패 안내가 보이지 않는다");
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[data-testid="internal-document-dialog"]', { state: "hidden", timeout: 8_000 });
+      await wait(250);
+      await page.evaluate(() => { window.__pasDocFail = false; });
       await page.locator(".pas-rt1707-document-row button").click();
       await page.waitForSelector('[data-testid="internal-document-dialog"]');
       await wait(300);
@@ -324,18 +396,32 @@ try {
       await wait(250);
       await clickText(page, ".pas-rt1707-stamps button", "참고 보관 후 완료");
       assert((await reportStatus(page)) === "완료", `참고 보관 뒤 상태가 완료가 아니다: ${await reportStatus(page)}`);
-      const railText = await (await railItem(page, 1387)).textContent();
-      assert(railText?.includes("완료"), "레일에 완료가 표시되지 않는다");
+      const keptRail = await railItem(page, 1387);
+      assert((await keptRail.textContent())?.includes("완료"), "레일에 완료가 표시되지 않는다");
+      assert((await keptRail.locator('[data-slot="badge"]').filter({ hasText: "참고" }).count()) === 1, "레일에 참고 배지가 없다");
       await page.locator(".pas-rt1707-document-row button").click();
       await page.waitForSelector('[data-testid="internal-document-dialog"]');
       const again = await textOf(page, '[data-testid="internal-document-dialog"]');
       assert(again?.includes("3단계 도입 설계안"), "보관 뒤 문서를 다시 읽을 수 없다");
       await page.keyboard.press("Escape");
       await page.waitForSelector('[data-testid="internal-document-dialog"]', { state: "hidden", timeout: 8_000 });
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[data-testid="pas-report-thread-dialog"]', { state: "hidden", timeout: 8_000 });
+      await wait(250);
+      await page.locator(".persistent-session-task-toggle button").click();
+      await page.waitForSelector('[data-testid="persistent-session-task-list"]');
+      const keptCard = page.locator(".pas-rt1707-kept-card").filter({ hasText: "#1387" });
+      assert((await keptCard.count()) === 1, "작업 목록 서랍에 참고 문서 카드가 없다");
+      assert((await keptCard.textContent())?.includes("참고"), "작업 목록 서랍 카드에 참고 배지가 없다");
+      await page.locator('[aria-label="작업 목록 닫기"]').click();
+      await wait(200);
+      await openFromBubble(page);
+      await selectRail(page, 1387);
       await page.locator(".pas-rt1707-undo-slot button").click();
       await wait(300);
       assert((await reportStatus(page)) === "검수 대기", "참고 보관 되돌리기가 실패했다");
-      return { document: "read twice" };
+      assert((await (await railItem(page, 1387)).locator('[data-slot="badge"]').count()) === 0, "되돌린 뒤 참고 배지가 남았다");
+      return { document: "failure then recovery", keptCard: true };
     });
 
     let instructionSlot;

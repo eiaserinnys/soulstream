@@ -32,6 +32,17 @@ export const AGENDA_STATUS_LABEL: Record<AgendaStatus, string> = {
   done: "완료",
 };
 
+/** choice 질문이 아직 미처분이면 상태가 아니라 안건 성격을 앞세운다. */
+export function agendaStatusLabel(agenda: Agenda) {
+  if (agenda.status === "review" && agenda.question?.kind === "choice") return "질문";
+  return AGENDA_STATUS_LABEL[agenda.status];
+}
+
+export function agendaStatusTone(agenda: Agenda) {
+  if (agenda.status === "review" && agenda.question?.kind === "choice") return "question";
+  return agenda.status;
+}
+
 export type DispositionId = "approve" | "keep" | "recheck3" | "evening" | "done";
 
 export type CheckItem = { id: string; label: string; done: boolean };
@@ -71,6 +82,7 @@ export type Agenda = {
   question?: QuestionSeed;
   primary: DecisionStamp | null;
   secondary: DecisionStamp | null;
+  keptAsReference?: boolean;
   documentId?: string;
 };
 
@@ -305,7 +317,7 @@ export const DOCUMENT_BODIES: Record<string, { id: string; title: string; body: 
 
 export function chatMessageText(agenda: Agenda, disposition: DispositionId) {
   const label = dispositionLabel(disposition);
-  if (disposition === "keep") return `#${agenda.number} ${agenda.title}을 참고 보관으로 남기고 완료했습니다. 문서는 보관함에서 다시 읽을 수 있습니다.`;
+  if (disposition === "keep") return `#${agenda.number} ${agenda.title}을 참고 문서로 남기고 완료했습니다. 보고 창의 설계 문서 열람에서 언제든 다시 읽을 수 있습니다.`;
   if (disposition === "recheck3") return `#${agenda.number} ${agenda.title}을 사흘 뒤 재확인으로 넘겼습니다. 보류함은 18개 그대로입니다.`;
   if (disposition === "evening") return `#${agenda.number} ${agenda.title}을 오늘 저녁에 다시 보기로 넘겼습니다.`;
   return `#${agenda.number} ${agenda.title}을 ${label}로 처분했습니다.`;

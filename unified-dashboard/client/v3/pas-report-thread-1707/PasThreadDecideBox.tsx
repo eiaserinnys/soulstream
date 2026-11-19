@@ -1,11 +1,13 @@
-import { Button } from "@seosoyoung/soul-ui";
+import { Badge, Button } from "@seosoyoung/soul-ui";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
+import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { X } from "lucide-react";
 import type { Agenda, DispositionId } from "./pas-report-thread-1707-data";
 
 export type DecisionTarget = { checkId: string; label: string } | null;
 
-export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChangeText, onSend, onDispose, undoLabel, onUndo }: {
+export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChangeText, onSend, onDispose,
+  questionAnswer, onChooseQuestion, undoLabel, onUndo }: {
   agenda: Agenda;
   target: DecisionTarget;
   onClearTarget(): void;
@@ -13,12 +15,15 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
   onChangeText(value: string): void;
   onSend(): void;
   onDispose(disposition: DispositionId): void;
+  questionAnswer: string | null;
+  onChooseQuestion(label: string): void;
   undoLabel: string | null;
   onUndo(): void;
 }) {
   const settled = agenda.status === "done" || agenda.status === "awaiting_verification";
   const primary = agenda.primary;
   const secondary = agenda.secondary;
+  const choiceQuestion = agenda.question?.kind === "choice" ? agenda.question : null;
   return <footer className="pas-rt1707-decide" aria-label="결재 상자">
     <div className="pas-rt1707-decide-phase-row">
       <span className="pas-rt1707-decide-phase">5. 결재</span>
@@ -34,10 +39,19 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
         disabled={text.trim().length === 0} textareaDisabled={false} />
     </div>
     <div className="pas-rt1707-decide-actions">
-      <div className="pas-rt1707-stamps">
-        {primary ? <Button variant="default" size="sm" disabled={settled} onClick={() => onDispose(primary.id)}>{primary.label}</Button> : null}
-        {secondary ? <Button variant="outline" size="sm" disabled={settled} onClick={() => onDispose(secondary.id)}>{secondary.label}</Button> : null}
-        {!primary && !secondary ? <span className="pas-rt1707-stamps-empty" aria-hidden="true" /> : null}
+      <div className={`pas-rt1707-stamps${choiceQuestion ? " pas-rt1707-stamps-choice" : ""}`} data-choice={choiceQuestion ? "true" : undefined}>
+        {choiceQuestion ? (questionAnswer === null
+          ? choiceQuestion.options.map((option) => <Button key={option.label} variant="choice" size="sm" className="pas-rt1707-choice"
+              onClick={() => onChooseQuestion(option.label)}>
+              <InputRequestOptionContent layout="columns" option={{ label: option.label }}
+                labelAccessory={option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null} />
+            </Button>)
+          : <span className="pas-rt1707-answer-line">받은 답: <strong>{questionAnswer}</strong></span>)
+          : <>
+            {primary ? <Button variant="default" size="sm" disabled={settled} onClick={() => onDispose(primary.id)}>{primary.label}</Button> : null}
+            {secondary ? <Button variant="outline" size="sm" disabled={settled} onClick={() => onDispose(secondary.id)}>{secondary.label}</Button> : null}
+            {!primary && !secondary ? <span className="pas-rt1707-stamps-empty" aria-hidden="true" /> : null}
+          </>}
       </div>
       <div className="pas-rt1707-undo-slot">
         {undoLabel ? <Button variant="ghost" size="sm" onClick={onUndo}>되돌리기</Button> : <span className="pas-rt1707-undo-placeholder">{settled ? undoLabel ?? "처분 완료" : ""}</span>}

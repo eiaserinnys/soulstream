@@ -5,7 +5,15 @@ import { mountMockup } from "../_shell/MockupShell";
 import { PasReportThreadMockup } from "../../client/v3/pas-report-thread-1707/PasReportThreadMockup";
 import { DOCUMENT_BODIES } from "../../client/v3/pas-report-thread-1707/pas-report-thread-1707-data";
 
-mockApi(Object.fromEntries(Object.entries(DOCUMENT_BODIES).map(([id, document]) => [`GET /api/markdown-documents/${id}`, document])));
+// 검수용 실패 주입: QA가 window.__pasDocFail을 세우면 문서 조회가 500으로 떨어진다.
+mockApi(Object.fromEntries(Object.entries(DOCUMENT_BODIES).map(([id, document]) => [`GET /api/markdown-documents/${id}`, () => {
+  if ((window as unknown as { __pasDocFail?: boolean }).__pasDocFail) {
+    return new Response(JSON.stringify({ error: "mockup: document failure" }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
+  }
+  return document;
+}])));
 mockAgentPortraits();
 
 mountMockup(<PasReportThreadMockup />, { surface: "bare" });
