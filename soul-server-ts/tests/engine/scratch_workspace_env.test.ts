@@ -95,4 +95,70 @@ describe("scratch workspace env", () => {
     });
   });
 
+  it("fills TEST_DATABASE_URL from the isolation test database URL when the result has none", () => {
+    withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, undefined, () => {
+      expect(
+        withScratchWorkspaceEnv(
+          {
+            PATH: "/usr/bin",
+            SESSION_ISOLATION_TEST_DATABASE_URL:
+              "postgres://tester@127.0.0.1:15432/soulstream_test",
+          },
+          { workspaceDir: "/scratch/agent-a" },
+        ),
+      ).toEqual({
+        PATH: "/usr/bin",
+        SESSION_ISOLATION_TEST_DATABASE_URL:
+          "postgres://tester@127.0.0.1:15432/soulstream_test",
+        [SCRATCH_WORKSPACE_DIR_ENV]: "/scratch/agent-a",
+        TEST_DATABASE_URL: "postgres://tester@127.0.0.1:15432/soulstream_test",
+      });
+
+      // 빈 값도 없는 것으로 본다.
+      expect(
+        withScratchWorkspaceEnv(
+          {
+            PATH: "/usr/bin",
+            TEST_DATABASE_URL: "",
+            SESSION_ISOLATION_TEST_DATABASE_URL:
+              "postgres://tester@127.0.0.1:15432/soulstream_test",
+          },
+          { workspaceDir: "/scratch/agent-a" },
+        ).TEST_DATABASE_URL,
+      ).toBe("postgres://tester@127.0.0.1:15432/soulstream_test");
+    });
+  });
+
+  it("keeps an existing TEST_DATABASE_URL instead of the isolation test database URL", () => {
+    withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, undefined, () => {
+      expect(
+        withScratchWorkspaceEnv(
+          {
+            PATH: "/usr/bin",
+            TEST_DATABASE_URL: "postgres://keep@127.0.0.1:15432/soulstream_test",
+            SESSION_ISOLATION_TEST_DATABASE_URL:
+              "postgres://isolation@127.0.0.1:15432/soulstream_test",
+          },
+          { workspaceDir: "/scratch/agent-a" },
+        ),
+      ).toEqual({
+        PATH: "/usr/bin",
+        TEST_DATABASE_URL: "postgres://keep@127.0.0.1:15432/soulstream_test",
+        SESSION_ISOLATION_TEST_DATABASE_URL:
+          "postgres://isolation@127.0.0.1:15432/soulstream_test",
+        [SCRATCH_WORKSPACE_DIR_ENV]: "/scratch/agent-a",
+      });
+    });
+  });
+
+  it("does not create TEST_DATABASE_URL when the result has neither value", () => {
+    withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, undefined, () => {
+      const env = withScratchWorkspaceEnv(
+        { PATH: "/usr/bin" },
+        { workspaceDir: "/scratch/agent-a" },
+      );
+      expect(env).not.toHaveProperty("TEST_DATABASE_URL");
+    });
+  });
+
 });
