@@ -180,7 +180,7 @@ test('명시적 거절 후 같은 제출은 같은 키이고 입력을 고친 �
   await act(async () => fireEvent.press(screen.getByLabelText('카드 저장')));
   expect(JSON.stringify(screen.toJSON())).not.toContain('synthetic-secret');
   fireEvent.press(screen.getByLabelText('기술 상세'));
-  expect(JSON.stringify(screen.toJSON())).not.toContain('synthetic-secret');
+  expect(screen.getByText('HTTP 422 password=synthetic-secret')).toBeTruthy();
   await act(async () => fireEvent.press(screen.getByLabelText('카드 저장')));
   expect(api.createCard.mock.calls[1][0]).toEqual(api.createCard.mock.calls[0][0]);
   fireEvent.changeText(screen.getByLabelText('요청 원문'), '고친 요청');

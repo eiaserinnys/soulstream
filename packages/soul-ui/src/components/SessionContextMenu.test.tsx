@@ -135,15 +135,15 @@ describe("SessionContextMenu", () => {
     const details = document.querySelector<HTMLDetailsElement>('[role="dialog"] details');
     expect(details).not.toBeNull();
     expect(details!.open).toBe(false);
-    expect(document.body.innerHTML).not.toContain("node unavailable");
+    expect(details!.textContent).toContain("node unavailable");
 
     await act(async () => {
       details!.querySelector("summary")!.click();
     });
 
     expect(details!.open).toBe(true);
-    expect(details!.textContent).toContain("민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.");
-    expect(document.body.innerHTML).not.toContain("node unavailable");
+    expect(details!.textContent).toContain("node unavailable");
+    expect(details!.textContent).not.toContain("민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.");
     expect(onContinueSession).toHaveBeenCalledTimes(1);
   });
 

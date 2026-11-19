@@ -1,7 +1,6 @@
 import { Trash2 } from "lucide-react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { safeErrorDetail } from "../lib/safe-error-detail";
 export function SessionContinueErrorDialog({ error, onClose }: { error: string | null; onClose(): void }) {
   return (
     <Dialog
@@ -18,7 +17,7 @@ export function SessionContinueErrorDialog({ error, onClose }: { error: string |
           <div className="dialog-error-notice" role="alert">
             <p data-slot="dialog-error-message">세션을 이어서 시작하지 못했습니다.</p>
             <p>노드 연결 상태와 실행 환경을 확인한 뒤 다시 시도하세요.</p>
-            <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{safeErrorDetail(error ?? "")}</pre></details>
+            {error?.trim() && error !== "세션을 이어서 시작하지 못했습니다." ? <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
           </div>
         </DialogPanel>
         <DialogFooter variant="bare">
