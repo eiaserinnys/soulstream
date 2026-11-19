@@ -357,7 +357,7 @@ def main():
                 page.get_by_text('세션 ID 형식이 아닙니다.').wait_for()
                 shot(f'inbound-create-{width}-id-invalid')
                 error_color = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
-                  const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; document.body.appendChild(el);
+                  const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; d.appendChild(el);
                     const color = getComputedStyle(el).color; el.remove(); return color; };
                   const alert = d.querySelector('small[role=alert]');
                   return {alert: alert ? getComputedStyle(alert).color : null, token: probe('--destructive-foreground')}; }""")
@@ -368,7 +368,7 @@ def main():
                     page.evaluate("() => document.documentElement.classList.add('dark')")
                     page.wait_for_timeout(150)
                     dark_color = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
-                      const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; document.body.appendChild(el);
+                      const probe = value => { const el = document.createElement('span'); el.style.color = `var(${value})`; d.appendChild(el);
                         const color = getComputedStyle(el).color; el.remove(); return color; };
                       const alert = d.querySelector('small[role=alert]');
                       return {alert: alert ? getComputedStyle(alert).color : null, token: probe('--destructive-foreground')}; }""")
