@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { collapseReportTimeline, isCardQuestionReplyContext, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
+import { collapseReportTimeline, isCardQuestionReplyContext, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, reportActionParts, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
 import type { ReportTimelineQuestionClosed, ReportTimelineQuestionClosedStatus, ReportTimelineRowLine } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
@@ -86,8 +85,8 @@ describe("persistent report shared contract", () => {
       .toEqual([latest, conversation(), latest]);
   });
   it("keeps the link recognition regex aligned with the display contract", () => {
-    const source = readFileSync(new URL("../../packages/wire-schema/src/persistent_report.ts", import.meta.url), "utf8");
-    expect(source).toContain(String.raw`action.replace(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g,`);
+    expect(reportActionParts("앞 [가](https://a.io)[나](https://b.io) 뒤"))
+      .toEqual(["앞 ", { label: "가", url: "https://a.io" }, { label: "나", url: "https://b.io" }, " 뒤"]);
   });
   it("uses codepoints, defaults open and permits agent-written answers", () => {
     expect(parsePersistentReportEntry({ ...entry, title: "😀".repeat(24) })).toMatchObject({ ok: true, value: { state: "open", answer: "" } });

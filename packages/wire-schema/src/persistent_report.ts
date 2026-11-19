@@ -235,17 +235,31 @@ export function parsePersistentReportEntry(input: unknown):
   } };
 }
 
+export function reportActionParts(text: string): Array<string | { label: string; url: string }> {
+  const parts: Array<string | { label: string; url: string }> = [];
+  const pattern = /\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
+  let start = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > start) parts.push(text.slice(start, match.index));
+    parts.push({ label: match[1]!, url: match[2]! });
+    start = match.index + match[0].length;
+  }
+  if (start < text.length) parts.push(text.slice(start));
+  return parts;
+}
+
 function validateAction(action: string): PersistentReportIssue[] {
   if (Array.from(action).length > 1000) return [{ path: "action", reason: "전체 원문은 1,000자까지입니다" }];
   const errors: PersistentReportIssue[] = [];
   let badLink = false;
   let linkCount = 0, labelLength = 0;
-  const plain = action.replace(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g, (_match, label: string, url: string) => {
+  let plain = "";
+  for (const part of reportActionParts(action)) {
+    if (typeof part === "string") { plain += part; continue; }
     linkCount++;
-    labelLength += Array.from(label).length;
-    try { if (new URL(url).protocol !== "https:") badLink = true; } catch { badLink = true; }
-    return "";
-  });
+    labelLength += Array.from(part.label).length;
+    try { if (new URL(part.url).protocol !== "https:") badLink = true; } catch { badLink = true; }
+  }
   if (labelLength + Array.from(plain).length > 100) errors.push({ path: "action", reason: "보이는 글은 100자까지입니다(링크 주소 제외)" });
   if (linkCount > 5) errors.push({ path: "action", reason: "링크는 5개까지입니다" });
   if (/!\[/.test(action) || badLink || /[\[\]<>`*]|__|_[^\s_]+_|(^|\n)\s*(?:#{1,6}\s|[-+]\s|\d+\.\s)/.test(plain))
