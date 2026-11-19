@@ -965,6 +965,23 @@ export async function createLiveProductionApplication(
   const externalAccessReplySignal = externalInputService === undefined
     ? undefined
     : new ExternalReplySignal();
+  // One management layer per direction, shared by the settings-screen routes
+  // and the MCP webhook tools: the same store, services and access judgment.
+  const inboundWebhookManagement = externalAccessGrants === undefined
+    || externalInputService === undefined
+    || accessLinkSessionAccess === undefined
+    ? undefined
+    : {
+        grants: externalAccessGrants,
+        requests: externalInputService,
+        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
+        publicUrl: accessLinkPublicUrl,
+      };
+  const outboundWebhookManagement = {
+    service: outboundWebhookService,
+    authorizeUser: outboundAuthorizeUser,
+    sessionAccess: outboundSessionAccess,
+  };
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
@@ -987,9 +1004,7 @@ export async function createLiveProductionApplication(
     }),
     outboundWebhookRoutes: {
       currentEmail: providers.adminUsersRoutes.provider.currentEmail,
-      service: outboundWebhookService,
-      authorizeUser: outboundAuthorizeUser,
-      sessionAccess: outboundSessionAccess,
+      ...outboundWebhookManagement,
     },
     ...(externalAccessGrants === undefined || externalInputService === undefined ? {} : {
       inboundHookRoutes: {
@@ -999,15 +1014,10 @@ export async function createLiveProductionApplication(
     }),
     // Same store, service and login identity as the receive routes; the
     // management surface adds no new grant store, service or bucket instance.
-    ...(externalAccessGrants === undefined
-      || externalInputService === undefined
-      || accessLinkSessionAccess === undefined ? {} : {
+    ...(inboundWebhookManagement === undefined ? {} : {
       inboundWebhookRoutes: {
         currentEmail: providers.adminUsersRoutes.provider.currentEmail,
-        grants: externalAccessGrants,
-        requests: externalInputService,
-        requireSessionAccess: accessLinkSessionAccess.requireSessionAccess,
-        publicUrl: accessLinkPublicUrl,
+        ...inboundWebhookManagement,
       },
     }),
     ...(externalAccessGrants === undefined
@@ -1065,6 +1075,10 @@ export async function createLiveProductionApplication(
       deadLetterStore,
       externalAccessReplySignal,
       config.default_execution_node_id,
+      {
+        ...(inboundWebhookManagement === undefined ? {} : { inbound: inboundWebhookManagement }),
+        outbound: outboundWebhookManagement,
+      },
     ),
     nodeReleaseRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1530,6 +1544,7 @@ export function buildProductionRouteOptions(
   deadLetterStore?: Pick<FileEventIngressDeadLetterStore, "list">,
   externalAccessReplySignal?: ExternalReplySignal,
   defaultExecutionNodeId?: string,
+  webhooks?: McpHostOptions["webhooks"],
 ): CreateAppOptions {
   if (defaultExecutionNodeId === undefined) {
     throw new Error("default execution node is required to build production routes");
@@ -1645,6 +1660,7 @@ export function buildProductionRouteOptions(
               : { replySignal: externalAccessReplySignal }),
           },
         }),
+        ...(webhooks === undefined ? {} : { webhooks }),
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,

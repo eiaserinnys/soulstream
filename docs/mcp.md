@@ -147,6 +147,21 @@ Recurring-job tools require a trusted Soulstream caller session with a verified 
 
 `model_preset_fallbacks` on create or update lists ordered preset IDs advertised by the job's node for dispatch and runtime limit fallback. Omit it on update to retain the list, or pass `[]` to clear it.
 
+### Webhooks
+
+Webhook tools are internal only and need a trusted Soulstream caller session with a verified owner. The owner is that session's owner, so the same webhooks appear in that person's settings-screen Webhooks tab; the tools call the same management commands as `/api/webhooks/inbound` and `/api/webhooks/outbound`. `secret`, `signing_secret` and `key_url` appear only in the create result. Errors are the routes' code words (`session_not_found`, `forbidden`, `not_found`, `challenge_failed: <reason>`, `subscription_inactive`, `invalid_request: <path>`, `webhooks_unavailable`) and never carry secrets, keys or receiver URLs.
+
+| Tool | Description |
+|------|-------------|
+| `create_inbound_webhook(target_session_id, label, auth_mode, preamble, expires_in_seconds)` | Issue an inbound webhook that puts external input into the target session; returns `secret` once, plus `key_url` for key mode |
+| `revoke_inbound_webhook(id)` | Revoke one inbound webhook; later requests with its credential are refused |
+| `create_outbound_webhook(target_session_id, label, url, event_types)` | Register an outbound subscription after the https public `url` echoes the verification challenge; returns `signing_secret` once |
+| `set_outbound_webhook_active(id, active)` | Turn an outbound subscription off or on |
+| `delete_outbound_webhook(id)` | Delete an outbound subscription and its delivery records |
+| `redeliver_outbound_webhook(id, delivery_id)` | Send one delivery again now and return its `outcome` |
+| `list_webhooks(direction)` | List the owner's inbound webhooks (with `state` and `recent`) or outbound `subscriptions`, without secrets |
+| `list_webhook_activity(direction, id, state, limit)` | Read one webhook's recent inbound requests (`limit` 1-50, default 20) or outbound deliveries filtered by `state` |
+
 ### Folder management
 
 | Tool | Description |

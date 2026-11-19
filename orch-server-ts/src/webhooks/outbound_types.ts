@@ -1,12 +1,11 @@
-export const OUTBOUND_EVENT_TYPES = [
-  "session.reply",
-  "session.question",
-  "session.failed",
-  "session.ended",
-] as const;
+import type {
+  OUTBOUND_WEBHOOK_DELIVERY_STATES,
+  OUTBOUND_WEBHOOK_EVENT_TYPES,
+} from "@soulstream/mcp-contract";
 
-export type OutboundEventType = (typeof OUTBOUND_EVENT_TYPES)[number];
-export type DeliveryState = "pending" | "delivered" | "dead";
+/** The canonical lists live with the webhook input fields in the MCP contract. */
+export type OutboundEventType = (typeof OUTBOUND_WEBHOOK_EVENT_TYPES)[number];
+export type DeliveryState = (typeof OUTBOUND_WEBHOOK_DELIVERY_STATES)[number];
 
 export type OutboundNotification = {
   id: string;

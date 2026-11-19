@@ -60,8 +60,14 @@
     "create_folder": {
       "category": "allow"
     },
+    "create_inbound_webhook": {
+      "category": "deny"
+    },
     "create_markdown_document": {
       "category": "allow"
+    },
+    "create_outbound_webhook": {
+      "category": "deny"
     },
     "create_page": {
       "category": "allow"
@@ -84,6 +90,9 @@
     },
     "delete_markdown_document": {
       "category": "allow"
+    },
+    "delete_outbound_webhook": {
+      "category": "deny"
     },
     "delete_session": {
       "category": "deny"
@@ -251,6 +260,12 @@
     "list_user_messages": {
       "category": "allow"
     },
+    "list_webhook_activity": {
+      "category": "allow"
+    },
+    "list_webhooks": {
+      "category": "allow"
+    },
     "list_worktrees": {
       "category": "allow"
     },
@@ -296,6 +311,9 @@
     "put_report_entry": {
       "category": "allow"
     },
+    "redeliver_outbound_webhook": {
+      "category": "deny"
+    },
     "reflect_brief": {
       "category": "allow"
     },
@@ -338,6 +356,9 @@
     },
     "resolve_attachment": {
       "category": "allow"
+    },
+    "revoke_inbound_webhook": {
+      "category": "deny"
     },
     "revoke_node_credential": {
       "category": "deny"
@@ -393,6 +414,9 @@
       "category": "allow"
     },
     "set_folder_system_prompt": {
+      "category": "deny"
+    },
+    "set_outbound_webhook_active": {
       "category": "deny"
     },
     "set_session_name": {

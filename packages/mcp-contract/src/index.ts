@@ -22,3 +22,4 @@ export * from "./mcp_auth.js";
 export * from "./constant_time_string_equal.js";
 export * from "./persistent_session_settings_tools.js";
 export * from "./node_pairing_tools.js";
+export * from "./webhook_tools.js";

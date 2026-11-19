@@ -186,12 +186,12 @@ describe("restricted MCP tool surface", () => {
     await harness.server.close();
   });
 
-  it("lists only allow, guarded and inherit tools (112)", async () => {
+  it("lists only allow, guarded and inherit tools (114)", async () => {
     const payload = await rpc(harness.baseUrl, sessionId, `Bearer ${TOKEN_A}`, {
       jsonrpc: "2.0", method: "tools/list", params: {}, id: 2,
     });
     const names: string[] = (payload.result?.tools ?? []).map((tool: { name: string }) => tool.name);
-    expect(names).toHaveLength(112);
+    expect(names).toHaveLength(114);
     for (const denied of ["delete_session", "run_card", "update_agent_profile", "dispatch_work",
       "update_central_agent_profile", "delete_central_agent_profile"]) {
       expect(names).not.toContain(denied);
@@ -265,7 +265,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const restrictedNames: string[] = (restricted.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(restrictedNames).toHaveLength(112);
+      expect(restrictedNames).toHaveLength(114);
       expect(restrictedNames).not.toContain("delete_session");
 
       const full = await statelessRpc(harness.baseUrl, `Bearer ${KEY}`, {
@@ -274,7 +274,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const fullNames: string[] = (full.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(fullNames).toHaveLength(149);
+      expect(fullNames).toHaveLength(157);
       expect(fullNames).toContain("delete_session");
     } finally {
       if (harness.server.closeMcp) await harness.server.closeMcp();
