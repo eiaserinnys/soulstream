@@ -51,6 +51,28 @@ describe("node barrier serialization", () => {
 });
 
 describe("node outside request cells", () => {
+  it("preserves the disposition of all 44 phase and request combinations", () => {
+    const expected = {
+      retained_releasing: ["reject_not_running", "queue_and_restart", "delete_row", "wait_then_start"],
+      retained_claude_background: ["reject_not_running", "queue_and_restart", "delete_row", "start_on_retained_runner"],
+      retained_codex_command: ["reject_not_running", "queue_and_restart", "delete_row", "start_on_retained_runner"],
+      stopping: ["join_stop", "queue_and_restart", "stop_then_delete", "wait_then_start"],
+      hydrated_active: ["terminate_without_runner", "queue_and_restart", "terminate_without_runner_then_delete", "start_execution"],
+      starting: ["reject_not_running", "hold_until_started", "delete_row", "join_start"],
+      replaying: ["interrupt_and_terminate", "deliver_or_queue", "stop_then_delete", "reject_runner_attached"],
+      terminating: ["reject_not_running", "queue_and_restart", "delete_row", "wait_then_start"],
+      registering: ["interrupt_and_terminate", "hold_until_started", "stop_then_delete", "join_start"],
+      running: ["interrupt_and_terminate", "deliver_or_queue", "stop_then_delete", "reject_runner_attached"],
+      idle: ["already_converged", "queue_and_restart", "delete_row", "start_execution"],
+    } as const;
+    expect(NODE_EXECUTION_PHASES).toHaveLength(11);
+    expect(NODE_REQUEST_KINDS).toEqual(["stop", "intervene", "delete", "resume"]);
+    for (const phase of NODE_EXECUTION_PHASES) {
+      expect(NODE_REQUEST_KINDS.map((request) => decideNodeRequest(phase, request)))
+        .toEqual(expected[phase]);
+    }
+  });
+
   it("gives every execution phase and request kind exactly one disposition", () => {
     let count = 0;
     for (const phase of NODE_EXECUTION_PHASES) {

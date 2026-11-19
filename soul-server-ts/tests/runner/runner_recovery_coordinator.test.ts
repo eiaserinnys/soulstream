@@ -3548,6 +3548,25 @@ describe("RunnerRecoveryCoordinator central check", () => {
     expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
   });
 
+  it("adopts again when the next central check is still inactive after success", async () => {
+    const { task: target } = runningTask();
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledOnce();
+    nowMs += 15_000;
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledTimes(2);
+    expect(adopt).toHaveBeenLastCalledWith(target, "execute:11111111-1111-4111-8111-111111111111:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  });
+
   it("reaps after an adoption rejection that is not worth retrying", async () => {
     const { task: target } = runningTask();
     const adopt = vi.fn(async () => ({

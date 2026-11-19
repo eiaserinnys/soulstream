@@ -38,6 +38,17 @@ function task(fields: Partial<NodeExecutionTaskFields>): NodeExecutionTaskFields
 }
 
 describe("node execution phase projection", () => {
+  it("treats each runner terminal reason as termination and its absence as running", () => {
+    const running = task({
+      runner,
+      executionRegistration: { registrationId: "r", executionCommandId: "c" },
+    });
+    expect(nodeExecutionPhaseOfTask(running)).toBe("running");
+    for (const runnerTerminalFact of ["completed", "failed", "reaped", "closed"] as const) {
+      expect(nodeExecutionPhaseOfTask({ ...running, runnerTerminalFact })).toBe("terminating");
+    }
+  });
+
   it("projects every fact combination to exactly one known phase", () => {
     let count = 0;
     const seen = new Set<string>();
