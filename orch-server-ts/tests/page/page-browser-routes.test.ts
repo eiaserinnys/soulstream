@@ -13,6 +13,7 @@ import {
 } from "../../src/page/page_mutation_core.js";
 import { PageBrowserBacklinkCursorError } from "../../src/page/page_repository_reads.js";
 import { PageYjsPageNotFoundError } from "../../src/page/page_yjs_persistence.js";
+import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_authenticated_user_resolver.js";
 
 const browserCookie = "soul_dashboard_auth=dashboard-token";
 
@@ -323,6 +324,40 @@ describe("browser page routes", () => {
         actor: { actorKind: "user", actorUserId: "user@example.com" },
         idempotencyKey:
           "browser_page:user@example.com:page-1:set_page_starred:user@example.com:req-2",
+        command: { type: "set_page_starred", starred: true },
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("changes the starred flag for an OAuth access subject", async () => {
+    const service = serviceDouble();
+    const users = createLiveAuthenticatedUserResolvers({
+      jwt: { issueToken: () => "dashboard-token", verifyToken: () => null },
+      resolveOAuthToken: async (token) => token === "oauth-token"
+        ? {
+            email: "app@example.com",
+            displayName: "App",
+            clientId: "client-1",
+            clientName: "Native Client",
+            scopes: ["folders:write"],
+          }
+        : null,
+    });
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: users.resolveUserOrOAuthEmail });
+    try {
+      const starred = await app.inject({
+        method: "PATCH",
+        url: "/api/pages/page-1/starred",
+        headers: { authorization: "Bearer oauth-token" },
+        payload: { starred: true, expected_version: 5, idempotency_key: "req-oauth" },
+      });
+      expect(starred.statusCode).toBe(200);
+      expect(service.mutatePage).toHaveBeenLastCalledWith(expect.objectContaining({
+        pageId: "page-1",
+        actor: { actorKind: "user", actorUserId: "app@example.com" },
         command: { type: "set_page_starred", starred: true },
       }));
     } finally {

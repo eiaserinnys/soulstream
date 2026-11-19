@@ -199,21 +199,57 @@ describe("OAuth resource scopes", () => {
     }
   });
 
+  it("maps folder writes, session writes, and agent reads to their own scopes", () => {
+    for (const [method, path] of [
+      ["POST", "/api/folders"],
+      ["PUT", "/api/folders/folder-1"],
+      ["PATCH", "/api/folders/reorder"],
+      ["POST", "/api/folders/folder-1/archive"],
+      ["POST", "/api/folders/folder-1/unarchive"],
+      ["POST", "/api/folders/folder-1/status"],
+      ["PATCH", "/api/pages/page-1/starred"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBe("folders:write");
+    for (const [method, path] of [
+      ["POST", "/api/sessions"],
+      ["PATCH", "/api/sessions/session-1/display-name"],
+      ["PATCH", "/api/sessions/folder"],
+      ["DELETE", "/api/sessions/session-1"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBe("sessions:write");
+    for (const [method, path] of [
+      ["GET", "/api/nodes"],
+      ["GET", "/api/nodes/node-1/agents"],
+      ["GET", "/api/nodes/node-1/model-presets"],
+      ["GET", "/api/nodes/node-1/agents/roselin/portrait"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBe("agents:read");
+    expect(oauthScopeForRoute("GET", "/api/planner/starred-folders")).toBe("folders:read");
+  });
+
+  it("lets a folder write token read folders and blocks a write without its scope", () => {
+    expect(requireOAuthScope({ ...access, scopes: ["folders:write"] }, "folders:read")).toEqual({ ok: true });
+    expect(requireOAuthScope({ ...access, scopes: ["folders:read"] }, "folders:write")).toMatchObject({ ok: false });
+    expect(requireOAuthScope({ ...access, scopes: ["sessions:write"] }, "sessions:write")).toEqual({ ok: true });
+    expect(requireOAuthScope({ ...access, scopes: ["agents:read"] }, "sessions:write")).toMatchObject({ ok: false });
+  });
+
   it("keeps every other method and resource outside the OAuth allowlist", () => {
-    expect(oauthScopeForRoute("POST", "/api/folders")).toBeNull();
     expect(oauthScopeForRoute("PATCH", "/api/folders/folder-1")).toBeNull();
+    expect(oauthScopeForRoute("DELETE", "/api/folders/folder-1")).toBeNull();
     expect(oauthScopeForRoute("DELETE", "/api/cards/card-1")).toBeNull();
-    expect(oauthScopeForRoute("POST", "/api/sessions")).toBeNull();
+    expect(oauthScopeForRoute("PUT", "/api/sessions/session-1")).toBeNull();
+    expect(oauthScopeForRoute("PATCH", "/api/planner/starred-folders/order")).toBeNull();
+    expect(oauthScopeForRoute("GET", "/api/nodes/node-1/agents/roselin")).toBeNull();
   });
 
   it("allows only the specified folder content and session routes for cards tokens", () => {
     for (const [method, path] of [
       ["GET", "/api/board-items"],
+      ["PATCH", "/api/board-items/board-1/folder"],
       ["GET", "/api/markdown-documents"],
       ["POST", "/api/markdown-documents"],
       ["GET", "/api/markdown-documents/doc-1"],
       ["PUT", "/api/markdown-documents/doc-1"],
       ["PATCH", "/api/markdown-documents/doc-1"],
+      ["DELETE", "/api/markdown-documents/doc-1"],
       ["GET", "/api/sessions"],
       ["GET", "/api/sessions/session-1/conversation"],
       ["POST", "/api/sessions/session-1/intervene"],
@@ -225,7 +261,6 @@ describe("OAuth resource scopes", () => {
       ["HEAD", "/api/attachments/asset-1/content"],
     ]) expect(oauthScopeForRoute(method!, path!)).toBe("cards:read");
     for (const [method, path] of [
-      ["DELETE", "/api/markdown-documents/doc-1"],
       ["GET", "/api/sessions/session-1"],
       ["POST", "/api/sessions/session-1/approve"],
       ["GET", "/api/sessions/session-1/conversation/extra"],

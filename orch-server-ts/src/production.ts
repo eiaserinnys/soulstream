@@ -604,7 +604,7 @@ export async function createLiveProductionApplication(
           dbCatalogRepository.agentProfileRepository.snapshot(),
         ),
       resolveBrowserUser: async (request) =>
-        await providers.authenticatedUserResolvers.resolveUser(request),
+        await providers.authenticatedUserResolvers.resolveUserOrOAuthEmail(request),
       createService: (logger) => pageYjsService ??= guardMethods(new PageYjsService({
         repository: pageRepository,
         documentGate: overrides.pageGate,
@@ -1609,6 +1609,9 @@ export function buildProductionRouteOptions(
     }),
     create: (request, body, id, logger) => executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger, id),
     waitForCreatedSession: (id, nodeId) => providers.runtime.sessionCommandRoutes.router.waitForCreatedSession(id, nodeId),
+    moveSessionToFolder: async (sessionId, folderId) => {
+      await providers.sessionCatalogRoutes.provider.moveSessionsToFolder([sessionId], folderId);
+    },
   }) : undefined;
   const conversationPorts = conversationSql ? createConversationMessagePorts(conversationSql, providers.attachmentRoutes, {
     ...providers.runtime.sessionActionCommandRoutes,

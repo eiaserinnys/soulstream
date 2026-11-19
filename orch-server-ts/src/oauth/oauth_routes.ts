@@ -223,6 +223,9 @@ async function interactionConsentView(
   const permissions = [
     ...(requestedScopes.includes("conversations") ? ["작업 대화"] : []),
     ...(requestedScopes.includes("cards:read") || requestedScopes.includes("folders:read") ? ["카드와 폴더 읽기"] : []),
+    ...(requestedScopes.includes("folders:write") ? ["폴더 만들기와 변경"] : []),
+    ...(requestedScopes.includes("sessions:write") ? ["세션 만들기와 변경"] : []),
+    ...(requestedScopes.includes("agents:read") ? ["에이전트와 모델 정보 읽기"] : []),
     ...(requestedScopes.includes("usage:read") ? ["사용량 읽기"] : []),
   ].join(", ");
   const csrf = randomBytes(32).toString("base64url");

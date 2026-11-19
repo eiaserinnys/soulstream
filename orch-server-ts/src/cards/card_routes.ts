@@ -67,12 +67,20 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
     }});
   }
   app.get<{ Querystring: { folderId?: string; status?: string } }>("/api/cards", async (request, reply) => {
-    try { return await listCardRouteBody(options, request.query, () => options.accessProvider.resolveAccess(request)); }
+    try {
+      const body = await listCardRouteBody(options, request.query, () => options.accessProvider.resolveAccess(request));
+      await options.assigneeAgentEnricher?.enrichCards(body.cards);
+      return body;
+    }
     catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
   });
   for (const reports of [false, true]) {
     app.get<{ Params: { id: string } }>(`/api/cards/:id${reports ? "/reports" : ""}`, async (request, reply) => {
-      try { return await readCardRouteBody(options, request.params.id, () => options.accessProvider.resolveAccess(request), reports); }
+      try {
+        const body = await readCardRouteBody(options, request.params.id, () => options.accessProvider.resolveAccess(request), reports);
+        if (!reports) await options.assigneeAgentEnricher?.enrichDetail(body as Record<string, unknown>);
+        return body;
+      }
       catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     });
   }

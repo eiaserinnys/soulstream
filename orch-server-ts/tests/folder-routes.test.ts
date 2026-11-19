@@ -22,15 +22,20 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
   const listSessionAssignments = vi.fn(() => ({ a: { folderId: "f" }, b: { folderId: "other" } }));
+  const listStarredProjectPageIds = vi.fn(async (pageIds: readonly string[]) => pageIds.filter((pageId) => pageId === "p"));
   registerFolderRoutes(app, {
     nodeCredentials: null,
-    provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments },
+    provider: {
+      listFolders: () => [{ id: "f", projectPageId: "p" }, { id: "other" }],
+      listSessionAssignments,
+      listStarredProjectPageIds,
+    },
     accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
     resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],
     cardServiceProvider: async () => cards, controlPlaneServiceProvider: async () => ({} as FolderControlPlaneService),
     authBearerToken: "test-token", environment: "production",
   });
-  return { app, identity, getFolder, listFolders, mutate, listSessionAssignments };
+  return { app, identity, getFolder, listFolders, mutate, listSessionAssignments, listStarredProjectPageIds };
 }
 
 describe("unified folder HTTP and host contracts", () => {
@@ -126,6 +131,18 @@ describe("unified folder HTTP and host contracts", () => {
     expect((await unrestricted.app.inject({ method: "POST", url: "/api/folders/claude/status", payload })).statusCode).toBe(403);
   });
 
+  it("carries the project page star onto folder list and single responses", async () => {
+    const { app, listStarredProjectPageIds } = setup();
+    const list = await app.inject("/api/folders");
+    expect(list.json().folders).toMatchObject([
+      { id: "f", starred: true },
+      { id: "other", starred: false },
+    ]);
+    expect(listStarredProjectPageIds).toHaveBeenCalledWith(["p"]);
+    const single = await app.inject("/api/folders/f");
+    expect(single.statusCode).toBe(200);
+    expect(single.json().folder).toMatchObject({ id: "f", starred: true });
+  });
   it("keeps the default folder response assignments when sessions is omitted", async () => {
     const { app, listSessionAssignments } = setup();
     const response = await app.inject("/api/folders");

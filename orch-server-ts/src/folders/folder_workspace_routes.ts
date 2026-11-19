@@ -6,6 +6,7 @@ import type { FolderRouteOptions } from "./folder_routes.js";
 import { isFolderAllowed, normalizeAccess } from "./folder_route_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
+import { folderStarred, loadStarredProjectPageIds } from "./folder_starred.js";
 
 type Scope = { folder_id: string };
 const mutations: readonly ["POST" | "PUT", string, FolderOperation][] = [
@@ -52,13 +53,27 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
     app.get<{ Params: Scope; Querystring: { view?: string; cardId?: string; limit?: string; cursor?: string; includeArchived?: string; includeCompleted?: string } }>(path, async (request, reply) => {
       try {
         const folderId = request.params.folder_id;
-        if (!await allowed(request, options, folderId)) return failure(reply, 403, "FOLDER_ACCESS_DENIED", "Folder access denied");
+        const folders = [...(await options.provider.listFolders())];
+        if (!isFolderAllowed(normalizeAccess(await options.accessProvider.resolveAccess(request)), folders, folderId)) {
+          return failure(reply, 403, "FOLDER_ACCESS_DENIED", "Folder access denied");
+        }
         if (!options.cardServiceProvider) throw new Error("Folder service is not configured");
         const service = await options.cardServiceProvider();
-        if (kind === "snapshot") return reply.send(await readFolderSnapshot(
-          service, folderId, request.query.cardId, request.query.view, request.query.includeCompleted !== "false",
-          { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor },
-        ));
+        if (kind === "snapshot") {
+          const body = await readFolderSnapshot(
+            service, folderId, request.query.cardId, request.query.view, request.query.includeCompleted !== "false",
+            { includeArchived: request.query.includeArchived, limit: request.query.limit, cursor: request.query.cursor },
+          );
+          const record = folders.find((folder) => folder.id === folderId) ?? null;
+          const starredPageIds = await loadStarredProjectPageIds(
+            options.provider.listStarredProjectPageIds,
+            record === null ? [] : [record],
+          );
+          return reply.send({
+            ...body,
+            folder: { ...body.folder, starred: record !== null && folderStarred(record, starredPageIds) },
+          });
+        }
         const limit = z.coerce.number().int().min(1).max(200).parse(request.query.limit ?? 50);
         const offset = z.coerce.number().int().nonnegative().parse(request.query.cursor ?? 0);
         const includeArchived = z.enum(["true", "false"]).parse(request.query.includeArchived ?? "false") === "true";

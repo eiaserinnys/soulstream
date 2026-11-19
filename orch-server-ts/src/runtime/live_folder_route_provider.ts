@@ -59,6 +59,19 @@ export function createLiveFolderProvider(
       `;
       return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
     },
+    async listStarredProjectPageIds(pageIds) {
+      if (pageIds.length === 0) return [];
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT id FROM pages
+        WHERE id = ANY(${[...pageIds]}::text[])
+          AND metadata->'starred' = 'true'::jsonb
+      `;
+      return rows.flatMap((row) => {
+        const id = stringOrNull(row.id);
+        return id === null ? [] : [id];
+      });
+    },
     async listBoardItemIdsForSessionDeletion(sessionId) {
       const sql = await sqlResolver.resolveSql();
       const rows = await sql`

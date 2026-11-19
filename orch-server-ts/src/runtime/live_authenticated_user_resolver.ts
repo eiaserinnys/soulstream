@@ -29,6 +29,20 @@ export type LiveAuthenticatedEmailResolver = (
   request: FastifyRequest,
 ) => Promise<string | null>;
 
+/**
+ * Dashboard JWT identity, or the OAuth access subject when no JWT is present.
+ * Page and planner browser routes use this so an OAuth token reaches the same
+ * user the dashboard cookie would.
+ */
+export type LiveBrowserUser = {
+  readonly email?: string;
+  readonly sub?: string;
+};
+
+export type LiveBrowserUserResolver = (
+  request: FastifyRequest,
+) => Promise<LiveBrowserUser | null>;
+
 export type LiveDashboardTokenVerifier = (
   request: FastifyRequest,
   token: string,
@@ -44,6 +58,7 @@ export type LiveAuthenticatedUserResolvers = {
   readonly verifyToken: LiveDashboardTokenVerifier;
   readonly resolveOAuthAccess: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   readonly resolveUser: LiveAuthenticatedUserResolver;
+  readonly resolveUserOrOAuthEmail: LiveBrowserUserResolver;
   readonly resolveUserFromHeaders: (
     headers: DashboardAuthHeaders,
   ) => Promise<AuthenticatedDashboardUser | null>;
@@ -116,11 +131,19 @@ export function createLiveAuthenticatedUserResolvers(
   const resolveUser: LiveAuthenticatedUserResolver = async (request) => {
     return (await resolveAuthenticatedUser(request))?.payload ?? null;
   };
+  const resolveUserOrOAuthEmail: LiveBrowserUserResolver = async (request) => {
+    const authenticated = await resolveAuthenticatedUser(request);
+    if (authenticated !== null) return authenticated.payload;
+    if (isServiceCaller(request)) return null;
+    const oauthAccess = await resolveOAuthAccess(request);
+    return oauthAccess === null ? null : { email: oauthAccess.email };
+  };
 
   return {
     verifyToken,
     resolveOAuthAccess,
     resolveUser,
+    resolveUserOrOAuthEmail,
     resolveUserFromHeaders: resolveHeadersWithoutRequest,
     async resolveEmail(request) {
       const user = await resolveUser(request);

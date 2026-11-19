@@ -163,12 +163,13 @@ function ensureBody(input: unknown): EnsureRequest {
     initial_instruction: string(b.initial_instruction, "initial_instruction", true), instructions: string(b.instructions, "instructions", true) };
 }
 function patchBody(input: unknown): PatchRequest {
-  const b = object(input); keys(b, ["title", "archived", "model", "model_order", "instructions"]);
+  const b = object(input); keys(b, ["title", "archived", "model", "model_order", "instructions", "collection"]);
   if (b.archived !== undefined && b.archived !== true) throw invalid("archived must be true");
   return { ...(b.title === undefined ? {} : { title: string(b.title, "title") }),
     ...(b.archived === undefined ? {} : { archived: true }),
     ...(b.model === undefined ? {} : { model: string(b.model, "model") }),
     ...(b.model_order === undefined ? {} : { model_order: strings(b.model_order, "model_order") }),
-    ...(b.instructions === undefined ? {} : { instructions: string(b.instructions, "instructions", true) }) };
+    ...(b.instructions === undefined ? {} : { instructions: string(b.instructions, "instructions", true) }),
+    ...(b.collection === undefined ? {} : { collection: string(b.collection, "collection") }) };
 }
 function invalid(message: string) { return new ConversationError(400, "invalid_request", message); }

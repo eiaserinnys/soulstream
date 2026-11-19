@@ -2,7 +2,15 @@ import type { AuthUserAuthorizer } from "../auth/auth_routes.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { oauthAdapter } from "./oauth_adapter.js";
 
-export const oauthScopes = ["conversations", "cards:read", "folders:read", "usage:read"] as const;
+export const oauthScopes = [
+  "conversations",
+  "cards:read",
+  "folders:read",
+  "usage:read",
+  "folders:write",
+  "sessions:write",
+  "agents:read",
+] as const;
 
 export type OAuthScope = (typeof oauthScopes)[number];
 
@@ -98,16 +106,30 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
     return "cards:read";
   if ((upper === "GET" && (path === "/api/board-items" || path === "/api/sessions" || path === "/api/sessions/stream"))
     || ((upper === "GET" || upper === "POST") && path === "/api/markdown-documents")
-    || ((upper === "GET" || upper === "PUT" || upper === "PATCH") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
+    || ((upper === "GET" || upper === "PUT" || upper === "PATCH" || upper === "DELETE") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
+    || (upper === "PATCH" && /^\/api\/board-items\/[^/]+\/folder$/.test(path))
     || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
     || (upper === "POST" && /^\/api\/sessions\/[^/]+\/(?:intervene|interrupt)$/.test(path))
     || (upper === "GET" && path === "/api/attachments/files")
     || (upper === "GET" && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+$/.test(path))
     || ((upper === "GET" || upper === "HEAD")
       && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+\/content$/.test(path))) return "cards:read";
+  if ((upper === "POST" && path === "/api/folders")
+    || (upper === "PUT" && /^\/api\/folders\/[^/]+$/.test(path))
+    || (upper === "PATCH" && path === "/api/folders/reorder")
+    || (upper === "POST" && /^\/api\/folders\/[^/]+\/(?:archive|unarchive|status)$/.test(path))
+    || (upper === "PATCH" && /^\/api\/pages\/[^/]+\/starred$/.test(path))) return "folders:write";
+  if ((upper === "POST" && path === "/api/sessions")
+    || (upper === "PATCH" && (/^\/api\/sessions\/[^/]+\/display-name$/.test(path) || path === "/api/sessions/folder"))
+    || (upper === "DELETE" && /^\/api\/sessions\/[^/]+$/.test(path))) return "sessions:write";
+  if (upper === "GET" && (path === "/api/nodes"
+    || /^\/api\/nodes\/[^/]+\/agents$/.test(path)
+    || /^\/api\/nodes\/[^/]+\/model-presets$/.test(path)
+    || /^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path))) return "agents:read";
   if (upper !== "GET") return null;
   if (path === "/api/usage/summary" || path === "/api/usage/stream") return "usage:read";
   if (path === "/api/session-statistics" || /^\/api\/session-statistics\/days\/[^/]+$/.test(path)) return "usage:read";
+  if (path === "/api/planner/starred-folders") return "folders:read";
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;
 }
@@ -117,7 +139,8 @@ export function requireOAuthScope(
   scope: OAuthScope,
 ): OAuthScopeCheck {
   return (access?.scopes.includes(scope)
-    || (scope === "folders:read" && access?.scopes.includes("cards:read")))
+    || (scope === "folders:read"
+      && (access?.scopes.includes("cards:read") || access?.scopes.includes("folders:write"))))
     ? { ok: true }
     : { ok: false, statusCode: 403, detail: "Insufficient OAuth scope" };
 }
