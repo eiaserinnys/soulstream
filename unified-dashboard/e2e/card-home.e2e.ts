@@ -682,7 +682,8 @@ async function measureFolderError(page:Page,width:number,verify=true,name?:strin
 async function measureRitualError(page:Page,width:number,verify=true,name?:string){
  await page.setViewportSize({width,height:width===390?844:900});await fixture(page);
  await page.locator('.v3-card-inbox').getByRole('button',{name:'기록',exact:true}).click();await page.locator('.v3-date-head').waitFor({state:'visible'});
- await page.route(url=>new URL(url).pathname==='/api/planner/daily-history',route=>route.fulfill({status:500,json:{message:'플래너 기록 조회 실패 (500): daily-history upstream timeout after 30000ms'}}));
+ const historyMatcher=(url:URL)=>url.pathname==='/api/planner/daily-history';
+ await page.route(historyMatcher,route=>route.fulfill({status:500,json:{message:'플래너 기록 조회 실패 (500): daily-history upstream timeout after 30000ms'}}));
  await page.getByTestId('v3-planner-scroll').getByRole('button',{name:'아침 정리',exact:true}).click();
  const alert=page.getByRole('dialog').getByRole('alert');await expect(alert).toBeVisible();await page.waitForTimeout(300);
  await page.screenshot({animations:'disabled'});
@@ -691,7 +692,10 @@ async function measureRitualError(page:Page,width:number,verify=true,name?:strin
  await alert.getByText('기술 상세').click();await expect(alert.locator('pre')).toBeVisible();
  const opened=await alert.evaluate(el=>({width:el.getBoundingClientRect().width,align:getComputedStyle(el).textAlign,containerWidth:el.parentElement!.getBoundingClientRect().width}));
  if(name){await visualShot(page,`${name}-open`);visualSave(name,{closed,opened});}
- if(verify){expect(['start','left']).toContain(opened.align);expect(opened.width).toBeCloseTo(closed.width,0);expect(opened.width).toBeCloseTo(opened.containerWidth,0);}
+ if(verify){
+  expect(['start','left']).toContain(opened.align);expect(opened.width).toBeCloseTo(closed.width,0);expect(opened.width).toBeCloseTo(opened.containerWidth,0);
+  await page.unroute(historyMatcher);await alert.getByRole('button',{name:'다시 시도'}).click();await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+ }
  return {closed,opened};
 }
 for(const [width,height] of [[390,844],[1366,768]])test(`card1680 긴 오류 상세가 완료 열 안에 유지 ${width}`,async({page})=>{await measureLongError(page,width,height);});
@@ -704,4 +708,42 @@ for(const theme of ['light','dark'] as const){
  test(`visual1680-review folder-board-long ${theme}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureLongError(page,390,844,true,visualPhase==='review-after',`folder-board-long-${theme}-390`);});
  for(const width of [390,1440])test(`visual1680-review folder-error-board ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureFolderError(page,width,visualPhase==='review-after',`folder-error-board-${theme}-${width}`);});
  for(const width of [390,1440])test(`visual1680-review ritual-error ${theme} ${width}`,async({page})=>{await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await measureRitualError(page,width,visualPhase==='review-after',`ritual-error-${theme}-${width}`);});
+}
+
+test('card1680 정상 폴더 진행 격자와 완료 묶음 간격',async({page})=>{
+ for(const width of [390,1440]){
+  await page.setViewportSize({width,height:width===390?844:900});await fixture(page);await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');await folder.getByRole('button',{name:'일반 보기',exact:true}).click();
+  await folder.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();
+  const grid=folder.locator(':scope > .v3-postit-grid').first(),completed=folder.locator(':scope > .v3-completed-collection');
+  await expect(completed).toBeVisible();
+  const gap=await completed.evaluate(el=>el.getBoundingClientRect().top-el.previousElementSibling!.getBoundingClientRect().bottom);
+  expect(Math.abs(gap)).toBeLessThanOrEqual(1);await expect(grid).toBeAttached();
+  await page.unrouteAll({behavior:'wait'});
+ }
+});
+
+type NormalCards='present'|'none'|'doneOnly';
+for(const width of [390,1440])for(const mode of ['present','none','doneOnly'] as NormalCards[]){
+ test(`visual1680-normal ${mode} ${width}`,async({page})=>{
+  await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await page.setViewportSize({width,height:width===390?844:900});
+  const cards=mode==='none'?[]:mode==='doneOnly'?seed().filter(card=>card.status==='done'):seed();
+  await fixture(page,17,cards);await openCompletedFolder(page);
+  const folder=page.getByTestId('folder-card-section');const result:Record<string,unknown>={};
+  const snap=async(key:string)=>{
+   await page.waitForTimeout(500);await expect(folder.getByText(/불러오는 중/)).toHaveCount(0,{timeout:15000});await page.waitForTimeout(300);await folder.scrollIntoViewIfNeeded();
+   result[key]=await page.evaluate(()=>{const sec=document.querySelector('[data-testid="v3-folder-cards-section"]')!,fc=sec.querySelector('[data-testid="folder-card-section"]')!,top=sec.getBoundingClientRect().top;
+    const rect=(el:Element)=>{const r=el.getBoundingClientRect();return {top:Math.round((r.top-top)*10)/10,bottom:Math.round((r.bottom-top)*10)/10,height:Math.round(r.height*10)/10,left:Math.round(r.left*10)/10,right:Math.round(r.right*10)/10};};
+    const name=(el:Element)=>`${el.tagName.toLowerCase()}.${el.className.toString().trim().split(/\s+/).filter(c=>c.startsWith('v3-')).slice(0,2).join('.')}`;
+    return {section:rect(sec),container:rect(fc),children:[...fc.children].map(el=>({name:name(el),...rect(el)}))};});
+   if(key==='list-on')await folder.locator(':scope > .v3-completed-collection').evaluate(el=>{
+    el.scrollIntoView({block:'start',inline:'nearest'});
+    const scroll=el.closest<HTMLElement>('.v3-planner-scroll');if(scroll)scroll.scrollTop-=scroll.clientHeight/2;
+   });
+   await visualShot(page,`normal-${mode}-${width}-${key}`);
+  };
+  await snap('board-off');await folder.getByRole('switch',{name:'완료·취소 숨김'}).uncheck();await snap('board-on');
+  await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await snap('list-on');
+  await folder.getByRole('switch',{name:'완료·취소 숨김'}).check();await snap('list-off');visualSave(`normal-${mode}-${width}`,result);
+ });
 }

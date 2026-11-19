@@ -63,6 +63,12 @@ try:
             phase_env['CARD1680_VISUAL_BASE'] = 'http://127.0.0.1:4194/'
         command = ['corepack', 'pnpm', '--dir', 'unified-dashboard', 'exec', 'playwright', 'test', '--config', 'playwright.card-home.config.ts', '--grep', 'visual1680 ', '--output=../.local/card1680/visual-results']
         results[phase] = subprocess.run(command, cwd=root, env=phase_env, check=False).returncode
+    for phase in ('normal-before', 'normal-after'):
+        phase_env = {**env, 'CARD1680_VISUAL_PHASE': phase}
+        if phase == 'normal-before':
+            phase_env['CARD1680_VISUAL_BASE'] = 'http://127.0.0.1:4194/'
+        command = ['corepack', 'pnpm', '--dir', 'unified-dashboard', 'exec', 'playwright', 'test', '--config', 'playwright.card-home.config.ts', '--grep', 'visual1680-normal', '--output=../.local/card1680/normal-results']
+        results[phase] = subprocess.run(command, cwd=root, env=phase_env, check=False).returncode
     review_server = subprocess.Popen(['corepack', 'pnpm', '--dir', str(review_dir), 'exec', 'vite', 'preview', '--host', '127.0.0.1', '--port', '4195', '--strictPort'], cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for attempt in range(100):
@@ -85,18 +91,32 @@ try:
         review_server.terminate()
         review_server.wait(timeout=5)
     data = {}
-    for phase in ('before', 'after', 'review-before', 'review-after'):
+    for phase in ('before', 'after', 'normal-before', 'normal-after', 'review-before', 'review-after'):
         folder = captures / phase
         data[phase] = {file.stem: json.loads(file.read_text(encoding='utf-8')) for file in sorted(folder.glob('*.json')) if file.stem not in ('report', 'measurements')}
     interaction = data['after'].get('interaction', {})
     errors = {mode: data['after'].get(f'error-{mode}', {}) for mode in ('list', 'folder', 'board')}
+    comparisons = []
+    for width in (390, 1440):
+        for cards in ('present', 'none', 'doneOnly'):
+            name = f'normal-{cards}-{width}'
+            for state in ('board-off', 'board-on', 'list-on', 'list-off'):
+                before = data['normal-before'].get(name, {}).get(state, {}).get('children', [])
+                after = data['normal-after'].get(name, {}).get(state, {}).get('children', [])
+                same = bool(before) and len(before) == len(after) and all(
+                    a['name'] == b['name'] and all(abs(a[key] - b[key]) <= 1 for key in ('top', 'bottom', 'height', 'left', 'right'))
+                    for a, b in zip(before, after)
+                )
+                comparisons.append({'case': name, 'state': state, 'passed': same})
     report = {'commands': results, 'captures': data, 'checks': {
         '14_focus': interaction.get('openedFocus', {}).get('inside') is True and interaction.get('focusRestored') is True,
         '15_tab_escape': interaction.get('tab', {}).get('visible') is True and interaction.get('escapeClosed') is True,
         '16_minimum_width': bool(interaction.get('narrow')) and interaction['narrow']['scrollWidth'] <= interaction['narrow']['width'],
         '17_error_recovery': all(value.get('retryRecovered') is True and value.get('errorPrefix') is False for value in errors.values()),
         '18_resize': bool(interaction) and interaction.get('beforeScroll') == interaction.get('afterScroll') and interaction.get('value') == '완료',
+        'normal_folder_24': all(item['passed'] for item in comparisons),
     }}
+    report['normal_folder_comparisons'] = comparisons
     captures.mkdir(parents=True, exist_ok=True)
     (captures / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(report['checks'], ensure_ascii=False))
