@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { ZodError } from "zod";
 
-import { writeFileAtomically } from "../atomic_file_rename.js";
+import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import { parseEnv } from "../config.js";
 import { hashArtifactSet } from "../runner/runner_release_materializer.js";
 import { readDeclaredEnvDocument } from "./declared_env_document.js";

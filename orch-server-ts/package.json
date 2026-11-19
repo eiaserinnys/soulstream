@@ -26,6 +26,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@modelcontextprotocol/server": "2.2.0",
     "@soulstream/agent-profile-contract": "workspace:*",
+    "@soulstream/atomic-file-rename": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/mcp-contract": "workspace:*",
     "@soulstream/model-catalog": "workspace:*",

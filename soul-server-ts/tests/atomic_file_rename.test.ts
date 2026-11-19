@@ -8,7 +8,7 @@ import {
   renameWithTransientRetry,
   renameWithTransientRetrySync,
   writeFileAtomically,
-} from "../src/atomic_file_rename.js";
+} from "@soulstream/atomic-file-rename";
 
 function renameError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`rename ${code}`), { code });

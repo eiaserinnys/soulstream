@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import type { Logger } from "pino";
 
-import { renameWithTransientRetry } from "../atomic_file_rename.js";
+import { renameWithTransientRetry } from "@soulstream/atomic-file-rename";
 
 /** 미결 파일이 놓이는 EVENT_OUTBOX_DIR 아래 하위 폴더 이름이다. */
 export const COMPLETION_SETTLEMENT_SUBDIRECTORY = "completion-settlements";

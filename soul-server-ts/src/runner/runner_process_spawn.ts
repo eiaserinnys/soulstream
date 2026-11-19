@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { Logger } from "pino";
 
-import { writeFileAtomically } from "../atomic_file_rename.js";
+import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import {
   parseRunnerChildConfig,
   type RunnerChildConfig,

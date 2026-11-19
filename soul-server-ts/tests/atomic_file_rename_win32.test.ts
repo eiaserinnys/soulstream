@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renameWithTransientRetry } from "../src/atomic_file_rename.js";
+import { renameWithTransientRetry } from "@soulstream/atomic-file-rename";
 import { RunnerSqliteEventOutbox } from "../src/runner/sqlite_event_outbox.js";
 import {
   runnerLifecycleSummaryPath,
