@@ -5,7 +5,7 @@
   max-width: 100%;
   gap: var(--v3-space-1);
   padding: calc(var(--v3-space-1) / 2) var(--v3-space-2);
-  border-radius: var(--v3-space-8);
+  border-radius: var(--radius-pill);
   font: var(--v3-type-badge) var(--v3-font-family);
   color: var(--v3-text-secondary);
   background: var(--muted);

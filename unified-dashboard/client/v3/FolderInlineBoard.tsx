@@ -335,7 +335,7 @@ export function FolderInlineBoard({
           if (item.itemType === "custom_view") {
             const title = metadataText(item, "title") || "Custom view";
             return (
-              <LiquidGlassCard key={item.id} webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="custom_view">
+              <LiquidGlassCard key={item.id} webglSurface cornerRadius="xl" className="v3-inline-board-item" data-board-kind="custom_view">
                 <div className="v3-inline-board-row">
                   <div className="v3-inline-board-label"><span>▦ {title}</span></div>
                   <DashboardIconCap
@@ -439,7 +439,7 @@ function InlineAsset({ item }: { item: CatalogBoardItem }) {
   const title = metadataText(item, "originalName") || metadataText(item, "title") || "첨부 파일";
   const href = metadataText(item, "signedUrl") || metadataText(item, "sourceUrl");
   return (
-    <LiquidGlassCard webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="asset">
+    <LiquidGlassCard webglSurface cornerRadius="xl" className="v3-inline-board-item" data-board-kind="asset">
       {href ? <a href={href} target="_blank" rel="noreferrer"><span>↗ {title}</span><small>열기</small></a> : <div><span>📎 {title}</span></div>}
     </LiquidGlassCard>
   );

@@ -68,7 +68,7 @@ describe("LiquidGlassCard", () => {
           LiquidGlassCard,
           {
             className: "custom-card",
-            cornerRadius: 18,
+            cornerRadius: "2xl",
             "data-testid": "glass-card",
           },
           "Card body",

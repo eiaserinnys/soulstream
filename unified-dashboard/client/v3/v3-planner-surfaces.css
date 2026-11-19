@@ -19,7 +19,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: var(--font-size-xs);
   font-weight: 830;
@@ -92,7 +92,7 @@
   width: 150px;
   height: 5px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--muted);
 }
 
@@ -108,7 +108,7 @@
   grid-template-columns: minmax(0, 1fr) 190px auto auto;
   gap: 8px;
   margin-bottom: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   padding: 12px;
 }
 
@@ -144,7 +144,7 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   color: var(--foreground);
   background: var(--background);
@@ -161,7 +161,7 @@
 
 .v3-new-task-dialog .v3-new-task-error {
   border: 1px solid color-mix(in srgb, var(--destructive) 42%, var(--border));
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   color: var(--destructive-foreground);
   background: color-mix(in srgb, var(--destructive) 12%, var(--card));
@@ -171,7 +171,7 @@
 .v3-new-task select {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   padding: 9px 11px;
   color: var(--foreground);
   background: var(--background);
@@ -198,7 +198,7 @@
   display: grid;
   gap: 10px;
   margin: 18px 0 22px;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   padding: 14px 16px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--muted) 62%, transparent);
@@ -219,7 +219,7 @@
 
 .v3-project-context-chip {
   border: 1px solid var(--glass-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 8px;
   color: var(--foreground);
   background: color-mix(in srgb, var(--accent) 70%, transparent);
@@ -265,7 +265,7 @@
 .v3-empty,
 .v3-load-error {
   border: 1px dashed var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   padding: 28px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 70%, transparent);
@@ -334,7 +334,7 @@
   gap: 6px;
   margin-top: 28px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   padding: 16px;
   background: var(--muted);
 }
@@ -350,7 +350,7 @@
   left: 50%;
   bottom: 24px;
   max-width: min(680px, 92vw);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 10px 18px;
   color: var(--primary-foreground);
   background: var(--primary);

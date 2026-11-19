@@ -64,7 +64,7 @@ function AlertDialogPopup({
   bottomStickOnMobile?: boolean;
 }) {
   const enhanced = supportsLiquidGlassEnhancement();
-  const popupStyle = liquidGlassStyle(24, style as CSSProperties | undefined);
+  const popupStyle = liquidGlassStyle("3xl", style as CSSProperties | undefined);
 
   return (
     <AlertDialogPortal>
@@ -88,7 +88,7 @@ function AlertDialogPopup({
           {...props}
         >
           {/* Overlay glass stays CSS/backdrop based: the shared WebGL canvas samples wallpaper only, not content behind modal z-layers. */}
-          <LiquidGlassLayer cornerRadius={24} enhanced={enhanced} />
+          <LiquidGlassLayer cornerRadius="3xl" enhanced={enhanced} />
           {children}
         </AlertDialogPrimitive.Popup>
       </AlertDialogViewport>

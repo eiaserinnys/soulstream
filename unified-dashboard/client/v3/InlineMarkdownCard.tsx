@@ -15,7 +15,7 @@ export function InlineMarkdownCard({ title, expanded, onToggle, onRename, rowPro
   error?: string;
   children?: ReactNode;
 }) {
-  return <LiquidGlassCard webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="markdown">
+  return <LiquidGlassCard webglSurface cornerRadius="xl" className="v3-inline-board-item" data-board-kind="markdown">
     <div className="v3-inline-board-row" tabIndex={0} aria-label={`${title} 문서 작업`} {...rowProps}>
       {renameForm ?? <div className="v3-inline-board-label"><span>📄 {title}</span></div>}
       {!renameForm ? <>

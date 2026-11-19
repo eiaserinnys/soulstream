@@ -13,7 +13,7 @@
   "rules": {
     "color-literal": {"enabled": true, "hint": "--v3-text-primary, --v3-glass-panel, --v3-stroke-default 또는 Tailwind 테마 색을 쓴다."},
     "font-literal": {"enabled": true, "hint": "--v3-type-body, --v3-type-meta 같은 글자 토큰을 쓴다."},
-    "radius-literal": {"enabled": false, "hint": "프로젝트의 곡률 토큰을 쓴다."},
+    "radius-literal": {"enabled": true, "hint": "var(--radius-sm|md|lg|xl|2xl|3xl|pill) 곡률 토큰을 쓴다."},
     "spacing-literal": {"enabled": true, "hint": "--v3-space-1, --v3-space-2 같은 간격 토큰을 쓴다."},
     "selection-outside-policy": {"enabled": true, "hint": "v3-selection-policy.css의 선택자 목록에 더한다."},
     "outline-none": {"enabled": true, "hint": ":focus-visible 모양을 프로젝트 초점 스타일로 함께 둔다."},
