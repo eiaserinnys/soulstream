@@ -678,6 +678,7 @@ describe("repository model catalogue data", () => {
 
   it("keeps the PAS defaults in the data file", () => {
     expect(catalog.persistent_defaults).toEqual({
+      agent_id: "seosoyoung-pas",
       model_preset: "claude-opus",
       fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
     });
@@ -714,6 +715,11 @@ describe("model catalogue schema validation", () => {
     );
     expect(() => parseModelCatalogYaml(missingFallback))
       .toThrow(/persistent_defaults\.fallback_models\[0\] .*nope.* is not a known model preset/);
+  });
+
+  it("rejects a blank persistent default agent id", () => {
+    const blank = BASE_CATALOG_YAML.replace("persistent_defaults:\n", "persistent_defaults:\n  agent_id: '  '\n");
+    expect(() => parseModelCatalogYaml(blank)).toThrow();
   });
 
   it("rejects negative rates and an unsupported schema version", () => {

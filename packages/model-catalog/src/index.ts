@@ -150,6 +150,7 @@ export const PersistentModelDefaultSchema = z.object({
 export type PersistentModelDefault = z.infer<typeof PersistentModelDefaultSchema>;
 
 export const PersistentCatalogDefaultsSchema = z.object({
+  agent_id: z.string().trim().min(1).optional(),
   model_preset: z.string().trim().min(1),
   fallback_models: z.array(PersistentModelDefaultSchema).default([]),
 });
