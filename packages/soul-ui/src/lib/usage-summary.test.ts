@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyUsageSummaryOutcome,
   findUsageSummaryNode,
   formatUsageResetCountdown,
   formatUsageUpdatedLabel,
@@ -11,10 +12,12 @@ import {
   selectUsageSummaryNode,
   sevenDayElapsedFraction,
   weeklyUsageGauges,
+  usageSummaryLoadState,
   type UsageSummaryNode,
   type UsageSummaryProvider,
   type UsageSummaryQuota,
   type UsageSummarySnapshot,
+  type UsageSummaryState,
 } from "./usage-summary";
 
 const emptyProvider = {
@@ -44,6 +47,46 @@ function node(
     },
   };
 }
+
+describe("usage summary request policy", () => {
+  const summary: UsageSummarySnapshot = {
+    generatedAt: "2026-10-11T00:00:00.000Z", collectedAt: null, nodes: [node("pas-node")],
+  };
+  const initial: UsageSummaryState = {
+    scopeKey: "account-a", lastSuccess: null, hideSummary: false,
+    outcome: "idle", loading: true, evaluatedAtMs: 123,
+  };
+
+  it("stores success, hides on 404, and restores the saved value on a connection failure", () => {
+    const success = applyUsageSummaryOutcome(initial, { scopeKey: "account-a", outcome: "success", status: null, summary });
+    expect(success).toEqual({ ...initial, lastSuccess: summary, outcome: "success", loading: false });
+
+    const pending = applyUsageSummaryOutcome(success, { scopeKey: "account-a", outcome: "error", status: 404, summary: null });
+    expect(pending).toEqual({ ...success, hideSummary: true, outcome: "serverPending" });
+
+    const offline = applyUsageSummaryOutcome(pending, { scopeKey: "account-a", outcome: "error", status: null, summary: null });
+    expect(offline).toEqual({ ...success, outcome: "connectionError" });
+  });
+
+  it("clears saved data on 401 and when the scope changes", () => {
+    const success = applyUsageSummaryOutcome(initial, { scopeKey: "account-a", outcome: "success", status: null, summary });
+    const unauthorized = applyUsageSummaryOutcome(success, { scopeKey: "account-a", outcome: "error", status: 401, summary: null });
+    expect(unauthorized).toEqual({ ...initial, loading: false });
+    const offline = applyUsageSummaryOutcome(unauthorized, { scopeKey: "account-a", outcome: "error", status: null, summary: null });
+    expect(offline.lastSuccess).toBeNull();
+
+    const otherScope = applyUsageSummaryOutcome(success, { scopeKey: "account-b", outcome: "error", status: null, summary: null });
+    expect(otherScope).toEqual({ ...initial, scopeKey: "account-b", outcome: "connectionError", loading: false, evaluatedAtMs: 0 });
+  });
+
+  it("derives the display state including a successful response without a node", () => {
+    expect(usageSummaryLoadState("idle", false)).toBe("idle");
+    expect(usageSummaryLoadState("success", true)).toBe("ready");
+    expect(usageSummaryLoadState("success", false)).toBe("serverPending");
+    expect(usageSummaryLoadState("serverPending", true)).toBe("serverPending");
+    expect(usageSummaryLoadState("connectionError", true)).toBe("connectionError");
+  });
+});
 
 describe("usage summary projection", () => {
   it("accepts Claude account-pool metadata on the shared provider contract", () => {

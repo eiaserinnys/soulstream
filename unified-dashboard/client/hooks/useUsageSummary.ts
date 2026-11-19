@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  applyUsageSummaryOutcome,
   selectUsageSummaryNode,
+  usageSummaryLoadState,
   weeklyUsageGauges,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
   type UsageSummaryGauge,
   type UsageSummaryNode,
   type UsageSummarySnapshot,
+  type UsageSummaryState,
 } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "../lib/http-response-error";
@@ -31,17 +34,7 @@ export type UseUsageSummaryResult = {
   retry: () => void;
 };
 
-type RequestOutcome = "idle" | "success" | "serverPending" | "connectionError";
-type ScopedSummaryState = {
-  scopeKey: string;
-  lastSuccess: UsageSummarySnapshot | null;
-  hideSummary: boolean;
-  outcome: RequestOutcome;
-  loading: boolean;
-  evaluatedAtMs: number;
-};
-
-const EMPTY_STATE: ScopedSummaryState = {
+const EMPTY_STATE: UsageSummaryState = {
   scopeKey: "",
   lastSuccess: null,
   hideSummary: false,
@@ -50,7 +43,7 @@ const EMPTY_STATE: ScopedSummaryState = {
   evaluatedAtMs: 0,
 };
 
-function emptyState(scopeKey: string): ScopedSummaryState {
+function emptyState(scopeKey: string): UsageSummaryState {
   return { ...EMPTY_STATE, scopeKey };
 }
 
@@ -65,7 +58,7 @@ export function useUsageSummary({
   scopeKey,
   request = globalThis.fetch,
 }: UseUsageSummaryOptions): UseUsageSummaryResult {
-  const [state, setState] = useState<ScopedSummaryState>(EMPTY_STATE);
+  const [state, setState] = useState<UsageSummaryState>(EMPTY_STATE);
   const [reload, setReload] = useState(0);
   const retry = useCallback(() => setReload((value) => value + 1), []);
 
@@ -88,40 +81,17 @@ export function useUsageSummary({
       try {
         const summary = await fetchUsageSummary(request);
         if (!active) return;
-        setState((current) => {
-          const scoped = current.scopeKey === scopeKey ? current : emptyState(scopeKey);
-          return {
-            ...scoped,
-            lastSuccess: summary,
-            hideSummary: false,
-            outcome: "success",
-            loading: false,
-            evaluatedAtMs: Date.now(),
-          };
-        });
+        setState((current) => ({
+          ...applyUsageSummaryOutcome(current, { scopeKey, outcome: "success", status: null, summary }),
+          evaluatedAtMs: Date.now(),
+        }));
       } catch (caught) {
         if (!active) return;
         const status = statusOf(caught);
-        setState((current) => {
-          const scoped = current.scopeKey === scopeKey ? current : emptyState(scopeKey);
-          if (status === 401) return { ...emptyState(scopeKey), evaluatedAtMs: Date.now() };
-          if (status === 404) {
-            return {
-              ...scoped,
-              hideSummary: true,
-              outcome: "serverPending",
-              loading: false,
-              evaluatedAtMs: Date.now(),
-            };
-          }
-          return {
-            ...scoped,
-            hideSummary: false,
-            outcome: "connectionError",
-            loading: false,
-            evaluatedAtMs: Date.now(),
-          };
-        });
+        setState((current) => ({
+          ...applyUsageSummaryOutcome(current, { scopeKey, outcome: "error", status, summary: null }),
+          evaluatedAtMs: Date.now(),
+        }));
       }
     };
 
@@ -137,11 +107,7 @@ export function useUsageSummary({
   const summary = scopedState.hideSummary ? null : scopedState.lastSuccess;
   const node = selectUsageSummaryNode(summary, nodeId, selectedNodeId);
   const gauges = useMemo(() => weeklyUsageGauges(node), [node]);
-  let loadState: UsageSummaryLoadState;
-  if (scopedState.outcome === "connectionError") loadState = "connectionError";
-  else if (scopedState.outcome === "serverPending") loadState = "serverPending";
-  else if (scopedState.outcome === "success") loadState = node ? "ready" : "serverPending";
-  else loadState = "idle";
+  const loadState = usageSummaryLoadState(scopedState.outcome, node !== null);
 
   return {
     summary,
