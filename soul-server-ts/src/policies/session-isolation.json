@@ -320,9 +320,6 @@
     "reflect_cluster_brief": {
       "category": "allow"
     },
-    "reflect_refresh": {
-      "category": "allow"
-    },
     "reflect_service": {
       "category": "allow"
     },

@@ -64,19 +64,4 @@ export function registerReflectTools(
       return jsonResult(await buildBriefSnapshot(runtime));
     },
   );
-
-  server.registerTool(
-    "reflect_refresh",
-    {
-      description:
-        "Cogito brief 파일 영속화는 제거되었다. 호환용 no-op.",
-      inputSchema: {},
-    },
-    async () => {
-      return jsonResult({
-        refreshed: false,
-        reason: "cogito brief files are no longer persisted",
-      });
-    },
-  );
 }

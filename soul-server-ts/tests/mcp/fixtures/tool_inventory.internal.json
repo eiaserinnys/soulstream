@@ -7091,18 +7091,6 @@
     "name": "reflect_cluster_brief"
   },
   {
-    "description": "Cogito brief 파일 영속화는 제거되었다. 호환용 no-op.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {},
-      "type": "object"
-    },
-    "name": "reflect_refresh"
-  },
-  {
     "description": "서비스의 리플렉션 데이터를 조회한다. 본 TS 노드는 'soul-server-ts'만 반영하며 그 외 서비스는 {error, available}을 반환.",
     "execution": {
       "taskSupport": "forbidden"

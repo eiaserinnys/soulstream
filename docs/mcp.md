@@ -39,7 +39,6 @@ inventory is returned by `tools/list` and by `reflect_service` Level 0 under the
 | `reflect_service(service, level)` | Query a service at depth 0–3: features → config → source locations → runtime state |
 | `reflect_brief()` | Self-only compact aggregate over this TS node's Level 0–3 reflection, returned in memory |
 | `reflect_cluster_brief()` | Orchestrator-backed aggregate of connected TS nodes' self `reflect_brief` snapshots |
-| `reflect_refresh()` | Compatibility no-op; cogito brief files are no longer persisted |
 
 Use `reflect_brief()` when an agent needs a small, machine-readable startup view for the current node. It combines
 identity/capabilities, configuration status, core source pointers, and runtime/dependency health in
