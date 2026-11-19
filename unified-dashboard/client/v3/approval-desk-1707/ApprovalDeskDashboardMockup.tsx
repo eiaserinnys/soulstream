@@ -25,7 +25,7 @@ const MOCK_NOW = "2026-11-19T09:00:00.000Z";
 const PAS_SESSION: SessionSummary = {
   agentSessionId: "mock-pas-seosoyoung",
   displayName: "PAS 대화",
-  status: "running",
+  status: "completed",
   eventCount: 3,
   agentId: "seosoyoung",
   agentName: "서소영",
@@ -161,7 +161,7 @@ export function ApprovalDeskDashboardMockup() {
   const [referenceView, setReferenceView] = useState(false);
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<CardDetail | null>(null);
-  const [overlaySession, setOverlaySession] = useState<SessionSummary | undefined>(undefined);
+  const [, setOverlaySession] = useState<SessionSummary | undefined>(undefined);
   const [mobileTab, setMobileTab] = useState<MobilePlannerTab>("projects");
   const overlayTrigger = useRef<HTMLElement | null>(null);
   // 겹 눌림 한 번이 다음 서류까지 넘기지 않도록, 최근 처분 뒤 400ms 동안 모든 처분을 막는다.
@@ -198,11 +198,6 @@ export function ApprovalDeskDashboardMockup() {
     setScreen(next);
     setReferenceView(false);
     if (window.location.hash !== `#${next}`) window.location.hash = next;
-  };
-
-  const restorePasSession = () => {
-    useDashboardStore.getState().setActiveSession(PAS_SESSION.agentSessionId);
-    useDashboardStore.getState().setActiveSessionSummary(PAS_SESSION);
   };
 
   const dispose = (doc: PendingDoc, kind: DispositionKind, detail?: string) => {
@@ -262,28 +257,24 @@ export function ApprovalDeskDashboardMockup() {
     navigate("desk");
   };
 
-  const activateOverlay = (detail: CardDetail, assignee: AgentAssignee, trigger: HTMLElement) => {
+  const activateOverlay = (detail: CardDetail, trigger: HTMLElement) => {
     overlayTrigger.current = trigger;
-    const session = sessionFor(assignee, detail.card.id);
-    useDashboardStore.getState().setActiveSession(session.agentSessionId);
-    useDashboardStore.getState().setActiveSessionSummary(session);
-    setOverlaySession(session);
+    setOverlaySession(undefined);
     setMobileTab("projects");
     setOverlay(detail);
   };
 
   const openPending = (doc: PendingDoc, trigger: HTMLElement) => {
-    activateOverlay(detailForPending(doc), doc.assignee, trigger);
+    activateOverlay(detailForPending(doc), trigger);
   };
 
   const openCard = (card: ScenarioCard, trigger: HTMLElement) => {
-    activateOverlay(detailForCard(card), card.assignee, trigger);
+    activateOverlay(detailForCard(card), trigger);
   };
 
   const closeOverlay = () => {
     setOverlay(null);
     setOverlaySession(undefined);
-    restorePasSession();
     requestAnimationFrame(() => overlayTrigger.current?.focus());
   };
 
@@ -312,13 +303,8 @@ export function ApprovalDeskDashboardMockup() {
     {screen === "pas" ? <PasBriefingScreen deskCount={deskDocs.length} onOpenDesk={() => navigate("desk")} /> : null}
     {overlay ? <CardWorkspace cardId={overlay.card.id} sampleDetail={overlay} folders={FOLDERS}
       onClose={closeOverlay} onCloseChat={() => setMobileTab("today")}
-      onOpenSession={session => {
-        useDashboardStore.getState().setActiveSession(session.agentSessionId);
-        useDashboardStore.getState().setActiveSessionSummary(session);
-        setOverlaySession(session);
-        setMobileTab("chat");
-      }}
-      mobileMode={mobileMode} mobileTab={mobileTab} activeSession={overlaySession}
+      onOpenSession={() => {}}
+      mobileMode={mobileMode} mobileTab={mobileTab} activeSession={undefined}
       chatInputDisabled historyEnabled={false} sessionStreamActive={false}
       sessionConnectionStatus="disconnected" reconnectSession={() => {}}
       onAcknowledgedReview={() => {}} loadDisplaySettings={false} /> : null}

@@ -472,6 +472,70 @@ await runPlaywrightLifecycle({
   timeoutMs: 420_000,
   launchOptions: { headless: true },
 }, async ({ browser }: { browser: Browser }) => {
+  // 세라피엘 재검수의 보드 높이, 작업대 빈 상태, PAS 입력 단추를 실제 화면에서 확인한다.
+  const regressionFailures: string[] = [];
+  const boardFill: Record<string, unknown> = {};
+  for (const [width, height] of [[1440, 900], [820, 1180]] as const) {
+    const view = await makePage(browser, width, height);
+    await open(view.page, "board");
+    const measured = await view.page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>(".ad1707-home-main")!;
+      const board = panel.querySelector<HTMLElement>(".v3-card-board")!;
+      const columns = [...board.querySelectorAll<HTMLElement>(".v3-card-board-column")];
+      const panelBottom = panel.getBoundingClientRect().bottom;
+      const innerBottom = panelBottom - parseFloat(getComputedStyle(panel).paddingBottom);
+      const boardRect = board.getBoundingClientRect();
+      return {
+        panelBottom, innerBottom,
+        board: { bottom: boardRect.bottom, height: boardRect.height },
+        columns: columns.map(column => {
+          const rect = column.getBoundingClientRect();
+          return { bottom: rect.bottom, height: rect.height };
+        }),
+      };
+    });
+    boardFill[String(width)] = measured;
+    if (Math.abs(measured.innerBottom - measured.board.bottom) > 24 ||
+        measured.columns.length === 0 ||
+        measured.columns.some((column: { bottom: number; height: number }) =>
+          Math.abs(measured.innerBottom - column.bottom) > 24 || column.height < 500)) {
+      regressionFailures.push(`A15 ${width}: ${JSON.stringify(measured)}`);
+    }
+    await shot(view.page, `board-fill-${width}-dark.png`);
+    await view.context.close();
+  }
+  checks.boardFill = boardFill;
+
+  const regression = await makePage(browser, 1440, 900);
+  await open(regression.page, "desk");
+  await regression.page.locator(".ad1707-filmstrip-item", { hasText: "#1387" }).click();
+  const trigger = regression.page.getByRole("button", { name: "전체 카드와 세션 열기" });
+  await trigger.click();
+  const regressionWorkspace = regression.page.getByTestId("v3-card-workspace");
+  await regressionWorkspace.waitFor({ state: "visible" });
+  const workspaceText = await regressionWorkspace.innerText();
+  await shot(regression.page, "workspace-1387-1440-dark.png");
+  if (!workspaceText.includes("선택된 세션 없음") ||
+      /대화를 기다리는 중|자동 스크롤/.test(workspaceText)) {
+    regressionFailures.push(`A16: ${workspaceText}`);
+  }
+  await regression.page.keyboard.press("Escape");
+  await regressionWorkspace.waitFor({ state: "hidden" });
+  const returned = await trigger.evaluate((element: HTMLElement) => element === document.activeElement);
+  if (!returned) regressionFailures.push("A16: Esc 뒤 연 단추로 초점이 돌아오지 않았다");
+  checks.workspaceEmpty = { empty: workspaceText.includes("선택된 세션 없음"), returned };
+
+  await open(regression.page, "pas");
+  const input = regression.page.getByTestId("chat-input");
+  const stopCount = await input.locator('[aria-label*="중단"]').count();
+  const sendVisible = await input.getByTestId("send-button").isVisible();
+  await shot(regression.page, "pas-input-1440-dark.png");
+  if (stopCount !== 0 || !sendVisible) regressionFailures.push(`A17: 중단 ${stopCount}, 전송 ${sendVisible}`);
+  checks.pasInput = { stopCount, sendVisible };
+  await regression.context.close();
+  assert.deepEqual(regressionFailures, [], regressionFailures.join("\n"));
+  mark("qa A15 A16 A17");
+
   // 1. 넓은 화면 기본 상태와 서류 전환.
   const main = await makePage(browser, 1440, 900, "dark");
   const page = main.page;
@@ -895,16 +959,18 @@ await runPlaywrightLifecycle({
   checks.fontsDesk = deskFonts;
   mark("qa 16 desk fonts");
 
-  // 17. 네 폭 네 화면: 가로 넘침, 요소 겹침, 글 잘림, 코멘트 단추 자리 가림 0.
-  for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 740]] as const) {
-    const narrow = await makePage(browser, width, height, "dark");
-    for (const screen of ["desk", "home", "pas", "board"] as const) {
-      await open(narrow.page, screen, "dark");
-      checks[`layout-${screen}-${width}`] = await assertClean(narrow.page, `${screen} ${width}`);
-      mark(`qa 17 ${screen} ${width}`);
-      await shot(narrow.page, `${screen}-${width}.png`);
+  // 17. 두 테마와 네 폭의 네 화면에서 넘침과 겹침, 글 잘림을 확인한다.
+  for (const theme of ["dark", "light"] as const) {
+    for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 740]] as const) {
+      const narrow = await makePage(browser, width, height, theme);
+      for (const screen of ["desk", "home", "pas", "board"] as const) {
+        await open(narrow.page, screen, theme);
+        checks[`layout-${screen}-${width}-${theme}`] = await assertClean(narrow.page, `${screen} ${width} ${theme}`);
+        mark(`qa 17 ${screen} ${width} ${theme}`);
+        await shot(narrow.page, `${screen}-${width}-${theme}.png`);
+      }
+      await narrow.context.close();
     }
-    await narrow.context.close();
   }
 
   // 18. 밝은 테마 도구 막대: 브랜드, 화면 전환, 테마 아이콘 대비. 유리 두 방식 모두.

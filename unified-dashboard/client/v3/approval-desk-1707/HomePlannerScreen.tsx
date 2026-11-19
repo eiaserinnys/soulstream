@@ -98,7 +98,8 @@ export function HomePlannerScreen({ pending, progress, queue, onHold, completed,
         </div>
       </GlassPanel>
 
-      <GlassPanel as="main" className="v3-planner ad1707-home-main border border-glass-border">
+      <GlassPanel as="main" className="v3-planner ad1707-home-main border border-glass-border"
+        data-board-view={boardView ? "true" : undefined}>
         <header className="ad1707-home-head">
           <h1>홈 플래너</h1>
           <div className="ad1707-home-actions">
