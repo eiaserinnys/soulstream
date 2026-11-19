@@ -353,11 +353,14 @@ describe("conversation thread collection", () => {
   });
 
   it("rejects a blocked default folder with the same error as an explicit folder", async () => {
-    const { app } = setup({ denyFolders: ["claude"] });
+    // Both folders are real to the caller's access rule and denied by it; the
+    // default folder must fail exactly like a named folder denied the same way.
+    const { app } = setup({ denyFolders: ["claude", "folder-blocked"] });
     const defaultDenied = await ensure(app, "denied-default", { ...basePayload });
-    const explicitDenied = await ensure(app, "denied-explicit", { ...basePayload, collection: "missing-folder" });
+    const explicitDenied = await ensure(app, "denied-explicit", { ...basePayload, collection: "folder-blocked" });
 
     expect(defaultDenied.statusCode).toBe(403);
+    expect(explicitDenied.statusCode).toBe(403);
     expect(defaultDenied.json()).toEqual(explicitDenied.json());
   });
 });
