@@ -45,8 +45,6 @@ export function withSessionCatalogMutationBroadcasts(
         transport: sessionDeleteTransport,
         deleteDirectly: (id) => provider.deleteSession(id, callerInfo),
       });
-      // 접수(노드가 마저 지움)면 아직 행이 남아 있으므로 지금 지웠다고 알리지 않는다.
-      // 노드가 삭제를 끝내면 session_deleted로 화면에 알린다.
       if (outcome === "deleted") {
         await broadcastCatalogSnapshot(folderProvider, broadcaster, {
           sessionsDelta: { [sessionId]: null },
