@@ -16,8 +16,8 @@ export function parseCardRequest(request: string, serverUrl?: string) {
   while (lines.length) {
     const line = lines.at(-1)!;
     if (attachments.length && line === '') { lines.pop(); continue; }
-    const match = /^첨부: (.*)\(((?:https?:\/\/|\/).*)\)$/.exec(line)
-      ?? /^!?\[([^\]]*)\]\(((?:https?:\/\/|\/).*)\)$/.exec(line);
+    const match = /^첨부: (.*)\(((?:https?:\/\/|\/)[^\s)]*)\)$/.exec(line)
+      ?? /^!?\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]*)\)$/.exec(line);
     if (!match) break;
     const [, name, url] = match;
     const parsed = new URL(url, serverUrl);

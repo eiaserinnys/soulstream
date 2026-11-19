@@ -2,6 +2,7 @@ import React, { useCallback, useContext, useMemo } from 'react';
 import { Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { NavigationContext } from '@react-navigation/native';
+import { navigationRef } from '../navigation/navigationRef';
 import { createApiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -37,6 +38,8 @@ export function useOpenContentLink(readContext?: AttachmentReadContext, links?: 
     jwt,
     api,
     navigation: navigation as ContentLinkNavigation | null,
+    rootNavigation: !navigation && navigationRef.isReady() ? navigationRef as unknown as ContentLinkNavigation : null,
+    closePreview: imageHost?.closeAttachment,
     device,
     activeSessionId: useUIStore.getState().activeSessionId,
     leavePersistent: persistentHost ? () => persistentHost.store.getState().leave() : undefined,

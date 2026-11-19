@@ -1,6 +1,6 @@
 import type { ApiClient } from '../../api/client';
 import { useUIStore } from '../../store/uiStore';
-import { openPhoneSearchSession } from '../../navigation/phoneSessionNavigation';
+import { openPhoneSearchSession, openPhoneSearchSessionFromRoot } from '../../navigation/phoneSessionNavigation';
 import { openTabletSessionFromRoot } from '../../navigation/tabletSessionNavigation';
 import {
   openPlannerFolderWorkspace,
@@ -11,7 +11,9 @@ import { plannerFolderDetailToSummary } from '../../api/plannerTypes';
 import { openContentLinkNavigation } from '../content-link-navigation';
 
 jest.mock('../../navigation/phoneSessionNavigation', () => ({
+  ...jest.requireActual('../../navigation/phoneSessionNavigation'),
   openPhoneSearchSession: jest.fn(),
+  openPhoneSearchSessionFromRoot: jest.fn(),
 }));
 jest.mock('../../navigation/tabletSessionNavigation', () => ({
   openTabletSessionFromRoot: jest.fn(),
@@ -404,7 +406,7 @@ test('태블릿 Main의 폴더와 페이지 링크는 기존 overlay opener를 �
 test.each([
   ['https://soulstream.test/api/attachments/files?nodeId=node-1&path=%2Ftmp%2Fphoto.png', true],
   ['https://soulstream.test/api/attachments/files?nodeId=node-1&path=%2Ftmp%2Ffile.pdf', false],
-])('내부 첨부는 이미지 여부에 따라 기존 모달 또는 브라우저로 간다 (%s)', async (href, image) => {
+])('맥락 없는 legacy 첨부는 이미지 뷰어 또는 첨부 창으로 간다 (%s)', async (href, image) => {
   const state = deps(href);
 
   await openContentLinkNavigation(state.input);
@@ -420,7 +422,8 @@ test.each([
     });
     expect(state.openExternal).not.toHaveBeenCalled();
   } else {
-    expect(state.openExternal).toHaveBeenCalledWith(href);
+    expect(state.openAttachment).toHaveBeenCalledTimes(1);
+    expect(state.openExternal).not.toHaveBeenCalled();
     expect(state.openImage).not.toHaveBeenCalled();
   }
 });
@@ -527,4 +530,54 @@ test('legacy 문서는 content-type이 octet-stream이어도 이름으로 문서
     expect(resolved).toMatchObject({ name: 'q3.html', previewKind: 'text' });
     await expect(resolved.loadText(new AbortController().signal)).resolves.toEqual({ text: '<p>분기 보고서</p>', truncated: true });
   } finally { global.fetch = originalFetch; }
+});
+
+test('attachment 쿼리는 ID와 읽기 맥락으로 보기 창을 연다', async () => {
+  const state = deps('/?attachment=asset-1&context_type=card&context_id=card-1');
+  await openContentLinkNavigation(state.input);
+  expect(state.openAttachment).toHaveBeenCalledTimes(1);
+  const view = state.openAttachment.mock.calls[0][0];
+  await view.loadMetadata();
+  expect(state.api.getAttachmentMetadata).toHaveBeenCalledWith('asset-1', { type: 'card', id: 'card-1' });
+  expect(state.openExternal).not.toHaveBeenCalled();
+});
+
+test('맥락 없는 legacy 문서는 보기 창으로 연다', async () => {
+  const state = deps('/api/attachments/files?nodeId=node-1&path=%2Ftmp%2Fnotes.txt');
+  await openContentLinkNavigation(state.input);
+  expect(state.openAttachment).toHaveBeenCalledTimes(1);
+  expect(state.openExternal).not.toHaveBeenCalled();
+});
+
+test('상대 쿼리는 내부 링크로 열고 빈 앵커는 무시한다', async () => {
+  const card = deps('?card=card-1');
+  await openContentLinkNavigation(card.input);
+  expect(card.navigation.push).toHaveBeenCalledWith('CardDetail', { cardId: 'card-1' });
+  const anchor = deps('#');
+  await openContentLinkNavigation(anchor.input);
+  expect(anchor.openExternal).not.toHaveBeenCalled();
+});
+
+test('내비게이션 문맥 밖의 첨부 창에서 닫고 루트로 카드와 문서를 연다', async () => {
+  const root = { navigate: jest.fn(), dispatch: jest.fn() };
+  const closePreview = jest.fn();
+  const card = deps('/?card=card-1', { navigation: null, rootNavigation: root, closePreview });
+  await openContentLinkNavigation(card.input);
+  expect(closePreview).toHaveBeenCalled();
+  expect(root.navigate).toHaveBeenCalledWith('DailyTab', { screen: 'CardDetail', initial: false, params: { cardId: 'card-1' } });
+  const doc = deps('/?document=doc-1', { navigation: null, rootNavigation: root, closePreview });
+  await openContentLinkNavigation(doc.input);
+  expect(root.navigate).toHaveBeenCalledWith('DailyTab', { screen: 'MarkdownDocument', initial: false, params: { documentId: 'doc-1' } });
+});
+
+test('내비게이션 문맥 밖의 세션 링크는 창을 닫고 기기별 루트 경로로 연다', async () => {
+  const root = { navigate: jest.fn(), dispatch: jest.fn() };
+  const closePreview = jest.fn();
+  const phone = deps('/?session=session-1&event=42', { navigation: null, rootNavigation: root, closePreview });
+  await openContentLinkNavigation(phone.input);
+  expect(closePreview).toHaveBeenCalledTimes(1);
+  expect(openPhoneSearchSessionFromRoot).toHaveBeenCalledWith(root, 'session-1', 42);
+  const tablet = deps('/?session=session-2', { navigation: null, rootNavigation: root, closePreview, device: 'tabletLandscape' });
+  await openContentLinkNavigation(tablet.input);
+  expect(openTabletSessionFromRoot).toHaveBeenCalledWith(root, null, 'session-2', undefined, undefined, 'nav');
 });

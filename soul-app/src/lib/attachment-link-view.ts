@@ -69,7 +69,7 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt, api 
   href: string;
   nodeId: string;
   path: string;
-  context: AttachmentReadContext;
+  context: AttachmentReadContext | null;
   jwt: string | null;
   api: LegacyAttachmentApi | null;
 }): Promise<AttachmentView> {
@@ -92,7 +92,7 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt, api 
     mimeType,
     byteSize: null,
     previewKind: kind,
-    readContext: context,
+    readContext: context ?? undefined,
     source: {
       kind: 'ready',
       attachmentId,
@@ -153,24 +153,36 @@ export function attachmentLinkView(link: AttachmentLink, { serverUrl, jwt, api, 
   const parsed = parseExactAttachmentLink(link.href, serverUrl);
   if (!parsed || parsed.kind === 'invalid') return null;
   const context = resolveAttachmentReadContext(parsed.context, readContext);
-  if (!context || (parsed.kind === 'id' && !api)) return null;
+  if (parsed.context.invalid || (parsed.kind === 'id' && (!context || !api))) return null;
   const key = parsed.kind === 'id' ? parsed.id : `${parsed.nodeId}:${parsed.path}`;
   // Hint the document layout before the HEAD resolves: an html/htm legacy path is a document.
   const legacyHtml = parsed.kind === 'legacy'
     && isHtmlAttachmentView({ mimeType: null, name: filenameFromPath(parsed.path) });
   return {
-    key: `${key}:${context.type}:${'id' in context ? context.id : ''}`, name: link.label || (parsed.kind === 'legacy' ? filenameFromPath(parsed.path) : parsed.id),
-    mimeType: legacyHtml ? 'text/html' : null, byteSize: null, previewKind: 'info', readContext: context,
+    key: `${key}:${context?.type ?? 'legacy'}:${context && 'id' in context ? context.id : ''}`, name: link.label || (parsed.kind === 'legacy' ? filenameFromPath(parsed.path) : parsed.id),
+    mimeType: legacyHtml ? 'text/html' : null, byteSize: null, previewKind: 'info', readContext: context ?? undefined,
     source: { kind: 'unavailable', availability: 'unresolved' },
     loadMetadata: async () => {
       if (parsed.kind === 'legacy') return readLegacyAttachmentView({ ...parsed, context, jwt, api });
-      const { descriptor } = await api!.getAttachmentMetadata(parsed.id, context);
+      return attachmentIdView(parsed.id, context!, api!, link.label).loadMetadata!();
+    },
+  };
+}
+
+/** Open an ID target without reconstructing its link. */
+export function attachmentIdView(id: string, context: AttachmentReadContext, api: Pick<ApiClient, 'getAttachmentMetadata'>, label = ''): AttachmentView {
+  return {
+    key: `${id}:${context.type}:${'id' in context ? context.id : ''}`, name: label || id,
+    mimeType: null, byteSize: null, previewKind: 'info', readContext: context,
+    source: { kind: 'unavailable', availability: 'unresolved' },
+    loadMetadata: async () => {
+      const { descriptor } = await api.getAttachmentMetadata(id, context);
       return {
-        key, name: descriptor.name, mimeType: descriptor.mime_type || null,
+        key: id, name: descriptor.name, mimeType: descriptor.mime_type || null,
         byteSize: Number.isSafeInteger(descriptor.byte_size) && descriptor.byte_size >= 0 ? descriptor.byte_size : null,
         previewKind: descriptor.preview_kind, readContext: context,
-        source: { kind: 'ready', attachmentId: parsed.id, previewUrl: attachmentContentUrl(parsed.id, context),
-          originalUrl: attachmentContentUrl(parsed.id, context, { download: true }) },
+        source: { kind: 'ready', attachmentId: id, previewUrl: attachmentContentUrl(id, context),
+          originalUrl: attachmentContentUrl(id, context, { download: true }) },
       };
     },
   };

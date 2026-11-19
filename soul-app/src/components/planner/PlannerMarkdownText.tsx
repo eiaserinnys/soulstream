@@ -34,6 +34,7 @@ export function PlannerMarkdownText({
   const segments = segmentMarkdownBlockquotes(markdown);
   const renderMarkdown = (value: string, segmentIndex?: number) => (
     <EnrichedMarkdownText
+      enableLinkPreview={false}
       {...(segmentIndex === undefined ? {} : { testID: `planner-markdown-segment-${segmentIndex}` })}
       markdown={value}
       flavor="github"

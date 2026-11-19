@@ -1,4 +1,4 @@
-import { appendCardAttachments, parseCardRequest } from '../card-attachments';
+import { appendCardAttachments, cardAttachmentUrl, parseCardRequest } from '../card-attachments';
 
 test('원문을 보존하고 파일명과 URL을 첨부 줄로 왕복한다', () => {
   const files = [
@@ -33,5 +33,17 @@ test('커멘트에 저장한 마크다운 이미지·파일 첨부를 빈 줄 �
       { name: '사진', url: 'https://files.test/photo.png', image: true },
       { name: '자료', url: 'https://files.test/file.pdf', image: false },
     ],
+  });
+});
+
+test('끝줄의 링크 둘은 본문에 남기고 링크 하나와 첨부 줄은 분리한다', () => {
+  const pair = '[카드](/?card=card-1) · [첨부](/?attachment=asset-1&context_type=card&context_id=card-1)';
+  expect(parseCardRequest(`본문\n\n${pair}`, 'https://cards.test')).toEqual({ text: `본문\n\n${pair}`, attachments: [] });
+  expect(parseCardRequest('본문\n\n[자료](/?attachment=asset-1)', 'https://cards.test')).toEqual({
+    text: '본문', attachments: [{ name: '자료', url: '/?attachment=asset-1', image: false }],
+  });
+  const url = cardAttachmentUrl('https://cards.test', 'n', '/tmp/doc.txt');
+  expect(parseCardRequest(`본문\n\n첨부: 문서(${url})`, 'https://cards.test')).toEqual({
+    text: '본문', attachments: [{ name: '문서', url, image: false }],
   });
 });

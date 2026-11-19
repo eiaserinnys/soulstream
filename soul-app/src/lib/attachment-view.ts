@@ -17,7 +17,7 @@ export type AttachmentView = {
   mimeType: string | null;
   byteSize: number | null;
   previewKind: AttachmentPreviewKind;
-  readContext: AttachmentReadContext;
+  readContext?: AttachmentReadContext;
   source:
     | {
       kind: 'ready';

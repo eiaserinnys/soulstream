@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Platform, View, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { webViewContentLinks } from '../../lib/webview-content-links';
 import type { CardReport } from '../../api/cardTypes';
 import { buildCustomViewBindings, renderDocumentHtml } from '../../lib/custom-view-renderer';
 import { createSessionVisualRoles, useTokens } from '../../theme';
@@ -26,13 +27,15 @@ export function CardReportView({ report }: { report: CardReport }) {
 function CardReportContent({ report }: { report: CardReport }) {
   const t = useTokens();
   const { width } = useWindowDimensions();
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const openContentLink = useOpenContentLink();
   const [height, setHeight] = useState(t.foundation.minHeight.memo);
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const html = useMemo(() => renderDocumentHtml(report.body, buildCustomViewBindings(null, {})), [report.body]);
   if (report.format === 'markdown') return <CardMarkdownReport report={report} />;
   return <View testID={`card-report-html-frame-${report.id}`} style={{ overflow: 'hidden', borderRadius: attachment.radius }}>
     <WebView key={`${report.id}:${width}`} testID={`card-report-html-${report.id}`} source={{ html }}
-      originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}
+      {...webViewContentLinks(serverUrl, openContentLink)} javaScriptEnabled allowFileAccess={false}
       scrollEnabled={false} style={{ height, backgroundColor: LIGHT_COLORS.background }}
       injectedJavaScript={'(function(){function size(){window.ReactNativeWebView.postMessage(String(Math.max(document.body.scrollHeight,document.documentElement.scrollHeight)));}new ResizeObserver(size).observe(document.body);size();})();true;'}
       onMessage={(event) => { const next = Number(event.nativeEvent.data); if (Number.isFinite(next) && next > 0) setHeight(Math.max(t.foundation.minHeight.memo, next)); }} />

@@ -10,14 +10,14 @@ import { plannerFolderDetailToSummary } from '../api/plannerTypes';
 import { cardAttachmentUrl } from './card-attachments';
 import { cardImageSource } from './card-image-source';
 import { isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
-import { attachmentLinkView, parseExactAttachmentLink, type AttachmentLink } from './attachment-link-view';
+import { attachmentIdView, attachmentLinkView, parseExactAttachmentLink, type AttachmentLink } from './attachment-link-view';
 import {
   openPlannerFolderWorkspace,
   openPlannerSessionWorkspace,
   openStarredPageWorkspace,
 } from './planner-folder-workspace';
-import { openPhoneSearchSession } from '../navigation/phoneSessionNavigation';
-import { openTabletSessionFromRoot } from '../navigation/tabletSessionNavigation';
+import { openPhoneCard, openPhoneSearchSession, openPhoneSearchSessionFromRoot } from '../navigation/phoneSessionNavigation';
+import { openTabletCardFromRoot, openTabletSessionFromRoot } from '../navigation/tabletSessionNavigation';
 import { useUIStore } from '../store/uiStore';
 import type { DeviceType } from '../theme/useDeviceType';
 
@@ -30,6 +30,7 @@ export interface ContentLinkNavigation {
   getState?: () => { index?: number; routes?: Array<{ name?: string; params?: Record<string, unknown> }> };
   dispatch?: (action: unknown) => void;
   popTo?: (name: string) => void;
+  navigate?: (name: string, params?: Record<string, unknown>) => void;
 }
 
 export interface OpenContentLinkNavigationArgs {
@@ -38,6 +39,8 @@ export interface OpenContentLinkNavigationArgs {
   jwt: string | null;
   api: ContentLinkApi | null;
   navigation: ContentLinkNavigation | null;
+  rootNavigation?: ContentLinkNavigation | null;
+  closePreview?: () => void;
   device: DeviceType;
   activeSessionId?: string | null;
   leavePersistent?: () => void;
@@ -141,6 +144,8 @@ export async function openContentLinkNavigation({
   jwt,
   api,
   navigation,
+  rootNavigation,
+  closePreview,
   device,
   activeSessionId,
   leavePersistent,
@@ -153,7 +158,9 @@ export async function openContentLinkNavigation({
   openExternal,
   alert,
 }: OpenContentLinkNavigationArgs): Promise<void> {
-  const absoluteHref = serverUrl ? new URL(href, serverUrl).href : href;
+  if (href.startsWith('#')) return;
+  const normalizedHref = href.startsWith('?') ? `/${href}` : href;
+  const absoluteHref = serverUrl ? new URL(normalizedHref, serverUrl).href : normalizedHref;
   const attachmentLink = serverUrl ? parseExactAttachmentLink(href, serverUrl) : null;
 
   if (attachmentLink?.kind === 'invalid') {
@@ -162,7 +169,10 @@ export async function openContentLinkNavigation({
   }
   if (attachmentLink?.kind === 'id' || attachmentLink?.kind === 'legacy') {
     const options = { serverUrl, jwt, api, readContext };
-    const selected = attachmentLinkView({ href, label: attachmentLabel ?? '' }, options);
+    // Preserve the existing image gallery when a legacy image has no context.
+    const standaloneImage = attachmentLink.kind === 'legacy' && !readContext && !attachmentLink.context.context
+      && !attachmentLink.context.invalid && isLegacyAttachmentImage(attachmentLink.path);
+    const selected = standaloneImage ? null : attachmentLinkView({ href, label: attachmentLabel ?? '' }, options);
     if (selected && openAttachment) {
       const links = attachmentLinks?.length ? attachmentLinks : [{ href, label: attachmentLabel ?? '' }];
       const entries = links.flatMap(link => {
@@ -176,7 +186,7 @@ export async function openContentLinkNavigation({
     }
     // Preserve standalone legacy opening when no read context was supplied.
     if (attachmentLink.kind === 'legacy' && !readContext && !attachmentLink.context.context && !attachmentLink.context.invalid) {
-      if (!isLegacyAttachmentImage(attachmentLink.path)) await openExternal(attachmentLink.href);
+      if (!isLegacyAttachmentImage(attachmentLink.path)) alert('첨부를 열 수 없습니다.');
       else if (openImage) openImage(cardImageSource(cardAttachmentUrl(serverUrl, attachmentLink.nodeId, attachmentLink.path), serverUrl, jwt));
       else alert('이미지를 열지 못했습니다.');
     } else alert('첨부를 열 수 없습니다.');
@@ -184,10 +194,17 @@ export async function openContentLinkNavigation({
   }
 
   const target = serverUrl
-    ? classifyInternalLink(href, [new URL(serverUrl).origin])
+    ? classifyInternalLink(normalizedHref, [new URL(serverUrl).origin])
     : null;
 
-  if (!target || target.kind === 'attachment_asset' || (target.kind === 'attachment' && !target.isImage)) {
+  if (target?.kind === 'attachment_asset') {
+    const context = target.context ?? readContext;
+    if (context && api && openAttachment) openAttachment(attachmentIdView(target.attachmentId, context, api, attachmentLabel));
+    else alert('첨부를 열 수 없습니다.');
+    return;
+  }
+
+  if (!target || (target.kind === 'attachment' && !target.isImage)) {
     await openExternal(absoluteHref);
     return;
   }
@@ -202,6 +219,26 @@ export async function openContentLinkNavigation({
     return;
   }
 
+  if (!navigation && rootNavigation) {
+    closePreview?.();
+    if (target.kind === 'session') {
+      const eventId = target.eventId === undefined ? undefined : Number(target.eventId);
+      if (device === 'phone') await openPhoneSearchSessionFromRoot(rootNavigation as any, target.sessionId, eventId);
+      else openTabletSessionFromRoot(rootNavigation as any, null, target.sessionId, eventId, undefined, 'nav');
+      return;
+    }
+    if (target.kind === 'card') {
+      if (device === 'phone') openPhoneCard(rootNavigation as any, target.cardId);
+      else openTabletCardFromRoot(rootNavigation as any, null, target.cardId);
+      return;
+    }
+    if (target.kind === 'document') {
+      if (device === 'phone') rootNavigation.navigate?.('DailyTab', { screen: 'MarkdownDocument', initial: false, params: { documentId: target.documentId } });
+      else rootNavigation.dispatch?.(StackActions.push('MarkdownDocument', { documentId: target.documentId }));
+      return;
+    }
+    navigation = device === 'phone' ? { getParent: () => rootNavigation } : rootNavigation;
+  }
   if (!navigation) {
     alertForMissingNavigation(alert, target);
     return;

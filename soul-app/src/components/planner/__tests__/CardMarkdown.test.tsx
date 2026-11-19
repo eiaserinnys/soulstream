@@ -17,6 +17,7 @@ import { AssistantMessage } from '../../events/AssistantMessage';
 import { PlannerMarkdownText } from '../PlannerMarkdownText';
 import { CardReportView } from '../CardReportView';
 import { CardTimeline } from '../CardTimeline';
+import { CardQuestionBody } from '../CardQuestionBlock';
 import { cardFixture } from '../../../test-support/cards';
 
 afterEach(() => useSettingsStore.setState({ appearance: 'system' }));
@@ -199,4 +200,13 @@ test.each([390, 1194])('펼친 보고 %s는 기존 썸네일 간격과 전체폭
     expect(markdown.props.containerStyle).toMatchObject({ width: '100%', textAlign: 'left' });
     for (const key of ['paragraph', 'h1', 'h2', 'h3']) expect(markdown.props.markdownStyle[key].textAlign).toBe('left');
   }
+});
+
+test('질문 배경과 스레드의 코드 블록에 복사 단추를 표시한다', () => {
+  const body = '명령\n\n```bash\necho hello\n```';
+  const view = { id: 'question', title: null, background: body, kind: 'choice' as const, options: [], attachments: [],
+    thread: [{ id: 'thread', author: 'user' as const, body, at: '' }], open: true, selectedOption: null,
+    answer: null, revisedAt: null, awaitingAgent: true };
+  const screen = render(<CardQuestionBody view={view} cardId="card" portraitUri={null} onChoose={() => {}} />);
+  expect(screen.getAllByLabelText('코드 복사')).toHaveLength(2);
 });

@@ -107,6 +107,7 @@ export function CopyableAssistantMarkdown({
         if (!segment.markdown.trim()) return null;
         return (
           <EnrichedMarkdownText
+      enableLinkPreview={false}
             key={`markdown-${segmentIndex}`}
             testID={segments.length === 1 ? 'assistant-markdown' : `assistant-markdown-${segmentIndex}`}
             markdown={segment.markdown}
@@ -216,6 +217,7 @@ export function CopyableBlockquote({
   return (
     <View style={styles.quoteFrame}>
       <EnrichedMarkdownText
+      enableLinkPreview={false}
         testID={`assistant-blockquote-content-${index}`}
         markdown={markdown}
         flavor="github"
@@ -313,6 +315,7 @@ export function CopyableCodeBlock({
       ]}
     >
       <EnrichedMarkdownText
+      enableLinkPreview={false}
         testID={`codeblock-markdown-${index}`}
         markdown={markdown}
         flavor="github"

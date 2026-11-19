@@ -1,3 +1,4 @@
+jest.mock('../navigationRef', () => ({ navigationRef: { isReady: () => false } }));
 import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
