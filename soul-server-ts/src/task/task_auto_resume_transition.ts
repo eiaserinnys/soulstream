@@ -114,24 +114,14 @@ export class AutoResumeTransition {
     const registrationId = task.executionRegistration?.registrationId
       ?? task.runner?.dispatcher.registrationId?.()
       ?? null;
-    const originalStatus = task.status;
+    let originalStatus = task.status;
     if (originalStatus === "running" && hasLiveExecutionEvidence(task)) {
       throw new Error(
         `auto-resume running transition rejected for ${task.agentSessionId}`,
       );
     }
     this.requireResumableProfile(task);
-    const transitionRevision = task.lastEventId;
-    const expectedTerminalEventId = isTerminalTaskStatus(originalStatus)
-      ? task.terminalEventId ?? null
-      : undefined;
-    const originalTerminalEventId = task.terminalEventId;
-    const terminalSnapshot = isTerminalTaskStatus(originalStatus)
-      ? captureTerminalResumeSnapshot(
-          task,
-          originalStatus as TerminalResumeSnapshot["status"],
-        )
-      : undefined;
+    let originalTerminalEventId = task.terminalEventId;
     const activation = createExecutionActivation();
     // The executor settles this exact delivery if preparation fails before a turn.
     activation.admissionMessage = message;
@@ -141,6 +131,23 @@ export class AutoResumeTransition {
 
     try {
       await this.awaitExecutionDrain(task);
+      // Replay can apply a terminal while the activation barrier is in place.
+      // Resume and any compensation must use that terminal, before async metadata work.
+      if (isTerminalTaskStatus(task.status)) {
+        originalStatus = task.status;
+        task.status = "initializing";
+      }
+      originalTerminalEventId = task.terminalEventId;
+      const transitionRevision = task.lastEventId;
+      const expectedTerminalEventId = isTerminalTaskStatus(originalStatus)
+        ? task.terminalEventId ?? null
+        : undefined;
+      const terminalSnapshot = isTerminalTaskStatus(originalStatus)
+        ? captureTerminalResumeSnapshot(
+            task,
+            originalStatus as TerminalResumeSnapshot["status"],
+          )
+        : undefined;
       await this.closeStaleEngine(task);
       await this.promoteCallerInfo(task, message.callerInfo);
 

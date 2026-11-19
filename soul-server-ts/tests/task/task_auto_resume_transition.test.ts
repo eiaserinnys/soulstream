@@ -933,6 +933,109 @@ describe("AutoResumeTransition", () => {
     );
   });
 
+  it("resumes from the terminal fact applied while the previous execution drains", async () => {
+    const drain = deferred<void>();
+    const task = makeTerminalTask({
+      status: "initializing",
+      terminalEventId: undefined,
+      executionPromise: drain.promise,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      expect(resumedTask.status).toBe("initializing");
+    });
+
+    const resuming = transition.resume(task, { text: "redelivered", user: "u" }, onResume);
+    expect(task.status).toBe("initializing");
+    expect(task.executionActivation).toBeDefined();
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication).not.toHaveBeenCalled();
+    task.status = "error";
+    task.terminalEventId = 8;
+    task.lastEventId = 9;
+    drain.resolve();
+    await resuming;
+
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .toHaveBeenCalledWith("s1", expect.objectContaining({
+        transitionId: "resume:9",
+        expectedTerminalEventId: 8,
+      }));
+    expect(onResume).toHaveBeenCalledOnce();
+  });
+
+  it("restores the drained terminal when preparation fails before the running transition", async () => {
+    const drain = deferred<void>();
+    const task = makeTerminalTask({
+      status: "initializing",
+      terminalEventId: undefined,
+      executionPromise: drain.promise,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const observedStatuses: Task["status"][] = [];
+    const transitionError = new Error("running transition failed");
+    persistenceDouble.enqueueRunningTransitionAndWaitForApplication.mockImplementationOnce(async () => {
+      observedStatuses.push(task.status);
+      throw transitionError;
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const onResume = vi.fn();
+    const resuming = transition.resume(task, { text: "redelivered", user: "u" }, onResume, {
+      publishUserMessage: false,
+    });
+    task.status = "error";
+    task.terminalEventId = 8;
+    task.lastEventId = 9;
+    drain.resolve();
+
+    await expect(resuming).rejects.toBe(transitionError);
+    expect(observedStatuses).toEqual(["initializing"]);
+    expect(task.status).toBe("error");
+    expect(task.terminalEventId).toBe(8);
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("restores the drained terminal when admission fails after the running transition", async () => {
+    const drain = deferred<void>();
+    const task = makeTerminalTask({
+      status: "initializing",
+      terminalEventId: undefined,
+      executionPromise: drain.promise,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const admissionError = new Error("admission failed");
+    const resuming = transition.resume(task, { text: "redelivered", user: "u" }, vi.fn(), {
+      afterRunningTransition: vi.fn().mockRejectedValue(admissionError),
+    });
+    task.status = "error";
+    task.terminationReason = "error_aborted";
+    task.terminationDetail = "replayed terminal";
+    task.terminalEventId = 8;
+    task.lastEventId = 9;
+    drain.resolve();
+
+    await expect(resuming).rejects.toBe(admissionError);
+    expect(persistenceDouble.enqueueTerminalTransitionAndWaitForApplication)
+      .toHaveBeenCalledWith("s1", expect.objectContaining({
+        status: "error",
+        termination_reason: "error_aborted",
+        termination_detail: "replayed terminal",
+        _dedupe_key: "resume_compensation:s1:9",
+      }), expect.objectContaining({ status: "error" }));
+    expect(task.status).toBe("error");
+    expect(task.terminationDetail).toBe("replayed terminal");
+  });
+
   it("clears a stale drained engine before resuming the next user turn", async () => {
     const order: string[] = [];
     const close = vi.fn(async () => {
