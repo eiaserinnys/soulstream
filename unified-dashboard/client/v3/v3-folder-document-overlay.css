@@ -42,6 +42,7 @@
 .v3-folder-board-document-overlay > .v3-chat-header {
   cursor: move;
   user-select: none;
+  padding-inline: var(--v3-space-3);
 }
 
 /* 🔴13: 열림 슬라이드/페이드 등장. 40%↔95%는 위 height transition. */
@@ -128,11 +129,21 @@
     display: flex;
     width: 100%;
     height: auto;
+    align-self: stretch;
+    --liquid-glass-radius: 0 !important;
     margin: 0;
     border-radius: 0;
   }
 
   .v3-folder-board-document-overlay.is-expanded {
     height: auto;
+  }
+
+  .v3-folder-board-document-overlay > .liquid-glass-card__layer > span {
+    border-radius: inherit !important;
+  }
+
+  .v3-folder-board-document-overlay [data-testid="v3-folder-board-document-overlay-expand"] {
+    display: none;
   }
 }
