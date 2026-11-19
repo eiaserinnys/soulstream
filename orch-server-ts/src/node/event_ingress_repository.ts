@@ -106,6 +106,17 @@ export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
   readonly modelCatalog: ModelCatalogSource;
   /** 없으면 console.warn으로 남긴다. */
   readonly warn?: EventIngressWarnSink;
+  /**
+   * Session statistics facts were inserted and their transaction committed;
+   * lets a stream announce the change. Never called for rolled-back writes.
+   */
+  readonly onSessionStatisticsFactsInserted?: () => void;
+};
+
+/** One committed transaction's ingress result plus what the stream must announce. */
+type CommittedEnvelope = {
+  readonly result: EventIngressResult;
+  readonly statisticsFactsInserted: boolean;
 };
 
 type PendingIngressEntry = {
@@ -140,6 +151,7 @@ export class EventIngressRepository {
   private readonly retryPolicy: EventIngressRetryPolicy;
   private readonly modelCatalog: ModelCatalogSource;
   private readonly warn: EventIngressWarnSink;
+  private readonly onSessionStatisticsFactsInserted: (() => void) | undefined;
 
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
@@ -151,6 +163,7 @@ export class EventIngressRepository {
     this.retryPolicy = new EventIngressRetryPolicy(options);
     this.modelCatalog = options.modelCatalog;
     this.warn = options.warn ?? consoleEventIngressWarn;
+    this.onSessionStatisticsFactsInserted = options.onSessionStatisticsFactsInserted;
   }
 
   async commitBatch(
@@ -186,8 +199,11 @@ export class EventIngressRepository {
           continue;
         }
         try {
-          results[item.index] = await sql.begin(async (transaction) =>
+          const committed = await sql.begin(async (transaction) =>
             await this.commitEnvelope(transaction, nodeId, batch.stream_id, item.envelope));
+          results[item.index] = committed.result;
+          // Facts are announced only after their transaction has committed.
+          if (committed.statisticsFactsInserted) this.onSessionStatisticsFactsInserted?.();
           if (retryingRecords.has(item.index) && results[item.index]?.outcome === "committed") {
             await this.removeRetryingRecord(nodeId, item.envelope);
           }
@@ -254,7 +270,7 @@ export class EventIngressRepository {
     nodeId: string,
     streamId: string,
     envelope: EventIngressEnvelope,
-  ): Promise<EventIngressResult> {
+  ): Promise<CommittedEnvelope> {
     const receipt = await findReceipt(transaction, nodeId, streamId, envelope.source_seq);
     if (receipt) {
       assertReceiptMatches(receipt, envelope);
@@ -263,11 +279,14 @@ export class EventIngressRepository {
         envelope.source_seq,
       );
       return {
-        outcome: "committed",
-        envelope,
-        eventId: receipt.event_id,
-        duplicateReceipt: true,
-        ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+        result: {
+          outcome: "committed",
+          envelope,
+          eventId: receipt.event_id,
+          duplicateReceipt: true,
+          ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+        },
+        statisticsFactsInserted: false,
       };
     }
     const generationHandoff = await lockRetainedRunnerGenerations(transaction, nodeId, envelope);
@@ -293,15 +312,18 @@ export class EventIngressRepository {
     if (staleRegistration
       && !recordsDespiteStaleRegistration(envelope.session_effect)) {
       return {
-        outcome: "dead_lettered",
-        envelope,
-        deadLetter: {
-          code: "STALE_REGISTRATION",
-          reason: "event registration identity is not current",
-          rejectedAt: new Date().toISOString(),
-          path: "registration_id",
+        result: {
+          outcome: "dead_lettered",
+          envelope,
+          deadLetter: {
+            code: "STALE_REGISTRATION",
+            reason: "event registration identity is not current",
+            rejectedAt: new Date().toISOString(),
+            path: "registration_id",
+          },
+          registrationMismatch: registrationMismatchEvidence,
         },
-        registrationMismatch: registrationMismatchEvidence,
+        statisticsFactsInserted: false,
       };
     }
 
@@ -312,13 +334,12 @@ export class EventIngressRepository {
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("event_append did not return a positive event id");
     }
-    if (!semanticReceipt) {
-      await applySessionStatisticsProjection(transaction, {
+    const statisticsFactsInserted = !semanticReceipt
+      && await applySessionStatisticsProjection(transaction, {
         eventId,
         envelope,
         modelCatalog: this.modelCatalog,
       });
-    }
 
     let sessionEffectApplication: EventSessionEffectApplication | undefined;
     if (!semanticReceipt && envelope.session_effect !== null) {
@@ -413,14 +434,17 @@ export class EventIngressRepository {
       )
     `;
     return {
-      outcome: "committed",
-      envelope,
-      eventId,
-      duplicateReceipt: semanticReceipt !== undefined,
-      ...(staleRegistration ? { registrationMismatch: registrationMismatchEvidence } : {}),
-      ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
-      ...(feedProjectionApplication ? { feedProjectionApplication } : {}),
-      ...(feedLastEventId === undefined ? {} : { feedLastEventId }),
+      result: {
+        outcome: "committed",
+        envelope,
+        eventId,
+        duplicateReceipt: semanticReceipt !== undefined,
+        ...(staleRegistration ? { registrationMismatch: registrationMismatchEvidence } : {}),
+        ...(sessionEffectApplication ? { sessionEffectApplication } : {}),
+        ...(feedProjectionApplication ? { feedProjectionApplication } : {}),
+        ...(feedLastEventId === undefined ? {} : { feedLastEventId }),
+      },
+      statisticsFactsInserted,
     };
   }
 }

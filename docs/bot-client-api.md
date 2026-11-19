@@ -63,11 +63,19 @@ hour, refresh tokens rotate with a 30-day idle lifetime, and the grant lasts 365
 days.
 
 OAuth bearer access is limited to read routes: `cards:read` allows `GET
-/api/cards` and its read subroutes; `folders:read` allows `GET /api/folders` and
-its read subroutes; `usage:read` allows only `GET /api/usage/summary`,
+/api/cards` and its read subroutes plus the `GET /api/sessions/stream` change
+notifications; `folders:read` allows `GET /api/folders` and its read subroutes;
+`usage:read` allows `GET /api/usage/summary`, `GET /api/usage/stream`,
 `GET /api/session-statistics`, and `GET /api/session-statistics/days/:date`.
-The card, folder, and session statistics routes apply the signed-in account's
-existing folder ACL.
+The card, folder, session stream, and session statistics routes apply the
+signed-in account's existing folder ACL. `GET /api/sessions/stream` sends
+`stream_meta`, `session_list`, `replay_gap`, `session_created`,
+`session_updated`, `session_deleted`, `catalog_updated`, `folder_updated`,
+`custom_view_updated`, `card_updated`, `page_updated`, and
+`orchestrator_shutdown`; its optional `types` query limits the stream to the
+named event types, and control frames (`stream_meta`, `replay_gap`,
+`orchestrator_shutdown`) always pass. `GET /api/usage/stream` sends
+`usage_summary` snapshots and `session_statistics_updated` refetch hints.
 `conversations` authorizes the conversation provider routes documented below.
 OAuth tokens do not authorize the legacy session intervention or MCP routes.
 See the [OAuth authentication path map](pathmaps/oauth-authentication.md) for

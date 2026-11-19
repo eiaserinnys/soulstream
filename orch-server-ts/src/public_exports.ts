@@ -151,6 +151,7 @@ export * from "./usage/usage_summary_routes.js";
 export * from "./usage/usage_summary_service.js";
 export * from "./usage/session_statistics_routes.js";
 export * from "./usage/session_statistics_service.js";
+export * from "./usage/session_statistics_update_notifier.js";
 export * from "./ui-events/ui_event_contract.js";
 export * from "./ui-events/ui_event_routes.js";
 export * from "./ui-events/ui_event_settings.js";

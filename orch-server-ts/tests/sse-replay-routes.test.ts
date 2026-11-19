@@ -315,6 +315,95 @@ describe("SSE replay HTTP route harness", () => {
     });
   });
 
+  it("sends only the event types named in types while control frames still pass", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({ instanceId });
+    broadcaster.append({ type: "card_updated", cardId: "card-1", folderId: "folder-1" });
+    broadcaster.append({ type: "session_updated", agent_session_id: "sess-1" });
+    broadcaster.append({ type: "folder_updated", folderId: "folder-1" });
+    broadcaster.append({ type: "orchestrator_shutdown" });
+    const app = createApp({
+      config,
+      sseReplayRoutes: {
+        ...createHarness(),
+        session: {
+          broadcaster,
+          loadSnapshot: async () => ({ sessions: [], total: 0 }),
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?lastEventId=0&instanceId=current-instance-id&types=card_updated%2Cfolder_updated",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(parseSseEvents(response.body)).toEqual([
+      {
+        event: "stream_meta",
+        id: undefined,
+        data: { type: "stream_meta", instance_id: instanceId, latest_id: 4 },
+      },
+      {
+        event: "card_updated",
+        id: "1",
+        data: { type: "card_updated", cardId: "card-1", folderId: "folder-1" },
+      },
+      {
+        event: "folder_updated",
+        id: "3",
+        data: { type: "folder_updated", folderId: "folder-1" },
+      },
+      {
+        event: "orchestrator_shutdown",
+        id: "4",
+        data: { type: "orchestrator_shutdown" },
+      },
+    ]);
+  });
+
+  it("skips the first session_list snapshot unless types names it", async () => {
+    const app = createApp({
+      config,
+      sseReplayRoutes: createHarness(),
+    });
+
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?types=card_updated",
+    });
+    expect(parseSseEvents(filtered.body)).toEqual([
+      {
+        event: "stream_meta",
+        id: undefined,
+        data: { type: "stream_meta", instance_id: instanceId, latest_id: 3 },
+      },
+    ]);
+
+    const withSnapshot = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?types=session_list%2Ccard_updated",
+    });
+    expect(parseSseEvents(withSnapshot.body).map((frame) => frame.event))
+      .toEqual(["stream_meta", "session_list"]);
+  });
+
+  it("keeps the replay_gap control frame when types filters every event", async () => {
+    const app = createApp({
+      config,
+      sseReplayRoutes: createHarness({ ringMaxlen: fixture.gap.ringMaxlen }),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?lastEventId=0&instanceId=current-instance-id&types=card_updated",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(parseSseEvents(response.body).map((frame) => frame.event))
+      .toEqual(["stream_meta", "replay_gap"]);
+  });
+
   it("can be registered directly on a Fastify instance for route-boundary tests", async () => {
     const app = createApp({ config });
 

@@ -55,6 +55,12 @@ type SseReplayEventFilter<TPayload extends object> = (
 
 const DEFAULT_KEEPALIVE_MS = 30_000;
 export const FEED_DISPLAY_CATCHUP_MAX_EVENTS = 30;
+/** Control frames reach every stream, whatever `types` the client asked for. */
+const CONTROL_STREAM_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "stream_meta",
+  "replay_gap",
+  "orchestrator_shutdown",
+]);
 
 export function registerSseReplayRoutes(
   app: FastifyInstance,
@@ -106,6 +112,7 @@ async function sendSseReplayStream<TPayload extends object>(
   if (cursor === undefined) {
     return reply;
   }
+  const eventTypes = queryEventTypes(request.query);
 
   const replaySeenIds = new Set<number>();
   let pendingLiveEvents: Array<SseReplayEvent<TPayload>> = [];
@@ -115,7 +122,7 @@ async function sendSseReplayStream<TPayload extends object>(
   let livePushChain: Promise<void> = Promise.resolve();
   const pushLiveEvent = async (event: SseReplayEvent<TPayload>) => {
     if (replaySeenIds.has(event.id)) return;
-    const frame = await filteredReplayEventFrame(request, options, event);
+    const frame = await filteredReplayEventFrame(request, options, event, eventTypes);
     if (frame !== null) {
       if (frame.event === "orchestrator_shutdown") {
         // The write callback completes before forceCloseConnections can close sockets.
@@ -154,6 +161,7 @@ async function sendSseReplayStream<TPayload extends object>(
       options,
       cursor,
       replaySeenIds,
+      eventTypes,
     );
     setSseHeaders(reply);
 
@@ -194,6 +202,7 @@ async function buildInitialFrames<TPayload extends object>(
   options: ReplayStreamOptions<TPayload>,
   cursor: SseResumeCursor,
   replaySeenIds: Set<number>,
+  eventTypes: ReadonlySet<string> | null,
 ): Promise<SseFrame[]> {
   const frames: SseFrame[] = [
     {
@@ -201,9 +210,10 @@ async function buildInitialFrames<TPayload extends object>(
       data: options.broadcaster.streamMeta,
     },
   ];
+  const includeSnapshot = eventTypes === null || eventTypes.has("session_list");
 
   if (cursor.lastEventId === null) {
-    frames.push(await options.loadSnapshot(request));
+    if (includeSnapshot) frames.push(await options.loadSnapshot(request));
     return frames;
   }
 
@@ -214,7 +224,7 @@ async function buildInitialFrames<TPayload extends object>(
     feedDisplay &&
     (replay.gap || replay.events.length > FEED_DISPLAY_CATCHUP_MAX_EVENTS)
   ) {
-    frames.push(await options.loadSnapshot(request));
+    if (includeSnapshot) frames.push(await options.loadSnapshot(request));
     return frames;
   }
   const overflow = !feedDisplay && snapshotCatchup && replay.events.length > 200;
@@ -233,7 +243,7 @@ async function buildInitialFrames<TPayload extends object>(
 
   for (const event of replay.events) {
     replaySeenIds.add(event.id);
-    const frame = await filteredReplayEventFrame(request, options, event);
+    const frame = await filteredReplayEventFrame(request, options, event, eventTypes);
     if (frame !== null) frames.push(frame);
   }
   return frames;
@@ -243,12 +253,18 @@ async function filteredReplayEventFrame<TPayload extends object>(
   request: FastifyRequest,
   options: ReplayStreamOptions<TPayload>,
   event: SseReplayEvent<TPayload>,
+  eventTypes: ReadonlySet<string> | null,
 ): Promise<SseFrame | null> {
   const payload =
     options.filterEvent === undefined
       ? event.payload
       : await options.filterEvent(request, event.payload);
-  return payload === null ? null : replayEventFrame({ ...event, payload });
+  if (payload === null) return null;
+  if (eventTypes !== null) {
+    const name = eventNameForPayload(payload);
+    if (!CONTROL_STREAM_EVENT_TYPES.has(name) && !eventTypes.has(name)) return null;
+  }
+  return replayEventFrame({ ...event, payload });
 }
 
 function replayEventFrame<TPayload extends object>(
@@ -311,6 +327,15 @@ function queryValue(query: unknown, key: string): string | null {
 function queryBool(query: unknown, key: string): boolean {
   const value = queryValue(query, key);
   return value !== null && ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+/** `types` picks the event names a client wants; absent means every event. */
+function queryEventTypes(query: unknown): ReadonlySet<string> | null {
+  const value = queryValue(query, "types");
+  if (value === null) return null;
+  return new Set(
+    value.split(",").map((type) => type.trim()).filter((type) => type.length > 0),
+  );
 }
 
 function setSseHeaders(reply: FastifyReply): void {
