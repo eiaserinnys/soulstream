@@ -15,20 +15,11 @@ fi
 mkdir -p "$(dirname "$TS_OUT")"
 echo "[wire-schema] TypeScript interface 생성: $TS_OUT"
 
-# json-schema-to-typescript: 글로벌 설치된 경우 직접 호출, 없으면 npx로 fallback
-if command -v json2ts >/dev/null 2>&1; then
-  json2ts \
-    --input "$SCHEMA" \
-    --output "$TS_OUT" \
-    --bannerComment '/* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */' \
-    --additionalProperties false
-else
-  npx --yes json-schema-to-typescript \
-    --input "$SCHEMA" \
-    --output "$TS_OUT" \
-    --bannerComment '/* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */' \
-    --additionalProperties false
-fi
+"$HERE/node_modules/.bin/json2ts" \
+  --input "$SCHEMA" \
+  --output "$TS_OUT" \
+  --bannerComment '/* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */' \
+  --additionalProperties false
 
 # json-schema-to-typescript는 custom JSON Schema annotation을 출력하지 않는다.
 # 런타임 목록과 유니온 타입은 schema metadata에서 생성한다.
