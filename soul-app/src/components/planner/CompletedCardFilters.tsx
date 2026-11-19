@@ -18,7 +18,7 @@ export function CompletedCardFilters({browser}:{browser:CompletedBrowser}) {
     <SessionSearchField placeholder="제목 또는 요청 검색" accessibilityLabel="제목 또는 요청 검색" value={browser.search} onChangeText={browser.setSearch} testID="completed-search"/>
     {browser.error?<Text testID="completed-error" accessibilityRole="alert" style={styles.error}>{browser.error}</Text>:null}
     {/* 보드 조회 실패와 같은 단추를 글 폭으로 둔다. 조회 중에는 busy로 끄되 초점은 남긴다. 범위 안내는 다시 받아도 고쳐지지 않으니 단추가 없다. */}
-    {browser.error&&!browser.invalidRange?<GlassButton testID="completed-retry" accessibilityLabel="완료 카드 다시 조회" style={{alignSelf:'flex-start'}} busy={browser.loading} onPress={browser.retry}>
+    {browser.error&&!browser.invalidRange?<GlassButton accessibilityLabel="완료 카드 다시 조회" style={{alignSelf:'flex-start'}} busy={browser.loading} onPress={browser.retry}>
       <Text style={{...t.foundation.typography.body,color:t.colors.textPrimary}}>다시 시도</Text>
     </GlassButton>:null}
   </View>;
