@@ -9,6 +9,7 @@ import {
   type SessionResourceAccessProvider,
 } from "../session/session_resource_access.js";
 import type { SessionCreateRouteResponse } from "../session/session_create_route_response.js";
+import { defaultFolderIdForSessionType } from "../folders/folder_defaults.js";
 import { ConversationRepository } from "./conversation_repository.js";
 import { ConversationCatalog, type ConversationModel } from "./conversation_catalog.js";
 import { ConversationExecutions } from "./conversation_execution.js";
@@ -137,15 +138,18 @@ export class ConversationService {
     let binding = await this.repo.byKey(account, namespace, key);
     let created = false;
     if (!binding) {
-      await this.deps.access.requireFolderAccess({ request, folderId: body.collection });
-      const candidates = await this.candidates(body);
+      // A conversation thread creates a claude agent session; without a named
+      // collection it belongs in the same system folder as any other session.
+      const creation = { ...body, collection: body.collection ?? defaultFolderIdForSessionType("claude") };
+      await this.deps.access.requireFolderAccess({ request, folderId: creation.collection });
+      const candidates = await this.candidates(creation);
       const selected = candidates.find(model => model.available);
       if (!selected) throw new ConversationError(422, "model_unavailable", "No requested model is available");
       const preferred: ConversationModel = candidates.find(model => model.id === body.selected_model)
         ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: this.deps.catalog.defaultNodeId, label: this.deps.catalog.defaultNodeId } };
       const notices = selected.id === body.selected_model ? []
         : [this.notice(preferred, selected, preferred.reason ?? "사용할 수 없습니다")];
-      created = await this.repo.reserve(account, namespace, key, randomUUID(), selected.id, body, "reserved", notices);
+      created = await this.repo.reserve(account, namespace, key, randomUUID(), selected.id, creation, "reserved", notices);
       binding = await this.repo.byKey(account, namespace, key);
       if (!binding) throw new ConversationError(409, "conflict", "Session binding already exists");
     }
