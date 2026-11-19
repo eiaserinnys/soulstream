@@ -9,6 +9,12 @@ export interface PersistenceHostRouteOptions {
   authBearerToken: string;
   environment?: string;
   nodeCredentials: NodeCredentialResolver | null;
+  /**
+   * 지금 그 노드가 orch에 등록한 WebSocket 연결 시각(orch 시계, epoch ms).
+   * 부팅 복구 클레임이 이번 연결 뒤에 접수된 배달까지 잡지 않도록 경계로
+   * 넘긴다. 그 노드의 연결이 없으면 undefined를 돌려준다.
+   */
+  nodeConnectedAtMs?: (nodeId: string) => number | undefined;
 }
 
 type RepositoryKey = keyof PersistenceHostRepositories;
@@ -197,6 +203,9 @@ function registerDomain(
         return sendTimed(request, reply, timing, 422, () =>
           errorReply(reply, 422, "INVALID_HOST_REQUEST", "retry delay must be a duration or absolute instant"));
       }
+      const routedArgs = request.params.operation === "claim_queued_after_node_restart"
+        ? withRestartClaimCutoff(args, options.nodeConnectedAtMs)
+        : args;
       const isCancellableOperation = domain === "session-data"
         && [
           "event_search", "event_session_id_search", "digest_search", "history_search",
@@ -215,10 +224,13 @@ function registerDomain(
       }
       try {
         const repositories = await options.repositoryProvider();
-        const invokeArgs = abortController
-          ? withAbortSignal(request.params.operation, args, abortController.signal)
-          : args;
-        const result = await invoke(repositories, target, invokeArgs);
+        const result = await invoke(
+          repositories,
+          target,
+          abortController
+            ? withAbortSignal(request.params.operation, routedArgs, abortController.signal)
+            : routedArgs,
+        );
         return sendTimed(request, reply, timing, 200, () =>
           reply.type("application/json").send(JSON.stringify(result ?? null)));
       } catch (error) {
@@ -337,6 +349,23 @@ function withAbortSignal(
   const padded = [...args];
   while (padded.length < 7) padded.push(null);
   return [...padded, signal];
+}
+
+/**
+ * 부팅 복구 클레임에 그 노드의 지금 연결 등록 시각을 마지막 인자로 붙인다.
+ * 저장소는 이 시각 이전에 queued된 행만 잡는다. 연결이 레지스트리에 없으면
+ * 시각을 붙이지 않아 지금처럼 조건 없이 클레임한다(행이 영영 남지 않게).
+ */
+function withRestartClaimCutoff(
+  args: unknown[],
+  nodeConnectedAtMs: PersistenceHostRouteOptions["nodeConnectedAtMs"],
+): unknown[] {
+  if (!nodeConnectedAtMs) return args;
+  const nodeId = args[0];
+  if (typeof nodeId !== "string" || nodeId.length === 0) return args;
+  const connectedAtMs = nodeConnectedAtMs(nodeId);
+  if (typeof connectedAtMs !== "number" || !Number.isFinite(connectedAtMs)) return args;
+  return [...args, connectedAtMs];
 }
 
 function normalizeRetryDelay(operation: string, args: unknown[]): unknown[] | null {

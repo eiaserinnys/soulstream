@@ -70,6 +70,7 @@ import {
 } from "../security/session_isolation_turn.js";
 
 import { assertGenericTaskExecution } from "./task_orchestration_purpose.js";
+import { ExecutionAdmissionInFlightError } from "./execution_admission_errors.js";
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
@@ -605,9 +606,7 @@ export class TaskExecutor {
       task.executionPromise
       || (task.executionActivation && task.executionActivation !== transferredActivation)
     ) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has an execution admission in flight`,
-      );
+      throw new ExecutionAdmissionInFlightError(task.agentSessionId);
     }
     const profileWorkspaceDir = this.resolveProfileWorkspaceDir(agent);
     if (!profileWorkspaceDir) {
@@ -687,9 +686,7 @@ export class TaskExecutor {
       (!executionSlotHeld && task.executionPromise)
       || (task.executionActivation && task.executionActivation !== transferredActivation)
     ) {
-      throw new Error(
-        `Task ${task.agentSessionId} already has an execution admission in flight`,
-      );
+      throw new ExecutionAdmissionInFlightError(task.agentSessionId);
     }
     let prepared: ReturnType<TaskExecutor["prepareExecution"]>;
     try {

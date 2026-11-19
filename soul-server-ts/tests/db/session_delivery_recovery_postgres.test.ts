@@ -1365,6 +1365,44 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     expect(afterRecovery?.consumed_at?.toISOString()).toBe(consumedAt);
   });
 
+  it("claims restart recovery rows only when they were queued before the cutoff", async () => {
+    await register("delivery-queued-before-cutoff", "relation-before-cutoff", {
+      targetSessionId: "caller-session",
+    });
+    await register("delivery-queued-after-cutoff", "relation-after-cutoff", {
+      targetSessionId: "caller-session",
+    });
+    for (const deliveryId of [
+      "delivery-queued-before-cutoff",
+      "delivery-queued-after-cutoff",
+    ]) {
+      await repository.claimAttemptForTarget(deliveryId, "caller-session", "worker-before-crash");
+      await repository.beginDispatch(deliveryId, "worker-before-crash");
+      await repository.markQueued(deliveryId, "worker-before-crash");
+    }
+    await harness.sql`
+      UPDATE session_deliveries
+      SET queued_at = NOW() - INTERVAL '120 seconds'
+      WHERE delivery_id = 'delivery-queued-before-cutoff'
+    `;
+
+    const claimed = await repository.recovery.claimQueuedAfterNodeRestart(
+      "node-test",
+      "restart-worker-cutoff",
+      10,
+      60_000,
+      false,
+      Date.now() - 60_000,
+    );
+
+    expect(claimed.map((row) => row.delivery_id)).toEqual([
+      "delivery-queued-before-cutoff",
+    ]);
+    await expect(repository.get("delivery-queued-after-cutoff")).resolves.toMatchObject({
+      state: "queued",
+    });
+  });
+
   it("returns an accepted SDK input to pending while its assistant transcript is unproven", async () => {
     await register("delivery-input-pending", "relation-input-pending", {
       targetSessionId: "caller-session",
