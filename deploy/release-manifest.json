@@ -3,7 +3,8 @@
   "release_id": "soulstream-claude-runtime-v2",
   "environment_service": "soulstream-orch-server",
   "service_restart_strategies": {
-    "soulstream-orch-server": { "mode": "overlap", "exit_timeout_sec": 60 }
+    "soulstream-orch-server": { "mode": "overlap", "exit_timeout_sec": 60 },
+    "soulstream-soul-server-ts": { "mode": "adopt" }
   },
   "migration": {
     "operation": "discover",

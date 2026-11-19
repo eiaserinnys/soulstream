@@ -181,7 +181,7 @@ if (-not (Test-CommandExists "haniel")) {
         # requires interactive prompts (service account password, config URL) that cannot
         # be automated. We only need the haniel binary to run `haniel install`.
         Write-Warn "Haniel not found. Installing via pip (non-interactive)..."
-        pip install git+https://github.com/eiaserinnys/haniel.git@aa9a8cf5e03e3bff2814066250e3b1887a5a17ef
+        pip install git+https://github.com/eiaserinnys/haniel.git@d143f0d8f7afffa4656f4ed10349a376cef585a1
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "Haniel pip install failed."
             exit 1

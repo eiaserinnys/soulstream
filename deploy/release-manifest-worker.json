@@ -3,6 +3,9 @@
   "release_id": "soulstream-worker-env-bound-v2",
   "environment_service": "soulstream-server",
   "requires_service_env_file": true,
+  "service_restart_strategies": {
+    "soulstream-server": { "mode": "adopt" }
+  },
   "change_ignore_paths": [
     "soul-app/*",
     "docs/*",
