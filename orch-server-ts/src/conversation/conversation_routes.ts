@@ -159,8 +159,12 @@ function param(r: FastifyRequest) { return string((r.params as Record<string, un
 function ensureBody(input: unknown): EnsureRequest {
   const b = object(input); keys(b, ["title", "selected_model", "model_order", "profile", "collection", "initial_instruction", "instructions"]);
   return { title: string(b.title, "title"), selected_model: string(b.selected_model, "selected_model"),
-    model_order: strings(b.model_order, "model_order"), profile: string(b.profile, "profile"), collection: string(b.collection, "collection"),
+    model_order: strings(b.model_order, "model_order"), profile: string(b.profile, "profile"), collection: optionalCollection(b.collection),
     initial_instruction: string(b.initial_instruction, "initial_instruction", true), instructions: string(b.instructions, "instructions", true) };
+}
+/** Omitting collection (or sending null) lets the server choose the default folder. */
+function optionalCollection(value: unknown): string | null {
+  return value === undefined || value === null ? null : string(value, "collection");
 }
 function patchBody(input: unknown): PatchRequest {
   const b = object(input); keys(b, ["title", "archived", "model", "model_order", "instructions", "collection"]);

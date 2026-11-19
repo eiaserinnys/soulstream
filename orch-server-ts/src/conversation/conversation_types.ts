@@ -1,6 +1,7 @@
 export type EnsureRequest = {
   title: string; selected_model: string; model_order: string[]; profile: string;
-  collection: string; initial_instruction: string; instructions: string;
+  /** Omitted or null resolves to the server default folder before the request is stored. */
+  collection: string | null; initial_instruction: string; instructions: string;
 };
 export type PatchRequest = {
   title?: string; archived?: boolean; model?: string; model_order?: string[]; instructions?: string;

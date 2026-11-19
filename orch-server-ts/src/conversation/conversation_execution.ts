@@ -7,6 +7,7 @@ import type { SessionResourceAccessProvider } from "../session/session_resource_
 import { ConversationCatalog, type ConversationModel } from "./conversation_catalog.js";
 import { ConversationRepository } from "./conversation_repository.js";
 import { ConversationError, type Binding, type EnsureRequest, type Execution, type ExecutionRequest } from "./conversation_types.js";
+import { defaultFolderIdForSessionType } from "../folders/folder_defaults.js";
 
 type Deps = {
   sql: SqlClient; repo: ConversationRepository; catalog: ConversationCatalog;
@@ -49,10 +50,14 @@ export class ConversationExecutions {
   }
   async switch(request: FastifyRequest, binding: Binding, input: ExecutionRequest): Promise<void> {
     const { expected_execution_id: expected, ...body } = input;
-    await this.deps.access.requireFolderAccess({ request, folderId: body.collection });
-    const executions = await this.deps.repo.executions(binding.session_id);
     const active = binding.active_session_id ?? binding.session_id;
-    const matching = executions.find(x => x.predecessor_session_id === expected && sameRequest(x.request, body));
+    const row = await this.deps.row(active);
+    // A switch without a collection keeps the thread's current folder and falls
+    // back to the server default folder when the thread has none.
+    const resolved: EnsureRequest = { ...body, collection: body.collection ?? row.folder_id ?? defaultFolderIdForSessionType("claude") };
+    await this.deps.access.requireFolderAccess({ request, folderId: resolved.collection });
+    const executions = await this.deps.repo.executions(binding.session_id);
+    const matching = executions.find(x => x.predecessor_session_id === expected && sameRequest(x.request, resolved));
     if (active !== expected) {
       if (matching?.phase === "complete") return;
       throw new ConversationError(409, "conflict", "Execution has changed");
@@ -60,7 +65,6 @@ export class ConversationExecutions {
     const pending = executions.find(x => x.phase !== "complete");
     if (pending && (!matching || pending.session_id !== matching.session_id)) throw new ConversationError(409, "conflict", "Another execution is pending");
     if (pending) return this.finish(request, binding, pending);
-    const row = await this.deps.row(active);
     const [last] = await this.deps.sql<Array<{ event_type: string }>>`SELECT event_type FROM events WHERE session_id=${active}
       AND event_type IN ('user_message','intervention_sent','tool_start','tool_result','complete','error','assistant_error') ORDER BY id DESC LIMIT 1`;
     if (row.status !== "error" && last && ["user_message","intervention_sent","tool_start","tool_result"].includes(last.event_type)) {
@@ -72,7 +76,7 @@ export class ConversationExecutions {
     const preferred = candidates.find(x => x.id === body.selected_model) ?? {id:body.selected_model,label:body.selected_model,available:false};
     const notices = selected.id === body.selected_model ? [] : [{id:"notice:0",at:new Date().toISOString(),
       text:this.deps.notice(preferred,selected,preferred.reason ?? "사용할 수 없습니다")}];
-    const execution = await this.deps.repo.reserveExecution(binding.session_id, active, randomUUID(), executions.length, body, selected.id, notices);
+    const execution = await this.deps.repo.reserveExecution(binding.session_id, active, randomUUID(), executions.length, resolved, selected.id, notices);
     await this.finish(request, binding, execution);
   }
   async resume(request: FastifyRequest, binding: Binding): Promise<void> {

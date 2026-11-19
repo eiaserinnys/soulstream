@@ -101,17 +101,25 @@ describe("live DB folder route providers", () => {
     expect(harness.normalizedCalls()).toEqual([]);
   });
 
-  it("reads starred project pages in one query", async () => {
+  it("reads project page stars and versions in one query", async () => {
     const harness = createSqlHarness((text) =>
-      text.includes("metadata->'starred'") ? [{ id: "page-a" }] : []);
+      text.includes("metadata->'starred'")
+        ? [
+            { id: "page-a", version: 4, starred: true },
+            { id: "page-b", version: 2, starred: false },
+          ]
+        : []);
     const repository = createLiveDbCatalogRepository({ sql: harness.sql });
-    await expect(repository.folderRouteProvider.listStarredProjectPageIds!(["page-a", "page-b"]))
-      .resolves.toEqual(["page-a"]);
+    await expect(repository.folderRouteProvider.listProjectPageStates!(["page-a", "page-b"]))
+      .resolves.toEqual([
+        { pageId: "page-a", starred: true, version: 4 },
+        { pageId: "page-b", starred: false, version: 2 },
+      ]);
     expect(harness.normalizedCalls()).toEqual([
-      "SELECT id FROM pages WHERE id = ANY(?::text[]) AND metadata->'starred' = 'true'::jsonb",
+      "SELECT id, version, (metadata->'starred' = 'true'::jsonb) AS starred FROM pages WHERE id = ANY(?::text[])",
     ]);
     harness.calls.length = 0;
-    await expect(repository.folderRouteProvider.listStarredProjectPageIds!([])).resolves.toEqual([]);
+    await expect(repository.folderRouteProvider.listProjectPageStates!([])).resolves.toEqual([]);
     expect(harness.calls).toEqual([]);
   });
 

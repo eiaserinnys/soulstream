@@ -14,6 +14,7 @@ import {
 import { PageBrowserBacklinkCursorError } from "../../src/page/page_repository_reads.js";
 import { PageYjsPageNotFoundError } from "../../src/page/page_yjs_persistence.js";
 import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_authenticated_user_resolver.js";
+import { registerFolderRoutes } from "../../src/folders/folder_routes.js";
 
 const browserCookie = "soul_dashboard_auth=dashboard-token";
 
@@ -360,6 +361,83 @@ describe("browser page routes", () => {
         actor: { actorKind: "user", actorUserId: "app@example.com" },
         command: { type: "set_page_starred", starred: true },
       }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("reads a folder project page version as an OAuth subject and toggles its star on and off", async () => {
+    const service = serviceDouble();
+    const users = createLiveAuthenticatedUserResolvers({
+      jwt: { issueToken: () => "dashboard-token", verifyToken: () => null },
+      resolveOAuthToken: async (token) => token === "oauth-token"
+        ? {
+            email: "app@example.com",
+            displayName: "App",
+            clientId: "client-1",
+            clientName: "Native Client",
+            scopes: ["folders:write"],
+          }
+        : null,
+    });
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: users.resolveUserOrOAuthEmail });
+    registerFolderRoutes(app, {
+      nodeCredentials: null,
+      provider: {
+        listFolders: () => [{ id: "folder-1", projectPageId: "page-1" }],
+        listSessionAssignments: () => ({}),
+        listProjectPageStates: () => [{ pageId: "page-1", starred: false, version: 5 }],
+      },
+      accessProvider: { resolveAccess: () => ({ restricted: false }) },
+    });
+    const oauth = { authorization: "Bearer oauth-token" };
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/folders", headers: oauth });
+      expect(list.statusCode).toBe(200);
+      const version = list.json().folders[0].projectPageVersion;
+      expect(version).toBe(5);
+
+      const mutation = (pageVersion: number, starred: boolean) => ({
+        page: { id: "page-1", title: "Page", version: pageVersion, metadata: { starred } },
+        blocks: [], operation: { id: `star-${starred}-${pageVersion}` }, temp_id_mapping: {},
+      });
+      vi.mocked(service.mutatePage).mockResolvedValueOnce(mutation(6, true) as never);
+      const starred = await app.inject({
+        method: "PATCH",
+        url: "/api/pages/page-1/starred",
+        headers: oauth,
+        payload: { starred: true, expected_version: version, idempotency_key: "oauth-star-on" },
+      });
+      expect(starred.statusCode).toBe(200);
+      expect(service.mutatePage).toHaveBeenLastCalledWith(expect.objectContaining({
+        pageId: "page-1",
+        expectedVersion: 5,
+        actor: { actorKind: "user", actorUserId: "app@example.com" },
+        command: { type: "set_page_starred", starred: true },
+      }));
+
+      vi.mocked(service.mutatePage).mockResolvedValueOnce(mutation(7, false) as never);
+      const unstarred = await app.inject({
+        method: "PATCH",
+        url: "/api/pages/page-1/starred",
+        headers: oauth,
+        payload: { starred: false, expected_version: starred.json().page.version, idempotency_key: "oauth-star-off" },
+      });
+      expect(unstarred.statusCode).toBe(200);
+      expect(service.mutatePage).toHaveBeenLastCalledWith(expect.objectContaining({
+        expectedVersion: 6,
+        command: { type: "set_page_starred", starred: false },
+      }));
+
+      vi.mocked(service.mutatePage).mockRejectedValueOnce(new PageMutationVersionConflictError("page-1", 5, 7));
+      const stale = await app.inject({
+        method: "PATCH",
+        url: "/api/pages/page-1/starred",
+        headers: oauth,
+        payload: { starred: true, expected_version: 5, idempotency_key: "oauth-star-stale" },
+      });
+      expect(stale.statusCode).toBe(409);
     } finally {
       await app.close();
     }
