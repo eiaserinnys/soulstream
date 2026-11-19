@@ -1,7 +1,7 @@
 import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type {
-  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeAccountTurnSwitchRequest,
   ClaudeRunOptions,
 } from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
@@ -17,8 +17,9 @@ import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import {
+  ClaudeSdkPersistentAccountSwitchStore,
   handleClaudeSdkPersistentRateLimitTermination,
-  observeClaudeSdkPersistentAccountSwitch,
+  observeClaudeSdkPersistentAccountSwitches,
 } from "./claude_sdk_persistent_rate_limit_event.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkPersistentTurnTimers } from "./claude_sdk_persistent_turn_timers.js";
@@ -75,10 +76,11 @@ export class ClaudeSdkPersistentSession {
   private readonly exactResultCache = new ClaudeExactResultCache();
   private usageCarry: ClaudeSdkUsageCarry;
   private readonly accountRateLimitSwitchEnabled: boolean;
+  private readonly accountAuthFailureSwitchEnabled: boolean;
   private readonly nativeNotificationTracker: ClaudePendingNativeNotificationTracker;
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
-  private accountRateLimitSwitch: ClaudeAccountRateLimitSwitchRequest | null = null;
+  private readonly accountSwitches = new ClaudeSdkPersistentAccountSwitchStore();
   private closeReasonValue: ClaudeRuntimeCloseReason | null = null;
   constructor(config: ClaudeSdkPersistentSessionConfig) {
     this.eventMapper = config.eventMapper;
@@ -86,6 +88,7 @@ export class ClaudeSdkPersistentSession {
     this.detachedEventSink = config.detachedEventSink;
     this.runtimeEventSink = config.runtimeEventSink;
     this.accountRateLimitSwitchEnabled = config.accountRateLimitSwitchEnabled === true;
+    this.accountAuthFailureSwitchEnabled = config.accountAuthFailureSwitchEnabled === true;
     this.usageCarry = config.usageCarry ?? new ClaudeSdkUsageCarry();
     this.logger = config.logger;
     this.nativeNotificationTracker = new ClaudePendingNativeNotificationTracker({
@@ -159,10 +162,8 @@ export class ClaudeSdkPersistentSession {
     return this.runtime.query as ClaudeSdkQuery;
   }
 
-  takeAccountRateLimitSwitch(): ClaudeAccountRateLimitSwitchRequest | null {
-    const result = this.accountRateLimitSwitch;
-    this.accountRateLimitSwitch = null;
-    return result;
+  takeAccountSwitch(): ClaudeAccountTurnSwitchRequest | null {
+    return this.accountSwitches.take();
   }
 
   closeReason(): ClaudeRuntimeCloseReason | null {
@@ -271,7 +272,7 @@ export class ClaudeSdkPersistentSession {
   private async handleResult(
     message: Record<string, unknown>, foreignTurnEndedBeforeOwn: boolean,
   ): Promise<void> {
-    if (this.accountRateLimitSwitch) {
+    if (this.accountSwitches.hasPending()) {
       this.usageCarry.absorb(this.exactResultCache.mapAndRecord(message, this.eventMapper, this.runtime));
       return;
     }
@@ -412,13 +413,14 @@ export class ClaudeSdkPersistentSession {
       return;
     }
     const active = this.activeForeground;
-    if (active && await observeClaudeSdkPersistentAccountSwitch({
+    if (active && await observeClaudeSdkPersistentAccountSwitches({
       active,
       event,
-      accountSwitchEnabled: this.accountRateLimitSwitchEnabled,
+      rateLimitSwitchEnabled: this.accountRateLimitSwitchEnabled,
+      authFailureSwitchEnabled: this.accountAuthFailureSwitchEnabled,
       bypassSwitchGate: bypassRateLimitGate,
       runtime: this.runtime,
-      setAccountSwitch: (request) => { this.accountRateLimitSwitch = request; },
+      switches: this.accountSwitches,
       close: async (reason) => await this.close(reason),
     })) return;
     const runtimeEventAccepted =

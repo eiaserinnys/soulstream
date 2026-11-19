@@ -38,10 +38,11 @@ const commandDefs = [
   ["ClaudeAuthLoginStatus", "claude_auth_login_status", ["type", "login_id"], "ClaudeAuthLoginFlow"],
   ["ClaudeAuthLoginSubmitCode", "claude_auth_login_submit_code", ["type", "login_id", "code"], "ClaudeAuthLoginFlow"],
   ["ClaudeAuthLoginCancel", "claude_auth_login_cancel", ["type", "login_id"], "ClaudeAuthLoginFlow"],
+  ["ClaudeCentralPoolSync", "claude_central_pool_sync", ["type", "revision", "receive", "accounts"], "ClaudeCentralPoolSyncResult"],
 ] as const;
 
 describe("Claude account pool wire contract", () => {
-  it("keeps all seven commands in the schema, generated type inventory, and root union", () => {
+  it("keeps all eight commands in the schema, generated type inventory, and root union", () => {
     const expectedTypes = commandDefs.map(([, type]) => type);
     const rootRefs = schema.oneOf.map(({ $ref }) => $ref);
 
@@ -72,7 +73,7 @@ describe("Claude account pool wire contract", () => {
     ]);
     expect(Object.keys(account.properties ?? {}).sort()).toEqual([
       "active_sessions", "auth_state", "blocked", "email", "enabled", "id",
-      "login_expires_at", "observed_at", "plan", "priority", "usage",
+      "login_expires_at", "observed_at", "plan", "priority", "source", "usage",
     ]);
     expect(account.properties?.login_expires_at?.format).toBe("date-time");
     expect(account.required ?? []).not.toContain("login_expires_at");

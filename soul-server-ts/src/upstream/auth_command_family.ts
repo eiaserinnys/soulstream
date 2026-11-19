@@ -37,6 +37,7 @@ export function createAuthCommandFamily(
     claude_auth_login_status: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_login_submit_code: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_login_cancel: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_central_pool_sync: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     provider_usage_get: (cmd) =>
       handleProviderUsage(deps, cmd as ProviderUsageCommand),
   };

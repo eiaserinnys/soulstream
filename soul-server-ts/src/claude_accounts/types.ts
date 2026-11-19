@@ -2,6 +2,31 @@ export type ClaudeAccountAuthState = "ok" | "idle" | "logging_in" | "needs_relog
 
 export type ClaudeAccountScope = "all" | "fable";
 
+/** 이 노드가 계정을 어디서 얻었는지. 중앙 풀 스냅샷은 central, 노드 로컬 파일은 local. */
+export type ClaudeAccountSource = "central" | "local";
+
+/** 오케스트레이터가 내려주는 중앙 풀 계정 한 건(노드 통신 계약). */
+export interface ClaudeCentralPoolAccount {
+  id: string;
+  email: string;
+  plan: string | null;
+  enabled: boolean;
+  priority: number;
+  auth_state: "ok" | "needs_relogin";
+  relogin_reason: string | null;
+  access_token: string | null;
+  expires_at: string | null;
+  usage_raw: Record<string, unknown> | null;
+  usage_fetched_at: string | null;
+}
+
+/** `claude_central_pool_sync` 명령의 payload. */
+export interface ClaudeCentralPoolSyncPayload {
+  revision: number;
+  receive: boolean;
+  accounts: ClaudeCentralPoolAccount[];
+}
+
 export interface ClaudeUsageWindow {
   used_percent: number;
   resets_at: string | null;
@@ -34,6 +59,8 @@ export interface ClaudeAccountView {
   enabled: boolean;
   priority: number | null;
   auth_state: ClaudeAccountAuthState;
+  /** 이 노드가 계정을 얻은 곳. provider_usage_get의 accounts[]에 그대로 실린다. */
+  source: ClaudeAccountSource;
   /** 로그인 중인 계정에만 있는 진행 중 흐름의 만료 시각(ISO 8601). */
   login_expires_at: string | null;
   active_sessions: number;
@@ -104,11 +131,19 @@ export interface ClaudeBlocksJsonFile {
   blocks: Record<string, ClaudeAccountBlocksRecord>;
 }
 
+/** 같은 턴에서 이미 시도한 중앙 계정 자격. 계정 id와 토큰 지문으로 가른다. */
+export interface ClaudeExcludedCredential {
+  account_id: string;
+  token_fingerprint: string;
+}
+
 export interface ClaudeAccountSelectionInput {
   session_id: string;
   turn_id: string;
   model: string;
   exclude_ids?: string[];
+  /** 중앙 계정 후보에서 뺄 (계정 id, 토큰 지문) 쌍. 로컬 계정에는 쓰지 않는다. */
+  exclude_credentials?: ClaudeExcludedCredential[];
 }
 
 /** restricted(격리) 선택 옵션. 러너 요청 필드가 아니라 호스트 내부에서만 쓴다. */
@@ -119,6 +154,8 @@ export interface ClaudeAccountSelectionOptions {
 export interface ClaudeAccountSelectionResult {
   account_id: string;
   config_dir: string;
+  /** 중앙 계정을 골랐을 때만 붙는다. 없으면 노드 로컬 계정이다. */
+  source?: ClaudeAccountSource;
   /** Accounts still assignable for this model after `exclude_ids` is applied. */
   available_count: number;
 }
@@ -161,6 +198,8 @@ export interface ClaudeAccountAuthFailureInput {
   account_id: string;
   session_id: string;
   observed_at: string;
+  /** 중앙 계정에서 실패한 토큰의 sha256 지문. 없으면 지금 받은 토큰으로 계산한다. */
+  token_fingerprint?: string;
 }
 
 export interface ClaudeAccountReleaseInput {

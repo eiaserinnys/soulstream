@@ -7,7 +7,7 @@ import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type {
-  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeAccountTurnSwitchRequest,
   ClaudeClient,
   ClaudeRunOptions,
 } from "./claude_adapter.js";
@@ -173,7 +173,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     options: ClaudeRunOptions,
     signal: AbortSignal,
     usageCarry?: ClaudeSdkUsageCarry,
-  ): AsyncGenerator<ClaudeClientEvent, ClaudeAccountRateLimitSwitchRequest | null, void> {
+  ): AsyncGenerator<ClaudeClientEvent, ClaudeAccountTurnSwitchRequest | null, void> {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
@@ -345,6 +345,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         detachedEventSink: this.detachedEventSink,
         runtimeEventSink: this.runtimeEventSink,
         accountRateLimitSwitchEnabled: options.onAccountRateLimit !== undefined,
+        accountAuthFailureSwitchEnabled:
+          options.onAccountAuthenticationFailure !== undefined,
         ...(usageCarry ? { usageCarry } : {}),
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,

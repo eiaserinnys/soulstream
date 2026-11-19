@@ -20,6 +20,13 @@ import { resolveRestrictedAccessToken } from "./restricted_credentials.js";
 import { IsolationAuthUnavailableError } from "../runner/session_filesystem_errors.js";
 import { ClaudeAccountStore } from "./store.js";
 import { ClaudeAccountSessionActivity } from "./session_activity.js";
+import {
+  CENTRAL_AUTH_EXCLUSION_MS,
+  centralAccountUsage,
+  centralTokenFingerprint,
+  isCentralAccountFresh,
+  normalizeCentralPoolSyncPayload,
+} from "./central_pool.js";
 import type {
   ClaudeAccountAuthState,
   ClaudeAccountBlocksRecord,
@@ -34,9 +41,11 @@ import type {
   ClaudeAccountSelectionInput,
   ClaudeAccountSelectionOptions,
   ClaudeAccountSelectionResponse,
+  ClaudeAccountSelectionResult,
   ClaudeAccountSelectionWithCredential,
   ClaudeAccountUpdatePatch,
   ClaudeAccountView,
+  ClaudeCentralPoolAccount,
   ClaudeLoginAccountPort,
 } from "./types.js";
 import {
@@ -69,6 +78,14 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   private readonly loggingInExpiresAt = new Map<string, string>();
   private readonly logger: Logger | undefined;
   private readonly pendingRetireAccountIds = new Set<string>();
+  /** 오케스트레이터가 마지막으로 적용한 중앙 풀 스냅샷(메모리 정본). */
+  private centralRevision = 0;
+  private centralAccounts: ClaudeCentralPoolAccount[] = [];
+  /** 이 노드에서 실패한 (중앙 계정, 토큰 지문)을 잠시 후보에서 빼 두는 기억. */
+  private readonly centralExclusions = new Map<
+    string,
+    { fingerprint: string; untilMs: number }
+  >();
 
   constructor(options: ClaudeAccountServiceOptions) {
     this.now = options.now ?? (() => Date.now());
@@ -88,9 +105,124 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       credentialRenewer: options.credentialRenewer,
       onAuthOutcome: (accountId, outcome) => this.applyAuthOutcome(accountId, outcome),
     });
+    this.loadCentralSnapshot();
+  }
+
+  private loadCentralSnapshot(): void {
+    try {
+      const snapshot = this.store.readCentralSnapshot();
+      if (!snapshot) return;
+      const normalized = normalizeCentralPoolSyncPayload(snapshot);
+      this.centralRevision = normalized.revision;
+      this.centralAccounts = normalized.receive ? normalized.accounts : [];
+    } catch (err) {
+      this.logger?.warn({ err }, "Ignoring invalid central Claude pool snapshot on startup");
+      this.centralRevision = 0;
+      this.centralAccounts = [];
+    }
+  }
+
+  /**
+   * `claude_central_pool_sync` 적용. revision이 가진 것보다 작으면 버린다.
+   * receive false이거나 accounts가 비면 중앙 계정을 모두 내린다.
+   */
+  applyCentralPoolSync(raw: unknown): { revision: number } {
+    const payload = normalizeCentralPoolSyncPayload(raw);
+    if (payload.revision < this.centralRevision) {
+      return { revision: this.centralRevision };
+    }
+    this.centralRevision = payload.revision;
+    this.centralAccounts = payload.receive ? payload.accounts : [];
+    this.store.writeCentralSnapshot({
+      revision: payload.revision,
+      receive: payload.receive,
+      accounts: this.centralAccounts,
+    });
+    const present = new Set(this.centralAccounts.map((account) => account.id));
+    for (const accountId of [...this.centralExclusions.keys()]) {
+      if (!present.has(accountId)) this.centralExclusions.delete(accountId);
+    }
+    this.logger?.info(
+      {
+        revision: payload.revision,
+        receive: payload.receive,
+        accounts: this.centralAccounts.length,
+      },
+      "Applied central Claude account pool snapshot",
+    );
+    return { revision: payload.revision };
+  }
+
+  private findCentralAccount(accountId: string): ClaudeCentralPoolAccount | undefined {
+    return this.centralAccounts.find((account) => account.id === accountId);
+  }
+
+  private isCentralExcluded(account: ClaudeCentralPoolAccount, nowMs: number): boolean {
+    const exclusion = this.centralExclusions.get(account.id);
+    if (!exclusion) return false;
+    if (exclusion.untilMs <= nowMs) {
+      this.centralExclusions.delete(account.id);
+      return false;
+    }
+    const fingerprint = centralTokenFingerprint(account.access_token);
+    return fingerprint !== null && fingerprint === exclusion.fingerprint;
+  }
+
+  /** 중앙 계정 인증 실패를 relogin.json 대신 10분짜리 후보 제외로 기록한다. */
+  private markCentralAuthFailure(accountId: string, tokenFingerprint?: string): void {
+    const account = this.findCentralAccount(accountId);
+    if (!account) return;
+    const fingerprint =
+      tokenFingerprint ?? centralTokenFingerprint(account.access_token);
+    if (!fingerprint) return;
+    this.centralExclusions.set(accountId, {
+      fingerprint,
+      untilMs: this.now() + CENTRAL_AUTH_EXCLUSION_MS,
+    });
+    this.logger?.warn(
+      { accountId, untilMs: this.now() + CENTRAL_AUTH_EXCLUSION_MS },
+      "Excluded central Claude account token after an authentication failure",
+    );
+  }
+
+  private centralAccountView(
+    account: ClaudeCentralPoolAccount,
+    blocks: Record<string, ClaudeAccountBlocksRecord>,
+    nowMs: number,
+  ): ClaudeAccountView {
+    return {
+      id: account.id,
+      email: account.email,
+      plan: account.plan,
+      enabled: account.enabled,
+      priority: account.priority,
+      auth_state: account.auth_state,
+      login_expires_at: null,
+      active_sessions: this.activeSessions(account.id),
+      blocked: projectPublicBlockView(blocks[account.id], nowMs),
+      stale: account.usage_raw === null,
+      observed_at: account.usage_fetched_at,
+      usage: centralAccountUsage(account),
+      source: "central",
+    };
+  }
+
+  private isCredentialExcluded(
+    account: ClaudeCentralPoolAccount,
+    excludeCredentials: ClaudeAccountSelectionInput["exclude_credentials"],
+  ): boolean {
+    if (!excludeCredentials || excludeCredentials.length === 0) return false;
+    const fingerprint = centralTokenFingerprint(account.access_token);
+    if (!fingerprint) return false;
+    return excludeCredentials.some(
+      (entry) =>
+        entry.account_id === account.id && entry.token_fingerprint === fingerprint,
+    );
   }
 
   private applyAuthOutcome(accountId: string, outcome: ClaudeAccountAuthOutcome): void {
+    // 중앙 계정은 이 노드가 자격을 갱신하지 않는다. relogin도 남기지 않는다.
+    if (this.findCentralAccount(accountId)) return;
     if (outcome === "renew_failed") this.markNeedsRelogin(accountId, "renewal_failed");
     else if (outcome === "rejected") this.markNeedsRelogin(accountId, "usage_rejected");
     else this.clearNeedsRelogin(accountId);
@@ -98,6 +230,8 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   /** 이미 기록이 있으면 첫 관측을 유지한다. */
   markNeedsRelogin(accountId: string, reason: ClaudeAccountReloginReason): void {
+    // 중앙 계정의 인증 상태는 오케스트레이터가 관리한다.
+    if (this.findCentralAccount(accountId)) return;
     const relogin = this.store.readRelogin();
     if (accountId in relogin) return;
     relogin[accountId] = {
@@ -117,6 +251,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   }
 
   async reportAuthFailure(input: ClaudeAccountAuthFailureInput): Promise<void> {
+    if (this.findCentralAccount(input.account_id)) {
+      // 중앙 계정은 relogin.json 대신 (계정, 토큰 지문)을 잠시 후보에서 뺀다.
+      this.markCentralAuthFailure(input.account_id, input.token_fingerprint);
+      return;
+    }
     if (!this.store.readAccounts().some((acc) => acc.id === input.account_id)) return;
     this.markNeedsRelogin(input.account_id, "session_auth_failed");
   }
@@ -233,22 +372,48 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const blocks = this.store.readBlocks();
     const relogin = this.store.readRelogin();
 
-    const candidates: SelectableAccountCandidate[] = accounts.map((acc) => {
-      const obs = this.usageCollector.getCachedObservation(
-        acc.id,
-        this.store.profileDir(acc.id),
-      );
-      return {
-        id: acc.id,
-        enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
-        priority: acc.priority,
-        auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin),
-        active_sessions: this.activeSessions(acc.id),
-        stale: obs.stale,
-        usage: obs.usage,
-        blocks: blocks[acc.id],
-      };
-    });
+    // 중앙 스냅샷에 같은 id가 있으면 그 로컬 계정은 가린다(파일은 지우지 않는다).
+    const centralById = new Map(
+      this.centralAccounts.map((account) => [account.id, account]),
+    );
+    const candidates: SelectableAccountCandidate[] = accounts
+      .filter((acc) => !centralById.has(acc.id))
+      .map((acc) => {
+        const obs = this.usageCollector.getCachedObservation(
+          acc.id,
+          this.store.profileDir(acc.id),
+        );
+        return {
+          id: acc.id,
+          enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
+          priority: acc.priority,
+          auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin),
+          active_sessions: this.activeSessions(acc.id),
+          stale: obs.stale,
+          usage: obs.usage,
+          blocks: blocks[acc.id],
+        };
+      });
+
+    // 중앙 후보: 켜져 있고, 인증 ok이며, 10분 넘게 살아 있는 토큰을 가진 계정만.
+    // 이 노드에서 실패한 (계정, 토큰 지문)은 잠시 뺀다.
+    const centralTokens = new Map<string, string>();
+    for (const centralAccount of this.centralAccounts) {
+      if (!isCentralAccountFresh(centralAccount, nowMs)) continue;
+      if (this.isCentralExcluded(centralAccount, nowMs)) continue;
+      if (this.isCredentialExcluded(centralAccount, input.exclude_credentials)) continue;
+      centralTokens.set(centralAccount.id, centralAccount.access_token!);
+      candidates.push({
+        id: centralAccount.id,
+        enabled: true,
+        priority: centralAccount.priority,
+        auth_state: "ok",
+        active_sessions: this.activeSessions(centralAccount.id),
+        stale: centralAccount.usage_raw === null,
+        usage: centralAccountUsage(centralAccount),
+        blocks: blocks[centralAccount.id],
+      });
+    }
 
     const existingBinding = bindings[input.session_id];
     const boundAccountId =
@@ -271,6 +436,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       });
       const tokens = new Map<string, string>();
       for (const candidate of credentialEligible) {
+        const centralToken = centralTokens.get(candidate.id);
+        if (centralToken) {
+          tokens.set(candidate.id, centralToken);
+          continue;
+        }
         const token = await resolveRestrictedAccessToken({
           accountId: candidate.id,
           profileDir: this.store.profileDir(candidate.id),
@@ -326,7 +496,12 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       };
     }
 
-    this.store.ensureProfileSymlinks(chosen.id);
+    const chosenCentral = centralById.get(chosen.id);
+    if (chosenCentral) {
+      this.store.ensureCentralProfileSymlinks(chosen.id);
+    } else {
+      this.store.ensureProfileSymlinks(chosen.id);
+    }
     this.sessionActivity.assign(input.session_id, chosen.id, input.turn_id);
     if (previousActiveAccountId && previousActiveAccountId !== chosen.id) {
       this.maybeFinalizeDeferredRetire(previousActiveAccountId);
@@ -343,11 +518,25 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.store.writeBindings(bindings);
     }
 
-    const result = {
+    const result: ClaudeAccountSelectionResult = {
       account_id: chosen.id,
-      config_dir: this.store.profileDir(chosen.id),
+      config_dir: chosenCentral
+        ? this.store.centralProfileDir(chosen.id)
+        : this.store.profileDir(chosen.id),
+      // 로컬 계정의 결과 모양은 예전과 똑같이 둔다(중앙일 때만 표시).
+      ...(chosenCentral ? { source: "central" as const } : {}),
       available_count: availableCount,
     };
+    if (chosenCentral) {
+      // 중앙 토큰은 매 턴 선택 응답으로 내려준다(전체 세션 포함).
+      return {
+        ...result,
+        credential: {
+          kind: "access-token",
+          access_token: centralTokens.get(chosen.id)!,
+        },
+      };
+    }
     if (!accessTokens) return result;
     // 선택 후보는 토큰 맵을 통과한 계정뿐이므로 고른 계정의 토큰은 항상 있다.
     return {
@@ -390,7 +579,12 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     session_id: string;
     account_id: string;
   }): Promise<void> {
-    this.sessionActivity.restoreActiveBinding(input, this.store);
+    const central = this.findCentralAccount(input.account_id);
+    this.sessionActivity.restoreActiveBinding(
+      input,
+      this.store,
+      central ? this.store.centralProfileDir(input.account_id) : null,
+    );
   }
 
   async updateAccount(
@@ -519,9 +713,13 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const nowMs = this.now();
     const accounts = this.store.readAccounts();
     const blocks = this.store.readBlocks();
+    const centralIds = new Set(this.centralAccounts.map((account) => account.id));
+
+    // 중앙 계정과 같은 id의 로컬 계정은 가린다. 조회와 갱신도 하지 않는다.
+    const visibleLocalAccounts = accounts.filter((acc) => !centralIds.has(acc.id));
 
     // needs_relogin 계정도 계속 조회한다. 다음 사용량 조회가 성공해야 선택에 돌아온다.
-    const pollTargets = accounts
+    const pollTargets = visibleLocalAccounts
       .filter((acc) => !this.loggingInExpiresAt.has(acc.id))
       .map((acc) => ({
         accountId: acc.id,
@@ -536,7 +734,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
     // 조회 중 콜백이 기록을 바꿨을 수 있으므로 조회 뒤에 읽는다.
     const relogin = this.store.readRelogin();
-    const accountViews: ClaudeAccountView[] = accounts.map((acc) => {
+    const accountViews: ClaudeAccountView[] = visibleLocalAccounts.map((acc) => {
       const obs =
         observations.get(acc.id) ??
         this.usageCollector.getCachedObservation(
@@ -557,8 +755,12 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         stale: obs.stale,
         observed_at: obs.observed_at,
         usage: obs.usage,
+        source: "local",
       };
     });
+    for (const centralAccount of this.centralAccounts) {
+      accountViews.push(this.centralAccountView(centralAccount, blocks, nowMs));
+    }
 
     const pool = computePoolSummary(accountViews, blocks, "all", nowMs);
     const fable_pool = computePoolSummary(accountViews, blocks, "fable", nowMs);

@@ -10,6 +10,7 @@ import type {
   ClaudeAuthLoginStart,
   ClaudeAuthLoginStatus,
   ClaudeAuthLoginSubmitCode,
+  ClaudeCentralPoolSync,
 } from "@soulstream/wire-schema";
 import type {
   ClaudeAuthApiResponse,
@@ -53,11 +54,14 @@ type ClaudeAuthLoginSubmitCodeCmd = CommandLike &
   Pick<ClaudeAuthLoginSubmitCode, "type" | "requestId" | "login_id" | "code">;
 type ClaudeAuthLoginCancelCmd = CommandLike &
   Pick<ClaudeAuthLoginCancel, "type" | "requestId" | "login_id">;
+type ClaudeCentralPoolSyncCmd = CommandLike &
+  Pick<ClaudeCentralPoolSync, "type" | "requestId" | "revision" | "receive" | "accounts">;
 
 type ClaudeAuthAccountCommand =
   | ClaudeAuthAccountsListCmd
   | ClaudeAuthAccountUpdateCmd
   | ClaudeAuthAccountDeleteCmd
+  | ClaudeCentralPoolSyncCmd
   | ClaudeAuthLoginStartCmd
   | ClaudeAuthLoginStatusCmd
   | ClaudeAuthLoginSubmitCodeCmd
@@ -82,7 +86,8 @@ export type ClaudeAuthCommandResponse =
   | ClaudeAuthLoginStart
   | ClaudeAuthLoginStatus
   | ClaudeAuthLoginSubmitCode
-  | ClaudeAuthLoginCancel;
+  | ClaudeAuthLoginCancel
+  | ClaudeCentralPoolSync;
 
 export class ClaudeAuthCommandError extends Error {
   readonly code: string | undefined;
@@ -96,7 +101,7 @@ export class ClaudeAuthCommandError extends Error {
 
 export type ClaudeAccountsCommandHandler = Pick<
   ClaudeAccountService,
-  "getAccountList" | "updateAccount" | "deleteAccount"
+  "getAccountList" | "updateAccount" | "deleteAccount" | "applyCentralPoolSync"
 >;
 
 export type ClaudeLoginCommandHandler = Pick<
@@ -112,6 +117,7 @@ function toWireClaudeAccount(account: ClaudeAccountView): ClaudeAccount {
     enabled: account.enabled,
     priority: account.priority,
     auth_state: account.auth_state,
+    source: account.source,
     ...(account.login_expires_at !== null ? { login_expires_at: account.login_expires_at } : {}),
     usage: account.usage,
     observed_at: account.observed_at,
@@ -242,7 +248,8 @@ export class ClaudeAuthCommands {
     cmd:
       | ClaudeAuthAccountsListCmd
       | ClaudeAuthAccountUpdateCmd
-      | ClaudeAuthAccountDeleteCmd,
+      | ClaudeAuthAccountDeleteCmd
+      | ClaudeCentralPoolSyncCmd,
     requestId: string,
   ): Promise<ClaudeAuthCommandResponse> {
     if (!this.deps.claudeAccounts) {
@@ -320,6 +327,31 @@ export class ClaudeAuthCommands {
           };
         }
       }
+      case "claude_central_pool_sync": {
+        try {
+          const applied = accountsService.applyCentralPoolSync({
+            revision: cmd.revision,
+            receive: cmd.receive,
+            accounts: cmd.accounts,
+          });
+          return {
+            type: "claude_central_pool_sync",
+            requestId,
+            success: true,
+            data: { ok: true, revision: applied.revision },
+          };
+        } catch (err) {
+          return {
+            type: "claude_central_pool_sync",
+            requestId,
+            success: false,
+            error: {
+              code: "INVALID_CENTRAL_POOL_SYNC",
+              message: err instanceof Error ? err.message : String(err),
+            },
+          };
+        }
+      }
     }
   }
 
@@ -347,11 +379,13 @@ function isClaudeAuthAccountPoolCommand(
 ): cmd is
   | ClaudeAuthAccountsListCmd
   | ClaudeAuthAccountUpdateCmd
-  | ClaudeAuthAccountDeleteCmd {
+  | ClaudeAuthAccountDeleteCmd
+  | ClaudeCentralPoolSyncCmd {
   return (
     cmd.type === "claude_auth_accounts_list" ||
     cmd.type === "claude_auth_account_update" ||
-    cmd.type === "claude_auth_account_delete"
+    cmd.type === "claude_auth_account_delete" ||
+    cmd.type === "claude_central_pool_sync"
   );
 }
 

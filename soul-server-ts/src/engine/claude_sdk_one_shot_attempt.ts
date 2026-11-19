@@ -8,7 +8,7 @@ import type {
 import type { Logger } from "pino";
 
 import type {
-  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeAccountTurnSwitchRequest,
   ClaudeRunOptions,
 } from "./claude_adapter.js";
 import type { ClaudeSdkQueryFn } from "./claude_sdk_client.js";
@@ -50,7 +50,7 @@ export async function* runClaudeSdkOneShotAttempt(
   options: ClaudeRunOptions,
   signal: AbortSignal,
   usageCarry?: ClaudeSdkUsageCarry,
-): AsyncGenerator<ClaudeClientEvent, ClaudeAccountRateLimitSwitchRequest | null, void> {
+): AsyncGenerator<ClaudeClientEvent, ClaudeAccountTurnSwitchRequest | null, void> {
   const output = createEventQueue<ClaudeClientEvent>();
   const input = createEventQueue<SDKUserMessage>();
   const inputUuid = options.inputUuid ?? (options.onAccountRateLimit ? randomUUID() : undefined);
@@ -126,7 +126,7 @@ export async function* runClaudeSdkOneShotAttempt(
   const rateLimitGate = options.onAccountRateLimit
     ? new ClaudeSdkRateLimitSwitchGate()
     : null;
-  let switchRequest: ClaudeAccountRateLimitSwitchRequest | null = null;
+  let switchRequest: ClaudeAccountTurnSwitchRequest | null = null;
   let closeReason: ClaudeRuntimeCloseReason | undefined;
   let observedSessionId = options.resumeSessionId;
   let terminalBatch: ClaudeClientEvent[] | null = null;
@@ -173,18 +173,41 @@ export async function* runClaudeSdkOneShotAttempt(
             terminalBatch = null;
           }
           switchRequest = {
-            info: observation.info,
-            ...(observedSessionId ? { sessionId: observedSessionId } : {}),
-            inputUuid: inputUuid ?? randomUUID(),
-            // The SDK writes consumed prompts immediately. Once pulled, transport delivery
-            // is ambiguous because the SDK write may still be pending.
-            inputDelivery: inputConsumed ? "ambiguous" : "not_sent",
+            kind: "rate_limit",
+            request: {
+              info: observation.info,
+              ...(observedSessionId ? { sessionId: observedSessionId } : {}),
+              inputUuid: inputUuid ?? randomUUID(),
+              // The SDK writes consumed prompts immediately. Once pulled, transport delivery
+              // is ambiguous because the SDK write may still be pending.
+              inputDelivery: inputConsumed ? "ambiguous" : "not_sent",
+            },
           };
           closeReason = "account_switch";
           context.closeActiveInput(input);
           query.close();
           continue;
         }
+      }
+      if (
+        options.onAccountAuthenticationFailure
+        && event.type === "assistant_error"
+        && event.errorType === "authentication_failed"
+      ) {
+        // 중앙 계정의 인증 실패는 계정 한도 전환과 같은 경로로 붙잡는다.
+        switchRequest = {
+          kind: "authentication_failed",
+          request: {
+            events: [event],
+            ...(observedSessionId ? { sessionId: observedSessionId } : {}),
+            inputUuid: inputUuid ?? randomUUID(),
+            inputDelivery: inputConsumed ? "ambiguous" : "not_sent",
+          },
+        };
+        closeReason = "account_switch";
+        context.closeActiveInput(input);
+        query.close();
+        continue;
       }
       for (const visible of takeOutput(event)) yield visible;
     }

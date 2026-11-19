@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 197개 $defs (top-level wire 94 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 200개 $defs (top-level wire 95 + supporting/SSE 105). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -51,6 +51,7 @@
     "claude_auth_login_status",
     "claude_auth_login_submit_code",
     "claude_auth_login_cancel",
+    "claude_central_pool_sync",
     "provider_usage_get",
     "reflect_brief",
     "plan_agent_profile_update",
@@ -2462,11 +2463,16 @@
       "description": "비밀값을 포함하지 않는 Claude 계정 메타데이터.",
       "required": [
         "id", "email", "plan", "enabled", "priority", "auth_state",
-        "usage", "observed_at", "blocked", "active_sessions"
+        "usage", "observed_at", "blocked", "active_sessions", "source"
       ],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "format": "uuid" },
+        "source": {
+          "type": "string",
+          "enum": ["central", "local"],
+          "description": "이 노드가 계정을 어디서 얻었는지. 중앙 풀 계정은 central, 노드 로컬 계정은 local."
+        },
         "email": { "type": "string" },
         "plan": { "type": ["string", "null"] },
         "enabled": { "type": "boolean" },
@@ -2703,6 +2709,56 @@
         "success": { "type": "boolean", "description": "응답에만 존재." },
         "data": { "$ref": "#/$defs/ClaudeAuthLoginFlow" },
         "error": { "$ref": "#/$defs/ClaudeAuthError" }
+      }
+    },
+    "ClaudeCentralPoolAccount": {
+      "type": "object",
+      "description": "오케스트레이터가 내려주는 중앙 풀 계정 한 건. 접근 토큰은 needs_relogin이거나 enabled false면 null.",
+      "required": [
+        "id", "email", "plan", "enabled", "priority", "auth_state",
+        "relogin_reason", "access_token", "expires_at", "usage_raw", "usage_fetched_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "email": { "type": "string" },
+        "plan": { "type": ["string", "null"] },
+        "enabled": { "type": "boolean" },
+        "priority": { "type": "number" },
+        "auth_state": { "type": "string", "enum": ["ok", "needs_relogin"] },
+        "relogin_reason": { "type": ["string", "null"] },
+        "access_token": { "type": ["string", "null"] },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "usage_raw": { "type": ["object", "null"], "additionalProperties": true },
+        "usage_fetched_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "ClaudeCentralPoolSync": {
+      "type": "object",
+      "description": "orch→노드: 중앙 Claude 계정 풀 스냅샷 동기화. revision이 노드가 가진 것보다 작으면 버린다.",
+      "required": ["type", "revision", "receive", "accounts"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_central_pool_sync" },
+        "requestId": { "type": "string" },
+        "revision": { "type": "number" },
+        "receive": { "type": "boolean" },
+        "accounts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ClaudeCentralPoolAccount" }
+        },
+        "success": { "type": "boolean", "description": "응답에만 존재." },
+        "data": { "$ref": "#/$defs/ClaudeCentralPoolSyncResult" },
+        "error": { "$ref": "#/$defs/ClaudeAuthError" }
+      }
+    },
+    "ClaudeCentralPoolSyncResult": {
+      "type": "object",
+      "required": ["ok", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": { "type": "boolean", "const": true },
+        "revision": { "type": "number", "description": "노드가 실제로 적용한 revision." }
       }
     },
     "ClaudeRuntimeListTasks": {
@@ -4431,6 +4487,7 @@
     { "$ref": "#/$defs/ClaudeAuthLoginStatus" },
     { "$ref": "#/$defs/ClaudeAuthLoginSubmitCode" },
     { "$ref": "#/$defs/ClaudeAuthLoginCancel" },
+    { "$ref": "#/$defs/ClaudeCentralPoolSync" },
     { "$ref": "#/$defs/ClaudeRuntimeListTasks" },
     { "$ref": "#/$defs/ClaudeRuntimeTaskOutput" },
     { "$ref": "#/$defs/ClaudeRuntimeStopTask" },

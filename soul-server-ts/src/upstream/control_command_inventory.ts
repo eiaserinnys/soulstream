@@ -74,6 +74,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("claude_auth_login_status", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_login_submit_code", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_login_cancel", "auth/provider-usage", "bounded_result"),
+  entry("claude_central_pool_sync", "auth/provider-usage", "bounded_result"),
   entry("provider_usage_get", "auth/provider-usage", "bounded_result"),
   entry("reflect_brief", "reflection", "bounded_result"),
   entry("plan_agent_profile_update", "agent-config", "bounded_result"),

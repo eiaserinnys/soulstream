@@ -1,5 +1,5 @@
 import type {
-  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeAccountTurnSwitchRequest,
   ClaudeRunOptions,
 } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
@@ -11,7 +11,7 @@ export type ClaudeSdkAccountTurnAttempt = (
   options: ClaudeRunOptions,
   signal: AbortSignal,
   usageCarry?: ClaudeSdkUsageCarry,
-) => AsyncGenerator<ClaudeClientEvent, ClaudeAccountRateLimitSwitchRequest | null, void>;
+) => AsyncGenerator<ClaudeClientEvent, ClaudeAccountTurnSwitchRequest | null, void>;
 
 export class ClaudeSdkAccountTurnDriver {
   async *runPersistentAttempt(
@@ -25,7 +25,7 @@ export class ClaudeSdkAccountTurnDriver {
       onSession: (session: ClaudeSdkPersistentSession) => void,
     ) => AsyncIterable<ClaudeClientEvent>,
     settle: () => Promise<void>,
-  ): AsyncGenerator<ClaudeClientEvent, ClaudeAccountRateLimitSwitchRequest | null, void> {
+  ): AsyncGenerator<ClaudeClientEvent, ClaudeAccountTurnSwitchRequest | null, void> {
     const sessionRef: { current: ClaudeSdkPersistentSession | null } = { current: null };
     try {
       for await (const event of runTurn(
@@ -45,7 +45,7 @@ export class ClaudeSdkAccountTurnDriver {
         await settle();
       }
     }
-    return sessionRef.current?.takeAccountRateLimitSwitch() ?? null;
+    return sessionRef.current?.takeAccountSwitch() ?? null;
   }
 
   async *run(
@@ -54,8 +54,10 @@ export class ClaudeSdkAccountTurnDriver {
     attempt: ClaudeSdkAccountTurnAttempt,
     shouldStop: () => boolean,
   ): AsyncIterable<ClaudeClientEvent> {
-    const usageCarry = options.onAccountRateLimit ? new ClaudeSdkUsageCarry() : undefined;
-    if (!options.onAccountRateLimit) {
+    const switchEnabled = options.onAccountRateLimit !== undefined
+      || options.onAccountAuthenticationFailure !== undefined;
+    const usageCarry = switchEnabled ? new ClaudeSdkUsageCarry() : undefined;
+    if (!switchEnabled) {
       yield* attempt(options, signal, undefined);
       return;
     }
@@ -64,24 +66,53 @@ export class ClaudeSdkAccountTurnDriver {
       for (;;) {
         if (signal.aborted || shouldStop()) return;
         const switchRequest = yield* attempt(attemptOptions, signal, usageCarry);
-        if (!switchRequest || !options.onAccountRateLimit || signal.aborted || shouldStop()) return;
+        if (!switchRequest || signal.aborted || shouldStop()) return;
 
-        const decision = await options.onAccountRateLimit(switchRequest, signal);
-        if (signal.aborted || shouldStop() || decision.kind === "cancelled") return;
-        if (decision.kind === "exhausted") {
-          const rateLimitInfo = { ...switchRequest.info };
-          if (decision.resetsAt !== undefined) {
-            if (decision.resetsAt === null) delete rateLimitInfo.resetsAt;
-            else rateLimitInfo.resetsAt = decision.resetsAt;
+        if (switchRequest.kind === "rate_limit") {
+          if (!attemptOptions.onAccountRateLimit) return;
+          const decision = await attemptOptions.onAccountRateLimit(
+            switchRequest.request,
+            signal,
+          );
+          if (signal.aborted || shouldStop() || decision.kind === "cancelled") return;
+          if (decision.kind === "exhausted") {
+            const rateLimitInfo = { ...switchRequest.request.info };
+            if (decision.resetsAt !== undefined) {
+              if (decision.resetsAt === null) delete rateLimitInfo.resetsAt;
+              else rateLimitInfo.resetsAt = decision.resetsAt;
+            }
+            yield makeStopFailureError({
+              ...rateLimitInfo,
+            });
+            return;
           }
-          yield makeStopFailureError({
-            ...rateLimitInfo,
-          });
+          attemptOptions = { ...attemptOptions, ...decision.options };
+          if (
+            !switchRequest.request.sessionId
+            && switchRequest.request.inputDelivery === "not_sent"
+          ) {
+            attemptOptions.inputUuid = switchRequest.request.inputUuid;
+          }
+          continue;
+        }
+
+        if (!attemptOptions.onAccountAuthenticationFailure) return;
+        const decision = await attemptOptions.onAccountAuthenticationFailure(
+          switchRequest.request,
+          signal,
+        );
+        if (signal.aborted || shouldStop() || decision.kind === "cancelled") return;
+        if (decision.kind === "continue") {
+          // 후보가 없다. 인증 실패 이벤트를 그대로 내보내고 오늘처럼 턴을 끝낸다.
+          for (const event of switchRequest.request.events) yield event;
           return;
         }
         attemptOptions = { ...attemptOptions, ...decision.options };
-        if (!switchRequest.sessionId && switchRequest.inputDelivery === "not_sent") {
-          attemptOptions.inputUuid = switchRequest.inputUuid;
+        if (
+          !switchRequest.request.sessionId
+          && switchRequest.request.inputDelivery === "not_sent"
+        ) {
+          attemptOptions.inputUuid = switchRequest.request.inputUuid;
         }
       }
     } finally {

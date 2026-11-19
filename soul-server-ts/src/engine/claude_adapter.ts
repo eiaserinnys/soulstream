@@ -70,11 +70,14 @@ import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.j
 import { toClaudeSdkEffort } from "./effort_boundary.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import { isFableModel } from "../claude_accounts/selector.js";
+import { centralTokenFingerprint } from "../claude_accounts/central_pool.js";
 import type {
   ClaudeAccountScope,
   ClaudeAccountSelectionExhausted,
   ClaudeAccountSelectionResponse,
   ClaudeAccountSelectionResult,
+  ClaudeAccountSelectionWithCredential,
+  ClaudeExcludedCredential,
 } from "../claude_accounts/types.js";
 
 const ACCOUNT_SWITCH_CONTINUATION_PROMPT =
@@ -91,6 +94,16 @@ function isAccountPoolExhausted(
   selection: ClaudeAccountSelectionResponse,
 ): selection is ClaudeAccountSelectionExhausted {
   return "pool_exhausted" in selection;
+}
+
+function accountCredentialFingerprint(
+  account: ClaudeAccountSelectionResult,
+): ClaudeExcludedCredential | null {
+  const token = (account as ClaudeAccountSelectionWithCredential).credential?.access_token;
+  const tokenFingerprint = centralTokenFingerprint(token);
+  return tokenFingerprint
+    ? { account_id: account.account_id, token_fingerprint: tokenFingerprint }
+    : null;
 }
 
 export {
@@ -155,6 +168,14 @@ export interface ClaudeRunOptions {
     request: ClaudeAccountRateLimitSwitchRequest,
     signal: AbortSignal,
   ) => Promise<ClaudeAccountRateLimitSwitchDecision>;
+  /**
+   * 중앙 계정의 턴 도중 인증 실패를 다음 후보로 넘긴다. 없으면 지금처럼
+   * 인증 실패로 그 턴을 끝낸다(노드 로컬 계정은 늘 그렇다).
+   */
+  onAccountAuthenticationFailure?: (
+    request: ClaudeAccountAuthenticationFailureSwitchRequest,
+    signal: AbortSignal,
+  ) => Promise<ClaudeAccountAuthenticationFailureDecision>;
   /** restricted 러너 격리 설정. 있으면 CLI를 netns 헬퍼로만 띄운다. */
   isolation?: RunnerIsolationChildConfig;
   /** 격리 러너가 CLI 시작 전에 실패했을 때 그 턴을 실패시킨다. */
@@ -174,6 +195,24 @@ export type ClaudeAccountRateLimitSwitchDecision =
   | { kind: "switch"; options: Partial<ClaudeRunOptions> }
   | { kind: "exhausted"; resetsAt?: string | null }
   | { kind: "cancelled" };
+
+export interface ClaudeAccountAuthenticationFailureSwitchRequest {
+  /** 후보가 없을 때 그대로 내보낼 실패 이벤트(계정 전환 시에는 버린다). */
+  events: ClaudeClientEvent[];
+  sessionId?: string;
+  inputUuid: string;
+  inputDelivery: "not_sent" | "ambiguous" | "delivered";
+}
+
+export type ClaudeAccountAuthenticationFailureDecision =
+  | { kind: "switch"; options: Partial<ClaudeRunOptions> }
+  | { kind: "continue" }
+  | { kind: "cancelled" };
+
+/** 한 번의 시도가 남긴 계정 전환 요청(한도 또는 인증 실패). */
+export type ClaudeAccountTurnSwitchRequest =
+  | { kind: "rate_limit"; request: ClaudeAccountRateLimitSwitchRequest }
+  | { kind: "authentication_failed"; request: ClaudeAccountAuthenticationFailureSwitchRequest };
 
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
@@ -361,6 +400,10 @@ export class ClaudeEngineAdapter
     let terminalQuerySettled = false;
     let maxAccountAttempts = 0;
     let attemptedAccountIds = new Set<string>();
+    const attemptedCredentials: ClaudeExcludedCredential[] = [];
+    // 인증 실패는 계정 id가 아니라 (계정, 토큰 지문)으로 가른다. 같은 계정에
+    // 더 새 토큰이 와 있으면 그 토큰으로는 다시 시도할 수 있다.
+    const authFailedAccountIds = new Set<string>();
     let selectedAccount: ClaudeAccountSelectionResult | null = null;
     let accountClient: ClaudeClient | null = null;
 
@@ -442,6 +485,19 @@ export class ClaudeEngineAdapter
           await this.claudeAccountTurnState?.write(turnState);
         }
 
+        const writeAttemptState = async (
+          account: ClaudeAccountSelectionResult,
+          continuation: { uuid: string | null; sent: boolean },
+        ): Promise<void> => {
+          turnState = {
+            turn_id: accountTurnId!,
+            account_id: account.account_id,
+            attempted_ids: [...attemptedAccountIds],
+            continuation_uuid: continuation.uuid,
+            continuation_sent: continuation.sent,
+          };
+          await this.claudeAccountTurnState?.write(turnState);
+        };
         const bindAccountAttempt = (
           account: ClaudeAccountSelectionResult,
           overrides: Partial<ClaudeRunOptions> = {},
@@ -491,14 +547,7 @@ export class ClaudeEngineAdapter
               session_id: sessionId,
             });
             attemptedAccountIds.add(failedAccount.account_id);
-            turnState = {
-              turn_id: accountTurnId!,
-              account_id: failedAccount.account_id,
-              attempted_ids: [...attemptedAccountIds],
-              continuation_uuid: null,
-              continuation_sent: false,
-            };
-            await this.claudeAccountTurnState?.write(turnState);
+            await writeAttemptState(failedAccount, { uuid: null, sent: false });
 
             if (signal.aborted || this.closed) return { kind: "cancelled" };
             if (!request.sessionId && request.inputDelivery !== "not_sent") {
@@ -508,76 +557,122 @@ export class ClaudeEngineAdapter
               };
             }
 
-            const nextAccount = await accountPort.select({
-              session_id: sessionId,
-              turn_id: accountTurnId!,
-              model,
-              exclude_ids: [...attemptedAccountIds],
+            const next = await claimNextAccountAttempt({
+              signal,
+              resumeSessionId: request.sessionId,
             });
-            if (signal.aborted || this.closed) {
-              if (!isAccountPoolExhausted(nextAccount)) {
-                await accountPort.release({
+            if (next.kind === "switch") return next;
+            if (next.kind === "cancelled") return { kind: "cancelled" };
+            return { kind: "exhausted", resetsAt: next.earliestAvailableAt };
+          };
+          if (account.source === "central") {
+            // 중앙 계정만 턴 도중 인증 실패를 다음 후보로 넘긴다. 로컬 계정은
+            // 지금처럼 relogin 표시와 함께 그 턴을 인증 실패로 끝낸다.
+            attemptOptions.onAccountAuthenticationFailure = async (request, signal) => {
+              if (signal.aborted || this.closed) return { kind: "cancelled" };
+              const failedAccount = selectedAccount;
+              if (!failedAccount) return { kind: "continue" };
+              attemptedAccountIds.add(failedAccount.account_id);
+              authFailedAccountIds.add(failedAccount.account_id);
+              const excluded = accountCredentialFingerprint(failedAccount);
+              if (excluded) attemptedCredentials.push(excluded);
+              try {
+                await accountPort.reportAuthFailure({
+                  account_id: failedAccount.account_id,
                   session_id: sessionId,
-                  account_id: nextAccount.account_id,
-                  turn_id: accountTurnId,
+                  observed_at: new Date().toISOString(),
+                  ...(excluded ? { token_fingerprint: excluded.token_fingerprint } : {}),
                 });
+              } catch (err) {
+                this.logger.warn(
+                  { err },
+                  "Failed to report Claude account authentication failure",
+                );
               }
-              return { kind: "cancelled" };
-            }
-            if (isAccountPoolExhausted(nextAccount)) {
-              return {
-                kind: "exhausted",
-                resetsAt: nextAccount.earliest_available_at,
-              };
-            }
-            if (attemptedAccountIds.size >= maxAccountAttempts) {
+              await writeAttemptState(failedAccount, { uuid: null, sent: false });
+
+              if (signal.aborted || this.closed) return { kind: "cancelled" };
+              if (!request.sessionId && request.inputDelivery !== "not_sent") {
+                return { kind: "continue" };
+              }
+              const next = await claimNextAccountAttempt({
+                signal,
+                resumeSessionId: request.sessionId,
+              });
+              if (next.kind === "switch") return next;
+              if (next.kind === "cancelled") return { kind: "cancelled" };
+              return { kind: "continue" };
+            };
+          }
+          return attemptOptions;
+        };
+        const claimNextAccountAttempt = async (params: {
+          signal: AbortSignal;
+          resumeSessionId: string | undefined;
+        }): Promise<
+          | { kind: "cancelled" }
+          | { kind: "exhausted"; earliestAvailableAt: string | null }
+          | { kind: "switch"; options: ClaudeRunOptions }
+        > => {
+          const { signal } = params;
+          const nextAccount = await accountPort.select({
+            session_id: sessionId,
+            turn_id: accountTurnId!,
+            model,
+            exclude_ids: [...attemptedAccountIds].filter(
+              (accountId) => !authFailedAccountIds.has(accountId),
+            ),
+            ...(attemptedCredentials.length > 0
+              ? { exclude_credentials: [...attemptedCredentials] }
+              : {}),
+          });
+          if (signal.aborted || this.closed) {
+            if (!isAccountPoolExhausted(nextAccount)) {
               await accountPort.release({
                 session_id: sessionId,
                 account_id: nextAccount.account_id,
                 turn_id: accountTurnId,
               });
-              return { kind: "exhausted", resetsAt: null };
             }
+            return { kind: "cancelled" };
+          }
+          if (isAccountPoolExhausted(nextAccount)) {
+            return { kind: "exhausted", earliestAvailableAt: nextAccount.earliest_available_at };
+          }
+          if (attemptedAccountIds.size >= maxAccountAttempts) {
+            await accountPort.release({
+              session_id: sessionId,
+              account_id: nextAccount.account_id,
+              turn_id: accountTurnId,
+            });
+            return { kind: "exhausted", earliestAvailableAt: null };
+          }
 
-            selectedAccount = nextAccount;
-            let nextOptions: ClaudeRunOptions;
-            if (request.sessionId) {
-              const stored = this.claudeAccountTurnState?.read();
-              const continuationUuid = stored && stored.turn_id === accountTurnId
-                && stored.continuation_uuid
-                && !stored.continuation_sent
-                ? stored.continuation_uuid
-                : randomUUID();
-              turnState = {
-                turn_id: accountTurnId!,
-                account_id: nextAccount.account_id,
-                attempted_ids: [...attemptedAccountIds],
-                continuation_uuid: continuationUuid,
-                continuation_sent: false,
-              };
-              await this.claudeAccountTurnState?.write(turnState);
-              turnState = { ...turnState, continuation_sent: true };
-              await this.claudeAccountTurnState?.write(turnState);
-              nextOptions = bindAccountAttempt(nextAccount, {
+          selectedAccount = nextAccount;
+          if (params.resumeSessionId) {
+            const stored = this.claudeAccountTurnState?.read();
+            const continuationUuid = stored && stored.turn_id === accountTurnId
+              && stored.continuation_uuid
+              && !stored.continuation_sent
+              ? stored.continuation_uuid
+              : randomUUID();
+            await writeAttemptState(nextAccount, { uuid: continuationUuid, sent: false });
+            await writeAttemptState(nextAccount, { uuid: continuationUuid, sent: true });
+            return {
+              kind: "switch",
+              options: bindAccountAttempt(nextAccount, {
                 prompt: ACCOUNT_SWITCH_CONTINUATION_PROMPT,
                 inputUuid: continuationUuid,
-                resumeSessionId: request.sessionId,
-              });
-            } else {
-              turnState = {
-                turn_id: accountTurnId!,
-                account_id: nextAccount.account_id,
-                attempted_ids: [...attemptedAccountIds],
-                continuation_uuid: null,
-                continuation_sent: false,
-              };
-              await this.claudeAccountTurnState?.write(turnState);
-              const { resumeSessionId: _resumeSessionId, ...withoutResume } = baseOptions;
-              nextOptions = bindAccountAttempt(nextAccount, withoutResume);
-            }
-            return { kind: "switch", options: nextOptions };
+                resumeSessionId: params.resumeSessionId,
+              }),
+            };
+          }
+          await writeAttemptState(nextAccount, { uuid: null, sent: false });
+          const { resumeSessionId: _resumeSessionId, ...withoutResume } = baseOptions;
+          return {
+            kind: "switch",
+            options: bindAccountAttempt(nextAccount, withoutResume),
           };
-          return attemptOptions;
         };
 
         if (resumePendingContinuation) {
@@ -657,12 +752,17 @@ export class ClaudeEngineAdapter
             && params.agentSessionId
             && this.claudeAccountTurnPort
           ) {
-            // 이 세션의 풀 계정 자격이 거부됐다. 계정을 재로그인 필요로 올려 다음 선택에서 뺀다.
+            // 이 세션의 풀 계정 자격이 거부됐다. 중앙 계정은 (계정, 토큰 지문)을
+            // 잠시 후보에서 빼고, 로컬 계정은 재로그인 필요로 올린다.
+            const failedCredential = accountCredentialFingerprint(selectedAccount);
             try {
               await this.claudeAccountTurnPort.reportAuthFailure({
                 account_id: selectedAccount.account_id,
                 session_id: params.agentSessionId,
                 observed_at: new Date().toISOString(),
+                ...(failedCredential
+                  ? { token_fingerprint: failedCredential.token_fingerprint }
+                  : {}),
               });
             } catch (err) {
               this.logger.warn({ err }, "Failed to report Claude account authentication failure");
