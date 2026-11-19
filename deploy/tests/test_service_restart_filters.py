@@ -115,7 +115,7 @@ class ServiceRestartFiltersTest(unittest.TestCase):
 
     def test_representative_unrelated_paths_are_ignored(self) -> None:
         examples = {
-            "soulstream-orch-server": ["soul-app/src/api/actionFailure.ts", "docs/guide/deployment.md", "unified-dashboard/client/App.tsx"],
+            "soulstream-orch-server": ["soul-app/src/api/types.ts", "docs/guide/deployment.md", "unified-dashboard/client/App.tsx"],
             "soulstream-soul-server-ts": ["orch-server-ts/src/production_main.ts"],
         }
         common = [
