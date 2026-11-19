@@ -864,7 +864,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/cards/card_dispatch_runtime.ts | 4 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_dispatcher.ts | 5 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_execution_service.ts | 4 | 2 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
-| src/cards/card_orchestration_coordinator.ts | 1 | 1 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
+| src/cards/card_orchestration_coordinator.ts | 1 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_orchestration_repository.ts | 1 | 0 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_orchestration_workers.ts | 0 | 1 | 0 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/cards/card_status_reminder_repository.ts | 0 | 0 | 4 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
@@ -878,7 +878,6 @@ state "한도 재개 예약" as sessionReservation {
 | src/cards/state/card_machine_promises.ts | 1 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
 | src/cards/state/card_machine_world.ts | 0 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
 | src/cards/state/card_remaining_evidence.ts | 0 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
-| src/cards/state/card_server_evidence.ts | 0 | 1 | 0 | 카드 결정 기계의 카드 상태 글자. |
 | src/cards/supervised_card_context.ts | 0 | 3 | 2 | 카드 흐름이 카드 상태나 연결 세션 상태를 읽는다. |
 | src/control_plane/repositories/claude_background_task_generation_repository.ts | 0 | 0 | 5 | 백그라운드 작업 생성 상태. |
 | src/control_plane/repositories/claude_background_task_repository.ts | 0 | 0 | 5 | 백그라운드 작업 상태. |
@@ -899,7 +898,6 @@ state "한도 재개 예약" as sessionReservation {
 | src/external_access/external_input_service.ts | 3 | 0 | 0 | 대상 세션의 관측 상태를 외부 응답에 싣는다. |
 | src/external_access/public_link_routes.ts | 1 | 0 | 0 | 외부 요청 상태가 끝나는 값(completed)인지 비교한다. 세션 상태 글자와 이름만 같다. |
 | src/folders/folder_operations.ts | 0 | 1 | 0 | 폴더 운영 상태. |
-| src/mcp/session_consumption_boundary.ts | 0 | 1 | 0 | 세션 종료 여부를 읽는다. |
 | src/model/model_preset_availability.ts | 1 | 0 | 0 | 모델 공급자 상태. |
 | src/node/control_ws_route.ts | 1 | 0 | 0 | 노드 제어 프레임 상태. |
 | src/node/event_feed_projection_applier.ts | 2 | 0 | 0 | 사건 피드 표시 제목과 사건 종류. |
@@ -909,13 +907,13 @@ state "한도 재개 예약" as sessionReservation {
 | src/node/pending_commands.ts | 1 | 0 | 0 | 노드 응답 상태. |
 | src/persistent-context/persistent_context_candidates.ts | 0 | 2 | 2 | 카드 상태. |
 | src/planner/planner_repository.ts | 0 | 0 | 1 | 카드 상태. |
-| src/production.ts | 6 | 0 | 0 | 세션 종료 판정과 노드 응답 상태. |
+| src/production.ts | 5 | 0 | 0 | 세션 종료 판정과 노드 응답 상태. |
 | src/push/expo_push_provider.ts | 1 | 0 | 0 | 푸시 티켓 상태. |
 | src/recurring-jobs/run_lifecycle.ts | 1 | 0 | 0 | 정기 작업 실행 상태. |
-| src/recurring-jobs/service.ts | 2 | 0 | 0 | 정기 작업 실행 상태와 세션 종료 판정. |
+| src/recurring-jobs/service.ts | 1 | 0 | 0 | 정기 작업 실행 상태와 세션 종료 판정. |
 | src/runtime/live_cogito_search_provider.ts | 1 | 0 | 0 | 검색 메타데이터 상태. |
 | src/runtime/live_db_catalog_repository.ts | 0 | 0 | 4 | 세션 상태 읽기 조회. |
-| src/runtime/live_execute_proxy_route_provider.ts | 3 | 0 | 0 | 세션 종료 판정과 실행 프레임 종류. |
+| src/runtime/live_execute_proxy_route_provider.ts | 2 | 0 | 0 | 세션 종료 판정과 실행 프레임 종류. |
 | src/runtime/session_event_hub.ts | 1 | 0 | 0 | 사건 종류. |
 | src/schedule/resume_after_limit_continuity.ts | 2 | 0 | 1 | 한도 종료 사건 판정. |
 | src/schedule/resume_dispatch_decision.ts | 2 | 0 | 0 | 한도 재개 판정. |
@@ -942,7 +940,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 84개, 비교 86줄, 목록 30줄, SQL 60줄이다.
+파일 82개, 비교 83줄, 목록 27줄, SQL 60줄이다.
 
 ## 다시 만들기
 
