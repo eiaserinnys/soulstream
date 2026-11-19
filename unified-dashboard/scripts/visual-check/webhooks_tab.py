@@ -51,6 +51,19 @@ DIALOG_TYPE = """() => { const d = [...document.querySelectorAll('[role=dialog][
     muted: probe('--muted-foreground'),
     danger: probe('--destructive-foreground')}; }"""
 
+RECORD_FONTS = """() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop(); if (!d) return [];
+  return [...d.querySelectorAll('.webhooks-record-title')].map(el => { const s = getComputedStyle(el);
+    return {text: el.textContent.trim().slice(0, 30), size: s.fontSize, weight: s.fontWeight, color: s.color}; }); }"""
+
+FORM_TYPE = """() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop(); if (!d) return null;
+  const f = el => { if (!el) return null; const s = getComputedStyle(el); return {weight: s.fontWeight, size: s.fontSize, line: s.lineHeight}; };
+  return {description: f(d.querySelector('[data-slot=dialog-description]')),
+    fieldLabel: f(d.querySelector('.access-links-form > label > span')),
+    input: f(d.querySelector('.access-links-form input')),
+    trigger: f(d.querySelector('[role=combobox]')),
+    legend: f(d.querySelector('legend')),
+    checkboxName: f(d.querySelector('fieldset label > span'))}; }"""
+
 WORDS = '''root => { const out = []; const roots = root ? [document.querySelector(root)] : [...document.querySelectorAll('.webhooks, [role=dialog][data-open]')].slice(-1);
           for (const r of roots) { if (!r) continue; const walker = document.createTreeWalker(r, NodeFilter.SHOW_TEXT);
             let n; while ((n = walker.nextNode())) { const el = n.parentElement; const s = getComputedStyle(el);
@@ -218,6 +231,21 @@ def main():
                 if status and data['statusGap'] != '16px':
                     problems.append(f'{name}: 뼈대 두 칸 사이가 16px이 아님')
 
+            def expect_record_title_type(name):
+                data = page.evaluate(RECORD_FONTS)
+                measurements[name] = data
+                if not data:
+                    problems.append(f'{name}: 기록 첫 줄이 없음')
+                elif {(item['size'], item['weight']) for item in data} != {('14px', '500')}:
+                    problems.append(f'{name}: 기록 첫 줄이 상태와 무관하게 14px/500 이 아님: {json.dumps(data, ensure_ascii=False)}')
+
+            def expect_create_form_type(name, reference, keys):
+                data = page.evaluate(FORM_TYPE)
+                measurements[name] = {'reference': reference, 'dialog': data}
+                for key in keys:
+                    if data[key] != reference[key]:
+                        problems.append(f'{name}: {key} 글자가 접속 링크 새 창과 다름: {data[key]} 대 {reference[key]}')
+
             def choose(label, field='대상 세션'):
                 page.get_by_role('combobox', name=field).click()
                 page.get_by_role('option', name=label, exact=True).click()
@@ -299,7 +327,27 @@ def main():
                     overflow(f'tab-{width}')
                     check_words(f'words-tab-{width}-expanded', '.webhooks')
 
+                # 창 뿌리 글꼴이 soul-ui 기본(400)을 덮지 않는지 접속 링크 새 창과 견준다.
+                access_form = None
+                if width == 1440:
+                    page.get_by_role('button', name='접속 링크', exact=True).click()
+                    page.get_by_role('button', name='링크 만들기', exact=True).click()
+                    page.get_by_role('dialog').last.get_by_text('새 접속 링크').wait_for()
+                    page.wait_for_timeout(200)
+                    access_form = page.evaluate(FORM_TYPE)
+                    measurements['access-create-form-1440'] = access_form
+                    if access_form['fieldLabel'] is None or access_form['fieldLabel']['weight'] != '400':
+                        problems.append('접속 링크 새 창 칸 이름 굵기가 400 이 아님')
+                    dialog().get_by_role('button', name='취소', exact=True).click()
+                    page.get_by_role('button', name='웹훅', exact=True).click()
+                    page.get_by_role('button', name='웹훅 만들기', exact=True).wait_for()
+                    page.get_by_text('n8n 메일 요약', exact=False).first.wait_for()
+                    if not page.locator('details.config-advanced').first.evaluate('(element) => element.open'):
+                        page.get_by_text('지난 웹훅', exact=False).first.click()
+
                 open_inbound_create()
+                if access_form is not None:
+                    expect_create_form_type('inbound-create-form-1440', access_form, ['description', 'fieldLabel', 'input', 'trigger'])
                 expect_focus(f'inbound-create-focus-{width}', label='대상 세션', title='들어오는 웹훅 만들기')
                 shot(f'inbound-create-{width}-empty')
                 choose('세션 ID 직접 입력')
@@ -409,6 +457,7 @@ def main():
                 for text in ['접수됨', '처리 중', '마감 없이 멈춤', '완료', '전달 실패']:
                     if not page.get_by_text(text, exact=True).first.is_visible():
                         problems.append(f'{width}: 요청 상태 {text} 없음')
+                expect_record_title_type(f'inbound-record-title-{width}')
                 expect_dialog_type(f'inbound-detail-type-{width}', value=True, meta=True)
                 detail_geom = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
                   const rect = el => el?.getBoundingClientRect();
@@ -424,6 +473,13 @@ def main():
                 if detail_geom['lineGap'] is None or abs(detail_geom['lineGap']) > 1:
                     problems.append(f'{width}: 요청 항목 두 줄 간격이 전달 항목과 다름')
                 shot(f'inbound-detail-{width}')
+                if width == 1440:
+                    page.evaluate("() => document.documentElement.classList.add('dark')")
+                    page.wait_for_timeout(150)
+                    expect_record_title_type('inbound-record-title-dark-1440')
+                    shot('inbound-detail-1440-dark')
+                    page.evaluate("() => document.documentElement.classList.remove('dark')")
+                    page.wait_for_timeout(150)
                 if width == 360:
                     overflow(f'inbound-detail-{width}')
                 dialog().get_by_role('button', name='새로 고침').click()
@@ -463,6 +519,8 @@ def main():
                 shot(f'revoked-{width}')
 
                 open_outbound_create()
+                if access_form is not None:
+                    expect_create_form_type('outbound-create-form-1440', access_form, ['description', 'fieldLabel', 'input', 'trigger', 'legend', 'checkboxName'])
                 expect_focus(f'outbound-create-focus-{width}', label='대상 세션', title='나가는 웹훅 등록')
                 boxes = page.get_by_role('checkbox').all()
                 checked = [box.get_attribute('aria-checked') for box in boxes]
@@ -508,6 +566,7 @@ def main():
                 wait_focus("() => document.activeElement?.textContent?.trim() === '전체'")
                 expect_focus(f'outbound-detail-focus-{width}', text='전체', title='요약 받는 주소', pressed='true')
                 dialog().locator('.webhooks-record-title').first.wait_for()
+                expect_record_title_type(f'outbound-record-title-{width}')
                 expect_dialog_type(f'outbound-detail-type-{width}', meta=True)
                 outbound_geom = page.evaluate("""() => { const d = [...document.querySelectorAll('[role=dialog][data-open]')].pop();
                   const rect = el => el?.getBoundingClientRect();
@@ -609,13 +668,13 @@ def main():
                 page.wait_for_timeout(300)
                 pressed = page.evaluate("() => [...document.querySelectorAll('[role=dialog][data-open] [aria-pressed]')].filter(el => el.getAttribute('aria-pressed') === 'true').map(el => el.textContent.trim())")
                 resized_rows = page.evaluate(RECORD_TITLES)
-                measurements[f'resize-{width}-to-{next_width}'] = {'pressed': pressed, 'rows': resized_rows, 'focus': focus(page)}
+                measurements[f'resize-rows-{width}-to-{next_width}'] = {'pressed': pressed, 'rows': resized_rows, 'focus': focus(page)}
                 if pressed != ['대기']:
                     problems.append(f'{width}→{next_width}: 거름 유지 안 됨')
                 if resized_rows != pending_rows:
                     problems.append(f'{width}→{next_width}: 거른 목록 내용이 바뀜: {resized_rows}')
                 shot(f'resize-{width}-to-{next_width}')
-                overflow(f'resize-{width}-to-{next_width}')
+                overflow(f'resize-overflow-{width}-to-{next_width}')
                 if next_width == 360:
                     check_words(f'words-resize-{width}-to-{next_width}')
                 close_detail()
