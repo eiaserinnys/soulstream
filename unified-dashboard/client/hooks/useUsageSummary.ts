@@ -6,6 +6,7 @@ import {
   weeklyUsageGauges,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
   type UsageSummaryGauge,
+  type UsageSummaryLoadState,
   type UsageSummaryNode,
   type UsageSummarySnapshot,
   type UsageSummaryState,
@@ -13,8 +14,6 @@ import {
 
 import { HttpResponseError } from "../lib/http-response-error";
 import { fetchUsageSummary } from "../lib/usage-summary";
-
-export type UsageSummaryLoadState = "idle" | "ready" | "serverPending" | "connectionError";
 
 export type UseUsageSummaryOptions = {
   enabled: boolean;

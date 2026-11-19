@@ -4,6 +4,7 @@ import {
   selectUsageSummaryNode,
   usageSummaryLoadState,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
+  type UsageSummaryLoadState,
   type UsageSummaryState,
 } from '../../../packages/soul-ui/src/lib/usage-summary';
 
@@ -12,8 +13,6 @@ import type { AppUsageSummaryNode, AppUsageSummarySnapshot } from '../api/usageE
 import { usageSummaryGaugesForApp, type AppUsageSummaryGauge } from '../lib/usage-summary-pool';
 import { ApiHttpError } from '../api/clientCore';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
-
-export type UsageSummaryLoadState = 'idle' | 'ready' | 'serverPending' | 'connectionError';
 
 export type UseUsageSummaryOptions = {
   enabled: boolean;
