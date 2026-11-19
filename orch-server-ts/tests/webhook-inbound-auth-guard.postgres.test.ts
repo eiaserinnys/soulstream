@@ -374,7 +374,8 @@ describe("inbound webhook routes behind the production auth guard", () => {
       expect(dispatched).toBe(1);
 
       const raw = capture.raw();
-      const secretPart = grant.secret.split("_")[2] ?? "";
+      const secretPart = grant.secret.slice(28);
+      expect(secretPart).toHaveLength(43);
       expect(raw).not.toContain(grant.secret);
       expect(raw).not.toContain(secretPart);
       const records = capture.records();

@@ -9,7 +9,7 @@ const ev = (id: string, type: SessionEvent['type'], data: Record<string, unknown
 });
 
 describe('useChatRenderItems manuscript activity', () => {
-  it('원고형에서 저장 도구 호출과 스트리밍 생각 행을 함께 접고 바닥 추적 키도 접힌 행을 가리킨다', () => {
+  it('원고형에서 저장 도구 호출과 스트리밍 생각 행을 함께 접고 마지막 구성 항목을 추적한다', () => {
     const toolStart = ev('1', 'tool_start', { tool_use_id: 'tool-1', tool_name: 'Read' });
     const toolResult = ev('2', 'tool_result', { tool_use_id: 'tool-1', result: 'done' });
     const thinking = ev('stream-thinking', 'thinking_delta', { thinking: '검토 중' });
@@ -30,7 +30,7 @@ describe('useChatRenderItems manuscript activity', () => {
         { kind: 'event', event: thinking },
       ],
     });
-    expect(result.current.bottomFollowItemKey).toBe('activity-tool-1');
+    expect(result.current.bottomFollowItemKey).toBe('stream-thinking');
   });
 
   it('원고형에서 작업 세부 표시가 꺼져 있으면 활동 행과 도구 요약을 숨긴다', () => {
