@@ -95,7 +95,9 @@ function buildSample(scene: SceneId): Sample {
         question: { ...base, id: 'q-secret', kind: 'choice', title: secretTitle, text: secretText,
           optionDetails: secretOptions, options: secretOptions.map(option => option.label),
           attachments: [{ type: 'image', label: '지금 실행 명령에 보이는 모습', url: evidenceUrl }],
-          answer: '파일로 옮기기', selectedOption: '파일로 옮기기', askedAt: at(10), answeredAt: at(14) }, comments: [] };
+          answer: '파일로 옮기기', selectedOption: '파일로 옮기기', askedAt: at(10), answeredAt: at(14) },
+        comments: [{ id: 'c-ask-back', cardId, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', questionId: 'q-secret',
+          body: '파일로 옮기면 지금 도는 에이전트는 어떻게 되나요?', createdAt: at(12) }] };
     case 'ra':
       return { cardTitle: '카드 질문 장 고치기: 선택지 설명, 다르게 답하기, 되묻기', cardNumber: 1197, entryTitle: '아이폰 앱을 업데이트해 주십시오',
         question: { ...base, id: 'q-request', kind: 'request', title: '아이폰 앱을 업데이트해 주십시오',

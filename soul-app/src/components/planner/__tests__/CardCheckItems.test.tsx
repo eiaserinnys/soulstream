@@ -259,3 +259,13 @@ test('URL-only legacy HTML evidence resolves metadata then reads the document bo
   expect(bodyCall[0]).toContain('/api/attachments/files?');
   expect(new Headers((bodyCall[1] as RequestInit).headers).get('range')).toBe('bytes=0-1048575');
 });
+
+test('확인 항목의 결과, 못 본 것과 변경 까닭은 모두 선택할 수 있다', () => {
+  const screen = render(<CardCheckItems items={[item(1, 'changed', {
+    result: '결과 원문', caveat: '못 본 원문', reopened: '변경 까닭 원문',
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={375} />);
+  for (const text of ['결과 원문', '못 본 원문', '변경 까닭 원문']) {
+    expect(screen.getByText(text).props.selectable).toBe(true);
+  }
+});

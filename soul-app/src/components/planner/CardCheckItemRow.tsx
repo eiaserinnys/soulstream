@@ -169,7 +169,7 @@ export function CardCheckItemRow({
       {rowExpanded ? (
         <View style={styles.details}>
           {item.display === 'changed' && item.reopened ? (
-            <View style={styles.changedReason}><Text style={styles.reopened}>확인한 뒤 바뀜</Text><Text style={styles.result} testID={`card-check-item-${item.id}-reopened`}>{item.reopened}</Text></View>
+            <View style={styles.changedReason}><Text style={styles.reopened}>확인한 뒤 바뀜</Text><Text selectable style={styles.result} testID={`card-check-item-${item.id}-reopened`}>{item.reopened}</Text></View>
           ) : null}
           {item.result ? <Text selectable style={[styles.result, item.display === 'dropped' && styles.droppedResult]}>{item.result}</Text> : null}
           {item.caveat ? <View testID={`card-check-item-${item.id}-caveat-row`} style={styles.caveatRow}>

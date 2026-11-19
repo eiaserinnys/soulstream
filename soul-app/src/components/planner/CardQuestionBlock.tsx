@@ -97,7 +97,7 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
       ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={styles.avatar} accessibilityIgnoresInvertColors />
     : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarFallbackText}>{author === 'user' ? userInitial : '담'}</Text></View>;
   return <View testID={`card-question-${view.id}`} style={styles.body}>
-    <PlannerMarkdownText markdown={view.background} variant="card" readContext={{ type: 'card', id: cardId }} />
+    <PlannerMarkdownText markdown={view.background} readContext={{ type: 'card', id: cardId }} />
     {images.length ? <View style={styles.evidence}>{images.map((item, index) => <View key={`${item.attachment_id ?? item.url}-${index}`} style={styles.imageEvidence}>
       <AttachmentImage accessibilityLabel={item.label || `볼 것 ${index + 1}`} onOpen={undefined}
         unavailableMessage={item.availability === 'missing' ? '찾을 수 없음' : item.availability ? '불러오지 못함' : undefined}
@@ -114,7 +114,7 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
     </CompactTouchTarget>)}</View> : null}
     {view.thread.length ? <View testID={`card-question-thread-${view.id}`} style={styles.thread}>
       {view.thread.map(turn => <View key={turn.id} style={styles.turn}>{avatar(turn.author)}
-        <View style={styles.turnText}><PlannerMarkdownText markdown={turn.body} variant="card" readContext={{ type: 'card', id: cardId }} /></View></View>)}
+        <View style={styles.turnText}><PlannerMarkdownText markdown={turn.body} readContext={{ type: 'card', id: cardId }} /></View></View>)}
       {view.awaitingAgent ? <View testID={`card-question-waiting-${view.id}`} style={styles.turn} accessibilityLabel="담당의 답을 기다리는 중">
         {avatar('agent')}
         <View style={styles.waiting}><ActivityIndicator size="small" color={t.colors.textMuted} /><Text style={styles.meta}>답을 기다리는 중</Text></View>

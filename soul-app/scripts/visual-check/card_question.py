@@ -640,9 +640,13 @@ def measure_band_hold(page: Page, base: str, width: int, theme: str, output: Pat
 
     cdp = page.context.new_cdp_session(page)
     # 판 안에서 터치가 시작되면 다루기가 걸린다.
-    touch(cdp, "start", box["x"] + box["width"] / 2, box["y"] + 24)
+    x, y = box["x"] + box["width"] - 60, box["y"] + 24
+    touch(cdp, "start", x, y)
     page.wait_for_timeout(200)
-    scroll_track(page, "next")
+    for dx in range(20, 381, 40):
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x - dx, "y": y, "id": 1}]})
+        page.wait_for_timeout(16)
+    page.wait_for_timeout(300)
     held_short = wait_paging_settled(page)
     held_name = f"card-question-band-hold-long-to-short-{width}-{theme}.png"
     root.screenshot(path=str(output / held_name))
@@ -668,9 +672,13 @@ def measure_band_hold(page: Page, base: str, width: int, theme: str, output: Pat
 
     # 짧은 장을 보는 채로 다시 판 안에서 다루면 긴 장으로 넘길 때 그만큼 자란다.
     short_box = deck.bounding_box() or box
-    touch(cdp, "start", short_box["x"] + short_box["width"] / 2, short_box["y"] + 24)
+    x, y = short_box["x"] + 60, short_box["y"] + 24
+    touch(cdp, "start", x, y)
     page.wait_for_timeout(200)
-    scroll_track(page, "prev")
+    for dx in range(20, 381, 40):
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x + dx, "y": y, "id": 1}]})
+        page.wait_for_timeout(16)
+    page.wait_for_timeout(300)
     held_long_down = wait_paging_settled(page)
     pressed_name = f"card-question-band-hold-short-to-long-pressed-{width}-{theme}.png"
     root.screenshot(path=str(output / pressed_name))
@@ -1162,6 +1170,71 @@ def capture_comment_copy(page: Page, base: str, width: int, theme: str, output: 
     record(result, 19, "커멘트 코드 복사", label, copied == "echo soulstream", {"clipboard": copied})
 
 
+def measure_question_fonts(page: Page, base: str, width: int, output: Path, result: dict) -> None:
+    """질문 장 문단과 되묻기, 선택지 설명과 제목의 실제 글꼴 및 아바타 정렬을 잰다."""
+    for surface, scene in (("pas", "na"), ("card", "da")):
+        label = f"fonts-{surface}-{scene}-{width}"
+        goto(page, base, surface, scene, False, "light", width)
+        if surface == "card":
+            open_comments_tab(page)
+        settle(page)
+        metrics = page.evaluate(r"""() => {
+          const find = (needle) => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+              if (!node.textContent.includes(needle)) continue;
+              const el = node.parentElement, r = el.getBoundingClientRect();
+              if (!r.width || !r.height) continue;
+              const css = getComputedStyle(el);
+              return { size: parseFloat(css.fontSize), line: parseFloat(css.lineHeight), top: r.top, left: r.left };
+            }
+            return null;
+          };
+          const thread = document.querySelector('[data-testid^="card-question-thread-"]');
+          const avatar = thread?.firstElementChild?.firstElementChild;
+          const r = avatar?.getBoundingClientRect();
+          return { title: find('에이전트 접속 비밀값을 숨길까요'),
+            background: find('에이전트 세션을 띄울 때마다'),
+            description: find('비밀값을 저만 여는'), thread: find('파일로 옮기면 지금'),
+            avatar: r ? { top: r.top, height: r.height } : null };
+        }""")
+        title, background, description, thread, avatar = (metrics[k] for k in
+            ("title", "background", "description", "thread", "avatar"))
+        aligned = bool(thread and avatar and abs((thread["top"] + thread["line"] / 2) -
+                       (avatar["top"] + avatar["height"] / 2)) <= 1)
+        passed = bool(title and background and description and thread and aligned
+                      and background["size"] == description["size"] == thread["size"]
+                      and background["line"] == description["line"] == thread["line"]
+                      and background["size"] <= title["size"])
+        record(result, 20, "질문 글꼴과 아바타 정렬", label, passed, metrics)
+        page.screenshot(path=str(output / f"{label}.png"))
+
+
+def measure_comment_links(page: Page, base: str, width: int, output: Path, result: dict) -> None:
+    """커멘트 끝줄의 두 링크와 첨부의 내부 보기 창을 확인한다."""
+    label = f"comment-links-{width}"
+    goto(page, base, "card", "ga", False, "light", width)
+    open_comments_tab(page)
+    settle(page)
+    bubble = page.get_by_test_id("user-message-bubble").filter(has_text="다른 카드들도 같은 방식")
+    links = bubble.get_by_role("link")
+    names = [links.nth(i).inner_text().strip() for i in range(count(links))]
+    attachment = bubble.get_by_role("link", name="첨부", exact=True)
+    page.evaluate("window.__opened = []")
+    if count(attachment) == 1:
+        attachment.scroll_into_view_if_needed()
+        page.screenshot(path=str(output / f"{label}.png"))
+        attachment.click()
+        page.wait_for_timeout(800)
+    modal = count(page.get_by_test_id("attachment-preview-modal"))
+    opened = page.evaluate("window.__opened")
+    record(result, 21, "커멘트 내부 링크", label,
+           names == ["카드", "첨부"] and modal == 1 and not opened,
+           {"links": names, "modal": modal, "windowOpen": opened})
+    page.screenshot(path=str(output / f"{label}-modal.png"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Card question sheet visual check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
@@ -1203,6 +1276,7 @@ def main() -> int:
                         permissions=["clipboard-read", "clipboard-write"],
                     )
                     page = context.new_page()
+                    page.add_init_script("window.__opened = []; window.open = function(url) { window.__opened.push(String(url)); return null; };")
                     page.set_default_timeout(15000)
                     page.on("pageerror", lambda error, label=f"{width}-{theme}": result["pageErrors"].append(f"{label}: {error}"))
                     page.on("console", lambda message, label=f"{width}-{theme}": (
@@ -1219,6 +1293,8 @@ def main() -> int:
                         # 카드 #1197: 긴 질문 장에서 한 줄 카드 장으로 넘길 때 판 높이가 지금 장을 따른다.
                         result["states"].append(measure_paging(page, args.base_url, width, theme, output, result))
                         if theme == "light":
+                            measure_question_fonts(page, args.base_url, width, output, result)
+                            measure_comment_links(page, args.base_url, width, output, result)
                             measure_interactions(page, args.base_url, width, output, result)
                     finally:
                         context.close()
