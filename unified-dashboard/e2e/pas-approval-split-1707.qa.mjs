@@ -1002,9 +1002,12 @@ try {
       });
       await errorPage.locator('.pas-home-doc-row[data-document-id="doc-pas-approval-notes"]').click({ force: true });
       await errorPage.locator('[data-testid="internal-document-dialog"]').waitFor({ state: "visible" });
-      await errorPage.waitForFunction(() => document.body.textContent?.includes("PAS 결재 뷰 요구 정리"));
+      await errorPage.waitForFunction(() => {
+        const region = document.querySelector('[role="region"][aria-label="문서 본문"]');
+        return Boolean(region?.textContent?.includes("카드 뷰는 세션 단위 추적보다"));
+      });
       const text = (await errorPage.locator('[data-testid="internal-document-dialog"]').innerText()).replace(/\s+/g, " ");
-      assert.ok(text.includes("다시") || text.includes("요구") || text.includes("배경"), "다시 연 문서가 비어 있습니다");
+      assert.ok(text.includes("카드 뷰는 세션 단위 추적보다"), "다시 연 문서가 비어 있습니다");
       await closeWithEscape(errorPage, '[data-testid="internal-document-dialog"]');
       return "실패 안내 뒤 닫고 다시 열면 본문이 뜹니다";
     });
