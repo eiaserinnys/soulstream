@@ -56,8 +56,11 @@ function DuoRefreshReview({ api, board, begin, finish, phase, frame }: { api: Ap
 export function ReviewAutoRefresh() {
   const t = useTokens();
   const phone = useDeviceType() === 'phone';
+  const query = new URLSearchParams(window.location.search);
+  const alignment = query.has('boardAlignment') || query.has('duoFrame');
+  const manyCompleted = query.has('manyCompleted');
   const [refreshing, setRefreshing] = useState(false);
-  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [includeCompleted, setIncludeCompleted] = useState(manyCompleted);
   const [mode, setMode] = useState<Mode>('boardInternal');
   const [empty, setEmpty] = useState(false);
   const [phase, setPhase] = useState<'before' | 'pending' | 'after'>('before');
@@ -66,9 +69,10 @@ export function ReviewAutoRefresh() {
   const pending = useRef<{ promise: Promise<void>; resolve(): void } | null>(null);
   const board = useRef<CardBoardWorkspaceHandle>(null);
   const api = useMemo(() => {
-    const base = createReviewApi();
-    const cards = empty ? [] : ['todo', 'review'].flatMap(status => Array.from({ length: 12 }, (_, index) => ({
-      ...makeCard(status as 'todo' | 'review'), id: `refresh-${status}-${index}`, title: `갱신 전후 같은 카드 ${index + 1}`,
+    const base = createReviewApi('normal', { manyCompleted });
+    const statuses = alignment ? ['todo', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold'] as const : ['todo', 'review'] as const;
+    const cards = empty ? [] : statuses.flatMap(status => Array.from({ length: 12 }, (_, index) => ({
+      ...makeCard(status), id: `refresh-${status}-${index}`, title: `갱신 전후 같은 카드 ${index + 1}`,
       latestActivity: { kind: 'report' as const, body: '갱신 중에도 카드와 스크롤 위치를 유지합니다.', format: 'markdown' as const, createdAt: '2026-10-02T00:00:00Z' },
     })));
     const items = empty ? [] : Array.from({ length: 12 }, (_, index) => ({ ...starredFolders[0],
@@ -77,9 +81,10 @@ export function ReviewAutoRefresh() {
     }));
     return { ...base,
       listCards: async () => { await pending.current?.promise; return { cards }; },
+      listCompletedCards: async params => { await pending.current?.promise; return base.listCompletedCards(params); },
       getStarredFolders: async () => { await pending.current?.promise; return { items, nextCursor: empty ? null : 'public-next' }; },
     } as ApiClient;
-  }, [empty]);
+  }, [empty, alignment, manyCompleted]);
   useEffect(() => {
     if (mode === 'daily') void api.getPlannerToday('2026-10-02').then(data => usePlannerStore.getState().setDaily('2026-10-02', data));
   }, [api, mode]);
@@ -114,7 +119,7 @@ export function ReviewAutoRefresh() {
       <Text testID="refresh-phase" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{phase} · {cycles}회</Text>
       <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>시작·완료를 반복하여 같은 콘텐츠의 요청 전·중·후를 비교합니다. RN web 예시이며 네이티브 당김 표시는 렌더 트리에서 확인합니다.</Text>
     </View>
-    {mode === 'boardExternal' ? <TabletPaneHeader testID={phone ? 'review-phone-card-header' : 'review-tablet-card-header'}>
+    {mode === 'boardExternal' ? <TabletPaneHeader testID={phone ? 'review-phone-card-header' : 'review-tablet-card-header'} style={phone ? { paddingHorizontal: t.cardLayout.padding } : undefined}>
       <Text testID="review-external-title" style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드</Text>
       {phone ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
         <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => board.current?.openCreate()}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton>

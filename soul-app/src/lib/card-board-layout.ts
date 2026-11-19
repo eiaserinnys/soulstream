@@ -20,10 +20,10 @@ export function boardVisibleColumns(includeCompleted: boolean) {
 }
 
 export function boardLaneGeometry(viewport: number, paperWidth: number, inset: number, phone: boolean,
-  columns?:readonly (readonly [CardStatus,string])[],gridGap=inset) {
+  columns?:readonly (readonly [CardStatus,string])[],gridGap=inset,outerPadding=phone?inset:0,alignEnd=!phone) {
   const laneWidth = paperWidth + inset * 2;
   const gap = phone ? inset : inset * 3;
-  const outerInset=phone?inset:0;
+  const outerInset=outerPadding;
   const doneIndex = columns?.findIndex(([status]) => status === 'done') ?? -1;
   const reviewIndex = columns?.findIndex(([status]) => status === 'review') ?? -1;
   const defaultIndex = reviewIndex >= 0 ? reviewIndex : 0;
@@ -34,15 +34,15 @@ export function boardLaneGeometry(viewport: number, paperWidth: number, inset: n
     const width=columns&&status==='done'?completed.width:laneWidth;
     const lane={status,start,width};start+=width+gap;return lane;
   });
-  const maxScroll=Math.max(0,start-gap+outerInset*2-viewport);
-  return { laneWidth, gap, stride: laneWidth + gap, inset: outerInset,lanes,maxScroll,completedColumns:completed.columns };
+  const naturalMax=Math.max(0,start-gap+outerInset*2-viewport);
+  const maxScroll=alignEnd?(lanes.find(lane=>lane.start>=naturalMax)?.start??naturalMax):naturalMax;
+  const trailingSpace=maxScroll-naturalMax;
+  return { laneWidth, gap, stride: laneWidth + gap, inset: outerInset,lanes,maxScroll,trailingSpace,completedColumns:completed.columns };
 }
 
 export function boardLaneOffset(index: number, viewport: number, geometry: ReturnType<typeof boardLaneGeometry>, count: number) {
   if (count <= 0 || index < 0 || index >= count || geometry.lanes.length < count) return 0;
-  const last=geometry.lanes[count-1];
-  const max = Math.max(0,last.start+last.width+geometry.inset*2-viewport);
-  return Math.max(0, Math.min(max, geometry.lanes[index].start));
+  return Math.max(0, Math.min(geometry.maxScroll, geometry.lanes[index].start));
 }
 
 export function boardSnapOffsets(viewport: number, geometry: ReturnType<typeof boardLaneGeometry>, count: number) {

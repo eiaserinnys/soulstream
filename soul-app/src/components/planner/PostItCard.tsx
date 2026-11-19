@@ -60,6 +60,7 @@ type PostItCardProps = {
   variant?: PostItVariant;
   onOpen(target?: number): void;
   boardManaged?: boolean;
+  alignPaper?: boolean;
   canPress?(): boolean;
   canOpenContextMenu?(): boolean;
 };
@@ -68,10 +69,14 @@ type CardMenuState = { entry: 'status' | 'color'; visible: boolean };
 
 /** Foundation typography; paper and spacing scale together, while touch targets stay native. */
 export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function PostItCard({
-  api, card, variant = 'full', onOpen, boardManaged = false, canPress = () => true, canOpenContextMenu = () => true,
+  api, card, variant = 'full', onOpen, boardManaged = false, alignPaper = false, canPress = () => true, canOpenContextMenu = () => true,
 }, ref) {
   const t = useTokens();
   const roles = createPostItRoles(t, variant, card.color ?? 'yellow');
+  const rotation = postItRotation(card.id);
+  const angle = rotation * Math.PI / 180;
+  // Keep the rotated paper's visible left edge on its lane's content line.
+  const alignment = alignPaper ? (Math.abs(Math.cos(angle)) * roles.width + Math.abs(Math.sin(angle)) * roles.height - roles.width) / 2 : 0;
   const openTarget = useRef<View>(null);
   const directHold = useRef(false);
   const suppressDirectPress = useRef(false);
@@ -162,7 +167,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
     <View accessible={false}>
       <AppGlassCard role="canvas" cornerRadius={roles.radius}>
         <View testID={`postit-card-${card.id}`} style={{ width: roles.width, height: roles.height, flexShrink: 0,
-          backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
+          backgroundColor: roles.paper, borderRadius: roles.radius, transform: [...(alignPaper ? [{ translateX: alignment }] : []), { rotate: `${rotation}deg` }] }}>
           <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${displayTitle} 카드 상세`}
             {...directHoldProps}
             style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
