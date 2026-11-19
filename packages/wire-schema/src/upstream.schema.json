@@ -868,7 +868,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "kind": { "const": "append_metadata" },
-                      "entry": { "type": "object" },
+                      "entry": { "type": "object", "additionalProperties": true },
                       "updated_at": { "type": "string", "format": "date-time" },
                       "replace_existing_type": { "type": "string", "minLength": 1 }
                     }

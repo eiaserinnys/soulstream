@@ -18,7 +18,6 @@ import type { EventOutboxSessionEffect } from "./event_outbox_session_effect.js"
 
 export type {
   EventOutboxSessionEffect,
-  SessionLastMessage,
 } from "./event_outbox_session_effect.js";
 
 export const EVENT_OUTBOX_MAX_BATCH_EVENTS = 64;

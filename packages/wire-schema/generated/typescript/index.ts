@@ -1611,7 +1611,9 @@ export interface EventAppendBatch {
           }
         | {
             kind: "append_metadata";
-            entry: {};
+            entry: {
+              [k: string]: unknown;
+            };
             updated_at: string;
             replace_existing_type?: string;
           };
@@ -1689,7 +1691,9 @@ export interface EventAppendBatch {
           }
         | {
             kind: "append_metadata";
-            entry: {};
+            entry: {
+              [k: string]: unknown;
+            };
             updated_at: string;
             replace_existing_type?: string;
           };
