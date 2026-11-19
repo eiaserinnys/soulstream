@@ -241,7 +241,8 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect.poll(()=>completedScroller.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);
  const mainCompletedScroll=await completedScroller.evaluate(element=>element.scrollTop);
  const mainScroll=await board.evaluate(element=>element.scrollLeft),mainRunningScroll=await runningLane.evaluate(element=>element.scrollTop),mainDoneX=(await mainDone.boundingBox())!.x;
- const anchor=await board.evaluate(element=>{const left=element.getBoundingClientRect().left+element.clientLeft+(parseFloat(getComputedStyle(element).paddingLeft)||0);const column=[...element.querySelectorAll<HTMLElement>("[data-board-column]")].find(item=>item.getBoundingClientRect().right>left)!;return {status:column.dataset.boardColumn!,x:column.getBoundingClientRect().x};});
+ const horizontalAnchor=(element:HTMLElement)=>{const left=element.getBoundingClientRect().left+element.clientLeft+(parseFloat(getComputedStyle(element).paddingLeft)||0);const column=[...element.querySelectorAll<HTMLElement>("[data-board-column]")].find(item=>item.getBoundingClientRect().right>left)!;return {status:column.dataset.boardColumn!,offset:column.getBoundingClientRect().left-left};};
+ const anchor=await board.evaluate(horizontalAnchor);
  await home.getByRole("button",{name:"보드 확대",exact:true}).click();
  const expanded=page.getByRole("dialog",{name:"전체 카드 보드",exact:true}),expandedBoard=expanded.locator(".v3-card-board");
  await expect(expanded).toBeVisible();
@@ -254,7 +255,8 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect(expandedActions.getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
  await expect(expandedActions.getByRole("button",{name:"기록",exact:true})).toHaveCount(0);
  await expect(expandedRunningLane).toHaveJSProperty("scrollTop",mainRunningScroll);
- expect(Math.abs((await expandedBoard.locator(`[data-board-column="${anchor.status}"]`).boundingBox())!.x-anchor.x)).toBeLessThanOrEqual(1);
+ const expandedAnchor=await expandedBoard.evaluate(horizontalAnchor);
+ expect(expandedAnchor.status).toBe(anchor.status);expect(Math.abs(expandedAnchor.offset-anchor.offset)).toBeLessThanOrEqual(1);
  await expandedBoard.evaluate(element=>element.scrollLeft=element.scrollWidth);
  await expandedCompletedScroller.hover();await page.mouse.wheel(0,-720);
  await expect.poll(()=>expandedCompletedScroller.evaluate(element=>element.scrollTop)).toBeLessThan(mainCompletedScroll);
