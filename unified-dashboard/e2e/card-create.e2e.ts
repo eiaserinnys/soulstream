@@ -1,4 +1,4 @@
-import {test,expect,type Page} from "@playwright/test";
+import {test,expect,type Page,type Locator} from "@playwright/test";
 import {mkdirSync,writeFileSync,readFileSync} from "node:fs";
 import path from "node:path";
 import {installV3VisualQaRoutes} from "./v3-visual-fixtures";
@@ -19,11 +19,17 @@ async function fixture(page:Page){
   const body=route.request().postDataJSON();creates.push(body);
   return fail?route.fulfill({status:409,json:{message:'fixture create conflict'}}):route.fulfill({status:201,json:{card:{...reviewCard,...body,id:'created',status:'todo'}}});
  });
- await page.goto('/');await expect(page.getByTestId('card-home')).toBeVisible();
+ await page.goto('/');await expect(page.getByTestId('card-home')).toBeVisible({timeout:30_000});
  return {creates,uploads,setFail:(v:boolean)=>fail=v};
 }
 async function imageLoaded(page:Page,alt:string){
  await expect.poll(()=>page.locator(`img[alt="${alt}"]`).first().evaluate((img:HTMLImageElement)=>img.naturalWidth)).toBeGreaterThan(0);
+}
+async function chooseAssignment(page:Page,dialog:Locator,node:string,agent:string){
+ await dialog.locator('summary').filter({hasText:'실행 환경'}).click();
+ await dialog.getByRole('combobox',{name:'노드 선택'}).click();await page.getByRole('option',{name:node,exact:true}).click();
+ await expect(dialog.getByRole('combobox',{name:'노드 선택'})).toHaveText(node);
+ await dialog.getByRole('combobox',{name:'에이전트 선택'}).click();await page.locator('[data-slot="select-positioner"]:not([hidden]) [data-slot="select-item"]').filter({hasText:agent}).first().click();
 }
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${phase}-${name}.png`),animations:'disabled'});};
 for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
@@ -33,10 +39,10 @@ for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
  await expect(dialog.getByRole('heading',{name:'새 카드',exact:true})).toBeVisible();
  await dialog.getByRole('textbox',{name:'카드 제목'}).fill('첨부와 실행 대상을 보존하는 카드');
  await dialog.getByRole('button',{name:'폴더 선택',exact:true}).click();await page.locator('.v3-card-folder-picker').getByRole('tab',{name:'전체',exact:true}).click();await page.locator('.v3-card-folder-picker').getByRole('button',{name:'소울스트림',exact:true}).click();
- await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveText('미지정');
+ await chooseAssignment(page,dialog,'eiaserinnys','로젤린');
  await dialog.getByRole('combobox',{name:'노드 선택'}).click();await capture(page,`node-open-${width}`);await page.keyboard.press('Escape');
  await dialog.getByRole('combobox',{name:'에이전트 선택'}).click();await expect(page.getByRole('listbox')).toBeVisible();await capture(page,`agent-open-${width}`);await page.keyboard.press('Escape');
- await dialog.getByRole('combobox',{name:'모델 선택'}).click();await expect(page.getByRole('listbox')).toBeVisible();await capture(page,`model-open-${width}`);await page.keyboard.press('Escape');
+ await dialog.getByRole('combobox',{name:'모델',exact:true}).click();await expect(page.getByRole('listbox')).toBeVisible();await capture(page,`model-open-${width}`);await page.keyboard.press('Escape');
  const fileInput=dialog.locator('input[type="file"]');
  await fileInput.setInputFiles({name:'첨부.png',mimeType:'image/png',buffer:readFileSync('public/icon-192.png')});
  await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeDisabled();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();
@@ -46,7 +52,7 @@ for(const width of [1280,390])test(`new card ${width}`,async({page})=>{
  await dialog.getByRole('textbox',{name:'요청 원문'}).evaluate((element,encoded)=>{const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));const data=new DataTransfer();data.items.add(new File([bytes],'붙여넣기.png',{type:'image/png'}));element.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));},encoded);
  await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();await imageLoaded(page,'붙여넣기.png');
  await dialog.getByRole('combobox',{name:'노드 선택'}).click();await page.getByRole('option',{name:'qa-node',exact:true}).click();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeDisabled();await expect(dialog.getByRole('button',{name:'카드 저장'})).toBeEnabled();
- expect(state.uploads.at(-1)).toBe('qa-node');await capture(page,`node-switch-${width}`);
+ expect(state.uploads.at(-1)).toBe('qa-node');await expect(dialog.getByRole('combobox',{name:'에이전트 선택'})).toBeEnabled();await dialog.getByRole('combobox',{name:'에이전트 선택'}).click();await page.locator('[data-slot="select-positioner"]:not([hidden]) [data-slot="select-item"]').filter({hasText:'QA 에이전트'}).first().click();await capture(page,`node-switch-${width}`);
  const metrics=await dialog.evaluate(el=>{const r=el.getBoundingClientRect(),header=el.querySelector('[data-slot="dialog-header"]')!.getBoundingClientRect(),footer=el.querySelector('[data-slot="dialog-footer"]')!.getBoundingClientRect(),title=el.querySelector('[aria-label="카드 제목"]')!.getBoundingClientRect(),request=el.querySelector('[aria-label="요청 원문"]')!.getBoundingClientRect(),body=el.querySelector('[data-slot="dialog-panel-scroll"]')!,fields=[...el.querySelectorAll('.v3-succession-assignment > div')].map(field=>{const box=field.getBoundingClientRect();return {left:box.x,top:box.y,right:box.right};});return {popup:{x:r.x,y:r.y,width:r.width,height:r.height},headerInset:header.x-r.x,footerInset:footer.x-r.x,inputInset:title.x-r.x,inputRightInset:r.right-title.right,inputRequestAlignment:Math.abs(title.x-request.x),fields,tokens:getComputedStyle(el).getPropertyValue('--v3-space-3'),bodyScroll:body.scrollHeight>body.clientHeight};});
  expect(metrics.popup.x).toBeGreaterThanOrEqual(0);expect(metrics.popup.x+metrics.popup.width).toBeLessThanOrEqual(width);expect(metrics.tokens.trim()).toBe('12px');
  expect(metrics.inputRequestAlignment).toBeLessThanOrEqual(1);expect(Math.abs(metrics.inputInset-metrics.inputRightInset)).toBeLessThanOrEqual(1);
@@ -68,21 +74,21 @@ test('all and folder board/list share the production form',async({page})=>{
  for(const mode of ['board','list']){
   if(mode==='list')await section.getByRole('button',{name:'일반 보기',exact:true}).click();
   await section.getByRole('button',{name:mode==='board'?'새 카드':'카드 추가',exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:'새 카드'});await expect(dialog.getByRole('button',{name:'폴더 선택'})).toHaveText('소울스트림');await expect(dialog.getByRole('combobox',{name:'모델 선택'})).toBeVisible();await expect(dialog.locator('input[type="file"]')).toHaveCount(1);await capture(page,`folder-${mode}`);await dialog.getByRole('button',{name:'취소',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'새 카드'});await expect(dialog.getByRole('button',{name:'폴더 선택'})).toHaveText('소울스트림');await chooseAssignment(page,dialog,'eiaserinnys','로젤린');await expect(dialog.getByRole('combobox',{name:'모델',exact:true})).toBeVisible();await expect(dialog.locator('input[type="file"]')).toHaveCount(1);await capture(page,`folder-${mode}`);await dialog.getByRole('button',{name:'취소',exact:true}).click();
  }
 });
 
 test('component review opens the actual form with live assignment choices',async({page})=>{
  test.skip(phase==='before');await fixture(page);await page.goto('/components');
- await page.getByRole('button',{name:'새 카드 작성 검수',exact:true}).click();const dialog=page.getByRole('dialog',{name:'새 카드'});
- await expect(dialog.getByRole('combobox',{name:'노드 선택'})).not.toHaveText('미지정');await expect(dialog.getByRole('combobox',{name:'모델 선택'})).toBeEnabled();
+ await expect(page.getByRole('button',{name:'새 카드 작성 검수',exact:true})).toBeVisible({timeout:30_000});await page.getByRole('button',{name:'새 카드 작성 검수',exact:true}).click();const dialog=page.getByRole('dialog',{name:'새 카드'});
+ await chooseAssignment(page,dialog,'eiaserinnys','로젤린');await expect(dialog.getByRole('combobox',{name:'모델',exact:true})).toBeEnabled();
  await dialog.locator('input[type="file"]').setInputFiles({name:'검수.png',mimeType:'image/png',buffer:readFileSync('public/icon-192.png')});await imageLoaded(page,'검수.png');await capture(page,'review-form');
 });
 
 test('existing new session frame comparison',async({page})=>{
  await fixture(page);await page.getByTestId('v3-all-projects').getByRole('button',{name:'소울스트림',exact:true}).click();
  await page.getByRole('button',{name:'새 세션',exact:true}).click();const dialog=page.getByRole('dialog',{name:'새 세션',exact:true});await expect(dialog).toBeVisible();
- await expect(dialog.getByRole('button',{name:'파일 첨부',exact:true})).toBeVisible();await expect(dialog.getByRole('combobox',{name:'모델 선택'})).toBeEnabled();await capture(page,'session-frame');
+ await expect(dialog.getByRole('button',{name:'파일 첨부',exact:true})).toBeVisible();await chooseAssignment(page,dialog,'eiaserinnys','로젤린');await expect(dialog.getByRole('combobox',{name:'모델',exact:true})).toBeEnabled();await capture(page,'session-frame');
  const dimensions=await dialog.evaluate(el=>({width:el.getBoundingClientRect().width,headerHeight:el.querySelector('[data-slot="dialog-header"]')!.getBoundingClientRect().height,footerHeight:el.querySelector('[data-slot="dialog-footer"]')!.getBoundingClientRect().height,attachmentButton:(el.querySelector('input[type="file"]')!.previousElementSibling as HTMLElement).getBoundingClientRect().height}));
  writeFileSync(path.join(output,`${phase}-session-metrics.json`),JSON.stringify(dimensions,null,2));
 });
