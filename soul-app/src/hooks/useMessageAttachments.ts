@@ -16,6 +16,7 @@ import {
   type AttachmentView,
 } from '../lib/attachment-view';
 import { captureAuthScope, isAuthScopeCurrent, useAuthScopeGeneration } from '../lib/auth-scope';
+import { useMessageAttachmentLoader } from './MessageAttachmentLoader';
 
 const ATTACHMENT_EVENT_TYPES = new Set([
   'user_message',
@@ -54,6 +55,7 @@ export function useMessageAttachments({
   event,
   readContext,
 }: UseMessageAttachmentsArgs): { items: AttachmentView[]; phase: 'idle' | AttachmentState['phase']; failure: MessageAttachmentFailure | null; retry(): void } {
+  const loader = useMessageAttachmentLoader();
   const authGeneration = useAuthScopeGeneration();
   const [retryVersion, setRetryVersion] = useState(0);
   const [state, setState] = useState<AttachmentState>({ key: '', items: [], phase: 'loading', failure: null });
@@ -69,18 +71,41 @@ export function useMessageAttachments({
     authGeneration,
   ]);
   const numericEventId = Number(eventId);
-  const canReadProjection = signals.hasSignal && readContext?.type === 'session' && Boolean(readContext.id)
-    && Number.isSafeInteger(numericEventId) && numericEventId >= 0;
+  // 로더는 서버 요청을 만들지 않으므로 숫자 이벤트 id를 요구하지 않는다.
+  const canReadProjection = signals.hasSignal && (loader !== null || (
+    readContext?.type === 'session' && Boolean(readContext.id)
+    && Number.isSafeInteger(numericEventId) && numericEventId >= 0
+  ));
 
   useEffect(() => {
-    if (!canReadProjection || readContext?.type !== 'session') return;
+    if (!canReadProjection) return;
 
     const scope = captureAuthScope();
     if (scope.generation !== authGeneration) return;
-    const api = createApiRequestContext(scope.serverUrl, { authScope: scope });
     const controller = new AbortController();
     let active = true;
     setState(previous => ({ key: requestKey, items: previous.key === requestKey ? previous.items : [], phase: 'loading', failure: null }));
+
+    if (loader !== null) {
+      void loader({ eventId, signals, readContext, signal: controller.signal }).then((items) => {
+        if (!active || controller.signal.aborted) return;
+        setState({ key: requestKey, items, phase: 'ready', failure: null });
+      }).catch(() => {
+        if (!active || controller.signal.aborted) return;
+        setState(previous => ({
+          key: requestKey,
+          items: previous.key === requestKey ? previous.items : [],
+          phase: 'failed', failure: { message: '첨부를 불러오지 못했습니다', status: null, retryable: false },
+        }));
+      });
+      return () => {
+        active = false;
+        controller.abort();
+      };
+    }
+
+    if (readContext?.type !== 'session') return;
+    const api = createApiRequestContext(scope.serverUrl, { authScope: scope });
 
     void loadEventAttachments({
       api,
@@ -109,7 +134,7 @@ export function useMessageAttachments({
       active = false;
       controller.abort();
     };
-  }, [authGeneration, canReadProjection, eventId, requestKey, retryVersion, signals, event.data.attachment_output]);
+  }, [authGeneration, canReadProjection, eventId, loader, requestKey, retryVersion, signals, event.data.attachment_output]);
 
   const retry = useCallback(() => setRetryVersion((version) => version + 1), []);
   if (!canReadProjection) return { items: [], phase: 'idle', failure: null, retry };

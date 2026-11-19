@@ -329,7 +329,19 @@ const w13Stamp = `${w13Now.slice(0, 10).replaceAll("-", "")}-${w13Now.slice(11, 
 
 for (const width of [1440, 390]) {
   test(`W13 manuscript activity sample ${width}`, async ({ page }, testInfo) => {
-    if (width === 390) testInfo.setTimeout(120_000);
+    // 두 폭 모두 표본 그림이 붙는 만큼 기본 60초로는 모자란다(카드 #1714).
+    testInfo.setTimeout(120_000);
+    // 카드 #1714: 표본 첨부는 번들 그림으로 뜨고 첨부 API와 다른 출처를 부르지 않는다.
+    const attachmentRequests: string[] = [];
+    const allRequests: string[] = [];
+    page.on("request", request => {
+      const url = new URL(request.url());
+      allRequests.push(request.url());
+      if (/^\/api\/sessions\/[^/]+\/events\/\d+\/attachments$/.test(url.pathname)
+        || url.pathname.startsWith("/api/attachments")) {
+        attachmentRequests.push(url.pathname);
+      }
+    });
     await prepare(page, width);
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: width === 390 ? "reduce" : "no-preference" });
     await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
@@ -469,6 +481,30 @@ for (const width of [1440, 390]) {
     await expect(agentHeader).toHaveAttribute("aria-expanded", "true");
     await expect(collapsedAgent.locator('[data-slot="chat-body"]')).toHaveCount(1);
     await collapsedAgent.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-agent-expanded-${width}.png`), animations: "disabled" });
+
+    // 표본 첨부(사람 메시지)는 서버 없이 같은 출처의 번들 raster 그림으로 로드된다.
+    await defaultChat.getByText("첨부 이미지를 확인해주세요.").scrollIntoViewIfNeeded();
+    const reviewAttachmentImages = defaultChat.locator('img[src*="review-assets"][src*=".png"]');
+    await expect(reviewAttachmentImages.first()).toBeVisible();
+    await expect.poll(async () => reviewAttachmentImages.first().evaluate(
+      image => (image as HTMLImageElement).naturalWidth,
+    )).toBeGreaterThan(0);
+    await expect.poll(async () => reviewAttachmentImages.count()).toBeGreaterThan(0);
+    for (const source of await reviewAttachmentImages.evaluateAll(images => images.map(image => (image as HTMLImageElement).getAttribute("src") ?? ""))) {
+      expect(source).toMatch(/review-assets\/[^/]+\.png/);
+      expect(source).not.toContain("/api/attachments");
+    }
+    await expect(defaultChat).not.toContainText("첨부를 찾을 수 없거나");
+    await expect(defaultChat).not.toContainText("첨부 정보를 불러오지 못했습니다");
+    expect(attachmentRequests).toEqual([]);
+    const reviewOrigin = new URL(page.url()).origin;
+    expect(allRequests.filter(url => !["data:", "blob:"].includes(new URL(url).protocol)
+      && new URL(url).origin !== reviewOrigin)).toEqual([]);
+    const webCaptureDir = path.resolve("../.local/card1714/web");
+    mkdirSync(webCaptureDir, { recursive: true });
+    await defaultChat.screenshot({
+      path: path.join(webCaptureDir, `web-chat-attachments-${width}.png`), animations: "disabled",
+    });
   });
 }
 

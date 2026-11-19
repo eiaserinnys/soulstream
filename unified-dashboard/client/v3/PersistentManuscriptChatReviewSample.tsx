@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
+import { ChatAttachmentLoaderProvider, ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
+import type { ChatAttachmentItem, ChatAttachmentLoader } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { ClaudeRuntimeSchedulesPanel } from "@seosoyoung/soul-ui/components/ClaudeRuntimeSchedulesPanel";
@@ -22,6 +23,44 @@ const PAS_251_LANDSCAPE_ATTACHMENT_PATHS = [
   "/srv/soulstream/incoming/review-sample/IMG_0168.jpg",
   "/srv/soulstream/incoming/review-sample/IMG_0169.jpg",
 ];
+// 표본 첨부는 운영 첨부 대신 같은 출처의 번들 raster 그림으로 그린다.
+// 이미지 격자는 raster MIME만 받으므로 SVG가 아닌 png를 쓴다.
+const REVIEW_ATTACHMENT_IMAGE_URLS: Record<string, string> = {
+  [PAS_8309_ATTACHMENT_PATHS[0]!]: new URL("./review-assets/pas-settings-1.png?no-inline", import.meta.url).href,
+  [PAS_251_LANDSCAPE_ATTACHMENT_PATHS[0]!]: new URL("./review-assets/img-0168.png?no-inline", import.meta.url).href,
+  [PAS_251_LANDSCAPE_ATTACHMENT_PATHS[1]!]: new URL("./review-assets/img-0169.png?no-inline", import.meta.url).href,
+};
+/** 표본 이벤트(16, 36)가 실은 첨부 경로. 다른 이벤트는 빈 목록으로 둔다. */
+const REVIEW_ATTACHMENT_PATHS_BY_EVENT: Record<number, string[]> = {
+  16: [PAS_8309_ATTACHMENT_PATHS[0]!, ...PAS_251_LANDSCAPE_ATTACHMENT_PATHS, "/notes/review.txt"],
+  36: [PAS_8309_ATTACHMENT_PATHS[0]!],
+};
+
+function reviewAttachmentItem(path: string): ChatAttachmentItem {
+  const name = path.split("/").filter(Boolean).at(-1) ?? path;
+  const imageUrl = REVIEW_ATTACHMENT_IMAGE_URLS[path];
+  const image = imageUrl !== undefined;
+  return {
+    key: `review-attachment:${path}`,
+    name,
+    mimeType: image ? "image/png" : "text/plain",
+    byteSize: null,
+    previewKind: image ? "image" : "info",
+    availability: "ready",
+    previewUrl: image ? imageUrl : null,
+    originalUrl: image ? imageUrl : null,
+    legacySources: [],
+    source: {
+      kind: "asset",
+      attachmentId: `review-attachment:${path}`,
+      context: { type: "session", id: REVIEW_SESSION },
+    },
+  };
+}
+
+/** 모듈 범위의 안정 참조. 효과 의존성이 바뀌어 다시 요청하지 않는다. */
+const reviewAttachmentLoader: ChatAttachmentLoader = async ({ eventId }) =>
+  (REVIEW_ATTACHMENT_PATHS_BY_EVENT[eventId] ?? []).map(reviewAttachmentItem);
 const PAS_REVIEW_COMPLETION_DELIVERY_ID = "00000000-0000-4000-8000-000000002251";
 const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = "00000000-0000-4000-8000-000000002252";
 const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
@@ -429,16 +468,18 @@ export function PersistentManuscriptChatReviewSample() {
       || (message.treeNodeType === "complete" && message.totalCostUsd === ARGON_REVIEW_COMPLETE_TOTAL_COST)),
     [tree],
   );
-  return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
-    <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
-      <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
-      {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
-      {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}
-      <div className="mt-4 border-t border-border/70 pt-2" data-testid="manuscript-schedules-caption-sample">
-        <p className="px-3 py-1 text-sm font-medium text-muted-foreground">예약 머리줄</p>
-        <ClaudeRuntimeSchedulesPanel sessionId={REVIEW_SESSION} runtime={REVIEW_RUNTIME} tone="calm" variant="caption" />
+  return <ChatAttachmentLoaderProvider loader={reviewAttachmentLoader}>
+    <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
+      <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
+        <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
+        {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
+        {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}
+        <div className="mt-4 border-t border-border/70 pt-2" data-testid="manuscript-schedules-caption-sample">
+          <p className="px-3 py-1 text-sm font-medium text-muted-foreground">예약 머리줄</p>
+          <ClaudeRuntimeSchedulesPanel sessionId={REVIEW_SESSION} runtime={REVIEW_RUNTIME} tone="calm" variant="caption" />
+        </div>
       </div>
+      <ManuscriptColumn />
     </div>
-    <ManuscriptColumn />
-  </div>;
+  </ChatAttachmentLoaderProvider>;
 }
