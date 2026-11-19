@@ -308,7 +308,7 @@ describe("OAuth authorization server", () => {
     expect(meta.headers.get("content-type")).toContain("application/json");
     const value = await meta.json() as { issuer: string; scopes_supported: string[]; grant_types_supported: string[]; code_challenge_methods_supported: string[] };
     expect(value.issuer).toBe(issuer);
-    expect(value.scopes_supported.sort()).toEqual(["cards:read", "conversations", "folders:read", "usage:read"]);
+    expect(value.scopes_supported.sort()).toEqual(["agents:read", "cards:read", "conversations", "folders:read", "folders:write", "sessions:write", "usage:read"]);
     expect(value.grant_types_supported.sort()).toEqual(["authorization_code", "refresh_token"]);
     expect(value.code_challenge_methods_supported).toEqual(["S256"]);
     const resource = await fetch(`${issuer}/.well-known/oauth-protected-resource`);
@@ -554,7 +554,7 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     });
     const folders = await api.inject({ method: "GET", url: "/api/folders", headers });
     expect(folders.statusCode).toBe(200);
-    expect(folders.json().folders).toEqual([{ id: "folder-allowed" }]);
+    expect(folders.json().folders).toEqual([{ id: "folder-allowed", starred: false }]);
     expect((await api.inject({ method: "GET", url: "/api/cards/private-card", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "GET", url: "/api/folders/folder-private", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "POST", url: "/api/sessions", headers })).statusCode).toBe(403);
