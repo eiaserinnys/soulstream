@@ -1,6 +1,6 @@
 import {CardCreateDialog} from "./CardCreateDialog";
 import { useState } from "react";
-import { DashboardIconCap, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, FrameLoading, type CatalogFolder } from "@seosoyoung/soul-ui";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { LayoutDashboard, List, Plus } from "lucide-react";
 import { PostItCard, PostItGrid } from "./PostItCard";
@@ -17,9 +17,10 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
  const cards=[...membership.cards,...completed.cards].filter(c=>!c.archived).sort((a,b)=>a.positionKey<b.positionKey?-1:a.positionKey>b.positionKey?1:0);
  const doneCount=cards.filter(card=>card.status==="done").length;
  const visibleCards=cards.filter(card=>includeCompleted||(card.status!=="done"&&(!board||card.status!=="cancelled")));
+ const placeholder=membership.loading?(membership.error?null:<FrameLoading inline label="카드를 불러오는 중…"/>):undefined;
 
  return <div className="v3-folder-cards" data-testid="folder-card-section">
-  {!board?<div className="v3-detail-section-head v3-folder-card-head"><h3>카드</h3><span>{visibleCards.length}개 표시</span>
+  {!board?<div className="v3-detail-section-head v3-folder-card-head"><h3>카드</h3>{!membership.loading?<span>{visibleCards.length}개 표시</span>:null}
    <span className="v3-spacer"/>
    <CardCompletionFilter includeCompleted={includeCompleted} onChange={setIncludeCompleted} hiddenCount={doneCount}/>
    <div className="v3-card-actions">
@@ -28,11 +29,11 @@ export function FolderCardSection({folderId,folders=[],placement="inline"}:{fold
    </div></div>:null}
   {adding?<CardCreateDialog folders={folders} initialFolderId={folderId} onCreated={id=>setCreatedIds(ids=>[...ids,id])} onClose={()=>setAdding(false)}/>:null}
   {membership.error?<V3ErrorNotice message="카드를 불러오지 못했습니다." detail={membership.error} onRetry={membership.retry}/>:null}
-  {board?<CardBoardWorkspace title="현재 폴더 카드" cards={cards} completed={completed}
+  {board?<CardBoardWorkspace title="현재 폴더 카드" cards={cards} completed={completed} boardPlaceholder={placeholder}
     actions={<DashboardIconCap size="small" label="일반 보기" onClick={()=>setBoard(false)}><List className="h-4 w-4"/></DashboardIconCap>}
     draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}
     renderCard={card=><PostItCard card={card} variant="compact"/>} completion={{includeCompleted,onChange:setIncludeCompleted}}/>
-   :<><PostItGrid>{visibleCards.filter(card=>card.status!=="done").map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
+   :membership.loading?placeholder:<><PostItGrid>{visibleCards.filter(card=>card.status!=="done").map(card=><PostItCard key={card.id} card={card}/>)}</PostItGrid>
      {includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=><PostItCard card={card}/>}/>:null}</>}
  </div>;
 }

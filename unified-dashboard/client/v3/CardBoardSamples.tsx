@@ -1,9 +1,10 @@
 import {dialoguesAssignment} from "./dialogues-api";
 import {createPortal} from "react-dom";
 import { useCallback,useMemo,useState } from "react";
-import { Button, DashboardIconCap, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, FrameLoading, useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { List, Plus } from "lucide-react";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 import { CardCreateDialog } from "./CardCreateDialog";
 import type { CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { boardColumns } from "./CardBoard";
@@ -28,6 +29,7 @@ export function CardBoardSamples() {
   const [scope,setScope]=useState<"folder"|"all">("folder");
   const [mode,setMode]=useState<"board"|"grid">("board");
   const [scenario,setScenario]=useState<"mixed"|"none"|"done"|"empty">("mixed");
+  const [folderState,setFolderState]=useState<"normal"|"loading"|"error">("normal");
   const [assignmentScenario,setAssignmentScenario]=useState<'unassigned'|'partial'|'agent'|'assigned'|'live'>('assigned');
   const assignmentSession={...reviewSession,status:assignmentScenario==='live'?'running' as const:'completed' as const};
   const [settings,setSettings]=useState<Record<string,Partial<typeof reviewCard>>>({});
@@ -117,9 +119,16 @@ export function CardBoardSamples() {
     <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(comparison.id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head" data-testid="card-check-scenarios">{(["full","agent","outside","no-now-complete","two-confirmed","question-only","many-sessions","long-caption","no-evidence"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={checkScenario===value} onClick={()=>{setSelected(null);setSampleDetails({});setCheckScenario(value);}}>{{full:"일곱 상태",agent:"에이전트 차례 띠",outside:"바깥 대기 띠","no-now-complete":"상황판 없이 모두 확인","two-confirmed":"확인함 두 개","question-only":"질문만 있는 카드","many-sessions":"많은 세션","long-caption":"긴 이미지 설명","no-evidence":"캡처 없는 보고"}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
-    {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card,"compact")} completion={{includeCompleted,onChange}}
+    <div className="v3-detail-section-head">{(["normal","loading","error"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={folderState===value} onClick={()=>setFolderState(value)}>{{normal:"일반 상태",loading:"폴더 로딩",error:"폴더 조회 실패"}[value]}</Button>)}</div>
+    {folderState==="normal"?(mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card,"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>
-      : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card,"default")}/>:null}</>}
+      : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card,"default")}/>:null}</>):<div className="v3-folder-cards" data-testid={`folder-board-${folderState}-sample`}>
+      {folderState==="error"?<V3ErrorNotice message="카드를 불러오지 못했습니다." detail="폴더 카드 조회 실패" onRetry={()=>{}}/>:null}
+      <CardBoardWorkspace title="현재 폴더 카드" cards={[]} completed={completed} completion={{includeCompleted,onChange}} renderCard={card=>renderCard(card,"compact")}
+        boardPlaceholder={folderState==="loading"?<FrameLoading inline label="카드를 불러오는 중…"/>:null}
+        draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}
+        actions={<DashboardIconCap size="small" label="일반 보기" onClick={()=>setMode("grid")}><List className="h-4 w-4"/></DashboardIconCap>}/>
+    </div>}
     {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={selectedCardDetail}
       onSampleChange={update=>setSampleDetails(previous=>({...previous,[selectedCard.id]:update(previous[selectedCard.id]??selectedCardDetail!)}))}
       folders={reviewFolders} onClose={()=>setSelected(null)} onCloseChat={()=>setMobileTab("today")} onOpenSession={(session,selection)=>{

@@ -9,9 +9,12 @@ const emptyLanesOutput=path.resolve("../../../.local/artifacts/20261005-card-emp
 const emptyLanesPhase=process.env.CARD_EMPTY_PHASE??"after";
 const seed=()=>["todo","queued","running","blocked","review","done"].flatMap((status,index)=>Array.from({length:index===0?4:1},(_,copy)=>({...reviewCard,id:`home-${index}-${copy}`,folderId:"folder-amber",status:status as typeof reviewCard.status,
  title:status==="todo"?reviewTitle:`${status} 카드`,latestActivity:{kind:status==="todo"?"instruction" as const:"report" as const,format:"markdown" as const,body:"긴 한국어 원문과 제목이 있어도 열과 카드 폭을 유지합니다. 마지막 지시와 보고는 카드 상세에서 이어 봅니다. ".repeat(6),createdAt:reviewCard.createdAt}})));
-async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean}={}){
+async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=0,completedOptions:{delay?:number;fail?:boolean;paginate?:boolean;detail?:string;folderFailure?:boolean;folderPending?:boolean}={}){
  const cards=initialCards,reads:string[]=[],completedReads:string[]=[],creates:Record<string,unknown>[]=[],writes:{id:string;body:Record<string,unknown>}[]=[];
  let failure=false,delay=false,completedFailure=completedOptions.fail??false;
+ let folderFailure=completedOptions.folderFailure??false;
+ let releaseFolder=()=>{};
+ const folderGate=new Promise<void>(resolve=>{releaseFolder=resolve;});
  const completedAt=new Date().toISOString();
  await page.addInitScript(()=>{localStorage.setItem("ls.webglGlass","0");Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>{},active:null,addEventListener:()=>{}})});
   const Native=EventSource,sources:EventSource[]=[];let sequence=0;
@@ -30,7 +33,8 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
     if(completedOptions.delay)await new Promise(done=>setTimeout(done,completedOptions.delay));
     if(completedFailure)return route.fulfill({status:500,json:{message:completedOptions.detail??"완료 카드 조회 실패 fixture"}});
    }
-   if(status!=="done"&&folderId&&completedOptions.folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
+   if(status!=="done"&&folderId&&completedOptions.folderPending)await folderGate;
+   if(status!=="done"&&folderId&&folderFailure)return route.fulfill({status:500,json:{message:"폴더 카드 조회 실패 fixture"}});
    const completedSeeds=Array.from({length:completedExtra},(_,index)=>({...reviewCard,id:`completed-grid-${index}`,folderId:"folder-amber",status:"done" as const,title:`완료 탐색 카드 ${index+1}`,completedAt}));
    const listed=[...cards,...completedSeeds].filter(card=>!folderId||card.folderId===folderId).filter(card=>status==="done"?card.status==="done":card.status!=="done")
     .filter(card=>!query||`${card.title} ${card.request}`.toLocaleLowerCase().includes(query));
@@ -59,7 +63,7 @@ async function fixture(page:Page,fontSize=17,initialCards=seed(),completedExtra=
  });
  await page.goto(process.env.CARD1680_VISUAL_BASE??"/");await expect(page.getByTestId("card-home")).toBeVisible({timeout:20000});
  const board=page.getByTestId("card-home").locator(".v3-card-board");await expect(board).toBeVisible({timeout:20000});
- return {cards,reads,completedReads,writes,creates,board,setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
+ return {cards,reads,completedReads,writes,creates,board,releaseFolder,setFolderFailure:(value:boolean)=>{folderFailure=value;},setFailure:(value:boolean)=>{failure=value;},setDelay:(value:boolean)=>{delay=value;},setCompletedFailure:(value:boolean)=>{completedFailure=value;}};
 }
 const boardTarget=(page:Page)=>page.locator('.v3-card-board-column[data-board-column="queued"]');
 const capture=async(page:Page,name:string)=>{mkdirSync(output,{recursive:true});await page.screenshot({path:path.join(output,`${name}.png`),animations:"disabled"});};
@@ -432,6 +436,72 @@ async function openCompletedFolder(page:Page){
   await page.getByTestId("v3-mobile-project-list").getByRole("button",{name:"소울스트림",exact:true}).click();
  }else await page.getByTestId("v3-all-projects").getByRole("button",{name:"소울스트림",exact:true}).click();
 }
+
+const card1698Dir=path.resolve(`../.local/card1698/captures/${process.env.CARD1698_PHASE??'after'}`);
+async function card1698Shot(page:Page,name:string){mkdirSync(card1698Dir,{recursive:true});await page.screenshot({path:path.join(card1698Dir,`${name}.png`),animations:'disabled'});}
+async function card1698Buttons(page:Page,name:string){
+ const head=page.getByTestId('folder-card-section').locator('.v3-card-board-workspace > .v3-folder-card-head');
+ await head.scrollIntoViewIfNeeded();await page.waitForTimeout(300);
+ const measurements=await head.locator('.v3-card-actions button').evaluateAll(buttons=>buttons.map(button=>{
+  const svg=button.querySelector('svg')!,rect=(el:Element)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+  const hit=(el:Element)=>{const r=el.getBoundingClientRect(),target=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {element:target?.outerHTML.slice(0,200),within:!!target&&button.contains(target)};};
+  return {label:button.getAttribute('aria-label'),button:rect(button),svg:rect(svg),buttonHit:hit(button),svgHit:hit(svg)};
+ }));
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`${name}.json`),JSON.stringify(measurements,null,2));
+ await card1698Shot(page,`${name}-viewport`);
+ await page.screenshot({path:path.join(card1698Dir,`${name}-fullpage.png`),fullPage:true,animations:'disabled'});
+ await head.locator('.v3-card-actions').screenshot({path:path.join(card1698Dir,`${name}-element.png`),animations:'disabled'});
+ for(const item of measurements){expect(item.buttonHit.within).toBe(true);expect(item.svgHit.within).toBe(true);}
+}
+for(const width of [390,1440])for(const failed of [true,false])test(`card1698 단추 진단 ${width} ${failed?'실패':'빈 목록'}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ await fixture(page,17,failed?seed():[],0,{folderFailure:failed});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section');
+ if(failed)await expect(folder.getByRole('alert')).toBeVisible();else await expect(folder.getByText('0개 표시')).toBeVisible();
+ await card1698Buttons(page,`buttons-${failed?'error':'empty'}-${width}`);
+});
+
+for(const width of [390,1440])test(`card1698 초점 링과 첫 줄 ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ await fixture(page);const home=page.getByTestId('card-home');const expand=home.getByRole('button',{name:'보드 확대',exact:true});
+ await expand.focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');await expect(expand).toBeFocused();
+ const ring=async()=>expand.evaluate(button=>{
+  const r=button.getBoundingClientRect(),clips=[];for(let el=button.parentElement;el;el=el.parentElement){
+   const style=getComputedStyle(el),box=el.getBoundingClientRect();
+   if(style.overflowX!=='visible'||style.overflowY!=='visible')clips.push({name:el.className,overflowX:style.overflowX,overflowY:style.overflowY,
+    left:box.left+el.clientLeft,right:box.left+el.clientLeft+el.clientWidth,top:box.top+el.clientTop,bottom:box.top+el.clientTop+el.clientHeight});
+  }return {ring:{left:r.left-4,right:r.right+4,top:r.top-4,bottom:r.bottom+4},clips};
+ });
+ const verifyRing=async()=>{const data=await ring();for(const clip of process.env.CARD1698_PHASE==='before'?[]:data.clips){
+  if(clip.overflowX!=='visible'){expect(data.ring.left,`${clip.name} left`).toBeGreaterThanOrEqual(clip.left-1);expect(data.ring.right,`${clip.name} right`).toBeLessThanOrEqual(clip.right+1);}
+  if(clip.overflowY!=='visible'){expect(data.ring.top,`${clip.name} top`).toBeGreaterThanOrEqual(clip.top-1);expect(data.ring.bottom,`${clip.name} bottom`).toBeLessThanOrEqual(clip.bottom+1);}
+ }return data;};
+ const geometry=async(selector:string)=>page.locator(selector).evaluate(row=>{const planner=row.closest<HTMLElement>('.v3-planner')!,scroll=planner.querySelector<HTMLElement>('.v3-planner-scroll')!,style=getComputedStyle(planner),b=planner.getBoundingClientRect(),s=scroll.getBoundingClientRect();
+  const list=planner.querySelector<HTMLElement>('.v3-today-list'),board=planner.querySelector<HTMLElement>('.v3-card-board-column');
+  return {rowTop:row.getBoundingClientRect().top,contentTop:b.top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop),scrollBottom:s.bottom,listHeight:list?.getBoundingClientRect().height,boardHeight:board?.getBoundingClientRect().height};});
+ const before=await verifyRing(),homeGeometry=await geometry('.v3-card-home .v3-folder-card-head');await card1698Shot(page,`home-focus-${width}`);
+ await page.keyboard.press('Enter');const dialog=page.getByRole('dialog',{name:'전체 카드 보드'});await expect(dialog).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'확대 닫기'})).toBeFocused();await page.keyboard.press('Escape');await expect(expand).toBeFocused();
+ const restored=await verifyRing();await card1698Shot(page,`home-restored-${width}`);
+ await home.getByRole('button',{name:'기록',exact:true}).click();const daily=page.locator('.v3-date-head');await expect(daily).toBeVisible();
+ const dailyGeometry=await geometry('.v3-date-head');await card1698Shot(page,`daily-${width}`);
+ for(const item of [homeGeometry,dailyGeometry])expect(Math.abs(item.rowTop-item.contentTop)).toBeLessThanOrEqual(1);
+ mkdirSync(card1698Dir,{recursive:true});writeFileSync(path.join(card1698Dir,`geometry-${width}.json`),JSON.stringify({before,restored,homeGeometry,dailyGeometry},null,2));
+});
+
+for(const width of [390,1440])test(`card1698 폴더 로딩 오류 복구 ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:width===390?844:900});await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});
+ const state=await fixture(page,17,seed(),0,{folderFailure:true,folderPending:true});await openCompletedFolder(page);
+ const folder=page.getByTestId('folder-card-section');
+ const unknown=async(board:boolean)=>{await expect(folder).not.toContainText(/\d+개 표시|카드가 없습니다/);await expect(folder.locator('.v3-card-board, .v3-postit-grid')).toHaveCount(0);await expect(folder.getByRole('button',{name:'보드 확대'})).toHaveCount(0);
+  await expect(folder.getByRole('switch',{name:'완료·취소 숨김'})).toBeVisible();await expect(folder.getByRole('button',{name:board?'새 카드':'카드 추가',exact:true})).toBeVisible();};
+ await unknown(true);await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();await folder.locator('.v3-folder-card-head').scrollIntoViewIfNeeded();await card1698Shot(page,`loading-board-${width}`);
+ await folder.getByRole('button',{name:'일반 보기',exact:true}).click();await unknown(false);await expect(folder.getByRole('status',{name:'카드를 불러오는 중…'})).toBeVisible();await card1698Shot(page,`loading-list-${width}`);
+ state.releaseFolder();await expect(folder.getByRole('alert')).toBeVisible();await unknown(false);await expect(folder.getByRole('status')).toHaveCount(0);await card1698Shot(page,`error-list-${width}`);
+ await folder.getByRole('button',{name:'보드',exact:true}).click();await unknown(true);await folder.getByRole('alert').scrollIntoViewIfNeeded();await card1698Shot(page,`error-board-${width}`);await card1698Buttons(page,`buttons-after-error-${width}`);
+ state.setFolderFailure(false);await folder.getByRole('button',{name:'다시 불러오기'}).click();await expect(folder.getByRole('alert')).toHaveCount(0);await expect(folder.getByText(/\d+개 표시/).first()).toBeVisible();
+ await expect(folder.locator('.v3-card-board')).toBeVisible();await expect(folder.getByRole('button',{name:'보드 확대'})).toBeVisible();await card1698Shot(page,`normal-board-${width}`);
+});
 
 for(const [folder,width] of [[false,1440],[false,390],[false,360],[true,390],[true,360]] as const){
  test(`완료 목록 폭 ${folder?"폴더":"카드 홈"} ${width}`,async({page})=>{
