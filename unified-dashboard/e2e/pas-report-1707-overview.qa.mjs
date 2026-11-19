@@ -408,6 +408,27 @@ try {
 
     await step("R2 보고 창 열기, 해시, 탭 없음, 3열 상단 정렬", async () => {
       await openSheet(page);
+      const openedFocus = await active(page);
+      assert.equal(openedFocus?.className.includes("pas-ro1707-sheet-panel"), true,
+        `시트를 연 뒤 초점이 패널이 아닙니다: ${JSON.stringify(openedFocus)}`);
+      const tabWrap = await page.evaluate(() => {
+        const panel = document.querySelector(".pas-ro1707-sheet-panel");
+        const focusables = Array.from(panel.querySelectorAll(
+          "button:not([disabled]), a[href], textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        )).filter(element => element.offsetParent !== null || element === document.activeElement);
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        last.focus();
+        return {
+          first: first.getAttribute("aria-label") ?? first.textContent.replace(/\s+/g, " ").trim().slice(0, 30),
+          last: last.getAttribute("aria-label") ?? last.textContent.replace(/\s+/g, " ").trim().slice(0, 30),
+        };
+      });
+      await page.keyboard.press("Tab");
+      const wrappedFocus = await active(page);
+      assert.equal(wrappedFocus?.label ?? wrappedFocus?.text, tabWrap.first,
+        `Tab이 첫 요소로 돌아오지 않았습니다: ${JSON.stringify(tabWrap)} -> ${JSON.stringify(wrappedFocus)}`);
+      geometryNotes.tabWrap = tabWrap;
       assert.equal(new URL(page.url()).hash, "#report", "시트를 연 뒤 해시가 #report가 아닙니다");
       assert.equal(await page.locator('[data-testid="overview-sheet"] [role="tab"]').count(), 0, "조감 시트에 탭이 있습니다");
       assert.equal(await page.locator('[data-testid="overview-col-1"]').count(), 1);
@@ -653,6 +674,10 @@ try {
       assert.match(await sheetTitle(page), /^#1680 /);
       await page.keyboard.press("Escape");
       await page.locator('[data-testid="overview-sheet"]').waitFor({ state: "hidden" });
+      await pause(120);
+      const closeFocus = await active(page);
+      assert.equal(closeFocus?.text, "보고 창 열기",
+        `조감판을 닫은 뒤 초점이 말풍선 단추가 아닙니다: ${JSON.stringify(closeFocus)}`);
       await page.goto(`${base}/frame.html?theme=dark&glass=css&view=report`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector('[data-testid="overview-sheet"]', { state: "visible" });
       const query = await page.evaluate(() => ({ search: location.search, hash: location.hash }));
@@ -736,6 +761,38 @@ try {
       const panelBottom = geometryNotes.sheet390.y + geometryNotes.sheet390.height;
       assert.ok(panelBottom <= 844 - 76 + 1, `390 시트 아래 여백이 76px 미만입니다: ${panelBottom}`);
       return `3열 ${JSON.stringify(geometryNotes.columnTops1440Final)}, 1440 시트 ${JSON.stringify(sheetBox)}, 390 시트 ${JSON.stringify(geometryNotes.sheet390)}`;
+    });
+
+    await step("R4 창 크기 바꾸기에서 입력과 스크롤 유지", async () => {
+      await openMain(responsive, { width: 1440, height: 900, theme: "dark" });
+      await openSheet(responsive);
+      await responsive.locator(".pas-ro1707-field textarea").fill("창 크기 확인");
+      const scrollBefore = await responsive.locator('[data-testid="overview-col-1"] .pas-ro1707-col-scroll')
+        .evaluate(element => { element.scrollTop = 120; return element.scrollTop; });
+      assert.ok(scrollBefore > 0, `첫 열이 스크롤되지 않습니다: ${scrollBefore}`);
+      await responsive.setViewportSize({ width: 820, height: 1180 });
+      await pause(220);
+      const at820 = await responsive.evaluate(() => ({
+        value: document.querySelector(".pas-ro1707-field textarea")?.value,
+        tracks: getComputedStyle(document.querySelector(".pas-ro1707-cols")).gridTemplateColumns.split(" ").filter(Boolean).length,
+        scroll: document.querySelector('[data-testid="overview-col-1"] .pas-ro1707-col-scroll')?.scrollTop,
+      }));
+      assert.equal(at820.value, "창 크기 확인", `창 크기를 바꾸면 입력이 사라집니다: ${JSON.stringify(at820)}`);
+      assert.equal(at820.tracks, 2, `820으로 바꾸면 2열이 아닙니다: ${JSON.stringify(at820)}`);
+      assert.equal(at820.scroll, scrollBefore, `첫 열 스크롤이 유지되지 않습니다: ${scrollBefore} -> ${at820.scroll}`);
+      await responsive.setViewportSize({ width: 1440, height: 900 });
+      await pause(220);
+      const back = await responsive.evaluate(() => ({
+        value: document.querySelector(".pas-ro1707-field textarea")?.value,
+        tracks: getComputedStyle(document.querySelector(".pas-ro1707-cols")).gridTemplateColumns.split(" ").filter(Boolean).length,
+        scroll: document.querySelector('[data-testid="overview-col-1"] .pas-ro1707-col-scroll')?.scrollTop,
+      }));
+      assert.equal(back.value, "창 크기 확인");
+      assert.equal(back.tracks, 3, `1440으로 되돌리면 3열이 아닙니다: ${JSON.stringify(back)}`);
+      assert.equal(back.scroll, scrollBefore, `첫 열 스크롤이 되돌릴 때 유지되지 않습니다: ${scrollBefore} -> ${back.scroll}`);
+      await closeSheet(responsive);
+      geometryNotes.resize = { scrollBefore, at820, back };
+      return `입력 유지, 첫 열 스크롤 ${scrollBefore} -> ${at820.scroll} -> ${back.scroll}`;
     });
 
     await step("R5 금지 문장부호와 박다 계열 0", async () => {
