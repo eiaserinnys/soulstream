@@ -15,8 +15,113 @@ import {
 } from "../../src/control_plane/persistence_host_transport.js";
 import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
+import { buildClaudeBackgroundGenerationIdentity } from
+  "../../src/task/claude_background_generation_identity.js";
 
 describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
+  it("routes a resumed execution and its follow-up through a new generation", async () => {
+    const old = { ...row("caller-session", "background-agent"), status: "completed" as const };
+    const getGeneration = vi.fn(async (_node, _session, _sdk, _task, id) =>
+      id === "toolu-background-agent" ? old : null);
+    const observeGeneration = vi.fn(async () => row("caller-session", "background-agent"));
+    const resolveGeneration = vi.fn(async () => ({ status: "ambiguous" }));
+    const terminalizeGeneration = vi.fn(async (input) => ({
+      accepted: true,
+      delivery: {
+        delivery_id: input.delivery.deliveryId,
+        completion_id: input.completionId,
+        relation_key: input.relationKey,
+        producer_terminal_revision: input.terminalRevision,
+        created_at: new Date(), source: "claude_runtime_task_followup",
+        payload: input.delivery.payload, payload_hash: input.delivery.payloadHash,
+      },
+    }));
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { getGeneration, observeGeneration, resolveGeneration, terminalizeGeneration } as never,
+      sourceNode: "node-a",
+    });
+    const start: ClaudeClientEvent = {
+      type: "claude_runtime_task_started", taskId: "background-agent", sessionId: "sdk-a",
+      toolUseId: "toolu-background-agent", description: "resumed",
+    };
+    const progress: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress", taskId: "background-agent", sessionId: "sdk-a",
+      toolUseId: "toolu-background-agent",
+    };
+    const progressWithoutId: ClaudeClientEvent = {
+      type: "claude_runtime_task_progress", taskId: "background-agent", sessionId: "sdk-a",
+    };
+    const terminal: ClaudeClientEvent = {
+      type: "claude_runtime_task_updated", taskId: "background-agent", sessionId: "sdk-a",
+      patch: { status: "completed" },
+    };
+    for (const event of [start, progress, progressWithoutId, terminal]) {
+      attachClaudeBackgroundProvenance(event, "sdk_membership");
+      await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+    }
+    expect(getGeneration.mock.calls.map((call) => call[4])).toEqual([
+      "toolu-background-agent", "toolu-background-agent#r1",
+    ]);
+    expect(observeGeneration).toHaveBeenCalledTimes(3);
+    for (const [input] of observeGeneration.mock.calls) {
+      expect(input).toMatchObject({ initiatingToolUseId: "toolu-background-agent#r1" });
+    }
+    expect(resolveGeneration).not.toHaveBeenCalled();
+    const [input] = terminalizeGeneration.mock.calls[0]!;
+    expect(input.initiatingToolUseId).toBe("toolu-background-agent#r1");
+    const first = buildClaudeBackgroundGenerationIdentity({
+      sourceNode: "node-a", agentSessionId: "caller-session", sdkSessionId: "sdk-a",
+      sdkTaskId: "background-agent", initiatingToolUseId: "toolu-background-agent",
+    });
+    expect(input.generationKey).not.toBe(first.generationKey);
+    expect(input.relationKey).not.toBe(first.relationKey);
+    expect(input.completionId).not.toBe(first.completionId);
+    expect(input.delivery.deliveryId).not.toBe(first.deliveryId);
+    expect(input.delivery.payload.text).toContain("tool_use_id=toolu-background-agent");
+    expect(input.delivery.payload.text).not.toContain("tool_use_id=toolu-background-agent#r1");
+    expect(readClaudeBackgroundDeliveryMetadata(terminal)?.initiatingToolUseId)
+      .toBe("toolu-background-agent#r1");
+  });
+
+  it("skips earlier terminal resume ids when the task resumes again", async () => {
+    const getGeneration = vi.fn(async (_node, _session, _sdk, _task, id) =>
+      id === "toolu-A#r2" ? null : { ...row("caller-session", "task-a"), status: "completed" });
+    const observeGeneration = vi.fn(async () => row("caller-session", "task-a"));
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { getGeneration, observeGeneration } as never, sourceNode: "node-a",
+    });
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_task_started", taskId: "task-a", sessionId: "sdk-a", toolUseId: "toolu-A",
+    };
+    attachClaudeBackgroundProvenance(event, "sdk_membership");
+    await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+    expect(getGeneration.mock.calls.map((call) => call[4])).toEqual(["toolu-A", "toolu-A#r1", "toolu-A#r2"]);
+    expect(observeGeneration).toHaveBeenCalledWith(expect.objectContaining({ initiatingToolUseId: "toolu-A#r2" }));
+  });
+
+  it("keeps first and new SendMessage tool ids, and reuses an active resumed generation", async () => {
+    const getGeneration = vi.fn(async (_node, _session, _sdk, _task, id) => {
+      if (id === "toolu-A") return { ...row("caller-session", "task-a"), status: "completed" };
+      if (id === "toolu-A#r1") return row("caller-session", "task-a");
+      return null;
+    });
+    const observeGeneration = vi.fn(async () => row("caller-session", "task-a"));
+    const lifecycle = new ClaudeBackgroundTaskLifecycle({
+      repository: { getGeneration, observeGeneration } as never, sourceNode: "node-a",
+    });
+    for (const toolUseId of ["toolu-first", "toolu-A", "toolu-send"]) {
+      const event: ClaudeClientEvent = {
+        type: "claude_runtime_task_started", taskId: "task-a", sessionId: "sdk-a", toolUseId,
+      };
+      attachClaudeBackgroundProvenance(event, "sdk_membership");
+      await expect(lifecycle.observe("caller-session", event)).resolves.toBe(true);
+    }
+    expect(getGeneration.mock.calls.map((call) => call[4])).toEqual([
+      "toolu-first", "toolu-A", "toolu-A#r1", "toolu-send",
+    ]);
+    expect(observeGeneration.mock.calls.map(([input]) => input.initiatingToolUseId))
+      .toEqual(["toolu-first", "toolu-A#r1", "toolu-send"]);
+  });
   it("resolves the sole existing generation when terminal task_updated omits tool_use_id", async () => {
     const resolved = row("caller-session", "background-agent");
     const terminalizeGeneration = vi.fn(async () => ({

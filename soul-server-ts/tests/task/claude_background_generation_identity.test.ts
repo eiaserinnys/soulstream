@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildClaudeBackgroundGenerationIdentity,
+  buildClaudeBackgroundResumeId,
+  originalClaudeBackgroundToolUseId,
 } from "../../src/task/claude_background_generation_identity.js";
 
 describe("Claude background generation identity", () => {
+  it("constructs resume ids and recovers the original tool id", () => {
+    expect(buildClaudeBackgroundResumeId("toolu-A", 2)).toBe("toolu-A#r2");
+    expect(originalClaudeBackgroundToolUseId("toolu-A#r2")).toBe("toolu-A");
+    expect(originalClaudeBackgroundToolUseId("toolu-A")).toBe("toolu-A");
+  });
   it("같은 task의 최초 Agent와 SendMessage resume을 initiating tool_use_id로 분리한다", () => {
     const common = {
       sourceNode: "node-windows",
