@@ -247,9 +247,6 @@ export async function loadSessionDocumentCandidateRows(input: {
   readonly limit: number;
 }): Promise<readonly SessionDocumentCandidateRow[]> {
   if (input.sessionIds.length === 0) return [];
-  if (input.sql.unsafe === undefined) {
-    throw new Error("session document search requires postgres unsafe fragments");
-  }
   const filters = input.params.session_filters;
   const allowedFolders = input.params.allowedFolderIds ?? null;
   const statuses = filters?.statuses?.length ? filters.statuses : null;
@@ -300,7 +297,7 @@ export async function loadSessionDocumentCandidateRows(input: {
       linked_card.status AS card_status
     FROM requested
     JOIN sessions session ON session.session_id = requested.session_id
-${input.sql.unsafe!(SESSION_LINK_JOINS_SQL)}
+${input.sql.unsafe(SESSION_LINK_JOINS_SQL)}
     WHERE COALESCE(session.session_type, '') <> 'llm'
       AND (${allowedFolders}::text[] IS NULL OR session.folder_id = ANY(${allowedFolders}::text[]))
       AND (${filters?.node_id ?? null}::text IS NULL OR session.node_id = ${filters?.node_id ?? null}::text)

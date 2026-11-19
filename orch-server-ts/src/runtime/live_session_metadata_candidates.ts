@@ -132,8 +132,6 @@ export async function loadSessionMetadataCandidateRows(
           LIMIT ${prefixGroup.limit}
         ) source_candidates
       `);
-      // Token overlap is for concise human search phrases. Long inputs retain
-      // exact/prefix metadata and the existing mode-specific body-search path.
       const includeTokenSource = source.kind === "title"
         ? phase !== "prompt_tokens"
         : phase !== "fast";
@@ -196,9 +194,6 @@ export async function loadSessionMetadataCandidateRows(
     )`).join(",");
     const candidateBackend = sessionBackendExpression("candidate", promptTokens.backendCatalog);
     const filteredBackend = sessionBackendExpression("session", promptTokens.backendCatalog);
-    // For up to eight unique terms, threshold-sized GIN containment probes are
-    // an exact superset of rows that can meet the overlap threshold. This avoids
-    // tokenizing every any-term hit. Larger queries keep the broad GIN overlap path.
     promptTokens.branches.push(`
       (
         WITH RECURSIVE
@@ -343,10 +338,6 @@ export async function loadSessionMetadataCandidateRows(
   if (groups.every((group) => group.branches.length === 0)) {
     return { rows: [], status: "complete", promptTokenStatus };
   }
-  if (sql.unsafe === undefined) {
-    throw new Error("parameterized session metadata search requires postgres unsafe bindings");
-  }
-
   const rows: SessionSearchCandidateRow[] = [];
   let failureReason: SessionMetadataCandidateResult["reason"];
   let promptTokenFailureReason: SessionMetadataCandidateResult["reason"];
@@ -357,7 +348,7 @@ export async function loadSessionMetadataCandidateRows(
       const queryText = buildMetadataQueryText(group);
       const result = await runSearchQuery(
         activeQuery,
-        () => sql.unsafe!(queryText, group.values) as LiveSearchPendingQuery<readonly Record<string, unknown>[]>,
+        () => sql.unsafe(queryText, group.values) as LiveSearchPendingQuery<readonly Record<string, unknown>[]>,
         signal,
         deadlineAt,
         sql,

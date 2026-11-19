@@ -4,37 +4,8 @@ import {
   createLiveCogitoSearchProvider,
   type LiveSearchSql,
 } from "../src/index.js";
-import { loadSessionDocumentCandidateRows } from "../src/runtime/live_session_document_search.js";
-import { loadCandidateRows } from "../src/runtime/live_session_search_candidates.js";
-
-const params = {
-  q: "needle",
-  top_k: 10,
-  search_session_id: true,
-  include_turn_summaries: false,
-  include_highlight: false,
-  include_story: false,
-};
 
 describe("live Cogito derived-text search scope", () => {
-  it("rejects a lexical search connection without unsafe fragments", async () => {
-    const sql = (() => Promise.resolve([])) as unknown as LiveSearchSql;
-    await expect(loadCandidateRows({
-      sql, params, variants: [{ query: "needle", kind: "original" }],
-      eventTypes: ["user_message"], candidateLimit: 10, activeQuery: {},
-      deadlineAt: Date.now() + 10_000, productSessionSearch: false, backendCatalog: [],
-    })).rejects.toThrow("requires postgres unsafe");
-  });
-
-  it("rejects a document search connection without unsafe fragments", async () => {
-    const sql = (() => Promise.resolve([])) as unknown as LiveSearchSql;
-    await expect(loadSessionDocumentCandidateRows({
-      sql, params, sessionIds: ["session-a"], activeQuery: {},
-      deadlineAt: Date.now() + 10_000, signal: new AbortController().signal,
-      backendCatalog: [], limit: 10,
-    })).rejects.toThrow("requires postgres unsafe");
-  });
-
   it("returns digest candidates only when a derived-text flag is enabled", async () => {
     const calls: Array<{ text: string; values: unknown[] }> = [];
     const query = ((

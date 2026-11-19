@@ -51,9 +51,6 @@ export async function loadCandidateRows(
   const backendFilters = sessionFilters?.backends?.length ? sessionFilters.backends : null;
   const backendCatalogJson = JSON.stringify(backendCatalog);
   if (variants.length === 0) return [];
-  if (sql.unsafe === undefined) {
-    throw new Error("session search requires postgres unsafe fragments");
-  }
   return await runSearchQuery(activeQuery, () => sql`
     WITH query_variants AS (
       SELECT variant.query, variant.query_kind, variant.query_order
@@ -239,7 +236,7 @@ export async function loadCandidateRows(
       linked_card.status AS card_status
     FROM raw_hits hit
     JOIN sessions session ON session.session_id = hit.session_id
-${sql.unsafe!(SESSION_LINK_JOINS_SQL)}
+${sql.unsafe(SESSION_LINK_JOINS_SQL)}
     ORDER BY hit.query_order, hit.score DESC, hit.created_at DESC NULLS LAST,
              hit.session_id ASC, hit.id ASC NULLS LAST
   `, params.signal, deadlineAt, sql);

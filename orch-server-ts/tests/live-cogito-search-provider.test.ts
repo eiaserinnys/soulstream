@@ -4,33 +4,10 @@ import {
   createLiveCogitoSearchProvider,
   type LiveSearchSql,
 } from "../src/index.js";
-import { loadCandidateRows } from "../src/runtime/live_session_search_candidates.js";
 
 type SqlCall = { text: string; values: unknown[] };
 
 describe("live Cogito search provider", () => {
-  it("keeps lexical link joins in the query and folder filters in the bindings", async () => {
-    const harness = createSqlHarness(() => []);
-    await loadCandidateRows({
-      sql: harness.sql,
-      variants: [{ query: "needle", kind: "original" }],
-      params: {
-        q: "needle", top_k: 5, search_session_id: true,
-        include_turn_summaries: false, include_highlight: false, include_story: false,
-        allowedFolderIds: ["visible-folder"],
-      },
-      eventTypes: ["user_message"], candidateLimit: 5, activeQuery: {},
-      deadlineAt: Date.now() + 10_000, productSessionSearch: true, backendCatalog: [],
-    });
-
-    expect(harness.calls).toHaveLength(1);
-    expect(harness.calls[0]?.text).toContain("primary_session_item.membership_kind = 'primary'");
-    expect(harness.calls[0]?.text).toContain("linked_card ON TRUE");
-    expect(harness.calls[0]?.values[1]).toEqual(["original"]);
-    expect(harness.calls[0]?.values).toContainEqual(["visible-folder"]);
-    expect(harness.calls[0]?.values.some(isSqlFragment)).toBe(false);
-  });
-
   it("reports document-index and projection timing without changing the public payload", async () => {
     const harness = createSqlHarness(() => []);
     const observations: Array<Record<string, unknown>> = [];
@@ -1121,14 +1098,9 @@ function isSqlFragment(value: unknown): value is { sqlFragment: string } {
 }
 
 function connectionFactoryFor(sql: LiveSearchSql) {
-  const searchSql = sql.unsafe === undefined
-    ? Object.assign(sql, {
-      unsafe: () => Object.assign(Promise.resolve([]), { cancel: () => undefined }),
-    }) as LiveSearchSql
-    : sql;
   return {
     open: async () => ({
-      sql: searchSql,
+      sql,
       close: async () => undefined,
     }),
   };

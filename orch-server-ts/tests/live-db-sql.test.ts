@@ -104,7 +104,7 @@ describe("live Postgres SQL resolver", () => {
         calls.push({ text: strings.join("?"), values });
         return Object.assign(Promise.resolve([]), { cancel: vi.fn() });
       }),
-      { end },
+      { end, unsafe: vi.fn() },
     ) as unknown as LiveSearchSql;
     const first = makeSql(endFirst, firstCalls);
     const second = makeSql(endSecond, []);
@@ -155,7 +155,7 @@ describe("live Postgres SQL resolver", () => {
     const end = vi.fn(async () => undefined);
     const sql = Object.assign(
       (() => Object.assign(Promise.resolve([]), { cancel: vi.fn() })),
-      { end },
+      { end, unsafe: vi.fn() },
     ) as unknown as LiveSearchSql;
     const factory = createLiveSearchDbConnectionFactory({
       databaseUrl: "postgres://orch@localhost/orch_test",
