@@ -1482,6 +1482,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           return client.unsafe(query, values as never[]);
         }) as unknown as LiveSearchSql;
         Object.assign(instrumented, {
+          unsafe: client.unsafe.bind(client),
           end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
         });
         return instrumented;
@@ -1522,6 +1523,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           return client.unsafe(query, values as never[]);
         }) as unknown as LiveSearchSql;
         Object.assign(instrumented, {
+          unsafe: client.unsafe.bind(client),
           end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
         });
         return instrumented;
@@ -1602,6 +1604,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           return client.unsafe(query, values as never[]);
         }) as unknown as LiveSearchSql;
         Object.assign(instrumented, {
+          unsafe: client.unsafe.bind(client),
           end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
         });
         return instrumented;
@@ -1642,6 +1645,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           return client(strings, ...values as never[]);
         }) as unknown as LiveSearchSql;
         Object.assign(instrumented, {
+          unsafe: client.unsafe.bind(client),
           end: (closeOptions?: { readonly timeout?: number }) => client.end(closeOptions),
         });
         return instrumented;

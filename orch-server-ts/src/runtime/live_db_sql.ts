@@ -55,7 +55,7 @@ export type LiveSearchSql = {
     ...values: unknown[]
   ): LiveSearchPendingQuery<T>;
   readonly setStatementTimeout?: (timeoutMs: number) => Promise<void>;
-  readonly unsafe?: (
+  readonly unsafe: (
     query: string,
     parameters?: unknown[],
   ) => LiveSearchPendingQuery<readonly Record<string, unknown>[]>;
@@ -362,14 +362,12 @@ export function createLiveSearchDbConnectionFactory(
         closePromise ??= sql.end?.({ timeout: timeoutSeconds }) ?? Promise.resolve();
         return closePromise;
       };
-      const unsafeQuery = sql.unsafe?.bind(sql);
+      const unsafeQuery = sql.unsafe.bind(sql);
       const searchSql = Object.assign(sql, {
         setStatementTimeout: async (timeoutMs: number) => {
           await sql`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, false)`;
         },
-        ...(unsafeQuery === undefined
-          ? {}
-          : { unsafe: unsafeQuery }),
+        unsafe: unsafeQuery,
       });
       return {
         sql: searchSql,

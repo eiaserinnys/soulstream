@@ -399,13 +399,25 @@ function createRefreshSql(
 ) {
   const calls: { readonly text: string; readonly values: unknown[] }[] = [];
   const sql = Object.assign((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const text = strings.join("?");
-    calls.push({ text, values });
-    return Object.assign(Promise.resolve(respond(text, values)), {
+    const bindings: unknown[] = [];
+    const text = strings.reduce((result, part, index) => {
+      if (index === 0) return part;
+      const value = values[index - 1];
+      if (isSqlFragment(value)) return result + value.sqlFragment + part;
+      bindings.push(value);
+      return result + "?" + part;
+    }, "");
+    calls.push({ text, values: bindings });
+    return Object.assign(Promise.resolve(respond(text, bindings)), {
       cancel: () => undefined,
     });
   }, {
+    unsafe: (text: string) => ({ sqlFragment: text }),
     setStatementTimeout: async (_timeoutMs: number) => undefined,
   }) as unknown as LiveSearchSql;
   return { sql, calls };
+}
+
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
 }

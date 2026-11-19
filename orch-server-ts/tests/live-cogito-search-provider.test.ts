@@ -1075,21 +1075,32 @@ function createSqlHarness(
   const sql = Object.assign((
     strings: TemplateStringsArray,
     ...values: unknown[]
-  ) => run(strings.join("?"), values), {
-    unsafe: (text: string, values: readonly unknown[] = []) => run(text, [...values]),
+  ) => {
+    const bindings: unknown[] = [];
+    const text = strings.reduce((result, part, index) => {
+      if (index === 0) return part;
+      const value = values[index - 1];
+      if (isSqlFragment(value)) return result + value.sqlFragment + part;
+      bindings.push(value);
+      return result + "?" + part;
+    }, "");
+    return run(text, bindings);
+  }, {
+    unsafe: (text: string, values?: readonly unknown[]) => values === undefined
+      ? { sqlFragment: text }
+      : run(text, [...values]),
   }) as unknown as LiveSearchSql;
   return { sql, calls };
 }
 
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
+}
+
 function connectionFactoryFor(sql: LiveSearchSql) {
-  const searchSql = sql.unsafe === undefined
-    ? Object.assign(sql, {
-      unsafe: () => Object.assign(Promise.resolve([]), { cancel: () => undefined }),
-    }) as LiveSearchSql
-    : sql;
   return {
     open: async () => ({
-      sql: searchSql,
+      sql,
       close: async () => undefined,
     }),
   };

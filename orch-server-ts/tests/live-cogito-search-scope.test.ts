@@ -12,9 +12,16 @@ describe("live Cogito derived-text search scope", () => {
       strings: TemplateStringsArray,
       ...values: unknown[]
     ) => {
-      const text = strings.join("?");
-      calls.push({ text, values });
-      const searchFlags = values.filter((value) => typeof value === "boolean");
+      const bindings: unknown[] = [];
+      const text = strings.reduce((result, part, index) => {
+        if (index === 0) return part;
+        const value = values[index - 1];
+        if (isSqlFragment(value)) return result + value.sqlFragment + part;
+        bindings.push(value);
+        return result + "?" + part;
+      }, "");
+      calls.push({ text, values: bindings });
+      const searchFlags = bindings.filter((value) => typeof value === "boolean");
       const includeHighlight = searchFlags[1];
       const includeStory = searchFlags[2];
       if (
@@ -37,8 +44,9 @@ describe("live Cogito derived-text search scope", () => {
       return Promise.resolve([]);
     });
     const sql = Object.assign(query, {
-      unsafe: (text: string) => {
-        calls.push({ text, values: [] });
+      unsafe: (text: string, values?: unknown[]) => {
+        if (values === undefined) return { sqlFragment: text };
+        calls.push({ text, values });
         return Promise.resolve([]);
       },
     }) as unknown as LiveSearchSql;
@@ -79,3 +87,7 @@ describe("live Cogito derived-text search scope", () => {
     ]);
   });
 });
+
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
+}
