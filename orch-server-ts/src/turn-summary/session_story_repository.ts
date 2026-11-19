@@ -1,6 +1,10 @@
 import type {
   LiveDbSqlResolver,
 } from "../runtime/live_db_sql.js";
+import {
+  readTurnSummaryCounts,
+  type TurnSummaryCountRow,
+} from "./turn_summary_count_query.js";
 
 export interface SessionStoryDigest {
   readonly sessionId: string;
@@ -158,27 +162,10 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
 
   async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
     const sql = await this.sqlResolver.resolveSql();
-    const rows = await sql`
-      WITH input AS (
-        SELECT ${sessionId}::text AS session_id
-      ),
-      watermark AS (
-        SELECT COALESCE(d.narrative_through_event_id, 0) AS event_id
-        FROM input
-        LEFT JOIN session_digests d ON d.session_id = input.session_id
-      )
-      SELECT
-        COUNT(*)::integer AS total_count,
-        COUNT(*) FILTER (
-          WHERE e.id <= (SELECT event_id FROM watermark)
-        )::integer AS digested_count,
-        COUNT(*) FILTER (
-          WHERE e.id > (SELECT event_id FROM watermark)
-        )::integer AS undigested_count
-      FROM events e
-      JOIN input ON input.session_id = e.session_id
-      WHERE e.event_type = 'turn_summary'
-    `;
+    const rows = await readTurnSummaryCounts<TurnSummaryCountRow[]>(sql, {
+      sessionId,
+      beforeEventId: null,
+    });
     return {
       totalCount: numberValue(rows[0]?.total_count) ?? 0,
       digestedCount: numberValue(rows[0]?.digested_count) ?? 0,

@@ -43,7 +43,7 @@ describe("SessionStoryRepository", () => {
       undigestedCount: 1,
     });
     expect(calls[0]?.text).toContain("COUNT(*) FILTER");
-    expect(calls[0]?.values).toEqual(["session-a"]);
+    expect(calls[0]?.values).toEqual(["session-a", null, null]);
   });
 
   it("loads an inclusive turn-number range in chronological order", async () => {

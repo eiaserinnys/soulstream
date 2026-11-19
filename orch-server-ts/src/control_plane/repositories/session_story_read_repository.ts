@@ -7,6 +7,7 @@ import type {
   LiveSearchSql,
 } from "../../runtime/live_db_sql.js";
 import type { SessionReadPeriod } from "@soulstream/mcp-contract";
+import { readTurnSummaryCounts } from "../../turn-summary/turn_summary_count_query.js";
 
 export interface HostSessionStoryTurnSummary {
   readonly eventId: number;
@@ -149,32 +150,10 @@ export class SessionStoryReadRepository {
     sessionId: string,
     options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
   ): Promise<HostSessionTurnSummaryCounts> {
-    const run = (sql: LiveSearchSql) => sql<Array<{
-          total_count: number | string;
-          digested_count: number | string;
-          undigested_count: number | string;
-        }>>`
-      WITH input AS (
-        SELECT ${sessionId}::text AS session_id
-      ),
-      watermark AS (
-        SELECT COALESCE(d.narrative_through_event_id, 0) AS event_id
-        FROM input
-        LEFT JOIN session_digests d ON d.session_id = input.session_id
-      )
-      SELECT
-        COUNT(*)::integer AS total_count,
-        COUNT(*) FILTER (
-          WHERE e.id <= (SELECT event_id FROM watermark)
-        )::integer AS digested_count,
-        COUNT(*) FILTER (
-          WHERE e.id > (SELECT event_id FROM watermark)
-        )::integer AS undigested_count
-      FROM events e
-      JOIN input ON input.session_id = e.session_id
-      WHERE e.event_type = 'turn_summary'
-        AND (${options.beforeEventId ?? null}::bigint IS NULL OR e.id < ${options.beforeEventId ?? null})
-      `;
+    const run = (sql: LiveSearchSql) => readTurnSummaryCounts(sql, {
+      sessionId,
+      beforeEventId: options.beforeEventId ?? null,
+    });
     const rows = options.signal === undefined && options.deadlineAt === undefined
       ? await run(this.sql as unknown as LiveSearchSql)
       : await this.runOwnedSearch(options.signal, options.deadlineAt, (query) => query((sql) => run(sql)));
