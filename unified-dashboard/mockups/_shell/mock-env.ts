@@ -81,8 +81,9 @@ window.EventSource = new Proxy(RealEventSource, {
 // 앞의 것은 묶음 기준으로 옮기고, 뒤의 것은 등록한 그림으로 바꾼다.
 const images: { pattern: RegExp; file: string }[] = [];
 
-/** 서버가 주던 그림 주소를 묶음 안의 파일로 바꾼다. file은 묶음 기준 상대 경로다. */
-export function mockImages(routes: { pattern: RegExp; file: string }[]) { images.push(...routes); }
+/** 서버가 주던 그림 주소를 묶음 안의 파일로 바꾼다. file은 묶음 기준 상대 경로다.
+ *  나중에 등록한 시안별 경로가 기본값보다 먼저 걸리도록 앞에 넣는다. */
+export function mockImages(routes: { pattern: RegExp; file: string }[]) { images.unshift(...routes); }
 
 const bundleBase = new URL(".", document.baseURI).pathname;
 function relocated(src: string): string {
@@ -116,3 +117,13 @@ mockApi({
   "GET /api/auth/status": { authenticated: true, user: null },
 });
 mockImages([{ pattern: /^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/, file: "system-portrait.png" }]);
+
+/** 시안에 나오는 에이전트마다 서로 다른 초상을 걸어 둔다. 기본 초상보다 먼저 걸린다. */
+export function mockAgentPortraits() {
+  mockImages([
+    { pattern: /^\/api\/nodes\/[^/]+\/agents\/seosoyoung\/portrait$/, file: "characters/seosoyoung/still.png" },
+    { pattern: /^\/api\/nodes\/[^/]+\/agents\/roselin\/portrait$/, file: "mockup-portraits/roselin.png" },
+    { pattern: /^\/api\/nodes\/[^/]+\/agents\/keke\/portrait$/, file: "mockup-portraits/keke.png" },
+    { pattern: /^\/api\/nodes\/[^/]+\/agents\/selaphiel\/portrait$/, file: "mockup-portraits/selaphiel.png" },
+  ]);
+}
