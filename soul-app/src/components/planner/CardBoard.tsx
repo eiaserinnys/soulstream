@@ -1,6 +1,6 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, FlatList, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
 import { useDeviceType, useTokens } from '../../theme';
@@ -213,7 +213,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
               onEndReached={items.length ? completed?.loadMore : undefined} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
-              ListEmptyComponent={firstLoading || completedFirstLoading || completed?.error ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
+              ListEmptyComponent={firstLoading || completedFirstLoading || completed?.error ? null : <Text lineBreakStrategyIOS="hangul-word" style={{...t.foundation.typography.body,color:t.colors.textSecondary,
+                ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {})}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
               ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="home-composer-spacer-done"/>}/>
             {completedFirstLoading?<View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="card-board-done-loading"/></View>:null}
             </View>

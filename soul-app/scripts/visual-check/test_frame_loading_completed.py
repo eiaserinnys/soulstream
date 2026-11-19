@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from frame_loading import (check_completed_error, check_completed_first_page, check_completed_hidden,
-                           check_completed_lane_state,
+                           check_completed_lane_state, word_breaks,
                            check_completed_recovered, check_initial_review_lane, check_period_chips,
                            check_refresh_kept_cards)
 
@@ -120,7 +120,8 @@ class RetryChecks(unittest.TestCase):
 def empty_lane():
     metrics = two_rows()
     metrics['search'] = {'left': 20, 'right': 246, 'top': 200, 'bottom': 244, 'width': 226, 'height': 44}
-    metrics['empty'] = {'left': 20, 'right': 220, 'top': 260, 'bottom': 282, 'width': 200, 'height': 22}
+    metrics['empty'] = {'left': 20, 'right': 220, 'top': 260, 'bottom': 304, 'width': 200, 'height': 44,
+                        'lines': ['선택한 기간에 완료 카드가 ', '없습니다'], 'wordBreak': 'keep-all'}
     metrics['loader'] = None
     metrics['cards'], metrics['count'], metrics['firstCard'] = 0, 0, None
     return metrics
@@ -137,6 +138,9 @@ class EmptyLaneChecks(unittest.TestCase):
     def test_empty_loading_initial_and_hidden_pass(self):
         failures = []
         check_completed_lane_state(empty_lane(), 'empty', failures, 'empty')
+        one_line = empty_lane()
+        one_line['empty']['lines'] = ['선택한 기간에 완료 카드가 없습니다']
+        check_completed_lane_state(one_line, 'one-line', failures, 'empty')
         check_completed_lane_state(loading_lane(), 'loading', failures, 'loading')
         check_initial_review_lane({'first': 'card-board-column-review',
                                    'lanes': ['card-board-column-review', 'card-board-column-done']}, 'initial', failures)
@@ -172,6 +176,14 @@ class EmptyLaneChecks(unittest.TestCase):
         self.assertEqual(checks(failures), ['completed empty notice above the filters', 'completed loader missing',
                                             'completed empty notice during a read'])
 
+        # The break before 「니다」 falls inside the word 「없습니다」 (the default word-break in a 241.88 lane).
+        failures = []
+        metrics = empty_lane()
+        metrics['empty'].update({'lines': ['선택한 기간에 완료 카드가 없습', '니다'], 'wordBreak': 'normal'})
+        check_completed_lane_state(metrics, 'mid-word', failures, 'empty')
+        self.assertEqual(checks(failures), ['completed empty notice breaks inside a word'])
+        self.assertEqual(failures[0]['lines'], ['선택한 기간에 완료 카드가 없습', '니다'])
+
         failures = []
         check_initial_review_lane({'first': 'card-board-column-todo',
                                    'lanes': ['card-board-column-todo', 'card-board-column-done']}, 'moved', failures)
@@ -181,6 +193,15 @@ class EmptyLaneChecks(unittest.TestCase):
         check_completed_first_page({'missing': 'done lane'}, 'no-lane', failures)
         self.assertEqual(checks(failures), ['board initial lane', 'board initial lane', 'completed lane while hidden',
                                             'completed paged without scrolling', 'completed paged without scrolling'])
+
+
+class WordBreakChecks(unittest.TestCase):
+    def test_breaks_only_after_a_space(self):
+        self.assertEqual(word_breaks(['선택한 기간에 완료 카드가 ', '없습니다']), [])
+        self.assertEqual(word_breaks(['선택한 기간에 완료', ' 카드가 없습니다']), [])
+        self.assertEqual(word_breaks(['선택한 기간에 완료 카드가 없습니다']), [])
+        self.assertEqual(word_breaks(['선택한 기간에 완료 카드가 없습', '니다']), [0])
+        self.assertEqual(word_breaks(['선택한 기', '간에 완료 카드가 ', '없습니다']), [0])
 
 
 if __name__ == '__main__':

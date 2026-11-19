@@ -43,7 +43,8 @@ the chip group inside the lane, at those boards plus the wide 1180 inline lane
 and the 951x669 duo expanded board. On the 1180 inline board (card pane) and
 the 390 inline board the done lane stays with its period chips and search
 field: a search or a custom period with no match shows the empty notice below
-the filters, clearing it draws cards again, and while a period read is held
+the filters, wrapping only after a space (measured per character with a Range,
+also on the 1180 and 390 expanded boards), clearing it draws cards again, and while a period read is held
 behind 「자동 요청 시작」 every sample shows the lane, the four chips and the
 loader. With the done lane in the lane list the board still opens on the review
 lane on the header title's start line, opening reads only the first completed
@@ -748,9 +749,24 @@ COMPLETED_FILTER_SCRIPT = r'''({expanded}) => {
   const search = [...lane.querySelectorAll('[aria-label="제목 또는 요청 검색"]')].filter(visible)[0];
   const empty = [...lane.querySelectorAll('div,span')].filter(e => e.childElementCount === 0 && visible(e)
     && e.textContent.trim() === '선택한 기간에 완료 카드가 없습니다')[0];
+  // The rendered lines of a text, one character Range at a time: a new line starts where a
+  // character's top moves by 2px or more. Characters without a box (a collapsed space) stay on the current line.
+  const lines = e => {
+    const node = e.firstChild, range = document.createRange(), out = [];
+    let top = null, line = '';
+    for (let i = 0; i < node.textContent.length; i++) {
+      range.setStart(node, i); range.setEnd(node, i + 1);
+      const box = range.getClientRects()[0];
+      if (!box || top === null || Math.abs(box.top - top) < 2) { line += node.textContent[i]; if (box && top === null) top = box.top; }
+      else { out.push(line); line = node.textContent[i]; top = box.top; }
+    }
+    out.push(line);
+    return out;
+  };
   const loader = [...lane.querySelectorAll('[data-testid="card-board-done-loading"]')].filter(visible)[0];
   return {lane: rect(lane), viewportWidth: innerWidth, chips, track: first && rect(first.parentElement),
-    search: search ? rect(search) : null, empty: empty ? rect(empty) : null, loader: loader ? rect(loader) : null,
+    search: search ? rect(search) : null, loader: loader ? rect(loader) : null,
+    empty: empty ? {...rect(empty), lines: lines(empty), wordBreak: getComputedStyle(empty).wordBreak} : null,
     error: error ? {...rect(error), text: error.innerText} : null,
     retry: retry ? {...rect(retry), text: retry.innerText} : null,
     cards: lane.querySelectorAll('[data-testid^="postit-card-"]').length,
@@ -850,10 +866,17 @@ def check_refresh_kept_cards(before: dict, after: dict, label: str, failures: li
                          'after': {k: after.get(k) for k in ('cards', 'count', 'firstCard')}})
 
 
+def word_breaks(lines: list[str]) -> list[int]:
+    """Indexes of line breaks that fall inside a word: Korean prose wraps only after a space (keep-all)."""
+    return [index for index in range(len(lines) - 1)
+            if not (lines[index].endswith(' ') or lines[index + 1].startswith(' '))]
+
+
 def check_completed_lane_state(metrics: dict, label: str, failures: list, state: str) -> None:
     """The done lane and its filters stay for 0 results ('empty') and while a read runs ('loading').
 
-    'empty': no card, the empty notice below the period chips and the search field, no loader.
+    'empty': no card, the empty notice below the period chips and the search field, wrapping only
+    after a space, no loader.
     'loading': the loader inside the lane and no empty notice.
     """
     if metrics.get('missing'):
@@ -869,9 +892,13 @@ def check_completed_lane_state(metrics: dict, label: str, failures: list, state:
             failures.append({'check': 'completed empty lane shows cards', 'label': label, 'cards': metrics['cards']})
         if not empty:
             failures.append({'check': 'completed empty notice missing', 'label': label})
-        elif metrics.get('search') and empty['top'] < metrics['search']['bottom'] - 1:
-            failures.append({'check': 'completed empty notice above the filters', 'label': label,
-                             'empty': empty, 'search': metrics['search']})
+        else:
+            if metrics.get('search') and empty['top'] < metrics['search']['bottom'] - 1:
+                failures.append({'check': 'completed empty notice above the filters', 'label': label,
+                                 'empty': empty, 'search': metrics['search']})
+            if word_breaks(empty.get('lines') or []):
+                failures.append({'check': 'completed empty notice breaks inside a word', 'label': label,
+                                 'lines': empty['lines'], 'wordBreak': empty.get('wordBreak')})
         if loader:
             failures.append({'check': 'completed loader after the read', 'label': label})
     elif state == 'loading':
@@ -1043,13 +1070,28 @@ def completed_summary(metrics: dict) -> dict:
 
 
 def check_completed_empty_lane(page: Page, base: str, output: Path, width: int, failures: list) -> list:
-    """Inline boards keep the done lane for 0 results, held period reads and the initial lane (card #1692 3)."""
+    """Inline boards keep the done lane for 0 results, held period reads and the initial lane (card #1692 3).
+
+    The empty notice wraps only after a space on the inline boards and on the 1180 and 390 expanded boards.
+    """
     results = []
-    for name, expanded, lanes, pane in completed_contexts(width):
-        if expanded:
-            continue
+    # The phone expanded board has the narrow done lane of the inline board, so its notice wraps too.
+    phone_expanded = [('phone-expanded', True, '', None)] if width == 390 else []
+    for name, expanded, lanes, pane in completed_contexts(width) + phone_expanded:
         label = f'completed-empty-{name}-{width}'
         try:
+            if expanded:
+                # The expanded board draws the same empty notice; a search with no match wraps it after a space too.
+                scope = open_completed_board(page, base, lanes + '&manyCompleted=1', True)
+                lane = scope.get_by_test_id('card-board-column-done')
+                lane.get_by_label('제목 또는 요청 검색').fill('맞는 카드가 없는 검색어')
+                lane.get_by_text(EMPTY_COMPLETED_NOTICE).wait_for(state='visible', timeout=5000)
+                searched = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': True})
+                check_completed_lane_state(searched, label + '-search', failures, 'empty')
+                lane.screenshot(path=str(output / f'{label}-search-lane.png'))
+                results.append({'label': label, 'search': completed_summary(searched),
+                                'emptyNotice': searched.get('empty'), 'lane': searched.get('lane')})
+                continue
             page.goto(section_url(base, 'autoRefresh') + lanes + '&manyCompleted=1', wait_until='networkidle')
             scope = page.get_by_test_id('card-board-workspace').first
             if pane:
@@ -1127,7 +1169,8 @@ def check_completed_empty_lane(page: Page, base: str, output: Path, width: int, 
                             'period': completed_summary(ranged), 'periodBack': completed_summary(widened),
                             'held': held, 'released': completed_summary(released), 'hidden': completed_summary(hidden),
                             'hiddenAlignment': hidden_alignment,
-                            'emptyNotice': searched.get('empty'), 'searchField': searched.get('search'), 'lane': searched.get('lane')})
+                            'emptyNotice': searched.get('empty'), 'periodNotice': ranged.get('empty'),
+                            'searchField': searched.get('search'), 'lane': searched.get('lane')})
         except Exception as error:
             failures.append({'check': 'completed empty lane', 'label': label, 'error': str(error).splitlines()[0]})
             page.screenshot(path=str(output / f'{label}-error.png'))

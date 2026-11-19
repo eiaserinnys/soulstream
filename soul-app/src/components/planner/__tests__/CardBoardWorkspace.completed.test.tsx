@@ -99,8 +99,9 @@ test.each([false, true])('완료 조회 실패는 칸 안에 다시 시도를 �
   expect(lane.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
   mockCompletedError = null;
   screen.rerender(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
-  // 오류가 걷히고 0장이면 두 보드 모두 완료 칸에 빈 칸 안내를 낸다.
-  expect(within(host.getByTestId('card-board-column-done')).getByText('선택한 기간에 완료 카드가 없습니다')).toBeTruthy();
+  // 오류가 걷히고 0장이면 두 보드 모두 완료 칸에 빈 칸 안내를 낸다. 좁은 칸에서도 어절에서 줄을 넘긴다.
+  const notice = within(host.getByTestId('card-board-column-done')).getByText('선택한 기간에 완료 카드가 없습니다');
+  expect(notice.props.lineBreakStrategyIOS).toBe('hangul-word');
   await settleTimers();
 });
 
