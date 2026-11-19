@@ -35,6 +35,7 @@ import {
 
 const OWNER_EMAIL = "owner@example.com";
 const TARGET_SESSION = "inbound-async-target";
+const OTHER_SESSION = "inbound-async-other-target";
 const PUBLIC_URL = "https://soulstream.example.test/";
 /** An answer slower than this means the route waited for the dispatch. */
 const ANSWER_DEADLINE_MS = 2_000;
@@ -67,6 +68,43 @@ function heldDispatch() {
     return await held;
   };
   return { calls, dispatch, release, fail };
+}
+
+interface HeldCall extends Call {
+  release(): void;
+  fail(error: Error): void;
+}
+
+/** A dispatch where each call waits on its own promise the test settles. */
+function heldPerCallDispatch() {
+  const calls: HeldCall[] = [];
+  const dispatch: ExternalInputDispatch = async (targetSessionId, body) => {
+    let release!: () => void;
+    let fail!: (error: Error) => void;
+    const held = new Promise<unknown>((resolve, reject) => {
+      release = () => resolve({ status: 200, body: { ok: true } });
+      fail = reject;
+    });
+    calls.push({ targetSessionId, body, release, fail });
+    return await held;
+  };
+  return { calls, dispatch };
+}
+
+/** Waits until `ready()` holds; queued dispatches start on a later tick. */
+async function waitUntil(ready: () => boolean): Promise<void> {
+  const deadline = Date.now() + ANSWER_DEADLINE_MS;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error("condition not reached in time");
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+/** Drains microtasks and one macrotask so a wrongly started dispatch shows. */
+async function letQueuedWorkRun(): Promise<void> {
+  for (let index = 0; index < 5; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 type Injected = Awaited<ReturnType<ReturnType<typeof createApp>["inject"]>>;
@@ -120,7 +158,8 @@ describe("inbound admission answers before the session delivery", () => {
     `;
     await db.sql`
       INSERT INTO sessions (session_id, display_name, agent_id, status)
-      VALUES (${TARGET_SESSION}, '비동기 대상', 'roselin', 'running')
+      VALUES (${TARGET_SESSION}, '비동기 대상', 'roselin', 'running'),
+             (${OTHER_SESSION}, '다른 대상', 'roselin', 'running')
     `;
   });
 
@@ -156,13 +195,36 @@ describe("inbound admission answers before the session delivery", () => {
     return createApp({ config, inboundHookRoutes: { grants: repository(), service: input } });
   }
 
-  async function issueKey() {
+  async function issueKey(targetSessionId: string = TARGET_SESSION) {
     return await repository().issueInboundWebhook({
       ownerEmail: OWNER_EMAIL,
       label: "빌드 알림",
-      targetSessionId: TARGET_SESSION,
+      targetSessionId,
       authMode: "key",
     });
+  }
+
+  async function postKey(
+    app: ReturnType<typeof createApp>,
+    grant: Awaited<ReturnType<typeof issueKey>>,
+    requestId: string,
+    text: string,
+  ): Promise<Injected> {
+    return expectAnswered(await answeredInTime(app.inject({
+      method: "POST",
+      url: `/api/hooks/${grant.grant.id}`,
+      headers: {
+        authorization: `Bearer ${grant.secret}`,
+        "idempotency-key": requestId,
+      },
+      payload: JSON.stringify({ text }),
+    })));
+  }
+
+  function textsFor(calls: Call[], target: string): string[] {
+    return calls
+      .filter((call) => call.targetSessionId === target)
+      .map((call) => String(call.body.text).split("\n\n").at(-1)!);
   }
 
   async function issueSignature() {
@@ -408,6 +470,80 @@ describe("inbound admission answers before the session delivery", () => {
       expect(logged).toEqual([{ grant_id: grant.grant.id, request_id: "key-async-throw" }]);
       expect(await deliveries()).toHaveLength(1);
     } finally {
+      await app.close();
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(unhandled).toEqual([]);
+  });
+
+  it("starts one target's dispatches in admission order while other targets run", async () => {
+    const held = heldPerCallDispatch();
+    const input = service(held.dispatch);
+    const app = hookApp(input);
+    const grant = await issueKey();
+    const other = await issueKey(OTHER_SESSION);
+    try {
+      expect((await postKey(app, grant, "order-a", "A")).statusCode).toBe(202);
+      expect((await postKey(app, grant, "order-b", "B")).statusCode).toBe(202);
+      await letQueuedWorkRun();
+      // B waits behind the held A; its 202 did not wait for the line.
+      expect(textsFor(held.calls, TARGET_SESSION)).toEqual(["A"]);
+
+      expect((await postKey(app, other, "order-c", "C")).statusCode).toBe(202);
+      await letQueuedWorkRun();
+      // Another target does not wait for the held A.
+      expect(textsFor(held.calls, OTHER_SESSION)).toEqual(["C"]);
+      expect(textsFor(held.calls, TARGET_SESSION)).toEqual(["A"]);
+
+      held.calls[0]!.release();
+      await waitUntil(() => textsFor(held.calls, TARGET_SESSION).length === 2);
+      expect(textsFor(held.calls, TARGET_SESSION)).toEqual(["A", "B"]);
+
+      for (const call of held.calls) call.release();
+      await input.settleDispatches();
+      expect(input.queuedDispatchTargetCount()).toBe(0);
+    } finally {
+      for (const call of held.calls) call.release();
+      await input.settleDispatches();
+      await app.close();
+    }
+    expect(unhandled).toEqual([]);
+  });
+
+  it("keeps the line moving after a rejected and a synchronously thrown dispatch", async () => {
+    const logged: Array<Record<string, unknown>> = [];
+    const held = heldPerCallDispatch();
+    const order: string[] = [];
+    const dispatch: ExternalInputDispatch = (targetSessionId, body) => {
+      const text = String(body.text).split("\n\n").at(-1)!;
+      order.push(text);
+      if (text === "B") throw new Error("sync failure");
+      return held.dispatch(targetSessionId, body);
+    };
+    const input = service(dispatch, logged);
+    const app = hookApp(input);
+    const grant = await issueKey();
+    try {
+      expect((await postKey(app, grant, "line-a", "A")).statusCode).toBe(202);
+      expect((await postKey(app, grant, "line-b", "B")).statusCode).toBe(202);
+      expect((await postKey(app, grant, "line-c", "C")).statusCode).toBe(202);
+      await letQueuedWorkRun();
+      expect(order).toEqual(["A"]);
+
+      held.calls[0]!.fail(new Error("node offline"));
+      await waitUntil(() => order.length === 3);
+      expect(order).toEqual(["A", "B", "C"]);
+
+      held.calls[1]!.release();
+      await input.settleDispatches();
+      expect(logged).toEqual([
+        { grant_id: grant.grant.id, request_id: "line-a" },
+        { grant_id: grant.grant.id, request_id: "line-b" },
+      ]);
+      expect(input.queuedDispatchTargetCount()).toBe(0);
+    } finally {
+      for (const call of held.calls) call.release();
+      await input.settleDispatches();
       await app.close();
     }
     await new Promise((resolve) => setImmediate(resolve));
