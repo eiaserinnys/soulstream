@@ -34,6 +34,8 @@ function makeRepository(): { projectsRoot: string; repo: string } {
   git(repo, "init", "-b", "main");
   git(repo, "config", "user.email", "test@example.com");
   git(repo, "config", "user.name", "Test");
+  writeFileSync(join(projectsRoot, "empty-ignore"), "");
+  git(repo, "config", "core.excludesFile", join(projectsRoot, "empty-ignore"));
   writeFileSync(join(repo, ".gitignore"), "dist/\nnode_modules/\n");
   writeFileSync(join(repo, "README.md"), "base\n");
   git(repo, "add", ".");
@@ -198,6 +200,65 @@ describe("WorktreeGit", () => {
 
     expect(dirty.untracked).toEqual(["notes.txt"]);
     expect(dirty.clean).toBe(false);
+  });
+
+  it("treats only the root untracked .local directory as ignored", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/local-only",
+      mode: "new", worktreeId: "worktree-local-only",
+    });
+    mkdirSync(join(created.path, ".local"));
+    writeFileSync(join(created.path, ".local", "capture.txt"), "capture");
+
+    expect(await worktrees.inspectDirty(created.path, [])).toMatchObject({
+      clean: true, tracked: [], untracked: [], ignored: [".local/"],
+    });
+    expect(await worktrees.inspectDirty(created.path, [], undefined, { includeIgnored: false }))
+      .toMatchObject({ clean: true, untracked: [], ignored: [] });
+    expect(await worktrees.inspectDirty(created.path, [], undefined, { deletionOnly: true }))
+      .toMatchObject({ clean: true, untracked: [], ignored: [".local/capture.txt"] });
+
+    git(created.path, "add", ".local/capture.txt");
+    git(created.path, "commit", "-m", "track local file");
+    writeFileSync(join(created.path, ".local", "capture.txt"), "changed");
+    expect(await worktrees.inspectDirty(created.path, []))
+      .toMatchObject({ clean: false, tracked: [".local/capture.txt"] });
+  });
+
+  it("preserves other untracked files alongside root .local", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/local-mixed",
+      mode: "new", worktreeId: "worktree-local-mixed",
+    });
+    mkdirSync(join(created.path, ".local"));
+    writeFileSync(join(created.path, ".local", "capture.txt"), "capture");
+    writeFileSync(join(created.path, "notes.txt"), "draft");
+
+    expect(await worktrees.inspectDirty(created.path, []))
+      .toMatchObject({ clean: false, untracked: ["notes.txt"], ignored: [".local/"] });
+  });
+
+  it("keeps a nested .local directory and a root .local file untracked", async () => {
+    const { projectsRoot, repo } = makeRepository();
+    mkdirSync(join(repo, "sub"));
+    writeFileSync(join(repo, "sub", "tracked.txt"), "base");
+    git(repo, "add", "sub/tracked.txt");
+    git(repo, "commit", "-m", "add sub directory");
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const created = await worktrees.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/local-nested",
+      mode: "new", worktreeId: "worktree-local-nested",
+    });
+    mkdirSync(join(created.path, "sub", ".local"));
+    writeFileSync(join(created.path, "sub", ".local", "file.txt"), "draft");
+    writeFileSync(join(created.path, ".local"), "file");
+
+    expect(await worktrees.inspectDirty(created.path, []))
+      .toMatchObject({ clean: false, untracked: [".local", "sub/.local/"], ignored: [] });
   });
 
   it("reports both paths of a tracked rename without corrupting either name", async () => {

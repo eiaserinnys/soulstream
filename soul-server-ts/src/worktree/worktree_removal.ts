@@ -100,7 +100,7 @@ export async function removeWorktreeLocked(options: {
         "Worktree contains tracked or untracked changes; preserve the listed paths and retry",
         {
           ...dirty,
-          cleanup: "Commit, stash, or preserve the listed tracked and untracked paths, then retry. Ignored files, including node_modules, are removed with the worktree.",
+          cleanup: "Commit, stash, or preserve the listed tracked and untracked paths, then retry. Ignored files, including node_modules, and the untracked root .local/ directory are removed with the worktree.",
         },
       );
     }

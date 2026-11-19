@@ -739,11 +739,14 @@ export class WorktreeGit {
     ])).stdout.split("\0").filter(Boolean);
     const tracked: string[] = [];
     const untracked: string[] = [];
+    const localIgnored: string[] = [];
     for (const entry of status) {
       const code = entry.slice(0, 2);
       const file = entry.slice(3);
-      if (code === "??") untracked.push(file);
-      else if (!options.deletionOnly || !/^[ D]+$/.test(code)) tracked.push(file);
+      if (code === "??") {
+        if (file.startsWith(".local/")) localIgnored.push(file);
+        else untracked.push(file);
+      } else if (!options.deletionOnly || !/^[ D]+$/.test(code)) tracked.push(file);
     }
     const ignored = options.includeIgnored === false ? [] : (await this.git(path, [
       ...exactWorktree,
@@ -755,6 +758,11 @@ export class WorktreeGit {
       "--no-empty-directory",
       "-z",
     ])).stdout.split("\0").filter(Boolean);
+    if (options.includeIgnored !== false) {
+      for (const file of localIgnored) {
+        if (!ignored.includes(file)) ignored.push(file);
+      }
+    }
     const unmanagedTracked = tracked.filter((entry) => !isManagedEntry(entry, managedPaths));
     const unmanagedUntracked = untracked.filter((entry) => !isManagedEntry(entry, managedPaths));
     const unmanagedIgnored = ignored.filter((entry) => !isManagedEntry(entry, managedPaths));
