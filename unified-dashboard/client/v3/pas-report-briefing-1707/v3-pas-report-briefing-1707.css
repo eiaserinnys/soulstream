@@ -1,0 +1,161 @@
+/* 카드 #1707 시안 A. 정본 토큰만 쓴다. 새 색과 글자 크기를 만들지 않는다. */
+
+.pas-rb1707-screen {
+  height: 100%;
+  background: var(--persistent-session-paper);
+}
+
+.pas-rb-chat-fill {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.pas-rb-chat-fill > [data-slot="chat-root"] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* PAS 말풍선은 정본 .pas-report 겉틀을 그대로 쓰고 내용만 결재 요약으로 줄인다. */
+.pas-rb-bubble {
+  max-width: 100%;
+}
+.pas-rb-bubble-sheet {
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-3) var(--v3-space-4);
+}
+.pas-rb-bubble-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--v3-space-1);
+  min-width: 0;
+}
+.pas-rb-bubble-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v3-space-1);
+  background: transparent;
+  color: var(--foreground);
+  font: var(--v3-type-card) var(--v3-font-family);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  word-break: keep-all;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+.pas-rb-bubble-title:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--v3-space-1) var(--ring);
+}
+.pas-rb-bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-width: 0;
+}
+.pas-rb-bubble-count {
+  font: var(--v3-type-meta) var(--v3-font-family);
+  color: var(--v3-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pas-rb-bubble-number {
+  font: var(--v3-type-badge) var(--v3-font-family);
+  color: var(--v3-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pas-rb-bubble-request {
+  margin: 0;
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-body) var(--v3-font-family);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.pas-rb-bubble-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-width: 0;
+}
+.pas-rb-complete-title {
+  margin: 0;
+  color: var(--foreground);
+  font: var(--v3-type-card) var(--v3-font-family);
+}
+.pas-rb-chat-fill > .pas-report {
+  margin-block: var(--v3-space-2);
+}
+
+
+/* 작업 목록 서랍의 아래 여백은 발행 페이지의 고정 코멘트 단추 자리를 비운다. */
+.pas-rb1707-screen .persistent-session-tasks { bottom: 72px; }
+.pas-rb1707-screen .persistent-session-task-scroll { padding-bottom: 48px; }
+.pas-rb1707-screen .persistent-session-task-scroll > .v3-persistent-task-list { min-height: 0; }
+.pas-rb-drawer-meta {
+  margin: var(--v3-space-3) 0 0;
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+.pas-rb-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin-top: var(--v3-space-4);
+  padding-top: var(--v3-space-3);
+  border-top: 1px solid var(--persistent-session-line);
+}
+.pas-rb-done h3 {
+  margin: 0;
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-badge) var(--v3-font-family);
+}
+.pas-rb-done ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pas-rb-done li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--v3-space-2);
+  min-width: 0;
+}
+.pas-rb-done-number {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-badge) var(--v3-font-family);
+  font-variant-numeric: tabular-nums;
+}
+.pas-rb-done-title {
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pas-rb-done-badges { display: flex; align-items: center; gap: var(--v3-space-1); }
+
+@media (max-width: 767px) {
+  .pas-rb1707-screen .persistent-session-main {
+    height: calc(100% - var(--pas-header-height) - 76px);
+  }
+  .pas-rb1707-screen .persistent-session-tasks { bottom: 76px; }
+  .pas-rb-chat-fill > .pas-report {
+    margin-top: calc(var(--v3-space-2) + var(--v3-action-size) + var(--v3-space-2));
+  }
+}
