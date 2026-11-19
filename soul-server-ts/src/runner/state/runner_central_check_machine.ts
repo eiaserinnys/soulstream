@@ -8,7 +8,6 @@ export type RunnerCentralLookup =
   | "active"
   | "inactive";
 
-/** 직전 잇기 전이의 응답이다. */
 export type RunnerAdoptResponse =
   | "none"
   | "retryable_rejection"

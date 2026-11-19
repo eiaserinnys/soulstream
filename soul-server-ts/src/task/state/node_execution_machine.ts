@@ -11,29 +11,17 @@ export const NODE_RETENTION_KINDS = [
 ] as const;
 export type NodeRetentionKind = (typeof NODE_RETENTION_KINDS)[number];
 
-/** Task 필드에 흩어진 사실을 한 자리에 모은 판정 입력이다. */
 export interface NodeExecutionFacts {
-  /** 상태가 initializing이나 running이다. */
   active: boolean;
-  /** 종료 상태이고 중앙이 종료 사건을 적용했다(terminationEventRecorded). */
   terminalRecorded: boolean;
-  /** task.runner가 붙어 있다. */
   hasRunner: boolean;
-  /** 붙은 러너가 살아 있는 프로세스가 아니라 기록을 다시 읽는 손잡이다(runnerIsOfflineReplay). */
   offlineReplay: boolean;
-  /** 시동 장벽(executionActivation)이나 실행 약속(executionPromise)이 있다. */
   hasStartBarrier: boolean;
-  /** 중앙이 적용한 실행 등록(executionRegistration)이 있다. */
   hasRegistration: boolean;
-  /** 러너가 남긴 종료 사실(runnerTerminalFact)이 있다. */
   hasRunnerTerminalFact: boolean;
-  /** 종료 뒤 정상 보유의 종류(runnerRetainedForDetachedWork와 엔진). */
   retention: NodeRetentionKind;
-  /** 러너 해제 청구가 걸려 있다(runnerReleaseClaim). */
   releasing: boolean;
-  /** DB 줄에서 올린 task다(hydratedFromDb). */
   hydratedFromDb: boolean;
-  /** 멈춤 장벽이 올라 있다. Task에는 이 표지가 없어 호출자가 넘긴다. */
   stopRequested: boolean;
 }
 
@@ -60,10 +48,6 @@ export type NodeExecutionPhase = (typeof NODE_EXECUTION_PHASES)[number];
 const recordedWithRunner = (event: NodeExecutionFacts): boolean =>
   event.terminalRecorded && event.hasRunner;
 
-/**
- * 노드 실행 상태 투영 기계다. 전이 배열의 순서가 판정 순서이고 목표 상태가 값이다.
- * 액터를 만들지 않고 transition()으로 다음 상태 값만 읽는다.
- */
 export const nodeExecutionMachine = setup({
   types: {
     events: {} as NodeExecutionProjectEvent,
@@ -75,8 +59,6 @@ export const nodeExecutionMachine = setup({
     retainedCodex: ({ event }) =>
       recordedWithRunner(event) && event.retention === "codex_command",
     stopping: ({ event }) => event.active && event.stopRequested,
-    // 실행 등록이 남은 task는 시동 복구가 이을 러너가 있을 수 있어 러너 없는 task가
-    // 아니다. 재연결 실행 중 목록도 같은 기준으로 복구 대기로 본다.
     hydratedActive: ({ event }) =>
       event.active
       && !event.hasRunner

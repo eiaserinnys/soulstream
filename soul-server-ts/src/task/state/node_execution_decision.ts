@@ -37,7 +37,6 @@ export interface NodeExecutionFactsOptions {
   stopRequested?: boolean;
 }
 
-/** Task 필드를 판정 입력으로 모은다. */
 export function nodeExecutionFactsFromTask(
   task: NodeExecutionTaskFields,
   options: NodeExecutionFactsOptions = {},

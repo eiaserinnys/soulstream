@@ -68,12 +68,6 @@ const cell = (
   test: string,
 ): NodeRequestCell => ({ disposition, basis, note, test });
 
-/**
- * 실행 상태 x 요청 종류의 처분 표다. 칸을 빼면 형 검사가 막는다.
- * 요청의 운영 진입 함수는 멈춤 `TaskManager.cancelTask`, 지시 `addIntervention`,
- * 삭제 `deleteTask`, 재개 `ensureRunning`(명시적 시작 의도)이다.
- * 러너 없이 올린 활성 task의 멈춤과 삭제는 종료 기록을 만드는 처분이다.
- */
 export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> = {
   idle: {
     stop: cell(

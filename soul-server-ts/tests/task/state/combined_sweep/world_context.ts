@@ -45,10 +45,6 @@ export interface WorldContext {
 
 const ACTIVE_EXEC = new Set<NodeExec>(["gate", "resume_w", "reg_w", "turn", "stopping", "replay", "adopt_w"]);
 
-/**
- * 구성을 노드 실행 상태 투영의 입력으로 옮긴다. 모형에 없는 Task 필드는 고정값이다
- * (해제 청구 없음, DB에서 올린 task 아님).
- */
 export function nodeExecutionFactsOf(g: G, codex: boolean): NodeExecutionFacts {
   const active = ACTIVE_EXEC.has(g.ex);
   const learnedEnd = g.ex === "replay";
@@ -58,7 +54,6 @@ export function nodeExecutionFactsOf(g: G, codex: boolean): NodeExecutionFacts {
     hasRunner: g.p !== "none",
     offlineReplay: g.ex === "replay" && g.p === "dead",
     hasStartBarrier: g.ex === "gate" || g.ex === "resume_w",
-    // 잇기 대기는 등록을 다시 세우는 중이라 등록이 없는 것으로 본다.
     hasRegistration: g.ex === "turn" || g.ex === "stopping" || g.ex === "replay",
     hasRunnerTerminalFact: learnedEnd
       && (g.life === "ended" || g.life === "ended_l" || g.life === "reaped"),
