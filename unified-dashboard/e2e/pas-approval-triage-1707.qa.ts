@@ -119,7 +119,13 @@ async function main() {
     pass("R2: 확인할 것 5건");
     assert(await page.getByTestId("v3-ht-row-1680").getAttribute("aria-expanded") === "true", "#1680 이 처음부터 펼쳐지지 않았습니다");
     assert((await page.getByTestId("v3-ht-session").innerText()).includes("로젤린"), "담당 세션이 로젤린이 아닙니다");
-    pass("R2: 첫 행 자동 펼침과 담당 세션 연결");
+    const sessionPortrait = page.getByTestId("v3-ht-session").locator("img");
+    assert(await sessionPortrait.count() === 1, "담당 세션 초상이 이미지가 아닙니다");
+    assert((await sessionPortrait.getAttribute("src"))?.includes("system-portrait.png"), "담당 세션 초상이 묶음 초상으로 바뀌지 않았습니다");
+    const pasPortrait = page.locator(".v3-ht-pas-entry img");
+    assert(await pasPortrait.count() === 1, "PAS 진입 초상이 이미지가 아닙니다");
+    assert((await pasPortrait.getAttribute("src"))?.includes("system-portrait.png"), "PAS 진입 초상이 묶음 초상으로 바뀌지 않았습니다");
+    pass("R2: 담당 세션과 PAS 진입이 ProfileAvatar 초상을 쓴다");
 
     await page.getByTestId("v3-ht-row-1387").click();
     assert(await page.getByTestId("v3-ht-row-1387").getAttribute("aria-expanded") === "true", "#1387 이 펼쳐지지 않았습니다");
@@ -144,6 +150,16 @@ async function main() {
     assert(returned === "v3-ht-evidence-ev1408-a", `닫은 뒤 초점이 근거 단추로 돌아오지 않았습니다: ${returned}`);
     pass("14: 근거 대화상자를 열면 초점이 안으로, Esc 로 닫으면 연 단추로 돌아온다");
 
+    await page.getByTestId("v3-ht-evidence-ev1408-a").click();
+    await page.waitForSelector("dialog[open]");
+    const closeCap = page.getByTestId("v3-ht-dialog-close");
+    assert(await closeCap.evaluate(element => element.classList.contains("dashboard-icon-cap")), "근거 닫기 단추가 DashboardIconCap 이 아닙니다");
+    await closeCap.click();
+    await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+    const closeReturned = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+    assert(closeReturned === "v3-ht-evidence-ev1408-a", `아이콘 닫기 뒤 초점이 근거 단추로 돌아오지 않았습니다: ${closeReturned}`);
+    pass("14: DashboardIconCap 닫기 단추로 닫아도 초점이 연 단추로 돌아온다");
+
     await assertNoOverflow(page, "1440");
     shots.push(await capture(page, "1440-dark"));
 
@@ -156,6 +172,13 @@ async function main() {
     assert(await page.evaluate(() => window.location.hash) === "#triage", "홈 복귀 해시가 #triage 가 아닙니다");
     await assertClean(page, dark.failures, "1440 dark after PAS");
     pass("R1: 도구 막대 PAS 진입과 한 줄 배너, 홈 복귀");
+
+    await page.getByTestId("pas-entry").click();
+    assert(await page.evaluate(() => window.location.hash) === "#pas", "브랜드 복귀 시험 전 PAS 해시가 아닙니다");
+    await page.getByTestId("brand-home").click();
+    assert(await page.evaluate(() => window.location.hash) === "#triage", "브랜드 캡슐이 홈 해시로 돌아오지 않았습니다");
+    assert(await page.locator(".v3-ht-panes").isVisible(), "브랜드 캡슐 뒤 홈 3단이 보이지 않습니다");
+    pass("R1: PAS 화면에서 브랜드 캡슐을 누르면 홈 트리아지로 돌아온다");
 
     // R3. 지켜보는 중 선반
     await page.getByTestId("v3-ht-row-1387").click();
@@ -175,6 +198,27 @@ async function main() {
     assert((await page.getByTestId("v3-ht-shelf-count").innerText()) === "0건", "일괄 완료 뒤 선반이 비지 않았습니다");
     pass("R3: 선반 펼침과 일괄 완료");
     await dark.close();
+
+    // A2. 질문 안건의 인라인 선택지 결재와 세션 직접 답하기
+    const choice = await open(browser, base, 1440, 900, "dark");
+    const cp = choice.page;
+    assert(await cp.locator('[data-testid^="v3-ht-choice-"]').count() === 3, "질문 선택지가 3개가 아닙니다");
+    assert((await cp.getByTestId("v3-ht-choice-1680-7d").innerText()).includes("권함"), "권함 표시가 없습니다");
+    await cp.getByTestId("v3-ht-choice-1680-7d").click();
+    assert(await cp.locator('[data-testid^="v3-ht-row-"]').count() === 4, "선택지 결재 뒤 확인할 것이 4건이 아닙니다");
+    assert(await cp.getByTestId("v3-ht-row-1512").getAttribute("aria-expanded") === "true", "선택지 결재 뒤 다음 안건이 펼쳐지지 않았습니다");
+    assert((await cp.getByTestId("v3-ht-session").innerText()).includes("키키"), "선택지 결재 뒤 담당 세션이 키키가 아닙니다");
+    await assertClean(cp, choice.failures, "질문 선택지 결재");
+    pass("질문: 장부 안 선택지로 바로 결재하고 다음 안건으로 넘어간다");
+    await choice.close();
+
+    const direct = await open(browser, base, 1440, 900, "dark");
+    const dp = direct.page;
+    await dp.getByTestId("v3-ht-direct-1680").click();
+    await dp.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    assert(await dp.evaluate(() => document.activeElement?.closest(".v3-ht-session") !== null), "초점이 담당 세션 패널 밖에 있습니다");
+    pass("질문: 세션에 직접 답하기가 담당 세션 입력창으로 초점을 넘긴다");
+    await direct.close();
 
     // B. 1440 다크 보드: 열 이름, 보류 18, 폴더 필터, 검수 승인
     const board = await open(browser, base, 1440, 900, "dark");

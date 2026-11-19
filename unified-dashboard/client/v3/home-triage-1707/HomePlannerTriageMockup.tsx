@@ -1,6 +1,7 @@
 // 시안 C: 홈 플래너 3단 트리아지 장부와 지켜보는 중 선반.
 // 홈(폴더, 확인할 것 장부, 담당 세션)과 PAS 화면을 한 도구 막대로 오간다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FolderTree, ListChecks, MessageSquare, type LucideIcon } from "lucide-react";
 import { useGlassSurface } from "@seosoyoung/soul-ui";
 
 import "./v3-home-triage-1707.css";
@@ -31,10 +32,10 @@ const HOME_TABS: readonly { id: HomeTab; label: string }[] = [
   { id: "board", label: "칸반 보드" },
 ];
 
-const MOBILE_TABS: readonly { id: MobileTab; icon: string; label: string }[] = [
-  { id: "triage", icon: "▦", label: "오늘 트리아지" },
-  { id: "folders", icon: "📁", label: "폴더" },
-  { id: "session", icon: "💬", label: "담당 세션" },
+const MOBILE_TABS: readonly { id: MobileTab; Icon: LucideIcon; label: string }[] = [
+  { id: "triage", Icon: ListChecks, label: "오늘 트리아지" },
+  { id: "folders", Icon: FolderTree, label: "폴더" },
+  { id: "session", Icon: MessageSquare, label: "담당 세션" },
 ];
 
 const ALL_CARDS: readonly TriageCard[] = [...triageCards, ...watchCards];
@@ -65,7 +66,7 @@ function MobileTabs({ active, onSelect }: { active: MobileTab; onSelect(tab: Mob
           onClick={() => onSelect(tab.id)}
           data-testid={`v3-ht-mobile-tab-${tab.id}`}
         >
-          <span className="v3-mobile-tab-icon" aria-hidden="true">{tab.icon}</span>
+          <tab.Icon aria-hidden="true" size={16} />
           <span>{tab.label}</span>
         </button>
       ))}
@@ -211,17 +212,9 @@ export function HomePlannerTriageMockup() {
     setUndoCard(null);
   };
 
-  const primary = (card: TriageCard) => {
-    if (card.kind === "질문") {
-      setDrafts(prev => ({
-        ...prev,
-        [card.id]: prev[card.id]?.trim() ? prev[card.id]! : `#${card.number} 관련: `,
-      }));
-      focusComposer();
-      return;
-    }
-    complete(card);
-  };
+  const primary = (card: TriageCard) => complete(card);
+
+  const answer = (card: TriageCard) => complete(card);
 
   const openCard = (id: string) => {
     const card = ALL_CARDS.find(item => item.id === id);
@@ -260,7 +253,7 @@ export function HomePlannerTriageMockup() {
       data-mobile-tab={mobileTab}
       data-testid="v3-ht-root"
     >
-      <TriageToolbar view={view} onOpenPas={() => navigate("pas")} />
+      <TriageToolbar view={view} onOpenHome={() => navigate("triage")} onOpenPas={() => navigate("pas")} />
       {view === "home" ? (
         <div className="v3-ht-panes">
           <div className={`v3-ht-slot${mobileTab === "folders" ? " is-mobile-active" : ""}`} data-slot-name="folders">
@@ -303,6 +296,7 @@ export function HomePlannerTriageMockup() {
                     onNext={() => move(1)}
                     onShelve={shelve}
                     onPrimary={primary}
+                    onAnswer={answer}
                     onOpenSession={focusComposer}
                     watched={watched}
                     shelfOpen={shelfOpen}

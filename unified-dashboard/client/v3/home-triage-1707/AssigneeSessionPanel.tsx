@@ -1,7 +1,7 @@
 // 오른쪽 담당 세션 패널. 고른 카드의 담당 세션으로 저절로 바뀌고, 최근 실행과 세션 기록,
 // 마지막 완료 보고를 보여 준다. 아래 입력창으로 이어서 지시를 보낸다.
 import { useEffect, useRef, type RefObject } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, ProfileAvatar } from "@seosoyoung/soul-ui";
 
 import { StatusChip } from "../StatusChip";
 import type { SessionMessage, TriageCard } from "./triage-data";
@@ -43,7 +43,13 @@ export function AssigneeSessionPanel({
       {card ? (
         <>
           <header className="v3-ht-session-head">
-            <span className="v3-ht-avatar" aria-hidden="true">{card.session.emoji}</span>
+            <ProfileAvatar
+              role="assistant"
+              shape="circle"
+              hasPortrait
+              portraitUrl={card.session.portraitUrl}
+              fallbackEmoji={card.session.emoji}
+            />
             <div className="v3-ht-session-id">
               <strong>{card.session.agentName}</strong>
               <span>{card.session.preset}, {card.session.node}</span>

@@ -1,10 +1,12 @@
 // 확인할 것 장부. 행을 누르면 그 자리에서 펼쳐지고, 근거 그림은 대화상자로 크게 본다.
 // 지켜보는 중 선반은 장부 아래 한 줄 막대로 접혀 있다.
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { ChevronDown, Clock3, X } from "lucide-react";
+import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 
 import { StatusChip } from "../StatusChip";
-import type { ItemState, TriageCard, TriageEvidence, TriageKind } from "./triage-data";
+import { EvidenceDiagram } from "./EvidenceDiagram";
+import type { ItemState, TriageCard, TriageEvidence, TriageKind, TriageQuestionChoice } from "./triage-data";
 
 const ITEM_STATE_LABEL: Record<ItemState, string> = {
   done: "확인됨",
@@ -22,9 +24,11 @@ function primaryLabel(kind: TriageKind): string {
 function EvidenceDialog({
   evidence,
   onDismiss,
+  onClosed,
 }: {
   evidence: TriageEvidence | null;
   onDismiss(): void;
+  onClosed(): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -40,7 +44,14 @@ function EvidenceDialog({
       ref={ref}
       className="v3-ht-dialog glass-strong glass-chrome lg-rim"
       aria-label={evidence ? `${evidence.label} 크게 보기` : "근거 크게 보기"}
-      onClose={onDismiss}
+      onClose={() => {
+        onDismiss();
+        onClosed();
+      }}
+      onCancel={event => {
+        event.preventDefault();
+        onDismiss();
+      }}
       onKeyDown={event => {
         if (event.key !== "Tab") return;
         const dialog = ref.current;
@@ -74,15 +85,12 @@ function EvidenceDialog({
               <h2>{evidence.label}</h2>
               <p>{evidence.note}</p>
             </div>
-            <Button variant="glass" size="sm" onClick={onDismiss}>닫기</Button>
+            <DashboardIconCap label="근거 닫기" onClick={onDismiss} data-testid="v3-ht-dialog-close">
+              <X className="size-5" strokeWidth={1.4} absoluteStrokeWidth />
+            </DashboardIconCap>
           </header>
-          <div className={`v3-ht-evidence-canvas v3-ht-evidence-canvas--${evidence.variant}`} aria-hidden="true">
-            <span className="v3-ht-canvas-bar" />
-            <span className="v3-ht-canvas-line" />
-            <span className="v3-ht-canvas-line v3-ht-canvas-line--short" />
-            <span className="v3-ht-canvas-block" />
-            <span className="v3-ht-canvas-line" />
-            <span className="v3-ht-canvas-block v3-ht-canvas-block--tall" />
+          <div className="v3-ht-evidence-canvas">
+            <EvidenceDiagram diagram={evidence.diagram} />
           </div>
         </div>
       ) : null}
@@ -94,12 +102,14 @@ function LedgerDetail({
   card,
   onShelve,
   onPrimary,
+  onAnswer,
   onOpenSession,
   onPreview,
 }: {
   card: TriageCard;
   onShelve(): void;
   onPrimary(): void;
+  onAnswer(choice: TriageQuestionChoice): void;
   onOpenSession(): void;
   onPreview(evidence: TriageEvidence, opener: HTMLElement): void;
 }) {
@@ -110,6 +120,34 @@ function LedgerDetail({
         <p>{card.request}</p>
       </div>
       <p className="v3-ht-scope">{card.scope}</p>
+      {card.question ? (
+        <section className="v3-ht-question" aria-label="질문 선택지" data-testid={`v3-ht-question-${card.number}`}>
+          <p className="v3-ht-question-intro">{card.question.intro}</p>
+          <div className="v3-ht-choices">
+            {card.question.choices.map(choice => (
+              <button
+                key={choice.id}
+                type="button"
+                className="v3-ht-choice"
+                data-recommended={choice.recommended || undefined}
+                onClick={() => onAnswer(choice)}
+                data-testid={`v3-ht-choice-${card.number}-${choice.id}`}
+              >
+                <span>{choice.label}</span>
+                {choice.recommended ? <span className="v3-ht-choice-hint">(권함)</span> : null}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="v3-ht-choice-direct"
+            onClick={onOpenSession}
+            data-testid={`v3-ht-direct-${card.number}`}
+          >
+            세션에 직접 답하기
+          </button>
+        </section>
+      ) : null}
       <ul className="v3-ht-items" aria-label="확인 항목">
         {card.items.map(item => (
           <li key={item.title} className="v3-ht-item" data-state={item.state}>
@@ -132,22 +170,26 @@ function LedgerDetail({
               aria-label={`${evidence.label} 크게 보기`}
               data-testid={`v3-ht-evidence-${evidence.id}`}
             >
-              <span className={`v3-ht-thumb v3-ht-thumb--${evidence.variant}`} aria-hidden="true" />
+              <span className="v3-ht-thumb"><EvidenceDiagram diagram={evidence.diagram} /></span>
               <span className="v3-ht-thumb-label">{evidence.label}</span>
             </button>
           ))}
         </div>
       ) : null}
       <div className="v3-ht-actions">
-        <Button size="sm" onClick={onPrimary} data-testid={`v3-ht-primary-${card.number}`}>
-          {primaryLabel(card.kind)}
-        </Button>
+        {card.question ? null : (
+          <Button size="sm" onClick={onPrimary} data-testid={`v3-ht-primary-${card.number}`}>
+            {primaryLabel(card.kind)}
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={onShelve} data-testid={`v3-ht-shelve-${card.number}`}>
           지켜보기 선반으로
         </Button>
-        <Button variant="ghost" size="sm" onClick={onOpenSession}>
-          세션 로그 보기
-        </Button>
+        {card.question ? null : (
+          <Button variant="ghost" size="sm" onClick={onOpenSession}>
+            세션 로그 보기
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -160,6 +202,7 @@ export function TriageLedger({
   onNext,
   onShelve,
   onPrimary,
+  onAnswer,
   onOpenSession,
   watched,
   shelfOpen,
@@ -176,6 +219,7 @@ export function TriageLedger({
   onNext(): void;
   onShelve(card: TriageCard): void;
   onPrimary(card: TriageCard): void;
+  onAnswer(card: TriageCard, choice: TriageQuestionChoice): void;
   onOpenSession(): void;
   watched: TriageCard[];
   shelfOpen: boolean;
@@ -193,8 +237,8 @@ export function TriageLedger({
     openerRef.current = opener;
     setPreview(evidence);
   };
-  const closePreview = () => {
-    setPreview(null);
+  const closePreview = () => setPreview(null);
+  const restoreFocus = () => {
     openerRef.current?.focus();
     openerRef.current = null;
   };
@@ -239,13 +283,14 @@ export function TriageLedger({
                   <span className="v3-ht-row-title">{card.title}</span>
                   <span className="v3-ht-row-folder">{card.folderLabel}</span>
                   <span className="v3-ht-row-waited">{card.waited}</span>
-                  <span className="v3-ht-row-caret" aria-hidden="true">⌄</span>
+                  <ChevronDown className="v3-ht-row-caret" aria-hidden="true" size={16} />
                 </button>
                 {open ? (
                   <LedgerDetail
                     card={card}
                     onShelve={() => onShelve(card)}
                     onPrimary={() => onPrimary(card)}
+                    onAnswer={choice => onAnswer(card, choice)}
                     onOpenSession={onOpenSession}
                     onPreview={openPreview}
                   />
@@ -264,10 +309,10 @@ export function TriageLedger({
             onClick={onToggleShelf}
             data-testid="v3-ht-shelf-toggle"
           >
-            <span aria-hidden="true" className="v3-ht-shelf-mark">◷</span>
+            <Clock3 className="v3-ht-shelf-mark" aria-hidden="true" size={16} />
             <span>지켜보는 중</span>
             <span className="v3-ht-shelf-count" data-testid="v3-ht-shelf-count">{watched.length}건</span>
-            <span className="v3-ht-shelf-caret" aria-hidden="true">⌄</span>
+            <ChevronDown className="v3-ht-shelf-caret" aria-hidden="true" size={16} />
           </button>
           {shelfOpen && watched.length > 0 ? (
             <Button variant="ghost" size="sm" onClick={onCompleteAll} data-testid="v3-ht-shelf-complete-all">
@@ -295,7 +340,7 @@ export function TriageLedger({
           )
         ) : null}
       </section>
-      <EvidenceDialog evidence={preview} onDismiss={closePreview} />
+      <EvidenceDialog evidence={preview} onDismiss={closePreview} onClosed={restoreFocus} />
     </section>
   );
 }

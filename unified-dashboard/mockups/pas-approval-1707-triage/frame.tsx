@@ -5,7 +5,11 @@ import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 import { HomePlannerTriageMockup } from "../../client/v3/home-triage-1707/HomePlannerTriageMockup";
 import { mountMockup } from "../_shell/MockupShell";
+import { mockImages } from "../_shell/mock-env";
 import wallpaperUrl from "../../e2e/readme-demo/wallpaper.jpg?inline";
+
+// 담당 에이전트와 PAS 진입의 초상은 묶음 안 기본 초상으로 응답한다.
+mockImages([{ pattern: /^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/, file: "system-portrait.png" }]);
 
 function Mockup() {
   useEffect(() => {

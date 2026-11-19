@@ -12,11 +12,31 @@ export interface TriageItem {
   result: string;
 }
 
+export type EvidenceDiagramKind =
+  | "period-chips"
+  | "app-updates"
+  | "interaction-steps"
+  | "interaction-flow"
+  | "line-height"
+  | "narrow-width"
+  | "morning-alerts";
+
 export interface TriageEvidence {
   id: string;
   label: string;
   note: string;
-  variant: "wide" | "tall" | "code";
+  diagram: EvidenceDiagramKind;
+}
+
+export interface TriageQuestionChoice {
+  id: string;
+  label: string;
+  recommended?: boolean;
+}
+
+export interface TriageQuestion {
+  intro: string;
+  choices: TriageQuestionChoice[];
 }
 
 export interface SessionMessage {
@@ -37,6 +57,7 @@ export interface TriageSession {
   agentId: string;
   preset: string;
   node: string;
+  portraitUrl: string;
   emoji: string;
   status: "running" | "review" | "completed" | "offline";
   statusLabel: string;
@@ -55,6 +76,7 @@ export interface TriageCard {
   waited: string;
   request: string;
   scope: string;
+  question?: TriageQuestion;
   items: TriageItem[];
   evidence: TriageEvidence[];
   session: TriageSession;
@@ -99,6 +121,7 @@ const roselin: TriageSession = {
   agentId: "roselin",
   preset: "deepseek-flash-4.1",
   node: "eiaserinnys",
+  portraitUrl: "/api/nodes/eiaserinnys/agents/roselin/portrait",
   emoji: "🗡️",
   status: "running",
   statusLabel: "실행 중",
@@ -120,6 +143,7 @@ const kiki: TriageSession = {
   agentId: "kiki",
   preset: "claude-sonnet-4.5",
   node: "eias-linegames",
+  portraitUrl: "/api/nodes/eias-linegames/agents/kiki/portrait",
   emoji: "🐈",
   status: "review",
   statusLabel: "검수 대기",
@@ -141,6 +165,7 @@ const ariella: TriageSession = {
   agentId: "ariella",
   preset: "gpt-5.1-codex",
   node: "silent-manari-ts",
+  portraitUrl: "/api/nodes/silent-manari-ts/agents/ariella/portrait",
   emoji: "🦋",
   status: "review",
   statusLabel: "검수 대기",
@@ -163,6 +188,7 @@ const selaphiel: TriageSession = {
   agentId: "selaphiel",
   preset: "claude-opus-4.5",
   node: "eias-linegames-wsl",
+  portraitUrl: "/api/nodes/eias-linegames-wsl/agents/selaphiel/portrait",
   emoji: "🪽",
   status: "review",
   statusLabel: "검수 대기",
@@ -184,6 +210,7 @@ const roselinKaleido: TriageSession = {
   agentId: "roselin",
   preset: "deepseek-flash-4.1",
   node: "eiaserinnys",
+  portraitUrl: "/api/nodes/eiaserinnys/agents/roselin/portrait",
   emoji: "🗡️",
   status: "review",
   statusLabel: "검수 대기",
@@ -205,6 +232,7 @@ const watcherContext: TriageSession = {
   agentId: "kiki",
   preset: "claude-sonnet-4.5",
   node: "eias-linegames",
+  portraitUrl: "/api/nodes/eias-linegames/agents/kiki/portrait",
   emoji: "🐈",
   status: "completed",
   statusLabel: "관찰 중",
@@ -222,6 +250,7 @@ const watcherSystem: TriageSession = {
   agentId: "ariella",
   preset: "gpt-5.1-codex",
   node: "silent-manari-ts",
+  portraitUrl: "/api/nodes/silent-manari-ts/agents/ariella/portrait",
   emoji: "🦋",
   status: "completed",
   statusLabel: "관찰 중",
@@ -246,12 +275,20 @@ export const triageCards: readonly TriageCard[] = [
     waited: "15분 전",
     request: "완료 목록을 열 때 기간 칩이 무엇을 기본으로 선택할지 정해 주세요. 지금은 매번 최근 7일로 돌아갑니다.",
     scope: "기본 선택 범위와 기기 기억 여부만 확인하면 됩니다. 목록 자체는 바뀌지 않습니다.",
+    question: {
+      intro: "완료 목록을 열 때 기간 칩이 무엇을 기본으로 선택할지 정합니다. 마지막에 고른 범위는 기기에 기억됩니다.",
+      choices: [
+        { id: "7d", label: "최근 7일", recommended: true },
+        { id: "today", label: "오늘만" },
+        { id: "all", label: "전체 표시" },
+      ],
+    },
     items: [
       { title: "최근 7일을 기본으로 두기", state: "done", result: "완료 목록의 첫 화면이 최근 7일로 열립니다." },
       { title: "마지막에 고른 범위 기억", state: "todo", result: "기기에 마지막 선택을 저장하는 방식을 확인해 주세요." },
     ],
     evidence: [
-      { id: "ev1680-a", label: "기간 칩 비교", note: "7일과 30일을 나란히 둔 화면", variant: "wide" },
+      { id: "ev1680-a", label: "기간 칩 비교", note: "7일과 30일을 나란히 둔 화면", diagram: "period-chips" },
     ],
     session: roselin,
     color: "yellow",
@@ -273,7 +310,7 @@ export const triageCards: readonly TriageCard[] = [
       { title: "업데이트 실행", state: "todo", result: "집 PC에서 직접 눌러야 합니다." },
     ],
     evidence: [
-      { id: "ev1512-a", label: "앱스토어 목록", note: "업데이트 표시가 있는 앱 목록", variant: "tall" },
+      { id: "ev1512-a", label: "앱스토어 목록", note: "업데이트 표시가 있는 앱 목록", diagram: "app-updates" },
     ],
     session: kiki,
     color: "mint",
@@ -297,8 +334,8 @@ export const triageCards: readonly TriageCard[] = [
       { title: "인쇄용 부록", state: "caveat", result: "이번 범위에서 빼 두었습니다." },
     ],
     evidence: [
-      { id: "ev1387-a", label: "3단계 도입 표", note: "설계서 3장의 상태 표", variant: "wide" },
-      { id: "ev1387-b", label: "개입 시점 흐름도", note: "설계서 4장의 흐름도", variant: "code" },
+      { id: "ev1387-a", label: "3단계 도입 표", note: "설계서 3장의 상태 표", diagram: "interaction-steps" },
+      { id: "ev1387-b", label: "개입 시점 흐름도", note: "설계서 4장의 흐름도", diagram: "interaction-flow" },
     ],
     session: ariella,
     color: "blue",
@@ -322,8 +359,8 @@ export const triageCards: readonly TriageCard[] = [
       { title: "인쇄 미리보기", state: "caveat", result: "이번 검수에서 보지 못했습니다." },
     ],
     evidence: [
-      { id: "ev1408-a", label: "편집 화면", note: "장 유형과 순서 변경 화면", variant: "wide" },
-      { id: "ev1408-b", label: "좁은 폭 캡처", note: "390px 줄간격 확인", variant: "tall" },
+      { id: "ev1408-a", label: "편집 화면", note: "장 유형과 순서 변경 화면", diagram: "line-height" },
+      { id: "ev1408-b", label: "좁은 폭 캡처", note: "390px 줄간격 확인", diagram: "narrow-width" },
     ],
     session: selaphiel,
     color: "pink",
@@ -347,7 +384,7 @@ export const triageCards: readonly TriageCard[] = [
       { title: "8일 관찰 기록", state: "done", result: "놓친 알림 0건입니다." },
     ],
     evidence: [
-      { id: "ev1112-a", label: "알림 기록 8일", note: "날짜별 알림 도착 기록", variant: "code" },
+      { id: "ev1112-a", label: "알림 기록 8일", note: "날짜별 알림 도착 기록", diagram: "morning-alerts" },
     ],
     session: roselinKaleido,
     color: "lavender",

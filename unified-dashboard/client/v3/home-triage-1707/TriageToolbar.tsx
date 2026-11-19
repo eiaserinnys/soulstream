@@ -2,24 +2,29 @@
 // 같은 클래스로 세우고, 운영에서 서버를 부르는 PAS 진입만 시안용 버튼으로 바꿨다.
 import { useRef } from "react";
 import { Search } from "lucide-react";
-import { ThemeToggle, useGlassSurface } from "@seosoyoung/soul-ui";
+import { ProfileAvatar, ThemeToggle, useGlassSurface } from "@seosoyoung/soul-ui";
 
-export function TriageToolbar({ view, onOpenPas }: { view: "home" | "pas"; onOpenPas(): void }) {
-  const brandRef = useRef<HTMLDivElement>(null);
+export function TriageToolbar({ view, onOpenHome, onOpenPas }: { view: "home" | "pas"; onOpenHome(): void; onOpenPas(): void }) {
+  const brandRef = useRef<HTMLButtonElement>(null);
   const pasRef = useRef<HTMLButtonElement>(null);
   const brandGlass = useGlassSurface(brandRef, { enabled: true });
   const pasGlass = useGlassSurface(pasRef, { enabled: true });
 
   return (
     <header className="dashboard-floating-toolbar v3-global-toolbar" data-testid="v3-global-toolbar">
-      <div
+      <button
         ref={brandRef}
+        type="button"
         className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
         data-liquid-glass-webgl={brandGlass ? "true" : undefined}
+        onClick={onOpenHome}
+        aria-label="홈 트리아지 열기"
+        title="홈 트리아지 열기"
+        data-testid="brand-home"
       >
         <span aria-hidden="true" className="dashboard-brand-orb" />
         <span className="font-semibold text-foreground">Soulstream</span>
-      </div>
+      </button>
       <button
         type="button"
         className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
@@ -40,7 +45,13 @@ export function TriageToolbar({ view, onOpenPas }: { view: "home" | "pas"; onOpe
           onClick={onOpenPas}
           data-testid="pas-entry"
         >
-          <span className="v3-ht-pas-entry-avatar" aria-hidden="true">서</span>
+          <ProfileAvatar
+            role="assistant"
+            shape="circle"
+            hasPortrait
+            portraitUrl="/api/nodes/eias-linegames/agents/seosoyoung/portrait"
+            fallbackEmoji="🤖"
+          />
           <span className="v3-ht-pas-entry-label">PAS 서소영</span>
         </button>
         <ThemeToggle variant="chrome" />
