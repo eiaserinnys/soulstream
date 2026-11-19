@@ -1,3 +1,4 @@
+import type { CatalogBoardItemsDelta } from "../mcp/board_catalog_delta.js";
 import type { FolderRecord, SessionAssignmentRecord } from "../folders/folder_routes.js";
 import type {
   InMemorySseReplayBroadcaster,
@@ -5,11 +6,10 @@ import type {
 } from "../sse/replay_broadcaster.js";
 
 export type CatalogSessionsDelta = Record<string, SessionAssignmentRecord | null>;
-export type CatalogBoardItemsDelta = Record<string, unknown | null>;
 
 export type CatalogDelta = {
   readonly sessionsDelta?: CatalogSessionsDelta;
-  readonly boardItemsDelta?: CatalogBoardItemsDelta;
+  readonly boardItemsDelta?: CatalogBoardItemsDelta<unknown>;
 };
 
 export type CatalogDeltaFolderProvider = {
@@ -27,10 +27,4 @@ export async function broadcastCatalogDelta(
     sessions_delta: delta.sessionsDelta ?? {},
     board_items_delta: delta.boardItemsDelta ?? {},
   });
-}
-
-export function deletedBoardItemsDelta(
-  boardItemIds: readonly string[],
-): CatalogBoardItemsDelta {
-  return Object.fromEntries(boardItemIds.map((boardItemId) => [boardItemId, null]));
 }

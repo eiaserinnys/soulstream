@@ -1,6 +1,5 @@
 import {
   broadcastCatalogDelta,
-  deletedBoardItemsDelta,
   type CatalogDelta,
 } from "./catalog_delta_broadcaster.js";
 import type {

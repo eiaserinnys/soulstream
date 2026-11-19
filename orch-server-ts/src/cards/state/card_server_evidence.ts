@@ -1,3 +1,4 @@
+import { isTerminalSessionStatus } from '../../session/session_status.js';
 import { isUsageLimitTermination } from '../../session/session_limit_termination.js';
 import type { LimitResumeOwner } from '../card_limit_auto_resume.js';
 import type { CardWorkExecution } from '../card_work_lifecycle.js';
@@ -35,7 +36,7 @@ export interface ServerFenceEvidence {
 }
 export function workExecutionMatches(worker:EvidenceSession|undefined,execution:CardWorkExecution|undefined):boolean {
  return !!worker&&worker.execution_registration_id===execution?.registrationId&&worker.execution_command_id===execution?.executionCommandId
-  &&!['completed','error','interrupted'].includes(worker.status??'')&&!(worker.metadata??[]).some(m=>m.type==='card_orchestration_decision');
+  &&!isTerminalSessionStatus(worker.status)&&!(worker.metadata??[]).some(m=>m.type==='card_orchestration_decision');
 }
 export function admissionRunMatches(run:Pick<EvidenceRun,'policy_version'|'decision'>|undefined|null,policyVersion:number,cardId:string,version:number):boolean {
  return !!run&&run.policy_version===policyVersion&&!!run.decision?.decisions.some(d=>d.cardId===cardId&&d.cardVersion===version&&d.action==='run');

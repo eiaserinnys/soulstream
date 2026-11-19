@@ -33,6 +33,7 @@ import {
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
 import { SessionCreateNodeSelectionError } from "../session/session_create_node_selector.js";
+import { isTerminalSessionStatus } from "../session/session_status.js";
 import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
@@ -217,7 +218,7 @@ export function createLiveExecuteProxyRouteProvider(
       try {
         let persistentTarget: { nodeId: string } | undefined;
         const row = await options.persistentResume?.getSession(payload.agent_session_id);
-        const stored = row && readPersistentEnabled(row.metadata) && isIdleSession(row.status)
+        const stored = row && readPersistentEnabled(row.metadata) && isTerminalSessionStatus(row.status)
           ? readStoredPersistentSettings(row.metadata,
             options.modelCatalog.snapshot().persistent_defaults.fallback_models)
           : undefined;
@@ -352,10 +353,6 @@ function streamResult(params: {
     body: Readable.from(streamExecuteProxyEvents(params)),
     contentType: "text/event-stream",
   };
-}
-
-function isIdleSession(status: unknown): boolean {
-  return status === "completed" || status === "error" || status === "interrupted";
 }
 
 async function choosePersistentCandidate(
