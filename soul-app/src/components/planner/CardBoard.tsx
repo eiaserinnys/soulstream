@@ -38,8 +38,9 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const window = useWindowDimensions();
   const active = cards.filter((card) => !card.archived);
   const visibleColumns = boardVisibleColumns(includeCompleted);
+  // 완료 조회가 실패했거나 기간이 틀리면 카드가 없어도 완료 칸을 남겨 안내와 필터를 보인다.
   const columns = hideEmptyLanes
-    ? visibleColumns.filter(([status]) => active.some((card) => card.status === status))
+    ? visibleColumns.filter(([status]) => active.some((card) => card.status === status) || (status === 'done' && !!completed?.error))
     : visibleColumns;
   const paper = createPostItRoles(t, 'compact');
   const frameRef = useRef<View>(null);
@@ -206,7 +207,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
               windowSize={5} initialNumToRender={geometry.completedColumns*2} maxToRenderPerBatch={geometry.completedColumns*2}
               onEndReached={completed?.loadMore} onEndReachedThreshold={0.5} showsVerticalScrollIndicator={false} scrollEnabled={!drag}
               onScroll={event=>{position.current.lanes.done=event.nativeEvent.contentOffset.y;savePosition();}}
-              ListEmptyComponent={firstLoading || completedFirstLoading ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
+              ListEmptyComponent={firstLoading || completedFirstLoading || completed?.error ? null : <Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>{'선택한 기간에 완료 카드가 없습니다'}</Text>}
               ListFooterComponent={<HomeComposerSpacer enabled={reserveHomeComposerSpace} precedingGap={0} testID="home-composer-spacer-done"/>}/>
             {completedFirstLoading?<View pointerEvents="none" style={StyleSheet.absoluteFill}><FrameLoading testID="card-board-done-loading"/></View>:null}
             </View>

@@ -27,7 +27,8 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
     const load=async(mode:'initial'|'refresh'|'more')=>{
       if(!active||!api||!enabled||invalidRange)return;
       if(busy.current){if(mode==='refresh')dirty=true;else if(mode==='initial')queued.current=()=>void load('initial');return;}
-      busy.current=true;setLoading(true);setError(null);
+      // 안내는 다음 응답이 성공할 때 걷는다. 다시 받는 동안 안내와 단추, 완료 칸이 사라졌다 돌아오지 않는다.
+      busy.current=true;setLoading(true);
       const after=mode==='more'?accumulated.cursor:null;
       const request=mode==='more'?params!:{folderId,...completedBounds(period,start,end,Date.now())!,q,limit:60};
       if(mode!=='more')params=request;
@@ -37,7 +38,7 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
         accumulated=mode==='refresh'?mergeCompletedRefresh(result,accumulated):mode==='more'
           ?{cards:[...new Map([...accumulated.cards,...result.cards].map(card=>[card.id,card])).values()],cursor:result.nextCursor}
           :{cards:result.cards,cursor:result.nextCursor};
-        loaded=true;setPage({key,...accumulated});
+        loaded=true;setPage({key,...accumulated});setError(null);
       }catch(cause){if(active)setError(cause instanceof Error?cause.message:String(cause));}
       finally {
         busy.current=false;
@@ -47,13 +48,15 @@ export function useCompletedCards(api:ApiClient|null,folderId:string|undefined,e
     };
     refresh.current=()=>void load('refresh');
     more.current=()=>{if(accumulated.cursor)void load('more');};
-    retry.current=()=>void load(loaded?'refresh':'initial');
+    // 조회 중에 다시 눌러도 겹쳐 보내지 않는다. 진행 중인 조회가 결과를 정한다.
+    retry.current=()=>{if(!busy.current)void load(loaded?'refresh':'initial');};
     if(enabled&&!invalidRange)void load('initial');
     return()=>{active=false;queued.current=null;};
   },[key,enabled,invalidRange,folderId,period,start,end,q,api]);
   const previousRevision=useRef(revision);
   useEffect(()=>{if(previousRevision.current!==revision){previousRevision.current=revision;refresh.current();}},[revision]);
-  return {cards:enabled&&page.key===key?page.cards:[],loading,error:invalidRange?'시작일과 종료일을 확인해 주세요.':error,resetKey:key,
+  // error는 화면에 보일 글 하나다. invalidRange면 그 글은 범위 안내이고, 다시 받아도 고쳐지지 않는다.
+  return {cards:enabled&&page.key===key?page.cards:[],loading,error:invalidRange?'시작일과 종료일을 확인해 주세요.':error,invalidRange,resetKey:key,
     period,setPeriod,start,setStart,end,setEnd,search,setSearch,loadMore:()=>more.current(),retry:()=>retry.current()};
 }
 export type CompletedBrowser=ReturnType<typeof useCompletedCards>;

@@ -27,6 +27,25 @@ records the header-to-loader top gap as a value: the inline loader is the
 whole visible body below the header, so there is no separate bordered box to
 balance against vertically. Captures are taken at iPad landscape (1180x820)
 and narrow (390x844).
+
+The completed lane checks (card #1692) use the auto refresh review page:
+?completedError fails the first completed read once, ?completedError=refresh
+fails the first refresh after a load once. At the 1180 inline board (sized to
+the three-pane card pane), the 1180 expanded board and the 390 inline board the
+first failure must show the error and a content-width 「다시 시도」 button inside
+the done lane (button height at least the chip hit target, i.e. hitTarget.min);
+pressing it must remove both and draw a card. A start date after the end date
+shows the range notice without the button. A failed refresh keeps the lane count
+and first card. The four period chips must form one row of four or two rows of
+two with equal widths per row (1px), matching row edges, unclipped labels and
+the chip group inside the lane, at those boards plus the wide 1180 inline lane
+and the 951x669 duo expanded board. test_frame_loading_completed.py plants
+violations against these judges.
+
+Over 500 lines on purpose: the script runs as `python3 -P <path>`, which keeps
+its folder off sys.path, so it cannot import sibling modules. The pure judges
+(failures_for, check_*_metrics, check_period_chips, check_completed_error, ...)
+are covered by test_frame_loading_*.py.
 """
 from __future__ import annotations
 
@@ -698,6 +717,235 @@ def check_completed_refresh(page: Page, base: str, output: Path, failures: list)
         return {}
 
 
+COMPLETED_FILTER_SCRIPT = r'''({expanded}) => {
+  const scope = expanded ? document.querySelector('[data-testid="card-board-expanded"]') : document.querySelector('[data-testid="card-board-workspace"]');
+  if (!scope) return {missing: 'board scope'};
+  const lane = scope.querySelector('[data-testid="card-board-column-done"]');
+  if (!lane) return {missing: 'done lane'};
+  const rect = e => { const r=e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
+  const visible = e => { const r=e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  // The chip hit target's min-height is t.hitTarget.min for the active device tokens.
+  const chips = ['7','30','all','custom'].map(value => {
+    const chip = lane.querySelector(`[data-testid="settings-segment-completed-period-${value}"]`);
+    if (!chip) return null;
+    const label = lane.querySelector(`[data-testid="settings-segment-completed-period-${value}-label"]`);
+    return {value, ...rect(chip), minHeight: parseFloat(getComputedStyle(chip).minHeight) || 0,
+      label: label && {scrollWidth: label.scrollWidth, clientWidth: label.clientWidth, text: label.innerText}};
+  });
+  const first = lane.querySelector('[data-testid="settings-segment-completed-period-7"]');
+  const error = [...lane.querySelectorAll('[data-testid="completed-error"]')].filter(visible)[0];
+  const retry = [...lane.querySelectorAll('[aria-label="완료 카드 다시 조회"]')].filter(visible)[0];
+  const count = lane.querySelector('[data-testid="card-board-count-done"]');
+  const firstCard = lane.querySelector('[data-testid^="postit-card-"]');
+  return {lane: rect(lane), viewportWidth: innerWidth, chips, track: first && rect(first.parentElement),
+    error: error ? {...rect(error), text: error.innerText} : null,
+    retry: retry ? {...rect(retry), text: retry.innerText} : null,
+    cards: lane.querySelectorAll('[data-testid^="postit-card-"]').length,
+    firstCard: firstCard ? firstCard.dataset.testid : null,
+    count: count ? parseInt(count.innerText, 10) : null};
+}'''
+
+
+def inside(item: dict, frame: dict) -> bool:
+    return item['left'] >= frame['left'] - 1 and item['right'] <= frame['right'] + 1
+
+
+def check_period_chips(metrics: dict, label: str, failures: list) -> None:
+    """Four period chips: one row of four or two rows of two, equal widths per row, inside the lane."""
+    if metrics.get('missing') or not metrics.get('chips') or not all(metrics['chips']) or not metrics.get('track'):
+        failures.append({'check': 'period chips missing', 'label': label, 'metrics': metrics})
+        return
+    chips = metrics['chips']
+    rows: list[list[dict]] = []
+    for chip in sorted(chips, key=lambda item: (item['top'], item['left'])):
+        if rows and abs(rows[-1][0]['top'] - chip['top']) <= 1:
+            rows[-1].append(chip)
+        else:
+            rows.append([chip])
+    shape = [len(row) for row in rows]
+    if shape not in ([4], [2, 2]):
+        failures.append({'check': 'period chip rows', 'label': label, 'shape': shape,
+                         'rows': [[chip['value'] for chip in row] for row in rows]})
+    for row in rows:
+        widths = [chip['width'] for chip in row]
+        if max(widths) - min(widths) > 1:
+            failures.append({'check': 'period chip width', 'label': label, 'widths': widths})
+    if shape == [2, 2]:
+        edges = [(min(c['left'] for c in row), max(c['right'] for c in row)) for row in rows]
+        if abs(edges[0][0] - edges[1][0]) > 1 or abs(edges[0][1] - edges[1][1]) > 1:
+            failures.append({'check': 'period chip row edges', 'label': label, 'edges': edges})
+    for chip in chips:
+        text = chip.get('label')
+        if not text:
+            failures.append({'check': 'period chip label missing', 'label': label, 'value': chip['value']})
+        elif text['scrollWidth'] > text['clientWidth'] + 1:
+            failures.append({'check': 'period chip label clipped', 'label': label, 'value': chip['value'], 'text': text})
+        if not chip['minHeight'] or chip['height'] < chip['minHeight'] - 0.5:
+            failures.append({'check': 'period chip hit height', 'label': label, 'value': chip['value'],
+                             'height': chip['height'], 'minHeight': chip['minHeight']})
+    if not inside(metrics['track'], metrics['lane']):
+        failures.append({'check': 'period chips outside lane', 'label': label,
+                         'track': metrics['track'], 'lane': metrics['lane']})
+
+
+def check_completed_error(metrics: dict, label: str, failures: list, retry_expected: bool, text: str | None = None) -> None:
+    """Error text inside the done lane; the retry button only for fetch failures."""
+    if metrics.get('missing'):
+        failures.append({'check': 'completed lane missing', 'label': label, 'metrics': metrics})
+        return
+    error, retry, lane = metrics.get('error'), metrics.get('retry'), metrics['lane']
+    if not error:
+        failures.append({'check': 'completed error missing', 'label': label})
+    elif text and text not in error['text']:
+        failures.append({'check': 'completed error text', 'label': label, 'expected': text, 'actual': error['text']})
+    if not retry_expected:
+        if retry:
+            failures.append({'check': 'retry must be absent', 'label': label, 'retry': retry})
+        return
+    if not retry:
+        failures.append({'check': 'retry button missing', 'label': label})
+        return
+    if retry['text'].strip() != '다시 시도':
+        failures.append({'check': 'retry text', 'label': label, 'actual': retry['text']})
+    if metrics.get('track') and retry['width'] >= metrics['track']['width'] - 1:
+        failures.append({'check': 'retry stretched to the lane width', 'label': label, 'retry': retry, 'track': metrics['track']})
+    for name, item in (('error', error), ('retry', retry)):
+        if item and (not inside(item, lane) or item['left'] < -1 or item['right'] > metrics['viewportWidth'] + 1):
+            failures.append({'check': f'{name} outside lane', 'label': label, name: item, 'lane': lane})
+    hit_min = max((chip['minHeight'] for chip in metrics.get('chips') or [] if chip), default=0)
+    if not hit_min or retry['height'] < hit_min - 0.5:
+        failures.append({'check': 'retry hit height', 'label': label, 'height': retry['height'], 'minHeight': hit_min})
+
+
+def check_completed_recovered(metrics: dict, label: str, failures: list, minimum_count: int = 1) -> None:
+    """Error and retry gone, at least one card drawn and the lane count not below minimum_count."""
+    if metrics.get('missing') or metrics.get('error') or metrics.get('retry') or metrics.get('cards', 0) < 1 \
+            or (metrics.get('count') or 0) < minimum_count:
+        failures.append({'check': 'completed not recovered', 'label': label, 'metrics': metrics})
+
+
+def check_refresh_kept_cards(before: dict, after: dict, label: str, failures: list) -> None:
+    """A failed refresh keeps the loaded cards: same lane count, same first card, cards still drawn.
+
+    The DOM card count is not compared: the done lane is a virtualized list, so the error block
+    above it shortens the render window without dropping any loaded card.
+    """
+    if not before.get('cards') or not before.get('count') or (after.get('count') or 0) < before['count'] \
+            or after.get('cards', 0) < 1 or after.get('firstCard') != before.get('firstCard'):
+        failures.append({'check': 'completed refresh failure dropped cards', 'label': label,
+                         'before': {k: before.get(k) for k in ('cards', 'count', 'firstCard')},
+                         'after': {k: after.get(k) for k in ('cards', 'count', 'firstCard')}})
+
+
+# The 1180 iPad runs three panes; the inline board sits in the card pane (paneWidths.ts
+# PANE_SPECS.card.default 480). The review page gives the board the whole window instead.
+TABLET_CARD_PANE_PX = 480
+
+
+def open_completed_board(page: Page, base: str, query: str, expanded: bool, duo: bool = False, pane: int | None = None):
+    page.goto(section_url(base, 'autoRefresh') + query, wait_until='networkidle')
+    if expanded:
+        page.get_by_test_id('duo-refresh-expand' if duo else 'refresh-expand').click(force=True)
+        page.get_by_test_id('card-board-expanded').wait_for(state='visible')
+    scope = page.get_by_test_id('card-board-expanded') if expanded else page.get_by_test_id('card-board-workspace').first
+    if pane:
+        scope.evaluate("(e, width) => { e.style.width = width + 'px'; e.style.alignSelf = 'flex-start'; }", pane)
+    board = scope.get_by_test_id('card-board')
+    board.wait_for(state='visible')
+    page.wait_for_timeout(500)
+    board.evaluate('(e) => { e.scrollLeft = e.scrollWidth; }')
+    scope.get_by_test_id('card-board-column-done').wait_for(state='visible')
+    page.wait_for_timeout(500)
+    return scope
+
+
+def completed_contexts(width: int) -> list[tuple[str, bool, str, int | None]]:
+    # (name, expanded, query, inline pane width). boardAlignment fills six active lanes like an operating folder.
+    return [('tablet-inline', False, '&boardAlignment=1', TABLET_CARD_PANE_PX), ('tablet-expanded', True, '&boardAlignment=1', None)] \
+        if width == 1180 else [('phone-inline', False, '', None)]
+
+
+def check_completed_retry(page: Page, base: str, output: Path, width: int, failures: list) -> list:
+    """First fetch failure → retry → recovery, range error without retry, refresh failure keeping cards."""
+    results = []
+    for name, expanded, lanes, pane in completed_contexts(width):
+        label = f'completed-retry-{name}-{width}'
+        try:
+            scope = open_completed_board(page, base, lanes + '&completedError', expanded, pane=pane)
+            lane = scope.get_by_test_id('card-board-column-done')
+            lane.get_by_test_id('completed-error').wait_for(state='visible', timeout=5000)
+            failed = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_completed_error(failed, label, failures, True)
+            page.screenshot(path=str(output / f'{label}-failed.png'))
+            lane.screenshot(path=str(output / f'{label}-failed-lane.png'))
+            lane.get_by_label('완료 카드 다시 조회').click()
+            page.wait_for_timeout(700)
+            recovered = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_completed_recovered(recovered, label, failures)
+            page.screenshot(path=str(output / f'{label}-recovered.png'))
+            lane.screenshot(path=str(output / f'{label}-recovered-lane.png'))
+            lane.get_by_test_id('settings-segment-completed-period-custom').click()
+            lane.get_by_label('완료 시작일').fill('2026-12-31')
+            lane.get_by_label('완료 종료일').fill('2026-01-01')
+            page.wait_for_timeout(500)
+            ranged = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_completed_error(ranged, label + '-range', failures, False, '시작일과 종료일을 확인해 주세요.')
+            lane.screenshot(path=str(output / f'{label}-range-lane.png'))
+            results.append({'label': label, 'failed': failed, 'recovered': recovered, 'range': ranged})
+        except Exception as error:
+            failures.append({'check': 'completed retry', 'label': label, 'error': str(error).splitlines()[0]})
+            page.screenshot(path=str(output / f'{label}-error.png'))
+        label = f'completed-refresh-failure-{name}-{width}'
+        try:
+            scope = open_completed_board(page, base, lanes + '&manyCompleted=1&completedError=refresh', expanded, pane=pane)
+            lane = scope.get_by_test_id('card-board-column-done')
+            lane.locator('[data-testid^="postit-card-"]').first.wait_for(state='visible')
+            before = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            page.get_by_test_id('refresh-begin').evaluate('(e) => e.click()')
+            page.wait_for_timeout(300)
+            page.get_by_test_id('refresh-finish').evaluate('(e) => e.click()')
+            lane.get_by_test_id('completed-error').wait_for(state='visible', timeout=5000)
+            page.wait_for_timeout(300)
+            after = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_completed_error(after, label, failures, True)
+            check_refresh_kept_cards(before, after, label, failures)
+            lane.screenshot(path=str(output / f'{label}-lane.png'))
+            lane.get_by_label('완료 카드 다시 조회').click()
+            page.wait_for_timeout(700)
+            recovered = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_completed_recovered(recovered, label, failures, before.get('count') or 1)
+            results.append({'label': label, 'before': before, 'after': after, 'recovered': recovered})
+        except Exception as error:
+            failures.append({'check': 'completed refresh failure', 'label': label, 'error': str(error).splitlines()[0]})
+            page.screenshot(path=str(output / f'{label}-error.png'))
+    return results
+
+
+def check_completed_period_chips(page: Page, base: str, output: Path, width: int, failures: list) -> list:
+    results = []
+    # tablet-inline-wide keeps three lanes, so the done lane widens to several columns (one row of four).
+    contexts = [*completed_contexts(width), ('tablet-inline-wide', False, '', None), ('duo-expanded', True, '&duoFrame=inner-landscape', None)] \
+        if width == 1180 else completed_contexts(width)
+    for name, expanded, lanes, pane in contexts:
+        label = f'completed-period-{name}'
+        duo = 'duoFrame' in lanes
+        try:
+            if duo:
+                page.set_viewport_size({'width': 951, 'height': 669})
+            scope = open_completed_board(page, base, lanes + '&manyCompleted=1', expanded, duo, pane)
+            metrics = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            check_period_chips(metrics, label, failures)
+            page.screenshot(path=str(output / f'{label}.png'))
+            scope.get_by_test_id('card-board-column-done').screenshot(path=str(output / f'{label}-lane.png'))
+            results.append({'label': label, 'chips': metrics.get('chips'), 'track': metrics.get('track'), 'lane': metrics.get('lane')})
+        except Exception as error:
+            failures.append({'check': 'completed period chips', 'label': label, 'error': str(error).splitlines()[0]})
+        finally:
+            if duo:
+                page.set_viewport_size({'width': 1180, 'height': 820})
+    return results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Frame loading placement check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
@@ -784,6 +1032,9 @@ def main() -> int:
                 viewport_result['alignment'] = check_board_alignment(page, args.base_url, output, width, failures) if width in (1180, 390) else []
                 if width == 1180:
                     viewport_result['completedRefresh'] = check_completed_refresh(page, args.base_url, output, failures)
+                if width in (1180, 390):
+                    viewport_result['completedRetry'] = check_completed_retry(page, args.base_url, output, width, failures)
+                    viewport_result['completedPeriodChips'] = check_completed_period_chips(page, args.base_url, output, width, failures)
                 viewport_result['boardStates'] = check_board_states(page, args.base_url, output, width, failures)
                 viewport_result['refreshStates'] = check_refresh_states(page, args.base_url, output, width, failures)
                 if width == 1180:

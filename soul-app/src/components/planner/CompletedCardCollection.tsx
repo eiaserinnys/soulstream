@@ -24,6 +24,6 @@ export function CompletedCardCollection({api,browser,onOpen}:{api:ApiClient|null
       columnWrapperStyle={columns>1?{gap:paper.gap}:undefined} initialNumToRender={columns*2} maxToRenderPerBatch={columns*2} windowSize={5}
       renderItem={({item})=><View style={{width:paper.width,marginBottom:paper.gap}}><PostItCard api={api} card={item} variant="compact" onOpen={()=>onOpen(item.id)}/></View>}
       showsVerticalScrollIndicator={false} onEndReached={browser.loadMore} onEndReachedThreshold={0.5}
-      ListEmptyComponent={browser.loading?<FrameLoading testID="completed-card-collection-loading"/>:<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>선택한 기간에 완료 카드가 없습니다</Text>}/>
+      ListEmptyComponent={browser.loading?<FrameLoading testID="completed-card-collection-loading"/>:browser.error?null:<Text style={{...t.foundation.typography.body,color:t.colors.textSecondary}}>선택한 기간에 완료 카드가 없습니다</Text>}/>
   </View>;
 }

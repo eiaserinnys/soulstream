@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
@@ -11,6 +11,17 @@ export interface SettingsSegmentOption<T extends string> {
   dot?: boolean;
 }
 
+/**
+ * 같은 너비 칩의 열 수. 가장 넓은 칩(글자 폭 + 칩 장식)이 한 줄에 모두 들어가면 전부 한 줄,
+ * 아니면 절반씩 줄을 나눈다. 아직 재지 못한 글자가 있으면 줄을 나눈 쪽에서 시작한다.
+ */
+export function evenRowColumns(count: number, innerWidth: number, labelWidths: readonly (number | undefined)[], chrome: number): number {
+  const half = Math.ceil(count / 2);
+  if (innerWidth <= 0 || labelWidths.some(width => width === undefined)) return half;
+  const widest = Math.max(...(labelWidths as number[])) + chrome;
+  return widest * count <= innerWidth ? count : half;
+}
+
 export function SettingsSegmentedControl<T extends string>({
   id,
   value,
@@ -18,6 +29,7 @@ export function SettingsSegmentedControl<T extends string>({
   onChange,
   disabled = false,
   wrap = false,
+  evenRows = false,
   variant = 'settings',
 }: {
   id: string;
@@ -26,14 +38,28 @@ export function SettingsSegmentedControl<T extends string>({
   onChange(value: T): void;
   disabled?: boolean;
   wrap?: boolean;
+  /** 칩을 같은 너비로 두고, 한 줄에 다 들어가지 않으면 절반씩 두 줄로 놓는다. */
+  evenRows?: boolean;
   variant?: 'settings' | 'detail';
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [focusedValue, setFocusedValue] = useState<T | null>(null);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const [labelWidths, setLabelWidths] = useState<Partial<Record<T, number>>>({});
+  const measureLabel = useCallback((key: T, width: number) => {
+    setLabelWidths(previous => previous[key] === width ? previous : { ...previous, [key]: width });
+  }, []);
+  // 칩 하나가 글자 밖에 쓰는 가로 폭은 visual의 좌우 안쪽 여백과 고른 칩의 테두리다.
+  const columns = evenRows ? evenRowColumns(options.length, trackWidth - 2 * t.spacing.xxs,
+    options.map(option => labelWidths[option.value]), 2 * (t.spacing.xs + StyleSheet.hairlineWidth)) : 0;
+  const evenHitTarget = evenRows ? { flex: 0, flexGrow: 0, flexShrink: 0, flexBasis: `${100 / columns}%` as const } : null;
+  const flowWrap = wrap && !evenRows;
 
   return (
-    <View style={[variant === 'detail' ? styles.detailTrack : styles.track, wrap && styles.wrapTrack]}>
+    <View testID={`settings-segment-${id}-track`}
+      onLayout={evenRows ? event => setTrackWidth(event.nativeEvent.layout.width) : undefined}
+      style={[variant === 'detail' ? styles.detailTrack : styles.track, (wrap || evenRows) && styles.wrapTrack]}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -45,7 +71,7 @@ export function SettingsSegmentedControl<T extends string>({
             accessibilityState={{ selected, disabled }}
             disabled={disabled}
             {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
-            style={[variant === 'detail' ? styles.detailHitTarget : styles.hitTarget, wrap && styles.wrapHitTarget, disabled && styles.disabled]}
+            style={[variant === 'detail' ? styles.detailHitTarget : styles.hitTarget, flowWrap && styles.wrapHitTarget, evenHitTarget, disabled && styles.disabled]}
             onFocus={() => setFocusedValue(option.value)}
             onBlur={() => setFocusedValue(null)}
             onPress={() => onChange(option.value)}
@@ -53,7 +79,7 @@ export function SettingsSegmentedControl<T extends string>({
             <View
               testID={`settings-segment-${id}-${option.value}-visual`}
               pointerEvents="none"
-              style={[variant === 'detail' ? styles.detailVisual : styles.visual, wrap && styles.wrapVisual,
+              style={[variant === 'detail' ? styles.detailVisual : styles.visual, flowWrap && styles.wrapVisual,
                 selected && (variant === 'detail' ? styles.detailSelected : styles.selected)]}
             >
               {variant === 'detail' ? (
@@ -65,7 +91,8 @@ export function SettingsSegmentedControl<T extends string>({
                   {option.dot ? <View testID={`settings-segment-${id}-${option.value}-dot`} style={styles.detailDot} /> : null}
                 </View>
               ) : (
-                <Text numberOfLines={wrap ? 1 : undefined} style={[styles.label, selected && styles.selectedLabel]}>
+                <Text testID={`settings-segment-${id}-${option.value}-label`} numberOfLines={wrap || evenRows ? 1 : undefined}
+                  style={[styles.label, selected && styles.selectedLabel]}>
                   {option.label}
                 </Text>
               )}
@@ -78,6 +105,17 @@ export function SettingsSegmentedControl<T extends string>({
           </TouchableOpacity>
         );
       })}
+      {evenRows ? (
+        // 고른 칩의 굵은 글자 폭을 칩 밖에서 잰다. 높이 0으로 접혀 보이지도 눌리지도 않는다.
+        <View testID={`settings-segment-${id}-measure`} aria-hidden pointerEvents="none" style={styles.measure}>
+          {options.map(option => (
+            <Text key={option.value} testID={`settings-segment-${id}-${option.value}-measure`} numberOfLines={1}
+              style={[styles.label, styles.selectedLabel]} onLayout={event => measureLabel(option.value, event.nativeEvent.layout.width)}>
+              {option.label}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -158,5 +196,6 @@ function makeStyles(t: DesignTokens) {
       fontWeight: '700',
     },
     disabled: { opacity: 0.45 },
+    measure: { position: 'absolute', left: 0, top: 0, height: 0, overflow: 'hidden', alignItems: 'flex-start' },
   });
 }

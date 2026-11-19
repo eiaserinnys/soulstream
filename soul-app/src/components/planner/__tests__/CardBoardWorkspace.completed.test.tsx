@@ -3,7 +3,7 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
 jest.mock('../../../hooks/useCardList', () => ({ useCardList: () => ({ cards: (mockActiveCards ?? mockCards).filter(card => card.status !== 'done'), loading: mockLoading, error: null, refresh: jest.fn() }) }));
-jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:null})}));
+jest.mock('../../../hooks/useCompletedCards',()=>({useCompletedCards:(_api:unknown,_folder:unknown,shown:boolean)=>({cards:shown?mockCards.filter(card=>card.status==='done'):[],period:'7',start:'2026-10-01',end:'2026-10-02',search:'',setPeriod:jest.fn(),setStart:jest.fn(),setEnd:jest.fn(),setSearch:jest.fn(),loadMore:jest.fn(),resetKey:'fixture',loading:mockCompletedLoading,error:mockCompletedError,invalidRange:false,retry:mockCompletedRetry})}));
 import React, { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
@@ -23,7 +23,9 @@ let mockActiveCards: typeof mockCards | null = null;
 let mockDevice = 'tablet';
 let mockLoading = false;
 let mockCompletedLoading = false;
-beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
+let mockCompletedError: string | null = null;
+const mockCompletedRetry = jest.fn();
+beforeEach(() => { mockDevice = 'tablet'; mockLoading = false; mockCompletedLoading = false; mockCompletedError = null; mockCompletedRetry.mockClear(); mockActiveCards = null; mockCards = [cardFixture({ id: 'done', status: 'done' }), cardFixture({ id: 'todo' })]; useUIStore.setState({ floatingComposerBottomInset: 0 }); });
 test('외부 머리는 기존 목록의 갱신 상태를 전달하고 위 여백을 유지한다', () => {
   const onAutoRefreshChange = jest.fn();
   const props = { api: null, externalHeader: true, onAutoRefreshChange, cardDisplay: { includeCompleted: false, onChange: jest.fn() }, onOpen: jest.fn() };
@@ -80,6 +82,25 @@ test('완료 칸만 첫 로딩이면 그 칸 안 가운데에 부품을 세운�
   expect(expanded.getByTestId('card-board-done-loading').props.accessibilityRole).toBe('progressbar');
   expect(expanded.queryByText('완료 카드를 불러오는 중…')).toBeNull();
   expect(expanded.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+  await settleTimers();
+});
+
+test.each([false, true])('완료 조회 실패는 칸 안에 다시 시도를 내고 빈 칸 안내를 내지 않는다 (확대 %s)', async expandedBoard => {
+  mockCards = [cardFixture({ id: 'todo' })]; mockCompletedError = '공개 예시: 완료 카드를 불러오지 못했습니다.';
+  const ref = React.createRef<import('../CardBoardWorkspace').CardBoardWorkspaceHandle>();
+  const screen = render(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  if (expandedBoard) act(() => ref.current!.openExpanded());
+  const host = expandedBoard ? within(screen.getByTestId('card-board-expanded')) : screen;
+  const lane = within(host.getByTestId('card-board-column-done'));
+  expect(lane.getByText('공개 예시: 완료 카드를 불러오지 못했습니다.')).toBeTruthy();
+  fireEvent.press(lane.getByLabelText('완료 카드 다시 조회'));
+  expect(mockCompletedRetry).toHaveBeenCalledTimes(1);
+  expect(lane.queryByText('선택한 기간에 완료 카드가 없습니다')).toBeNull();
+  mockCompletedError = null;
+  screen.rerender(<CardBoardWorkspace ref={ref} api={null} cardDisplay={{ includeCompleted: true, onChange: jest.fn() }} onOpen={() => {}} />);
+  // 오류가 걷히면 원래대로: 확대 보드는 빈 칸 안내, 인라인 보드는 빈 완료 칸을 숨긴다.
+  if (expandedBoard) expect(within(within(screen.getByTestId('card-board-expanded')).getByTestId('card-board-column-done')).getByText('선택한 기간에 완료 카드가 없습니다')).toBeTruthy();
+  else expect(screen.queryByTestId('card-board-column-done')).toBeNull();
   await settleTimers();
 });
 

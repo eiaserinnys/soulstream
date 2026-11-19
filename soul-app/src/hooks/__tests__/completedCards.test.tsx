@@ -78,6 +78,46 @@ test('retry refreshes the first page while preserving the loaded tail',async()=>
   expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a','b']);
   await settleTimers();
 });
+test('a range error is reported apart from a read failure and is not retried',async()=>{
+  const listCompletedCards=jest.fn().mockRejectedValueOnce(new Error('조회 실패')).mockResolvedValue({cards:[],nextCursor:null});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  await waitFor(()=>expect(hook.result.current.error).toBe('조회 실패'));
+  expect(hook.result.current.invalidRange).toBe(false);
+  act(()=>hook.result.current.setPeriod('custom'));
+  await waitFor(()=>expect(listCompletedCards).toHaveBeenCalledTimes(2));
+  act(()=>{hook.result.current.setStart('2026-12-31');hook.result.current.setEnd('2026-01-01');});
+  expect(hook.result.current.invalidRange).toBe(true);
+  expect(hook.result.current.error).toBe('시작일과 종료일을 확인해 주세요.');
+  act(()=>hook.result.current.retry());
+  await settleTimers();
+  expect(listCompletedCards).toHaveBeenCalledTimes(2);
+});
+
+test('a failed refresh keeps the loaded cards, and repeated retry during the read sends one request',async()=>{
+  const a=cardFixture({id:'a',status:'done',completedAt:'2026-01-02'});
+  let resolve!: (value:{cards:typeof a[];nextCursor:string|null})=>void;
+  const pending=new Promise<{cards:typeof a[];nextCursor:string|null}>(done=>{resolve=done;});
+  const listCompletedCards=jest.fn().mockResolvedValueOnce({cards:[a],nextCursor:null}).mockRejectedValueOnce(new Error('갱신 실패'))
+    .mockReturnValueOnce(pending).mockResolvedValue({cards:[a],nextCursor:null});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  await waitFor(()=>expect(hook.result.current.cards).toHaveLength(1));
+  act(()=>usePlannerStore.getState().invalidate('folder'));
+  await waitFor(()=>expect(hook.result.current.error).toBe('갱신 실패'));
+  expect(hook.result.current.invalidRange).toBe(false);
+  expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a']);
+  act(()=>{hook.result.current.retry();hook.result.current.retry();});
+  expect(listCompletedCards).toHaveBeenCalledTimes(3);
+  // 다시 받는 동안 안내는 남고(칸이 사라지거나 튀지 않는다) 조회 중으로 알린다.
+  expect(hook.result.current.loading).toBe(true);
+  expect(hook.result.current.error).toBe('갱신 실패');
+  await act(async()=>{resolve({cards:[a],nextCursor:null});await pending;});
+  await waitFor(()=>expect(hook.result.current.error).toBeNull());
+  await settleTimers();
+  expect(listCompletedCards).toHaveBeenCalledTimes(3);
+  expect(hook.result.current.cards.map(card=>card.id)).toEqual(['a']);
+});
 test('both folder reads always exclude done independently of completion visibility',async()=>{
   const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});
   const getPlannerFolder=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[],subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}});
