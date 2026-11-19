@@ -32,9 +32,8 @@ import {
 import { decideRunnerRecovery } from "./runner_recovery_decision.js";
 import {
   RUNNER_RECOVERY_DISPOSITIONS,
-  runnerRecoveryMachine,
   type RunnerRecoveryDisposition,
-} from "./runner_recovery_machine.js";
+} from "./runner_recovery_decision.js";
 
 export interface RunnerLifecycleDecisionRow {
   state: RunnerLifecycleState;
