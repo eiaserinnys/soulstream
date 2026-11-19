@@ -6,20 +6,17 @@ import type { EventIngressQuerySql } from "../node/event_ingress_repository.js";
 import type { EventIngressEnvelope } from "../node/event_ingress_types.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
-export type SessionStatisticsFactsListener = () => void;
-
 export type ApplySessionStatisticsProjectionInput = {
   eventId: number;
   envelope: EventIngressEnvelope;
   modelCatalog: ModelCatalogSource;
-  /** Called once after facts are inserted, so a stream can announce the change. */
-  onFactsInserted?: SessionStatisticsFactsListener;
 };
 
+/** Returns whether the event produced facts; callers announce only committed facts. */
 export async function applySessionStatisticsProjection(
   sql: EventIngressQuerySql,
   input: ApplySessionStatisticsProjectionInput,
-): Promise<void> {
+): Promise<boolean> {
   // One snapshot prices one event; a later file edit applies from the next event.
   const normalized = normalizeSessionStatisticsEvent({
     sessionId: input.envelope.session_id,
@@ -28,15 +25,14 @@ export async function applySessionStatisticsProjection(
     createdAt: input.envelope.created_at,
     payload: input.envelope.payload,
   }, input.modelCatalog.snapshot());
-  await insertSessionStatisticsFacts(sql, normalized.facts, input.onFactsInserted);
+  return await insertSessionStatisticsFacts(sql, normalized.facts);
 }
 
 export async function insertSessionStatisticsFacts(
   sql: EventIngressQuerySql,
   facts: readonly FactDraft[],
-  onFactsInserted?: SessionStatisticsFactsListener,
-): Promise<void> {
-  if (facts.length === 0) return;
+): Promise<boolean> {
+  if (facts.length === 0) return false;
   const rows = facts.map((fact) => ({
     ...fact,
     event_id: String(fact.event_id),
@@ -101,7 +97,7 @@ export async function insertSessionStatisticsFacts(
     )
     ON CONFLICT (session_id, event_id, part_key) DO NOTHING
   `;
-  onFactsInserted?.();
+  return true;
 }
 
 export async function assertSessionStatisticsFactsMatchSourceEvents(
