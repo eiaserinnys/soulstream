@@ -4,6 +4,7 @@ export type EnsureRequest = {
 };
 export type PatchRequest = {
   title?: string; archived?: boolean; model?: string; model_order?: string[]; instructions?: string;
+  collection?: string;
 };
 export type ExecutionRequest = EnsureRequest & { expected_execution_id: string };
 export type Execution = {
@@ -24,7 +25,7 @@ export type Thread = {
   id: string; external: { namespace: string; key: string }; title: string;
   model: { id: string; label: string; group?: { id: string; label: string } };
   profile?: { id: string; label: string }; execution_id?: string;
-  created_at: string; archived: boolean;
+  created_at: string; archived: boolean; collection: string | null;
 };
 export type AdoptableCandidate = {
   id: string; title: string;

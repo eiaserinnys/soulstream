@@ -16,6 +16,8 @@ import { createSessionOutputAttachmentValidation } from "../attachments/session_
 import { createOwnedAttachmentCommitService } from "../attachments/attachment_commit_service.js";
 import type { CreateOwnedAttachmentCommitServiceOptions } from "../attachments/attachment_commit_contract.js";
 import type { RepositorySql } from "../cards/control_plane/card_types.js";
+import { createCardAssigneeAgentEnricher } from "../cards/card_assignee_agent.js";
+import { serializeSessionRow } from "./live_session_serialization.js";
 import { createLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CreateLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
@@ -169,7 +171,7 @@ export type LiveOrchestratorProviderBundle = {
   >;
   readonly folderRoutes: Pick<
     FolderRouteOptions,
-    "accessProvider" | "provider" | "resolveDashboardUserId"
+    "accessProvider" | "provider" | "resolveDashboardUserId" | "assigneeAgentEnricher"
   >;
   readonly boardAssetRoutes: Pick<BoardAssetRouteOptions, "accessProvider" | "provider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider" | "provider">;
@@ -447,6 +449,26 @@ export function createLiveOrchestratorProviderBundle(
     now: () => new Date(),
     modelCatalog: options.modelCatalog,
   });
+  const dbSqlResolver = options.dbSqlResolver;
+  const cardAssigneeAgentEnricher = dbSqlResolver === undefined ? undefined
+    : createCardAssigneeAgentEnricher({
+        loadSessions: async (sessionIds) => {
+          if (sessionIds.length === 0) return [];
+          const sql = await dbSqlResolver.resolveSql();
+          return await sql`
+            SELECT session_id, node_id, agent_id, model_preset
+            FROM sessions
+            WHERE session_id = ANY(${[...sessionIds]}::text[])
+          `;
+        },
+        serializeSessions: (rows) => {
+          const agentProfiles = options.dependencies.dbCatalogRepository.agentProfileRepository.snapshot();
+          return rows.map((row) => serializeSessionRow(row, {
+            registry: options.runtimeServices.registry,
+            agentProfiles,
+          }));
+        },
+      });
 
   return {
     agentProfileRoutes: {
@@ -509,6 +531,7 @@ export function createLiveOrchestratorProviderBundle(
       provider: options.dependencies.dbCatalogRepository.folderRouteProvider,
       accessProvider: dashboardAccessProvider,
       resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
+      ...(cardAssigneeAgentEnricher === undefined ? {} : { assigneeAgentEnricher: cardAssigneeAgentEnricher }),
     },
     boardAssetRoutes: {
       provider: withBoardAssetMutationBroadcasts(

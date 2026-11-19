@@ -18,6 +18,7 @@ import {
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
+import { folderStarred, loadStarredProjectPageIds } from "./folder_starred.js";
 
 export type { FolderAccess, FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
 
@@ -43,7 +44,9 @@ export type FolderRouteProvider = {
   listSessionAssignments: (includeSessions?: boolean) =>
     | Promise<Record<string, SessionAssignmentRecord>>
     | Record<string, SessionAssignmentRecord>;
-
+  listStarredProjectPageIds?: (
+    pageIds: readonly string[],
+  ) => Promise<readonly string[]> | readonly string[];
 };
 
 export type FolderAccessProvider = {
@@ -92,6 +95,8 @@ export type FolderRouteOptions = {
   ) => Promise<{ status: number; body: unknown }>;
   uploadCardCommentAttachment?: CardCommentAttachmentUploader;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
+  /** 카드 목록·상세 HTTP 응답에 담당 에이전트 표시 정보를 붙인다. */
+  assigneeAgentEnricher?: import("../cards/card_assignee_agent.js").CardAssigneeAgentEnricher;
 };
 
 export class FolderRouteError extends Error {
@@ -143,10 +148,14 @@ export function registerFolderRoutes(
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
     const includeSessions = queryValue(request.query, "sessions") !== "false";
-    const assignments = await options.provider.listSessionAssignments(includeSessions);
+    const visibleFolders = filterFolders(access, folders);
+    const [assignments, starredPageIds] = await Promise.all([
+      options.provider.listSessionAssignments(includeSessions),
+      loadStarredProjectPageIds(options.provider.listStarredProjectPageIds, visibleFolders),
+    ]);
 
     return reply.send({
-      folders: filterFolders(access, folders),
+      folders: visibleFolders.map((folder) => ({ ...folder, starred: folderStarred(folder, starredPageIds) })),
       sessions: includeSessions
         ? filterSessionAssignments(access, folders, assignments)
         : {},

@@ -28,6 +28,12 @@ export interface CardCheckItem {
 }
 export interface CardNow { text: string; turn: "agent" | "user" | "outside"; ask: string | null; updatedAt: string; sessionId: string | null }
 export interface CardNowHistoryEntry { text: string; turn: CardNow["turn"]; ask: string | null; at: string }
+/** 카드 목록·상세 응답이 싣는 담당 에이전트 표시 정보. 담당이 없거나 사람이면 null이다. */
+export interface CardAssigneeAgent {
+  agentId: string; nodeId: string | null;
+  agentName: string | null; portraitUrl: string | null;
+  modelPreset: string | null; modelLabel: string | null;
+}
 export interface CardRow {
   id: string; number?: number | null; folderId: string; title: string; request: string; brief: string;
   attachments: CardAttachment[];
@@ -36,6 +42,7 @@ export interface CardRow {
   positionKey: string; queuePositionKey: string | null;
   assigneeKind: "agent" | "human" | "session" | null;
   assigneeAgentId: string | null; assigneeUserId: string | null; assigneeSessionId: string | null;
+  assigneeAgent?: CardAssigneeAgent | null;
   nodeId: string | null; modelPreset: string | null; version: number; archived: boolean;
   createdAt: string; updatedAt: string;
   completedAt?: string | null;
@@ -50,7 +57,10 @@ export interface CardQuestion {
   title?: string | null; kind?: CardQuestionKind; optionDetails?: CardQuestionOption[];
   attachments?: CardQuestionAttachment[]; selectedOption?: string | null; revision?: number; revisedAt?: string | null;
 }
-export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("../shared/session-types").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string }
+export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("../shared/session-types").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string
+  /** GET /api/sessions 행과 같은 이름과 값으로 상세 응답이 싣는다. */
+  agentName?: string | null; agentPortraitUrl?: string | null;
+  modelPreset?: string | null; modelLabel?: string | null; backend?: string | null }
 export interface CardComment { id: string; cardId: string; authorKind: "user" | "agent"; authorId: string; sessionId: string | null; kind: "comment" | "spoken" | "note"; itemId?: number | null; questionId?: string | null; body: string; createdAt: string }
 export interface CardDetail { card: CardRow; reports: CardReport[]; questions: CardQuestion[]; sessions: CardLinkedSession[]; comments?: CardComment[]; notes?: CardComment[]; nowHistory?: CardNowHistoryEntry[] }
 export interface CardAssignment { folderId: string; nodeId: string; agentId: string; modelPreset: string }

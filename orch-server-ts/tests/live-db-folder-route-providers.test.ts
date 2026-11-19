@@ -101,6 +101,20 @@ describe("live DB folder route providers", () => {
     expect(harness.normalizedCalls()).toEqual([]);
   });
 
+  it("reads starred project pages in one query", async () => {
+    const harness = createSqlHarness((text) =>
+      text.includes("metadata->'starred'") ? [{ id: "page-a" }] : []);
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+    await expect(repository.folderRouteProvider.listStarredProjectPageIds!(["page-a", "page-b"]))
+      .resolves.toEqual(["page-a"]);
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT id FROM pages WHERE id = ANY(?::text[]) AND metadata->'starred' = 'true'::jsonb",
+    ]);
+    harness.calls.length = 0;
+    await expect(repository.folderRouteProvider.listStarredProjectPageIds!([])).resolves.toEqual([]);
+    expect(harness.calls).toEqual([]);
+  });
+
 
 });
 

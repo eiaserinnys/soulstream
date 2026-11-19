@@ -4,7 +4,10 @@ import { PendingNodeCommandTimeoutError } from "../node/pending_commands.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { HostSessionRow } from "../control_plane/repositories/session_read_repository.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
-import type { SessionResourceAccessProvider } from "../session/session_resource_access.js";
+import {
+  SessionResourceAccessError,
+  type SessionResourceAccessProvider,
+} from "../session/session_resource_access.js";
 import type { SessionCreateRouteResponse } from "../session/session_create_route_response.js";
 import { ConversationRepository } from "./conversation_repository.js";
 import { ConversationCatalog, type ConversationModel } from "./conversation_catalog.js";
@@ -20,6 +23,8 @@ type Deps = {
   catalog: ConversationCatalog;
   create: (request: Caller, body: Record<string, unknown>, id: string, logger: Pick<Caller["log"], "warn">) => Promise<SessionCreateRouteResponse>;
   waitForCreatedSession: (id: string, nodeId: string) => Promise<boolean>;
+  /** PATCH /api/sessions/folder와 같은 세션 폴더 이동 서비스를 쓴다. */
+  moveSessionToFolder?: (sessionId: string, folderId: string | null) => Promise<void>;
   responseTimeoutMs?: number;
 };
 
@@ -56,7 +61,7 @@ export class ConversationService {
   }
   async list(request: Caller, account: string, namespace: string, cursor?: string) {
     const bindings = await this.repo.list(account, namespace);
-    const refs: Array<Pick<Thread, "id" | "title" | "created_at" | "archived">> = [];
+    const refs: Array<Pick<Thread, "id" | "title" | "created_at" | "archived" | "collection">> = [];
     let nextCursor: string | undefined;
     let refsCursor = "";
     for (const binding of bindings) {
@@ -64,7 +69,7 @@ export class ConversationService {
       try {
         const thread = await this.thread(request, binding);
         if (refs.length === 100) { nextCursor = refsCursor; break; }
-        refs.push({ id: thread.id, title: thread.title, created_at: thread.created_at, archived: thread.archived });
+        refs.push({ id: thread.id, title: thread.title, created_at: thread.created_at, archived: thread.archived, collection: thread.collection });
         refsCursor = binding.external_key;
       } catch (error) {
         if (error instanceof ConversationError && (error.status === 404 || error.status === 504)) continue;
@@ -295,6 +300,7 @@ export class ConversationService {
     return this.executions.locked(threadId, async () => {
     const binding = await this.prepareLocked(request, account, await this.requireBinding(account, threadId));
     const id = binding.active_session_id ?? threadId;
+    if (patch.collection !== undefined) await this.requireCollectionAccess(request, patch.collection);
     if (patch.title !== undefined) await this.deps.persistent.update(request, id, { display_name: patch.title });
     if (patch.model !== undefined || patch.model_order !== undefined) {
       const row = await this.requireRow(id);
@@ -335,8 +341,24 @@ export class ConversationService {
       await this.executions.release(request, id);
       await this.repo.archive(threadId);
     }
+    if (patch.collection !== undefined) {
+      const move = this.deps.moveSessionToFolder;
+      if (move === undefined) throw new ConversationError(503, "unavailable", "Folder move unavailable");
+      await move(id, patch.collection);
+    }
     return { thread: await this.thread(request, await this.requireBinding(account, threadId)) };
     });
+  }
+  /** PATCH /api/sessions/folder의 폴더 접근 검사와 같은 오류를 낸다. */
+  private async requireCollectionAccess(request: Caller, collection: string): Promise<void> {
+    try {
+      await this.deps.access.requireFolderAccess({ request, folderId: collection });
+    } catch (error) {
+      if (error instanceof SessionResourceAccessError) {
+        throw new ConversationError(error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
   }
   private async thread(request: Caller, binding: Binding): Promise<Thread> {
     const activeId = binding.active_session_id ?? binding.session_id;
@@ -359,7 +381,7 @@ export class ConversationService {
       model: { id: binding.selected_model, label: model?.label ?? binding.selected_model,
         ...(model?.group ? { group: model.group } : {}) },
       ...(agentId ? { profile:{ id:agentId, label:label! } } : {}), execution_id:activeId,
-      created_at: createdAt, archived: binding.archived };
+      created_at: createdAt, archived: binding.archived, collection: row.folder_id ?? null };
   }
   private async requireRow(id: string) { const row = await (await this.deps.reads()).getSession(id); if (!row) throw notFound(); return row; }
   private async requireBinding(account: string, id: string) { const b = await this.repo.byId(account, id); if (!b) throw notFound(); return b; }
