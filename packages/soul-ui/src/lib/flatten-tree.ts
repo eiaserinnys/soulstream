@@ -42,7 +42,7 @@ import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
 import { placePersistentJevCandidatesAtInputAnchors } from "./persistent-jev-candidates";
 import { placePersistentInstructionRecordedAtTurnEnds } from "./persistent-instruction-recorded";
-import { formatRateLimitNotice } from "@shared/rate-limit-notice";
+import { formatRateLimitNotice } from "./rate-limit-notice";
 import { formatTurnCompleteStats, TURN_COMPLETE_LABEL } from "./turn-usage-format";
 
 export { extractEventId } from "./event-tree-id";

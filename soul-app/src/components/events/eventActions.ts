@@ -5,7 +5,7 @@ import {
   TURN_COMPLETE_LABEL,
   TURN_USAGE_SEPARATOR,
 } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
-import { formatRateLimitNotice } from './rateLimitNotice';
+import { formatRateLimitNotice } from '../../../../packages/soul-ui/src/lib/rate-limit-notice';
 
 type UnknownRecord = Record<string, unknown>;
 

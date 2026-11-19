@@ -1,6 +1,6 @@
 import type { SessionNotice, SoulSSEEvent } from "./types";
 import { formatRetryingErrorHistory } from "./sse-events";
-import { formatRateLimitNotice } from "./rate-limit-notice";
+import { formatRateLimitNotice } from "../lib/rate-limit-notice";
 
 const MAX_PENDING_BROWSER_NOTICES = 100;
 

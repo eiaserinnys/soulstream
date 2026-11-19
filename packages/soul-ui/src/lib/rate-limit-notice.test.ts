@@ -25,6 +25,15 @@ describe("formatRateLimitNotice", () => {
     )).toContain("2일 3시간 남음");
   });
 
+  it("shows weekly duration for the seven_day limit type in days and hours", () => {
+    expect(formatRateLimitNotice(
+      "Session stopped.",
+      "seven_day",
+      new Date(now + 2 * 24 * 60 * 60_000 + 3 * 60 * 60_000).toISOString(),
+      now,
+    )).toContain("2일 3시간 남음");
+  });
+
   it.each([
     [23 * 60 + 59, "23시간 59분 남음"],
     [24 * 60, "1일 남음"],
