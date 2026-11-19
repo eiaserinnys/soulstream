@@ -27,6 +27,7 @@
 !/packages/soul-ui/src/cards/completed-cards.ts
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
+!/packages/soul-ui/src/lib/action-failure.ts
 !/packages/soul-ui/src/lib/turn-usage-format.ts
 !/packages/soul-ui/src/lib/usage-summary.ts
 !/packages/soul-ui/src/lib/usage-stats-format.ts

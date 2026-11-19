@@ -4,7 +4,7 @@ import { AccessibilityInfo, findNodeHandle, Platform, Text, View, type LayoutCha
 import { isReportReply, type ReportReplyDraft, type ReportSendContext } from '../../lib/persistent-report';
 import type { ApiClient } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
-import { actionFailureMessage } from '../../api/actionFailure';
+import { actionFailureMessage } from '../../../../packages/soul-ui/src/lib/action-failure';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { useChatAttachments } from '../../hooks/useChatAttachments';

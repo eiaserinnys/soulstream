@@ -48,6 +48,13 @@ describe("actionFailureMessage", () => {
         .toBe("이미 끝난 요청이라 보내지 못했습니다.");
     });
 
+    it("본문의 해결 완료 코드도 같은 문구를 고른다", () => {
+      expect(actionFailureMessage("tool-approval", {
+        status: 400,
+        body: JSON.stringify({ error: { code: "APPROVAL_ALREADY_RESOLVED" } }),
+      })).toBe("이미 끝난 요청이라 보내지 못했습니다.");
+    });
+
     it("503과 응답 없는 예외는 연결 실패로 알린다", () => {
       expect(actionFailureMessage("tool-approval", { status: 503 }))
         .toBe("연결하지 못해 보내지 못했습니다. 다시 눌러 주세요.");
@@ -57,6 +64,11 @@ describe("actionFailureMessage", () => {
 
     it("그 밖의 상태는 일반 실패 문구를 쓴다", () => {
       expect(actionFailureMessage("tool-approval", { status: 500 }))
+        .toBe("보내지 못했습니다. 다시 눌러 주세요.");
+    });
+
+    it("본문이 JSON이 아니어도 상태로 판정한다", () => {
+      expect(actionFailureMessage("tool-approval", { status: 500, body: "<html>err</html>" }))
         .toBe("보내지 못했습니다. 다시 눌러 주세요.");
     });
   });

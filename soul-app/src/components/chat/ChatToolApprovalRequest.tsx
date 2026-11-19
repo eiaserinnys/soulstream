@@ -8,7 +8,7 @@ import type {
 } from '../../api/types';
 import { createApiClient } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
-import { actionFailureMessage } from '../../api/actionFailure';
+import { actionFailureMessage } from '../../../../packages/soul-ui/src/lib/action-failure';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens, type DesignTokens } from '../../theme';

@@ -1,7 +1,5 @@
 /**
  * action-failure - 사용자가 누른 동작(멈춤, 도구 승인·거절)이 실패했을 때 보여줄 일상어 문구.
- *
- * 앱(soul-app)의 같은 이름 모듈과 문구를 똑같이 유지한다.
  */
 
 export type ActionFailureKind = "interrupt" | "tool-approval";
