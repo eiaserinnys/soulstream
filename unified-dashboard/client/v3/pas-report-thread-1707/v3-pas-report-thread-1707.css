@@ -158,9 +158,9 @@
 .pas-rt1707-decide-hint { min-width: 0; overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
 .pas-rt1707-decide-input { display: flex; align-items: flex-end; gap: var(--v3-space-2); border: 1px solid var(--persistent-session-line); border-radius: var(--v3-space-3); background: var(--persistent-session-paper); padding: var(--v3-space-2) var(--v3-space-3); }
 .pas-rt1707-decide-input:focus-within { border-color: var(--ring); }
-.pas-rt1707-decide-actions { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--v3-space-3); min-height: var(--v3-action-size); }
-.pas-rt1707-stamps { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); }
-.pas-rt1707-stamps[data-choice="true"] { display: grid; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+.pas-rt1707-decide-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-3); min-height: var(--v3-action-size); }
+.pas-rt1707-decide-actions [data-slot="button"] { width: auto; max-width: 100%; height: auto; min-height: var(--v3-action-size); justify-content: center; gap: var(--v3-space-1); padding: var(--v3-space-1) var(--v3-space-3); border-radius: var(--radius-lg); font: var(--v3-type-body) var(--v3-font-family); white-space: nowrap; }
+.pas-rt1707-stamps { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); }
 .pas-rt1707-choice[data-slot="button"] { min-width: 0; }
 .pas-rt1707-answer-line { min-width: 0; overflow: hidden; color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); text-overflow: ellipsis; white-space: nowrap; }
 .pas-rt1707-answer-line strong { color: var(--foreground); }
@@ -206,8 +206,6 @@
   .pas-rt1707-decide { padding: var(--v3-space-2) var(--v3-space-3); }
   .pas-rt1707-decide-hint { white-space: normal; }
   .pas-rt1707-decide-actions { gap: var(--v3-space-2); }
-  .pas-rt1707-stamps[data-choice="true"] { gap: var(--v3-space-1); }
-  .pas-rt1707-choice[data-slot="button"] { padding-inline: var(--v3-space-1); }
   .pas-rt1707-undo-slot { min-width: var(--v3-space-8); }
   .pas-rt1707-flow { flex-direction: column; }
   .pas-rt1707-flow-arrow { transform: rotate(90deg); }

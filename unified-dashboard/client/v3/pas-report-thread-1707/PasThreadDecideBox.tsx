@@ -1,6 +1,5 @@
 import { Badge, Button } from "@seosoyoung/soul-ui";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
-import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { X } from "lucide-react";
 import type { Agenda, DispositionId } from "./pas-report-thread-1707-data";
 
@@ -43,8 +42,8 @@ export function PasThreadDecideBox({ agenda, target, onClearTarget, text, onChan
         {choiceQuestion ? (questionAnswer === null
           ? choiceQuestion.options.map((option) => <Button key={option.label} variant="choice" size="sm" className="pas-rt1707-choice"
               onClick={() => onChooseQuestion(option.label)}>
-              <InputRequestOptionContent layout="columns" option={{ label: option.label }}
-                labelAccessory={option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null} />
+              <span>{option.label}</span>
+              {option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null}
             </Button>)
           : <span className="pas-rt1707-answer-line">받은 답: <strong>{questionAnswer}</strong></span>)
           : <>
