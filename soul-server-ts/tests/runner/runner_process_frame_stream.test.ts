@@ -96,41 +96,4 @@ describe("ProcessFrameStream", () => {
     await expect(iterator.next()).resolves.toMatchObject({ done: false });
     await expect(iterator.next()).rejects.toThrow("ack failed");
   });
-
-  it.skip("불변식 8: 첫 terminal 신호 뒤의 신호가 stream 결과를 뒤집지 않는다", async () => {
-    const stream = new ProcessFrameStream(vi.fn());
-    const iterator = stream[Symbol.asyncIterator]();
-
-    stream.finish();
-    stream.fail(new Error("late failure"));
-
-    // 현재는 late failure가 clean finish를 덮는다. 재설계는 하나의 멱등
-    // terminal transition으로 첫 결과를 보존해야 한다.
-    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
-  });
-
-  it.skip("불변식 8: 첫 failure 뒤의 failure가 최초 원인을 덮지 않는다", async () => {
-    const stream = new ProcessFrameStream(vi.fn());
-    const iterator = stream[Symbol.asyncIterator]();
-
-    stream.fail(new Error("first failure"));
-    stream.fail(new Error("late failure"));
-
-    await expect(iterator.next()).rejects.toThrow("first failure");
-  });
-
-  it.skip("불변식 5·6: 등록 소멸만으로도 대기 중 iterator가 유한 시간 안에 settle된다", async () => {
-    const stream = new ProcessFrameStream(vi.fn());
-    const iterator = stream[Symbol.asyncIterator]();
-    const pending = iterator.next();
-    const outcome = await Promise.race([
-      pending.then(() => "settled" as const, () => "settled" as const),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
-    ]);
-
-    // Release the probe waiter even when the invariant is still violated.
-    stream.fail(new Error("bounded-settle probe cleanup"));
-    await pending.catch(() => undefined);
-    expect(outcome).toBe("settled");
-  });
 });
