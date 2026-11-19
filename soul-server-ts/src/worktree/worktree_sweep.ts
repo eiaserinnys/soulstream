@@ -6,6 +6,7 @@ import { WorktreeGit } from "./worktree_git.js";
 import { removeWorktreeLocked } from "./worktree_removal.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
 import { decideWorktreeSweep, SWEEP_RECENT_MS, type SweepOutcome } from "./worktree_sweep_policy.js";
+import { sweepTrash } from "./worktree_trash.js";
 import type { WorktreeHost, WorktreeSweepCandidate } from "./worktree_types.js";
 
 interface SweepOptions {
@@ -22,6 +23,7 @@ export async function sweepWorktrees(options: SweepOptions, input: {
   now?: number;
   onFetchError?: (repoId: string, error: unknown) => void;
 }) {
+  await sweepTrash(options.projectsRoot);
   const candidates = await options.host.sweepCandidates({ nodeId: options.nodeId });
   const result = {
     candidates: candidates.length,
@@ -37,15 +39,17 @@ export async function sweepWorktrees(options: SweepOptions, input: {
       const outcome = await options.git.withOperationDeadline(async () => {
         const commonDirectory = await options.git.commonDirectory(candidate.repoId);
         if (!linkInventories.has(candidate.repoId)) {
+          const lockStart = Date.now();
           const preliminary = await options.lock.withLock(commonDirectory, async () =>
-            await inspectSweepCandidate(options, candidate, input.now));
+            await inspectSweepCandidate(options, candidate, input.now, Date.now() - lockStart));
           if (typeof preliminary === "string") return preliminary;
           // Release the lock for the expensive traversal; candidate gates run again after reacquiring it.
           linkInventories.set(candidate.repoId, collectBaseDependencyLinks(join(options.projectsRoot, candidate.repoId)));
         }
         const baseDependencyLinks = await linkInventories.get(candidate.repoId)!;
+        const lockStart = Date.now();
         return await options.lock.withLock(commonDirectory, async () =>
-          await sweepCandidate(options, candidate, fetched, baseDependencyLinks, input));
+          await sweepCandidate(options, candidate, fetched, baseDependencyLinks, input, Date.now() - lockStart));
       }, options.createTimeoutMs);
       result[outcome]++;
       if (outcome === "removed") result.removedWorktreeIds.push(candidate.id);
@@ -64,13 +68,14 @@ async function inspectSweepCandidate(
   options: SweepOptions,
   record: WorktreeSweepCandidate,
   now?: number,
+  lockWaitMs = 0,
 ): Promise<"recent" | "removed" | { idleMs: number }> {
   const gitActivity = await options.git.lastWorktreeActivityMs(record.repoId, record.canonicalPath);
   const idleMs = (now ?? Date.now()) - Math.max(new Date(record.lastSessionActivityAt).getTime(), gitActivity);
   if (idleMs < SWEEP_RECENT_MS) return "recent";
   const actor = { sweeperNodeId: options.nodeId };
   if (!await pathExists(record.canonicalPath)) {
-    await removeWorktreeLocked(options, record, actor);
+    await removeWorktreeLocked({ ...options, lockWaitMs }, record, actor);
     return "removed";
   }
   options.assertWorkspaceUnused(record.canonicalPath);
@@ -83,13 +88,14 @@ async function sweepCandidate(
   fetched: Set<string>,
   baseDependencyLinks: readonly CollectedBaseDependencyLink[],
   input: { now?: number; onFetchError?: (repoId: string, error: unknown) => void },
+  lockWaitMs: number,
 ): Promise<SweepOutcome> {
-  const inspected = await inspectSweepCandidate(options, record, input.now);
+  const inspected = await inspectSweepCandidate(options, record, input.now, lockWaitMs);
   if (typeof inspected === "string") return inspected;
   const { idleMs } = inspected;
   const links = dependencyLinksIntoWorktree(baseDependencyLinks, record.canonicalPath);
   if (links.length) return "base_links";
-  const dirty = await options.git.inspectDirty(record.canonicalPath, record.managedPaths.map(path => path.path));
+  const dirty = await options.git.inspectDirty(record.canonicalPath, record.managedPaths.map(path => path.path), undefined, { includeIgnored: false });
   if (dirty.tracked.length || dirty.untracked.length) return "changes";
   if (!fetched.has(record.repoId)) {
     fetched.add(record.repoId);
@@ -110,7 +116,7 @@ async function sweepCandidate(
     changes: false, pushed: state.pushed || prMerged,
     merged: (state.merged && head !== record.createdFromSha) || prMerged,
     linkedCardsClosed: record.linkedCardsClosed });
-  if (outcome === "removed") await removeWorktreeLocked({ ...options, baseDependencyLinks }, record, { sweeperNodeId: options.nodeId });
+  if (outcome === "removed") await removeWorktreeLocked({ ...options, baseDependencyLinks, lockWaitMs }, record, { sweeperNodeId: options.nodeId });
   return outcome;
 }
 
