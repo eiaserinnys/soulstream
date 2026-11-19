@@ -1,8 +1,10 @@
+import { Badge } from "@seosoyoung/soul-ui";
 import { StatusChip } from "../StatusChip";
 import {
   AGENDA_KIND_LABEL,
-  AGENDA_STATUS_LABEL,
   INITIAL_HOLD_COUNT,
+  agendaStatusLabel,
+  agendaStatusTone,
   agentPortraitUrl,
   type Agenda,
 } from "./pas-report-thread-1707-data";
@@ -19,19 +21,26 @@ export function PasThreadRail({ agendas, activeId, onSelect }: {
       <span className="pas-rt1707-rail-count" aria-label={`${pending}건`}>{pending}</span>
     </div>
     <ul className="pas-rt1707-rail-list">
-      {agendas.map((agenda) => <li key={agenda.id}>
-        <button type="button" className="pas-rt1707-rail-item" data-active={agenda.id === activeId || undefined}
-          data-status={agenda.status} aria-current={agenda.id === activeId ? "true" : undefined}
-          aria-label={`${agenda.number}번 ${agenda.title}, ${AGENDA_STATUS_LABEL[agenda.status]}`}
-          onClick={() => onSelect(agenda.id)}>
-          <span className="pas-rt1707-rail-number">#{agenda.number}</span>
-          <span className="pas-rt1707-rail-kind">{AGENDA_KIND_LABEL[agenda.kind]}</span>
-          <span className="pas-rt1707-rail-title">{agenda.title}</span>
-          <span className="pas-rt1707-rail-status"><StatusChip label={AGENDA_STATUS_LABEL[agenda.status]} tone={agenda.status} /></span>
-          <img className="pas-rt1707-rail-portrait" src={agentPortraitUrl(agenda.agent)} alt="" width={24} height={24} />
-          <span className="pas-rt1707-rail-dot" aria-hidden="true" />
-        </button>
-      </li>)}
+      {agendas.map((agenda) => {
+        // 미결 항목은 머리글의 "결재 대기"가 이미 말한다. 처분으로 상태가 바뀐 항목만 칩을 단다.
+        const changed = agenda.status !== "review";
+        return <li key={agenda.id}>
+          <button type="button" className="pas-rt1707-rail-item" data-active={agenda.id === activeId || undefined}
+            data-status={agenda.status} aria-current={agenda.id === activeId ? "true" : undefined}
+            aria-label={`${agenda.number}번 ${agenda.title}, ${agendaStatusLabel(agenda)}${agenda.keptAsReference ? ", 참고" : ""}`}
+            onClick={() => onSelect(agenda.id)}>
+            <span className="pas-rt1707-rail-number">#{agenda.number}</span>
+            <span className="pas-rt1707-rail-kind">{AGENDA_KIND_LABEL[agenda.kind]}</span>
+            <span className="pas-rt1707-rail-title">{agenda.title}</span>
+            {changed || agenda.keptAsReference ? <span className="pas-rt1707-rail-status">
+              {changed ? <StatusChip label={agendaStatusLabel(agenda)} tone={agendaStatusTone(agenda)} /> : null}
+              {agenda.keptAsReference ? <Badge variant="info" size="sm">참고</Badge> : null}
+            </span> : null}
+            <img className="pas-rt1707-rail-portrait" src={agentPortraitUrl(agenda.agent)} alt="" width={24} height={24} />
+            <span className="pas-rt1707-rail-dot" aria-hidden="true" />
+          </button>
+        </li>;
+      })}
     </ul>
     <div className="pas-rt1707-rail-foot">
       <p className="pas-rt1707-hold-note">보류함 {INITIAL_HOLD_COUNT}개 (변동 없음)</p>

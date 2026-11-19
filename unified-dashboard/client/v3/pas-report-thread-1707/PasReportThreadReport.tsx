@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { DashboardIconCap, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
+import { Badge, DashboardIconCap, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { DocumentReaderDialog } from "../DocumentReaderDialog";
 import { StatusChip } from "../StatusChip";
@@ -8,7 +8,8 @@ import { PasThreadDecideBox, type DecisionTarget } from "./PasThreadDecideBox";
 import { PasThreadRail } from "./PasThreadRail";
 import { PasThreadTimeline } from "./PasThreadTimeline";
 import {
-  AGENDA_STATUS_LABEL,
+  agendaStatusLabel,
+  agendaStatusTone,
   type Agenda,
   type CheckItem,
   type DispositionId,
@@ -86,7 +87,8 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
           <div className="pas-rt1707-report-heading">
             <span className="pas-rt1707-report-number">#{agenda.number}</span>
             <DialogTitle className="pas-rt1707-report-title">{agenda.title}</DialogTitle>
-            <StatusChip label={AGENDA_STATUS_LABEL[agenda.status]} tone={agenda.status} />
+            <StatusChip label={agendaStatusLabel(agenda)} tone={agendaStatusTone(agenda)} />
+            {agenda.keptAsReference ? <Badge variant="info" size="sm">참고</Badge> : null}
           </div>
           <div className="pas-rt1707-report-tools">
             {agenda.status === "review" ? <span className="pas-rt1707-report-count" aria-label={`${pending.length}건 가운데 ${pendingIndex + 1}번째`}>{pendingIndex + 1} / {pending.length}</span> : null}
@@ -100,11 +102,12 @@ export function PasReportThreadReport({ agendas, activeId, open, onSelect, onClo
           <div className="pas-rt1707-thread">
             <div ref={threadRef} className="pas-rt1707-thread-scroll">
               <PasThreadTimeline agenda={agenda} checks={checks} questionAnswer={questionAnswers[agenda.id] ?? null}
-                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument}
-                onChooseQuestion={onChooseAnswer} />
+                onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} />
             </div>
             <PasThreadDecideBox agenda={agenda} target={target} onClearTarget={onClearTarget} text={instruction}
-              onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={onDispose} undoLabel={undoLabel} onUndo={onUndo} />
+              onChangeText={onChangeInstruction} onSend={onSendInstruction} onDispose={onDispose}
+              questionAnswer={questionAnswers[agenda.id] ?? null} onChooseQuestion={(label) => onChooseAnswer(agenda, label)}
+              undoLabel={undoLabel} onUndo={onUndo} />
           </div>
         </div>
       </DialogPopup>

@@ -44,7 +44,7 @@ export function questionView(question: QuestionSeed, answer: string | null, open
   };
 }
 
-export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument, onChooseQuestion }: {
+export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument }: {
   agenda: Agenda;
   checks: Readonly<Record<string, boolean>>;
   questionAnswer: string | null;
@@ -52,7 +52,6 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
   onInstruct(agenda: Agenda, check: CheckItem): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
-  onChooseQuestion(agenda: Agenda, label: string): void;
 }) {
   let sawComment = false;
   const hasComment = agenda.events.some((event) => event.kind === "comment");
@@ -66,7 +65,6 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
           <span className="pas-rt1707-event-number" aria-hidden="true">3</span>
           <div className="pas-rt1707-event-body">
             <header className="pas-rt1707-event-head"><h3>3. 중간 커멘트 없음</h3></header>
-            <p className="pas-rt1707-request" data-quiet="true">중간에 보탠 커멘트 없이 결과까지 왔습니다.</p>
           </div>
         </section> : null}
         <section className="pas-rt1707-event" data-kind={event.kind} role="listitem">
@@ -80,7 +78,7 @@ export function PasThreadTimeline({ agenda, checks, questionAnswer, onToggleChec
           {event.kind === "session" ? <SessionEvent event={event} /> : null}
           {event.kind === "comment" ? <CommentEvent event={event} /> : null}
           {event.kind === "result" ? <ResultEvent agenda={agenda} event={event} checks={checks} questionAnswer={questionAnswer}
-            onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} onChooseQuestion={onChooseQuestion} /> : null}
+            onToggleCheck={onToggleCheck} onInstruct={onInstruct} onOpenEvidence={onOpenEvidence} onOpenDocument={onOpenDocument} /> : null}
         </div>
         </section>
       </Fragment>;
@@ -118,7 +116,7 @@ function CommentEvent({ event }: { event: Extract<ThreadEvent, { kind: "comment"
   </div>;
 }
 
-function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument, onChooseQuestion }: {
+function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onInstruct, onOpenEvidence, onOpenDocument }: {
   agenda: Agenda;
   event: Extract<ThreadEvent, { kind: "result" }>;
   checks: Readonly<Record<string, boolean>>;
@@ -127,7 +125,6 @@ function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onI
   onInstruct(agenda: Agenda, check: CheckItem): void;
   onOpenEvidence(evidence: Evidence, trigger: HTMLElement | null): void;
   onOpenDocument(documentId: string): void;
-  onChooseQuestion(agenda: Agenda, label: string): void;
 }) {
   return <div className="pas-rt1707-result">
     <ul className="pas-rt1707-checks">
@@ -152,9 +149,9 @@ function ResultEvent({ agenda, event, checks, questionAnswer, onToggleCheck, onI
         <FileText className="size-4" strokeWidth={1.4} aria-hidden="true" />설계 문서 열람
       </Button>
     </div> : null}
-    {agenda.question ? <div className="pas-rt1707-question">
+    {agenda.question?.kind === "request" ? <div className="pas-rt1707-question">
       <CardQuestionBody key={`${agenda.id}:${questionAnswer ?? "open"}`} view={questionView(agenda.question, questionAnswer, questionAnswer === null)}
-        portraitUrl={agentPortraitUrl(agenda.agent)} layout="stack" onChoose={(label) => onChooseQuestion(agenda, label)} />
+        portraitUrl={agentPortraitUrl(agenda.agent)} layout="stack" />
       {questionAnswer !== null ? <CardQuestionAnswered view={questionView(agenda.question, questionAnswer, false)} /> : null}
     </div> : null}
     {event.caveat ? <div className="pas-rt1707-caveat"><strong>못 본 범위</strong><p>{event.caveat}</p></div> : null}

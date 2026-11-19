@@ -52,7 +52,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   let body: unknown = null;
   if (typeof init?.body === "string") { try { body = JSON.parse(init.body); } catch { body = init.body; } }
-  return new Response(JSON.stringify(handler({ url, method, body })), {
+  const result = handler({ url, method, body });
+  // 시안이 실패 응답을 흉내 내야 할 때는 handler가 Response를 그대로 돌려준다.
+  if (result instanceof Response) return result;
+  return new Response(JSON.stringify(result), {
     status: 200, headers: { "Content-Type": "application/json" },
   });
 };
