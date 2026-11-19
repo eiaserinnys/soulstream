@@ -75,9 +75,9 @@ export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'defa
             size={t.iconSize.standard}
           />
           <Ionicons name="notifications-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
-          <Text style={styles.title} numberOfLines={1}>Runtime Signals</Text>
+          <Text style={styles.title} numberOfLines={1} lineBreakStrategyIOS="hangul-word">런타임 신호</Text>
           <Text style={styles.badge}>{visibleCount}</Text>
-          {errorCount > 0 ? <Text style={styles.errorBadge}>{errorCount} error</Text> : null}
+          {errorCount > 0 ? <Text style={styles.errorBadge}>오류 {errorCount}</Text> : null}
         </CompactTouchTarget>
         <CompactTouchTarget
           testID="runtime-signals-refresh-touch"
@@ -123,7 +123,7 @@ export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'defa
               <Ionicons name="server-outline" color={t.colors.error} size={t.iconSize.compact} />
               <View style={styles.textColumn}>
                 <View style={styles.titleRow}>
-                  <Text style={[styles.kind, styles.errorKind]} numberOfLines={1} ellipsizeMode="tail">mirror</Text>
+                  <Text style={[styles.kind, styles.errorKind]} numberOfLines={1} ellipsizeMode="tail" lineBreakStrategyIOS="hangul-word">미러</Text>
                   <Text style={styles.rowTitle} numberOfLines={1} ellipsizeMode="tail">
                     {mirror.transcriptSessionId ?? mirror.projectKey ?? mirror.sessionId ?? 'transcript'}
                   </Text>
@@ -193,7 +193,7 @@ function RemoteTriggerRow({
       <Ionicons name="radio-outline" color={iconColor} size={DESIGN_ICON_SIZE.compact} />
       <View style={styles.textColumn}>
         <View style={styles.titleRow}>
-          <Text style={styles.kind} numberOfLines={1} ellipsizeMode="tail">remote</Text>
+          <Text style={styles.kind} numberOfLines={1} ellipsizeMode="tail" lineBreakStrategyIOS="hangul-word">원격</Text>
           <Text style={styles.rowTitle} numberOfLines={1} ellipsizeMode="tail">
             {label}
           </Text>

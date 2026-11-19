@@ -85,12 +85,12 @@ export function ClaudeRuntimeSchedulesStrip({ sessionId, api, presentation = 'de
             size={t.iconSize.standard}
           />
           <Ionicons name="calendar-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
-          <Text style={styles.title} numberOfLines={1}>Schedules</Text>
+          <Text style={styles.title} numberOfLines={1} lineBreakStrategyIOS="hangul-word">예약</Text>
           {schedules.length > 0 || !recoveryNeeded ? (
             <Text style={styles.badge}>{schedules.length}</Text>
           ) : null}
           {recoveryNeeded ? <Text style={styles.errorBadge}>목록 미확인</Text> : null}
-          {errorCount > 0 ? <Text style={styles.errorBadge}>{errorCount} error</Text> : null}
+          {errorCount > 0 ? <Text style={styles.errorBadge}>오류 {errorCount}</Text> : null}
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => void refresh()}
@@ -155,10 +155,10 @@ function ScheduleRow({
           </Text>
         </View>
         <Text style={styles.summary} numberOfLines={2}>
-          {schedule.prompt ?? schedule.cronExpression ?? 'scheduled prompt'}
+          {schedule.prompt ?? schedule.cronExpression ?? '예약된 프롬프트'}
         </Text>
         <Text style={styles.nextRun} numberOfLines={1}>
-          {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : 'no next run'}
+          {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : '다음 실행 없음'}
         </Text>
       </View>
       <TouchableOpacity

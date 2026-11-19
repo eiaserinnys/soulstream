@@ -108,13 +108,13 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'defaul
             size={t.iconSize.standard}
           />
           <Ionicons name="git-network-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
-          <Text style={styles.title} numberOfLines={1}>Claude Runtime Tasks</Text>
+          <Text style={styles.title} numberOfLines={1} lineBreakStrategyIOS="hangul-word">백그라운드 작업</Text>
           {tasks.length > 0 || !recoveryNeeded ? (
             <Text style={styles.badge}>{tasks.length}</Text>
           ) : null}
           {recoveryNeeded ? <Text style={styles.errorBadge}>목록 미확인</Text> : null}
-          {runningCount > 0 ? <Text style={styles.activeBadge}>{runningCount} active</Text> : null}
-          {errorCount > 0 ? <Text style={styles.errorBadge}>{errorCount} error</Text> : null}
+          {runningCount > 0 ? <Text style={styles.activeBadge}>실행 중 {runningCount}</Text> : null}
+          {errorCount > 0 ? <Text style={styles.errorBadge}>오류 {errorCount}</Text> : null}
         </CompactTouchTarget>
         <CompactTouchTarget
           testID="runtime-tasks-refresh-touch"
@@ -143,7 +143,7 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'defaul
               {planMode ? (
                 <ModePill
                   icon="list-outline"
-                  label={planMode.active ? 'Plan mode' : 'Plan off'}
+                  label={planMode.active ? '계획 모드' : '계획 모드 꺼짐'}
                   active={planMode.active}
                   iconColor={planMode.active ? t.colors.warning : t.colors.textMuted}
                   styles={styles}
@@ -243,9 +243,9 @@ function ModePill({
 
 function worktreeLabel(mode: ClaudeRuntimeMode): string {
   if (!mode.active) {
-    return mode.worktreeAction ? `Worktree off (${mode.worktreeAction})` : 'Worktree off';
+    return mode.worktreeAction ? `워크트리 모드 꺼짐 (${mode.worktreeAction === 'keep' ? '유지' : mode.worktreeAction === 'remove' ? '제거' : mode.worktreeAction})` : '워크트리 모드 꺼짐';
   }
-  return mode.worktreeName ?? mode.worktreePath ?? 'Worktree mode';
+  return mode.worktreeName ?? mode.worktreePath ?? '워크트리 모드';
 }
 
 function TaskRow({
@@ -271,13 +271,13 @@ function TaskRow({
           <Text style={[styles.status, statusStyle(task.status, styles)]}>
             {task.status}
           </Text>
-          <Text style={styles.kind}>{taskKindLabel(task)}</Text>
+          <Text style={styles.kind} lineBreakStrategyIOS="hangul-word">{taskKindLabel(task)}</Text>
           <Text style={styles.taskId} numberOfLines={1} ellipsizeMode="tail">
             {task.taskId}
           </Text>
         </View>
         <Text style={styles.summary} numberOfLines={1} ellipsizeMode="tail">
-          {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? 'SDK task'}
+          {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? 'SDK 작업'}
         </Text>
       </View>
       <CompactTouchTarget
@@ -310,12 +310,12 @@ function TaskRow({
 }
 
 function taskKindLabel(task: ClaudeRuntimeTask): string {
-  if (task.taskType === 'bash' && task.isBackgrounded) return 'Background Bash';
+  if (task.taskType === 'bash' && task.isBackgrounded) return '백그라운드 Bash';
   if (task.taskType === 'bash') return 'Bash';
-  if (task.isBackgrounded) return 'Background Agent';
-  if (task.taskType === 'agent') return 'Agent';
-  if (task.subject) return 'SDK Task';
-  return task.taskType ?? 'Task';
+  if (task.isBackgrounded) return '백그라운드 에이전트';
+  if (task.taskType === 'agent') return '에이전트';
+  if (task.subject) return 'SDK 작업';
+  return task.taskType ?? '작업';
 }
 
 function statusStyle(

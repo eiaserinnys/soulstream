@@ -9,6 +9,7 @@ import { SheetErrorNotice, sheetErrorDetail } from '../components/planner/SheetE
 import { ReviewSection } from './ReviewSection';
 import { ReviewNativeDialogues } from './ReviewNativeDialogues';
 import { ReviewDialogueSurface } from './ReviewDialogueSurface';
+import { ApiHttpError } from '../api/clientCore';
 
 export function ReviewDialogues() {
   const t = useTokens();
@@ -39,7 +40,7 @@ export function ReviewDialogues() {
     </ReviewSection>
     <ReviewSection title="작성창 오류 상세">
       <SheetErrorNotice summary="저장하지 못했습니다. 입력을 유지했습니다. 다시 시도해 주세요."
-        detail={sheetErrorDetail(new Error('HTTP 403 request_id: 12345678-1234-1234-1234-123456789abc'))} />
+        detail={sheetErrorDetail(new ApiHttpError('[createCard] HTTP 422 Unprocessable Entity — {"detail":"title is required"}', 422, '{"detail":"title is required"}'))} />
     </ReviewSection>
     <ReviewNativeDialogues />
   </>;

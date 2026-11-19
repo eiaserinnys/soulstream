@@ -26,7 +26,7 @@ describe('ClaudeRuntimeSignalsStrip compact disclosure', () => {
               updatedAt: 100,
             },
           },
-          remoteTriggers: {},
+          remoteTriggers: { r: { triggerId: 'r', source: 'message_origin', prompt: '원격 요청', updatedAt: 100 } },
           transcriptMirror: {
             updatedAt: 100,
             errorCount: 3,
@@ -42,12 +42,12 @@ describe('ClaudeRuntimeSignalsStrip compact disclosure', () => {
       <ClaudeRuntimeSignalsStrip sessionId={SID} api={null} />,
     );
 
-    expect(getByText('Runtime Signals')).toBeTruthy();
-    expect(getByText('4')).toBeTruthy();
-    expect(getByText('3 error')).toBeTruthy();
+    expect(getByText('런타임 신호')).toBeTruthy();
+    expect(getByText('5')).toBeTruthy();
+    expect(getByText('오류 3')).toBeTruthy();
     expect(queryByText('cannot extract elements from a scalar')).toBeNull();
 
-    fireEvent.press(getByText('Runtime Signals'));
+    fireEvent.press(getByText('런타임 신호'));
 
     expect(
       StyleSheet.flatten(getByTestId('runtime-signals-details-scroll').props.style).maxHeight,
@@ -56,7 +56,8 @@ describe('ClaudeRuntimeSignalsStrip compact disclosure', () => {
     expect(getByText('cannot extract elements from a scalar')).toBeTruthy();
     expect(getByText('runtime notification').props.numberOfLines).toBe(1);
     expect(getByText('cannot extract elements from a scalar').props.numberOfLines).toBe(1);
-    expect(StyleSheet.flatten(getByText('mirror').props.style).minHeight).toBeUndefined();
+    expect(StyleSheet.flatten(getByText('미러').props.style).minHeight).toBeUndefined();
+    expect(getByText('원격')).toBeTruthy();
     const headerTouch = StyleSheet.flatten(
       getByTestId('runtime-signals-header-touch').props.style,
     );

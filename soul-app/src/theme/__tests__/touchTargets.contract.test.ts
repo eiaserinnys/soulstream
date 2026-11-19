@@ -125,7 +125,7 @@ describe('direct touch target contract', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    fireEvent.press(tasks.getByText('Claude Runtime Tasks'));
+    fireEvent.press(tasks.getByText('백그라운드 작업'));
     const taskFrames = [
       tasks.getByTestId('runtime-tasks-header-touch'),
       tasks.getByTestId('runtime-tasks-refresh-touch'),

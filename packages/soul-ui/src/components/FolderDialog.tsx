@@ -7,7 +7,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { safeErrorDetail } from "../lib/safe-error-detail";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -100,7 +99,7 @@ function CreateFolderDialog({
     try {
       await onConfirm(data.name);
     } catch (err) {
-      setError(safeErrorDetail(err instanceof Error ? err.message : String(err)));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -123,9 +122,9 @@ function CreateFolderDialog({
               placeholder="폴더 이름"
               {...register("name")}
             />
-            {error && <div className="dialog-error-notice" role="alert">
+            {error !== null && <div className="dialog-error-notice" role="alert">
               <p data-slot="dialog-error-message">폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요.</p>
-              <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details>
+              {error.trim() && error !== "폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요." ? <details><summary>기술 상세</summary><pre data-slot="dialog-error-detail">{error}</pre></details> : null}
             </div>}
           </DialogPanel>
           <DialogFooter variant="bare">

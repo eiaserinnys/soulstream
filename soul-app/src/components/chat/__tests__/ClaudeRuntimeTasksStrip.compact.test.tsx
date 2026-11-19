@@ -34,7 +34,7 @@ test('런타임 작업은 한 줄 ellipsis와 시각 박스에서 분리된 터�
   });
 
   const screen = render(<ClaudeRuntimeTasksStrip sessionId={SID} api={null} />);
-  fireEvent.press(screen.getByText('Claude Runtime Tasks'));
+  fireEvent.press(screen.getByText('백그라운드 작업'));
 
   expect(screen.getByText(summary).props.numberOfLines).toBe(1);
   expect(screen.getByText(summary).props.ellipsizeMode).toBe('tail');
@@ -60,7 +60,7 @@ test('운영 출력 버튼으로 원본 모달을 열고 닫으며 표면 렌더
     sessionId: 'public-idle', sessionState: 'idle', runtimeSessionId: null, updatedAt: 1, tasks: [reviewTask],
   });
   const screen = render(<ClaudeRuntimeTasksStrip sessionId="public-idle" api={api} />);
-  fireEvent.press(screen.getByText('Claude Runtime Tasks'));
+  fireEvent.press(screen.getByText('백그라운드 작업'));
   await act(async () => fireEvent.press(screen.getByLabelText('출력 보기')));
   await waitFor(() => expect(screen.getByTestId('runtime-output-modal')).toBeTruthy());
   expect(findOutputTree(screen.toJSON())).toMatchSnapshot();
@@ -84,3 +84,23 @@ function findOutputTree(tree: any): any {
   if (tree.props?.testID === 'runtime-output-modal') return tree;
   return findOutputTree(tree.children);
 }
+
+test('작업 종류와 모드, 개수는 한국어로 표시한다', () => {
+  useChatStore.setState({ claudeRuntimeBySession: { [SID]: {
+    updatedAt: 100, schedules: {}, notifications: {}, remoteTriggers: {},
+    planMode: { active: true, updatedAt: 100 },
+    worktreeMode: { active: false, worktreeAction: 'keep', updatedAt: 100 },
+    tasks: {
+      bash: { taskId: 'bash', status: 'running', updatedAt: 1, taskType: 'bash', isBackgrounded: true },
+      agent: { taskId: 'agent', status: 'failed', updatedAt: 2, taskType: 'agent', isBackgrounded: true },
+    },
+  } } });
+  const screen = render(<ClaudeRuntimeTasksStrip sessionId={SID} api={null} />);
+  expect(screen.getByText('실행 중 1')).toBeTruthy();
+  expect(screen.getByText('오류 1')).toBeTruthy();
+  fireEvent.press(screen.getByText('백그라운드 작업'));
+  expect(screen.getByText('계획 모드')).toBeTruthy();
+  expect(screen.getByText('워크트리 모드 꺼짐 (유지)')).toBeTruthy();
+  expect(screen.getByText('백그라운드 Bash')).toBeTruthy();
+  expect(screen.getByText('백그라운드 에이전트')).toBeTruthy();
+});

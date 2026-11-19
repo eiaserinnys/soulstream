@@ -94,6 +94,19 @@ beforeEach(() => {
   });
 });
 
+test('예약 띠의 오류 개수와 비어 있는 예약 정보는 한국어로 표시한다', () => {
+  const sessionId = 'session-schedule-labels';
+  useChatStore.setState({ claudeRuntimeBySession: { [sessionId]: {
+    updatedAt: 1, tasks: {}, notifications: {}, remoteTriggers: {},
+    schedules: { s: { scheduleId: 's', sessionId, kind: 'wakeup', status: 'failed' } },
+  } } });
+  const screen = render(<ClaudeRuntimeSchedulesStrip sessionId={sessionId} api={null} />);
+  expect(screen.getByText('오류 1')).toBeTruthy();
+  fireEvent.press(screen.getByText('예약'));
+  expect(screen.getByText('예약된 프롬프트')).toBeTruthy();
+  expect(screen.getByText('다음 실행 없음')).toBeTruthy();
+});
+
 test('Host가 막 생성한 세션은 tasks와 schedules 초기 복구 GET을 모두 생략한다', async () => {
   const onCreated = jest.fn();
   const host = render(
