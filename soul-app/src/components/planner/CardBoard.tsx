@@ -82,8 +82,11 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const completedFirstLoading = !!completed && completed.loading && completed.cards.length === 0 && !firstLoading;
   const laneScrolls = useRef<Partial<Record<CardDto['status'], ScrollView | null>>>({});
   const savePosition = () => onPositionChange?.({ ...position.current, lanes: { ...position.current.lanes } });
+  // 빈 칸을 숨기는 보드는 활성 목록이 오기 전에는 칸 목록이 정해지지 않았다(완료 칸만 있을 수 있다).
+  // 그때 처음 위치를 고르면 완료 칸에 머무르므로, 활성 목록이 온 뒤에 고른다.
+  const lanesKnown = !hideEmptyLanes || !activePending;
   useEffect(() => {
-    if (frame.width > 0 && !initialized.current) {
+    if (frame.width > 0 && !initialized.current && lanesKnown) {
       initialized.current = true;
       const lane = nearestVisibleLane(position.current.lane);
       position.current.lane = lane >= 0 ? columns[lane][0] : undefined;
@@ -100,7 +103,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       savePosition();
     }
     previousLayout.current = { stride: geometry.stride, viewport, includeCompleted, laneSignature, hideEmptyLanes };
-  }, [frame.width, geometry.stride, viewport, includeCompleted, laneSignature, hideEmptyLanes]);
+  }, [frame.width, geometry.stride, viewport, includeCompleted, laneSignature, hideEmptyLanes, lanesKnown]);
   const lastIncomingPosition = useRef(initialPosition);
   useEffect(() => {
     if (!initialPosition || initialized.current && initialPosition === lastIncomingPosition.current) return;

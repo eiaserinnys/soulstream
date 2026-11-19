@@ -142,6 +142,20 @@ test('a period change while an earlier read runs stays loading, drops the old an
   expect(Date.parse(next.completedBefore)-Date.parse(next.completedFrom)).toBe(30*24*60*60*1000);
   await settleTimers();
 });
+test('an invalid range entered while an earlier read runs shows the range notice without the loader',async()=>{
+  let resolve!: (value:{cards:never[];nextCursor:string|null})=>void;
+  const pending=new Promise<{cards:never[];nextCursor:string|null}>(done=>{resolve=done;});
+  const listCompletedCards=jest.fn().mockReturnValueOnce(pending).mockResolvedValue({cards:[],nextCursor:null});
+  const api={listCompletedCards} as unknown as ApiClient;
+  const hook=renderHook(()=>useCompletedCards(api,'folder-1',true));
+  expect(hook.result.current.loading).toBe(true);
+  act(()=>{hook.result.current.setPeriod('custom');hook.result.current.setStart('2026-12-31');hook.result.current.setEnd('2026-01-01');});
+  expect(hook.result.current).toMatchObject({invalidRange:true,loading:false,error:'시작일과 종료일을 확인해 주세요.'});
+  await act(async()=>{resolve({cards:[],nextCursor:null});await pending;});
+  expect(hook.result.current.loading).toBe(false);
+  expect(listCompletedCards).toHaveBeenCalledTimes(1);
+  await settleTimers();
+});
 test('both folder reads always exclude done independently of completion visibility',async()=>{
   const getFolderSnapshot=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[]});
   const getPlannerFolder=jest.fn().mockResolvedValue({folder:{id:'folder-1'},cards:[],subfolders:{items:[],nextCursor:null},sessions:{items:[],nextCursor:null}});
