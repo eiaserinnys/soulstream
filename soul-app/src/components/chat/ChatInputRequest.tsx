@@ -21,9 +21,9 @@ import type {
 } from '../../api/types';
 import { createApiClient } from '../../api/client';
 import {
-  ALREADY_RESOLVED_MESSAGE,
+  TOOL_APPROVAL_FAILURE_MESSAGES,
   isInputResponseAlreadyHandled,
-} from '../../api/actionFailure';
+} from '../../../../packages/soul-ui/src/lib/action-failure';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useInputRequestTimer } from '../../hooks/useInputRequestTimer';
@@ -176,7 +176,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
           reportSubmissionFailure(
             'already_resolved',
             { status: response.status },
-            ALREADY_RESOLVED_MESSAGE,
+            TOOL_APPROVAL_FAILURE_MESSAGES.alreadyResolved,
           );
           return;
         }
