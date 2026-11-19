@@ -149,6 +149,7 @@ async function active(page) {
       tag: element.tagName,
       label: element.getAttribute("aria-label"),
       testid: element.getAttribute("data-testid"),
+      choice: element.getAttribute("data-choice"),
       text: (element.textContent || "").trim().slice(0, 40),
       className: typeof element.className === "string" ? element.className.slice(0, 80) : "",
     };
@@ -344,7 +345,119 @@ async function dialogTop(page) {
     return {
       title: pick("#pas-rb-dialog-title"),
       stamp: pick('[data-testid="pas-rb-stamp-row"] button'),
+      stamps: pick('[data-testid="pas-rb-stamp-row"]'),
       foot: pick('[data-testid="pas-rb-foot"]'),
+    };
+  });
+}
+
+async function questionChoiceReport(page, label) {
+  return page.evaluate(choiceLabel => {
+    const scroll = document.querySelector(".pas-rb-scroll");
+    const button = [...document.querySelectorAll('[data-testid="pas-rb-choice"]')]
+      .find(element => element.getAttribute("data-choice") === choiceLabel);
+    if (!button) return { found: false, scrollTop: scroll?.scrollTop ?? null };
+    const rect = button.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(cx, cy);
+    const foot = document.querySelector('[data-testid="pas-rb-foot"]');
+    const footRect = foot?.getBoundingClientRect();
+    let lastBottom = footRect?.top ?? 0;
+    if (foot) {
+      for (const element of foot.querySelectorAll("*")) {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (box.width <= 0 || box.height <= 0 || style.visibility === "hidden" || style.display === "none") continue;
+        const hasContent = Boolean((element.innerText || "").trim()) || element.matches("input, textarea, button, [contenteditable]");
+        if (hasContent) lastBottom = Math.max(lastBottom, box.bottom);
+      }
+    }
+    return {
+      found: true,
+      scrollTop: scroll?.scrollTop ?? null,
+      cx: Math.round(cx * 10) / 10,
+      cy: Math.round(cy * 10) / 10,
+      top: Math.round(rect.top),
+      bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left),
+      right: Math.round(rect.right),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      insideViewport: cx >= 0 && cx <= window.innerWidth && cy >= 0 && cy <= window.innerHeight,
+      hit: Boolean(hit && (hit === button || button.contains(hit))),
+      hitTag: hit ? String(hit.className || hit.tagName).slice(0, 60) : null,
+      footBottom: footRect ? Math.round(footRect.bottom * 10) / 10 : null,
+      footLastBottom: Math.round(lastBottom * 10) / 10,
+      emptyBelow: footRect ? Math.round((footRect.bottom - lastBottom) * 10) / 10 : null,
+    };
+  }, label);
+}
+
+async function bubbleReport(page) {
+  return page.evaluate(() => {
+    const bubble = document.querySelector('[data-testid="pas-rb-bubble"]');
+    const tail = bubble?.querySelector(".pas-report-tail");
+    if (!bubble || !tail) return { found: false, bubble: Boolean(bubble), tail: Boolean(tail) };
+    const bubbleRect = bubble.getBoundingClientRect();
+    const tailRect = tail.getBoundingClientRect();
+    return {
+      found: true,
+      width: Math.round(bubbleRect.width * 10) / 10,
+      left: Math.round(bubbleRect.left * 10) / 10,
+      right: Math.round(bubbleRect.right * 10) / 10,
+      tailCenter: Math.round(((tailRect.left + tailRect.right) / 2) * 10) / 10,
+      tailWidth: Math.round(tailRect.width * 10) / 10,
+    };
+  });
+}
+
+async function pillReport(page, number) {
+  return page.evaluate(value => {
+    const pill = [...document.querySelectorAll('[data-testid="pas-rb-pill"]')]
+      .find(element => element.getAttribute("data-number") === String(value));
+    if (!pill) return null;
+    const dialog = document.querySelector('[data-testid="pas-rb-dialog"]');
+    const probe = document.createElement("span");
+    probe.style.border = "1px solid var(--v3-accent)";
+    dialog?.append(probe);
+    const accent = probe ? getComputedStyle(probe).borderTopColor : "";
+    probe.remove();
+    return {
+      ariaCurrent: pill.getAttribute("aria-current"),
+      dataCurrent: pill.getAttribute("data-current"),
+      dataDisposed: pill.getAttribute("data-disposed"),
+      borderColor: getComputedStyle(pill).borderTopColor,
+      accent,
+      text: (pill.textContent || "").trim(),
+    };
+  }, number);
+}
+
+function assertPillCurrentDisposed(report, number) {
+  assert.ok(report, `#${number} 알약이 없습니다`);
+  assert.equal(report.ariaCurrent, "true", `#${number} aria-current ${JSON.stringify(report)}`);
+  assert.equal(report.dataCurrent, "true", `#${number} data-current ${JSON.stringify(report)}`);
+  assert.equal(report.dataDisposed, "true", `#${number} data-disposed ${JSON.stringify(report)}`);
+  assert.equal(report.borderColor, report.accent, `#${number} 강조 테두리 ${JSON.stringify(report)}`);
+  return `#${number} 현재 안건 강조와 처분 표시`;
+}
+
+async function headerReport(page) {
+  return page.evaluate(() => {
+    const kicker = document.querySelector(".pas-rb-kicker");
+    const agenda = document.querySelector('[data-testid="pas-rb-agenda"]');
+    const badges = [...(kicker?.querySelectorAll('[data-slot="badge"]') ?? [])]
+      .map(element => (element.textContent || "").trim());
+    const status = [...(kicker?.querySelectorAll('[data-slot="status-chip"]') ?? [])]
+      .map(element => (element.textContent || "").trim());
+    const kickerText = (kicker?.innerText || "").replace(/\s+/g, " ").trim();
+    return {
+      kickerText,
+      questionMentions: (kickerText.match(/질문/g) ?? []).length,
+      questionBadges: badges.filter(text => text === "질문").length,
+      status,
+      agendaText: (agenda?.innerText || "").replace(/\s+/g, " ").trim(),
     };
   });
 }
@@ -468,6 +581,48 @@ try {
       return summaries.slice(-3).join(", ");
     });
 
+    await step("A1 질문 선택지 첫 화면 노출과 하단 여백", async () => {
+      const summaries = [];
+      for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 780]]) {
+        await openRoute(page, { width, height, theme: "dark", hash: "report" });
+        const report = await questionChoiceReport(page, "최근 7일");
+        assert.ok(report.found, `${width} 최근 7일 선택지 없음`);
+        assert.equal(report.scrollTop, 0, `${width} 진입 직후 스크롤 ${report.scrollTop}`);
+        assert.ok(report.insideViewport, `${width} 선택지 중심이 화면 밖 ${JSON.stringify(report)}`);
+        assert.ok(report.hit, `${width} 선택지 중심이 다른 요소에 가림 ${JSON.stringify(report)}`);
+        assert.ok(report.emptyBelow !== null && report.emptyBelow <= 16, `${width} 하단 빈 띠 ${JSON.stringify(report)}`);
+        const focused = await active(page);
+        assert.equal(focused?.choice, "최근 7일", `${width} 첫 초점 ${JSON.stringify(focused)}`);
+        await capture(page, `a1-1680-${width}.png`);
+        summaries.push(`${width} 중심 ${report.cy}, 빈 띠 ${report.emptyBelow}px`);
+      }
+      return summaries.join(", ");
+    });
+
+    await step("A2 말풍선 폭과 꼬리 위치", async () => {
+      await openRoute(page, { width: 1440, height: 900, theme: "dark", hash: "pas" });
+      const report = await bubbleReport(page);
+      assert.ok(report.found, `말풍선이나 꼬리가 없습니다: ${JSON.stringify(report)}`);
+      assert.ok(Math.abs(report.width - 342) <= 2, `말풍선 폭 ${report.width}`);
+      assert.ok(
+        report.tailCenter >= report.left + 16 && report.tailCenter <= report.right - 16,
+        `꼬리 중심 ${report.tailCenter}, 말풍선 ${report.left}..${report.right}`,
+      );
+      await capture(page, "a2-bubble-1440.png");
+      return `폭 ${report.width}px, 꼬리 ${report.tailCenter}px (${report.left}..${report.right})`;
+    });
+
+    await step("A4 머리말 중복 제거와 금지 문구", async () => {
+      await openRoute(page, { width: 1440, height: 900, theme: "dark", hash: "report" });
+      const header = await headerReport(page);
+      assert.equal(header.questionMentions, 1, `머리말 질문 중복 ${JSON.stringify(header)}`);
+      assert.equal(header.questionBadges, 0, `질문 배지 중복 ${JSON.stringify(header)}`);
+      assert.ok(!header.agendaText.includes("카드 #1680"), `카드 번호 중복 ${JSON.stringify(header)}`);
+      const scan = await scanForbiddenText();
+      await capture(page, "a4-1680-header.png");
+      return `질문 ${header.questionMentions}회, 배지 ${header.questionBadges}개, ${scan}`;
+    });
+
     await step("D2 요청 응답과 초상", async () => {
       await openRoute(page, { width: 1440, height: 900, theme: "dark", hash: "pas" });
       assert.deepEqual(await unmocked(page), [], "PAS 진입 미등록 요청");
@@ -524,7 +679,7 @@ try {
       await page.waitForFunction(() => window.location.hash === "#report");
       assert.equal((await page.getByTestId("pas-rb-count").innerText()).replace(/\s+/g, " ").trim(), "1 / 5");
       const focused = await active(page);
-      assert.equal(focused?.testid, "pas-rb-input", `열린 뒤 초점 ${JSON.stringify(focused)}`);
+      assert.equal(focused?.choice, "최근 7일", `열린 뒤 초점 ${JSON.stringify(focused)}`);
       await capture(page, "10-report-1680-before.png");
     });
 
@@ -554,6 +709,8 @@ try {
       await page.getByTestId("pas-rb-dialog").getByRole("button", { name: /최근 7일/ }).click();
       await page.waitForFunction(() => document.querySelector('[data-testid="pas-rb-status-line"]')?.textContent?.includes("최근 7일 기준으로 정했습니다."));
       await pause(140);
+      const questionPill = await pillReport(page, 1680);
+      assertPillCurrentDisposed(questionPill, 1680);
       const focusAfterChoose = await active(page);
       assert.equal(focusAfterChoose?.testid, "pas-rb-status-line", `선택지 처분 뒤 초점 ${JSON.stringify(focusAfterChoose)}`);
       const after = await dialogTop(page);
@@ -577,7 +734,8 @@ try {
       await page.waitForFunction(() => !document.querySelector('[data-testid="pas-rb-status-line"]')?.textContent?.includes("최근 7일 기준으로 정했습니다."));
       const afterUndo = await dialogTop(page);
       assert.ok(Math.abs(afterUndo.title - beforeOpen.title) <= 1, `되돌린 뒤 제목 Y ${beforeOpen.title} ${afterUndo.title}`);
-      assert.ok(Math.abs(afterUndo.stamp - beforeOpen.stamp) <= 1, `되돌린 뒤 단추 Y ${beforeOpen.stamp} ${afterUndo.stamp}`);
+      assert.ok(Math.abs(afterUndo.stamps - beforeOpen.stamps) <= 1, `되돌린 뒤 단추 줄 Y ${beforeOpen.stamps} ${afterUndo.stamps}`);
+      assert.ok(Math.abs(afterUndo.foot - beforeOpen.foot) <= 1, `되돌린 뒤 하단 막대 Y ${beforeOpen.foot} ${afterUndo.foot}`);
       await pause(140);
       const focusAfterUndo = await active(page);
       assert.equal(focusAfterUndo?.testid, "pas-rb-input", `되돌린 뒤 초점 ${JSON.stringify(focusAfterUndo)}`);
@@ -682,6 +840,8 @@ try {
       await page.getByTestId("pas-rb-dialog").getByRole("button", { name: "보내기", exact: true }).click();
       await page.waitForFunction(() => document.querySelector('[data-testid="pas-rb-status-line"]')?.textContent?.includes("1번 항목 지시를 보냈습니다."));
       await pause(140);
+      const itemPill = await pillReport(page, 1408);
+      assertPillCurrentDisposed(itemPill, 1408);
       const focusAfterInput = await active(page);
       assert.equal(focusAfterInput?.testid, "pas-rb-status-line", `지시를 보낸 뒤 초점 ${JSON.stringify(focusAfterInput)}`);
       assert.ok((await page.getByTestId("pas-rb-agenda").innerText()).includes("실행 중"), "1408 실행 중");

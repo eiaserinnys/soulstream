@@ -287,7 +287,7 @@ export function PasReportBriefingMockup() {
     <div className="pas-report-sheet pas-rb-bubble-sheet">
       <div className="pas-rb-bubble-head">
         <button type="button" className="pas-rb-bubble-title" onClick={openReport}>{bubbleAgenda.title}</button>
-        <DashboardIconCap appearance="bare" label="보고 창 크게 열기" onClick={openReport}>
+        <DashboardIconCap appearance="bare" size="small" label="보고 창 크게 열기" onClick={openReport}>
           <Maximize2 className="size-4" strokeWidth={1.5} aria-hidden="true" />
         </DashboardIconCap>
       </div>

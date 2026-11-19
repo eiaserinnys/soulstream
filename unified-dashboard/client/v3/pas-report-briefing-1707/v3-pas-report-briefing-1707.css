@@ -20,13 +20,18 @@
 .pas-rb-bubble {
   max-width: 100%;
 }
+/* 캐릭터 폭(184px) 안으로 포털해도 계산된 말풍선 폭(342px)을 그대로 쓴다. */
+.pas-rb-bubble[data-bubble="true"] {
+  max-width: none;
+  width: 100%;
+}
 .pas-rb-bubble-sheet {
   gap: var(--v3-space-2);
   padding: var(--v3-space-3) var(--v3-space-4);
 }
 .pas-rb-bubble-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--v3-space-1);
   min-width: 0;
 }

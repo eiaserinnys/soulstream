@@ -5,10 +5,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import {
   Badge, Button, DashboardIconCap, Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, ProfileAvatar,
 } from "@seosoyoung/soul-ui";
-import { ChevronLeft, ChevronRight, EyeOff, Maximize2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, EyeOff, Maximize2, X } from "lucide-react";
 import type { CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import { CardCheckItems } from "../CardCheckItems";
-import { CardQuestionBody } from "../CardQuestionBlock";
 import { StatusChip } from "../StatusChip";
 import { AGENT_NAMES, type Agenda, type AgendaStamp, type StampOutcome } from "./data";
 import "./v3-pas-report-briefing-1707-dossier.css";
@@ -132,6 +131,11 @@ export function PasReviewReportDialog({
 }: Props) {
   const agenda = agendas[Math.max(0, Math.min(agendas.length - 1, index))]!;
   const disposition = dispositions[agenda.key];
+  const choiceOptions = agenda.question?.kind === "choice" ? agenda.question.options : null;
+  const selectedChoice = disposition?.outcome === "answered" ? disposition.label : null;
+  const customAnswer = selectedChoice && !choiceOptions?.some(option => option.label === selectedChoice)
+    ? selectedChoice
+    : null;
   const [text, setText] = useState("");
   const [targetItem, setTargetItem] = useState<number | null>(null);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
@@ -150,6 +154,7 @@ export function PasReviewReportDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
+  const initialFocusChoice = useRef(agenda.question?.kind === "choice" && !disposition);
 
   useEffect(() => {
     setText("");
@@ -159,6 +164,10 @@ export function PasReviewReportDialog({
 
   useEffect(() => {
     const fine = window.matchMedia("(pointer: fine)").matches;
+    if (fine && initialFocusChoice.current) {
+      const choice = dialogRef.current?.querySelector<HTMLButtonElement>('[data-testid="pas-rb-choice"]');
+      if (choice) { choice.focus(); return; }
+    }
     if (fine && inputRef.current && !inputRef.current.disabled) inputRef.current.focus();
     else dialogRef.current?.focus();
   }, []);
@@ -209,12 +218,9 @@ export function PasReviewReportDialog({
     }
   };
 
-  const questionView = agenda.question
-    ? disposition
-      ? { ...agenda.question, open: false, selectedOption: disposition.outcome === "answered" ? disposition.label : null, answer: disposition.outcome === "answered" ? disposition.label : null }
-      : agenda.question
-    : null;
   const chip = outcomeChip(disposition);
+  const statusLabel = disposition ? chip.label : agenda.statusLabel;
+  const statusTone = disposition ? chip.tone : agenda.statusTone;
   const statusLine = targetItem !== null
     ? `대상: ${targetItem}번 항목, 지시를 적고 보내세요.`
     : notice && notice.agendaKey === agenda.key
@@ -255,8 +261,10 @@ export function PasReviewReportDialog({
         <ol className="pas-rb-pills" aria-label="안건 번호">
           {agendas.map((item, position) => <li key={item.key}>
             <button type="button" className="pas-rb-pill" data-testid="pas-rb-pill" data-number={item.number}
-              data-state={dispositions[item.key] ? "done" : position === index ? "current" : "open"}
+              data-current={position === index ? "true" : undefined}
+              data-disposed={dispositions[item.key] ? "true" : undefined}
               aria-current={position === index ? "true" : undefined} onClick={() => onNavigate(position)}>
+              {dispositions[item.key] ? <Check className="size-3" strokeWidth={2} aria-hidden="true" /> : null}
               #{item.number}
             </button>
           </li>)}
@@ -271,15 +279,14 @@ export function PasReviewReportDialog({
           <header className="pas-rb-agenda-head">
             <div className="pas-rb-kicker">
               <span className="pas-rb-number">#{agenda.number}</span>
-              <Badge variant="outline" size="sm">{agenda.kindLabel}</Badge>
-              <StatusChip label={disposition ? chip.label : agenda.statusLabel} tone={disposition ? chip.tone : agenda.statusTone} />
+              {agenda.kindLabel === statusLabel ? null : <Badge variant="outline" size="sm">{agenda.kindLabel}</Badge>}
+              <StatusChip label={statusLabel} tone={statusTone} />
               {disposition?.outcome === "reference" ? <Badge variant="info" size="sm">참고</Badge> : null}
             </div>
             <h2 id="pas-rb-dialog-title" className="pas-rb-agenda-title">{agenda.title}</h2>
             <div className="pas-rb-assignee">
               <ProfileAvatar role="assistant" hasPortrait fallbackEmoji="🙂" portraitUrl={portrait(agenda.assignee)} />
               <span>담당 {AGENT_NAMES[agenda.assignee]}</span>
-              <span className="pas-rb-assignee-meta">카드 #{agenda.number}</span>
             </div>
           </header>
 
@@ -306,14 +313,11 @@ export function PasReviewReportDialog({
 
           <EvidenceSection agenda={agenda} onOpenDocument={onOpenDocument} onZoom={() => setEvidenceOpen(true)} />
 
-          {questionView || agenda.checks ? <section className="pas-rb-section" aria-label="확인과 결정">
+          {agenda.question?.kind === "choice" || agenda.checks ? <section className="pas-rb-section" aria-label="확인과 결정">
             <h3 className="pas-rb-section-title">확인할 것</h3>
-            {questionView ? <CardQuestionBody view={questionView} portraitUrl={portrait(agenda.assignee)}
-              onChoose={label => {
-                if (disposition) return;
-                onChoose(agenda, label);
-                requestAnimationFrame(() => statusRef.current?.focus({ preventScroll: true }));
-              }} /> : null}
+            {agenda.question?.kind === "choice"
+              ? <p className="pas-rb-summary">{agenda.question.background}</p>
+              : null}
             {agenda.checks ? <CardCheckItems key={agenda.key} items={checkItems}
               onConfirmChange={(itemId, confirmed) => onCheck(agenda.key, itemId, confirmed)}
               onTargetItem={itemId => { setTargetItem(itemId); requestAnimationFrame(() => inputRef.current?.focus()); }} /> : null}
@@ -335,6 +339,22 @@ export function PasReviewReportDialog({
         </form>
         <div className="pas-rb-stamps" data-testid="pas-rb-stamp-row">
           <div className="pas-rb-stamp-buttons">
+            {customAnswer ? <span className="pas-rb-choice-answer" data-testid="pas-rb-answer">답: <strong>{customAnswer}</strong></span> : null}
+            {choiceOptions?.map(option => {
+              const selected = selectedChoice === option.label;
+              return <Button key={option.label} variant="choice" size="sm" className="pas-rb-choice"
+                data-testid="pas-rb-choice" data-choice={option.label}
+                data-selected={selected ? "true" : undefined}
+                aria-pressed={selected || undefined}
+                disabled={Boolean(disposition)} onClick={() => {
+                  if (disposition) return;
+                  onChoose(agenda, option.label);
+                  requestAnimationFrame(() => statusRef.current?.focus({ preventScroll: true }));
+                }}>
+                {option.label}
+                {option.recommended ? <Badge variant="info" size="sm">권함</Badge> : null}
+              </Button>;
+            })}
             {agenda.stamps.map(stamp => <Button key={stamp.id} variant={stamp.primary ? "default" : "outline"} size="sm"
               data-stamp={stamp.id} data-stamp-primary={stamp.primary ? "true" : undefined}
               data-selected={disposition?.actionId === stamp.id ? "true" : undefined}
