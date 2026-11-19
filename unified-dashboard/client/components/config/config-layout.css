@@ -30,7 +30,8 @@
 .config-dialog .config-detail-heading { margin-bottom:var(--v3-space-6); }
 .config-dialog .config-detail-heading h2 { margin:0 0 var(--v3-space-2); font:var(--v3-type-page) var(--v3-font-family); }
 .config-dialog .config-detail-heading p { color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); margin:0; word-break:keep-all; overflow-wrap:break-word; }
-.config-dialog .config-meta-row { display:flex; flex-wrap:wrap; row-gap:0; column-gap:var(--v3-space-3); word-break:keep-all; overflow-wrap:anywhere; color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); }
+.config-dialog .config-inline-row { display:flex; flex-wrap:wrap; row-gap:0; column-gap:var(--v3-space-3); word-break:keep-all; overflow-wrap:anywhere; }
+.config-dialog .config-meta-row { color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); }
 .config-dialog .config-back { display:none; }
 /* 탭 본문 자체가 로딩일 때: 제목 아래 남는 높이를 채우고 그 안에서 가운데에 선다. */
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) { display:flex; flex-direction:column; }

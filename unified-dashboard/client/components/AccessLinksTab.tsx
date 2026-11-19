@@ -118,7 +118,7 @@ export function AccessLinksTab({ request = fetch }: { request?: typeof fetch }) 
     return <div className={`owned-agents-block access-links-row${isPast ? ' is-past' : ''}`} key={link.id}>
       <div className="owned-agents-key-row"><div className="access-links-copy">
         <p className="access-links-label" title={link.label} data-v3-selectable-content="true">{link.label}</p>
-        <div className="config-meta-row" data-v3-selectable-content="true">
+        <div className="config-inline-row config-meta-row" data-v3-selectable-content="true">
           {isPast && <span>{shortDate(status === 'revoked' ? link.revoked_at! : link.expires_at)} {status === 'revoked' ? '폐기' : '만료'}</span>}
           <span>{names.get(link.target_session_id) ?? `세션 ${link.target_session_id.slice(0, 8)}`}</span>
           <span>{link.permissions.map(p => permissions.find(item => item.value === p)?.label ?? p).join(', ')}</span>

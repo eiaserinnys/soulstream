@@ -4,8 +4,9 @@
 `/dialogues?sample=settings`의 내 에이전트·화면과 읽기·접속 링크 탭, 그리고 설정 창 밖
 컴포넌트 검수 창(`/components`)에서 다음을 캡처와 좌표로 잰다.
 
-  - 내 에이전트 메타가 가운뎃점 없이 항목별 span 인 공용 줄(config-meta-row)로 서고,
-    360 폭에서 상세 머리 설명과 메타에 낱말 가운데 줄바꿈·가로 넘침이 없는지
+  - 내 에이전트의 상태 줄이 본문 토큰·기본 글자색이고, 생성·최근 사용 줄은 가운뎃점 없이
+    항목별 span 인 공용 줄(config-inline-row + config-meta-row)로 메타 토큰·muted 인지,
+    360 폭에서 상세 머리 설명·탭 문단·메타에 낱말 가운데 줄바꿈·가로 넘침이 없는지
     (`access_links_tab.py`의 WORDS 검사 꼴),
   - `details.config-advanced` 표식이 lucide ChevronRight(svg, aria-hidden)이고 표식 사각형의
     세로 가운데와 머리 글자 줄 상자의 세로 가운데 차이가 1px 이하인지
@@ -19,8 +20,8 @@
     360 넘침, 오류 상태와 다시 시도, 열린 채 1280↔360 창 크기 바꾸기.
 
 검수 창이 부르는 API는 page.route 로 가로쓴 운영 꼴 견본이다. 내 에이전트와 접속 링크 응답은
-`ownedAgentsVisual`·`accessLinksVisual` 질의에서 실제 fetch 로 통과시킨다(dialogues-api 모듈을
-같은 주소에서 고쳐 쓴다). 불러오는 중 화면은 `ownedAgentsDelay` 질의에서 fetch 응답을 늦춰 만든다.
+앱 코드가 `ownedAgentsVisual`·`accessLinksVisual` 질의에서 실제 fetch 로 통과시켜 page.route 가
+받는다. 불러오는 중 화면은 `ownedAgentsDelay` 질의에서 fetch 응답을 늦춰 만든다.
 
 실행
 
@@ -123,8 +124,22 @@ META_PROBE = r"""
 () => {
   const workspace = document.querySelector('.owned-agents');
   if (!workspace) return {found: false};
-  const rows = [...workspace.querySelectorAll('.config-meta-row')];
+  const rows = [...workspace.querySelectorAll('.config-inline-row')];
   const keyTexts = [...workspace.querySelectorAll('.owned-agents-key-row p')].map(p => p.textContent.trim());
+  const keyRow = workspace.querySelector('.owned-agents-key-row');
+  const status = keyRow ? keyRow.querySelector('div > p:first-child') : null;
+  const meta = keyRow ? keyRow.querySelector('div > p:nth-child(2)') : null;
+  const detail = document.querySelector('.config-detail');
+  const muted = document.querySelector('.config-detail-heading p');
+  const style = (el) => el ? {
+    fontSize: parseFloat(getComputedStyle(el).fontSize),
+    color: getComputedStyle(el).color,
+  } : null;
+  const tokenPx = (name) => {
+    const raw = detail ? getComputedStyle(detail).getPropertyValue(name).trim() : '';
+    const match = raw.match(/(\d+(?:\.\d+)?)px/);
+    return match ? parseFloat(match[1]) : null;
+  };
   return {
     found: true,
     rows: rows.map(row => ({
@@ -136,6 +151,8 @@ META_PROBE = r"""
     })),
     middleDots: keyTexts.filter(text => text.includes('·')),
     keyTexts,
+    styles: {status: style(status), meta: style(meta), body: style(workspace), muted: style(muted)},
+    tokens: {body: tokenPx('--v3-type-body'), meta: tokenPx('--v3-type-meta')},
   };
 }
 """
@@ -251,22 +268,8 @@ def access_route(route) -> None:
         route.fulfill(json=LINKS)
 
 
-def pass_owned_agents(route) -> None:
-    """샘플 응답 대신 실제 fetch 로 통과시켜 page.route 견본을 쓰게 dialogues-api 를 고쳐 쓴다."""
-    response = route.fetch()
-    lines = response.text().splitlines(keepends=True)
-    hits = [index for index, line in enumerate(lines) if "/api/owned-agents" in line and "return ownedAgents(input, init);" in line]
-    assert len(hits) == 1, "dialogues-api.ts 의 owned-agents 분기를 찾지 못했습니다"
-    lines[hits[0]] = (
-        '    if (path.startsWith("/api/owned-agents")) { if (new URLSearchParams(window.location.search)'
-        '.has("ownedAgentsVisual")) return fetch(input, init); return ownedAgents(input, init); }\n'
-    )
-    route.fulfill(response=response, body="".join(lines))
-
-
 def install_fixtures(context) -> None:
     context.add_init_script(DELAY_SCRIPT)
-    context.route("**/client/v3/dialogues-api.ts*", pass_owned_agents)
     context.route("**/api/owned-agents**", owned_route)
     context.route("**/api/access-links**", access_route)
     context.route("**/api/persistent-sessions", access_route)
@@ -384,14 +387,30 @@ def check_owned_meta(page, measurements: dict, problems: list[str], name: str) -
     if data["middleDots"]:
         problems.append(name + ": 가운뎃점 남음")
     if len(data["rows"]) < 4:
-        problems.append(name + ": 공용 메타 줄 부족")
+        problems.append(name + ": 공용 줄 부족")
     for row in data["rows"]:
         if row["display"] != "flex":
-            problems.append(name + ": 메타 줄 flex 아님")
+            problems.append(name + ": 공용 줄 flex 아님")
         if not row["children"] or any(tag != "span" for tag in row["children"]):
-            problems.append(name + ": 메타 항목 span 아님")
+            problems.append(name + ": 항목 span 아님")
         if row["wordBreak"] != "keep-all":
-            problems.append(name + ": 메타 줄 keep-all 아님")
+            problems.append(name + ": 공용 줄 keep-all 아님")
+    styles = data.get("styles") or {}
+    tokens = data.get("tokens") or {}
+    status, meta, body, muted = styles.get("status"), styles.get("meta"), styles.get("body"), styles.get("muted")
+    if not status or not meta or not body:
+        problems.append(name + ": 상태·메타 줄 없음")
+        return
+    body_px = tokens.get("body") or body["fontSize"]
+    meta_px = tokens.get("meta")
+    if abs(status["fontSize"] - body_px) > 0.1:
+        problems.append(name + ": 상태 줄 글꼴 크기가 본문 토큰 아님")
+    if status["color"] != body["color"]:
+        problems.append(name + ": 상태 줄 색이 기본 글자색 아님")
+    if meta_px is None or abs(meta["fontSize"] - meta_px) > 0.1:
+        problems.append(name + ": 생성·최근 사용 줄 글꼴 크기가 메타 토큰 아님")
+    if not muted or meta["color"] != muted["color"]:
+        problems.append(name + ": 생성·최근 사용 줄 색이 muted 아님")
 
 
 def check_select_open(page, label: str, measurements: dict, problems: list[str], name: str, out: Path, shot_name: str, captures: list[str]) -> None:
@@ -451,10 +470,14 @@ def run(browser, base: str, out: Path, captures: list[str], measurements: dict, 
             measurements[f"focus-after-tab-click-{key}"] = FOCUS(page)
             check_owned_meta(page, measurements, problems, f"meta-{key}")
             if width == NARROW:
-                split = page.evaluate(WORDS, ".config-detail-heading p") + page.evaluate(WORDS, ".owned-agents-key-row")
+                split = (
+                    page.evaluate(WORDS, ".config-detail-heading p")
+                    + page.evaluate(WORDS, ".owned-agents-key-row")
+                    + page.evaluate(WORDS, ".owned-agents-block > p")
+                )
                 measurements[f"words-owned-{key}"] = split
                 if split:
-                    problems.append(f"{key}: 상세 머리·메타 낱말 가운데 줄바꿈")
+                    problems.append(f"{key}: 상세 머리·탭 문단·메타 낱말 가운데 줄바꿈")
             check_overflow(page, measurements, problems, f"overflow-owned-{key}")
             shot(page, out, f"owned-agents-{key}", captures)
 
