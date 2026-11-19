@@ -15,7 +15,13 @@ export function bottomFollowTargetKey<T extends { key: string; kind?: string }>(
     if (
       item.kind !== 'typing'
       && !(item.kind === 'event' && item.event?.type === 'generation_started')
-    ) return item.key;
+    ) {
+      if (item.kind === 'activity') {
+        const activity = item as T & { items: readonly { key: string }[] };
+        return activity.items[activity.items.length - 1].key;
+      }
+      return item.key;
+    }
   }
   return items.length > 0 ? items[items.length - 1].key : null;
 }

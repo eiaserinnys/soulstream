@@ -1,7 +1,9 @@
 import { act, renderHook } from '@testing-library/react-native';
 import type { FlatList } from 'react-native';
+import type { SessionEvent } from '../../../api/types';
 import type { ChatRenderItem } from '../groupChatEvents';
 import { useChatBottomFollow } from '../useChatBottomFollow';
+import { useChatRenderItems } from '../useChatRenderItems';
 
 function createListRef() {
   return {
@@ -10,6 +12,10 @@ function createListRef() {
       scrollToOffset: jest.fn(),
     },
   } as unknown as React.RefObject<FlatList<ChatRenderItem> | null>;
+}
+
+function tool(id: string): SessionEvent {
+  return { id, type: 'tool_start', data: { tool_use_id: `tool-${id}`, tool_name: 'Read' } };
 }
 
 describe('useChatBottomFollow', () => {
@@ -182,6 +188,72 @@ describe('useChatBottomFollow', () => {
 
     act(() => result.current.onScrollOffsetChange(0));
     expect(result.current.showNewMessage).toBe(false);
+  });
+
+  function renderManuscriptFollow(initialEvents: SessionEvent[]) {
+    const flatListRef = createListRef();
+    const hook = renderHook(
+      ({ events }: { events: SessionEvent[] }) => {
+        const { bottomFollowItemKey, reversedItems } = useChatRenderItems({
+          events,
+          pendingOptimistic: undefined,
+          streamingSlots: undefined,
+          sessionStatus: 'completed',
+          presentation: 'manuscript',
+        });
+        const follow = useChatBottomFollow({
+          flatListRef,
+          sessionId: 'sess-activity',
+          bottomItemKey: bottomFollowItemKey,
+          presentation: 'manuscript',
+        });
+        return { ...follow, reversedItems };
+      },
+      { initialProps: { events: initialEvents } },
+    );
+    flushAnimationFrame();
+    (flatListRef.current?.scrollToOffset as jest.Mock).mockClear();
+    return { ...hook, flatListRef };
+  }
+
+  it('바닥을 떠나 활동 묶음 앞에 이전 이력이 붙어도 새 메시지 배너를 보이지 않는다', () => {
+    const { result, rerender, flatListRef } = renderManuscriptFollow([tool('2'), tool('3')]);
+    act(() => {
+      result.current.onScrollBeginDrag();
+      result.current.onScrollOffsetChange(80);
+    });
+
+    rerender({ events: [tool('0'), tool('1'), tool('2'), tool('3')] });
+
+    expect(result.current.reversedItems[0].key).toBe('activity-tool-0');
+    expect(result.current.showNewMessage).toBe(false);
+    expect(flatListRef.current?.scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  it('바닥을 떠나 활동 묶음 뒤에 도구가 붙으면 새 메시지 배너를 보인다', () => {
+    const { result, rerender, flatListRef } = renderManuscriptFollow([tool('2'), tool('3')]);
+    act(() => {
+      result.current.onScrollBeginDrag();
+      result.current.onScrollOffsetChange(80);
+    });
+
+    rerender({ events: [tool('2'), tool('3'), tool('4')] });
+
+    expect(result.current.reversedItems[0].key).toBe('activity-tool-2');
+    expect(result.current.showNewMessage).toBe(true);
+    expect(flatListRef.current?.scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  it('바닥에서 활동 묶음 뒤에 도구가 붙으면 따라 내려간다', () => {
+    const { result, rerender, flatListRef } = renderManuscriptFollow([tool('2'), tool('3')]);
+    act(() => result.current.onScrollOffsetChange(0));
+
+    rerender({ events: [tool('2'), tool('3'), tool('4')] });
+
+    expect(result.current.showNewMessage).toBe(false);
+    expect(animationFrames).toHaveLength(1);
+    flushAnimationFrame();
+    expect(flatListRef.current?.scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
   });
 
   it('같은 frame 안의 연속 요청은 한 번으로 합친다', () => {
