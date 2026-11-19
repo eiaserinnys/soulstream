@@ -32,7 +32,7 @@ describe("card question answers and author withdrawal", () => {
       return rows[0]!.id;
     } }, undefined, change => dispatcher.acceptMutation(change), () => {});
     reports = new PersistentReportService(adapted, () => {});
-    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(async () => adapted), cards: async () => cards,
+    dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: new CardDispatchRepository(async () => adapted), cards: async () => cards,
       resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: null, available: false, reason: "test" }),
       launch: async () => {}, sendMessage: messages, notify: async () => {}, deliveryExists: async () => false, abandonDelivery: async () => {}, warn });
   }, 60_000);

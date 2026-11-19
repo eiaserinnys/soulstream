@@ -71,6 +71,8 @@ export async function createCardDispatchRuntime(options: {
   notifier: PushNotifier;
   admin: AdminAccessProvider;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
+  /** Node for cards that name none; the orchestrator injects its configured value. */
+  defaultExecutionNodeId: string;
   warn: (message: string) => void;
   onReportsChanged?: PublishPersistentReports;
   appendTimeline?: AppendReportTimeline;
@@ -188,6 +190,7 @@ export async function createCardDispatchRuntime(options: {
   const serviceProvider = createCardControlPlaneServiceProvider({
     sqlResolver: options.sqlResolver,
     broadcaster: options.broadcaster,
+    defaultExecutionNodeId: options.defaultExecutionNodeId,
     warn: options.warn,
     onFolderHeaderUpdated: options.onFolderHeaderUpdated,
     onMutation: (change) => dispatcher.acceptMutation(change),
@@ -199,14 +202,15 @@ export async function createCardDispatchRuntime(options: {
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,
+    defaultNodeId: options.defaultExecutionNodeId,
     isNodeConnected: nodeId => options.router.isNodeConnected(nodeId),
     cards: serviceProvider,
     deliveryExists: async id => !!await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).get(id),
     abandonDelivery: async (deliveryId, reason) => { await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).markUncertain(deliveryId, undefined, reason); },
     warn: options.warn,
     resolveTarget: (card, modelPreset) => {
-      // Central agent identities have no default-node field; the configured card node wins, then the documented default.
-      const nodeId = card.node_id ?? "eiaserinnys";
+      // Central agent identities have no default-node field; the configured card node wins, then the install default.
+      const nodeId = card.node_id ?? options.defaultExecutionNodeId;
       const agentId = card.assignee_agent_id!;
       const preset = modelPreset ?? card.model_preset;
       try {

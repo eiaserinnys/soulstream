@@ -47,7 +47,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined,
       change => dispatcher.acceptMutation(change));
     repo = new CardDispatchRepository(async () => sql);
-    dispatcher = new CardDispatcher({ repository: repo, cards: async () => cards, resolveTarget: target,
+    dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: repo, cards: async () => cards, resolveTarget: target,
       launch, sendMessage: messages, notify: async () => {}, deliveryExists: async () => false, warn,
       abandonDelivery: async (deliveryId, reason) => { await deliveries.markUncertain(deliveryId, undefined, reason); },
       now: () => clock,

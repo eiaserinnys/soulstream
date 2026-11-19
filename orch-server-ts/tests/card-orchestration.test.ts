@@ -114,7 +114,7 @@ describe("server owns card orchestration admission", () => {
       queued = vi.fn(),
       limited = vi.fn(async () => []),
       awaitingVerification = vi.fn(async () => []);
-    const d = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
+    const d = new CardDispatcher({ defaultNodeId:"eiaserinnys", deliveryExists: async () => false, abandonDelivery: async () => {},
       repository: { queued, limited, awaitingVerification } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,
@@ -135,7 +135,7 @@ describe("server owns card orchestration admission", () => {
   it("decision terminal reconciles without triggering a new decision run", async () => {
     const kick = vi.fn(async () => {}),
       decisionEnded = vi.fn(async () => {});
-    const d = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
+    const d = new CardDispatcher({ defaultNodeId:"eiaserinnys", deliveryExists: async () => false, abandonDelivery: async () => {},
       repository: { ownerSession: async () => ({status:"completed"}), reminderFacts: async () => [] } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,

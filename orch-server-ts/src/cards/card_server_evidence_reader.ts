@@ -8,8 +8,10 @@ import { serverCardEvidence, type ServerFenceEvidence } from './state/card_serve
 import { CARD_SERVER_EVIDENCE_STAGES, type ServerCardCommand, type ServerEvidenceStage } from './state/card_server_command.js';
 import type { CardBindingValues } from './state/card_write_intent.js';
 
-/** Readers contain IO and SQL fences only. The machine alone chooses which reader runs next. */
-export function cardServerEvidenceReader(sql:RepositorySql,card:CardRow,command:ServerCardCommand,actor:FolderActorParams) {
+/** Readers contain IO and SQL fences only. The machine alone chooses which reader runs next.
+ * `defaultNodeId` is the install default for cards that name no node; it is separate from
+ * the candidate node in the admission comparison. */
+export function cardServerEvidenceReader(sql:RepositorySql,card:CardRow,command:ServerCardCommand,actor:FolderActorParams,defaultNodeId?:string) {
  const loaded:ServerEvidenceStage[]=[];
  const input:ServerFenceEvidence={loaded,actorSessionId:actor.actorSessionId};
  const readers:Partial<Record<ServerEvidenceStage,()=>Promise<void>>>={
@@ -35,8 +37,9 @@ export function cardServerEvidenceReader(sql:RepositorySql,card:CardRow,command:
  }
  case 'DISPATCH':case 'RESUME_LONG_LIMIT':{
   readers.admission=async()=>{
+   if(defaultNodeId===undefined)throw new Error('기본 실행 노드(DEFAULT_EXECUTION_NODE_ID)가 없어 카드 승인 대조를 할 수 없습니다');
    const result=await readPolicyAdmission(sql,{cardId:card.id,cardVersion:command.expectedVersion,sessionId:command.sessionId,
-    nodeId:command.nodeId??card.node_id??'eiaserinnys',...command.admission!});
+    nodeId:command.nodeId??card.node_id??defaultNodeId,defaultNodeId,...command.admission!});
    input.admission=result.result;commit=result.commit;
   };
   break;

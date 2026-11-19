@@ -317,7 +317,10 @@ export async function readPolicyAdmission(
     runId: string;
     leaseToken: string;
     sessionId: string;
+    /** Candidate node being admitted. */
     nodeId: string;
+    /** Install default for a card that names no node; never merged with the candidate. */
+    defaultNodeId: string;
     cardId: string;
     cardVersion: number;
     workerInput: Record<string, unknown>;
@@ -350,7 +353,7 @@ export async function readPolicyAdmission(
     await sql`SELECT c.id FROM cards c JOIN folders f ON f.id=c.folder_id
       LEFT JOIN sessions owner ON owner.session_id=c.assignee_session_id
       WHERE c.id=${input.cardId} AND NOT c.archived AND NOT f.archived
-      AND ((c.assignee_kind='agent' AND c.assignee_agent_id=${String(input.workerInput.agentId)} AND COALESCE(c.node_id,'eiaserinnys')=${input.nodeId}
+      AND ((c.assignee_kind='agent' AND c.assignee_agent_id=${String(input.workerInput.agentId)} AND COALESCE(c.node_id,${input.defaultNodeId})=${input.nodeId}
         AND c.model_preset IS NOT DISTINCT FROM ${input.workerInput.configuredModelPreset ?? null})
       OR (c.assignee_kind='session' AND owner.session_id=${input.sessionId} AND owner.node_id=${input.nodeId}
         AND owner.agent_id=${String(input.workerInput.agentId)} AND owner.model_preset IS NOT DISTINCT FROM ${input.workerInput.modelPreset ?? null}))`;

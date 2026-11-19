@@ -26,7 +26,9 @@ describe("explicit manual card work", () => {
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
     await recordWorkReceipt(h,"owner","running",execution);
     repo=new CardOrchestrationRepository(async()=>createFolderContentSqlAdapter(h.liveSql));
-    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx },
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { defaultExecutionNodeId: "eiaserinnys" });
   }, 60000);
   beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE,limit_resume_session_id=NULL,limit_resume_at=NULL`; });
   afterAll(async () => h?.cleanup());
@@ -109,7 +111,7 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     expect(ended.map(r=>r.card_id)).toContain(id);
     expect(ended.map(r=>r.card_id)).not.toContain(untouched);
     const warnings:string[]=[];
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ defaultNodeId:"eiaserinnys", deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>warnings.push(m),
       orchestration:{enabled:async()=>enabled,ownsSession:async()=>false,kick:async()=>{}}});
@@ -132,7 +134,7 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await recordWorkReceipt(h,"owner","error",null,"limit_hit");
     const ended=await endedCardWork(createFolderContentSqlAdapter(h.liveSql),"owner");
     expect(ended.find(w=>w.card_id===id)?.terminal_session).toMatchObject({status:"error",termination_reason:"limit_hit"});
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ defaultNodeId:"eiaserinnys", deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
       orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});
@@ -144,7 +146,7 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
   it("keeps the card running after a fallback generation takes over a limit stop, and blocks only the last limit",async()=>{
     const id=await make();
     await cards.startCardWork(declaration(id,"fallback-work"));
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ defaultNodeId:"eiaserinnys", deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
       orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});

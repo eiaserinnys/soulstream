@@ -33,7 +33,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
     const sql = createFolderContentSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
     repo = new CardDispatchRepository(async () => sql);
-    dispatcher = new CardDispatcher({ repository: repo, cards: async () => cards, resolveTarget: target,
+    dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: repo, cards: async () => cards, resolveTarget: target,
       launch, sendMessage, notify: async () => {}, deliveryExists: async () => false, abandonDelivery: async () => {}, warn });
   }, 60000);
   beforeEach(async () => {
@@ -119,7 +119,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
         return {nodeId:chosen.node.nodeId,agentId:chosen.profileId,modelPreset:chosen.modelPresetId??null,available,reason:null};
       }catch(error){return {nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:preset??null,available:false,reason:String(error)};}
     });
-    const realSelectorDispatcher=new CardDispatcher({repository:repo,cards:async()=>cards,resolveTarget:select,
+    const realSelectorDispatcher=new CardDispatcher({ defaultNodeId:"eiaserinnys",repository:repo,cards:async()=>cards,resolveTarget:select,
       launch,sendMessage,notify:async()=>{},deliveryExists:async()=>false,abandonDelivery:async()=>{},warn});
     available=false;
     await realSelectorDispatcher.checkLimits();await realSelectorDispatcher.drain();

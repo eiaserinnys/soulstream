@@ -9,7 +9,7 @@ function fixture(connected: boolean, elapsed: number) {
   const setCardStatus = vi.fn(async () => {});
   const resumeVerificationCard = vi.fn(async () => {});
   const abandonDelivery = vi.fn(async () => {});
-  const dispatcher = new CardDispatcher({
+  const dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys",
     repository: {
       limited: async () => [], awaitingVerification: async () => [card],
       ownerSession: async () => ({ session_id: "owner", node_id: "node" }),

@@ -52,7 +52,7 @@ describe("an answer that leaves the card status unchanged survives an unavailabl
     deliveries = new SessionDeliveryRepository(h.liveSql as never);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined,
       (change: CardMutationChange) => dispatcher.acceptMutation(change));
-    dispatcher = new CardDispatcher({ repository: new CardDispatchRepository(async () => sql), cards: async () => cards,
+    dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: new CardDispatchRepository(async () => sql), cards: async () => cards,
       resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: "model", available: true, reason: null }),
       launch: async () => {}, sendMessage: messages, notify: async () => {}, deliveryExists: async () => false,
       abandonDelivery: async () => {}, warn });
