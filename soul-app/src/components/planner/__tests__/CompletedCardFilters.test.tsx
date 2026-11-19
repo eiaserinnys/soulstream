@@ -25,11 +25,15 @@ test('a read failure keeps the hook message and offers the board retry button', 
   expect(retry).toHaveBeenCalledTimes(1);
 });
 
-test('while the retry read runs the button stays in place but is disabled', () => {
+test('while the retry read runs the button stays in place, busy and inert, without dropping focus', () => {
   const retry = jest.fn();
   const screen = render(<CompletedCardFilters browser={browser({ error: '조회 실패', loading: true, retry })} />);
   const button = screen.getByLabelText('완료 카드 다시 조회');
-  expect(button.props.accessibilityState).toMatchObject({ disabled: true });
+  expect(button.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
+  // busy keeps the pressable enabled so a focused button keeps focus on web.
+  const props = screen.UNSAFE_getByType(GlassButton).props;
+  expect(props.busy).toBe(true);
+  expect(props.disabled).toBeFalsy();
   fireEvent.press(button);
   expect(retry).not.toHaveBeenCalled();
 });

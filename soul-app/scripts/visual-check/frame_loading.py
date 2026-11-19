@@ -34,7 +34,8 @@ fails the first refresh after a load once. At the 1180 inline board (sized to
 the three-pane card pane), the 1180 expanded board and the 390 inline board the
 first failure must show the error and a content-width 「다시 시도」 button inside
 the done lane (button height at least the chip hit target, i.e. hitTarget.min);
-pressing it must remove both and draw a card. A start date after the end date
+pressing it (keyboard Enter) must remove both and draw a card. While a read is
+held the button stays, is aria-busy and keeps keyboard focus. A start date after the end date
 shows the range notice without the button. A failed refresh keeps the lane count
 and first card. The four period chips must form one row of four or two rows of
 two with equal widths per row (1px), matching row edges, unclipped labels and
@@ -878,10 +879,12 @@ def check_completed_retry(page: Page, base: str, output: Path, width: int, failu
             check_completed_error(failed, label, failures, True)
             page.screenshot(path=str(output / f'{label}-failed.png'))
             lane.screenshot(path=str(output / f'{label}-failed-lane.png'))
-            lane.get_by_label('완료 카드 다시 조회').click()
+            lane.get_by_label('완료 카드 다시 조회').focus()
+            page.keyboard.press('Enter')
             page.wait_for_timeout(700)
             recovered = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
             check_completed_recovered(recovered, label, failures)
+            focus_after = page.evaluate("() => { const e = document.activeElement; return e ? (e.dataset.testid || e.getAttribute('aria-label') || e.tagName) : null; }")
             page.screenshot(path=str(output / f'{label}-recovered.png'))
             lane.screenshot(path=str(output / f'{label}-recovered-lane.png'))
             lane.get_by_test_id('settings-segment-completed-period-custom').click()
@@ -891,7 +894,7 @@ def check_completed_retry(page: Page, base: str, output: Path, width: int, failu
             ranged = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
             check_completed_error(ranged, label + '-range', failures, False, '시작일과 종료일을 확인해 주세요.')
             lane.screenshot(path=str(output / f'{label}-range-lane.png'))
-            results.append({'label': label, 'failed': failed, 'recovered': recovered, 'range': ranged})
+            results.append({'label': label, 'failed': failed, 'recovered': recovered, 'focusAfterRecovery': focus_after, 'range': ranged})
         except Exception as error:
             failures.append({'check': 'completed retry', 'label': label, 'error': str(error).splitlines()[0]})
             page.screenshot(path=str(output / f'{label}-error.png'))
@@ -910,11 +913,27 @@ def check_completed_retry(page: Page, base: str, output: Path, width: int, failu
             check_completed_error(after, label, failures, True)
             check_refresh_kept_cards(before, after, label, failures)
             lane.screenshot(path=str(output / f'{label}-lane.png'))
-            lane.get_by_label('완료 카드 다시 조회').click()
+            # Hold the next read: the notice and button stay, the button is busy, a keyboard
+            # press sends nothing and keeps focus on it (ui-design §0 14).
+            page.get_by_test_id('refresh-begin').evaluate('(e) => e.click()')
+            page.wait_for_timeout(300)
+            retry = lane.get_by_label('완료 카드 다시 조회')
+            retry.focus()
+            page.keyboard.press('Enter')
+            page.wait_for_timeout(300)
+            held = retry.evaluate("(e) => ({busy: e.getAttribute('aria-busy'), focused: document.activeElement === e})")
+            held['metrics'] = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
+            if held['busy'] != 'true' or not held['focused'] or not held['metrics'].get('error') or not held['metrics'].get('retry'):
+                failures.append({'check': 'retry not busy or lost focus during a read', 'label': label,
+                                 'busy': held['busy'], 'focused': held['focused']})
+            lane.screenshot(path=str(output / f'{label}-busy-lane.png'))
+            page.get_by_test_id('refresh-finish').evaluate('(e) => e.click()')
             page.wait_for_timeout(700)
             recovered = page.evaluate(COMPLETED_FILTER_SCRIPT, {'expanded': expanded})
             check_completed_recovered(recovered, label, failures, before.get('count') or 1)
-            results.append({'label': label, 'before': before, 'after': after, 'recovered': recovered})
+            focus_after = page.evaluate("() => { const e = document.activeElement; return e ? (e.dataset.testid || e.getAttribute('aria-label') || e.tagName) : null; }")
+            results.append({'label': label, 'before': before, 'after': after, 'held': {'busy': held['busy'], 'focused': held['focused']},
+                            'recovered': recovered, 'focusAfterRecovery': focus_after})
         except Exception as error:
             failures.append({'check': 'completed refresh failure', 'label': label, 'error': str(error).splitlines()[0]})
             page.screenshot(path=str(output / f'{label}-error.png'))
