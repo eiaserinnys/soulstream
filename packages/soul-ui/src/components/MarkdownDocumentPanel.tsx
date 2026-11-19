@@ -5,6 +5,7 @@ import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
 import { FrameLoading } from "./FrameLoading";
+import { FrameNotice } from "./FrameNotice";
 import {
   getMetadataNumber,
   getMetadataText,
@@ -412,7 +413,7 @@ export function MarkdownDocumentPanel({
             titleEditingRef.current = false;
             void saveNow();
           }}
-          className="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
+          className="-ml-1 min-w-0 flex-1 rounded-md bg-transparent px-1 py-1 text-sm font-semibold outline-none ring-ring/50 transition-shadow focus-visible:ring-[3px]"
           aria-label="문서 제목"
         />
         <span
@@ -423,8 +424,7 @@ export function MarkdownDocumentPanel({
         >
           {statusLabel}
         </span>
-        {document ? (
-          isEditingBody ? (
+        {isEditingBody && document ? (
             <DashboardIconCap
               label="편집 완료"
               data-testid="markdown-edit-done"
@@ -437,24 +437,24 @@ export function MarkdownDocumentPanel({
             <DashboardIconCap
               label="문서 편집"
               data-testid="markdown-edit-start"
+              disabled={!document}
               onClick={enterEditMode}
             >
               <Pencil className="h-4 w-4" aria-hidden="true" />
             </DashboardIconCap>
-          )
-        ) : null}
+          )}
         <span className="inline-flex" title={canDeleteDocument ? undefined : "문서 동기화 준비 중"}><Button variant="ghost" size="icon" disabled={!canDeleteDocument} onClick={remove} title={canDeleteDocument ? "문서 삭제" : undefined} aria-label={canDeleteDocument ? "문서 삭제" : "문서 동기화 준비 중"}>
           <Trash2 className="h-4 w-4" />
         </Button></span>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto p-3" onMouseDown={handleEditScrollMouseDown}>
+      <div ref={scrollContainerRef} className={`min-h-0 flex-1 overflow-auto p-3${!document ? " flex" : ""}`} onMouseDown={handleEditScrollMouseDown}>
         {!document ? (
           panelError?.kind === "load"
-            ? <div className="text-sm text-muted-foreground" data-testid="markdown-load-error" role="alert">불러오기 실패</div>
+            ? <FrameNotice><p className="text-sm text-muted-foreground" data-testid="markdown-load-error" data-v3-selectable-content="true" role="alert">불러오기 실패</p></FrameNotice>
             : <FrameLoading label="불러오는 중" />
         ) : isEditingBody ? (
-          <Suspense fallback={<FrameLoading label="편집기를 불러오는 중" />}>
+          <Suspense fallback={<div className="flex h-full"><FrameLoading label="편집기를 불러오는 중" /></div>}>
             <MarkdownCodeMirrorEditor
               ref={editorRef}
               value={body}
@@ -470,14 +470,14 @@ export function MarkdownDocumentPanel({
         ) : (
           <div
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
-            data-v3-selectable-content="true"
+            data-v3-selectable-content={body.trim() ? "true" : undefined}
             onClick={(event) => {
               if (event.target instanceof Element && event.target.closest("a, button")) return;
               enterEditMode();
             }}
             data-testid="markdown-read-body"
           >
-            <MarkdownContent content={body || "빈 문서"} codeBlockLayout="document" />
+            {body.trim() ? <MarkdownContent content={body} codeBlockLayout="document" /> : <span className="select-none text-sm text-[var(--v3-text-tertiary)]" data-testid="markdown-empty">빈 문서</span>}
           </div>
         )}
       </div>

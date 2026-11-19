@@ -4,7 +4,6 @@ import { PendingNodeCommandTimeoutError } from "../node/pending_commands.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { HostSessionRow } from "../control_plane/repositories/session_read_repository.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
-import { PERSISTENT_CREATE_NODE_ID } from "../session/persistent_session_settings_service.js";
 import type { SessionResourceAccessProvider } from "../session/session_resource_access.js";
 import type { SessionCreateRouteResponse } from "../session/session_create_route_response.js";
 import { ConversationRepository } from "./conversation_repository.js";
@@ -51,8 +50,8 @@ export class ConversationService {
   }
   private notice(preferred: { id: string; label: string; group?: { label: string }; reason?: string },
     selected: { label: string; group?: { label: string } }, reason: string) {
-    const preferredNode = preferred.group?.label ?? PERSISTENT_CREATE_NODE_ID;
-    const selectedNode = selected.group?.label ?? PERSISTENT_CREATE_NODE_ID;
+    const preferredNode = preferred.group?.label ?? this.deps.catalog.defaultNodeId;
+    const selectedNode = selected.group?.label ?? this.deps.catalog.defaultNodeId;
     return `${preferred.label}(${preferredNode})은 ${reason}이라 ${selected.label}(${selectedNode})로 시작했습니다.`;
   }
   async list(request: Caller, account: string, namespace: string, cursor?: string) {
@@ -138,7 +137,7 @@ export class ConversationService {
       const selected = candidates.find(model => model.available);
       if (!selected) throw new ConversationError(422, "model_unavailable", "No requested model is available");
       const preferred: ConversationModel = candidates.find(model => model.id === body.selected_model)
-        ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: PERSISTENT_CREATE_NODE_ID, label: PERSISTENT_CREATE_NODE_ID } };
+        ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: this.deps.catalog.defaultNodeId, label: this.deps.catalog.defaultNodeId } };
       const notices = selected.id === body.selected_model ? []
         : [this.notice(preferred, selected, preferred.reason ?? "사용할 수 없습니다")];
       created = await this.repo.reserve(account, namespace, key, randomUUID(), selected.id, body, "reserved", notices);
@@ -174,12 +173,12 @@ export class ConversationService {
     const phase = (value: string) => execution ? this.repo.executionPhase(id, value) : this.repo.phase(id, value);
     if (!body) throw new ConversationError(503, "unavailable", "Creation data is missing");
     let row = await (await this.deps.reads()).getSession(id);
-    let selectedNodeId = this.deps.catalog.resolve(binding.selected_model)?.nodeId ?? PERSISTENT_CREATE_NODE_ID;
+    let selectedNodeId = this.deps.catalog.resolve(binding.selected_model)?.nodeId ?? this.deps.catalog.defaultNodeId;
     if (!row && binding.phase === "reserved") {
       await phase("dispatched");
       const candidates = await this.candidates(body);
       const firstPreferred: ConversationModel = candidates.find(model => model.id === body.selected_model)
-        ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: PERSISTENT_CREATE_NODE_ID, label: PERSISTENT_CREATE_NODE_ID } };
+        ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: this.deps.catalog.defaultNodeId, label: this.deps.catalog.defaultNodeId } };
       const attempted = new Set<string>();
       let candidate = candidates.find(model => model.id === binding.selected_model && model.available)
         ?? candidates.find(model => model.available);
@@ -299,7 +298,7 @@ export class ConversationService {
     if (patch.title !== undefined) await this.deps.persistent.update(request, id, { display_name: patch.title });
     if (patch.model !== undefined || patch.model_order !== undefined) {
       const row = await this.requireRow(id);
-      const currentNodeId = typeof row.node_id === "string" ? row.node_id : PERSISTENT_CREATE_NODE_ID;
+      const currentNodeId = typeof row.node_id === "string" ? row.node_id : this.deps.catalog.defaultNodeId;
       const selectedId = patch.model ?? binding.selected_model;
       const selected = this.deps.catalog.resolve(selectedId);
       if (!selected) throw new ConversationError(422, "model_unavailable", "Model selection is invalid");

@@ -1,3 +1,4 @@
+// Over 500 lines: parsing, generation routing and terminal delivery belong to this lifecycle boundary.
 import type { Logger } from "pino";
 
 import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
@@ -23,8 +24,11 @@ import { PersistenceHostRequestError } from
 import type { ExecutionRegistration } from "./execution_registration.js";
 
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
-import { buildClaudeBackgroundGenerationIdentity } from
-  "./claude_background_generation_identity.js";
+import {
+  buildClaudeBackgroundGenerationIdentity,
+  buildClaudeBackgroundResumeId,
+  originalClaudeBackgroundToolUseId,
+} from "./claude_background_generation_identity.js";
 import {
   buildClaudeRuntimeTaskFollowupPrompt,
   buildFollowupKey,
@@ -45,6 +49,7 @@ interface ClaudeBackgroundTaskLifecycleDeps {
 /** Persists SDK background lifecycle before the event is exposed to callers. */
 export class ClaudeBackgroundTaskLifecycle {
   private readonly now: () => Date;
+  private readonly currentGenerations = new Map<string, string>();
 
   constructor(private readonly deps: ClaudeBackgroundTaskLifecycleDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -58,7 +63,39 @@ export class ClaudeBackgroundTaskLifecycle {
   ): Promise<boolean> {
     const parsed = parseBackgroundEvent(event);
     if (!parsed || !parsed.sdkSessionId) return true;
+    const taskKey = JSON.stringify([sessionId, parsed.sdkSessionId, parsed.taskId]);
     let initiatingToolUseId = parsed.toolUseId;
+    if (initiatingToolUseId && (event.type === "claude_runtime_task_started" ||
+      event.type === "claude_runtime_task_created")) {
+      const originalId = originalClaudeBackgroundToolUseId(initiatingToolUseId);
+      try {
+        for (let n = 0; ; n += 1) {
+          const candidate = n === 0 ? originalId : buildClaudeBackgroundResumeId(originalId, n);
+          const row = await this.deps.repository.getGeneration(
+            this.deps.sourceNode, sessionId, parsed.sdkSessionId, parsed.taskId, candidate,
+          );
+          if (!row || row.status === "pending" || row.status === "running") {
+            initiatingToolUseId = candidate;
+            break;
+          }
+        }
+      } catch (err) {
+        this.deps.logger?.warn({ err, sessionId, taskId: parsed.taskId },
+          "Claude background generation lookup failed; continuing the turn");
+        return true;
+      }
+      this.currentGenerations.delete(taskKey);
+      this.currentGenerations.set(taskKey, initiatingToolUseId);
+      if (this.currentGenerations.size > 2_000) {
+        this.currentGenerations.delete(this.currentGenerations.keys().next().value!);
+      }
+    } else {
+      const current = this.currentGenerations.get(taskKey);
+      if (current && (!initiatingToolUseId ||
+        initiatingToolUseId === originalClaudeBackgroundToolUseId(current))) {
+        initiatingToolUseId = current;
+      }
+    }
     if (!initiatingToolUseId && parsed.terminalStatus) {
       const resolved = await this.deps.repository.resolveGeneration(
         this.deps.sourceNode,
@@ -130,7 +167,7 @@ export class ClaudeBackgroundTaskLifecycle {
       description: parsed.description,
       summary: parsed.summary,
       outputFile: parsed.outputFile,
-      toolUseId: initiatingToolUseId,
+      toolUseId: originalClaudeBackgroundToolUseId(initiatingToolUseId),
       error: parsed.error,
       createdAt: observedAt,
     });
@@ -266,7 +303,7 @@ export class ClaudeBackgroundTaskLifecycle {
       description: row.description ?? undefined,
       summary: row.summary ?? undefined,
       outputFile: row.output_file ?? undefined,
-      toolUseId: row.initiating_tool_use_id,
+      toolUseId: originalClaudeBackgroundToolUseId(row.initiating_tool_use_id),
       createdAt,
     });
     const result = await this.deps.repository.terminalizeGeneration({

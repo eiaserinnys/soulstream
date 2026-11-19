@@ -25,7 +25,7 @@ export const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { 
           <span>{"\u2699\uFE0F"}</span>
           <span className="font-medium">시스템 프롬프트</span>
           <span className="text-xs leading-4 rounded bg-input px-1.5 text-muted-foreground">
-            {formatPromptTokenCount(tokens)} {tokenScope}
+            {tokenScope === "system" ? "시스템" : "프롬프트"} {formatPromptTokenCount(tokens)}
           </span>
         </button>
         {expanded && (

@@ -194,14 +194,14 @@ test.each([
 
   const tasks = render(<ClaudeRuntimeTasksStrip sessionId={sessionId} api={null} />);
   expect(StyleSheet.flatten(tasks.getByTestId('runtime-tasks-strip').props.style).paddingVertical).toBe(0);
-  fireEvent.press(tasks.getByText('Claude Runtime Tasks'));
+  fireEvent.press(tasks.getByText('백그라운드 작업'));
   expect(StyleSheet.flatten(tasks.getByTestId('runtime-task-row-task').props.style).minHeight).toBe(40);
-  expect(StyleSheet.flatten(tasks.getByText('Claude Runtime Tasks').props.style).fontSize).toBeLessThan(chatBody);
+  expect(StyleSheet.flatten(tasks.getByText('백그라운드 작업').props.style).fontSize).toBeLessThan(chatBody);
 
   const signals = render(<ClaudeRuntimeSignalsStrip sessionId={sessionId} api={null} />);
   expect(StyleSheet.flatten(signals.getByTestId('runtime-signals-strip').props.style).paddingVertical).toBe(0);
-  expect(StyleSheet.flatten(signals.getByText('Runtime Signals').props.style).fontSize).toBeLessThan(chatBody);
-  fireEvent.press(signals.getByText('Runtime Signals'));
+  expect(StyleSheet.flatten(signals.getByText('런타임 신호').props.style).fontSize).toBeLessThan(chatBody);
+  fireEvent.press(signals.getByText('런타임 신호'));
   expect(StyleSheet.flatten(signals.getByTestId('runtime-signal-row-notice').props.style).minHeight).toBe(40);
 
   const assistant = render(

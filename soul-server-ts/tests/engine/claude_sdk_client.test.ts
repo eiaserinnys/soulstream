@@ -1410,7 +1410,7 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
-  it("uses the DeepSeek-compatible window when modelUsage carries no contextWindow", () => {
+  it("uses the catalogue context window when modelUsage carries no contextWindow", () => {
     const transcriptPath = writeTranscriptFixture([
       { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
       {
@@ -1424,7 +1424,7 @@ describe("ClaudeSdkClient", () => {
       },
     ]);
     const mapDeepSeekTurn = (overrides: Record<string, unknown>) => {
-      const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+      const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
       mapper.recordTranscriptPath(transcriptPath);
       mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
       mapZeroTokenAssistant(mapper, "turn-last", "deepseek-v4.1-flash");
@@ -1447,6 +1447,112 @@ describe("ClaudeSdkClient", () => {
           percent: 2,
         });
     }
+  });
+
+  it("prefers an SDK-declared context window over the catalogue value", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
+    mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-sdk-window", "done", {
+      usage: { iterations: [{ type: "message", input_tokens: 1_000, output_tokens: 100 }] },
+      modelUsage: { "deepseek-v4.1-flash": { contextWindow: 200_000 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 1_100,
+      maxTokens: 200_000,
+      percent: 0.6,
+    });
+  });
+
+  it("maps the DeepSeek 1017 alias reported only in modelUsage to the catalogue window", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-alias-window", "done", {
+      usage: { iterations: [{ type: "message", input_tokens: 1_000, output_tokens: 100 }] },
+      modelUsage: { "deepseek-v4.1-flash-1017": { inputTokens: 1_000, outputTokens: 100 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 1_100,
+      maxTokens: 262_144,
+      percent: 0.4,
+    });
+  });
+
+  it("fills the KiMi 3.1 Pro window from the catalogue when the SDK omits it", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
+    mapZeroTokenAssistant(mapper, "turn-first", "k3.1-pro");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-k31-window", "done", {
+      usage: { iterations: [{ type: "message", input_tokens: 1_000, output_tokens: 100 }] },
+      modelUsage: { "k3.1-pro": { inputTokens: 1_000, outputTokens: 100 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 1_100,
+      maxTokens: 262_144,
+      percent: 0.4,
+    });
+  });
+
+  it.each([
+    "deepseek-v4.1-flash-1017",
+    "deepseek-v4.1-flash",
+    "deepseek-v4-flash-vision-exp",
+    "deepseek-preview-unlisted",
+    "opencode/deepseek-v4.1-flash-free",
+    "kimi-for-coding",
+    "k3",
+  ])("keeps the catalogue 262144 window for the previously recognised %s", (reportedModel) => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
+    mapZeroTokenAssistant(mapper, `turn-${reportedModel}`, reportedModel);
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult(`sess-${reportedModel}`, "done", {
+      usage: { iterations: [{ type: "message", input_tokens: 1_000, output_tokens: 100 }] },
+      modelUsage: { [reportedModel]: { inputTokens: 1_000, outputTokens: 100 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 1_100,
+      maxTokens: 262_144,
+    });
+  });
+
+  it("leaves the context window empty when matching presets disagree", () => {
+    const conflictingCatalog = {
+      ...MODEL_CATALOG,
+      presets: [
+        ...MODEL_CATALOG.presets,
+        {
+          id: "window-probe-100k",
+          label: "Window probe 100k",
+          backend: "claude" as const,
+          model: "window-probe",
+          context_window: 100_000,
+        },
+        {
+          id: "window-probe-200k",
+          label: "Window probe 200k",
+          backend: "claude" as const,
+          model: "window-probe",
+          context_window: 200_000,
+        },
+      ],
+    };
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), () => conflictingCatalog);
+    mapZeroTokenAssistant(mapper, "turn-window-probe", "window-probe");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-window-conflict", "done", {
+      usage: { iterations: [{ type: "message", input_tokens: 1_000, output_tokens: 100 }] },
+      modelUsage: { "window-probe": { inputTokens: 1_000, outputTokens: 100 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toBeUndefined();
   });
 
   it("initial image attachments are embedded as Claude image content blocks", async () => {

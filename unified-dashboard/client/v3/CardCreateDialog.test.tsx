@@ -54,12 +54,12 @@ it("locks an uncertain submission and replays the same snapshot after a lost res
  expect(document.querySelector<HTMLButtonElement>('[aria-label="노드 선택"]')!.disabled).toBe(true);
  expect(document.querySelector<HTMLButtonElement>('[aria-label="폴더 선택"]')!.disabled).toBe(true);
  expect(document.querySelector<HTMLInputElement>('input[type="file"]')!.matches(':disabled')).toBe(true);
- expect(document.querySelector<HTMLButtonElement>('[aria-label="Remove file"]')!.matches(':disabled')).toBe(true);
+ expect(document.querySelector<HTMLButtonElement>('[aria-label="첨부 제거"]')!.matches(':disabled')).toBe(true);
  expect(save.textContent).toBe('같은 제출로 다시 확인');
  expect(document.body.textContent).toContain('이미 저장되었을 수 있습니다');
  await setTitle('바꾸려는 제목');
  expect(title.value).toBe('첫 카드');
- await act(()=>document.querySelector<HTMLButtonElement>('[aria-label="Remove file"]')!.click());
+ await act(()=>document.querySelector<HTMLButtonElement>('[aria-label="첨부 제거"]')!.click());
  expect(upload.removeFile).not.toHaveBeenCalled();expect(upload.resetLocal).not.toHaveBeenCalled();
  await act(async()=>{save.click();await Promise.resolve();});
  expect(onSave.mock.calls[1][0]).toBe(onSave.mock.calls[0][0]);

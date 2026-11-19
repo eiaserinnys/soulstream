@@ -148,6 +148,8 @@ presets:
     # 실측(260728): "kimi-for-coding"의 display_name은 "K2.7 Coding".
     # 같은 계열의 "kimi-for-coding-highspeed"는 목록에 노출하지 않는다.
     model: kimi-for-coding
+    # SDK modelUsage가 contextWindow를 생략할 때 매퍼가 쓰는 대체값 (카드 #1703).
+    context_window: 262144
     env:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
@@ -162,6 +164,7 @@ presets:
     # 같은 엔드포인트의 "k3-256k"는 context_length가 262144로 동일하고
     # 비디오 입력만 빠진 부분집합이라 "k3"를 정본으로 둔다.
     model: k3
+    context_window: 262144
     env:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
@@ -175,6 +178,7 @@ presets:
     # 실측(261024, GET https://api.kimi.com/coding/v1/models): K3.1 Pro = "k3.1-pro".
     # 같은 계열의 "k3.1-pro-highspeed"는 목록에 노출하지 않는다.
     model: k3.1-pro
+    context_window: 262144
     env:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
@@ -189,6 +193,10 @@ presets:
     # 261106 카드 #1061: OpenCode Go 구독. Go의 deepseek-v4.1-flash는 OpenCode 공지로 1017판.
     # Go 콘솔 Settings > Privacy > Regions에서 Global을 켜야 호출된다.
     model: deepseek-v4.1-flash
+    context_window: 262144
+    # 기존 매퍼가 인정하던 보고 이름: OpenCode 공지 1017판 별칭과 접두어 계열.
+    context_window_aliases: ["deepseek-v4.1-flash-1017"]
+    context_window_prefixes: ["deepseek-", "opencode/deepseek-"]
     # 261110 카드 #1149: low는 첫 호출이 400(cache_control 거부)으로 즉사. 디렉터 지시로 xhigh, max만 연다.
     supported_efforts: [xhigh, max]
     default_effort: max
@@ -462,6 +470,7 @@ price_snapshot:
     - Other legacy rows retain their previous 2026-10-05 values and are not claimed as reverified for this snapshot.
 
 persistent_defaults:
+  agent_id: seosoyoung-pas
   model_preset: claude-opus
   fallback_models:
     - model_preset: codex-6.2-sol

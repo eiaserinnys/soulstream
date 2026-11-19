@@ -127,9 +127,7 @@ export function RitualModal({
           {loadState.status === "loading" ? <div className="v3-ritual-message"><FrameLoading label="이월할 항목을 모으는 중…" /></div> : null}
           {loadState.status === "error" ? (
             <RitualMessage>
-              <V3ErrorNotice message="아침 정리를 불러오지 못했습니다." detail={loadState.message}>
-                <Button onClick={() => setLoadState({ status: "idle" })}>다시 시도</Button>
-              </V3ErrorNotice>
+              <V3ErrorNotice message="아침 정리를 불러오지 못했습니다." detail={loadState.message} onRetry={() => setLoadState({ status: "idle" })} retryLabel="다시 시도"/>
             </RitualMessage>
           ) : null}
           {data ? (

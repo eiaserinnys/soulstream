@@ -69,6 +69,15 @@ export const ModelPresetSchema = z.object({
     z.record(NonEmptyMcpNameSchema, z.array(NonEmptyMcpNameSchema)),
   ).optional(),
   usage_model_id: z.string().trim().min(1).optional(),
+  /**
+   * Token window this preset's backend serves. The Claude SDK result mapper
+   * falls back to it when a result message omits `contextWindow`.
+   */
+  context_window: z.number().int().positive().optional(),
+  /** Reported model names (exact, case-insensitive) that use `context_window`. */
+  context_window_aliases: z.array(z.string().trim().min(1)).optional(),
+  /** Reported model-name prefixes (case-insensitive) that use `context_window`. */
+  context_window_prefixes: z.array(z.string().trim().min(1)).optional(),
   /** Subscription usage source joined by the orchestrator usage overlay. */
   usage_provider: z.literal("opencode_go").optional(),
   supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
@@ -141,6 +150,7 @@ export const PersistentModelDefaultSchema = z.object({
 export type PersistentModelDefault = z.infer<typeof PersistentModelDefaultSchema>;
 
 export const PersistentCatalogDefaultsSchema = z.object({
+  agent_id: z.string().trim().min(1).optional(),
   model_preset: z.string().trim().min(1),
   fallback_models: z.array(PersistentModelDefaultSchema).default([]),
 });

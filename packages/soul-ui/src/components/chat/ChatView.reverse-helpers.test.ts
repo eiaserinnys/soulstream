@@ -237,3 +237,22 @@ describe("resolveFocusEventId", () => {
     expect(resolveFocusEventId([], 105, "assistant_turn")).toBe(105);
   });
 });
+
+describe("new-message tail changes", () => {
+  const a = makeMsg({ treeNodeId: "a" });
+  const b = makeMsg({ treeNodeId: "b" });
+  const c = makeMsg({ treeNodeId: "c" });
+  const single = (msg: ChatMessage): ChatTimelineItem => ({ type: "single", msg });
+  const group = (...messages: ChatMessage[]): ChatTimelineItem => ({ type: "tool-group", messages });
+  it("ignores prepend, including a prepend merged into the first group", async () => {
+    const { hasNewMessageTailChange } = await import("./ChatView.reverse-helpers");
+    expect(hasNewMessageTailChange([single(b)], [single(a), single(b)])).toBe(false);
+    expect(hasNewMessageTailChange([group(b)], [group(a, b)])).toBe(false);
+  });
+  it("detects appended rows, simultaneous prepend and append, and last row edits", async () => {
+    const { hasNewMessageTailChange } = await import("./ChatView.reverse-helpers");
+    expect(hasNewMessageTailChange([single(b)], [single(b), single(c)])).toBe(true);
+    expect(hasNewMessageTailChange([single(b)], [single(a), single(b), single(c)])).toBe(true);
+    expect(hasNewMessageTailChange([single(b)], [single({ ...b, content: "edited" })])).toBe(true);
+  });
+});

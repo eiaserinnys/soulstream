@@ -84,10 +84,10 @@ export function V3GlobalToolbar({
         className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
         data-liquid-glass-webgl={searchWebglActive ? "true" : undefined}
         onClick={onOpenSearch}
-        aria-label="Open session search"
+        aria-label="세션 검색 열기"
       >
         <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">Search sessions</span>
+        <span className="truncate">세션 검색</span>
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">

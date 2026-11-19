@@ -136,6 +136,20 @@ export function areMessageGroupsRenderEqual(
   });
 }
 
+/** 이력 앞붙임으로 마지막 묶음이 확장된 경우도 같은 끝으로 본다. */
+export function hasNewMessageTailChange(previous: ChatTimelineItem[], next: ChatTimelineItem[]): boolean {
+  const oldTail = previous.filter((item) => item.type !== "thinking-indicator").at(-1);
+  const newTail = next.filter((item) => item.type !== "thinking-indicator").at(-1);
+  if (!newTail) return false;
+  if (!oldTail) return true;
+  if (areMessageGroupsRenderEqual([oldTail], [newTail])) return false;
+  if ((oldTail.type === "tool-group" || oldTail.type === "activity-group") && oldTail.type === newTail.type) {
+    const offset = newTail.messages.length - oldTail.messages.length;
+    return offset < 0 || !oldTail.messages.every((message, index) => message === newTail.messages[offset + index]);
+  }
+  return true;
+}
+
 /**
  * 같은 first-visible key가 새 배열에서 뒤로 이동한 양을 반환한다.
  * 음수(앞 행 제거), key 부재, 또는 first-visible 뒤 삽입은 좌표를 바꾸지 않는다.

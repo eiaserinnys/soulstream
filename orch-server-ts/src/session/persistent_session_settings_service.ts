@@ -38,9 +38,6 @@ import {
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
 import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
 
-/** Node and agent for a new PAS live here; the default preset and fallback list come from catalogue data. */
-export const PERSISTENT_CREATE_NODE_ID = "eiaserinnys";
-export const PERSISTENT_PREFERRED_AGENT_ID = "seosoyoung-pas";
 /** Used when the first message is left empty; ordinary session creation keeps its own empty-input prompt. */
 export const PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
@@ -69,6 +66,8 @@ export type PersistentSessionSettingsServiceDeps = {
   presets: Pick<ModelPresetAvailabilityService, "resolveStaticForNode" | "requireAvailable">;
   profiles: { listAgentProfiles(nodeId: string): Promise<Record<string, { name?: unknown }> | undefined> };
   modelCatalog: ModelCatalogSource;
+  /** Node for a new PAS that names none; the orchestrator injects its configured value. */
+  defaultExecutionNodeId: string;
 };
 
 type CallerRequest = FastifyRequest | ServiceCaller;
@@ -241,17 +240,17 @@ export class PersistentSessionSettingsService {
     logger: Pick<FastifyRequest["log"], "warn">,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const body = parseCreateBody(input);
-    const defaultModel = this.normalizeModel(PERSISTENT_CREATE_NODE_ID, body.default_model, {
+    const defaultModel = this.normalizeModel(this.deps.defaultExecutionNodeId, body.default_model, {
       requireAvailable: false, allowLimitRejected: false, keepEffort: undefined,
     });
     const fallbackModels = body.fallback_models?.map((model) => this.normalizeModel(
-      PERSISTENT_CREATE_NODE_ID, model,
+      this.deps.defaultExecutionNodeId, model,
       { requireAvailable: false, allowLimitRejected: false, keepEffort: undefined },
     ));
     let initialCandidate: PersistentModelSelection | undefined;
-    let initialNodeId = PERSISTENT_CREATE_NODE_ID;
+    let initialNodeId = this.deps.defaultExecutionNodeId;
     for (const candidate of [defaultModel, ...(fallbackModels ?? [])]) {
-      const candidateNodeId = candidate.node_id ?? PERSISTENT_CREATE_NODE_ID;
+      const candidateNodeId = candidate.node_id ?? this.deps.defaultExecutionNodeId;
       try {
         const profileId = body.agent_id;
         const profiles = await this.deps.profiles.listAgentProfiles(candidateNodeId);
@@ -461,27 +460,30 @@ export class PersistentSessionSettingsService {
 
   async createDefaults(): Promise<PersistentCreateDefaults> {
     const reasons: string[] = [];
-    const profiles = await this.deps.profiles.listAgentProfiles(PERSISTENT_CREATE_NODE_ID);
-    let preferredAgentId: string | null = null;
-    if (profiles === undefined) {
-      reasons.push(`노드 ${PERSISTENT_CREATE_NODE_ID}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
-    } else if (PERSISTENT_PREFERRED_AGENT_ID in profiles) {
-      preferredAgentId = PERSISTENT_PREFERRED_AGENT_ID;
-    } else {
-      reasons.push(`프로필 ${PERSISTENT_PREFERRED_AGENT_ID}이(가) 노드 ${PERSISTENT_CREATE_NODE_ID}에 없습니다.`);
-    }
     const persistedDefaults = this.deps.modelCatalog.snapshot().persistent_defaults;
+    const agentId = persistedDefaults.agent_id;
+    let preferredAgentId: string | null = null;
+    if (agentId !== undefined) {
+      const profiles = await this.deps.profiles.listAgentProfiles(this.deps.defaultExecutionNodeId);
+      if (profiles === undefined) {
+        reasons.push(`노드 ${this.deps.defaultExecutionNodeId}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
+      } else if (agentId in profiles) {
+        preferredAgentId = agentId;
+      } else {
+        reasons.push(`프로필 ${agentId}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
+      }
+    }
     let defaultModel: PersistentModelSelectionView = { model_preset: null, reasoning_effort: null };
     try {
       const preset = this.deps.presets.resolveStaticForNode(
-        PERSISTENT_CREATE_NODE_ID, persistedDefaults.model_preset);
+        this.deps.defaultExecutionNodeId, persistedDefaults.model_preset);
       defaultModel = { model_preset: preset.id, reasoning_effort: preset.default_effort ?? null };
     } catch (error) {
       if (!(error instanceof ModelPresetAvailabilityError)) throw error;
-      reasons.push(`기본 모델 ${persistedDefaults.model_preset}이(가) 노드 ${PERSISTENT_CREATE_NODE_ID}에 없습니다.`);
+      reasons.push(`기본 모델 ${persistedDefaults.model_preset}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
     }
     return {
-      node_id: PERSISTENT_CREATE_NODE_ID,
+      node_id: this.deps.defaultExecutionNodeId,
       preferred_agent_id: preferredAgentId,
       settings: {
         default_model: defaultModel,

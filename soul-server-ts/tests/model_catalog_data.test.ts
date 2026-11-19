@@ -123,6 +123,9 @@ type PresetExpectation = {
   default_effort?: string;
   trusted_execution?: boolean;
   env?: Record<string, string>;
+  context_window?: number;
+  context_window_aliases?: string[];
+  context_window_prefixes?: string[];
 };
 
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -276,6 +279,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "kimi-3": {
     label: "Kimi - 3",
@@ -284,6 +288,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "kimi-3.1-pro": {
     label: "Kimi - 3.1 Pro",
@@ -292,6 +297,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     group: "china",
     provider: "kimi",
     env: KIMI_ENV,
+    context_window: 262_144,
   },
   "deepseek-flash-4.1": {
     label: "DeepSeek - Flash 4.1",
@@ -302,6 +308,9 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     usage_provider: "opencode_go",
     supported_efforts: ["xhigh", "max"],
     default_effort: "max",
+    context_window: 262_144,
+    context_window_aliases: ["deepseek-v4.1-flash-1017"],
+    context_window_prefixes: ["deepseek-", "opencode/deepseek-"],
     env: {
       ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
       ANTHROPIC_API_KEY: "${OPENCODE_GO_API_KEY}",
@@ -456,6 +465,9 @@ describe("repository model catalogue data", () => {
         "default_effort",
         "trusted_execution",
         "env",
+        "context_window",
+        "context_window_aliases",
+        "context_window_prefixes",
       ] as const) {
         if (preset[key] !== undefined) actual[key] = preset[key];
       }
@@ -666,6 +678,7 @@ describe("repository model catalogue data", () => {
 
   it("keeps the PAS defaults in the data file", () => {
     expect(catalog.persistent_defaults).toEqual({
+      agent_id: "seosoyoung-pas",
       model_preset: "claude-opus",
       fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
     });
@@ -702,6 +715,11 @@ describe("model catalogue schema validation", () => {
     );
     expect(() => parseModelCatalogYaml(missingFallback))
       .toThrow(/persistent_defaults\.fallback_models\[0\] .*nope.* is not a known model preset/);
+  });
+
+  it("rejects a blank persistent default agent id", () => {
+    const blank = BASE_CATALOG_YAML.replace("persistent_defaults:\n", "persistent_defaults:\n  agent_id: '  '\n");
+    expect(() => parseModelCatalogYaml(blank)).toThrow();
   });
 
   it("rejects negative rates and an unsupported schema version", () => {

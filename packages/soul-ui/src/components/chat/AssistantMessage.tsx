@@ -54,8 +54,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   // LLM 세션: assistant_message에 model 정보가 있으면 표시, 없으면 llmContext에서 가져옴
   const modelLabel = msg.model ?? llmContext?.llmModel;
   const displayName = isLlm
-    ? modelLabel ? `ASSISTANT (${modelLabel})` : "ASSISTANT"
-    : agentName ?? "Assistant";
+    ? modelLabel ? `어시스턴트 (${modelLabel})` : "어시스턴트"
+    : agentName ?? "어시스턴트";
   const displayId = isLlm ? null : activeSession?.agentId ?? null;
   const hasPortrait = isLlm ? false : !!agentPortraitUrl;
   const bubbleClassName = manuscript
@@ -67,7 +67,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
   const tokenInfo = msg.usage
-    ? `${(msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString()} tokens`
+    ? `토큰 ${(msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString()}`
     : null;
   const displayContent = stripEventTruncationSuffix(msg.content, msg.truncation);
 

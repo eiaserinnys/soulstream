@@ -88,7 +88,7 @@ export function buildContextPromptTokenMetrics(
 }
 
 export function formatPromptTokenCount(tokens: number): string {
-  return `~${tokens.toLocaleString()} tokens`;
+  return `토큰 ~${tokens.toLocaleString()}`;
 }
 
 export function systemPromptTokenScope(backend?: string | null): "system" | "prompt" {

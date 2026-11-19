@@ -137,7 +137,7 @@ describe("card work runtime and internal MCP integration", () => {
         return { type: "ack", status: "ok" };
       },
     };
-    runtime = await createCardDispatchRuntime({
+    runtime = await createCardDispatchRuntime({ defaultExecutionNodeId:"eiaserinnys",
       sqlResolver: { resolveSql: async () => h.liveSql, close: async () => undefined },
       router: router as never,
       bridge: bridge as never,

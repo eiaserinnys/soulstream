@@ -310,6 +310,11 @@ export interface IsolationHostPorts {
   lstatPath(path: string): Promise<HostPathFact | null>;
   /** 이름과 종류만 읽는다. 파일 내용은 읽지 않는다. */
   listDirectory(path: string): Promise<HostDirectoryEntry[]>;
+  /**
+   * 같은 나열을 동기로 읽는다. libuv 스레드풀(기본 4)을 쓰지 않아야 하는
+   * 대량 순회(`.env` 가림 탐색) 전용이다. 파일 내용은 읽지 않는다.
+   */
+  listDirectorySync(path: string): HostDirectoryEntry[];
   /** 링크 대상 경로만 읽는다. 대상 파일의 내용은 읽지 않는다. */
   readSymlink(path: string): Promise<string | null>;
   /** 커널 표식만 확인한다. 입력이나 헤더로 바꿀 수 없다. */

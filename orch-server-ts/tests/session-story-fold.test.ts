@@ -33,6 +33,8 @@ const CONFIG: TurnSummaryConfig = {
   model: "gpt-5.6-luna",
   storyModel: "gpt-5.6-terra",
   reasoningEffort: "high",
+  instructionExtractionModel: "gpt-6.2-sol",
+  instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
   codexConcurrencyLimit: 2,

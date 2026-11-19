@@ -48,11 +48,11 @@
 .config-dialog [data-wallpaper="metal"] .wallpaper-swatch { background:linear-gradient(120deg,#e5e7ed,#aab2bd 38%,#f3f4f8 55%,#c2c8d2); }
 .config-dialog [data-wallpaper="photo"] .wallpaper-swatch { background:linear-gradient(155deg,#c9d8e2 50%,#b6c1ac 51%,#859984); }
 .config-dialog .config-appearance > section:not(.config-wallpaper) { background:transparent; padding:0 0 var(--v3-space-6); border:0; border-bottom:1px solid var(--border); border-radius:0; }
-.config-dialog .config-advanced { font:var(--v3-type-body) var(--v3-font-family); }
-.config-dialog .config-advanced > summary { display:flex; align-items:center; justify-content:space-between; padding:0 0 var(--v3-space-4); cursor:pointer; font-weight:500; }
-.config-dialog .config-advanced-marker { color:var(--muted-foreground); margin-right:var(--v3-space-2); transition:none; }
-.config-dialog .config-advanced[open] > summary .config-advanced-marker { transform:rotate(90deg); }
-.config-dialog .config-advanced > summary span { margin-left:auto; font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); }
+.approved-dialog .config-advanced { font:var(--v3-type-body) var(--v3-font-family); }
+.approved-dialog .config-advanced > summary { display:flex; align-items:center; justify-content:space-between; padding:0 0 var(--v3-space-4); cursor:pointer; font-weight:500; }
+.approved-dialog .config-advanced-marker { color:var(--muted-foreground); margin-right:var(--v3-space-2); transition:none; }
+.approved-dialog .config-advanced[open] > summary .config-advanced-marker { transform:rotate(90deg); }
+.approved-dialog .config-advanced > summary span { margin-left:auto; font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); }
 .config-dialog .config-footer { display:block; }
 .config-dialog .config-footer-row, .config-dialog .config-discard { display:flex; align-items:center; flex-wrap:wrap; gap:var(--v3-space-2); width:100%; }
 .config-dialog .config-save-state { display:flex; align-items:center; gap:var(--v3-space-2); margin:0 auto 0 0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
@@ -63,7 +63,7 @@
 .config-dialog .config-detail .config-pas-open-on-start { padding:0 0 var(--v3-space-6); }
 .config-dialog .persistent-settings-read-only-value { min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
-.config-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
+.approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
 
 .config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { overflow:hidden; }
 .config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { flex:1 1 auto; min-height:0; min-width:0; }

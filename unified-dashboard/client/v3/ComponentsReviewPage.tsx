@@ -44,6 +44,7 @@ import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
 import { FrameLoadingReviewSample } from "./FrameLoadingReviewSample";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
@@ -458,6 +459,10 @@ export function ComponentsReviewPage() {
             </div>
             <div className="v3-components-samples">
             <Sample name="FrameLoading / FrameNotice" state="높이 고정 패널 · 대화상자 본문 · 좁은 폭 · 포털 대화상자 · 실패 안내 자리"><FrameLoadingReviewSample/></Sample>
+            <Sample name="V3ErrorNotice" state="불러오기 실패 · 기술 상세 · 대화상자 실패">
+              <V3ErrorNotice message="카드를 불러오지 못했습니다." detail="카드 요청 실패 (503)" onRetry={() => open("다시 불러오기")}/>
+              <V3ErrorNotice message="저장하지 못했습니다." detail="연결이 끊어졌습니다."/>
+            </Sample>
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
             <Sample name="PersistentSessionScreen" state="운영 전화면 · 우하단 사용량 · 작업 목록 동시 펼침 · 실제 PAS 대화"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">

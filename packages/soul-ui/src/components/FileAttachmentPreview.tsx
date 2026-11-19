@@ -195,7 +195,7 @@ export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
         type="button"
         onClick={onRemove}
         className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors"
-        aria-label="Remove file"
+        aria-label="첨부 제거"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

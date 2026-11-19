@@ -38,7 +38,7 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed,
   const visible=cards.filter(card=>!card.archived);
   const columns=boardColumns.filter(({status})=>completion?.includeCompleted!==false||(status!=="done"&&status!=="cancelled")).map(column=>({
     ...column,cards:column.status==="done"&&completed?[...completed.cards]:visible.filter(card=>card.status===column.status),
-  })).filter(column=>!hideEmptyLanes||column.cards.length>0);
+  })).filter(column=>!hideEmptyLanes||column.cards.length>0||(column.status==="done"&&!!completed));
   return <PostItGrid ref={root} {...pan} className="v3-card-board" variant="compact"><span className="v3-completed-measure" aria-hidden="true"/>{columns.length===0&&hideEmptyLanes?<p className="v3-card-board-empty">카드가 없습니다</p>:null}{columns.map(({status,label,cards:column})=>{
     const sorted=column.sort((a,b)=>{
       const left=status==="queued"?a.queuePositionKey??"":a.positionKey;
@@ -47,7 +47,7 @@ export function CardBoard({cards, renderCard, completion, draftAction,completed,
     });
     return <section key={status} className="v3-card-board-column" data-board-column={status} aria-label={label} style={status==="done"?{width:doneWidth}:undefined}>
       <div className="v3-detail-section-head"><h3>{label}</h3>{status!=="done"||!completed||completed.loaded?<span>{column.length}개{status==="done"?" 표시":""}</span>:null}{status==="todo"?draftAction:null}</div>
-      {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=>renderCard(card)} showControls={!hideEmptyLanes} showFeedback={!hideEmptyLanes}
+      {status==="done"&&completed?<CompletedCardGrid browser={completed} renderCard={card=>renderCard(card)} showControls={!hideEmptyLanes}
         snapshot={completedGridSnapshot} onSnapshotChange={onCompletedGridSnapshotChange}/>:<div className="v3-card-board-lane">
         {sorted.length ? sorted.map(card=><Fragment key={card.id}>{renderCard(card)}</Fragment>)
         : <p className="v3-card-board-empty">카드가 없습니다</p>}

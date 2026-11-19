@@ -5,6 +5,7 @@ import {
   createReadStream,
   type Dirent,
   type Stats,
+  readdirSync,
 } from "node:fs";
 import {
   chmod,
@@ -278,6 +279,11 @@ export function createIsolationHostPorts(
 
     async listDirectory(path: string): Promise<HostDirectoryEntry[]> {
       const entries = await readdir(path, { withFileTypes: true });
+      return entries.map((entry) => ({ name: entry.name, kind: kindOfDirent(entry) }));
+    },
+
+    listDirectorySync(path: string): HostDirectoryEntry[] {
+      const entries = readdirSync(path, { withFileTypes: true });
       return entries.map((entry) => ({ name: entry.name, kind: kindOfDirent(entry) }));
     },
 

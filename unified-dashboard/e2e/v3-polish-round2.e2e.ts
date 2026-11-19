@@ -120,14 +120,14 @@ async function expectGlobalToolbarChrome(page: Page): Promise<void> {
   const toolbar = page.getByTestId("v3-global-toolbar");
   await expect(toolbar).toBeVisible();
   await expect(toolbar.getByText("Soulstream", { exact: true })).toBeVisible();
-  await expect(toolbar.getByRole("button", { name: "Open session search" })).toBeVisible();
+  await expect(toolbar.getByRole("button", { name: "세션 검색 열기" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: "서버 설정" })).toBeVisible();
   await expect(toolbar.getByRole("button", { name: /^(라이트|다크) 모드로 전환$/ })).toBeVisible();
 }
 
 async function expectGlobalToolbarInteractions(page: Page): Promise<void> {
   const toolbar = page.getByTestId("v3-global-toolbar");
-  const searchButton = toolbar.getByRole("button", { name: "Open session search" });
+  const searchButton = toolbar.getByRole("button", { name: "세션 검색 열기" });
   await searchButton.click();
   await expect(page.getByRole("heading", { name: "세션 기록 검색" })).toBeVisible();
   // 단추로 열면 검색 입력에 초점이 있고, Esc로 닫으면 연 단추로 초점이 돌아온다.

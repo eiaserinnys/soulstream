@@ -32,11 +32,12 @@ export async function createCardMachineWorld() {
   const sql=createFolderContentSqlAdapter(h.liveSql);
   const reports=new PersistentReportService(sql,()=>{});
   const cards=new CardControlPlaneService(sql,{appendEventTx:appendCardEventTx},undefined,undefined,()=>{},()=>{},[],
-    async({cardId,questionId})=>{await reports.placeQuestion(cardId,questionId);});
+    async({cardId,questionId})=>{await reports.placeQuestion(cardId,questionId);},undefined,undefined,
+    {defaultExecutionNodeId:"eiaserinnys"});
   const executions=new CardExecutionService({sql,cards,validate:async()=>({nodeId:"node",agentId:"worker",modelPreset:"model"}),launch:async()=>{},ensure:async()=>({state:"already_running",execution})});
   const repo=new CardDispatchRepository(async()=>sql);
   let now=Date.now(),available=false,failSend=false;
-  const dispatcher=new CardDispatcher({repository:repo,cards:async()=>cards,
+  const dispatcher=new CardDispatcher({ defaultNodeId:"eiaserinnys",repository:repo,cards:async()=>cards,
     resolveTarget:()=>({nodeId:"node",agentId:"worker",modelPreset:"model",available,reason:null}),
     launch:async()=>{},sendMessage:async()=>{if(failSend)throw new Error("test transport failure");},notify:async()=>{},
     deliveryExists:async()=>false,abandonDelivery:async()=>{},warn:()=>{},now:()=>now});

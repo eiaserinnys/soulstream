@@ -26,7 +26,7 @@ export const ContextBlock = memo(function ContextBlock({
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1.5 flex-wrap">
             <span>{item.label}</span>
             <span className="normal-case tracking-normal rounded bg-input px-1.5 leading-4">
-              {formatPromptTokenCount(metrics.items[index]?.tokens ?? 0)} prompt
+              프롬프트 {formatPromptTokenCount(metrics.items[index]?.tokens ?? 0)}
             </span>
           </div>
           <ContextContentRenderer content={item.content} />
@@ -70,9 +70,9 @@ export const ContextBlock = memo(function ContextBlock({
       >
         <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F4CB}"}</span>
-        <span className="font-medium">Context ({items.length})</span>
+        <span className="font-medium">맥락 ({items.length})</span>
         <span className="text-xs leading-4 rounded bg-input px-1.5 text-muted-foreground">
-          {formatPromptTokenCount(metrics.totalTokens)} prompt
+          프롬프트 {formatPromptTokenCount(metrics.totalTokens)}
         </span>
       </button>
       {expanded && itemList}

@@ -17,6 +17,14 @@ export interface ClaudeBackgroundGenerationIdentity {
   deliveryId: string;
 }
 
+export function buildClaudeBackgroundResumeId(originalId: string, number: number): string {
+  return `${originalId}#r${number}`;
+}
+
+export function originalClaudeBackgroundToolUseId(id: string): string {
+  return id.replace(/#r\d+$/, "");
+}
+
 /**
  * One Claude background execution generation. Terminal state, revision and
  * output are deliberately absent: they refine a generation, never identify it.

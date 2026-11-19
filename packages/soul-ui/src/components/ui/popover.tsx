@@ -34,6 +34,7 @@ function PopoverPopup({
   tooltipStyle = false,
   keepMounted = false,
   anchor,
+  collisionPadding,
   ...props
 }: PopoverPrimitive.Popup.Props & {
   side?: PopoverPrimitive.Positioner.Props["side"];
@@ -43,6 +44,7 @@ function PopoverPopup({
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
+  collisionPadding?: PopoverPrimitive.Positioner.Props["collisionPadding"];
 }) {
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
@@ -50,6 +52,7 @@ function PopoverPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
+        collisionPadding={collisionPadding}
         className="z-[var(--v3-layer-popover,51)] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
         data-slot="popover-positioner"
         side={side}

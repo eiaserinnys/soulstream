@@ -65,7 +65,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Question
+          질문
         </div>
         {question.header && (
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{question.header}</div>

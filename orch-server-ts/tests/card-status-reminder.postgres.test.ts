@@ -16,7 +16,7 @@ describe("durable card status reminders", () => {
   const messages = vi.fn<CardDispatcherOptions["sendMessage"]>();
   const warn = vi.fn(), kick = vi.fn(async () => {});
   const human = { actorKind: "user" as const, actorSessionId: null };
-  const makeDispatcher = () => new CardDispatcher({ repository: repo, cards: async () => cards,
+  const makeDispatcher = () => new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: repo, cards: async () => cards,
     resolveTarget: vi.fn() as never, launch: vi.fn(), notify: vi.fn(), sendMessage: messages, warn,
     deliveryExists: async (id: string) => (await h.sql`SELECT delivery_id FROM session_deliveries WHERE delivery_id=${id}`).length > 0,
     abandonDelivery: async () => {},

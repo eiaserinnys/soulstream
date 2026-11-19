@@ -48,6 +48,7 @@ import {
   findFocusIndex,
   getBottomScrollLocation,
   getInitialTopMostItemIndex,
+  hasNewMessageTailChange,
   MAX_SEARCH_FOCUS_HISTORY_PAGES,
   messageOrGroupKey,
   resolveFocusEventId,
@@ -90,6 +91,8 @@ export interface ChatViewProps {
 function isGenerationDivider(item: ChatTimelineItem): boolean {
   return item.type === "single" && item.msg.treeNodeType === "generation_started";
 }
+
+const CHAT_FOLLOW_CONTROL_CLASS = "flex select-none items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium glass-shadow-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 // 초점 대상 행은 Virtuoso 행 key로 찾고, 스크롤 상자의 보이는 영역과 겹치는지로 화면 안을 판정한다.
 function findFocusRowElement(
@@ -487,6 +490,10 @@ function ChatViewContent({
     requestOlderDuringExploration,
     setFocusEventId,
   ]);
+  const scrollItemToOffset = useCallback((index: number, offset: number) => {
+    // scrollToIndex addresses the current data array, not firstItemIndex keys.
+    virtuosoRef.current?.scrollToIndex({ index, align: "start", offset: -offset });
+  }, []);
   const {
     scrollerRef,
     bindScrollerElement,
@@ -499,6 +506,7 @@ function ChatViewContent({
     isFollowing,
     isExplicitEventFocus: focusEventId !== null,
     recordFirstVisibleKey,
+    scrollItemToOffset,
     onUserViewportInput: handleUserViewportInput,
   });
   // 보이는 영역에 들어온 대상 행에 고리를 붙이고 2초 뒤 지운다.
@@ -748,7 +756,7 @@ function ChatViewContent({
       prevVisibleItemsRef.current,
       timelineItems,
     );
-    const newMessageItemsChanged = !areMessageGroupsRenderEqual(
+    const newMessageItemsChanged = hasNewMessageTailChange(
       prevVisibleItemsRef.current.filter((item) => !isGenerationDivider(item)),
       timelineItems.filter((item) => !isGenerationDivider(item)),
     );
@@ -879,7 +887,7 @@ function ChatViewContent({
   if (!activeSessionKey) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Select a session to view chat
+        세션을 선택하세요
       </div>
     );
   }
@@ -891,6 +899,8 @@ function ChatViewContent({
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
       data-chat-first-item-index={firstItemIndex}
+      data-chat-item-count={timelineItems.length}
+      data-chat-prepended-count={chatPrependedCount}
       style={chatTypographyStyle}
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
@@ -929,7 +939,7 @@ function ChatViewContent({
           />
           {history.blockedReason === null && (
             <div className="p-5 text-center text-muted-foreground text-sm">
-              Waiting for events...
+              대화를 기다리는 중
             </div>
           )}
         </>
@@ -1069,14 +1079,15 @@ function ChatViewContent({
         </div>
       )}
 
-      {presentation === "default" && <div className="flex shrink-0 justify-end pb-2 pr-3">
+      {presentation === "default" && <div className="flex shrink-0 items-center justify-end pb-2">
         <button
+          type="button"
           onClick={toggleFollow}
+          aria-pressed={isFollowing}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-            "border glass-shadow-xs",
+            CHAT_FOLLOW_CONTROL_CLASS,
             isFollowing
-              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25"
+              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
               : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >

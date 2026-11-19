@@ -29,6 +29,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
 
   beforeEach(async () => {
     await harness.sql`DELETE FROM session_delivery_notification_outbox`;
+    await harness.sql`DELETE FROM session_delivery_relation_consumptions`;
     await harness.sql`DELETE FROM session_deliveries`;
     await harness.sql`DELETE FROM claude_background_task_generations`;
     await harness.sql`DELETE FROM claude_background_tasks`;
@@ -41,6 +42,37 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
 
   afterAll(async () => {
     await harness.cleanup();
+  });
+
+  it("records a resumed old tool id under a new owner and separate delivery", async () => {
+    const lifecycle = makeLifecycle(harness.sql);
+    const firstOwner = { registrationId: "registration-a", executionCommandId: "command-a" };
+    const nextOwner = { registrationId: "registration-b", executionCommandId: "command-b" };
+    const taskId = "task-resumed";
+    await expect(lifecycle.observe("caller-session", started(taskId), undefined, firstOwner)).resolves.toBe(true);
+    await expect(lifecycle.observe("caller-session", terminal(taskId, "completed"), undefined, firstOwner)).resolves.toBe(true);
+    const first = await background(harness.sql).getGeneration(
+      "node-test", "caller-session", "sdk-session", taskId, `toolu-${taskId}`,
+    );
+    await deliveries(harness.sql).recordRelationConsumed({
+      relationKey: first!.relation_key, completionId: first!.completion_id,
+      callerSessionId: "caller-session", consumedTurnId: "event:first",
+    });
+    await expect(lifecycle.observe("caller-session", started(taskId), undefined, nextOwner)).resolves.toBe(true);
+    await expect(lifecycle.observe("caller-session", terminal(taskId, "completed"), undefined, nextOwner)).resolves.toBe(true);
+    const resumed = await background(harness.sql).getGeneration(
+      "node-test", "caller-session", "sdk-session", taskId, `toolu-${taskId}#r1`,
+    );
+    expect(resumed).toMatchObject({
+      status: "completed", runner_registration_id: "registration-b", execution_command_id: "command-b",
+    });
+    expect(resumed!.relation_key).not.toBe(first!.relation_key);
+    expect(resumed!.completion_id).not.toBe(first!.completion_id);
+    expect(resumed!.notification_delivery_id).not.toBe(first!.notification_delivery_id);
+    await expect(deliveries(harness.sql).get(first!.notification_delivery_id!))
+      .resolves.toMatchObject({ state: "consumed" });
+    await expect(deliveries(harness.sql).get(resumed!.notification_delivery_id!))
+      .resolves.toMatchObject({ state: "pending" });
   });
 
   it("commits terminal state and its semantic delivery atomically", async () => {

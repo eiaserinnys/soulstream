@@ -405,9 +405,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .v3-shell *,
-  .v3-shell *::before,
-  .v3-shell *::after {
+  /* 대화 목록 안은 뺀다. 전환 속성이 없는 요소까지 all .01ms 전환이 걸려 Virtuoso가 바꾼
+     목록 여백의 계산값 반영이 늦고, 그동안 보던 행 위치 보정이 어긋난다(카드 #1683). */
+  .v3-shell *:not([data-chat-scroller] *),
+  .v3-shell *:not([data-chat-scroller] *)::before,
+  .v3-shell *:not([data-chat-scroller] *)::after {
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
   }

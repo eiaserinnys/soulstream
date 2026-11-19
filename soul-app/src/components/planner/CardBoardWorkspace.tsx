@@ -103,6 +103,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   ]);
   const completedCount = completed.cards.length;
   const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed} firstLoading={firstLoading} activePending={activePending}
+    expandedTablet={expandedBoard && !phone} alignTablet={!phone} outerPadding={!expandedBoard && !phone ? t.tabletShell.header.paddingHorizontal - t.uiSpacing.sm : undefined}
     railOverlayWidth={expandedBoard ? 0 : railOverlayWidth}
     reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
     includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}
@@ -120,7 +121,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     const headingTitle = !expandedBoard && title !== undefined
       ? title
       : folderId ? '현재 폴더 · 카드' : '전체 · 카드';
-    return <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: titled ? 'nowrap' : 'wrap', gap: t.uiSpacing.sm }}>
+    return <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : phone ? t.cardLayout.padding : t.tabletShell.header.paddingHorizontal, flexDirection: 'row', alignItems: 'center', flexWrap: titled ? 'nowrap' : 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
       <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}><PlannerSectionHeader testID="card-board-heading-title" variant={titled ? 'board' : 'default'} title={headingTitle} /></View>
       <AutomaticRefreshSlot active={autoRefreshing && (expandedBoard || !expanded)} testID={expandedBoard ? 'card-board-expanded-refresh-slot' : 'card-board-refresh-slot'} indicatorTestID={expandedBoard ? 'card-board-expanded-auto-progress' : 'card-board-auto-progress'} />

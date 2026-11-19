@@ -274,7 +274,7 @@ export function ProjectContextEditor({
 
 function ContextPopover({ children }: { children: ReactNode }) {
   return (
-    <PopoverPopup align="start" side="bottom" sideOffset={6} className="v3-project-context-popover">
+    <PopoverPopup align="start" side="bottom" sideOffset={6} collisionPadding={12} initialFocus finalFocus className="v3-project-context-popover">
       {children}
     </PopoverPopup>
   );
@@ -300,8 +300,16 @@ function AtomEditorFields({
   const [open, setOpen] = useState(editor.instance === "atom");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("ready");
   return (
-    <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <ProjectAtomFields request={request}
+    <div className="v3-project-context-editor" data-editor-presentation="popover"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        event.currentTarget.querySelector<HTMLButtonElement>('[data-slot="atom-node-selector-trigger"]')?.focus();
+      }}
+    >
+      <ProjectAtomFields request={request} presentation="inline"
         selectorOpen={open} onSelectorOpenChange={setOpen} onSelectorStatusChange={setStatus}
         value={editor}
         disabled={pending}

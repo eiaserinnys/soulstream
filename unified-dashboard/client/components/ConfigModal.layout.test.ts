@@ -124,7 +124,10 @@ describe("ConfigModal layout", () => {
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      const body = url === '/api/access-links' ? [] : url === '/api/persistent-sessions' ? { sessions: [] } : url.includes("session-review-policy")
+      const body = url === '/api/access-links' ? [] : url === '/api/persistent-sessions' ? { sessions: [] }
+        : url === '/api/webhooks/inbound' ? []
+        : url === '/api/webhooks/outbound' ? { subscriptions: [] }
+        : url.includes("session-review-policy")
         ? {
             policy: {
               key: "session_review_policy",
@@ -194,6 +197,20 @@ describe("ConfigModal layout", () => {
     expect(names.slice(0, 3)).toEqual(['화면과 읽기', '내 에이전트', '접속 링크']);
     clickConfigTab('접속 링크');
     await settleConfigModal();
+    expect(document.body.textContent).toContain('각 항목의 버튼으로 변경을 적용합니다');
+    expect(document.querySelector('[data-testid="config-save-button"]')).toBeNull();
+  });
+
+  it("places webhooks right after access links in personal settings and uses the action footer", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+    const personal = document.querySelector('[data-testid="config-category-nav"] section')!;
+    const names = [...personal.querySelectorAll('button')].map(button => button.textContent);
+    expect(names.slice(0, 4)).toEqual(['화면과 읽기', '내 에이전트', '접속 링크', '웹훅']);
+    clickConfigTab('웹훅');
+    await settleConfigModal();
+    expect(document.body.textContent).toContain('들어오는 웹훅');
+    expect(document.body.textContent).toContain('나가는 웹훅');
     expect(document.body.textContent).toContain('각 항목의 버튼으로 변경을 적용합니다');
     expect(document.querySelector('[data-testid="config-save-button"]')).toBeNull();
   });

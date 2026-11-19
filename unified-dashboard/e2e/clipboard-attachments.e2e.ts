@@ -78,7 +78,7 @@ for (const width of [1440, 390]) {
     await expect(preview).toBeVisible();
     const selectedBounds = await preview.boundingBox();
     await capture(page, `main-selected-${width}`);
-    await composer.getByRole("button", { name: "Remove file", exact: true }).click();
+    await preview.locator("..").getByRole("button", { name: "첨부 제거", exact: true }).click();
     await expect(preview).toHaveCount(0); await paste(input);
     await expect(preview).toBeVisible();
     expect(await preview.boundingBox()).toEqual(selectedBounds);

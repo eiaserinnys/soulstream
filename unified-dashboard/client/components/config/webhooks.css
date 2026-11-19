@@ -1,0 +1,42 @@
+/* 설정 창 「웹훅」 탭. 새 부품 없이 접속 링크와 soul-ui 부품을 쓰고, 여기에는 배치와 실패 글자 색만 둔다. */
+.owned-agents.webhooks { display:flex; flex-direction:column; gap:var(--v3-space-8); }
+.webhooks-section { display:flex; flex-direction:column; gap:var(--v3-space-4); min-width:0; }
+.webhooks [role="status"], .webhooks-dialog [role="status"] { display:flex; flex-direction:column; gap:var(--v3-space-4); }
+.webhooks .config-advanced .owned-agents-block + .owned-agents-block { margin-top:var(--v3-space-4); }
+
+/* 행 전체가 상세를 여는 단추다. 음수 바깥 여백만큼 양쪽으로 늘어나 올림 바탕과
+   초점 고리만 글 상자 밖으로 나간다. width:100% 를 더하면 왼쪽으로만 밀린다. */
+.webhooks-row { display:flex; align-items:center; justify-content:space-between; gap:var(--v3-space-2); min-width:0; text-align:left; border-radius:var(--radius-md); margin:calc(-1 * var(--v3-space-1)) calc(-1 * var(--v3-space-2)); padding:var(--v3-space-1) var(--v3-space-2); }
+.webhooks-row:hover { background:var(--muted); }
+.webhooks-row:focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); }
+.webhooks-row-copy { display:flex; flex-direction:column; flex:1; min-width:0; }
+.webhooks-row-copy > .access-links-label { display:block; }
+.webhooks-chevron { flex-shrink:0; color:var(--muted-foreground); }
+
+/* 작은 실패 글자. 접속 링크 탭의 --destructive 는 고치지 않는다(기준본 「시안과 다르게 정한 곳」 2). */
+.webhooks-danger { color:var(--destructive-foreground); }
+
+/* 창은 body 포털로 떠 .webhooks/.owned-agents 뿌리 밖이다. 창 뿌리에 본문 글꼴을
+   걸면 soul-ui 기본(400)인 창 설명과 칸 이름까지 450 으로 덮으므로, 본문 글꼴이
+   필요했던 값 행, 기록 목록, 빈 글에만 건다(화면별 px 보정을 두지 않는다). */
+.webhooks-dialog .webhooks-values,
+.webhooks-dialog .webhooks-records,
+.webhooks-dialog .access-links-empty { font:var(--v3-type-body) var(--v3-font-family); }
+.webhooks-dialog .owned-agents-meta { color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); }
+.webhooks-dialog .webhooks-value > .owned-agents-meta { font:var(--v3-type-body) var(--v3-font-family); }
+.webhooks-dialog p.webhooks-danger:not(.webhooks-record-title) { font:var(--v3-type-meta) var(--v3-font-family); }
+.webhooks-dialog .access-links-form small[role="alert"] { color:var(--destructive-foreground); }
+.webhooks-dialog :is(.webhooks-danger, .access-links-hint) { word-break:keep-all; overflow-wrap:anywhere; }
+
+/* 창 안 값 행과 기록 */
+.webhooks-values { display:flex; flex-direction:column; gap:var(--v3-space-4); }
+.webhooks-value { display:flex; flex-direction:column; gap:var(--v3-space-1); }
+.webhooks-records { display:flex; flex-direction:column; gap:var(--v3-space-4); margin-top:var(--v3-space-6); }
+.webhooks-records-head { flex:1; min-width:0; margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
+.webhooks-record-title { display:flex; flex-wrap:wrap; align-items:baseline; column-gap:var(--v3-space-3); margin:0; font:var(--v3-type-body) var(--v3-font-family); font-weight:500; }
+.webhooks-record-title > span { color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); font-weight:500; }
+.webhooks-record-title > span.webhooks-danger { color:var(--destructive-foreground); }
+.webhooks-request-id { display:block; flex:1 1 8rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.webhooks-filter-row { display:flex; align-items:center; justify-content:space-between; gap:var(--v3-space-2); }
+.webhooks-switch { display:flex; flex-direction:column; gap:var(--v3-space-1); }
+.webhooks-switch-name { flex:1; min-width:0; margin:0; font:var(--v3-type-body) var(--v3-font-family); font-weight:500; }

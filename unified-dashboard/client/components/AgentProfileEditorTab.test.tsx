@@ -182,11 +182,15 @@ describe("AgentProfileEditorTab", () => {
       expect(document.body.querySelector('[role="status"]')?.textContent).toContain("프로필을 저장했습니다.");
     });
     expect(requests).toContain("PUT /api/agent-profiles/seosoyoung/portrait");
-    expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
-      .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
-    expect(profileButton("서소영").querySelector("img")?.getAttribute("src"))
-      .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:selected-portrait");
+    // 미리보기 URL 해제와 img src 교체는 저장 뒤 passive effect에서 일어난다.
+    // 상태 문구가 먼저 보일 수 있으므로 effect가 반영될 때까지 기다린다.
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="agent-profile-editor"] img')?.getAttribute("src"))
+        .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+      expect(profileButton("서소영").querySelector("img")?.getAttribute("src"))
+        .toBe("/api/agent-profiles/seosoyoung/portrait?v=new-sha");
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:selected-portrait");
+    });
   });
 
   it("explains where context bundles are edited and how they are used", async () => {

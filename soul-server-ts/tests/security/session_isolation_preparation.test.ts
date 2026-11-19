@@ -23,6 +23,7 @@ import {
   clearEnvMaskScanCache,
   ENV_MASK_SCAN_CACHE_TTL_MS,
   type IsolationEnvMaskScan,
+  scanEnvMaskRoots,
 } from "../../src/runner/session_filesystem_masks.js";
 import { prepareIsolationPlan } from "../../src/runner/session_filesystem_plan.js";
 import { isolationChildConfigFromPlan } from
@@ -849,6 +850,33 @@ describe("prepareIsolationPlan", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("waits on one in-flight scan when two scans of the same root overlap", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const workspaceRoot = await fixture.ports.resolveRealPath(fixture.workspace);
+    touch(fixture.root, join(fixture.workspace, ".projects", "one", ".env"), "A=1", 0o600);
+
+    const listings: string[] = [];
+    const listDirectorySync = fixture.ports.listDirectorySync.bind(fixture.ports);
+    fixture.ports.listDirectorySync = (path) => {
+      listings.push(path);
+      return listDirectorySync(path);
+    };
+
+    const [first, second] = await Promise.all([
+      scanEnvMaskRoots([workspaceRoot], fixture.ports, []),
+      scanEnvMaskRoots([workspaceRoot], fixture.ports, []),
+    ]);
+
+    // 같은 뿌리를 동시에 훑어도 디렉터리 나열은 한 번이고, 두 요청은 그 결과를
+    // 나눠 쓴다. 함께 기다린 요청은 캐시에서 되쓴 것이 아니므로 miss로 센다.
+    expect(listings.filter((path) => path === workspaceRoot)).toHaveLength(1);
+    expect(first).toMatchObject({ cacheHits: 0, cacheMisses: 1 });
+    expect(second).toMatchObject({ cacheHits: 0, cacheMisses: 1 });
+    expect(second.files).toBe(first.files);
+    expect(second.rootScans).toEqual(first.rootScans);
   });
 
   it("applies session-specific write paths to the cached scan list", async () => {

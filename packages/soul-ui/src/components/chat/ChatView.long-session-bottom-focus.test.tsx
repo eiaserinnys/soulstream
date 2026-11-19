@@ -912,6 +912,40 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(virtuosoMock.scrollToIndex).not.toHaveBeenCalled();
   });
 
+  it("맨 위에서 휠 입력 뒤 연속 prepend가 오면 보이는 행의 위치를 유지한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView());
+    const { scroller } = configureScroller(container, { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+    const original = setFirstVisibleDataIndex(0);
+    const marker = scroller.querySelector<HTMLElement>(`[data-chat-item-key="${original.key}"]`)!;
+    const visibleRow = marker.firstElementChild as HTMLElement;
+    let insertedHeight = 0;
+    visibleRow.getBoundingClientRect = () => {
+      const top = 100 + insertedHeight - scroller.scrollTop;
+      return { x: 0, y: top, top, bottom: top + 40, left: 0, right: 320, width: 320, height: 40, toJSON: () => ({}) };
+    };
+
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    flushSync(() => scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })));
+    flushSync(() => useDashboardStore.getState().processHistoryEvents([makeUserMessage(900)]));
+    flushSync(() => scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })));
+    flushSync(() => useDashboardStore.getState().processHistoryEvents([makeUserMessage(800)]));
+    insertedHeight = 80;
+    while (frames.size > 0) {
+      const [id, callback] = frames.entries().next().value!;
+      frames.delete(id);
+      callback(0);
+    }
+
+    expect(scroller.scrollTop).toBe(80);
+  });
+
   it("follow-off에서 first visible 앞의 live 과거 summary를 anchor stable row 안에 결합한다", async () => {
     useDashboardStore.getState().processHistoryEvents([
       makeAssistantMessage(1000),
@@ -1380,7 +1414,7 @@ describe("ChatView long-session initial bottom focus", () => {
     ({ container, root } = await renderChatView());
 
     expect(container.querySelector('[data-testid="virtuoso"]')).toBeNull();
-    expect(container.textContent).toContain("Waiting for events...");
+    expect(container.textContent).toContain("대화를 기다리는 중");
     expect(virtuosoMock.notifyViewportGeometry).toHaveBeenCalled();
   });
 

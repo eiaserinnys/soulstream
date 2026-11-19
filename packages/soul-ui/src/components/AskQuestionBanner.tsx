@@ -103,7 +103,7 @@ function AttentionDetailBanner({
       data-testid="attention-detail-banner"
       className={PROMPT_BANNER_FRAME_CLASS}
     >
-      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Attention</div>
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">확인 필요</div>
       <div className="font-medium text-foreground">{attention.title}</div>
       <div className="text-xs text-muted-foreground">{attention.body}</div>
       <div className="flex justify-end">
@@ -164,7 +164,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
       data-testid="tool-approval-banner"
       className={PROMPT_BANNER_FRAME_CLASS}
     >
-      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Approval</div>
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">도구 승인</div>
       <div className="font-medium text-foreground">{node.toolName}</div>
       {node.agentName && (
         <div className="text-xs text-muted-foreground">{node.agentName}</div>
@@ -253,7 +253,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
         <div className="text-center text-muted-foreground">시간 초과</div>
       ) : (
         <>
-          <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Question</div>
+          <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">질문</div>
           {question.header && (
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {question.header}

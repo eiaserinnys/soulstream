@@ -1,3 +1,8 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,8 +12,10 @@ import {
   createPersistentInstructionExtractor,
   PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA,
 } from "../src/turn-summary/persistent_instruction_extractor.js";
-import type { TurnSummaryConfig } from
-  "../src/turn-summary/turn_summary_config.js";
+import {
+  TurnSummaryConfigService,
+  type TurnSummaryConfig,
+} from "../src/turn-summary/turn_summary_config.js";
 
 const CONFIG: TurnSummaryConfig = {
   enabled: true,
@@ -24,6 +31,8 @@ const CONFIG: TurnSummaryConfig = {
   model: "gpt-5.6-luna",
   storyModel: "gpt-5.6-luna",
   reasoningEffort: "high",
+  instructionExtractionModel: "gpt-6.2-sol",
+  instructionExtractionReasoningEffort: "high",
   timeoutMs: 30_000,
   maxAttempts: 2,
   codexConcurrencyLimit: 2,
@@ -146,8 +155,8 @@ describe("persistent instruction extraction", () => {
     if (expectedCalls === 1) {
       const [, solConfig, options] = generate.mock.calls[0] ?? [];
       expect(solConfig).toMatchObject({
-        model: "gpt-6.2-sol",
-        reasoningEffort: "high",
+        model: CONFIG.instructionExtractionModel,
+        reasoningEffort: CONFIG.instructionExtractionReasoningEffort,
         timeoutMs: CONFIG.timeoutMs,
         codexConcurrencyLimit: CONFIG.codexConcurrencyLimit,
       });
@@ -160,6 +169,67 @@ describe("persistent instruction extraction", () => {
       );
       expect(String(generate.mock.calls[0]?.[0])).not.toContain(CONFIG.instruction);
       expect(String(generate.mock.calls[0]?.[0])).not.toContain(CONFIG.storyInstruction);
+    }
+  });
+
+  it("takes the extraction model from the merged config and follows a local overlay", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instruction-extractor-config-"));
+    try {
+      const baseYaml = readFileSync(
+        fileURLToPath(new URL("../config/turn-summary.yaml", import.meta.url)),
+        "utf8",
+      );
+      const basePath = join(dir, "turn-summary.yaml");
+      const overlayPath = join(dir, "turn-summary.local.yaml");
+      writeFileSync(basePath, baseYaml, "utf8");
+      writeFileSync(overlayPath, "enabled: true\n", "utf8");
+      const service = new TurnSummaryConfigService(basePath, { warn: vi.fn() });
+      const generate = vi.fn().mockResolvedValue({
+        content: JSON.stringify({ standing_instructions: [] }),
+        model: "gpt-6.2-sol",
+        latencyMs: 1,
+        attempts: 1,
+      });
+      const extractor = createPersistentInstructionExtractor({
+        apiKey: "test-typesafe-key",
+        fetchImpl: async () => new Response(JSON.stringify({
+          answers: { long_term_correction: { noul: 0.8 } },
+        }), { status: 200 }),
+        generate,
+      });
+      const input = {
+        userText: "앞으로는 먼저 근거를 확인해 줘.",
+        activeInstructions: [],
+      };
+
+      const baseConfig = service.read();
+      expect(baseConfig.model).toBe("gpt-5.6-terra");
+      expect(baseConfig.reasoningEffort).toBe("high");
+      await extractor.extract(input, baseConfig);
+      expect(generate.mock.calls[0]?.[1]).toMatchObject({
+        model: "gpt-6.2-sol",
+        reasoningEffort: "high",
+      });
+
+      writeFileSync(
+        overlayPath,
+        [
+          "instruction_extraction_model: gpt-6.3-nova",
+          "instruction_extraction_reasoning_effort: medium",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const overriddenConfig = service.read();
+      expect(overriddenConfig.model).toBe("gpt-5.6-terra");
+      expect(overriddenConfig.reasoningEffort).toBe("high");
+      await extractor.extract(input, overriddenConfig);
+      expect(generate.mock.calls[1]?.[1]).toMatchObject({
+        model: "gpt-6.3-nova",
+        reasoningEffort: "medium",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

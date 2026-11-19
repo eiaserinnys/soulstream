@@ -16,6 +16,8 @@ import { formatCardDecisionRejection } from '../src/cards/state/card_decision_er
 import type { CardCommand } from '../src/cards/state/card_decision_facts.js';
 import type { DecisionObservation } from './card-decision-observation.js';
 import { resolveCardQuestionAnswer } from '../src/cards/card_question_rules.js';
+// 녹화된 표본은 이 설치 기본값으로 판정됐다. 운영 조립도 같은 값을 판정 입력으로 넘긴다.
+const DEFAULT_EXECUTION_NODE_ID='eiaserinnys';
 const METHODS:Record<string,CardCommand['type']>={createCardTx:'CREATE',addCommentTx:'ADD_COMMENT',createCard:'CREATE',setCardStatus:'SET_STATUS',requestCardReview:'REQUEST_REVIEW',resumeBlockedCardOnHumanInput:'HUMAN_INPUT',askQuestion:'ASK_QUESTION',answerQuestion:'ANSWER_QUESTION',withdrawQuestion:'WITHDRAW_QUESTION',addComment:'ADD_COMMENT',startCardWork:'START_WORK',recordExecution:'CONFIRM_EXECUTION',recordDispatch:'DISPATCH',blockCardForLimit:'BLOCK_FOR_LIMIT',resumeLimitedCard:'RESUME_SHORT_LIMIT',resumeDispatchedCard:'RESUME_LONG_LIMIT',resumeVerificationCard:'RESUME_VERIFICATION',noteMissingAssignee:'NOTE_MISSING',bulkSetCardStatus:'BULK_SET_STATUS',mergeCards:'MERGE_SOURCE',patchCard:'PATCH_CARD_CONTROL',updateUnstartedCard:'UPDATE_UNSTARTED',saveExecutionSettings:'SAVE_EXECUTION_SETTINGS'};
 /** Reconstruct SQL boundary results from their recorded rows. This adapter never
  * reads observed after or result to select an outcome or any write. */
@@ -32,7 +34,8 @@ export function predictObservation(r:DecisionObservation) {
   ...humanCardEvidence(r.evidence.claimableSessions as {session_id:string}[],actor.sessionId,reads.userInputAfterLastReply),
   ...serverCardEvidence({rows:reads as ServerEvidenceRows,card:row??{},command:c,actorSessionId:actor.sessionId,checkedAt:r.checkedAt,
    requests:r.evidence.executionRequests as {state:string}[],dispatches:r.evidence.dispatches as any[],
-   claimCandidates:r.evidence.claimableSessions as {session_id:string}[],resumeAt:r.evidence.limitAutoResumeAt?new Date(String(r.evidence.limitAutoResumeAt)):null}),
+   claimCandidates:r.evidence.claimableSessions as {session_id:string}[],resumeAt:r.evidence.limitAutoResumeAt?new Date(String(r.evidence.limitAutoResumeAt)):null,
+   defaultNodeId:DEFAULT_EXECUTION_NODE_ID}),
  };
  if(c.type in CARD_REMAINING_EVIDENCE_STAGES)Object.assign(evidence,remainingCardEvidence({
   loaded:CARD_REMAINING_EVIDENCE_STAGES[c.type as keyof typeof CARD_REMAINING_EVIDENCE_STAGES],

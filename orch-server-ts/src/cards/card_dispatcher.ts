@@ -51,6 +51,8 @@ export type CardDispatcherOptions = {
     deliveryExists: (deliveryId: string) => Promise<boolean>;
     abandonDelivery: (deliveryId: string, reason: string) => Promise<void>;
     notify: (input: CardNotification) => Promise<unknown>;
+    /** Node for a card that names none; injected by the card runtime assembly. */
+    defaultNodeId: string;
     warn: (message: string) => void;
     now?: () => number;
     isNodeConnected?: (nodeId: string) => boolean;
@@ -273,7 +275,7 @@ export class CardDispatcher {
     private async notify(card: CardRow, kind: "question" | "review", question?: string): Promise<void> {
         try {
             const session = await this.options.repository.latestSession(card.id);
-            await this.options.notify({ nodeId: session?.node_id ?? card.node_id ?? "eiaserinnys", cardId: card.id, folderId: card.folder_id, title: card.title, kind,
+            await this.options.notify({ nodeId: session?.node_id ?? card.node_id ?? this.options.defaultNodeId, cardId: card.id, folderId: card.folder_id, title: card.title, kind,
                 ...(question === undefined ? {} : { question }) });
         } catch (error) {
             this.options.warn(`card ${card.id} notification failed: ${String(error)}`);

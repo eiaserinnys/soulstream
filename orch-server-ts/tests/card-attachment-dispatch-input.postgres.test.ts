@@ -60,7 +60,7 @@ describe("card attachment dispatch input", () => {
       }
       return { type: "ack", status: "ok" };
     });
-    runtime = await createCardDispatchRuntime({
+    runtime = await createCardDispatchRuntime({ defaultExecutionNodeId:"eiaserinnys",
       sqlResolver: { resolveSql: async () => h.liveSql, close: async () => undefined },
       router: {
         selectNodeForCreate: ({ nodeId, profileId, modelPresetId }: { nodeId: string; profileId: string; modelPresetId?: string }) => ({

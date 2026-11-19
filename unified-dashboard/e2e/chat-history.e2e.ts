@@ -69,9 +69,10 @@ async function setup(page: Page, pages: HistoryPage[], options: { holdOlder?: bo
   });
   await page.goto("/?session=run-alpha-1");
   const root = page.locator('[data-slot="chat-root"]').filter({ visible: true });
-  await expect(root).toBeVisible();
+  await expect(root).toBeVisible({ timeout: 30_000 });
   const scroller = root.locator('[data-virtuoso-scroller="true"]');
   await expect(scroller).toBeVisible();
+  await expect(scroller.locator("[data-chat-item-key]").first()).toBeAttached({ timeout: 30_000 });
   await expect.poll(() => scroller.evaluate(el => el.scrollHeight)).toBeGreaterThan(0);
   await page.waitForTimeout(700);
   return { root, scroller, cursors, maxConcurrent: () => maxConcurrent,

@@ -15,6 +15,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query).
 - `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
+- `DEFAULT_EXECUTION_NODE_ID`: node that runs cards, conversations, and persistent sessions that name no node (empty uses the built-in central default, `eiaserinnys`). It is separate from `NODE_NAME`, which only labels the external MCP ingress caller.
 
 Board and attachment Cloudflare R2 storage settings are managed in the central PostgreSQL database admin settings rather than environment variables.
 

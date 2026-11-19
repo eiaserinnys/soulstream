@@ -49,7 +49,8 @@ export function workAdmissionMatches(card:Pick<EvidenceCard,'assignee_kind'|'ass
 
 /** One pure constructor for runtime fence results and frozen-row replay. No state permissions live here. */
 export function serverCardEvidence(input:ServerFenceEvidence|{rows:ServerEvidenceRows;card:EvidenceCard;command:ServerEvidenceCommand;
- actorSessionId:string|null;checkedAt:number;dispatches:EvidenceDispatch[];requests:{state:string}[];claimCandidates:{session_id:string}[];resumeAt:Date|null}):CardDecisionEvidence {
+ actorSessionId:string|null;checkedAt:number;dispatches:EvidenceDispatch[];requests:{state:string}[];claimCandidates:{session_id:string}[];
+ resumeAt:Date|null;defaultNodeId:string}):CardDecisionEvidence {
  if('rows' in input){
   const {rows:r,card:c,command:q,actorSessionId:s,checkedAt}=input;
   const worker=r.sessions.find(w=>w.session_id===s),owner=r.sessions.find(w=>w.session_id===c.assignee_session_id);
@@ -74,7 +75,7 @@ export function serverCardEvidence(input:ServerFenceEvidence|{rows:ServerEvidenc
    else{
     outcome=admissionCapacityResult(r.dispatchPolicy?.value.nodeConcurrency?.[q.nodeId!]??r.dispatchPolicy?.value.nodeConcurrency?.default,r.capacitySessions,q.sessionId!,q.nodeId!);
     const folder=r.folders.find(f=>f.id===c.folder_id),a=admission.workerInput;
-    const eligible=!c.archived&&!folder?.archived&&(c.assignee_kind==='agent'&&c.assignee_agent_id===a.agentId&&(c.node_id??'eiaserinnys')===q.nodeId&&c.model_preset===(a.configuredModelPreset??null)
+    const eligible=!c.archived&&!folder?.archived&&(c.assignee_kind==='agent'&&c.assignee_agent_id===a.agentId&&(c.node_id??input.defaultNodeId)===q.nodeId&&c.model_preset===(a.configuredModelPreset??null)
      ||c.assignee_kind==='session'&&!!owner&&owner.session_id===q.sessionId&&owner.node_id===q.nodeId&&owner.agent_id===a.agentId&&owner.model_preset===(a.modelPreset??null));
     if(outcome==='ok'&&!eligible)outcome='ineligible';
    }

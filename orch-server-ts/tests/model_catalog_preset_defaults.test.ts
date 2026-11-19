@@ -118,7 +118,7 @@ function settingsService(
     usage_provider: "claude" as const,
     default_effort: "high" as const,
   }));
-  const service = new PersistentSessionSettingsService({
+  const service = new PersistentSessionSettingsService({ defaultExecutionNodeId:"eiaserinnys",
     reads: async () => ({
       getSession: async () => row as never,
       listPersistentSessions: async () => [row] as never,

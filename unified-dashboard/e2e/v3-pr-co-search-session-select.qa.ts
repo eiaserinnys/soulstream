@@ -66,7 +66,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await preparePage(page, theme);
     await openV3Folder(page, baseUrl);
 
-    await page.getByRole("button", { name: "Open session search" }).click();
+    await page.getByRole("button", { name: "세션 검색 열기" }).click();
     await selectSearchResult(page, firstTarget.query, firstTarget.preview);
     const firstChat = visibleChat(page);
     await firstChat.getByText(firstTarget.title, { exact: true }).waitFor({ state: "visible" });

@@ -27,6 +27,11 @@ type ConversationCatalogOptions = {
 export class ConversationCatalog {
   constructor(private readonly options: ConversationCatalogOptions) {}
 
+  /** The orchestrator's default execution node, injected at the assembly point. */
+  get defaultNodeId(): string {
+    return this.options.defaultNodeId;
+  }
+
   async models(profile?: string): Promise<ConversationModelReply> {
     const nodes = this.orderedNodes();
     const profileSets = profile === undefined

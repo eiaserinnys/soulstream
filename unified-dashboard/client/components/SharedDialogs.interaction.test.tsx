@@ -57,10 +57,21 @@ it("keeps a small folder draft after failure and guards pending submit/close", a
   await act(async () => pending.reject(new Error("HTTP 503")));
   expect(name.value).toBe("보존할 폴더");
   expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  expect(document.querySelector('[data-slot="dialog-error-detail"]')?.textContent).toBe("HTTP 503");
+  expect(document.querySelector<HTMLDetailsElement>('[role="alert"] details')?.open).toBe(false);
   await click("만들기");
   expect(confirm).toHaveBeenCalledTimes(2);
   // Parent owns the successful close and board position update.
   expect(close).not.toHaveBeenCalled();
+});
+
+it.each(["", "   ", "폴더를 만들지 못했습니다. 이름과 연결 상태를 확인한 뒤 다시 시도하세요."])("keeps the folder summary without empty or duplicate details: %j", async (error) => {
+  await render(<FolderDialog mode="create" open onOpenChange={vi.fn()} onConfirm={vi.fn().mockRejectedValue(new Error(error))} />);
+  const name = document.querySelector<HTMLInputElement>('input[placeholder="폴더 이름"]')!;
+  await input(name, "폴더");
+  await click("만들기");
+  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  expect(document.querySelector('[role="alert"] details')).toBeNull();
 });
 
 it("keeps user form errors inside the dialog and refreshes only after one successful save", async () => {
@@ -94,18 +105,22 @@ it("keeps user form errors inside the dialog and refreshes only after one succes
   expect(request.mock.calls.filter(([, init]) => !init?.method)).toHaveLength(2);
 });
 
-it("never mounts raw secrets in a session error, whether details are open or closed", async () => {
-  const secrets = ["auth-secret", "cookie-secret", "password-secret", "token-secret", "key-secret", "url-user", "url-pass", "query-secret"];
+it("shows the original session error in initially closed details", async () => {
   const error = 'HTTP 403\nAuthorization: Bearer auth-secret\nCookie: sid=cookie-secret\npassword="password-secret" token=token-secret api_key=key-secret\nhttps://url-user:url-pass@example.test/?secret=query-secret';
   const onClose = vi.fn();
   await render(<SessionContinueErrorDialog error={error} onClose={onClose} />);
   const details = document.querySelector("details")!;
   expect(details).not.toBeNull();
   expect(details.open).toBe(false);
-  for (let i = 0; i < 3; i++) {
-    await act(async () => details.querySelector("summary")!.click());
-    for (const secret of secrets) expect(document.body.innerHTML).not.toContain(secret);
-  }
-  expect(document.body.textContent).toContain("403");
+  await act(async () => details.querySelector("summary")!.click());
+  expect(details.open).toBe(true);
+  expect(details.querySelector("pre")?.textContent).toBe(error);
+  expect(details.textContent).not.toContain("민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.");
   expect(onClose).not.toHaveBeenCalled();
+});
+
+it.each(["", "   ", "세션을 이어서 시작하지 못했습니다."])("omits duplicate or empty session details: %j", async (error) => {
+  await render(<SessionContinueErrorDialog error={error} onClose={vi.fn()} />);
+  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  expect(document.querySelector('[role="alert"] details')).toBeNull();
 });
