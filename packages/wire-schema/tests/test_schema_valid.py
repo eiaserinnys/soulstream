@@ -374,6 +374,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthLoginStatus",
         "ClaudeAuthLoginSubmitCode",
         "ClaudeAuthLoginCancel",
+        "ClaudeCentralPoolSync",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",
@@ -397,7 +398,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 94
+    assert len(wire_types) == 95
 
     sse_types = {
         "SSEEventInit",
@@ -813,6 +814,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthLoginStatus",
         "ClaudeAuthLoginSubmitCode",
         "ClaudeAuthLoginCancel",
+        "ClaudeCentralPoolSync",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",
