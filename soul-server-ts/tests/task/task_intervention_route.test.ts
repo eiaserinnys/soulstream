@@ -6,7 +6,12 @@ import {
   TaskInterventionRoute,
   type TaskInterventionRouteDeps,
 } from "../../src/task/task_intervention_route.js";
-import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import {
+  AutoResumeTransition,
+  prepareTaskForAutoResume,
+} from "../../src/task/task_auto_resume_transition.js";
+import { ExecutionAdmissionInFlightError } from
+  "../../src/task/execution_admission_errors.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type {
@@ -1658,5 +1663,109 @@ describe("TaskInterventionRoute previous-turn system abort notice", () => {
     const message = vi.mocked(runningInterventionTransition.deliver).mock.calls[0]?.[1];
     expect(noticeItems(message)).toHaveLength(0);
     expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("reports a competing execution admission as queued instead of failed", async () => {
+    const task = makeTask({
+      status: "completed",
+      terminalEventId: 7,
+      terminationEventRecorded: true,
+    });
+    const { route, autoResumeTransition } = makeSubject([task], undefined, {
+      resumeQueuedAfterStop: vi.fn(async () => false),
+    });
+    vi.mocked(autoResumeTransition.resume).mockImplementation(async (
+      resumedTask,
+      message,
+      onResume,
+    ) => {
+      prepareTaskForAutoResume(resumedTask, message, "initializing");
+      try {
+        onResume(resumedTask);
+        return { autoResumed: true };
+      } catch (error) {
+        resumedTask.status = "completed";
+        throw error;
+      }
+    });
+    const competingExecution = deferred<void>();
+    task.executionPromise = competingExecution.promise;
+    const onResume = vi.fn(() => {
+      throw new ExecutionAdmissionInFlightError(task.agentSessionId);
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "delivery that raced an execution admission",
+      user: "alice",
+    }, onResume)).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "execution_admission_in_flight",
+    });
+    expect(onResume).toHaveBeenCalledOnce();
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]?.text).toBe(
+      "delivery that raced an execution admission",
+    );
+    competingExecution.resolve();
+  });
+
+  it("re-drives the queued message when the competing execution ends without a terminal event", async () => {
+    const task = makeTask({
+      status: "completed",
+      profileId: "codex-default",
+      terminalEventId: 7,
+      terminationEventRecorded: true,
+      terminationReason: "completed_ok",
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: pino({ level: "silent" }),
+      persistence: persistenceDouble.persistence,
+    });
+    const tasks = new Map([[task.agentSessionId, task]]);
+    const route = new TaskInterventionRoute({
+      getTask: (sessionId) => tasks.get(sessionId),
+      loadEvictedTask: async () => null,
+      rememberTask: (remembered) => {
+        tasks.set(remembered.agentSessionId, remembered);
+      },
+      runningInterventionTransition: {
+        deliver: vi.fn(),
+        queueOnly: vi.fn(),
+      } as unknown as TaskInterventionRouteDeps["runningInterventionTransition"],
+      autoResumeTransition: transition,
+      resumeQueuedAfterStop: (queuedTask, onResume) =>
+        transition.resumeQueuedAfterTerminal(queuedTask, onResume),
+    });
+    const competingExecution = deferred<void>();
+    let resumeCalls = 0;
+    const onResume = vi.fn(() => {
+      resumeCalls += 1;
+      if (resumeCalls === 1) {
+        task.executionPromise = competingExecution.promise;
+        throw new ExecutionAdmissionInFlightError(task.agentSessionId);
+      }
+    });
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "queued across the admission race",
+      user: "alice",
+    }, onResume)).resolves.toMatchObject({
+      queued: true,
+      consumeWhen: "next_turn",
+      reason: "execution_admission_in_flight",
+    });
+    expect(task.interventionQueue).toHaveLength(1);
+
+    competingExecution.resolve();
+    task.executionPromise = undefined;
+    await vi.waitFor(() => expect(onResume).toHaveBeenCalledTimes(2));
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]?.text).toBe("queued across the admission race");
   });
 });

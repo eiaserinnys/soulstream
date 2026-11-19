@@ -129,7 +129,11 @@ export type InterveneAck =
       delivered: false;
       queuePosition: number;
       consumeWhen: "next_turn";
-      reason: EngineInterventionFailureReason | "queue_only_policy" | "verdict_unknown";
+      reason:
+        | EngineInterventionFailureReason
+        | "queue_only_policy"
+        | "verdict_unknown"
+        | "execution_admission_in_flight";
     }
   | {
       type: "intervene_ack";

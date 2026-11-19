@@ -98,6 +98,22 @@ export function enqueueInterventionOnce(
   return task.interventionQueue.indexOf(message) + 1;
 }
 
+/**
+ * 같은 지시가 지금 큐에 있으면 1부터 세는 자리를, 없으면 null을 돌려준다.
+ * enqueueInterventionOnce와 같은 신원(deliveryId, 러너 지시 번호, 객체)으로 찾는다.
+ */
+export function interventionQueuePosition(
+  task: Task,
+  message: InterventionMessage,
+): number | null {
+  const index = task.interventionQueue.findIndex((queued) =>
+    queued === message
+    || (message.deliveryId !== undefined && queued.deliveryId === message.deliveryId)
+    || (message.runnerInterventionId !== undefined
+      && queued.runnerInterventionId === message.runnerInterventionId));
+  return index >= 0 ? index + 1 : null;
+}
+
 /** Removes exactly the message that owned a failed admission, keeping other input. */
 export function removeInterventionMessage(
   task: Task,

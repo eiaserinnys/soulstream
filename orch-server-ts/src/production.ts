@@ -1819,6 +1819,8 @@ export function buildProductionRouteOptions(
       repositoryProvider: persistenceRepositoryProvider,
       authBearerToken: config.authBearerToken,
       nodeCredentials,
+      nodeConnectedAtMs: (nodeId) =>
+        runtime.registry.getConnectedNode(nodeId)?.connectedAtMs,
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,

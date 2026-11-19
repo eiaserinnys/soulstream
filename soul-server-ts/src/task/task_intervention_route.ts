@@ -28,6 +28,8 @@ import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import { restartQueuedAfterStop, stopEndOf } from "./task_stopping_intervention.js";
+import { interventionQueuePosition } from "./task_intervention_queue.js";
+import { ExecutionAdmissionInFlightError } from "./execution_admission_errors.js";
 import {
   appendSystemAbortNotice,
   type PreviousSessionTermination,
@@ -54,7 +56,18 @@ export type AddInterventionResult =
   | RunningInterventionResult
   | { delivered: true; reason: string }
   | { autoResumed: true }
-  | { suppressed: true; deliveryId: string; reason: string };
+  | { suppressed: true; deliveryId: string; reason: string }
+  /**
+   * 실행 접수 경합. 시동은 거절됐지만 메시지는 이미 노드 큐에 올라갔으므로
+   * 호출자는 실패로 알고 다시 보내면 안 된다(카드 #1745).
+   */
+  | {
+      delivered: false;
+      queued: true;
+      queuePosition: number;
+      consumeWhen: "next_turn";
+      reason: "execution_admission_in_flight";
+    };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
 export interface AddInterventionParams {
@@ -402,6 +415,32 @@ export class TaskInterventionRoute {
       }
       return result;
     } catch (err) {
+      if (err instanceof ExecutionAdmissionInFlightError) {
+        const queuePosition = interventionQueuePosition(task, message);
+        if (queuePosition !== null) {
+          const competingSettlement = settleAdmissionConflict(
+            task.executionPromise,
+            task.executionActivation,
+          );
+          // The instruction is already in the node queue. The caller saw a
+          // failure only because a competing execution held the admission;
+          // reporting it as queued stops the caller from resending it and
+          // producing a second turn. The competing execution's end (or its
+          // terminal event) re-drives this queue through the same paths the
+          // stop and terminal drains use.
+          void restartQueuedAfterStop(task, competingSettlement, onResume, {
+            ...this.deps,
+            ensuring: (sessionId) => this.ensuring.has(sessionId),
+          });
+          return {
+            delivered: false,
+            queued: true,
+            queuePosition,
+            consumeWhen: "next_turn",
+            reason: "execution_admission_in_flight",
+          };
+        }
+      }
       let recoveryError: unknown;
       if (!deferredResumeStarted && deferredResume) {
         deferredResume = undefined;
@@ -483,6 +522,22 @@ function hasPriorDispatchAttempt(row: SessionDeliveryRow): boolean {
   return row.attempt_count > 0
     || Boolean(row.dispatching_at)
     || Boolean(row.queued_at);
+}
+
+/**
+ * 경합 상대 실행과 활성이 끝나기를 기다린다. 실패는 삼킨다. 이 기다림은 큐를
+ * 다시 띄울 시점을 정할 뿐이고, 상대의 실패는 그 실행의 길이 이미 다룬다.
+ */
+function settleAdmissionConflict(
+  execution: Task["executionPromise"],
+  activation: Task["executionActivation"],
+): Promise<void> {
+  const settle = (promise: Promise<unknown> | undefined): Promise<void> =>
+    promise === undefined
+      ? Promise.resolve()
+      : promise.then(() => undefined, () => undefined);
+  return Promise.all([settle(execution), settle(activation?.promise)])
+    .then(() => undefined);
 }
 
 function interventionTaskRoute(

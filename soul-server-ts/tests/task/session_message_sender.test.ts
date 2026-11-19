@@ -4,6 +4,12 @@ import {
   sendMessageToSession,
   type SendMessageToSessionDeps,
 } from "../../src/task/session_message_sender.js";
+import { prepareTaskForAutoResume } from
+  "../../src/task/task_auto_resume_transition.js";
+import { ExecutionAdmissionInFlightError } from
+  "../../src/task/execution_admission_errors.js";
+import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import type { Task } from "../../src/task/task_models.js";
 
 const ORCH = { baseUrl: "http://orch.test", headers: {} };
 
@@ -283,5 +289,68 @@ describe("sendMessageToSession relay verdict", () => {
     });
 
     expect(result).toEqual({ ok: true, detail: { delivered: true } });
+  });
+
+  it("reports an execution admission race as an accepted queue entry", async () => {
+    const task: Task = {
+      agentSessionId: "session-admission-race",
+      prompt: "original",
+      status: "completed",
+      createdAt: new Date("2026-11-20T00:00:00.000Z"),
+      lastEventId: 7,
+      lastReadEventId: 3,
+      interventionQueue: [],
+    };
+    const route = new TaskInterventionRoute({
+      getTask: () => task,
+      loadEvictedTask: async () => null,
+      rememberTask: () => undefined,
+      runningInterventionTransition: {
+        deliver: vi.fn(),
+        queueOnly: vi.fn(),
+      } as unknown as ConstructorParameters<typeof TaskInterventionRoute>[0]["runningInterventionTransition"],
+      autoResumeTransition: {
+        resume: async (resumedTask, message, onResume) => {
+          prepareTaskForAutoResume(resumedTask, message, "initializing");
+          try {
+            onResume(resumedTask);
+            return { autoResumed: true as const };
+          } catch (error) {
+            resumedTask.status = "completed";
+            throw error;
+          }
+        },
+      },
+    });
+    const { logger } = silentLogger();
+
+    const result = await sendMessageToSession({
+      logger,
+      onResume: () => {
+        throw new ExecutionAdmissionInFlightError(task.agentSessionId);
+      },
+      nodeId: "self",
+      ownerLookup: {
+        getSessionOwnerNode: async () => ({ node_id: "self" }),
+      },
+      taskManager: {
+        addIntervention: (params, onResume) => route.addIntervention(params, onResume),
+      },
+    }, {
+      targetSessionId: task.agentSessionId,
+      message: "delivery that raced an execution admission",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      detail: {
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "execution_admission_in_flight",
+      },
+    });
+    expect(task.interventionQueue).toHaveLength(1);
   });
 });

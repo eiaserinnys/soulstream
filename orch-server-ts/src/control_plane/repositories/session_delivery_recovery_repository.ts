@@ -196,12 +196,13 @@ export class SessionDeliveryRecoveryRepository {
     limit = 100,
     attemptTtlMs = 15_000,
     includeDelivered = false,
+    queuedBeforeMs?: number | null,
   ): Promise<SessionDeliveryRow[]> {
     return await this.claimQueued(
       attemptToken,
       limit,
       attemptTtlMs,
-      { startupNodeId: nodeId, includeDelivered },
+      { startupNodeId: nodeId, includeDelivered, queuedBeforeMs },
     );
   }
 
@@ -307,10 +308,17 @@ export class SessionDeliveryRecoveryRepository {
       startupNodeId?: string;
       scan?: QueuedDeliveryRecoveryScan;
       includeDelivered?: boolean;
+      /**
+       * 그 노드의 지금 연결 등록 시각(orch 시계, epoch ms). 있으면 이 시각
+       * 이전에 queued된 행만 잡는다. 이번 연결 뒤 새 프로세스가 직접 접수한
+       * 배달을 부팅 복구가 불확실로 닫지 않게 한다(7edad0de, 카드 #1745).
+       */
+      queuedBeforeMs?: number | null;
     },
   ): Promise<SessionDeliveryRow[]> {
     const startupNodeId = mode.startupNodeId ?? null;
     const scan = mode.scan;
+    const queuedBeforeMs = mode.queuedBeforeMs ?? null;
     const rows = await this.sql<SessionDeliveryRow[]>`
       WITH recoverable AS MATERIALIZED (
         SELECT delivery.delivery_id
@@ -356,6 +364,10 @@ export class SessionDeliveryRecoveryRepository {
                   - (${scan?.queuedAfterMs ?? null}::double precision * INTERVAL '1 millisecond')
               )
             )
+          )
+          AND (
+            ${queuedBeforeMs}::double precision IS NULL
+            OR delivery.queued_at < to_timestamp(${queuedBeforeMs}::double precision / 1000.0)
           )
         ORDER BY delivery.next_attempt_at, delivery.queued_at, delivery.delivery_id
         FOR UPDATE OF delivery SKIP LOCKED
