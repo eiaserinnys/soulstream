@@ -31,7 +31,9 @@ describe("only the current assignee's quota termination blocks a card", () => {
     await h.sql`INSERT INTO system_settings(setting_key,value,updated_by) VALUES('card_dispatch','{"nodeConcurrency":{"default":2}}','test')`;
     await h.sql.unsafe(await readFile(new URL('../../packages/db-schema/sql/migrations/113_card_orchestration.sql', import.meta.url), 'utf8'));
     const sql = createFolderContentSqlAdapter(h.liveSql);
-    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
+    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx },
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { defaultExecutionNodeId: "node" });
     repo = new CardDispatchRepository(async () => sql);
     dispatcher = new CardDispatcher({ defaultNodeId:"eiaserinnys", repository: repo, cards: async () => cards, resolveTarget: target,
       launch, sendMessage, notify: async () => {}, deliveryExists: async () => false, abandonDelivery: async () => {}, warn });
