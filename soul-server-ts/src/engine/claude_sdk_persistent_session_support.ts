@@ -42,6 +42,7 @@ export interface ClaudeSdkPersistentSessionConfig {
   detachedEventSink: ClaudeDetachedEventSink;
   runtimeEventSink?: ClaudeRuntimeEventSink;
   accountRateLimitSwitchEnabled?: boolean;
+  accountAuthFailureSwitchEnabled?: boolean;
   usageCarry?: import("./claude_sdk_usage_carry.js").ClaudeSdkUsageCarry;
   logger: Logger;
   postResultDrainMs: number;

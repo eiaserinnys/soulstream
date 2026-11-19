@@ -31,7 +31,7 @@ describe("control command inventory", () => {
     }).sort();
     const inventoryTypes = CONTROL_COMMAND_INVENTORY.map(({ type }) => type).sort();
 
-    expect(inventoryTypes).toHaveLength(53);
+    expect(inventoryTypes).toHaveLength(54);
     expect(new Set(inventoryTypes).size).toBe(inventoryTypes.length);
     expect(inventoryTypes).toEqual(handlerTypes);
     expect(inventoryTypes).toEqual([...CONTROL_COMMAND_TYPES].sort());
@@ -107,6 +107,7 @@ describe("control command inventory", () => {
       { type: "claude_auth_login_status", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_login_submit_code", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "claude_auth_login_cancel", family: "auth/provider-usage", policy: "bounded_result" },
+      { type: "claude_central_pool_sync", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "provider_usage_get", family: "auth/provider-usage", policy: "bounded_result" },
       { type: "reflect_brief", family: "reflection", policy: "bounded_result" },
       { type: "plan_agent_profile_update", family: "agent-config", policy: "bounded_result" },

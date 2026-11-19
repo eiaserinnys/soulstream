@@ -90,6 +90,7 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthLoginStatus
   | ClaudeAuthLoginSubmitCode
   | ClaudeAuthLoginCancel
+  | ClaudeCentralPoolSync
   | ClaudeRuntimeListTasks
   | ClaudeRuntimeTaskOutput
   | ClaudeRuntimeStopTask
@@ -3093,6 +3094,10 @@ export interface ClaudeAccountList {
  */
 export interface ClaudeAccount {
   id: string;
+  /**
+   * 이 노드가 계정을 어디서 얻었는지. 중앙 풀 계정은 central, 노드 로컬 계정은 local.
+   */
+  source: "central" | "local";
   email: string;
   plan: string | null;
   enabled: boolean;
@@ -3248,6 +3253,48 @@ export interface ClaudeAuthLoginCancel {
   data?: ClaudeAuthLoginFlow;
   error?: ClaudeAuthError;
   [k: string]: unknown;
+}
+/**
+ * orch→노드: 중앙 Claude 계정 풀 스냅샷 동기화. revision이 노드가 가진 것보다 작으면 버린다.
+ */
+export interface ClaudeCentralPoolSync {
+  type: "claude_central_pool_sync";
+  requestId?: string;
+  revision: number;
+  receive: boolean;
+  accounts: ClaudeCentralPoolAccount[];
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeCentralPoolSyncResult;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+/**
+ * 오케스트레이터가 내려주는 중앙 풀 계정 한 건. 접근 토큰은 needs_relogin이거나 enabled false면 null.
+ */
+export interface ClaudeCentralPoolAccount {
+  id: string;
+  email: string;
+  plan: string | null;
+  enabled: boolean;
+  priority: number;
+  auth_state: "ok" | "needs_relogin";
+  relogin_reason: string | null;
+  access_token: string | null;
+  expires_at: string | null;
+  usage_raw: {
+    [k: string]: unknown;
+  } | null;
+  usage_fetched_at: string | null;
+}
+export interface ClaudeCentralPoolSyncResult {
+  ok: true;
+  /**
+   * 노드가 실제로 적용한 revision.
+   */
+  revision: number;
 }
 /**
  * orch→노드: Claude runtime task 목록 조회.
@@ -3619,6 +3666,7 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_login_status",
   "claude_auth_login_submit_code",
   "claude_auth_login_cancel",
+  "claude_central_pool_sync",
   "provider_usage_get",
   "reflect_brief",
   "plan_agent_profile_update",

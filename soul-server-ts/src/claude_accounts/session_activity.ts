@@ -72,16 +72,24 @@ export class ClaudeAccountSessionActivity {
   restoreActiveBinding(
     input: { session_id: string; account_id: string },
     store: Pick<ClaudeAccountStore, "readBindings" | "readAccounts" | "profileDir">,
+    centralProfileDir?: string | null,
   ): void {
     const binding = store.readBindings()[input.session_id];
     if (binding?.account_id !== input.account_id) {
       throw new Error(`Claude account runner binding mismatch for session ${input.session_id}`);
     }
-    if (!store.readAccounts().some((account) => account.id === input.account_id)) {
-      throw new ClaudeAccountNotFoundError(input.account_id);
-    }
-    if (!fs.existsSync(store.profileDir(input.account_id))) {
-      throw new Error(`Claude account profile is missing: ${input.account_id}`);
+    if (centralProfileDir) {
+      // 중앙 계정은 로컬 accounts.json에 없다. 프로필 폴더 존재만 확인한다.
+      if (!fs.existsSync(centralProfileDir)) {
+        throw new Error(`Claude central account profile is missing: ${input.account_id}`);
+      }
+    } else {
+      if (!store.readAccounts().some((account) => account.id === input.account_id)) {
+        throw new ClaudeAccountNotFoundError(input.account_id);
+      }
+      if (!fs.existsSync(store.profileDir(input.account_id))) {
+        throw new Error(`Claude account profile is missing: ${input.account_id}`);
+      }
     }
     const existingAccountId = this.assignment(input.session_id);
     if (existingAccountId && existingAccountId !== input.account_id) {

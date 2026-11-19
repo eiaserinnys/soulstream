@@ -10,6 +10,8 @@ import type {
   ClaudeAccountsJsonFile,
   ClaudeBindingsJsonFile,
   ClaudeBlocksJsonFile,
+  ClaudeCentralPoolAccount,
+  ClaudeCentralPoolSyncPayload,
   ClaudeReloginJsonFile,
   ClaudeSessionBindingEntry,
 } from "./types.js";
@@ -165,6 +167,9 @@ export class ClaudeAccountStore {
   readonly bindingsFilePath: string;
   readonly blocksFilePath: string;
   readonly reloginFilePath: string;
+  readonly centralDir: string;
+  readonly centralProfilesDir: string;
+  readonly centralSnapshotFilePath: string;
 
   constructor(options: ClaudeAccountStoreOptions) {
     this.accountsDir = path.resolve(options.accountsDir);
@@ -176,6 +181,9 @@ export class ClaudeAccountStore {
     this.bindingsFilePath = path.join(this.accountsDir, "bindings.json");
     this.blocksFilePath = path.join(this.accountsDir, "blocks.json");
     this.reloginFilePath = path.join(this.accountsDir, "relogin.json");
+    this.centralDir = path.join(this.accountsDir, "central");
+    this.centralProfilesDir = path.join(this.centralDir, "profiles");
+    this.centralSnapshotFilePath = path.join(this.centralDir, "snapshot.json");
   }
 
   ensureBaseDirs(): void {
@@ -204,6 +212,41 @@ export class ClaudeAccountStore {
     this.ensureBaseDirs();
     const dir = this.profileDir(accountId);
     ensureProfileSharedSymlinks(dir, this.homeDir);
+  }
+
+  centralProfileDir(accountId: string): string {
+    return path.join(this.centralProfilesDir, accountId);
+  }
+
+  /**
+   * 중앙 계정 프로필도 로컬과 같은 공유 링크 배치로 만든다. 다만
+   * `.credentials.json`은 두지 않는다. 토큰은 매 턴 선택 응답으로 내려온다.
+   */
+  ensureCentralProfileSymlinks(accountId: string): void {
+    ensureDir0700(this.centralDir);
+    ensureDir0700(this.centralProfilesDir);
+    ensureProfileSharedSymlinks(this.centralProfileDir(accountId), this.homeDir);
+  }
+
+  readCentralSnapshot(): ClaudeCentralPoolSyncPayload | null {
+    const parsed = readJsonOrDefault<ClaudeCentralPoolSyncPayload | null>(
+      this.centralSnapshotFilePath,
+      null,
+    );
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.revision !== "number" || !Number.isFinite(parsed.revision)) return null;
+    if (typeof parsed.receive !== "boolean") return null;
+    if (!Array.isArray(parsed.accounts)) return null;
+    return {
+      revision: parsed.revision,
+      receive: parsed.receive,
+      accounts: parsed.accounts as ClaudeCentralPoolAccount[],
+    };
+  }
+
+  writeCentralSnapshot(payload: ClaudeCentralPoolSyncPayload): void {
+    ensureDir0700(this.centralDir);
+    writeJsonAtomic0600(this.centralSnapshotFilePath, payload);
   }
 
   readAccounts(): ClaudeAccountRecord[] {

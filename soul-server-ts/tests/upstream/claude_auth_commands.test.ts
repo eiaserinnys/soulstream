@@ -386,6 +386,7 @@ describe("claude auth command boundary", () => {
       plan: "max",
       enabled: true,
       priority: 1,
+      source: "local" as const,
       active_sessions: 0,
       blocked: null,
       stale: false,
@@ -425,6 +426,9 @@ describe("claude auth command boundary", () => {
           throw new Error("not used");
         },
         deleteAccount: async () => {
+          throw new Error("not used");
+        },
+        applyCentralPoolSync: () => {
           throw new Error("not used");
         },
       },
