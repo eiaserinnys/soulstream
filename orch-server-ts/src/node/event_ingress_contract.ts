@@ -1,4 +1,11 @@
-import type { EventAppendBatch as WireEventAppendBatch } from "@soulstream/wire-schema";
+import type {
+  EventAppendAck as WireEventAppendAck,
+  EventAppendBatch as WireEventAppendBatch,
+  EventCanonicalExecutionOwnershipProjection as WireEventCanonicalExecutionOwnershipProjection,
+  EventCanonicalExecutionRegistrationProjection as WireEventCanonicalExecutionRegistrationProjection,
+  EventCanonicalSessionProjection as WireEventCanonicalSessionProjection,
+  EventSessionEffectApplication as WireEventSessionEffectApplication,
+} from "@soulstream/wire-schema";
 
 export type EventSessionEffect = NonNullable<WireEventAppendBatch["events"][number]["session_effect"]>;
 
@@ -46,70 +53,33 @@ export type EventAppendBatch = {
   events: EventIngressEnvelope[];
 };
 
-export type EventAppendAck = {
-  type: "event_append_ack";
-  stream_id: string;
-  acked_through: number;
-  events: EventAppendAcknowledgement[];
-};
+export type EventAppendAck = Pick<
+  WireEventAppendAck,
+  "type" | "stream_id" | "acked_through"
+> & { events: EventAppendAcknowledgement[] };
 
-export type EventAppendAcknowledgement =
-  | {
-      source_seq: number;
-      event_id: number;
-      effect_application?: EventSessionEffectApplicationWire;
-    }
-  | {
-      source_seq: number;
-      dead_letter: {
-        code: string;
-        reason: string;
-        rejected_at: string;
-      };
-    };
+export type EventAppendAcknowledgement = WireEventAppendAck["events"][number];
 
-export type EventCanonicalSessionProjection = {
-  status: string;
-  termination_reason: string | null;
-  termination_detail: string | null;
-  review_state: string;
-  last_assistant_text: string | null;
-  termination_event_id: number | null;
-  updated_at: string;
-  last_event_id: number | null;
-};
+type WireShape<T> = { [K in keyof T]: T[K] };
 
-export type EventCanonicalExecutionOwnershipProjection = {
-  ownership_generation: number;
-  owner_kind: "runner_process" | "adopted_runner" | "in_process";
-  manifest_id: string;
-  runtime_env_identity?: string;
-  registration_id: string | null;
-  pid: number | null;
-  start_identity: string | null;
-  execution_command_id: string | null;
-  phase: "reserved" | "identity_proven" | "active" | "terminal" | "failed";
-  failure_reason: string | null;
-};
+export type EventCanonicalSessionProjection =
+  WireShape<WireEventCanonicalSessionProjection>;
 
-export type EventCanonicalExecutionRegistrationProjection = {
-  registration_id: string;
-  execution_command_id: string;
-};
+export type EventCanonicalExecutionOwnershipProjection =
+  WireShape<WireEventCanonicalExecutionOwnershipProjection>;
 
-/**
- * 노드가 다시 시도할지 판단하는 거절 사유. 값은 wire schema의 enum과 같다.
- * session_missing은 지금처럼 예외라 ACK로 싣지 않지만 enum에는 둔다.
- */
+export type EventCanonicalExecutionRegistrationProjection =
+  WireShape<WireEventCanonicalExecutionRegistrationProjection>;
+
 export const EVENT_SESSION_REJECTION_REASONS = [
   "already_terminal",
   "session_missing",
   "owner_node_changed",
   "worktree_busy",
   "worktree_not_ready",
-] as const;
+] as const satisfies readonly EventSessionRejectionReason[];
 export type EventSessionRejectionReason =
-  (typeof EVENT_SESSION_REJECTION_REASONS)[number];
+  NonNullable<WireEventSessionEffectApplication["rejection_reason"]>;
 
 export type EventSessionEffectApplication = {
   applied: boolean;
