@@ -37,7 +37,7 @@ async function setup(page: Page, width: number) {
       if (node === "qa-node" && holdB) await new Promise<void>(resolve => { releaseB = resolve; });
       return json({ path: `/${node}/clipboard.png` });
     }
-    if (url.pathname === "/api/cards/paste-card/comments") { comments.push(request.postDataJSON()); return json({ card, reports: [], comments: [], questions: [], sessions: [] }); }
+    if (url.pathname === "/api/cards/paste-card/comments") { const posted = request.postDataJSON(); comments.push(posted); return json({ id: posted.idempotencyKey, cardId: "paste-card", authorKind: "user", authorId: "qa", sessionId: null, kind: "comment", body: posted.body, createdAt: new Date().toISOString() }); }
     if (url.pathname === "/api/cards/paste-card") return json({ card, reports: [], comments: [], questions: [], sessions: [] });
     if (/\/api\/sessions\/[^/]+\/intervene$/.test(url.pathname)) { interventions.push(request.postDataJSON()); return json({ status: "ok", delivered: true }); }
     return route.fallback();
@@ -65,7 +65,7 @@ async function folder(page: Page, width: number) {
 
 for (const width of [1440, 390]) {
   for (const source of ["picker", "folder"]) test(`main ${source} A→B preserves preview and draft at ${width}`, async ({ page }) => {
-    const state = await setup(page, width); await page.goto("/");
+    const state = await setup(page, width); await page.goto("/"); await expect(page.getByTestId("card-home")).toBeVisible({ timeout: 30_000 });
     const composer = page.locator(".v3-card-handoff"), input = composer.locator("textarea");
     await expect(input).toBeVisible();
     expect(await input.evaluate(element => {
@@ -90,7 +90,7 @@ for (const width of [1440, 390]) {
       await page.getByRole("button", { name: "실행 조합 선택", exact: true }).click();
       const picker = page.locator(".v3-card-execution-picker:visible");
       await picker.locator('section[aria-label="노드"]').getByRole("button", { name: "qa-node", exact: true }).click();
-      await page.keyboard.press("Escape");
+      await picker.getByRole("button", { name: "확인", exact: true }).click();
     } else {
       await composer.locator(".v3-card-handoff-folder").click();
       const picker = page.locator(".v3-card-folder-picker:visible");
@@ -114,9 +114,10 @@ for (const width of [1440, 390]) {
     writeFileSync(path.join(output, `main-${source}-${width}.json`), JSON.stringify({ creates: state.creates, uploads: state.uploads.map(upload => upload.node) }, null, 2));
   });
   test(`new conversation paste and A→B at ${width}`, async ({ page }) => {
-    const state = await setup(page, width); await page.goto("/"); await folder(page, width);
+    const state = await setup(page, width); await page.goto("/"); await expect(page.getByTestId("card-home")).toBeVisible({ timeout: 30_000 }); await folder(page, width);
     await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "새 세션", exact: true });
+    await dialog.locator("summary").filter({ hasText: "실행 환경" }).click();
     await dialog.getByLabel("노드 선택", { exact: true }).click();
     await page.getByRole("option", { name: "eiaserinnys", exact: true }).click();
     // Existing soulstream-e2e Base UI Select interaction: select only the open popup.
@@ -138,7 +139,7 @@ for (const width of [1440, 390]) {
     writeFileSync(path.join(output, `new-conversation-${width}.json`), JSON.stringify({ creates: state.creates, uploads: state.uploads.map(upload => upload.node) }, null, 2));
   });
   test(`comment and session paste at ${width}`, async ({ page }) => {
-    const state = await setup(page, width); await page.goto("/");
+    const state = await setup(page, width); await page.goto("/"); await expect(page.getByTestId("card-home")).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "카드 붙여넣기 검증 열기", exact: true }).click();
     const detail = page.getByTestId("card-detail");
     await paste(detail.getByPlaceholder("커멘트", { exact: true }));
@@ -152,7 +153,7 @@ for (const width of [1440, 390]) {
     await page.locator('[data-task-section="sessions"] .v3-run-open').first().click();
     const input = page.locator('.v3-chat-pane [data-slot="chat-input-body"]');
     await input.fill("이미지를 확인합니다");
-    await paste(input); await expect(page.locator('.v3-chat-pane img[alt^="clipboard-"]')).toBeVisible();
+    await paste(input); await expect(page.locator('.v3-chat-pane [data-chat-attachment-chip-view][title^="clipboard-"]')).toBeVisible();
     await capture(page, `session-${width}`); await input.press("Control+Enter");
     await expect.poll(() => state.interventions.length).toBe(1);
     expect(state.interventions[0]).toMatchObject({ attachmentPaths: ["/eiaserinnys/clipboard.png"] });
