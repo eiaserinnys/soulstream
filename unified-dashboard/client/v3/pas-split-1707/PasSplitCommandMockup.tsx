@@ -340,13 +340,6 @@ export function PasSplitCommandMockup() {
     </header>
 
     {isPas ? <main className="pas-split-body" data-mode={quietMode ? "quiet" : "board"} data-mobile-tab={mobileTab}>
-      {undo ? <div className="pas-split-undo" role="status" data-testid="pas-split-toast">
-        <span>{undo.message}</span>
-        <Button variant="ghost" size="sm" onClick={undoLast}>
-          <RotateCcw className="size-4" aria-hidden="true"/>되돌리기
-        </Button>
-      </div> : null}
-
       <div className="pas-split-viewbar">
         <div className="pas-split-viewswitch" role="group" aria-label="PAS 보기">
           <button type="button" data-active={boardVisible || undefined} disabled={pending.length === 0}
@@ -360,6 +353,12 @@ export function PasSplitCommandMockup() {
           <button type="button" role="tab" aria-selected={mobileTab === "chat"} data-active={mobileTab === "chat" || undefined}
             onClick={() => setMobileTab("chat")}>PAS 대화</button>
         </div>
+        {undo ? <div className="pas-split-undo" role="status" data-testid="pas-split-toast">
+          <span>{undo.message}</span>
+          <Button variant="ghost" size="sm" onClick={undoLast}>
+            <RotateCcw className="size-4" aria-hidden="true"/>되돌리기
+          </Button>
+        </div> : null}
       </div>
 
       {quietMode ? <div ref={characterRef} className="pas-quiet-character" aria-hidden="true">

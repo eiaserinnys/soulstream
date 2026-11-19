@@ -180,7 +180,7 @@ async function sheetTitle(page) {
 }
 
 async function tab(page, number) {
-  await page.locator(".pas-clipboard-tab", { hasText: `#${number}` }).click({ force: true });
+  await page.locator(".pas-clipboard-tab", { hasText: `#${number}` }).click();
   await page.waitForFunction(value => {
     const element = document.querySelector("#pas-sheet-title");
     return element?.textContent?.includes(`#${value}`);
@@ -188,7 +188,7 @@ async function tab(page, number) {
 }
 
 async function primary(page, label) {
-  await page.locator(".pas-sheet-actions").getByRole("button", { name: label }).click({ force: true });
+  await page.locator(".pas-sheet-actions").getByRole("button", { name: label }).click();
   await pause(80);
 }
 
@@ -246,7 +246,7 @@ async function unmocked(page) {
 }
 
 async function openTaskDrawer(page) {
-  await page.getByRole("button", { name: "작업 목록", exact: true }).click({ force: true });
+  await page.getByRole("button", { name: "작업 목록", exact: true }).click();
   await page.waitForSelector('[data-testid="pas-task-drawer"]', { state: "visible" });
 }
 
@@ -272,7 +272,7 @@ async function installReviewToggle(page) {
     toggle.type = "button";
     toggle.textContent = "검토";
     toggle.style.cssText = [
-      "position:fixed", "right:12px", "bottom:12px", "width:112px", "height:64px",
+      "position:fixed", "right:4px", "bottom:4px", "width:112px", "height:64px",
       "border:0", "border-radius:16px", "background:#111", "color:#fff",
       "font-size:14px", "font-weight:700", "z-index:2147483647",
     ].join(";");
@@ -395,6 +395,71 @@ try {
     const pageErrors = [];
     page.on("pageerror", error => pageErrors.push(error.message));
 
+    await step("B12 폴더 트리 정본 글꼴과 정렬", async () => {
+      await openRoute(page, { width: 1440, height: 900, theme: "dark", hash: "home" });
+      const style = await page.locator(".pas-home-nav .v3-project-nav-link").first().evaluate(element => {
+        const computed = getComputedStyle(element);
+        return { align: computed.textAlign, size: computed.fontSize, weight: computed.fontWeight };
+      });
+      assert.ok(["left", "start"].includes(style.align), JSON.stringify(style));
+      assert.equal(style.size, "14px", JSON.stringify(style));
+      assert.ok(Number(style.weight) >= 650, JSON.stringify(style));
+      await capture(page, "22-1440-dark-home-tree.png");
+      return JSON.stringify(style);
+    });
+
+    for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 740]]) {
+      await step(`B13 ${width} 처분 전후 좌표와 마지막 복원`, async () => {
+        await open(page, { width, height, theme: "dark" });
+        await installReviewToggle(page);
+        const measure = async () => {
+          await page.locator(".pas-clipboard-sheet").evaluate(element => { element.scrollTop = 0; });
+          return page.evaluate(() => Object.fromEntries(["#pas-sheet-title", ".pas-sheet-actions button"].map(selector =>
+            [selector, document.querySelector(selector).getBoundingClientRect().top])));
+        };
+        await page.locator('.pas-clipboard-tab:has-text("#1512")').click();
+        const before = await measure();
+        await page.locator('.pas-clipboard-tab:has-text("#1680")').click();
+        await page.locator('[data-question-option="7일 유지"]').click();
+        await page.locator('[data-testid="pas-split-toast"]').waitFor({ state: "visible" });
+        const during = await measure();
+        await assertNoToggleHits(page, `${width} 되돌리기 표시`);
+        await capture(page, `23-${width}-dark-undo.png`);
+        await page.locator('[data-testid="pas-split-toast"]').waitFor({ state: "hidden", timeout: 17000 });
+        const after = await measure();
+        assert.deepEqual(during, before, `처분 직후 이동: ${JSON.stringify({ before, during, after })}`);
+        assert.deepEqual(after, before, `알림 종료 후 이동: ${JSON.stringify({ before, during, after })}`);
+        for (let index = 0; index < 4; index += 1) {
+          await page.locator(".pas-sheet-actions button").last().click();
+        }
+        await page.locator('.pas-split-body[data-mode="quiet"]').waitFor({ state: "visible" });
+        await page.getByRole("button", { name: "되돌리기" }).click();
+        await page.locator('.pas-split-body[data-mode="board"]').waitFor({ state: "visible" });
+        assert.match(await sheetTitle(page), /^#1112 /);
+        return JSON.stringify({ before, during, after, restored: "#1112" });
+      });
+    }
+
+    for (const [width, height] of [[1440, 900], [820, 1180], [390, 844], [360, 740]]) {
+      await step(`B14 ${width} 입력 상자 여백과 끝선`, async () => {
+        await open(page, { width, height, theme: "dark" });
+        const boxes = await page.evaluate(() => {
+          const box = selector => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+          };
+          return { seat: box(".pas-split-composer-seat"), composer: box('[data-slot="chat-input-composer"]'), panel: box(window.innerWidth > 767 ? ".pas-split-chat" : ".pas-split-clipboard") };
+        });
+        const top = boxes.composer.top - boxes.seat.top;
+        const bottom = boxes.seat.bottom - boxes.composer.bottom;
+        assert.ok(Math.abs(top - bottom) <= 4, JSON.stringify({ boxes, top, bottom }));
+        assert.ok(Math.abs(boxes.seat.left - boxes.panel.left) <= 1 && Math.abs(boxes.seat.right - boxes.panel.right) <= 1, JSON.stringify(boxes));
+        await assertNoToggleHits(page, `${width} PAS`);
+        await capture(page, `24-${width}-dark-composer.png`);
+        return JSON.stringify({ boxes, top, bottom });
+      });
+    }
+
     await step("R1 기본 화면과 해시 이동", async () => {
       await open(page, { width: 1440, height: 900, theme: "dark" });
       assert.equal(await page.locator('[data-testid="pas-split-app"]').getAttribute("data-route"), "pas");
@@ -409,21 +474,21 @@ try {
       assert.equal(await page.locator('.pas-split-header [aria-label="홈"]').count(), 0,
         "헤더에 집 아이콘이 남았습니다");
 
-      await nav.getByRole("button", { name: "홈", exact: true }).click({ force: true });
+      await nav.getByRole("button", { name: "홈", exact: true }).click();
       await page.waitForSelector('[data-testid="pas-home"]', { state: "visible" });
       assert.equal(new URL(page.url()).hash, "#home");
-      await page.getByRole("tab", { name: "폴더 문서" }).click({ force: true });
+      await page.getByRole("tab", { name: "폴더 문서" }).click();
       await pause(120);
       assert.equal(new URL(page.url()).hash, "#folder-docs");
       assert.equal(await page.locator('[data-testid="pas-home"]').getAttribute("data-focus"), "docs");
 
-      await nav.getByRole("button", { name: "PAS 지휘실" }).click({ force: true });
+      await nav.getByRole("button", { name: "PAS 지휘실" }).click();
       await page.waitForSelector(".pas-split-body", { state: "visible" });
       assert.equal(new URL(page.url()).hash, "#pas");
-      await page.locator(".pas-split-viewswitch button").nth(1).click({ force: true });
+      await page.locator(".pas-split-viewswitch button").nth(1).click();
       await page.waitForSelector('.pas-split-body[data-mode="quiet"]', { state: "visible" });
       assert.equal(new URL(page.url()).hash, "#pas-chat");
-      await page.locator(".pas-split-viewswitch button").first().click({ force: true });
+      await page.locator(".pas-split-viewswitch button").first().click();
       await page.waitForSelector('.pas-split-body[data-mode="board"]', { state: "visible" });
       assert.equal(new URL(page.url()).hash, "#pas");
       return "PAS 지휘실 기본, 헤더 탭 두 개, 홈/폴더 문서/PAS 대화 해시 왕복";
@@ -443,7 +508,7 @@ try {
       await page.waitForFunction(() => document.querySelector("#pas-sheet-title")?.textContent?.includes("#1680"));
 
       await tab(page, 1408);
-      await page.locator(".pas-evidence-trigger").click({ force: true });
+      await page.locator(".pas-evidence-trigger").click();
       await page.locator(".pas-split-evidence-dialog").waitFor({ state: "visible" });
       await capture(page, "02-1440-dark-evidence.png");
       for (let index = 0; index < 5; index += 1) {
@@ -473,17 +538,17 @@ try {
         assert.ok(input.ariaHidden === "true" || input.tabIndex < 0 || input.cssHidden,
           "정규 Checkbox의 숨은 입력이 조작 가능한 상태입니다");
       }
-      await checkbox.click({ force: true });
+      await checkbox.click();
       assert.equal(await firstCheck.getAttribute("data-done"), "true");
-      await checkbox.click({ force: true });
+      await checkbox.click();
       assert.equal(await firstCheck.getAttribute("data-done"), null);
 
-      await page.locator(".pas-check-row").nth(1).getByRole("button", { name: "구두 지시" }).click({ force: true });
+      await page.locator(".pas-check-row").nth(1).getByRole("button", { name: "구두 지시" }).click();
       await page.waitForSelector('[data-testid="pas-instruction-target"]', { state: "visible" });
       const targetText = (await page.locator('[data-testid="pas-instruction-target"]').innerText()).replace(/\s+/g, " ").trim();
       assert.ok(targetText.includes("전달 대상: #1408 2번 항목 보완 지시"), `칩 글자가 다릅니다: ${targetText}`);
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "PAS 메시지");
-      await page.getByRole("button", { name: "전달 대상 해제" }).click({ force: true });
+      await page.getByRole("button", { name: "전달 대상 해제" }).click();
       await page.waitForSelector('[data-testid="pas-instruction-target"]', { state: "hidden" });
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "PAS 메시지");
       return "정규 Checkbox card-item 토글, 칩 표시와 해제, 입력창 초점";
@@ -491,7 +556,7 @@ try {
 
     await step("R2 IME 조합 Enter와 지시 전송", async () => {
       await tab(page, 1408);
-      await page.locator(".pas-check-row").nth(1).getByRole("button", { name: "구두 지시" }).click({ force: true });
+      await page.locator(".pas-check-row").nth(1).getByRole("button", { name: "구두 지시" }).click();
       const textarea = page.locator('textarea[aria-label="PAS 메시지"]');
       await textarea.fill("2번 항목을 다시 확인해 주세요");
       const before = await page.locator(".pas-split-message").count();
@@ -535,7 +600,7 @@ try {
     });
 
     await step("R2 대화만 보기와 SwayCharacter, 대화 초상", async () => {
-      await page.locator(".pas-split-viewswitch button").nth(1).click({ force: true });
+      await page.locator(".pas-split-viewswitch button").nth(1).click();
       await page.waitForSelector('.pas-split-body[data-mode="quiet"]', { state: "visible" });
       const character = page.locator(".pas-quiet-character :is(img, iframe)").first();
       await character.waitFor({ state: "visible" });
@@ -571,7 +636,7 @@ try {
         `시안 바탕이 투명하지 않습니다: ${surface.appBackground}`);
       assert.ok(surface.clipboardGlass.includes("glass-strong"), "클립보드 바깥이 유리가 아닙니다");
       await capture(lightPage, "05-1440-light-board.png");
-      await lightPage.locator(".pas-split-viewswitch button").nth(1).click({ force: true });
+      await lightPage.locator(".pas-split-viewswitch button").nth(1).click();
       await lightPage.waitForSelector('.pas-split-body[data-mode="quiet"]', { state: "visible" });
       await capture(lightPage, "06-1440-light-quiet.png");
       return `bare main, 투명 바탕, CSS 유리, 클립보드 유리`;
@@ -613,7 +678,7 @@ try {
       const anotherClass = await flowPage.locator('[data-question-option="14일로 변경"]').getAttribute("class");
       assert.doesNotMatch(anotherClass ?? "", /from-accent-blue/, "다른 선택지가 주 단추 강조입니다");
 
-      await flowPage.locator('[data-question-option="7일 유지"]').click({ force: true });
+      await flowPage.locator('[data-question-option="7일 유지"]').click();
       await flowPage.waitForFunction(() => document.querySelector("#pas-sheet-title")?.textContent?.includes("#1512"));
       assert.equal(await pendingCount(flowPage), 4);
       const toast = flowPage.locator('[data-testid="pas-split-toast"]');
@@ -623,16 +688,16 @@ try {
       assert.ok(!["absolute", "fixed"].includes(toastPosition), `영수증이 고정 오버레이입니다: ${toastPosition}`);
       await capture(flowPage, "07-1440-dark-question-answer.png");
 
-      await flowPage.getByRole("button", { name: "되돌리기" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "되돌리기" }).click();
       await flowPage.waitForFunction(() => document.querySelector("#pas-sheet-title")?.textContent?.includes("#1680"));
       assert.equal(await pendingCount(flowPage), 5);
 
-      await flowPage.getByRole("button", { name: "되묻기" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "되묻기" }).click();
       await flowPage.waitForSelector('[data-testid="pas-instruction-target"]', { state: "visible" });
       assert.ok((await flowPage.locator('[data-testid="pas-instruction-target"]').innerText()).includes("#1680 되묻기"));
-      await flowPage.getByRole("button", { name: "전달 대상 해제" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "전달 대상 해제" }).click();
 
-      await flowPage.getByRole("button", { name: "자유 응답" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "자유 응답" }).click();
       await flowPage.waitForSelector('[data-testid="pas-instruction-target"]', { state: "visible" });
       await flowPage.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "PAS 메시지");
       const textarea = flowPage.locator('textarea[aria-label="PAS 메시지"]');
@@ -673,7 +738,7 @@ try {
     });
 
     await step("R3 처분, 되돌리기, 폴더 문서 승격", async () => {
-      await flowPage.getByRole("button", { name: "되돌리기" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "되돌리기" }).click();
       await pause(100);
       assert.equal(await pendingCount(flowPage), 3);
       assert.match(await sheetTitle(flowPage), /^#1387 /);
@@ -705,7 +770,7 @@ try {
       assert.ok((await groupText(flowPage, "hold")).includes("18개"));
       await closeWithEscape(flowPage, '[data-testid="pas-task-drawer"]');
 
-      await flowPage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click({ force: true });
+      await flowPage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click();
       await flowPage.waitForSelector('[data-testid="pas-home"]', { state: "visible" });
       const homeText = (await flowPage.locator('[data-testid="pas-home"]').innerText()).replace(/\s+/g, " ");
       assert.equal(await flowPage.locator(".pas-home-board-grid, .pas-home-summary").count(), 0,
@@ -716,7 +781,7 @@ try {
       assert.equal(await tabs.count(), 3, "홈 탭이 세 개가 아닙니다");
       assert.equal(await flowPage.getByRole("tab", { name: "카드 목록" }).getAttribute("aria-selected"), "true");
       const cardsText = (await flowPage.locator("#pas-home-view-panel").innerText()).replace(/\s+/g, " ");
-      await flowPage.getByRole("tab", { name: "폴더 문서" }).click({ force: true });
+      await flowPage.getByRole("tab", { name: "폴더 문서" }).click();
       await flowPage.waitForFunction(() => location.hash === "#folder-docs");
       const docsText = (await flowPage.locator("#pas-home-view-panel").innerText()).replace(/\s+/g, " ");
       assert.notEqual(cardsText, docsText, "폴더 문서 탭 내용이 카드 목록과 같습니다");
@@ -730,7 +795,7 @@ try {
       assert.equal(await docRows.count(), 3, "소울스트림 폴더 문서가 3건이 아닙니다");
       assert.ok((await docRows.allInnerTexts()).some(text => text.includes("턴 안 상호작용 3단계 도입 설계안")));
       const promoted = flowPage.locator('.pas-home-doc-row[data-document-id="doc-turn-interaction-design"]');
-      await promoted.click({ force: true });
+      await promoted.click();
       await flowPage.locator('[data-testid="internal-document-dialog"]').waitFor({ state: "visible" });
       const dialogText = (await flowPage.locator('[data-testid="internal-document-dialog"]').innerText()).replace(/\s+/g, " ");
       assert.ok(dialogText.includes("턴 안 상호작용 3단계 도입 설계안"));
@@ -740,20 +805,20 @@ try {
       const focused = await active(flowPage);
       assert.equal(focused?.documentId, "doc-turn-interaction-design", `문서를 닫은 뒤 초점이 다릅니다: ${JSON.stringify(focused)}`);
 
-      await flowPage.getByRole("tab", { name: "카드 목록" }).click({ force: true });
+      await flowPage.getByRole("tab", { name: "카드 목록" }).click();
       await flowPage.waitForFunction(() => location.hash === "#home");
       const cardRows = flowPage.locator(".pas-home-card-row");
       assert.ok(await cardRows.count() > 0, "카드 목록이 비었습니다");
-      await cardRows.first().click({ force: true });
+      await cardRows.first().click();
       await flowPage.locator('[data-testid="v3-card-workspace"]').waitFor({ state: "visible" });
       await capture(flowPage, "11-1440-dark-card-workspace.png");
-      await flowPage.getByRole("button", { name: "카드 닫기" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "카드 닫기" }).click();
       await flowPage.locator('[data-testid="v3-card-workspace"]').waitFor({ state: "hidden" });
       return "승격 문서 리더와 초점 복귀, 카드 행에서 정규 CardWorkspace 열기";
     });
 
     await step("B5 칸반 보드, 보류 18, 폴더 거르기, 에이전트 초상", async () => {
-      await flowPage.getByRole("tab", { name: "칸반 보드" }).click({ force: true });
+      await flowPage.getByRole("tab", { name: "칸반 보드" }).click();
       await flowPage.waitForSelector(".v3-card-board", { state: "visible" });
       await pause(200);
       const hold = (await flowPage.locator('[data-board-column="on_hold"]').innerText()).replace(/\s+/g, " ").trim();
@@ -773,30 +838,30 @@ try {
         assert.ok(portraits.some(src => src.includes(file)), `${file} 초상이 없습니다: ${JSON.stringify(portraits)}`);
       }
 
-      await flowPage.locator('[data-board-column="on_hold"] .v3-postit-open').first().click({ force: true });
+      await flowPage.locator('[data-board-column="on_hold"] .v3-postit-open').first().click();
       await flowPage.locator('[data-testid="v3-card-workspace"]').waitFor({ state: "visible" });
-      await flowPage.getByRole("button", { name: "카드 닫기" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "카드 닫기" }).click();
       await flowPage.locator('[data-testid="v3-card-workspace"]').waitFor({ state: "hidden" });
 
-      await flowPage.getByRole("button", { name: "🔮 kaleidoscope", exact: true }).click({ force: true });
+      await flowPage.getByRole("button", { name: "🔮 kaleidoscope", exact: true }).click();
       await pause(200);
       const filtered = (await flowPage.locator("#pas-home-view-panel").innerText()).replace(/\s+/g, " ");
       assert.ok(filtered.includes("사용량 앱"), `폴더 거르기 결과가 다릅니다: ${filtered.slice(0, 160)}`);
       assert.equal(await flowPage.locator('[data-board-column="on_hold"]').count(), 0,
         "다른 폴더에서 보류 카드가 남았습니다");
 
-      await flowPage.getByRole("tab", { name: "폴더 문서" }).click({ force: true });
+      await flowPage.getByRole("tab", { name: "폴더 문서" }).click();
       await pause(150);
       assert.equal(await flowPage.locator(".pas-home-doc-row").count(), 1, "kaleidoscope 문서가 1건이 아닙니다");
       assert.ok((await flowPage.locator(".pas-home-doc-row").innerText()).includes("kaleidoscope 사용량 앱"));
 
-      await flowPage.getByRole("tab", { name: "카드 목록" }).click({ force: true });
+      await flowPage.getByRole("tab", { name: "카드 목록" }).click();
       await pause(150);
       assert.equal(await flowPage.locator(".pas-home-card-row").count(), 2, "kaleidoscope 카드가 2건이 아닙니다");
       assert.ok((await flowPage.locator("#pas-home-view-panel").innerText()).includes("사용량 앱"));
 
-      await flowPage.getByRole("button", { name: "✨ 소울스트림", exact: true }).click({ force: true });
-      await flowPage.getByRole("tab", { name: "칸반 보드" }).click({ force: true });
+      await flowPage.getByRole("button", { name: "✨ 소울스트림", exact: true }).click();
+      await flowPage.getByRole("tab", { name: "칸반 보드" }).click();
       await flowPage.waitForSelector('[data-board-column="on_hold"]', { state: "visible" });
       return `보류 18, 네 열, 초상 ${portraits.length}종, 카드 작업대, kaleidoscope 거르기`;
     });
@@ -819,16 +884,16 @@ try {
         await open(mobilePage, { width, height, theme: "dark" });
         await installReviewToggle(mobilePage);
         notes.push(await assertNoToggleHits(mobilePage, `${width} PAS 서류판`));
-        await mobilePage.locator(".pas-split-viewswitch button").nth(1).click({ force: true });
+        await mobilePage.locator(".pas-split-viewswitch button").nth(1).click();
         await mobilePage.waitForSelector('.pas-split-body[data-mode="quiet"]', { state: "visible" });
         notes.push(await assertNoToggleHits(mobilePage, `${width} PAS 대화만`));
-        await mobilePage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click({ force: true });
+        await mobilePage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click();
         await mobilePage.waitForSelector('[data-testid="pas-home"]', { state: "visible" });
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 카드 목록`));
-        await mobilePage.getByRole("tab", { name: "폴더 문서" }).click({ force: true });
+        await mobilePage.getByRole("tab", { name: "폴더 문서" }).click();
         await pause(120);
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 폴더 문서`));
-        await mobilePage.getByRole("tab", { name: "칸반 보드" }).click({ force: true });
+        await mobilePage.getByRole("tab", { name: "칸반 보드" }).click();
         await mobilePage.waitForSelector(".v3-card-board", { state: "visible" });
         await pause(150);
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 칸반 보드`));
@@ -846,16 +911,16 @@ try {
         const composer = await mobilePage.locator('[data-testid="pas-composer"]').boundingBox();
         assert.ok(composer && height - (composer.y + composer.height) >= 60,
           `${width} 입력창이 안전 여백 위에 있지 않습니다: ${JSON.stringify(composer)}`);
-        await mobilePage.locator(".pas-split-mobile-tabs").getByRole("tab", { name: /PAS 대화/ }).click({ force: true });
+        await mobilePage.locator(".pas-split-mobile-tabs").getByRole("tab", { name: /PAS 대화/ }).click();
         await mobilePage.waitForSelector('.pas-split-body[data-mobile-tab="chat"]', { state: "visible" });
         notes.push(await assertNoToggleHits(mobilePage, `${width} PAS 대화`));
-        await mobilePage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click({ force: true });
+        await mobilePage.locator(".pas-split-nav").getByRole("button", { name: "홈", exact: true }).click();
         await mobilePage.waitForSelector('[data-testid="pas-home"]', { state: "visible" });
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 카드 목록`));
-        await mobilePage.getByRole("tab", { name: "폴더 문서" }).click({ force: true });
+        await mobilePage.getByRole("tab", { name: "폴더 문서" }).click();
         await pause(120);
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 폴더 문서`));
-        await mobilePage.getByRole("tab", { name: "칸반 보드" }).click({ force: true });
+        await mobilePage.getByRole("tab", { name: "칸반 보드" }).click();
         await mobilePage.waitForSelector(".v3-card-board", { state: "visible" });
         await pause(120);
         notes.push(await assertNoToggleHits(mobilePage, `${width} 홈 칸반 보드`));
@@ -907,7 +972,7 @@ try {
       const box = await mobilePage.locator('[data-testid="pas-composer"]').boundingBox();
       assert.ok(box && 844 - (box.y + box.height) >= 60, `입력창 안전 여백이 부족합니다: ${JSON.stringify(box)}`);
       await capture(mobilePage, "16-390-dark-board.png");
-      await tabs.getByRole("tab", { name: /PAS 대화/ }).click({ force: true });
+      await tabs.getByRole("tab", { name: /PAS 대화/ }).click();
       await mobilePage.waitForSelector('.pas-split-body[data-mobile-tab="chat"]', { state: "visible" });
       assert.equal(await mobilePage.locator(".pas-split-clipboard").isVisible(), false);
       assert.equal(await mobilePage.locator('[data-testid="pas-composer"]').isVisible(), true,
@@ -992,7 +1057,7 @@ try {
           return original(input, init);
         };
       });
-      await errorPage.locator('.pas-home-doc-row[data-document-id="doc-pas-approval-notes"]').click({ force: true });
+      await errorPage.locator('.pas-home-doc-row[data-document-id="doc-pas-approval-notes"]').click();
       await errorPage.locator('[data-testid="internal-document-dialog"]').waitFor({ state: "visible" });
       await errorPage.waitForFunction(() => document.body.textContent?.includes("문서를 불러오지 못했습니다"));
       await capture(errorPage, "21-1440-dark-reader-error.png");
@@ -1000,7 +1065,7 @@ try {
       await errorPage.evaluate(() => {
         if (window.__pasSplitOriginalFetch) window.fetch = window.__pasSplitOriginalFetch;
       });
-      await errorPage.locator('.pas-home-doc-row[data-document-id="doc-pas-approval-notes"]').click({ force: true });
+      await errorPage.locator('.pas-home-doc-row[data-document-id="doc-pas-approval-notes"]').click();
       await errorPage.locator('[data-testid="internal-document-dialog"]').waitFor({ state: "visible" });
       await errorPage.waitForFunction(() => {
         const region = document.querySelector('[role="region"][aria-label="문서 본문"]');

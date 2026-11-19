@@ -66,9 +66,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "undo undo"
     "viewbar viewbar"
     "clipboard chat"
     "clipboard composer";
@@ -79,19 +78,21 @@
 .pas-split-body[data-mode="quiet"] {
   grid-template-columns: minmax(0, 1fr) var(--pas-main-width);
   grid-template-areas:
-    "undo undo"
     "viewbar viewbar"
     "character chat"
     "character composer";
 }
 
 .pas-split-undo {
-  grid-area: undo;
   display: flex;
   align-items: center;
   gap: var(--v3-space-3);
-  min-height: var(--v3-action-size);
-  padding: var(--v3-space-1) var(--v3-space-2) var(--v3-space-1) var(--v3-space-4);
+  min-width: 0;
+  max-width: 100%;
+  height: var(--v3-action-size);
+  box-sizing: border-box;
+  margin-inline-start: auto;
+  padding: 0 var(--v3-space-2) 0 var(--v3-space-4);
   border: 1px solid var(--persistent-session-line);
   border-radius: var(--v3-space-4);
   background: var(--persistent-session-paper);
@@ -102,8 +103,9 @@
 .pas-split-undo > span {
   flex: 1;
   min-width: 0;
-  word-break: keep-all;
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pas-split-viewbar {
@@ -262,7 +264,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--v3-space-5);
-  padding: var(--v3-space-5) var(--v3-space-5) calc(var(--v3-space-5) + var(--pas-toggle-safe-block));
+  padding: var(--v3-space-5);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--glass-border) 86%, var(--foreground)) transparent;
 }
@@ -764,8 +766,8 @@
 .pas-split-composer-seat {
   grid-area: composer;
   min-width: 0;
-  padding: var(--v3-space-2) var(--v3-space-3) var(--pas-toggle-safe-block);
-  padding-inline-end: var(--pas-toggle-safe-inline);
+  padding: var(--v3-space-2) var(--v3-space-3);
+  margin-block-end: calc(var(--pas-toggle-safe-block) - var(--v3-space-5));
   border: 1px solid var(--persistent-session-line);
   border-radius: var(--v3-space-6);
   background: var(--persistent-session-paper);
@@ -961,7 +963,11 @@
   overflow: hidden;
 }
 
-.pas-home-nav {
+.pas-home > .pas-home-nav {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  box-sizing: border-box;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1233,7 +1239,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .pas-home-nav {
+  .pas-home > .pas-home-nav {
     display: none;
   }
 }
@@ -1255,9 +1261,8 @@
   .pas-split-body,
   .pas-split-body[data-mode="quiet"] {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "undo"
       "viewbar"
       "pane"
       "composer";
@@ -1289,6 +1294,17 @@
 
   .pas-split-mobile-tabs {
     display: flex;
+    grid-row: 1;
+  }
+
+  .pas-split-viewbar {
+    display: grid;
+    grid-template-rows: var(--v3-action-size) var(--v3-action-size);
+  }
+
+  .pas-split-undo {
+    grid-row: 2;
+    width: 100%;
   }
 
   .pas-split-viewswitch {
@@ -1300,7 +1316,7 @@
   }
 
   .pas-split-composer-seat {
-    padding-inline-end: var(--v3-space-3);
+    margin-block-end: var(--pas-toggle-safe-block);
     border-radius: var(--v3-space-5);
   }
 
@@ -1324,7 +1340,7 @@
   }
 
   .pas-clipboard-sheet {
-    padding: var(--v3-space-4) var(--v3-space-3) calc(var(--v3-space-4) + var(--pas-toggle-safe-block));
+    padding: var(--v3-space-4) var(--v3-space-3);
   }
 
   .pas-chat-head {

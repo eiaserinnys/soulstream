@@ -64,10 +64,10 @@ export function PasSplitHome({
   };
 
   return <main className="pas-home" data-testid="pas-home" data-focus={view === "docs" ? "docs" : undefined}>
-    <nav className="pas-home-nav glass-strong glass-chrome lg-rim" aria-label="폴더 트리">
-      <div className="pas-home-nav-scroll">
+    <aside className="v3-navigation pas-home-nav glass-strong glass-chrome lg-rim border border-glass-border" aria-label="폴더 트리">
+      <div className="v3-navigation-scroll pas-home-nav-scroll">
         <h2>전체 프로젝트</h2>
-        <ProjectNavigationTree
+        <div className="v3-nav-list"><ProjectNavigationTree
           folders={HOME_FOLDERS}
           selectedFolderId={selectedFolderId}
           isExpanded={folderId => Boolean(expanded[folderId])}
@@ -75,9 +75,9 @@ export function PasSplitHome({
           onSelect={item => setSelectedFolderId(item.id)}
           onContextMenu={event => event.preventDefault()}
           onReorder={async () => {}}
-        />
+        /></div>
       </div>
-    </nav>
+    </aside>
 
     <section className="pas-home-planner glass-strong glass-chrome lg-rim" aria-label="홈 플래너">
       <div className="pas-home-planner-head">
