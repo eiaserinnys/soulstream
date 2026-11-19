@@ -199,7 +199,9 @@ try {
           return { overflow: pageOverflow, images: images.total };
         });
         await check(`${viewport.id} ${theme} 보고 창`, async () => {
-          await gotoReport(page, theme);
+          // 같은 페이지에서 말풍선으로 열어 화면 재적재를 줄인다. 직접 #report 진입은
+          // 아래 1440 흐름에서 한 번 더 확인한다.
+          await openFromBubble(page);
           const dialog = await rect(page, '[data-testid="pas-report-thread-dialog"]');
           assert(dialog, "보고 창이 열리지 않았다");
           assert(dialog.x >= 0 && dialog.y >= 0 && dialog.right <= viewport.width + 0.5 && dialog.bottom <= viewport.height - 72 + 0.5,
@@ -254,6 +256,18 @@ try {
     const viewport = { width: 1440, height: 900 };
     const page = await newPage(browser, viewport, "dark");
     await gotoPas(page, "dark");
+
+    await check("직접 #report 진입", async () => {
+      await gotoReport(page, "dark");
+      assert(await page.locator('[data-testid="pas-report-thread-dialog"]').isVisible(), "보고 창이 보이지 않는다");
+      assert((await reportStatus(page)) === "질문", `직접 진입한 질문 안건의 상태가 질문이 아니다: ${await reportStatus(page)}`);
+      const hash = await page.evaluate(() => window.location.hash);
+      assert(hash === "#report", `주소가 #report가 아니다: ${hash}`);
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('[data-testid="pas-report-thread-dialog"]', { state: "hidden", timeout: 8_000 });
+      await wait(250);
+      return { hash };
+    });
 
     await check("말풍선으로 보고 창 열기", async () => {
       await openFromBubble(page);
