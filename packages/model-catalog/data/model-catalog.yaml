@@ -470,6 +470,7 @@ price_snapshot:
     - Other legacy rows retain their previous 2026-10-05 values and are not claimed as reverified for this snapshot.
 
 persistent_defaults:
+  agent_id: seosoyoung-pas
   model_preset: claude-opus
   fallback_models:
     - model_preset: codex-6.2-sol

@@ -38,12 +38,6 @@ import {
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
 import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
 
-/**
- * The default agent for a new PAS lives here; its node is the orchestrator's
- * DEFAULT_EXECUTION_NODE_ID, injected from the assembly point, and the default
- * preset and fallback list come from catalogue data.
- */
-export const PERSISTENT_PREFERRED_AGENT_ID = "seosoyoung-pas";
 /** Used when the first message is left empty; ordinary session creation keeps its own empty-input prompt. */
 export const PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
@@ -466,16 +460,19 @@ export class PersistentSessionSettingsService {
 
   async createDefaults(): Promise<PersistentCreateDefaults> {
     const reasons: string[] = [];
-    const profiles = await this.deps.profiles.listAgentProfiles(this.deps.defaultExecutionNodeId);
-    let preferredAgentId: string | null = null;
-    if (profiles === undefined) {
-      reasons.push(`노드 ${this.deps.defaultExecutionNodeId}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
-    } else if (PERSISTENT_PREFERRED_AGENT_ID in profiles) {
-      preferredAgentId = PERSISTENT_PREFERRED_AGENT_ID;
-    } else {
-      reasons.push(`프로필 ${PERSISTENT_PREFERRED_AGENT_ID}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
-    }
     const persistedDefaults = this.deps.modelCatalog.snapshot().persistent_defaults;
+    const agentId = persistedDefaults.agent_id;
+    let preferredAgentId: string | null = null;
+    if (agentId !== undefined) {
+      const profiles = await this.deps.profiles.listAgentProfiles(this.deps.defaultExecutionNodeId);
+      if (profiles === undefined) {
+        reasons.push(`노드 ${this.deps.defaultExecutionNodeId}에 연결할 수 없어 프로필을 확인하지 못했습니다.`);
+      } else if (agentId in profiles) {
+        preferredAgentId = agentId;
+      } else {
+        reasons.push(`프로필 ${agentId}이(가) 노드 ${this.deps.defaultExecutionNodeId}에 없습니다.`);
+      }
+    }
     let defaultModel: PersistentModelSelectionView = { model_preset: null, reasoning_effort: null };
     try {
       const preset = this.deps.presets.resolveStaticForNode(
