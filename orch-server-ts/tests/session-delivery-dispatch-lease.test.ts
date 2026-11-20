@@ -1,10 +1,3 @@
-/**
- * card #1380 — 발송 중(dispatching) 전달 시도가 claim의 15초 시한을 그대로 쓰면
- * 만료 sweep이 진행 중인 발송을 pending으로 되돌리고, 뒤따르는 markQueued가
- * 토큰 CAS를 잃는다. beginDispatch는 dispatching으로 옮길 때 attempt_expires_at을
- * dispatchLease(기본 120초)로 다시 쓴다. claim의 15초와 만료 sweep의 되돌림 규칙은
- * 그대로다.
- */
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";

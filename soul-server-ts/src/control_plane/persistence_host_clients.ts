@@ -11,9 +11,6 @@ import type {
   SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
 import type {
-  ClaudeTranscriptEntry,
-  ClaudeTranscriptKey,
-  ClaudeTranscriptSessionSummary,
   RegisterSessionReviewResult,
   AcknowledgeReviewOutcome,
   RegisterSessionParams,

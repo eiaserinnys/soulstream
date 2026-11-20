@@ -29,6 +29,13 @@ export const DELIVERY_AGGREGATE_STATES = [
 
 export type DeliveryAggregateState = (typeof DELIVERY_AGGREGATE_STATES)[number];
 
+export function isDeliveryIntent(value: unknown): value is DeliveryIntent {
+  return (
+    typeof value === "string" &&
+    DELIVERY_INTENTS.includes(value as DeliveryIntent)
+  );
+}
+
 export interface SessionDeliveryRow {
   delivery_id: string;
   enqueue_sequence?: string | number;

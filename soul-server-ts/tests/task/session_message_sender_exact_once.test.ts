@@ -1,6 +1,3 @@
-// 500-line exception: the deterministic two-node ledger, clock, execution
-// fixture, retry-horizon oracle, and its mutation self-test stay together so
-// the oracle cannot drift from the failure model it judges.
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";

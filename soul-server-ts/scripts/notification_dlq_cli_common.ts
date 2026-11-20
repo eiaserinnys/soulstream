@@ -1,11 +1,3 @@
-/**
- * notification DLQ CLI 공통부.
- *
- * orch를 직접 부르지 않고 노드 로컬 soul-server의 내부 MCP 리스너에 붙은
- * DLQ 라우트를 부른다. 주소는 세션의 soulstream 내부 MCP 주소와 같은
- * 출처(`MCP_INTERNAL_PORT`/`PORT`+1, `MCP_PATH`)에서 만들고, 토큰은 지금처럼
- * `AUTH_BEARER_TOKEN`(세션 안 ssf1, 세션 밖 서비스 토큰)이다.
- */
 import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
 import { localInternalMcpUrlFromEnv } from "../src/mcp/endpoint_paths.js";
 

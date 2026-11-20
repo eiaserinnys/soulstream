@@ -1,7 +1,6 @@
-import {
-  DELIVERY_INTENTS,
-  type DeliveryAggregateState,
-  type DeliveryIntent,
+import type {
+  DeliveryAggregateState,
+  DeliveryIntent,
 } from "@soulstream/wire-schema/session-delivery";
 
 export const DELIVERY_ATTEMPT_OUTCOMES = [
@@ -30,12 +29,6 @@ export function isDeliveryLayerCombinationAllowed(input: {
   return input.aggregateState === "dead_letter" && !input.hasTargetReceipt;
 }
 
-/**
- * Optional additive metadata carried across every intervention boundary.
- *
- * Missing fields deliberately preserve the legacy intervention path while the
- * persistent runtime feature gate is disabled.
- */
 export interface DeliveryMetadata {
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
@@ -47,11 +40,4 @@ export interface DeliveryMetadata {
   callerTurnId?: string;
   createdAt?: string;
   deliveryAttemptToken?: string;
-}
-
-export function isDeliveryIntent(value: unknown): value is DeliveryIntent {
-  return (
-    typeof value === "string" &&
-    DELIVERY_INTENTS.includes(value as DeliveryIntent)
-  );
 }

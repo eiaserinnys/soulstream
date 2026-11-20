@@ -1,10 +1,3 @@
-/**
- * 노드 로컬 notification DLQ 라우트와 CLI 공통부.
- *
- * 라우트는 서비스 토큰과 full 세션 토큰(ssf1)을 받고 restricted(ssr1)는 403,
- * 토큰 없음·위조는 401이다. 실제 orch 호출은 서버 자신의 클라이언트가 한다.
- * CLI는 orch가 아니라 로컬 내부 MCP 주소를 부르고 env 토큰을 쓴다.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
