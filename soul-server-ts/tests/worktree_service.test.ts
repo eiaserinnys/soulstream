@@ -35,7 +35,7 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
 
-function fixture(active: string[] = []) {
+function fixture(active: string[] = [], options: { onCreated?: () => void } = {}) {
   const projectsRoot = mkdtempSync(join(tmpdir(), "worktree-service-"));
   roots.push(projectsRoot);
   const repo = join(projectsRoot, "demo");
@@ -61,6 +61,7 @@ function fixture(active: string[] = []) {
     lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }),
     host,
     listActiveWorkspaceDirs: () => active,
+    ...(options.onCreated ? { onCreated: options.onCreated } : {}),
   });
   return { projectsRoot, repo, host, service, worktreeGit };
 }
@@ -116,6 +117,19 @@ async function captureWorktreeError(operation: Promise<unknown>): Promise<Worktr
 }
 
 describe("WorktreeService", () => {
+  it("calls the create callback once after success and not on failure", async () => {
+    const onCreated = vi.fn();
+    const { service } = fixture([], { onCreated });
+
+    await service.create({ actorSessionId: "owner", repoId: "demo", branch: "callback-once", mode: "new" });
+    expect(onCreated).toHaveBeenCalledTimes(1);
+
+    await expect(
+      service.create({ actorSessionId: "owner", repoId: "demo", branch: "callback-fail", mode: "adopt" }),
+    ).rejects.toBeInstanceOf(WorktreeServiceError);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+  });
+
   it("finishes removal without waiting for slow trash cleanup", async () => {
     const { service, repo, host } = fixture();
     const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "slow-trash", mode: "new" });

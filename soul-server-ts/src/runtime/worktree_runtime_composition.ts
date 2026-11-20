@@ -30,6 +30,7 @@ export function composeWorktreeService(
   env: Env,
   hostConfig: HostClientConfig,
   listActiveWorkspaceDirs: () => string[],
+  onWorktreeCreated?: () => void,
 ): WorktreeService | undefined {
   if (!env.WORKTREE_MCP_ENABLED) return undefined;
   const projectsRoot = env.WORKTREE_PROJECTS_ROOT;
@@ -51,6 +52,7 @@ export function composeWorktreeService(
     }),
     host: new WorktreeHostClient(hostConfig),
     listActiveWorkspaceDirs,
+    ...(onWorktreeCreated ? { onCreated: onWorktreeCreated } : {}),
   });
 }
 

@@ -1,7 +1,8 @@
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
+import type { AgentRegistry } from "../agent_registry.js";
 import type { Env } from "../config.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import { createLogger } from "../logger.js";
@@ -39,6 +40,8 @@ export interface SessionIsolationCompositionDeps {
   > | undefined;
   mcpConfigService: Pick<McpConfigService, "resolveMcpProfile">;
   codexCliPath?: CodexCliPathResolution | undefined;
+  /** 프로필 workspace_dir을 `.env` 가림 탐색 뿌리로 싣는다. */
+  agentRegistry?: Pick<AgentRegistry, "list"> | undefined;
 }
 
 export interface SessionIsolationComposition {
@@ -148,6 +151,11 @@ async function prepareRunnerIsolation(
     taskWorktreeId: request.task.worktreeId,
     resolveCommonDir: async (repositoryPath) => await ports.resolveGitCommonDir(repositoryPath),
   });
+  // 프로필 workspace_dir은 이름 규칙 없이 그대로 스캔 뿌리가 된다. 절대 경로가
+  // 아닌 값은 싣지 않는다.
+  const agentWorkspaceDirs = (deps.agentRegistry?.list() ?? [])
+    .map((profile) => profile.workspace_dir)
+    .filter((workspaceDir) => isAbsolute(workspaceDir));
   const input: IsolationPreparationInput = {
     decision,
     backend,
@@ -182,6 +190,8 @@ async function prepareRunnerIsolation(
       ? { testDatabaseUrl: runtime.settings.testDatabaseUrl }
       : {}),
     scratchWorkspaceDir: request.agent.workspace_dir,
+    ...(env.WORKTREE_PROJECTS_ROOT ? { projectsRoot: env.WORKTREE_PROJECTS_ROOT } : {}),
+    ...(agentWorkspaceDirs.length > 0 ? { agentWorkspaceDirs } : {}),
   };
   const plan = await prepareIsolationPlan(input, ports, {
     logEnvMaskScan: (scan) => scanLogger.info({ ...scan }, "restricted .env mask scan"),

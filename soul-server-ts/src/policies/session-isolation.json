@@ -625,7 +625,8 @@
       "/home/eias/haniel-root/logs",
       "/home/eias/haniel-root/services/logs",
       "/home/eias/haniel-root/services/soulstream/logs"
-    ]
+    ],
+    "envMaskScanRoots": []
   },
   "testDatabases": [],
   "network": {
