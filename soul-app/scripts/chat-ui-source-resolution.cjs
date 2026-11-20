@@ -4,6 +4,7 @@ const path = require('node:path');
 const sourceRoots = new Set([
   path.resolve(__dirname, '../../packages/chat-ui/src'),
   path.resolve(__dirname, '../node_modules/@soulstream/chat-ui/src'),
+  path.resolve(__dirname, '../../packages/wire-schema/src'),
 ]);
 
 function isWithin(directory, candidate) {

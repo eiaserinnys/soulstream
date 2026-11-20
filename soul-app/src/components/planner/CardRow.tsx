@@ -4,7 +4,7 @@ import { Image, Text, Pressable, View, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
-import { CARD_STATUS_LABEL } from '../../lib/card-presentation';
+import { CARD_STATUS_LABELS } from '../../../../packages/wire-schema/src/card_status_labels';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -48,7 +48,7 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
         : board && card.status === 'todo' ? '드래프트'
           : board && card.status === 'review' ? '검수 대기'
             : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘, 질문' : '질문')
-              : CARD_STATUS_LABEL[card.status]
+              : CARD_STATUS_LABELS[card.status]
     )}
   </Text>;
 }

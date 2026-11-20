@@ -1,14 +1,11 @@
 import type { CardStatus } from '../api/cardTypes';
 import { completedGridLayout } from '../../../packages/soul-ui/src/cards/completed-cards';
+import { CARD_BOARD_STATUS_LABELS } from '../../../packages/soul-ui/src/lib/card-board-status-labels';
 import { exhaustiveList } from './exhaustive';
 
-const BOARD_COLUMN_LABELS: Record<CardStatus, string> = {
-  todo: '드래프트', queued: '대기', running: '실행 중', blocked: '막힘',
-  awaiting_verification: '검증 대기', review: '검수 대기', on_hold: '보류', done: '완료', cancelled: '취소',
-};
 export const BOARD_COLUMNS = exhaustiveList<CardStatus>()([
   'todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled',
-]).map((status) => [status, BOARD_COLUMN_LABELS[status]] as const);
+]).map((status) => [status, CARD_BOARD_STATUS_LABELS[status]] as const);
 /** 검증 대기는 담당이 스스로 기다리는 상태라 손으로 옮길 수 있는 목적지가 아니다. */
 export const MANUAL_STATUS_COLUMNS = BOARD_COLUMNS.filter(([status]) => status !== 'awaiting_verification');
 export const BOARD_LONG_PRESS_MS = 350;

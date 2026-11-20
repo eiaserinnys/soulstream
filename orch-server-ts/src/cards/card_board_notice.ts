@@ -1,6 +1,6 @@
 import type { CardRow, CardStatus, FolderOperationActorKind } from "./control_plane/card_types.js";
-import type { CardItemState } from "./card_item_rules.js";
 import type { CardOwnerSession } from "./card_session_target.js";
+import { cardItemStateLabels } from "./card_change_notification.js";
 import { CARD_NOTICE_TAGS, CARD_NOTICE_LEAD } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
 type NoticeCard = Pick<CardRow, "id" | "number" | "title">;
@@ -33,10 +33,9 @@ export function buildCardQuestionNotice(card: NoticeCard, text: string, options:
   return `${CARD_NOTICE_TAGS[1]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})에 담당이 질문을 열었습니다. 질문${questionId ? ` ${questionId}` : ""}: ${text} 선택지: ${options.length ? options.join(" / ") : "없음"}. 디렉터 판에 질문 장이 올라 있습니다.`;
 }
 
-const itemStateLabels: Record<CardItemState, string> = {done:"결과 있음",doing:"하는 중",todo:"아직",dropped:"뺌"};
 export function buildCardReviewNotice(card: NoticeCard & Pick<CardRow, "now" | "items">): string {
   const items = card.items;
-  return `${CARD_NOTICE_TAGS[2]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})가 검수 대기가 됐습니다. 볼 것: ${card.now?.ask || card.now?.text || "없음"}. 확인 항목: ${items.length ? items.map(item => `${item.id}. ${item.title}(${itemStateLabels[item.state]})`).join(", ") : "없음"}.`;
+  return `${CARD_NOTICE_TAGS[2]}${CARD_NOTICE_LEAD}${card.number} 「${card.title}」(${card.id})가 검수 대기가 됐습니다. 볼 것: ${card.now?.ask || card.now?.text || "없음"}. 확인 항목: ${items.length ? items.map(item => `${item.id}. ${item.title}(${cardItemStateLabels[item.state]})`).join(", ") : "없음"}.`;
 }
 
 export function buildCardDoneNotice(card: NoticeCard & Pick<CardRow, "completed_kind" | "completed_session_id" | "assignee_session_id">): string {

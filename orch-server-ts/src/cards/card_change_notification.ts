@@ -1,11 +1,11 @@
+import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import type { CardMutationChange } from "./card_control_plane_service.js";
-import type { CardMutationResult } from "./control_plane/card_types.js";
+import type { CardMutationResult, CardStatus } from "./control_plane/card_types.js";
 import type { CardItemState } from "./card_item_rules.js";
 
 export type CardChangeDelivery = { deliveryId:string; actorKind:string; actorSessionId:string | null };
 export type CardCommentNotificationDetails = { itemTarget?:{id:number;title:string;state:CardItemState;confirmed:boolean}; confirmedItemIds?:number[] };
-export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대기",running:"실행 중",awaiting_verification:"검증 대기",blocked:"막힘",review:"검수",on_hold:"보류",done:"완료",cancelled:"취소"};
-const cardItemStateLabels:Record<CardItemState,string>={todo:"아직",doing:"하는 중",done:"끝남",dropped:"뺌"};
+export const cardItemStateLabels:Record<CardItemState,string>={todo:"아직",doing:"하는 중",done:"결과 있음",dropped:"뺌"};
 const cardCommentInstruction="수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다.";
 
 /** 답과 되묻기의 전달 대상. 배달 시점 카드의 현재 담당이 있으면 그 세션, 없으면 질문을 만든 세션이다. */
@@ -23,7 +23,7 @@ export function buildCardQuestionAnswerNotice(card:{id:string;title:string;statu
     lines.push(`고른 안: ${question.selected_option}`);
     lines.push(`덧붙임: ${question.answer === question.selected_option ? "없음" : question.answer}`);
   } else lines.push(`글 답: ${question.answer}`);
-  lines.push(`카드 상태: ${cardStatusLabels[card.status]}`);
+  lines.push(`카드 상태: ${CARD_STATUS_LABELS[card.status as CardStatus]}`);
   return lines.join("\n");
 }
 
@@ -39,7 +39,7 @@ export function buildCardQuestionThreadNotice(card:{id:string;title:string;statu
     if (question.selected_option != null && question.answer !== question.selected_option) lines.push(`덧붙임: ${question.answer}`);
   }
   lines.push(open ? `되물은 글: ${body}` : `덧붙인 글: ${body}`);
-  lines.push(`질문은 ${open ? "아직 열려" : "닫혀"} 있습니다. 카드 상태는 ${cardStatusLabels[card.status]}입니다.`);
+  lines.push(`질문은 ${open ? "아직 열려" : "닫혀"} 있습니다. 카드 상태는 ${CARD_STATUS_LABELS[card.status as CardStatus]}입니다.`);
   lines.push(open
     ? `add_card_comment에 mode="reply", question_id="${question.id}"를 붙여 답하세요.`
     : `답이 필요하면 add_card_comment에 mode="reply", question_id="${question.id}"를 붙여 답하세요.`);
@@ -71,7 +71,7 @@ export function buildCardChangeNotification(change:CardChangeNotificationChange,
     if (!comment || comment.author_kind !== "user" || comment.delivered_at) return null;
     text=`[카드 커멘트] ${actor}가 ${target}에 커멘트를 남겼습니다: ${String(comment.body)}`;
     text+=`\n커멘트 ID: ${String(comment.id ?? op.payload_json.comment_id ?? "")}`;
-    text+=`\n카드 상태: ${cardStatusLabels[card.status]}`;
+    text+=`\n카드 상태: ${CARD_STATUS_LABELS[card.status]}`;
     if (details?.itemTarget) {
       const itemStatus=details.itemTarget.confirmed ? "사용자 확인" : cardItemStateLabels[details.itemTarget.state];
       text+=`\n대상 항목: ${details.itemTarget.id}번 ${details.itemTarget.title} (지금 ${itemStatus})`;
@@ -81,7 +81,7 @@ export function buildCardChangeNotification(change:CardChangeNotificationChange,
   } else {
     if (!previousStatus || previousStatus === card.status) return null;
     const ending = card.status === "on_hold" ? "로" : "으로";
-    text=`${actor}가 ${target}를 ${cardStatusLabels[previousStatus]}→${cardStatusLabels[card.status]}${ending} 변경했습니다`;
+    text=`${actor}가 ${target}를 ${CARD_STATUS_LABELS[previousStatus]}→${CARD_STATUS_LABELS[card.status]}${ending} 변경했습니다`;
     if (op.reason) text+=`: ${op.reason}`;
   }
   return {sessionId,text,deliveryId:`card:${card.id}:${kind}:${op.id}:${sessionId}`,actorKind:op.actor_kind,actorSessionId:op.actor_session_id};

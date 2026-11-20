@@ -5,6 +5,7 @@ import type {
   CardQuestionOption,
   CardQuestionThreadEntry,
 } from "./card_questions.js";
+import { CARD_STATUS_LABELS } from "./card_status_labels.js";
 export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
 export const REPORT_TIMELINE_EVENT_TYPE = "report_timeline";
 /** 카드 질문 줄이 답이나 철회로 닫혔을 때 남기는 이벤트 타입. 줄로 그리지 않는다. */
@@ -42,16 +43,8 @@ export type ReportTimelineLine = {
 export type ReportTimelineRowStatus = ReportTimelineStatus | ReportTimelineQuestionClosedStatus;
 export type ReportTimelineRowLine = Omit<ReportTimelineLine, "status"> & { status: ReportTimelineRowStatus };
 export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineRowStatus, string> = {
-  todo: "할 일",
-  queued: "대기",
-  running: "실행 중",
-  awaiting_verification: "검증 대기",
-  review: "검수 대기",
-  blocked: "막힘",
+  ...CARD_STATUS_LABELS,
   question: "질문",
-  done: "완료",
-  cancelled: "취소",
-  on_hold: "보류",
   report: "보고",
   answered: "답함",
   withdrawn: "철회",

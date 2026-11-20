@@ -1,5 +1,6 @@
+import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import { formatSeoulWakeTime } from "./card_verification_wait.js";
-import { cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
+import type { CardChangeDelivery } from "./card_change_notification.js";
 import type { CardStatus } from "./control_plane/card_types.js";
 
 // Failure ceilings, not a delay on the normal completion path.
@@ -47,11 +48,11 @@ export function buildCardStatusReminder(facts: CardReminderFacts, rootEnded: boo
   let kind: "comment_unhandled" | "not_running" | "stalled", text: string;
   if (rootEnded && facts.unhandledCommentId && !facts.pendingDeliveries) {
     kind = "comment_unhandled";
-    text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${cardStatusLabels[facts.cardStatus]}'인데, 사용자 커멘트(ID ${facts.unhandledCommentId})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`;
+    text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${CARD_STATUS_LABELS[facts.cardStatus]}'인데, 사용자 커멘트(ID ${facts.unhandledCommentId})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`;
   } else if (!isRunningStatus(facts.cardStatus)) {
     if (!rootEnded || !facts.activeDescendants) return null;
     kind = "not_running";
-    text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${cardStatusLabels[facts.cardStatus]}'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`;
+    text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${CARD_STATUS_LABELS[facts.cardStatus]}'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`;
   } else {
     if (facts.activeTree || Boolean(facts.activeBackgroundTasks) || facts.pendingDeliveries || facts.unregisteredCompletions || !facts.rootEndedAfterStatus) return null;
     kind = "stalled";

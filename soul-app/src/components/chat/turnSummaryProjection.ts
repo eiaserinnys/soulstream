@@ -8,6 +8,7 @@ import { formatRelativeTime } from '../../lib/relative-time';
 import {
   isPersistentJevCandidatesDebugEvent,
 } from '../../../../packages/wire-schema/src/persistent_jev_candidates';
+import { CARD_STATUS_LABELS } from '../../../../packages/wire-schema/src/card_status_labels';
 
 function assignedCardPreparedInputId(event: SessionEvent): string | null {
   if (event.type !== 'debug' || event.data?.kind !== 'assigned_card_context_snapshot') return null;
@@ -62,13 +63,8 @@ function hasLaterComment(card: Record<string,unknown>): boolean {
     && Date.parse(card.latestCommentAt)>Date.parse(card.latestReportAt);
 }
 
-const STATUS_LABELS: Record<CardStatus, string> = {
-  todo:'할 일',queued:'대기',blocked:'막힘',running:'실행 중',awaiting_verification:'검증 대기',
-  review:'검수 대기',on_hold:'보류',done:'완료',cancelled:'취소',
-};
-
 function statusLabel(status:string):string {
-  return STATUS_LABELS[status as CardStatus]??status;
+  return CARD_STATUS_LABELS[status as CardStatus]??status;
 }
 
 function positiveEventId(value: unknown): number | null {

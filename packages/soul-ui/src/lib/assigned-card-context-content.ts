@@ -1,5 +1,6 @@
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { CardStatus } from "@soulstream/wire-schema";
+import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import { formatWorkspaceTime } from "./format-workspace-time";
 
 type Snapshot = AssignedCardContextSnapshotEvent["capture"]["snapshot"];
@@ -26,13 +27,6 @@ function hasLaterComment(card: Snapshot["cards"][number]): boolean {
   return Date.parse(card.latestCommentAt) > Date.parse(card.latestReportAt);
 }
 
-const CARD_STATUS_LABELS = {
-  todo:"할 일",queued:"대기",blocked:"막힘",running:"실행 중",awaiting_verification:"검증 대기",
-  review:"검수 대기",on_hold:"보류",done:"완료",cancelled:"취소",
-} satisfies Record<CardStatus,string>;
-
 function statusLabel(status: string): string {
-  return Object.prototype.hasOwnProperty.call(CARD_STATUS_LABELS, status)
-    ? CARD_STATUS_LABELS[status as CardStatus]
-    : status;
+  return CARD_STATUS_LABELS[status as CardStatus] ?? status;
 }
