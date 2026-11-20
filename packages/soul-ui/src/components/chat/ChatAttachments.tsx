@@ -2,7 +2,7 @@ import { useId } from "react";
 import { FileAttachmentPreview } from "../FileAttachmentPreview";
 import { ChatImageAttachments } from "./ChatImageAttachments";
 import {
-  isSafeRasterPreviewMimeType,
+  isImagePreviewMimeType,
   type ChatAttachmentItem,
 } from "../../lib/chat-attachment-model";
 import type { ChatImageItem, ChatImageMetadata, ChatImageRole } from "../../lib/chat-markdown-images";
@@ -68,7 +68,7 @@ function isImageGridItem(item: ChatAttachmentItem): boolean {
   return item.previewKind === "image"
     && item.availability === "ready"
     && item.previewUrl !== null
-    && isSafeRasterPreviewMimeType(item.mimeType);
+    && isImagePreviewMimeType(item.mimeType);
 }
 
 function uniqueItems(items: ChatAttachmentItem[]): Array<{ item: ChatAttachmentItem; index: number }> {

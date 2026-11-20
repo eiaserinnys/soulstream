@@ -4,9 +4,9 @@ import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const phase = process.env.IMAGE_VIEWER_PHASE ?? "after";
-const output = path.resolve("../../../.local/artifacts/20261012-image-viewer", phase);
+const output = path.resolve("../.local/card429/web", phase);
 mkdirSync(output, {recursive:true});
-const headroomOutput = path.resolve("../../../.local/artifacts/20261012-image-viewer/headroom");
+const headroomOutput = path.resolve("../.local/card429/web/headroom");
 const previewPhase = process.env.IMAGE_VIEWER_PREVIEW_PHASE ?? "after";
 const cases = [[1920,1080,800,600],[1920,1080,2560,1440],[1920,1080,1200,2800],[1920,1080,64,64],[390,844,800,600]];
 async function open(page: Page, viewer: string, vw:number, vh:number, w:number, h:number, caption="", options: {theme?: "light"|"dark"; gallery?:string; sample?:string} = {}) {
@@ -385,10 +385,13 @@ for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[240,8
 // 늘리지 않음), 문서는 읽기 폭, 긴 문서는 화면 높이 한도에서 본문 스크롤. 질문 장의 첨부
 // 링크는 새 탭이 아니라 이 보기 창으로 열린다.
 const attachmentViewports = [[2560,1392],[1440,900],[360,780]] as const;
-async function openAttachment(page:Page, kind:string, vw:number, vh:number, w=800, h=600) {
+async function openAttachment(page:Page, kind:string, vw:number, vh:number, w=800, h=600, theme:"light"|"dark"="light") {
   await page.setViewportSize({width:vw,height:vh});
-  await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
-  await page.addInitScript(()=>localStorage.setItem("ls.webglGlass","0"));
+  await page.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});
+  await page.addInitScript((nextTheme:string)=>{
+    localStorage.setItem("ls.webglGlass","0");
+    localStorage.setItem("soul-dashboard-theme",nextTheme);
+  },theme);
   await page.goto(`/e2e/image-viewer.fixture.html?viewer=attachment&attachment=${kind}&width=${w}&height=${h}`);
   const popup=page.locator('[data-slot="dialog-popup"]');
   await expect(popup).toBeVisible();
@@ -834,3 +837,324 @@ for(const [vw,vh] of [[1920,1080],[390,844]] as const) {
     expect(data.popup.right).toBeLessThanOrEqual(vw-15);
   });
 }
+
+// 카드 #429: 긴 캡처는 통째로 맞추지 않고 읽기 크기(폭 상한 448)로 열고 창 안에서 스크롤한다.
+// 두 창(AttachmentViewer, CardImageViewer)이 같은 틀을 쓴다. 장면은 시안 visual_check.py를 옮긴 것이다.
+const tallSvg=(w=1170,h=7200)=>`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="#f4f1ea"/><rect x="24" y="24" width="${w-48}" height="${h-48}" fill="none" stroke="#3b6ea5" stroke-width="8"/><text x="48" y="96" fill="#1f2933" font-size="48">${w} × ${h}</text></svg>`;
+async function readingMetrics(popup:Locator) {
+  return popup.evaluate(el=>{
+    const rect=(node:Element)=>node.getBoundingClientRect().toJSON();
+    const image=el.querySelector("img") as HTMLImageElement|null;
+    const viewport=el.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    const status=el.querySelector<HTMLElement>(".attachment-viewer-state");
+    const panel=el.querySelector<HTMLElement>('[data-slot="dialog-panel"]');
+    const toggle=el.querySelector<HTMLElement>(".attachment-viewer-actions button");
+    const center=(box:{left:number;top:number;width:number;height:number})=>({x:box.left+box.width/2,y:box.top+box.height/2});
+    const contentCenter=(()=>{
+      if(!panel) return null;
+      const style=getComputedStyle(panel);
+      const box=panel.getBoundingClientRect();
+      const left=parseFloat(style.paddingLeft),right=parseFloat(style.paddingRight);
+      const top=parseFloat(style.paddingTop),bottom=parseFloat(style.paddingBottom);
+      return {x:box.x+left+(box.width-left-right)/2,y:box.y+top+(box.height-top-bottom)/2};
+    })();
+    const scrollMax=(axis:"y"|"x",node:HTMLElement)=>axis==="y"?node.scrollHeight-node.clientHeight:node.scrollWidth-node.clientWidth;
+    return {
+      state:el.getAttribute("data-image-state"),
+      frame:el.getAttribute("data-image-frame"),
+      fit:el.getAttribute("data-image-fit"),
+      popup:rect(el),
+      image:image?rect(image):null,
+      natural:image?[image.naturalWidth,image.naturalHeight]:null,
+      imageSrc:image?.getAttribute("src") ?? null,
+      imageBackground:image?getComputedStyle(image).backgroundColor:null,
+      colorScheme:image?getComputedStyle(image).colorScheme:null,
+      viewport:viewport?{
+        rect:rect(viewport),scrollTop:viewport.scrollTop,scrollLeft:viewport.scrollLeft,
+        scrollHeight:viewport.scrollHeight,clientHeight:viewport.clientHeight,
+        scrollWidth:viewport.scrollWidth,clientWidth:viewport.clientWidth,
+        maxY:scrollMax("y",viewport),maxX:scrollMax("x",viewport),
+        tabIndex:viewport.tabIndex,role:viewport.getAttribute("role"),
+        label:viewport.getAttribute("aria-label"),focused:document.activeElement===viewport,
+      }:null,
+      status:status?{rect:rect(status),center:center(status.getBoundingClientRect())}:null,
+      contentCenter,
+      toggle:toggle?{rect:rect(toggle),label:toggle.getAttribute("aria-label"),title:toggle.getAttribute("title")}:null,
+      figure:(()=>{const figure=el.querySelector("figure");return figure?rect(figure):null;})(),
+      caption:el.querySelector("figcaption")?.textContent ?? null,
+      pageScrollWidth:document.documentElement.scrollWidth,
+      innerWidth:window.innerWidth,
+    };
+  });
+}
+async function captureReading(page:Page,popup:Locator,name:string,vw:number,vh:number) {
+  const data={viewport:[vw,vh],...await readingMetrics(popup)};
+  await page.screenshot({path:path.join(output,name+".png"),animations:"disabled",timeout:15000});
+  writeFileSync(path.join(output,name+".json"),JSON.stringify(data,null,2));
+  return data;
+}
+function expectCentered(data:{status:{center:{x:number;y:number}}|null;contentCenter:{x:number;y:number}|null}) {
+  expect(data.status).not.toBeNull();
+  expect(data.contentCenter).not.toBeNull();
+  expect(Math.abs(data.status!.center.x-data.contentCenter!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(data.status!.center.y-data.contentCenter!.y)).toBeLessThanOrEqual(2);
+}
+function expectReadingFrame(data:{popup:{width:number;height:number;left:number;right:number};image:{width:number;height:number}|null;viewport:any;frame:string|null},vw:number,vh:number,axis:"y"|"x") {
+  const margin=vw<=640?24:32;
+  expect(data.frame).toBe(axis==="y"?"column":"full");
+  expect(Math.abs(data.popup.height-(vh-2*margin))).toBeLessThanOrEqual(1);
+  expect(data.popup.width).toBeLessThanOrEqual(axis==="y"?448+1:vw-32+1);
+  expect(data.popup.width).toBeGreaterThanOrEqual(axis==="y"?Math.min(448,vw-32)-1:1);
+  expect(data.viewport).not.toBeNull();
+  expect(data.viewport.tabIndex).toBe(0);
+  expect(data.viewport.role).toBe("region");
+  expect(data.viewport.focused).toBe(true);
+  expect(axis==="y"?data.viewport.maxY:data.viewport.maxX).toBeGreaterThan(0);
+  if(axis==="y") expect(data.image!.width).toBeLessThanOrEqual(data.popup.width);
+  else expect(data.image!.width).toBeGreaterThan(data.viewport.clientWidth);
+  expect(data.pageScrollWidth).toBeLessThanOrEqual(data.innerWidth);
+}
+
+test("card429 tall capture reads at the 448 fit width (wide and narrow)",async({page})=>{
+  for(const [vw,vh] of [[1920,1080],[360,780]] as const) {
+    const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200);
+    await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+    await page.waitForTimeout(350);
+    const data=await captureReading(page,popup,`card429-tall-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") continue;
+    expectReadingFrame(data,vw,vh,"y");
+    expect(data.natural).toEqual([1170,7200]);
+    expect(data.toggle).not.toBeNull();
+    expect(data.toggle!.label).toBe("전체 보기");
+    expect(data.toggle!.title).toBe("전체 보기");
+    const contentWidth=data.popup.width-48; // 패널 좌우 안쪽 여백
+    expect(Math.abs(data.image!.width-contentWidth)).toBeLessThanOrEqual(2);
+    expect(data.image!.width/data.image!.height).toBeCloseTo(1170/7200,3);
+  }
+});
+
+test("card429 wide capture reads at the full width and scrolls sideways",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-wide",vw,vh,7200,600);
+  await expect(popup).toHaveAttribute("data-image-frame","full",{timeout:5000}).catch(()=>{});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(350);
+  const data=await captureReading(page,popup,`card429-wide-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expectReadingFrame(data,vw,vh,"x");
+  expect(data.natural).toEqual([7200,600]);
+  expect(data.toggle!.label).toBe("전체 보기");
+  const toggle=popup.locator(".attachment-viewer-actions button");
+  await toggle.click();
+  await expect(popup).toHaveAttribute("data-image-fit","whole");
+  await expect(toggle).toHaveAttribute("aria-label","높이에 맞춤");
+  await toggle.click();
+  await expect(popup).toHaveAttribute("data-image-fit","read");
+  await popup.locator('[data-slot="scroll-area-viewport"]').focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async()=>(await readingMetrics(popup)).viewport!.scrollLeft).toBeGreaterThan(0);
+});
+
+test("card429 fit toggle twice keeps the window and the scroll ratio",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200);
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(350);
+  await captureReading(page,popup,`card429-toggle-before-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  const viewport=popup.locator('[data-slot="scroll-area-viewport"]');
+  await viewport.evaluate((el:HTMLElement)=>{
+    el.scrollTop=(el.scrollHeight-el.clientHeight)*0.4;
+    el.dispatchEvent(new Event("scroll"));
+  });
+  const beforeData=await readingMetrics(popup);
+  const before=beforeData.viewport!;
+  const toggle=popup.locator(".attachment-viewer-actions button");
+  await toggle.dblclick();
+  await page.waitForTimeout(120);
+  await expect(popup).toHaveCount(1);
+  const afterTwice=await captureReading(page,popup,`card429-toggle-twice-${vw}x${vh}`,vw,vh);
+  expect(afterTwice.fit).toBe("read");
+  expect(afterTwice.frame).toBe("column");
+  expect(afterTwice.popup.width).toBeCloseTo(beforeData.popup.width,0);
+  const ratio=(await readingMetrics(popup)).viewport!;
+  expect(ratio.maxY).toBeGreaterThan(0);
+  expect(ratio.scrollTop/ratio.maxY).toBeCloseTo(before.scrollTop/before.maxY,1);
+  // 한 번씩 눌러 전체 보기로 갔다가 돌아와도 같은 비율이다.
+  await toggle.click();
+  await expect(popup).toHaveAttribute("data-image-fit","whole");
+  const whole=await captureReading(page,popup,`card429-whole-${vw}x${vh}`,vw,vh);
+  expect(whole.image!.height).toBeLessThanOrEqual(whole.viewport!.rect.height+1);
+  await toggle.click();
+  await expect(popup).toHaveAttribute("data-image-fit","read");
+  await page.waitForTimeout(150);
+  const restored=(await readingMetrics(popup)).viewport!;
+  expect(restored.scrollTop/restored.maxY).toBeCloseTo(before.scrollTop/before.maxY,1);
+});
+
+test("card429 keyboard scrolls the reading frame",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200);
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(400);
+  await captureReading(page,popup,`card429-keyboard-before-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  const viewport=popup.locator('[data-slot="scroll-area-viewport"]');
+  await expect(viewport).toBeVisible();
+  await expect(viewport).toBeFocused();
+  const start=(await readingMetrics(popup)).viewport!;
+  for(const key of ["ArrowDown","PageDown","Space"]) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(150);
+    const next=(await readingMetrics(popup)).viewport!;
+    expect(next.scrollTop).toBeGreaterThan(start.scrollTop);
+  }
+  const data=await captureReading(page,popup,`card429-keyboard-${vw}x${vh}`,vw,vh);
+  expect(data.viewport!.focused).toBe(true);
+  expect(data.viewport!.tabIndex).toBe(0);
+});
+
+test("card429 loading shows the centred operational state",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route("**/api/attachments/image-slow/content*",async route=>{
+    await gate;
+    return route.fulfill({contentType:"image/svg+xml",body:tallSvg()});
+  });
+  const popup=await openAttachment(page,"image-slow",vw,vh);
+  await page.waitForTimeout(300);
+  const loading=await captureReading(page,popup,`card429-loading-${vw}x${vh}`,vw,vh);
+  if(phase==="after") {
+    expect(loading.state).toBe("loading");
+    expectCentered(loading);
+    expect(loading.toggle).toBeNull();
+    expect(loading.popup.height).toBeGreaterThanOrEqual(256);
+    expect(loading.viewport).toBeNull();
+  }
+  release();
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(200);
+  const loaded=await captureReading(page,popup,`card429-loading-loaded-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expect(loaded.state).toBe("ready");
+  expect(loaded.popup.width).toBeLessThanOrEqual(448+1);
+});
+
+test("card429 failure shows the centred state and retries in the same place",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  let gets=0;
+  await page.route("**/api/attachments/image-fail/content*",route=>{
+    if(route.request().method()==="HEAD") return route.fulfill({status:500});
+    gets+=1;
+    if(gets===1) return route.fulfill({status:500,body:"failed"});
+    return route.fulfill({contentType:"image/svg+xml",body:tallSvg()});
+  });
+  const popup=await openAttachment(page,"image-fail",vw,vh);
+  await expect(popup.locator("[data-slot=dialog-error-message]")).toContainText("이미지를 불러오지 못했습니다",{timeout:8000});
+  if(phase==="after") await expect(popup.getByRole("button",{name:"다시 시도"})).toBeVisible({timeout:5000});
+  const failed=await captureReading(page,popup,`card429-failure-${vw}x${vh}`,vw,vh);
+  if(phase==="after") {
+    expect(failed.state).toBe("failed");
+    expectCentered(failed);
+    expect(failed.toggle).toBeNull();
+    expect(failed.viewport).toBeNull();
+  } else return;
+  await popup.getByRole("button",{name:"다시 시도"}).click();
+  await page.waitForTimeout(500);
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(150);
+  const retried=await captureReading(page,popup,`card429-failure-retried-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expect(retried.state).toBe("ready");
+  expect(retried.frame).toBe("column");
+  expect(retried.toggle).not.toBeNull();
+});
+
+test("card429 SVG draws on the light picture background in the dark theme",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-svg",vw,vh,240,160,"dark");
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode());
+  const data=await captureReading(page,popup,`card429-svg-dark-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expect(data.colorScheme).toBe("light");
+  expect(data.imageBackground).toBe("rgb(255, 255, 255)");
+  expect(data.natural).toEqual([240,160]);
+});
+
+test("card429 HEIC decodes in chromium",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-heic",vw,vh,320,240);
+  await page.waitForTimeout(400);
+  if(phase==="after") {
+    await expect.poll(async()=>(await readingMetrics(popup)).imageSrc?.startsWith("blob:") ?? false,{timeout:15000}).toBe(true);
+    await expect.poll(async()=>(await readingMetrics(popup)).natural,{timeout:15000}).toEqual([320,240]);
+  }
+  const data=await captureReading(page,popup,`card429-heic-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expect(data.state).toBe("ready");
+  expect(data.imageSrc.startsWith("blob:")).toBe(true);
+});
+
+test("card429 Escape inside the HTML preview closes the window",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  await page.route("**/api/attachments/slow-html/content*",route=>{
+    const html="<!doctype html><html><body><h1>Esc relay</h1></body></html>";
+    const body=html+"<!--"+" ".repeat(4096-html.length-7)+"-->";
+    return route.fulfill({status:206,headers:{
+      "Content-Type":"text/html; charset=utf-8","Content-Length":"4096","Content-Range":"bytes 0-4095/4096",
+    },body});
+  });
+  const popup=await openAttachment(page,"html-slow",vw,vh);
+  const frame=popup.locator("iframe.chat-attachment-html-frame");
+  await expect(frame).toBeVisible();
+  await captureReading(page,popup,`card429-html-${vw}x${vh}`,vw,vh);
+  await page.frameLocator("iframe.chat-attachment-html-frame").locator("h1").click();
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0,{timeout:5000});
+});
+
+test("card429 resized window keeps the reading frame and the scroll ratio",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200);
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await page.waitForTimeout(350);
+  await captureReading(page,popup,`card429-resize-before-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  const viewport=popup.locator('[data-slot="scroll-area-viewport"]');
+  await viewport.evaluate((el:HTMLElement)=>{
+    el.scrollTop=(el.scrollHeight-el.clientHeight)*0.35;
+    el.dispatchEvent(new Event("scroll"));
+  });
+  const before=(await readingMetrics(popup)).viewport!;
+  await page.setViewportSize({width:1280,height:800});
+  const data=await captureReading(page,popup,"card429-resize-after-1280x800",1280,800);
+  expect(data.frame).toBe("column");
+  expect(data.fit).toBe("read");
+  expect(Math.abs(data.popup.height-(800-64))).toBeLessThanOrEqual(1);
+  // The restored ratio lands on the first frame after the new layout settles.
+  await expect.poll(async()=>{
+    const viewport=(await readingMetrics(popup)).viewport!;
+    return viewport.maxY>0?viewport.scrollTop/viewport.maxY:0;
+  },{timeout:3000}).toBeCloseTo(before.scrollTop/before.maxY,1);
+});
+
+test("card429 card image window uses the same reading layout",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await open(page,"card",vw,vh,1170,7200,"one");
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const data=await captureReading(page,popup,`card429-card-tall-${vw}x${vh}`,vw,vh);
+  if(phase!=="after") return;
+  expect(data.frame).toBe("column");
+  expect(Math.abs(data.popup.height-(vh-64))).toBeLessThanOrEqual(1);
+  expect(data.popup.width).toBeLessThanOrEqual(448+1);
+  expect(data.viewport!.tabIndex).toBe(0);
+  expect(data.viewport!.maxY).toBeGreaterThan(0);
+  expect(data.toggle!.label).toBe("전체 보기");
+  expect(data.caption).toBe("화면 캡처");
+});

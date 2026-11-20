@@ -1,6 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
+import { ScrollArea } from "@seosoyoung/soul-ui/components/ui/scroll-area";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
+import {
+  AttachmentViewerFitToggle,
+  AttachmentViewerImageStatus,
+  AttachmentViewerProbes,
+  useAttachmentViewerImage,
+} from "@seosoyoung/soul-ui/components/AttachmentViewerImage";
+import { useHeicImageSource } from "@seosoyoung/soul-ui/lib/image-source";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 
 export interface CardImageSelection { src: string; alt: string; attachment?: ChatAttachmentItem }
@@ -8,9 +16,19 @@ export interface CardAttachmentStatus { message: string; onRetry?(): void }
 
 /** Shared dialog surface for card timeline and check item evidence images. */
 export function CardImageViewer({ image, attachments, attachmentStatus, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; attachmentStatus?: Readonly<Record<string, CardAttachmentStatus>>; returnFocus?: HTMLElement | null; onClose(): void }) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [attachmentCursor, setAttachmentCursor] = useState<{ key: string; index: number } | null>(null);
-  const imageFailed = Boolean(image && failedSrc === image.src);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const plainImage = image && !image.attachment ? image : null;
+  const imageViewer = useAttachmentViewerImage({
+    popupRef,
+    mediaRef,
+    src: plainImage?.src,
+    mimeType: null,
+    label: plainImage?.alt || "이미지",
+  });
+  const heic = useHeicImageSource(plainImage?.src, null);
+  const imageFailed = imageViewer.state === "failed";
   const attachmentItems = image?.attachment
     ? attachments?.length ? [...attachments] : [image.attachment]
     : [];
@@ -22,10 +40,6 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
       ? Math.min(attachmentCursor.index, attachmentItems.length - 1)
       : Math.max(0, selectedAttachmentIndex)
     : 0;
-
-  useEffect(() => {
-    setFailedSrc(null);
-  }, [image?.src]);
 
   useEffect(() => {
     if (!image) setAttachmentCursor(null);
@@ -55,10 +69,68 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
     />;
   }
 
+  const viewerImage = !imageFailed && plainImage ? (
+    <div ref={mediaRef} className="attachment-viewer-media">
+      <div className="chat-image-frame">
+        <img
+          src={heic.displaySrc}
+          alt={plainImage.alt}
+          className="attachment-viewer-image max-w-full object-contain"
+          onLoad={() => imageViewer.onImageLoad()}
+          onError={() => {
+            // A browser that cannot paint HEIC reports an error first; decode it
+            // lazily and report only if that also fails.
+            if (heic.tryDecode()) return;
+            imageViewer.onImageError();
+          }}
+        />
+      </div>
+    </div>
+  ) : null;
+
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
-    <DialogPopup className="v3-surface image-viewer-popup" {...(returnFocus ? { finalFocus: () => returnFocus } : {})}>
+    <DialogPopup
+      ref={popupRef}
+      className="v3-surface image-viewer-popup"
+      {...imageViewer.popupAttributes}
+      style={imageViewer.popupStyle}
+      {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
+    >
       <DialogTitle className="sr-only">{image?.alt || "이미지"}</DialogTitle>
-      {image ? <figure className="v3-card-image-expanded" data-image-failed={imageFailed || undefined}>{imageFailed?null:<img src={image.src} alt={image.alt} className="max-w-full object-contain" onError={()=>setFailedSrc(image.src)}/>}{image.alt||imageFailed?<figcaption data-v3-selectable-content="true">{imageFailed?"파일을 불러오지 못했습니다":image.alt}</figcaption>:null}</figure> : null}
+      {image ? <figure className="v3-card-image-expanded" data-image-failed={imageFailed || undefined}>
+        <div className="attachment-viewer-image-body" data-image-state={imageViewer.state}>
+          {imageViewer.state !== "failed" && (imageViewer.reading ? (
+            <ScrollArea
+              className="attachment-viewer-scroll"
+              {...imageViewer.scrollAreaProps}
+              viewportRef={imageViewer.viewportRef}
+              viewportProps={imageViewer.viewportProps}
+            >
+              {viewerImage}
+            </ScrollArea>
+          ) : viewerImage)}
+          <AttachmentViewerImageStatus
+            state={imageViewer.state}
+            message={null}
+            retryable={imageViewer.retryable}
+            onRetry={imageViewer.retry}
+          />
+        </div>
+        {image.alt || imageFailed ? <figcaption data-v3-selectable-content="true">{imageFailed ? "파일을 불러오지 못했습니다" : image.alt}</figcaption> : null}
+      </figure> : null}
+      {image && imageViewer.showToggle && (
+        <AttachmentViewerFitToggle
+          label={imageViewer.toggleLabel}
+          icon={imageViewer.toggleIcon}
+          onToggle={imageViewer.toggleFit}
+        />
+      )}
+      {image && (
+        <AttachmentViewerProbes
+          areaRef={imageViewer.areaProbeRef}
+          referenceRef={imageViewer.referenceProbeRef}
+        />
+      )}
     </DialogPopup>
   </Dialog>;
 }

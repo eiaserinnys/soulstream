@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import {
-  SAFE_RASTER_PREVIEW_MIME_TYPES,
+  IMAGE_PREVIEW_MIME_TYPES,
   SAFE_TEXT_PREVIEW_MIME_TYPES,
   type AttachmentDescriptor,
 } from "@soulstream/wire-schema/attachments";
@@ -81,7 +81,7 @@ export function normalizedMimeType(value: string): string {
 export function previewInfo(
   mimeType: string,
 ): { kind: AttachmentDescriptor["preview_kind"]; mimeType: string | null } {
-  if (SAFE_RASTER_PREVIEW_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
+  if (IMAGE_PREVIEW_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
   if (mimeType === "text/markdown" || mimeType === "text/html") {
     return { kind: "text", mimeType };
   }
@@ -107,8 +107,12 @@ export function responseHeaders(
     : null;
   const effectiveBaseMimeType = inferredMimeType ?? baseMimeType;
   const contentType = inferredMimeType ?? responseMimeType(asset.mimeType);
+  // Rasters, HEIC/HEIF and media open inline. SVG stays `attachment`: opening a
+  // fresh tab downloads it instead of running the document as a page.
+  const inlineImage = effectiveBaseMimeType !== "image/svg+xml" &&
+    IMAGE_PREVIEW_MIME_TYPES.has(effectiveBaseMimeType);
   const inline = !download && (
-    SAFE_RASTER_PREVIEW_MIME_TYPES.has(effectiveBaseMimeType) ||
+    inlineImage ||
     effectiveBaseMimeType === "text/plain" ||
     SAFE_INLINE_MEDIA_MIME_TYPES.has(effectiveBaseMimeType)
   );

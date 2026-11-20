@@ -1,4 +1,5 @@
 import { isExternalInput, isInternalInput, isKeepalive, isHiddenConversationInput, isShortAcknowledgement, isSilent, isVisibleConversationInput } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { MIME_BY_EXTENSION } from "../../../packages/wire-schema/src/attachments.js";
 
 export type ItemSender = { kind: "external"; label: string };
 export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }>; sender?: ItemSender };
@@ -152,7 +153,6 @@ function attachmentsFor(payload: Record<string, unknown>): Item["attachments"] {
     const base = value.split(/[\\/]/).pop() ?? value;
     const name = base.replace(/^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z-(.+)-[0-9a-f]{32}(\.[^.]+)?$/, "$1$2");
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
-    const mime: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", txt: "text/plain", md: "text/markdown", pdf: "application/pdf" };
-    return [{ id: `path:${index}`, name, mime: mime[ext] ?? "application/octet-stream" }];
+    return [{ id: `path:${index}`, name, mime: MIME_BY_EXTENSION[ext] ?? "application/octet-stream" }];
   })];
 }

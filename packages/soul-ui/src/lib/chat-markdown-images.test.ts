@@ -60,10 +60,15 @@ describe("chat image sources", () => {
         src: "/api/attachments/files?nodeId=node%20%2F%20one&path=%2Fincoming%2Ffirst.png",
         alt: "",
       },
+      {
+        id: "attachment:2:/incoming/second.HEIC",
+        src: "/api/attachments/files?nodeId=node%20%2F%20one&path=%2Fincoming%2Fsecond.HEIC",
+        alt: "",
+      },
     ]);
   });
 
-  it("adds the provided read context to legacy image URLs and excludes HEIC", () => {
+  it("adds the provided read context to legacy image URLs including HEIC", () => {
     expect(buildStructuredChatImageItems([
       "/incoming/first.png",
       "/incoming/photo.HEIC",
@@ -72,6 +77,11 @@ describe("chat image sources", () => {
       {
         id: "attachment:0:/incoming/first.png",
         src: "/api/attachments/files?nodeId=node-a&path=%2Fincoming%2Ffirst.png&context_type=session&context_id=session-a",
+        alt: "",
+      },
+      {
+        id: "attachment:1:/incoming/photo.HEIC",
+        src: "/api/attachments/files?nodeId=node-a&path=%2Fincoming%2Fphoto.HEIC&context_type=session&context_id=session-a",
         alt: "",
       },
       {

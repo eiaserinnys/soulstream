@@ -1639,6 +1639,168 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
 .chat-image-viewer-popup:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
   flex: 1 1 auto;
 }
+/* 긴 캡처: 통째로 맞추면 짧은 변이 기준 길이(min(폭 상한 448, 화면 높이)의 절반)보다 작아질 때만
+   폭 맞춤(세로로 긴 그림, 상한 448)이나 높이 맞춤(가로로 긴 그림)으로 열고 창 안에서 스크롤한다.
+   두 모드와 「전체 보기」가 같은 창 틀을 쓰고, 틀은 그림을 받은 뒤 정한다. */
+.image-viewer-popup[data-slot="dialog-popup"]:is([data-image-state="loading"], [data-image-state="failed"]) {
+  min-height: min(var(--container-3xs), calc(100dvh - 2 * var(--image-viewer-block-margin)));
+}
+.chat-image-viewer-popup:is([data-image-state="loading"], [data-image-state="failed"]) > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup:is([data-image-state="loading"], [data-image-state="failed"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  flex: 1 1 auto;
+}
+.image-viewer-popup[data-slot="dialog-popup"]:has(> .v3-card-image-expanded) {
+  --image-viewer-inline-reserve: calc(2 * var(--v3-space-3));
+  --image-viewer-block-reserve: calc(3lh + 3 * var(--v3-space-3));
+}
+.image-viewer-popup[data-slot="dialog-popup"][data-image-frame][data-image-fit] {
+  --attachment-viewer-read-cap: var(--container-md);
+  width: min(
+    var(--attachment-viewer-read-cap),
+    calc(100dvw - 2rem),
+    calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
+  );
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+  max-height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+}
+.image-viewer-popup[data-slot="dialog-popup"][data-image-frame="full"][data-image-fit] {
+  width: min(
+    calc(100dvw - 2rem),
+    calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
+  );
+}
+.chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  flex: 1 1 auto;
+}
+/* 그림 영역. 폭 맞춤은 세로로, 높이 맞춤은 가로로 스크롤한다. 초점 고리는 ScrollArea 정본 그대로다. */
+.attachment-viewer-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border-radius: var(--chat-attachment-radius);
+}
+.attachment-viewer-scroll .attachment-viewer-media {
+  display: contents;
+}
+.attachment-viewer-scroll .chat-image-frame > .chat-image-status {
+  display: none;
+}
+.image-viewer-popup .attachment-viewer-scroll img.attachment-viewer-image {
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  border-radius: var(--chat-attachment-radius);
+}
+.image-viewer-popup .attachment-viewer-media img.attachment-viewer-image {
+  border-radius: var(--chat-attachment-radius);
+}
+.attachment-viewer-scroll[data-fit="read"][data-axis="y"] .chat-image-frame {
+  display: block;
+}
+.image-viewer-popup .attachment-viewer-scroll[data-fit="read"][data-axis="y"] img.attachment-viewer-image {
+  width: 100%;
+  height: auto;
+}
+.attachment-viewer-scroll[data-fit="read"][data-axis="x"] .chat-image-frame {
+  display: flex;
+  align-items: center;
+  inline-size: max-content;
+  block-size: 100%;
+}
+.image-viewer-popup .attachment-viewer-scroll[data-fit="read"][data-axis="x"] img.attachment-viewer-image {
+  flex: none;
+  width: auto;
+  height: min(100%, var(--attachment-natural-height));
+}
+.attachment-viewer-scroll[data-fit="whole"] .chat-image-frame {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  block-size: 100%;
+}
+.image-viewer-popup .attachment-viewer-scroll[data-fit="whole"] img.attachment-viewer-image {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+.attachment-viewer-image-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.attachment-viewer-media {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* 통째로 맞춘 그림은 전과 같이 창 안에서 가운데에 둔다. 읽기 틀일 때는 스크롤 영역이 크기를 맡는다. */
+.attachment-viewer-image-body:not(:has(> .attachment-viewer-scroll)) > .attachment-viewer-media {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.attachment-viewer-image-body:not(:has(> .attachment-viewer-scroll)) > .attachment-viewer-media > .chat-image-frame {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.attachment-viewer-image-body:is([data-image-state="loading"], [data-image-state="failed"]) > .attachment-viewer-media {
+  display: none;
+}
+.attachment-viewer-state {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v3-space-3);
+  min-height: 0;
+  text-align: center;
+}
+/* 「전체 보기」 단추는 닫기 단추 왼쪽, 같은 머리줄 자리에 둔다. 이름은 aria-label과 title이다. */
+.attachment-viewer-actions {
+  position: absolute;
+  inset-block-start: calc(var(--spacing) * 2);
+  inset-inline-end: calc(var(--spacing) * 2 + var(--v3-action-size) + var(--v3-space-1));
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+}
+.chat-image-viewer-popup:has(.attachment-viewer-actions) > [data-slot="dialog-header"] {
+  padding-inline-end: calc(2 * var(--v3-action-size) + var(--v3-space-1) + var(--v3-space-2));
+}
+/* SVG는 격자 타일과 보기 창 모두 HTML 보기 틀과 같은 밝은 바탕 위에 그린다. */
+img[data-image-format="svg"],
+.image-viewer-popup[data-image-format="svg"] img.attachment-viewer-image {
+  color-scheme: light;
+  background-color: Canvas;
+}
+/* 틀을 정하는 데 쓰는 보이지 않는 자. 지금 창의 그림 한계식과 휴대폰 폭 틀(--container-md)의 그림 폭을 잰다.
+   자의 크기가 창의 넘침 너비로 새지 않도록 0 크기 상자에 담아 자른다. */
+.attachment-viewer-probes {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 0;
+  block-size: 0;
+  overflow: clip;
+  visibility: hidden;
+  pointer-events: none;
+}
+.attachment-viewer-probe {
+  display: block;
+  inline-size: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
+  block-size: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
+}
+.attachment-viewer-probe-reference {
+  inline-size: calc(min(var(--container-md), 100dvw - 2rem) - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
+}
 /* 문서만 든 넘기기 창은 문서 창 크기로 고정해 단계 사이에 틀이 움직이지 않게 한다. */
 .chat-image-viewer-popup[data-slot="dialog-popup"][data-attachment-bundle="documents"] {
   width: min(var(--container-3xl), calc(100dvw - 2rem));
@@ -1727,16 +1889,6 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   min-height: 0;
   min-width: 0;
 }
-.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame > .chat-image-viewer-image {
-  border-radius: var(--chat-attachment-radius);
-}
-.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame > .chat-image-status,
 .chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-status {
   min-width: 0;
   max-width: 100%;

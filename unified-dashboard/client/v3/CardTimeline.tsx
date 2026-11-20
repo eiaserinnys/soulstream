@@ -6,7 +6,7 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRenderer";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
-import { attachmentContentUrl, contextualLegacyUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { attachmentContentUrl, contextualLegacyUrl, isImagePreviewMimeType, mimeTypeForFileName, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { CardDetail, CardQuestion, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
 import { CardQuestionActions, CardQuestionBody, cardQuestionDetailView } from "./CardQuestionBlock";
@@ -333,10 +333,10 @@ function legacyPathName(path:string):string {
 
 function legacyPreviewKind(mimeType:string|null|undefined,path?:string):ChatAttachmentItem["previewKind"] {
  const normalized=mimeType?.toLowerCase().split(";",1)[0];
- if(normalized==="image/svg+xml")return "info";
- if(normalized?.startsWith("image/"))return "image";
+ if(normalized&&isImagePreviewMimeType(normalized))return "image";
  if(normalized?.startsWith("text/")||normalized==="application/json")return "text";
- if(path&&/\.(?:png|jpe?g|gif|webp|heic|avif)$/i.test(path))return "image";
+ const pathMime=mimeTypeForFileName(path);
+ if(pathMime&&isImagePreviewMimeType(pathMime))return "image";
  if(path&&/\.(?:txt|md|markdown|json|csv)$/i.test(path))return "text";
  return "info";
 }

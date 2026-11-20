@@ -1,6 +1,7 @@
 "use client";
 
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
+import type { Ref } from "react";
 
 import { cn } from "../../lib/cn";
 
@@ -9,10 +10,18 @@ function ScrollArea({
   children,
   scrollFade = false,
   scrollbarGutter = false,
+  viewportClassName,
+  viewportRef,
+  viewportProps,
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
   scrollFade?: boolean;
   scrollbarGutter?: boolean;
+  /** Extra classes for the scrollable viewport (e.g. a keyboard focus target). */
+  viewportClassName?: string;
+  viewportRef?: Ref<HTMLDivElement>;
+  /** Viewport attributes such as tabIndex, role, aria-label and onScroll. */
+  viewportProps?: ScrollAreaPrimitive.Viewport.Props;
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -20,12 +29,16 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        {...viewportProps}
+        ref={viewportRef}
         className={cn(
           "h-full overscroll-contain rounded-[inherit] outline-none transition-shadows focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-has-overflow-x:overscroll-x-contain",
           scrollFade &&
             "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] [--fade-size:1.5rem]",
           scrollbarGutter &&
             "data-has-overflow-y:pe-2.5 data-has-overflow-x:pb-2.5",
+          viewportClassName,
+          viewportProps?.className,
         )}
         data-slot="scroll-area-viewport"
       >

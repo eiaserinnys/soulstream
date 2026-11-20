@@ -77,7 +77,7 @@ describe("message ref backfill PostgreSQL contract", () => {
           legacy_sources: [],
         },
         {
-          kind: "legacy", node_id: "node-a", path: "/legacy/a.png", name: "a.png", mime_type: null,
+          kind: "legacy", node_id: "node-a", path: "/legacy/a.png", name: "a.png", mime_type: "image/png",
           byte_size: null, availability: "unresolved", read_context: { type: "session", id: sessionA },
         },
       ]);
@@ -165,7 +165,7 @@ describe("message ref backfill PostgreSQL contract", () => {
             legacy_sources: [],
           },
           {
-            kind: "legacy", node_id: "node-a", path: "/legacy/a.png", name: "a.png", mime_type: null,
+            kind: "legacy", node_id: "node-a", path: "/legacy/a.png", name: "a.png", mime_type: "image/png",
             byte_size: null, availability: "unresolved", read_context: { type: "session", id: sessionB },
           },
         ],

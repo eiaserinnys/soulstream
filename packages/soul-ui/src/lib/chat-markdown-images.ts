@@ -1,4 +1,5 @@
 import { parseStandaloneImageLine } from "./standalone-image-line";
+import { isImagePreviewMimeType, mimeTypeForFileName } from "@soulstream/wire-schema/attachments";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { contextParams, type ChatAttachmentItem } from "./chat-attachment-model";
 
@@ -107,7 +108,8 @@ export function getChatImageFilename(src: string): string | undefined {
 
 function isImageAttachmentPath(path: string): boolean {
   const cleanPath = path.split(/[?#]/, 1)[0] ?? path;
-  return /\.(?:png|jpe?g|gif|webp|avif)$/i.test(cleanPath);
+  const mimeType = mimeTypeForFileName(cleanPath);
+  return mimeType !== null && isImagePreviewMimeType(mimeType);
 }
 
 function sameOriginUrl(src: string): URL | null {

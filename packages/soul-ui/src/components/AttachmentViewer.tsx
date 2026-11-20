@@ -11,6 +11,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
+import { ScrollArea } from "./ui/scroll-area";
 import { FileTypeIcon } from "./FileAttachmentPreview";
 import { formatFileSize } from "../lib/format-file-size";
 import { MarkdownImage } from "./MarkdownImage";
@@ -26,6 +27,21 @@ import {
 } from "../lib/chat-attachment-model";
 import { MarkdownContent } from "./MarkdownContent";
 import { CustomViewIframe } from "../custom-view/CustomViewRenderer";
+import {
+  AttachmentViewerFitToggle,
+  AttachmentViewerImageStatus,
+  AttachmentViewerProbes,
+  useAttachmentViewerImage,
+} from "./AttachmentViewerImage";
+
+const ESCAPE_MESSAGE = "attachment-viewer:escape";
+// The viewer puts this short script at the end of the HTML document. Esc pressed
+// inside the sandboxed frame (no same-origin access) is relayed to the parent.
+const ESCAPE_RELAY = `<script>addEventListener("keydown",function(e){if(e.key==="Escape"&&!e.defaultPrevented)parent.postMessage({type:"${ESCAPE_MESSAGE}"},"*")})</script>`;
+
+function withEscapeRelay(html: string): string {
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${ESCAPE_RELAY}</body>`) : `${html}${ESCAPE_RELAY}`;
+}
 
 type TextState =
   | { key: string; state: "loading" }
@@ -85,11 +101,9 @@ export function AttachmentViewer({
     ? JSON.stringify([item.key, item.previewUrl, item.byteSize, item.mimeType, localFile?.name, localFile?.size])
     : "";
   const popupRef = useRef<HTMLDivElement>(null);
-  const [imageRetryKey, setImageRetryKey] = useState<string | null>(null);
+  const imageMediaRef = useRef<HTMLDivElement>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [textState, setTextState] = useState<TextState | null>(null);
-  const [imageFailureKey, setImageFailureKey] = useState<string | null>(null);
-  const [imageAttempt, setImageAttempt] = useState(0);
   const [mediaFailureKey, setMediaFailureKey] = useState<string | null>(null);
   const [mediaFailureMessage, setMediaFailureMessage] = useState<string | null>(null);
   const [mediaRetryKey, setMediaRetryKey] = useState<string | null>(null);
@@ -148,21 +162,25 @@ export function AttachmentViewer({
   const emptyMedia = mediaFormat !== null && (
     item?.byteSize === 0 || localFile?.size === 0
   );
+  const imageViewer = useAttachmentViewerImage({
+    popupRef,
+    mediaRef: imageMediaRef,
+    src: item?.previewKind === "image" ? imageSource : undefined,
+    mimeType: item?.mimeType,
+    label: item?.name ?? "첨부 이미지",
+  });
 
-  // Image error events omit the HTTP status. Probe only a failed remote source
-  // to offer retry for server/network failures, never for forbidden/missing files.
+  // Esc inside the sandboxed HTML preview cannot reach the dialog, so the relay
+  // script posts it here. Accept only messages from this viewer's iframe.
   useEffect(() => {
-    if (imageFailureKey !== previewKey || !imageSource || imageSource.startsWith("blob:")) return;
-    const controller = new AbortController();
-    void fetch(imageSource, { method: "HEAD", credentials: "same-origin", signal: controller.signal })
-      .then(async response => {
-        if (!controller.signal.aborted) setImageRetryKey(response.status >= 500 ? previewKey : null);
-        await response.body?.cancel();
-      }).catch(error => {
-        if (!controller.signal.aborted && error instanceof TypeError) setImageRetryKey(previewKey);
-      });
-    return () => controller.abort();
-  }, [imageFailureKey, imageSource, previewKey]);
+    const onMessage = (event: MessageEvent) => {
+      const frame = popupRef.current?.querySelector("iframe");
+      if (frame && event.source === frame.contentWindow
+        && (event.data as { type?: unknown } | null)?.type === ESCAPE_MESSAGE) onClose();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onClose]);
 
   useEffect(() => {
     if (
@@ -188,9 +206,6 @@ export function AttachmentViewer({
   }, [mediaFailureKey, mediaSource, previewKey, emptyMedia]);
 
   useEffect(() => {
-    setImageFailureKey(null);
-    setImageRetryKey(null);
-    setImageAttempt(0);
     setMediaFailureKey(null);
     setMediaFailureMessage(null);
     setMediaRetryKey(null);
@@ -239,6 +254,9 @@ export function AttachmentViewer({
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!multiItem || event.target instanceof HTMLMediaElement) return;
+    // A focused reading frame scrolls on its own arrow keys instead of stepping
+    // through the gallery.
+    if (imageViewer.viewportRef.current?.contains(event.target as Node)) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       changeIndex(index - 1);
@@ -268,6 +286,8 @@ export function AttachmentViewer({
         initialFocus={popupRef}
         className="v3-surface image-viewer-popup chat-image-viewer-popup"
         data-attachment-kind={contentKind}
+        {...(contentKind === "image" ? imageViewer.popupAttributes : {})}
+        {...(contentKind === "image" ? { style: imageViewer.popupStyle } : {})}
         {...(bundleKind ? { "data-attachment-bundle": bundleKind } : {})}
         {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
         onKeyDown={handleKeyDown}
@@ -286,25 +306,55 @@ export function AttachmentViewer({
           ) : item.availability === "unavailable" ? (
             <div className="chat-attachment-state chat-image-status" role="status" data-slot="dialog-error-message">첨부를 사용할 수 없습니다.</div>
           ) : item.previewKind === "image" ? (
-            imageFailureKey === previewKey || !imageSource ? (
+            !imageSource ? (
               <div className="chat-attachment-state chat-image-status" role="status">
-                <span data-slot="dialog-error-message">{imageFailureKey === previewKey ? "이미지를 불러오지 못했습니다." : "이미지 미리보기를 사용할 수 없습니다."}</span>
-                {imageRetryKey === previewKey && <Button variant="outline" size="sm" onClick={() => {
-                  setImageFailureKey(null);
-                  setImageAttempt(value => value + 1);
-                }}>다시 시도</Button>}
+                <span data-slot="dialog-error-message">이미지 미리보기를 사용할 수 없습니다.</span>
               </div>
             ) : (
-              <MarkdownImage
-                key={`${previewKey}:${imageAttempt}`}
-                src={imageSource}
-                alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? "첨부 이미지"}
-                variant="chatRefined"
-                loading="eager"
-                className="chat-image-viewer-image"
-                onLoad={() => setImageFailureKey(null)}
-                onError={() => setImageFailureKey(previewKey)}
-              />
+              <div className="attachment-viewer-image-body" data-image-state={imageViewer.state}>
+                {imageViewer.state !== "failed" && (imageViewer.reading ? (
+                  <ScrollArea
+                    className="attachment-viewer-scroll"
+                    {...imageViewer.scrollAreaProps}
+                    viewportRef={imageViewer.viewportRef}
+                    viewportProps={imageViewer.viewportProps}
+                  >
+                    <div ref={imageMediaRef} className="attachment-viewer-media">
+                      <MarkdownImage
+                        key={`${previewKey}:${imageViewer.attempt}`}
+                        src={imageSource}
+                        alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? "첨부 이미지"}
+                        mimeType={item.mimeType}
+                        variant="chatRefined"
+                        loading="eager"
+                        className="attachment-viewer-image chat-image-viewer-image"
+                        onLoad={() => imageViewer.onImageLoad()}
+                        onError={() => imageViewer.onImageError()}
+                      />
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div ref={imageMediaRef} className="attachment-viewer-media">
+                    <MarkdownImage
+                      key={`${previewKey}:${imageViewer.attempt}`}
+                      src={imageSource}
+                      alt={item.source.kind === "markdown-image" ? item.source.alt : item.name ?? "첨부 이미지"}
+                      mimeType={item.mimeType}
+                      variant="chatRefined"
+                      loading="eager"
+                      className="attachment-viewer-image chat-image-viewer-image"
+                      onLoad={() => imageViewer.onImageLoad()}
+                      onError={() => imageViewer.onImageError()}
+                    />
+                  </div>
+                ))}
+                <AttachmentViewerImageStatus
+                  state={imageViewer.state}
+                  message="이미지를 불러오지 못했습니다."
+                  retryable={imageViewer.retryable}
+                  onRetry={imageViewer.retry}
+                />
+              </div>
             )
           ) : item.previewKind === "text" ? (
             !canPreview ? null : text?.state === "loading" || text === null ? (
@@ -324,7 +374,7 @@ export function AttachmentViewer({
                   </div>
                 ) : textFormat === "html" ? (
                   <CustomViewIframe
-                    html={text.result.text}
+                    html={withEscapeRelay(text.result.text)}
                     title={item.name ?? "HTML 첨부"}
                     className="chat-attachment-html-frame"
                   />
@@ -426,6 +476,19 @@ export function AttachmentViewer({
             )}
             {saveMessage && <span className="chat-image-status chat-image-viewer-save-error" role="status" data-slot="dialog-error-message">{saveMessage}</span>}
           </DialogFooter>
+        )}
+        {contentKind === "image" && imageViewer.showToggle && (
+          <AttachmentViewerFitToggle
+            label={imageViewer.toggleLabel}
+            icon={imageViewer.toggleIcon}
+            onToggle={imageViewer.toggleFit}
+          />
+        )}
+        {contentKind === "image" && (
+          <AttachmentViewerProbes
+            areaRef={imageViewer.areaProbeRef}
+            referenceRef={imageViewer.referenceProbeRef}
+          />
         )}
       </DialogPopup>
     </Dialog>

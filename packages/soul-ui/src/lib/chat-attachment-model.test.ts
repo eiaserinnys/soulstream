@@ -198,7 +198,7 @@ describe("chat attachment model", () => {
     expect(items[4]?.originalUrl).toBeNull();
   });
 
-  it("limits legacy previews to the shared safe raster and text MIME types", () => {
+  it("classifies legacy previews with the shared image and text MIME lists", () => {
     const mimeTypes = [
       "image/png",
       "image/svg+xml",
@@ -222,25 +222,25 @@ describe("chat attachment model", () => {
     });
 
     expect(items.map((item) => item.previewKind)).toEqual([
-      "image", "info", "info", "text", "info", "text",
+      "image", "image", "image", "text", "info", "text",
     ]);
-    expect(items[1]?.previewUrl).toBeNull();
-    expect(items[2]?.previewUrl).toBeNull();
+    expect(items[1]?.previewUrl).not.toBeNull();
+    expect(items[2]?.previewUrl).not.toBeNull();
     expect(items[4]?.previewUrl).toBeNull();
   });
 
   it("does not preview assets whose MIME conflicts with an advertised kind", () => {
-    const [svg] = projectChatAttachmentItems({
+    const [html] = projectChatAttachmentItems({
       event_id: 44,
-      items: [assetView("asset-svg", sessionContext, {
-        name: "vector.svg",
-        mime_type: "image/svg+xml",
+      items: [assetView("asset-html", sessionContext, {
+        name: "report.html",
+        mime_type: "text/html",
         preview_kind: "image",
-        preview_mime_type: "image/svg+xml",
+        preview_mime_type: "text/html",
       })],
     });
 
-    expect(svg).toMatchObject({ previewKind: "info", previewUrl: null });
+    expect(html).toMatchObject({ previewKind: "info", previewUrl: null });
   });
 
   it("keeps HTML text previews behind the server descriptor and classifies text formats", () => {

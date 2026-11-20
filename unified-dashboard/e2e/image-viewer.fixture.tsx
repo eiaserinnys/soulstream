@@ -24,6 +24,12 @@ const file = new File([sampleSrc ? await fetch(sampleSrc).then(response => respo
 // 검수 반려 2: 320보다 좁은 동영상도 단독 창에서 가운데에 서는지 재는 표본.
 const narrowVideo = new File([await fetch("/e2e/fixtures/sample-video.mp4").then(response => response.blob())],
   "sample-video.mp4", {type:"video/mp4"});
+// 카드 #429: 크롬이 그리지 못하는 실제 HEIC 표본(100KB 안). 해독기는 그때 동적으로 불러온다.
+const heicFile = new File([await fetch("/e2e/fixtures/sample.heic").then(response => response.blob())],
+  "IMG_0412.HEIC", {type:"image/heic"});
+// 투명 바탕 SVG. 어두운 테마에서도 그림 뒤에 밝은 바탕이 깔리는지 잰다.
+const transparentSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><circle cx="120" cy="80" r="60" fill="#c85028"/></svg>`;
+const transparentSrc = "data:image/svg+xml," + encodeURIComponent(transparentSvg);
 const caption = params.get("caption") === "none" ? "" : params.get("caption") === "long"
   ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(5)
   : params.get("caption") === "one" ? "화면 캡처"
@@ -88,6 +94,30 @@ function attachmentItem(kind: string): ChatAttachmentItem {
     key: `asset:${kind}`, name: "fixture.svg", mimeType: "image/svg+xml", byteSize: 1024,
     previewKind: "image", availability: "ready", previewUrl: src, originalUrl, legacySources: [],
     source: {kind: "asset", attachmentId: "fixture-image", context},
+  };
+  if (kind === "image-tall" || kind === "image-wide") return {
+    key: `asset:${kind}`,
+    name: kind === "image-tall" ? "IMG_0398.PNG" : "timeline-2611.png",
+    mimeType: "image/png", byteSize: kind === "image-tall" ? 369747 : 89177,
+    previewKind: "image", availability: "ready", previewUrl: src, originalUrl, legacySources: [],
+    source: {kind: "asset", attachmentId: kind, context},
+  };
+  if (kind === "image-slow" || kind === "image-fail") return {
+    key: `asset:${kind}`, name: "IMG_0399.PNG", mimeType: "image/png", byteSize: 4096,
+    previewKind: "image", availability: "ready",
+    previewUrl: `/api/attachments/${kind}/content?context_type=card&context_id=card-1`,
+    originalUrl: `/api/attachments/${kind}/content?context_type=card&context_id=card-1&download=true`,
+    legacySources: [], source: {kind: "asset", attachmentId: kind, context},
+  };
+  if (kind === "image-svg") return {
+    key: "asset:image-svg", name: "diagram.svg", mimeType: "image/svg+xml", byteSize: transparentSvg.length,
+    previewKind: "image", availability: "ready", previewUrl: transparentSrc, originalUrl, legacySources: [],
+    source: {kind: "asset", attachmentId: "image-svg", context},
+  };
+  if (kind === "image-heic") return {
+    key: "local:image-heic", name: "IMG_0412.HEIC", mimeType: "image/heic", byteSize: heicFile.size,
+    previewKind: "image", availability: "ready", previewUrl: null, originalUrl: null,
+    legacySources: [], source: {kind: "local", file: heicFile},
   };
   if (kind === "slow-doc") return {
     key: "asset:slow-doc", name: "느린 문서.md", mimeType: "text/markdown", byteSize: 4096,
