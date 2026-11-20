@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -2118,12 +2118,24 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       },
       { idleTtlMs: 300_000, maxEntries: 16 },
     );
+    // resume 전 로컬 JSONL 확인(#1075 U3)이 실제 spawn을 막지 않도록 기록 파일을 둔다.
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-backend-rollover-"));
+    roots.push(workspaceDir);
+    const configDir = mkdtempSync(join(tmpdir(), "claude-backend-rollover-config-"));
+    roots.push(configDir);
+    const projectDir = join(
+      configDir,
+      "projects",
+      realpathSync(workspaceDir).replace(/[^a-zA-Z0-9]/g, "-"),
+    );
+    mkdirSync(projectDir, { recursive: true });
+    writeFileSync(join(projectDir, "backend-old.jsonl"), "{}\n");
     const engine = new ClaudeEngineAdapter(
       {
-        workspaceDir: "/tmp/claude-work",
+        workspaceDir,
         client: makeClient([], []),
         persistentSessionRegistry: registry,
-        processEnv: {},
+        processEnv: { CLAUDE_CONFIG_DIR: configDir },
       },
       silentLogger,
     );

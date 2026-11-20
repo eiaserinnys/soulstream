@@ -61,6 +61,10 @@ import {
   type ClaudeAccountTurnPort,
   type ClaudeAccountTurnStatePort,
 } from "./claude_account_pool.js";
+import {
+  CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE,
+  claudeResumeTranscriptExists,
+} from "./claude_resume_transcript.js";
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
 import type { ClaudeSessionClientRegistry } from "./claude_session_client_registry.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
@@ -660,6 +664,35 @@ export class ClaudeEngineAdapter
         } else {
           options = bindAccountAttempt(selectedAccount);
         }
+      }
+
+      // resume할 로컬 기록이 없으면 CLI는 종료 코드 1로 끝나 매 턴 같은 실패를 반복한다.
+      // spawn 전에 확인해 비치명 안내만 내고, 태스크 실행기가 세션 스토리를 첫 입력에
+      // 넣은 새 백엔드 세션으로 같은 턴을 잇는다.
+      if (
+        options.resumeSessionId !== undefined
+        && !await claudeResumeTranscriptExists({
+          env: options.env ?? {},
+          workspaceDir: options.workspaceDir,
+          sessionId: options.resumeSessionId,
+        })
+      ) {
+        this.logger.warn(
+          { sessionId: params.agentSessionId, backendSessionId: options.resumeSessionId },
+          "Claude resume transcript missing; requesting backend rollover",
+        );
+        const payload = {
+          type: "error",
+          message: "이전 Claude 대화 기록 파일이 없어 새 대화로 이어 갑니다. 세션 스토리를 첫 입력에 넣습니다.",
+          fatal: false,
+          error_code: CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE,
+          timestamp: nowSeconds(),
+        } as SSEEventPayload;
+        await channel.emit(engineEventFrame(
+          payload as Record<string, unknown>,
+          engineEventMetadata(payload),
+        ));
+        return;
       }
 
       let observedSessionId = options.resumeSessionId;

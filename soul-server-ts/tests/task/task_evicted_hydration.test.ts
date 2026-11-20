@@ -540,6 +540,30 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.pendingClaudeBackendRolloverFrom).toBe("thread-1");
   });
 
+  it("restores the transcript_missing rollover reason for a pending cycle", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        claude_session_id: "thread-1",
+        metadata: [
+          {
+            type: "claude_backend_rollover",
+            value: {
+              attempts: 1,
+              reason: "transcript_missing",
+              phase: "pending",
+              previous_session_id: "thread-1",
+            },
+          },
+        ],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.claudeBackendRolloverAttempts).toBe(1);
+    expect(task?.claudeBackendRolloverReason).toBe("transcript_missing");
+    expect(task?.claudeBackendRolloverCycleFrom).toBe("thread-1");
+  });
+
   it("keeps an already-rotated recovery cycle armed without replaying the predecessor", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({

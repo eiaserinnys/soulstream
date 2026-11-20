@@ -9,7 +9,10 @@ import {
 } from "../context/input_material_parts.js";
 
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
-import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
+import {
+  truncateClaudeTextToEstimatedTokens,
+  type ClaudeBackendRolloverReason,
+} from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
@@ -100,31 +103,31 @@ export function buildBoundedBackendRolloverPrompt(
   replayPrompt: string,
   context: BackendRolloverContext,
   limits: { maxChars: number; maxEstimatedTokens: number },
+  reason: ClaudeBackendRolloverReason,
   attachmentNotePaths: readonly string[] = [],
 ): string {
   const excerpt = context.currentSessionExcerpt;
+  const sessionStory = context.sessionStory;
   const includedTurns = excerpt?.turns.length ?? 0;
-  const coverage = excerpt
-    ? `${includedTurns.toLocaleString("en-US")} recent conversation records were carried from `
-      + `${excerpt.totalEvents.toLocaleString("en-US")} total session events; `
-      + "older or omitted context may be missing."
-    : "No prior conversation excerpt was available; all backend-only conversation context "
-      + "may be missing.";
+  const coverage = sessionStory !== undefined
+    ? "The session story below (folded narrative, turn summaries and recent records) was "
+      + "carried from the Soulstream session record; details not in it may be missing."
+    : excerpt
+      ? `${includedTurns.toLocaleString("en-US")} recent conversation records were carried from `
+        + `${excerpt.totalEvents.toLocaleString("en-US")} total session events; `
+        + "older or omitted context may be missing."
+      : "No prior conversation excerpt was available; all backend-only conversation context "
+        + "may be missing.";
   const notice = [
     "<claude_backend_rollover>",
-    "The previous Claude backend session exceeded its context window and was replaced.",
+    reason === "transcript_missing"
+      ? "The previous Claude backend session could not be resumed because its local transcript "
+        + "file was not found, so a new backend session was started."
+      : "The previous Claude backend session exceeded its context window and was replaced.",
     coverage,
     "Before making irreversible changes, re-check the current task, files, and external state.",
     "</claude_backend_rollover>",
   ].join("\n");
-  const history = excerpt && excerpt.turns.length > 0
-    ? truncateWithNotice(
-        `<recent_session_history>\n${JSON.stringify(excerpt.turns, null, 2)}\n`
-          + "</recent_session_history>",
-        CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS,
-        "recent session history",
-      )
-    : "";
   const noteOnly = appendAttachmentPathNotes("", attachmentNotePaths);
   const noteReserve = noteOnly.length > 0
     ? noteOnly.length + (replayPrompt.length > 0 ? 2 : 0)
@@ -142,10 +145,25 @@ export function buildBoundedBackendRolloverPrompt(
     "dynamic context",
   );
   const contextBlock = [remainingContext, assignedBlock].filter(Boolean).join("\n\n");
+  const replaySection = `<replayed_input>\n${boundedReplay}\n</replayed_input>`;
+  const history = sessionStory !== undefined
+    ? truncateWithNotice(
+        `<session_story>\n${sessionStory}\n</session_story>`,
+        sessionStoryLimit(limits.maxChars, notice, replaySection, contextBlock),
+        "session story",
+      )
+    : excerpt && excerpt.turns.length > 0
+      ? truncateWithNotice(
+          `<recent_session_history>\n${JSON.stringify(excerpt.turns, null, 2)}\n`
+            + "</recent_session_history>",
+          CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS,
+          "recent session history",
+        )
+      : "";
   const sections = [
     notice,
     history,
-    `<replayed_input>\n${boundedReplay}\n</replayed_input>`,
+    replaySection,
     contextBlock,
   ].filter((value) => value.length > 0);
   return truncateClaudeTextToEstimatedTokens(
@@ -153,6 +171,18 @@ export function buildBoundedBackendRolloverPrompt(
     limits.maxEstimatedTokens,
     "rollover prompt",
   );
+}
+
+/**
+ * 세션 스토리 블록은 새 상수 없이 남는 자리를 쓴다. 나머지 섹션과 그 사이 구분자(\n\n)를
+ * 빼고 남은 만큼만 싣는다.
+ */
+function sessionStoryLimit(maxChars: number, ...otherSections: string[]): number {
+  const separatorChars = "\n\n".length;
+  const present = otherSections.filter((value) => value.length > 0);
+  const consumed = present.reduce((total, value) => total + value.length, 0)
+    + separatorChars * present.length;
+  return Math.max(0, maxChars - consumed);
 }
 
 export function truncateWithNotice(value: string, limit: number, label: string): string {

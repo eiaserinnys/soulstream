@@ -189,7 +189,10 @@ import {
   fatalPromptTooLongEvent,
   observeClaudeContextRecoveryEvent,
   shouldPreemptivelyCompact,
+  type ClaudeBackendRolloverReason,
 } from "./claude_context_recovery.js";
+import { CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE } from
+  "../engine/claude_resume_transcript.js";
 import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
@@ -2254,6 +2257,7 @@ export class TaskExecutor {
           agent,
           turnInput,
           task.pendingClaudeBackendRolloverFrom,
+          task.claudeBackendRolloverReason ?? "prompt_too_long",
         );
       }
       const rolloverCycleFromForTurn = turnInput.generationRollover
@@ -2416,7 +2420,13 @@ export class TaskExecutor {
             ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
             : task.claudeContextUsage,
       );
-      if (contextRecovery.promptTooLongMessage !== undefined) {
+      const rolloverReason: ClaudeBackendRolloverReason | undefined =
+        contextRecovery.promptTooLongMessage !== undefined
+          ? "prompt_too_long"
+          : contextRecovery.resumeTranscriptMissing
+            ? "transcript_missing"
+            : undefined;
+      if (rolloverReason !== undefined) {
         const previousSessionId = task.pendingClaudeBackendRolloverFrom
           ?? task.codexThreadId;
         const attempts = task.claudeBackendRolloverAttempts ?? 0;
@@ -2430,6 +2440,7 @@ export class TaskExecutor {
           const metadataEntry = claudeBackendRolloverMetadataEntry({
             attempts: nextAttempts,
             phase: "pending",
+            reason: rolloverReason,
             previousSessionId,
           });
           const metadataEventId = await this.persistence.enqueueMetadataEffect(
@@ -2453,6 +2464,7 @@ export class TaskExecutor {
             metadataEntry,
           ];
           task.claudeBackendRolloverAttempts = nextAttempts;
+          task.claudeBackendRolloverReason = rolloverReason;
           task.claudeBackendRolloverCycleFrom = previousSessionId;
           task.pendingClaudeBackendRolloverFrom = previousSessionId;
           await this.setClaudeContextUsage(task, undefined);
@@ -2461,19 +2473,26 @@ export class TaskExecutor {
             agent,
             turnInput,
             previousSessionId,
+            rolloverReason,
           );
           continue;
         }
+        const fatalMessage = contextRecovery.promptTooLongMessage
+          ?? "이전 Claude 대화 기록 파일이 없고, 새 대화로 이어 가는 것도 이번 주기에 이미 한 번 했습니다.";
         await this.engineEventPublisher.publishEngineEvent(
           task,
-          fatalPromptTooLongEvent(contextRecovery.promptTooLongMessage),
+          contextRecovery.promptTooLongMessage !== undefined
+            ? fatalPromptTooLongEvent(contextRecovery.promptTooLongMessage)
+            : {
+                type: "error",
+                message: fatalMessage,
+                fatal: true,
+                error_code: CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE,
+              } as SSEEventPayload,
         );
         const fatalEventId = await this.persistence.waitForSessionAck(task.agentSessionId);
         if (fatalEventId !== null) task.lastEventId = fatalEventId;
-        this.engineFailureRecovery.recoverFromSynthesizedFailure(
-          task,
-          contextRecovery.promptTooLongMessage,
-        );
+        this.engineFailureRecovery.recoverFromSynthesizedFailure(task, fatalMessage);
         break;
       }
       if (
@@ -2641,6 +2660,7 @@ export class TaskExecutor {
     const metadataEntry = claudeBackendRolloverMetadataEntry({
       attempts: 0,
       phase: "completed",
+      reason: task.claudeBackendRolloverReason ?? "prompt_too_long",
       previousSessionId,
       backendSessionId,
     });
@@ -2665,6 +2685,7 @@ export class TaskExecutor {
       metadataEntry,
     ];
     task.claudeBackendRolloverAttempts = 0;
+    task.claudeBackendRolloverReason = undefined;
     task.claudeBackendRolloverCycleFrom = undefined;
     task.pendingClaudeBackendRolloverFrom = undefined;
   }

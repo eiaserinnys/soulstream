@@ -1,4 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE } from
+  "../engine/claude_resume_transcript.js";
 
 export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO = 0.85;
 export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_MAX_TOKENS = 280_000;
@@ -23,8 +25,11 @@ const REPLAY_SAFE_EVENT_TYPES = new Set([
   "usage_observation",
 ]);
 
+export type ClaudeBackendRolloverReason = "prompt_too_long" | "transcript_missing";
+
 export interface ClaudeContextRecoveryObservation {
   promptTooLongMessage?: string;
+  resumeTranscriptMissing: boolean;
   replayUnsafeEventObserved: boolean;
   preemptiveCompactNeeded: boolean;
   compactCompleted: boolean;
@@ -44,6 +49,7 @@ export interface ClaudeEstimatedTurnInput {
 
 export function createClaudeContextRecoveryObservation(): ClaudeContextRecoveryObservation {
   return {
+    resumeTranscriptMissing: false,
     replayUnsafeEventObserved: false,
     preemptiveCompactNeeded: false,
     compactCompleted: false,
@@ -69,6 +75,10 @@ export function observeClaudeContextRecoveryEvent(
       record.output,
       "Prompt is too long",
     );
+  }
+
+  if (type === "error" && record.error_code === CLAUDE_RESUME_TRANSCRIPT_MISSING_ERROR_CODE) {
+    observation.resumeTranscriptMissing = true;
   }
 
   if (type !== "context_usage") return;
@@ -163,6 +173,7 @@ export function claudeBackendRolloverMetadataEntry(
   input: {
     attempts: number;
     phase: "pending" | "completed";
+    reason: ClaudeBackendRolloverReason;
     previousSessionId: string;
     backendSessionId?: string;
   },
@@ -172,7 +183,7 @@ export function claudeBackendRolloverMetadataEntry(
     type: "claude_backend_rollover",
     value: {
       attempts: input.attempts,
-      reason: "prompt_too_long",
+      reason: input.reason,
       phase: input.phase,
       previous_session_id: input.previousSessionId,
       ...(input.backendSessionId === undefined

@@ -79,7 +79,7 @@ export function buildPersistentCheckpoint(
     materialUnavailable?: boolean;
   },
   budget: PersistentCheckpointBudget = PERSISTENT_CHECKPOINT_BUDGET,
-): { item: ContextItem; stats: PersistentCheckpointStats } {
+): { item: ContextItem & { content: string }; stats: PersistentCheckpointStats } {
   const resetContext = input.resetContext === true;
   const state = buildStateSection(input.material, input.cards, input.ownSessionId, budget);
   const instructions = input.keepInstructions === false

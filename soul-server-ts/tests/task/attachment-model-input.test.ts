@@ -284,6 +284,7 @@ describe("attachment model input boundary", () => {
       claudeAgent,
       initial,
       "backend-old",
+      "prompt_too_long",
     );
     const rolloverParams = await collectExecuteParams(task, claudeAgent, rollover);
     expect(rolloverParams.imageAttachmentPaths).toEqual([IMAGE_PATH]);
