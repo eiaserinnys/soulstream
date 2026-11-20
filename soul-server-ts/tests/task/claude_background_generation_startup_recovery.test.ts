@@ -88,7 +88,7 @@ describe("Claude background generation upgrade recovery", () => {
         recordRelationConsumed: vi.fn(async () => undefined),
         sourceNode: "node-a",
         logger: { error: vi.fn(), info: vi.fn() },
-          getSession: vi.fn(async () => ({
+        getSession: vi.fn(async () => ({
           session_id: "caller-session",
           claude_session_id: "sdk-session",
           agent_id: "claude-agent",
