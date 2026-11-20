@@ -115,7 +115,7 @@ describe("createNodeFromEvent", () => {
           assumptions: [],
           units: {},
         },
-      };
+      } as const;
       const event: AssistantMessageEvent = {
         type: "assistant_message",
         content: "Stored answer",

@@ -1,3 +1,41 @@
+import type {
+  ClaudeRuntimeModeStateEvent,
+  ClaudeRuntimeNotificationEvent,
+  ClaudeRuntimeRemoteTriggerEvent,
+  ClaudeRuntimeScheduleDeletedEvent,
+  ClaudeRuntimeScheduleUpdatedEvent,
+  ClaudeRuntimeSessionStateEvent,
+  ClaudeRuntimeTaskCompletedEvent,
+  ClaudeRuntimeTaskCreatedEvent,
+  ClaudeRuntimeTaskNotificationEvent,
+  ClaudeRuntimeTaskProgressEvent,
+  ClaudeRuntimeTaskStartedEvent,
+  ClaudeRuntimeTaskUpdatedEvent,
+  ClaudeRuntimeTranscriptMirrorErrorEvent,
+} from "../shared/sse-events";
+
+type ClaudeRuntimePayloadEvent =
+  | ClaudeRuntimeSessionStateEvent
+  | ClaudeRuntimeTaskStartedEvent
+  | ClaudeRuntimeTaskCreatedEvent
+  | ClaudeRuntimeTaskUpdatedEvent
+  | ClaudeRuntimeTaskProgressEvent
+  | ClaudeRuntimeTaskCompletedEvent
+  | ClaudeRuntimeTaskNotificationEvent
+  | ClaudeRuntimeNotificationEvent
+  | ClaudeRuntimeRemoteTriggerEvent
+  | ClaudeRuntimeTranscriptMirrorErrorEvent
+  | ClaudeRuntimeModeStateEvent
+  | ClaudeRuntimeScheduleUpdatedEvent
+  | ClaudeRuntimeScheduleDeletedEvent;
+
+function isClaudeRuntimePayloadEvent(
+  event: { type: string },
+): event is ClaudeRuntimePayloadEvent {
+  return event.type.startsWith("claude_runtime_")
+    && event.type !== "claude_runtime_hook_event";
+}
+
 export type ClaudeRuntimeTaskStatus =
   | "pending"
   | "running"
@@ -127,14 +165,13 @@ export interface ClaudeRuntimeView {
   nextScheduleRunAt?: string | null;
 }
 
-export function applyClaudeRuntimeEvent<E extends { type: string }>(
+export function applyClaudeRuntimeEvent(
   current: ClaudeRuntimeView | null,
-  event: E,
+  event: { type: string },
 ): ClaudeRuntimeView | null {
-  if (!event.type.startsWith("claude_runtime_")) return current;
-  if (event.type === "claude_runtime_hook_event") return current;
+  if (!isClaudeRuntimePayloadEvent(event)) return current;
 
-  const payload = event as unknown as Record<string, unknown>;
+  const payload: Record<string, unknown> = event;
   const updatedAt = timestampToMs(payload.timestamp);
   const next: ClaudeRuntimeView = {
     ...(current ?? { tasks: {}, schedules: {}, notifications: {}, remoteTriggers: {}, updatedAt }),
