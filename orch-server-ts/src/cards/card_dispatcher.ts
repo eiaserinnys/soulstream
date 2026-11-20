@@ -78,7 +78,9 @@ export class CardDispatcher {
         previous = this.pending;
         await previous;
     } while (previous !== this.pending); }
-    async pause(): Promise<void> { this.paused = true; await this.drain(); }
+    /** Closes the queue to new work without waiting for in-flight work; pause() adds the drain. */
+    fence(): void { this.paused = true; }
+    async pause(): Promise<void> { this.fence(); await this.drain(); }
     resume(): void { this.paused = false; }
     dispatch(): Promise<void> { return this.enqueue(() => this.dispatchOnce()); }
     checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeAutoLimits(); await this.wakeAwaitingVerifications(this.options.now?.() ?? Date.now()); if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }

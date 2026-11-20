@@ -60,6 +60,7 @@ it("reclaims owner when the successor never becomes ready and releases the lock"
   };
   const handover = new OrchestratorHandover(locks, {
     start: async () => {}, stopBackground: async () => { events.push("stop"); },
+    fenceWrites: async () => { events.push("fence"); },
     resumeBackground: async () => { events.push("resume"); }, stopListening: () => { events.push("stop-listening"); },
     drainCommands: async () => {}, closeNodeSockets: () => {}, closePages: async () => {},
     closeHttp: async () => {}, exit: () => {}, log: () => {},
@@ -83,6 +84,7 @@ it("waits for ownership and finishes the old generation after successor readines
   };
   const handover = new OrchestratorHandover(locks, {
     start: async () => { events.push("start-and-listen"); }, stopBackground: async () => { events.push("stop-background"); },
+    fenceWrites: async () => { events.push("fence-writes"); },
     resumeBackground: async () => { events.push("resume-background"); }, stopListening: () => { events.push("stop-listening"); },
     drainCommands: async () => { events.push("commands"); }, closeNodeSockets: () => { events.push("node-1012"); },
     closePages: async () => { events.push("pages-saved"); }, closeHttp: async () => { events.push("http-closed"); },
@@ -102,6 +104,72 @@ it("waits for ownership and finishes the old generation after successor readines
   expect(events.slice(events.indexOf("stop-listening"))).toEqual([
     "stop-listening", "commands", "node-1012", "pages-saved", "release-page", "http-closed", "exit-0",
   ]);
+  expect(events).not.toContain("fence-writes");
+});
+
+it("fences writes and continues the handover when stopping background runs over budget", async () => {
+  const events: string[] = [];
+  const logs: Array<{ step: string; elapsedMs: number; currentStep?: string }> = [];
+  let receive!: (message: string) => void;
+  let ownerAvailable = true;
+  const locks: HandoverLocks = {
+    subscribe: async fn => { receive = fn; }, tryOwner: async () => ownerAvailable,
+    releaseOwner: async () => { events.push("release-owner"); ownerAvailable = false; },
+    acquirePage: async () => {}, releasePage: async () => { events.push("release-page"); },
+    notify: async () => {}, close: async () => {},
+  };
+  const handover = new OrchestratorHandover(locks, {
+    start: async () => {}, stopBackground: () => new Promise<void>(() => {}),
+    fenceWrites: async () => { events.push("fence-writes"); },
+    resumeBackground: async () => { events.push("resume-background"); }, stopListening: () => { events.push("stop-listening"); },
+    drainCommands: async () => { events.push("commands"); }, closeNodeSockets: () => { events.push("node-1012"); },
+    closePages: async () => { events.push("pages-saved"); }, closeHttp: async () => { events.push("http-closed"); },
+    exit: () => { events.push("exit-0"); },
+    log: (step, elapsedMs, currentStep) => { logs.push({ step, elapsedMs, currentStep }); },
+    stopBackgroundStep: () => "dispatcher.pause",
+  }, 5, 1_000, 20);
+  await handover.start();
+  receive("request");
+  await vi.waitFor(() => expect(events).toContain("release-owner"));
+  expect(events).toEqual(["fence-writes", "release-owner"]);
+  expect(logs).toContainEqual(expect.objectContaining({
+    step: "stop_background_over_budget", currentStep: "dispatcher.pause",
+  }));
+  receive("ready");
+  await vi.waitFor(() => expect(events).toContain("exit-0"));
+  expect(events).toEqual([
+    "fence-writes", "release-owner", "stop-listening", "commands", "node-1012",
+    "pages-saved", "release-page", "http-closed", "exit-0",
+  ]);
+  await handover.close();
+});
+
+it("resumes after an over-budget stop finishes when the successor never becomes ready", async () => {
+  const events: string[] = [];
+  let receive!: (message: string) => void;
+  let resolveStop!: () => void;
+  const stop = new Promise<void>(resolve => { resolveStop = resolve; });
+  const locks: HandoverLocks = {
+    subscribe: async fn => { receive = fn; }, tryOwner: async () => true,
+    releaseOwner: async () => { events.push("release"); },
+    acquirePage: async () => {}, releasePage: async () => {},
+    notify: async () => {}, close: async () => {},
+  };
+  const handover = new OrchestratorHandover(locks, {
+    start: async () => {}, stopBackground: async () => { events.push("stop"); await stop; },
+    fenceWrites: async () => { events.push("fence"); },
+    resumeBackground: async () => { events.push("resume"); }, stopListening: () => { events.push("stop-listening"); },
+    drainCommands: async () => {}, closeNodeSockets: () => {}, closePages: async () => {},
+    closeHttp: async () => {}, exit: () => { events.push("exit"); }, log: () => {},
+  }, 5, 20, 10);
+  await handover.start();
+  receive("request");
+  await vi.waitFor(() => expect(events).toEqual(["stop", "fence", "release"]));
+  expect(events).not.toContain("resume");
+  resolveStop();
+  await vi.waitFor(() => expect(events).toContain("resume"));
+  expect(events).toEqual(["stop", "fence", "release", "resume"]);
+  await handover.close();
 });
 
 describe("handover whole-file state", () => {
