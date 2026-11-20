@@ -258,8 +258,8 @@ describe("TaskTurnInputBuilder", () => {
     const { builder } = makeSubject({ prepareAttachmentInput });
     const failedInput = { prompt: "previous runtime prompt", originalPrompt: "원본 요청",
       imageAttachmentPaths: ["/old-cache/photo.png"], attachmentSource: source };
-    const first = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, failedInput, "backend-old");
-    const second = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, first, "backend-next");
+    const first = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, failedInput, "backend-old", "prompt_too_long");
+    const second = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, first, "backend-next", "prompt_too_long");
     expect(prepareAttachmentInput).toHaveBeenCalledTimes(2);
     expect(second.prompt).toContain("/cache/second/photo.png");
     expect(second.prompt).not.toContain("/old-cache/photo.png");
@@ -1331,6 +1331,7 @@ describe("TaskTurnInputBuilder", () => {
       claudeAgent,
       failedInput,
       "claude-exhausted",
+      "prompt_too_long",
     );
 
     expect(replay.inputUuid).toBe("input-1");
@@ -1398,9 +1399,14 @@ describe("TaskTurnInputBuilder", () => {
         imageAttachmentPaths: [],
       },
       "claude-exhausted",
+      "prompt_too_long",
     );
 
-    expect(contextBuilder.buildBackendRolloverContext).toHaveBeenCalledWith(task, claudeAgent);
+    expect(contextBuilder.buildBackendRolloverContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      "prompt_too_long",
+    );
     expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
     expect(input.systemPrompt?.length).toBeLessThanOrEqual(
       CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
@@ -1429,6 +1435,42 @@ describe("TaskTurnInputBuilder", () => {
       }),
     ]));
     expect(input.inputMaterialParts?.some((part) => part.category === "history_replay")).toBe(false);
+  });
+
+  it("transcript_missing rollover는 recent history 대신 세션 스토리를 남는 자리에 맞춰 싣는다", async () => {
+    const task = makeTask({ codexThreadId: "claude-missing-transcript" });
+    const { builder, contextBuilder } = makeSubject({
+      contextBuilder: {
+        buildBackendRolloverContext: vi.fn().mockResolvedValue({
+          contextItems: [],
+          sessionStory: "## 줄거리\n" + "서".repeat(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS * 2),
+        }),
+      },
+    });
+
+    const input = await builder.prepareBackendRolloverTurnInput(
+      task,
+      claudeAgent,
+      { prompt: "이어서 작업해", imageAttachmentPaths: [] },
+      "claude-missing-transcript",
+      "transcript_missing",
+    );
+
+    expect(contextBuilder.buildBackendRolloverContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      "transcript_missing",
+    );
+    expect(input.prompt).toContain("<session_story>");
+    expect(input.prompt).toContain("## 줄거리");
+    expect(input.prompt).toContain("local transcript file was not found");
+    expect(input.prompt).toContain("이어서 작업해");
+    expect(input.prompt).not.toContain("<recent_session_history>");
+    expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+    expect(estimateClaudeTextTokens(input.prompt)).toBeLessThanOrEqual(
+      CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
+    );
+    expect(input.backendSessionRolloverFrom).toBe("claude-missing-transcript");
   });
 
   it("rollover context 조회 실패는 replay 생존을 막지 않고 metadata-only notice로 강등한다", async () => {
@@ -1504,7 +1546,7 @@ describe("rollover assigned-card slot",()=>{
     const task=makeTask({prompt:'<assigned_cards>사용자 예문</assigned_cards>'});
     const {builder}=makeSubject({contextBuilder:{buildBackendRolloverContext:vi.fn().mockResolvedValue({contextItems:[{key:'assigned_cards',content:'fresh server slot'}]})}});
     const first=await builder.prepareInitialTurnInput(task,claudeAgent);
-    const rollover=await builder.prepareBackendRolloverTurnInput(task,claudeAgent,first,'old');
+    const rollover=await builder.prepareBackendRolloverTurnInput(task,claudeAgent,first,'old','prompt_too_long');
     expect(rollover.prompt).toContain(task.prompt);expect(rollover.prompt).toContain('fresh server slot');
   });
   it.each([false,true])("preserves the fresh slot beyond large dynamic context and removes replayed snapshots, subreport=%s",async subreport=>{
@@ -1517,7 +1559,7 @@ describe("rollover assigned-card slot",()=>{
     const input=await builder.prepareBackendRolloverTurnInput(task,claudeAgent,{
       prompt:'<assigned_cards>\n{"trust":"untrusted_card_data","cards":[{"title":"stale card"}]}\n</assigned_cards>\noriginal',originalPrompt:"original",imageAttachmentPaths:[],
       ...(subreport?{interventions:[{text:"하위 보고",user:"agent",context:[stale]}]}:{}),
-    },"previous");
+    },"previous","prompt_too_long");
     expect(input.prompt).toContain("fresh card");expect(input.prompt).not.toContain("stale card");
     expect(input.prompt.match(/<assigned_cards>/g)).toHaveLength(1);expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
   });

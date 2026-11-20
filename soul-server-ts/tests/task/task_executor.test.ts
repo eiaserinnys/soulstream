@@ -42,7 +42,11 @@ import {
   TaskTurnInputBuilder,
   type TaskTurnInput,
 } from "../../src/task/task_turn_input_builder.js";
+import { buildBestEffortBackendRolloverContext } from
+  "../../src/context/backend_rollover_context.js";
 import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
+import { loadPersistentCheckpointContext } from
+  "../../src/context/persistent_checkpoint_material.js";
 import {
   createExecutionActivation,
   type InterventionMessage,
@@ -5041,6 +5045,139 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("transcript_missing은 backend session을 한 번 rollover하고 세션 스토리를 첫 입력에 넣는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-missing-transcript";
+    task.interventionQueue.push({ text: "이어서 작업해", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 1) {
+          yield {
+            type: "error",
+            message: "이전 Claude 대화 기록 파일이 없어 새 대화로 이어 갑니다. 세션 스토리를 첫 입력에 넣습니다.",
+            fatal: false,
+            error_code: "claude_resume_transcript_missing",
+          } as SSEEventPayload;
+          return;
+        }
+        yield { type: "session", session_id: "claude-fresh" } as SSEEventPayload;
+        yield { type: "complete", result: "recovered" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const storyDb = {
+      getGenerationCheckpointMaterial: vi.fn(async () => ({
+        story: {
+          highlight: null,
+          narrative: "이전 대화의 줄거리: 기록 파일이 사라져도 세션 스토리로 이어진다.",
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: null,
+          foldCount: 1,
+          updatedAt: null,
+        },
+        lastSummarizedFinalResponseEventId: null,
+        recent: { records: [], omittedUnsummarized: 0 },
+        childSessions: [],
+        childSessionTotal: 0,
+        totals: { turnSummaries: 0 },
+      })),
+      getAssignedCardContext: vi.fn(async () => ({
+        capturedAt: "2026-11-21T00:00:00.000Z",
+        total: 0,
+        omitted: 0,
+        cards: [],
+      })),
+    } as unknown as SessionDB;
+    const fakeBuilder = {
+      build: vi.fn(),
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+      buildBackendRolloverContext: vi.fn(async (
+        rolloverTask: Task,
+        _agent: AgentProfile,
+        reason: "prompt_too_long" | "transcript_missing",
+      ) => await buildBestEffortBackendRolloverContext({
+        db: storyDb,
+        logger: silentLogger,
+        sessionId: rolloverTask.agentSessionId,
+        buildFullContext: async () => ({ contextItems: [] }),
+        ...(reason === "transcript_missing"
+          ? {
+              loadSessionStory: async () => (
+                await loadPersistentCheckpointContext(storyDb, silentLogger, rolloverTask)
+              ).item.content,
+            }
+          : {}),
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).toMatchObject({
+      prompt: "이어서 작업해",
+      resumeSessionId: "claude-missing-transcript",
+    });
+    expect(captured[1]).toMatchObject({
+      backendSessionRolloverFrom: "claude-missing-transcript",
+    });
+    expect(captured[1]).not.toHaveProperty("resumeSessionId");
+    expect(captured[1]?.prompt).toContain("local transcript file was not found");
+    expect(captured[1]?.prompt).toContain("<session_story>");
+    expect(captured[1]?.prompt).toContain("이전 대화의 줄거리");
+    expect(captured[1]?.prompt).not.toContain("<recent_session_history>");
+    expect(captured[1]?.prompt).toContain("이어서 작업해");
+    expect(fakeBuilder.buildBackendRolloverContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: task.agentSessionId }),
+      claudeAgent,
+      "transcript_missing",
+    );
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        type: "claude_backend_rollover",
+        value: expect.objectContaining({
+          attempts: 1,
+          reason: "transcript_missing",
+          phase: "pending",
+        }),
+      }),
+      expect.objectContaining({
+        replaceExistingType: "claude_backend_rollover",
+        waitForAck: true,
+      }),
+    );
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({
+        value: expect.objectContaining({
+          reason: "transcript_missing",
+          phase: "completed",
+          backend_session_id: "claude-fresh",
+        }),
+      }),
+      expect.objectContaining({ replaceExistingType: "claude_backend_rollover" }),
+    );
+    expect(task.codexThreadId).toBe("claude-fresh");
+    expect(task.claudeBackendRolloverReason).toBeUndefined();
+    expect(task.status).toBe("completed");
+  });
+
   it.each([
     {
       label: "V3 값을 compact 뒤 context_usage로 낸다",
@@ -5288,6 +5425,62 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(mocks.enqueueMetadataEffect).toHaveBeenCalledTimes(1);
     expect(task.claudeBackendRolloverAttempts).toBe(1);
     expect(task.claudeBackendRolloverCycleFrom).toBe("claude-over-limit");
+  });
+
+  it("transcript_missing rollover가 다시 실패하면 fatal로 끝낸다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-missing-transcript";
+    task.interventionQueue.push({ text: "resume once", user: "u" });
+    const captured: EngineExecuteParams[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push(params);
+        if (captured.length === 2) {
+          yield { type: "session", session_id: "claude-fresh" } as SSEEventPayload;
+        }
+        yield {
+          type: "error",
+          message: "이전 Claude 대화 기록 파일이 없어 새 대화로 이어 갑니다. 세션 스토리를 첫 입력에 넣습니다.",
+          fatal: false,
+          error_code: "claude_resume_transcript_missing",
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(),
+      buildFollowupContext: vi.fn(async () => ({ contextItems: [] })),
+      buildBackendRolloverContext: vi.fn(async () => ({ contextItems: [] })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(captured).toHaveLength(2);
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("새 대화로 이어 가는 것도 이번 주기에 이미 한 번 했습니다");
+    expect(mocks.enqueueMetadataEffect).toHaveBeenCalledTimes(1);
+    expect(task.claudeBackendRolloverAttempts).toBe(1);
+    expect(task.claudeBackendRolloverCycleFrom).toBe("claude-missing-transcript");
+    const fatalPayload = mocks.persistEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)
+      .find((event) => event.type === "error" && event.fatal === true);
+    expect(fatalPayload).toMatchObject({
+      error_code: "claude_resume_transcript_missing",
+    });
   });
 
   it("ACK 뒤 rotate 전 재시작한 rollover cycle을 predecessor resume 없이 이어간다", async () => {

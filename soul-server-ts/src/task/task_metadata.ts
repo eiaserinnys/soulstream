@@ -12,6 +12,7 @@ import {
   type ClaudePermissionMode,
 } from "../engine/protocol.js";
 import type { SessionCostBase } from "../engine/session_cost.js";
+import type { ClaudeBackendRolloverReason } from "./claude_context_recovery.js";
 
 export function buildSessionCostMetadataEntry(
   cost: SessionCostBase,
@@ -459,6 +460,7 @@ export function extractClaudePermissionModeFromMetadata(
 export interface ClaudeBackendRolloverMetadataState {
   attempts: number;
   phase: "pending" | "completed";
+  reason: ClaudeBackendRolloverReason;
   previousSessionId?: string;
   backendSessionId?: string;
 }
@@ -486,6 +488,7 @@ export function extractClaudeBackendRolloverState(
     return {
       attempts,
       phase,
+      reason: record.reason === "transcript_missing" ? "transcript_missing" : "prompt_too_long",
       ...(typeof record.previous_session_id === "string"
         ? { previousSessionId: record.previous_session_id }
         : {}),
@@ -498,7 +501,7 @@ export function extractClaudeBackendRolloverState(
 }
 
 function defaultClaudeBackendRolloverState(): ClaudeBackendRolloverMetadataState {
-  return { attempts: 0, phase: "completed" };
+  return { attempts: 0, phase: "completed", reason: "prompt_too_long" };
 }
 
 export function buildCallerInfoMetadataEntry(

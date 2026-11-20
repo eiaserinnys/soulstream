@@ -26,6 +26,7 @@ import type {
 } from "../engine/protocol.js";
 import type { SessionCostBase } from "../engine/session_cost.js";
 import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
+import type { ClaudeBackendRolloverReason } from "./claude_context_recovery.js";
 import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import type { AgentProfile } from "../agent_registry.js";
 import type { NodeBarrierKind } from "./state/node_barrier_machine.js";
@@ -648,6 +649,9 @@ export interface Task {
 
   /** Durable one-shot guard restored from claude_backend_rollover metadata. */
   claudeBackendRolloverAttempts?: number;
+
+  /** 롤오버 주기를 연 사유. 재시작 뒤에도 metadata에서 복원한다. */
+  claudeBackendRolloverReason?: ClaudeBackendRolloverReason;
 
   /** Durable predecessor that scopes the active rollover recovery cycle. */
   claudeBackendRolloverCycleFrom?: string;

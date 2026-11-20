@@ -45,7 +45,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 `runner/claude_account_turn_state_store.ts:RunnerClaudeAccountTurnStateStore`는 session별 `{turn_id, account_id, attempted_ids, continuation_uuid, continuation_sent}`를 runner SQLite에 기록한다. 살아 있는 runner 입양은 `adoptRegisteredRunner`가 durable row가 있을 때 SQLite의 `account_id`를 읽고 host `ClaudeAccountService.restoreActiveBinding`에서 `bindings.json`의 session binding 및 계정 존재를 대조한 뒤 `active_sessions` 점유를 복원한다. 검증된 live runner는 재선택 없이 그 계정을 유지한다. row가 없는 Kimi·서드파티 runner는 계정 풀 점유를 복원하지 않는다. row가 있는 상태에서 binding 불일치나 계정 누락은 입양을 실패시킨다. child가 죽은 경우에만 replay turn이 저장된 turn ID를 사용해 host `ClaudeAccountService.select`를 다시 호출하므로 P2의 durable affinity가 같은 계정을 돌려준다. 기존 runner config에는 `claudeAccountPool` 필드가 없어도 새 parser가 호환되며, flag가 꺼진 실행은 이 상태 store를 열지 않는다.
 
-재개 시 `engine/claude_account_pool_transcript.ts`는 같은 SessionKey의 DB transcript와 subkey를 선택 프로필의 공유 projects에 복원한다. 로컬이 최신이면 유지하고, DB가 앞서면 세션별 kernel lock 안에서 임시 파일을 쓴 뒤 rename한다. Query가 foreground 완료 뒤 스스로 닫혀도 pump와 실제 child 종료 뒤 계정 점유와 해당 durable 턴 상태를 정산한다.
+재개는 선택 프로필의 `CLAUDE_CONFIG_DIR` 아래 같은 session 경로의 로컬 JSONL을 그대로 쓴다. 프로필들이 같은 `projects`를 공유하므로 계정이 바뀌어도 복원 단계가 없다. 로컬 기록이 없으면 어댑터가 `transcript_missing` 백엔드 롤오버로 새 세션을 열고 세션 스토리를 첫 입력에 넣는다. Query가 foreground 완료 뒤 스스로 닫혀도 pump와 실제 child 종료 뒤 계정 점유와 해당 durable 턴 상태를 정산한다.
 
 P5의 계정 전환은 같은 row에 시도한 계정 ID와 continuation UUID·송신 여부를 갱신한다. 재시작 시 UUID가 아직 미송신이면 그 UUID의 continuation을 한 번 이어 보내며, `continuation_sent=true`면 원 입력이나 continuation을 다시 전송하지 않고 해당 턴을 실패로 종결한다. 이미 거부된 profile은 `attempted_ids`로 다시 고르지 않는다. 따라서 재시작 경계에서 continuation 중복은 0회다.
 

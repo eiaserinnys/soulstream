@@ -53,6 +53,7 @@ import { assemblePreparedContext, type PreparedContext } from "./prepared_contex
 export type { PreparedContext } from "./prepared_context_assembly.js";
 import type { PersistentCheckpointStats } from "./persistent_checkpoint.js";
 import { loadPersistentCheckpointContext } from "./persistent_checkpoint_material.js";
+import type { ClaudeBackendRolloverReason } from "../task/claude_context_recovery.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import {
@@ -187,6 +188,7 @@ export class ExecutionContextBuilder {
   async buildBackendRolloverContext(
     task: Task,
     agent: AgentProfile,
+    reason: ClaudeBackendRolloverReason,
   ): Promise<BackendRolloverContext> {
     return await buildBestEffortBackendRolloverContext({
       db: this.db,
@@ -194,6 +196,9 @@ export class ExecutionContextBuilder {
       sessionId: task.agentSessionId,
       buildFullContext: async () =>
         await this.buildFollowupContext(task, agent, { includeFullContext: true }),
+      loadSessionStory: reason === "transcript_missing"
+        ? async () => (await loadPersistentCheckpointContext(this.db, this.logger, task)).item.content
+        : undefined,
     });
   }
 

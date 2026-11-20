@@ -20,7 +20,10 @@ import {
 
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
-import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
+import {
+  truncateClaudeTextToEstimatedTokens,
+  type ClaudeBackendRolloverReason,
+} from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
@@ -285,12 +288,13 @@ export class TaskTurnInputBuilder {
     agent: AgentProfile,
     failedInput: TaskTurnInput,
     backendSessionRolloverFrom: string,
+    reason: ClaudeBackendRolloverReason,
   ): Promise<TaskTurnInput> {
     const currentCallerInfo = failedInput.interventions?.at(-1)?.callerInfo ?? task.callerInfo;
     const taskForContext = currentCallerInfo
       ? { ...task, callerInfo: currentCallerInfo }
       : task;
-    const ctx = await this.buildBackendRolloverContext(taskForContext, agent);
+    const ctx = await this.buildBackendRolloverContext(taskForContext, agent, reason);
     task.needsFullContextReinjection = false;
     this.recordFollowupContextInjection(task, currentCallerInfo, ctx);
     // 백엔드 교체 뒤에는 다음 후속 턴에 전체 목록을 다시 알린다.
@@ -319,7 +323,7 @@ export class TaskTurnInputBuilder {
     const prompt = buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx, {
       maxChars: CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
       maxEstimatedTokens: CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
-    }, replayBase.attachmentNotePaths);
+    }, reason, replayBase.attachmentNotePaths);
     const systemPrompt = ctx.effectiveSystemPrompt !== undefined
       ? truncateClaudeTextToEstimatedTokens(
           truncateWithNotice(
@@ -400,12 +404,13 @@ export class TaskTurnInputBuilder {
   private async buildBackendRolloverContext(
     task: Task,
     agent: AgentProfile,
+    reason: ClaudeBackendRolloverReason,
   ): Promise<BackendRolloverContext> {
     const builder = this.deps.contextBuilder;
     if (!builder) return { contextItems: [] };
     try {
       if (typeof builder.buildBackendRolloverContext === "function") {
-        return await builder.buildBackendRolloverContext(task, agent);
+        return await builder.buildBackendRolloverContext(task, agent, reason);
       }
       return await builder.buildFollowupContext(task, agent, {
         includeFullContext: true,

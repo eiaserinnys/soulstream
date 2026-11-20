@@ -172,6 +172,9 @@ export function hydrateEvictedTaskFromSessionRow(
     claudePermissionMode,
     ...(claudeContextUsage === undefined ? {} : { claudeContextUsage }),
     claudeBackendRolloverAttempts: claudeBackendRollover.attempts,
+    ...(claudeBackendRollover.phase === "pending"
+      ? { claudeBackendRolloverReason: claudeBackendRollover.reason }
+      : {}),
     ...(rolloverCycleFrom === undefined
       ? {}
       : { claudeBackendRolloverCycleFrom: rolloverCycleFrom }),

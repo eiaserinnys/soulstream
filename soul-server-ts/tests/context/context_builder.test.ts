@@ -2208,7 +2208,7 @@ describe("ExecutionContextBuilder.buildBackendRolloverContext", () => {
     const cb = makeBuilder({ getTurnExcerpt } as Partial<SessionDB>);
     const task = makeTask();
 
-    const context = await cb.buildBackendRolloverContext(task, codexAgent);
+    const context = await cb.buildBackendRolloverContext(task, codexAgent, "prompt_too_long");
 
     expect(getTurnExcerpt).toHaveBeenCalledWith(
       task.agentSessionId,
@@ -2231,10 +2231,52 @@ describe("ExecutionContextBuilder.buildBackendRolloverContext", () => {
     });
     const cb = makeBuilder({ getResumeContext, getTurnExcerpt } as Partial<SessionDB>);
 
-    const context = await cb.buildBackendRolloverContext(makeTask(), codexAgent);
+    const context = await cb.buildBackendRolloverContext(
+      makeTask(),
+      codexAgent,
+      "prompt_too_long",
+    );
 
     expect(context.contextItems).toEqual([]);
     expect(context.currentSessionExcerpt?.turns[0]?.text).toBe("survives");
+  });
+
+  it("transcript_missing은 turn excerpt 대신 세션 스토리를 싣는다", async () => {
+    const getTurnExcerpt = vi.fn();
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "파일이 사라진 세션의 줄거리",
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 1,
+        updatedAt: null,
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: { records: [], omittedUnsummarized: 0 },
+      childSessions: [],
+      childSessionTotal: 0,
+      totals: { turnSummaries: 0 },
+    });
+    const getAssignedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-11-21T00:00:00.000Z",
+      total: 0,
+      omitted: 0,
+      cards: [],
+    });
+    const cb = makeBuilder({
+      getTurnExcerpt,
+      getGenerationCheckpointMaterial,
+      getAssignedCardContext,
+    } as unknown as Partial<SessionDB>);
+    const task = makeTask();
+
+    const context = await cb.buildBackendRolloverContext(task, codexAgent, "transcript_missing");
+
+    expect(getTurnExcerpt).not.toHaveBeenCalled();
+    expect(context.currentSessionExcerpt).toBeUndefined();
+    expect(context.sessionStory).toContain("파일이 사라진 세션의 줄거리");
+    expect(context.contextItems.map((item) => item.key)).toContain("soulstream_session");
   });
 });
 

@@ -41,6 +41,10 @@ import type { EventOutboxPumpStore } from "../../src/upstream/event_outbox_pump_
 
 import contextUsageFixture from "../engine/claude_context_usage_after_compact.fixture.json";
 import { sdkInit, sdkResult } from "../engine/claude_sdk_persistent_test_harness.js";
+import {
+  makeClaudeResumeTranscriptFixture,
+  removeClaudeResumeTranscriptFixture,
+} from "./claude_resume_transcript_fixture.js";
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const SESSION_ID = "session-compact-intervention-ipc";
@@ -208,6 +212,10 @@ describe("Claude compact/intervention runner IPC integration", () => {
   it("queues messages during compact and sends both in the immediately following turn", async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), "compact-intervention-ipc-"));
     const paths = runnerProcessPaths(stateDirectory, SESSION_ID);
+    const resumeConfigDir = makeClaudeResumeTranscriptFixture({
+      workspaceDir: stateDirectory,
+      sessionIds: ["claude-backend-session"],
+    });
     const agent: AgentProfile = {
       id: AGENT_ID,
       name: "Claude compact IPC test",
@@ -273,7 +281,7 @@ describe("Claude compact/intervention runner IPC integration", () => {
         workspaceDir: config.agent.workspace_dir,
         agentId: config.agent.id,
         client,
-        processEnv: {},
+        processEnv: { CLAUDE_CONFIG_DIR: resumeConfigDir },
         persistentSessionRegistry: registry,
       }, silentLogger),
     });
@@ -521,6 +529,7 @@ describe("Claude compact/intervention runner IPC integration", () => {
       sdk.end();
       await dispatcher?.close().catch(() => undefined);
       await runtime.shutdown().catch(() => undefined);
+      removeClaudeResumeTranscriptFixture(resumeConfigDir);
       await rm(stateDirectory, { recursive: true, force: true });
     }
   }, 60_000);

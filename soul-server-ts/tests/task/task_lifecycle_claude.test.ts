@@ -16,7 +16,7 @@
 
 import pino from "pino";
 import type { Logger } from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type Query as ClaudeSdkQuery,
   type SDKMessage,
@@ -39,8 +39,17 @@ import { RunningInterventionTransition } from "../../src/task/task_running_inter
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
+import {
+  makeClaudeResumeTranscriptFixture,
+  removeClaudeResumeTranscriptFixture,
+} from "./claude_resume_transcript_fixture.js";
 
 const silentLogger: Logger = pino({ level: "silent" });
+const resumeTranscriptRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of resumeTranscriptRoots.splice(0)) removeClaudeResumeTranscriptFixture(root);
+});
 
 const claudeAgent: AgentProfile = {
   id: "claude-roselin",
@@ -248,8 +257,17 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       },
       async close() {},
     };
+    const resumeConfigDir = makeClaudeResumeTranscriptFixture({
+      workspaceDir: "/tmp/claude-roselin",
+      sessionIds: ["claude-sess-m1"],
+    });
+    resumeTranscriptRoots.push(resumeConfigDir);
     const adapter = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-roselin", client, processEnv: {} },
+      {
+        workspaceDir: "/tmp/claude-roselin",
+        client,
+        processEnv: { CLAUDE_CONFIG_DIR: resumeConfigDir },
+      },
       silentLogger,
     );
     const executor = new TaskExecutor(
@@ -308,8 +326,17 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       { query, postResultDrainMs: 500 },
       silentLogger,
     );
+    const resumeConfigDir = makeClaudeResumeTranscriptFixture({
+      workspaceDir: "/tmp/claude-roselin",
+      sessionIds: ["claude-sess-drain-queue"],
+    });
+    resumeTranscriptRoots.push(resumeConfigDir);
     const adapter = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-roselin", client, processEnv: {} },
+      {
+        workspaceDir: "/tmp/claude-roselin",
+        client,
+        processEnv: { CLAUDE_CONFIG_DIR: resumeConfigDir },
+      },
       silentLogger,
     );
     const executor = new TaskExecutor(
@@ -407,8 +434,17 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       { query, postResultDrainMs: 10 },
       silentLogger,
     );
+    const resumeConfigDir = makeClaudeResumeTranscriptFixture({
+      workspaceDir: "/tmp/claude-roselin",
+      sessionIds: ["claude-sess-empty-live"],
+    });
+    resumeTranscriptRoots.push(resumeConfigDir);
     const adapter = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-roselin", client, processEnv: {} },
+      {
+        workspaceDir: "/tmp/claude-roselin",
+        client,
+        processEnv: { CLAUDE_CONFIG_DIR: resumeConfigDir },
+      },
       silentLogger,
     );
     const executor = new TaskExecutor(
