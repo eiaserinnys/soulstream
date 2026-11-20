@@ -5,15 +5,6 @@
  * - 트리 상태(tree, treeVersion 등)와 이벤트 처리 컨텍스트(processingCtx) 소유.
  * - processEvent / processEvents / processHistoryEvents 액션을 제공.
  *
- * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening):
- *   - tree-placer가 root.children 평면 push로 단순화되면서 historyMode 토글·orphan 큐가
- *     필요 없어짐. processHistoryEvents의 try/finally는 activeTextTarget 격리만 남긴다.
- *   - subtree_update SSE는 event-processor에서 dedup만 갱신하고 no-op 반환. slice 측의
- *     applySubtreeHeightUpdate / subtreeHeightUpdate 적용 분기는 모두 폐기.
- *   - treeChangeInfo는 NodeGraph 제거(Phase 1) 후 소비자 0건이라 폐기.
- *   - totalSubtreeHeight·setTotalSubtreeHeight는 Phase D §11.3 grep으로 컴포넌트·훅
- *     소비자 0건 재확인 후 폐기 완료. 더 이상 슬라이스에 존재하지 않는다.
- *
  * 핵심 invariants:
  * - tree, treeVersion, chatPrependedCount는 한 set({}) 호출 안에 묶여야
  *   Zustand subscribe가 1회만 발화하여 React 한 렌더 사이클에서 정합 (atom 816060d2).

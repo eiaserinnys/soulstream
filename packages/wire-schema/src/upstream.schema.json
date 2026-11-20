@@ -197,8 +197,7 @@
     "assistant_error": "durable",
     "away_summary": "durable",
     "metadata": "durable",
-    "system_message": "durable",
-    "subtree_update": "durable"
+    "system_message": "durable"
   },
   "$defs": {
     "SessionLifecycleStatus": {
@@ -4776,17 +4775,6 @@
         "type": { "const": "system_message" },
         "text": { "type": "string" },
         "timestamp": { "type": "number" }
-      }
-    },
-    "SSEEventSubtreeUpdate": {
-      "type": "object",
-      "description": "SSE: deprecated subtree delta compatibility event.",
-      "required": ["type", "deltas", "new_total_subtree_height"],
-      "additionalProperties": true,
-      "properties": {
-        "type": { "const": "subtree_update" },
-        "deltas": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "new_total_subtree_height": { "type": "integer" }
       }
     }
   },

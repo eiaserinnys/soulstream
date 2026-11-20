@@ -3713,7 +3713,6 @@ export const EVENT_DURABILITY = {
   "away_summary": "durable",
   "metadata": "durable",
   "system_message": "durable",
-  "subtree_update": "durable",
 } as const;
 
 export type PersistenceEventType = keyof typeof EVENT_DURABILITY;
@@ -3788,7 +3787,6 @@ export const SSE_EVENT_TYPES = [
   "assistant_error",
   "away_summary",
   "system_message",
-  "subtree_update",
 ] as const;
 export type SSEEventType = (typeof SSE_EVENT_TYPES)[number];
 

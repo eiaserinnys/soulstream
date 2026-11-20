@@ -935,7 +935,6 @@ def test_known_sse_event_types_completeness() -> None:
         "reconnect",
         "history_sync",
         "metadata_updated",
-        "subtree_update",
         "assistant_error",
         "turn_summary",
         "away_summary",
