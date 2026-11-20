@@ -1,12 +1,10 @@
-import type { BoardItemType } from "@soulstream/wire-schema";
 import type {
   CatalogBoardItemRow,
   CustomViewRow,
-  FolderSessionRecord,
+  ListFolderItemsParams,
+  ListFolderItemsResult,
   MarkdownDocumentRow,
 } from "@soulstream/wire-schema/catalog";
-
-export type { BoardItemType } from "@soulstream/wire-schema";
 
 export interface CustomViewWithBoardItem {
   customView: CustomViewRow;
@@ -39,46 +37,6 @@ export interface PatchCustomViewRecordInput {
 export interface CustomViewRecordMutationResult {
   customView: CustomViewRow;
   eventId: number | null;
-}
-
-export interface FolderMarkdownRecord {
-  id: string;
-  title: string;
-  body: string;
-  updatedAt: string | null;
-}
-
-export interface FolderTitleRecord {
-  id: string;
-  title: string | null;
-  updatedAt: string | null;
-}
-
-export interface FolderItemRecord {
-  boardItem: CatalogBoardItemRow;
-  archived: boolean;
-  session?: FolderSessionRecord;
-  markdown?: FolderMarkdownRecord;
-  customView?: FolderTitleRecord;
-  asset?: FolderTitleRecord;
-  subfolder?: { id: string; title: string | null };
-}
-
-export interface ListFolderItemsParams {
-  folderId: string;
-  query: string | null;
-  includeArchived: boolean;
-  itemTypes: BoardItemType[] | null;
-  limit: number;
-  cursor: number;
-  scanLimit?: number | null;
-}
-
-export interface ListFolderItemsResult {
-  items: FolderItemRecord[];
-  total: number;
-  counts: Record<BoardItemType, number>;
-  scan: { limit: number; scannedItems: number; truncated: boolean } | null;
 }
 
 export interface BoardProjectionHost {

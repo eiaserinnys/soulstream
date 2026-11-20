@@ -1,10 +1,6 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
-import type {
-  BoardItemType,
-  CardStatus,
-} from "@soulstream/wire-schema";
-import type { CatalogBoardItemRow, FolderSessionRecord } from "@soulstream/wire-schema/catalog";
+import type { CardStatus } from "@soulstream/wire-schema";
 
 export type {
   BoardItemType,
@@ -78,57 +74,6 @@ export interface CatalogFolderRow {
   parentFolderId: string | null;
   projectPageId?: string | null;
   createdAt?: string;
-}
-
-export type FolderItemCounts = Record<BoardItemType, number>;
-
-export interface FolderMarkdownRecord {
-  id: string;
-  title: string;
-  body: string;
-  updatedAt: string | null;
-}
-
-export interface FolderTitleRecord {
-  id: string;
-  title: string | null;
-  updatedAt: string | null;
-}
-
-export interface FolderSubfolderRecord {
-  id: string;
-  title: string | null;
-}
-
-export interface FolderItemRecord {
-  boardItem: CatalogBoardItemRow;
-  archived: boolean;
-  session?: FolderSessionRecord;
-  markdown?: FolderMarkdownRecord;
-  customView?: FolderTitleRecord;
-  asset?: FolderTitleRecord;
-  subfolder?: FolderSubfolderRecord;
-}
-
-export interface ListFolderItemsParams {
-  folderId: string;
-  query: string | null;
-  includeArchived: boolean;
-  itemTypes: BoardItemType[] | null;
-  limit: number;
-  cursor: number;
-  scanLimit?: number | null;
-}
-
-export interface ListFolderItemsResult {
-  items: FolderItemRecord[];
-  total: number;
-  counts: FolderItemCounts;
-  scan: {
-    limit: number;
-    scannedItems: number;
-    truncated: boolean;
-  } | null;
 }
 
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */

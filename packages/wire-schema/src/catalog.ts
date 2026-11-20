@@ -68,6 +68,53 @@ export interface CatalogFolderRecord {
   createdAt?: string;
 }
 
+export type FolderItemCounts = Record<BoardItemType, number>;
+
+export interface FolderMarkdownRecord {
+  id: string;
+  title: string;
+  body: string;
+  updatedAt: string | null;
+}
+
+export interface FolderTitleRecord {
+  id: string;
+  title: string | null;
+  updatedAt: string | null;
+}
+
+export interface FolderSubfolderRecord {
+  id: string;
+  title: string | null;
+}
+
+export interface FolderItemRecord {
+  boardItem: CatalogBoardItemRow;
+  archived: boolean;
+  session?: FolderSessionRecord;
+  markdown?: FolderMarkdownRecord;
+  customView?: FolderTitleRecord;
+  asset?: FolderTitleRecord;
+  subfolder?: FolderSubfolderRecord;
+}
+
+export interface ListFolderItemsParams {
+  folderId: string;
+  query: string | null;
+  includeArchived: boolean;
+  itemTypes: BoardItemType[] | null;
+  limit: number;
+  cursor: number;
+  scanLimit?: number | null;
+}
+
+export interface ListFolderItemsResult {
+  items: FolderItemRecord[];
+  total: number;
+  counts: FolderItemCounts;
+  scan: { limit: number; scannedItems: number; truncated: boolean } | null;
+}
+
 export type CatalogSessionAssignment = {
   folderId: string | null;
   displayName: string | null;
