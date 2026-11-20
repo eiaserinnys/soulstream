@@ -44,6 +44,7 @@ if (!MANIFEST_MIGRATIONS.at(-1)) {
   throw new Error("release executor fixture requires at least one migration");
 }
 const MANIFEST_MIGRATION_COUNT = MANIFEST_MIGRATIONS.length;
+const LAST_MANIFEST_MIGRATION_ID = MANIFEST_MIGRATIONS.at(-1)!.id;
 
 afterEach(async () => {
   for (const directory of directories.splice(0)) {
@@ -218,10 +219,10 @@ describe("database release executor", () => {
     }
   }
 
-  async function assertRealAdditiveApply() {
+  async function assertRealUpgradeApply() {
     const testDatabaseUrl = await startIsolatedPostgres();
-    const installDir = makeTempDirSync("soul-release-additive-install-");
-    const upgradeDir = makeTempDirSync("soul-release-additive-real-");
+    const installDir = makeTempDirSync("soul-release-upgrade-install-");
+    const upgradeDir = makeTempDirSync("soul-release-upgrade-real-");
     directories.push(installDir, upgradeDir);
     const databaseEnv = { TEST_DATABASE_URL: testDatabaseUrl, DATABASE_URL: testDatabaseUrl };
     const freshEnv = { ...environment(installDir, "fresh_install"), ...databaseEnv };
@@ -229,11 +230,13 @@ describe("database release executor", () => {
     await runDatabaseRelease("apply", { env: freshEnv });
     const sql = postgres(testDatabaseUrl, { max: 1 });
     try {
-      await sql`DROP TABLE claude_central_accounts`;
-      await sql`DELETE FROM schema_migrations WHERE migration_id = '171_claude_central_accounts.sql'`;
+      // The terminal migration may be destructive, so re-applying it needs the
+      // same quiescence evidence as any non-additive upgrade.
+      await sql`DELETE FROM schema_migrations WHERE migration_id = ${LAST_MANIFEST_MIGRATION_ID}`;
     } finally { await sql.end({ timeout: 5 }); }
-    const env = { ...environment(upgradeDir), ...databaseEnv };
-    expect(await runDatabaseRelease("preflight", { env })).toMatchObject({ pending_count: 1, pending_additive_only: true });
+    const env = { ...await writeReceipt(environment(upgradeDir)), ...databaseEnv };
+    expect(await runDatabaseRelease("preflight", { env })).toMatchObject({ pending_count: 1, pending_additive_only: false });
+    await setHanielState(env, "migrating");
     await expect(runDatabaseRelease("apply", { env })).resolves.toMatchObject({ status: "applied" });
     await expect(runDatabaseRelease("verify", { env })).resolves.toMatchObject({ status: "verified" });
   }
@@ -558,7 +561,7 @@ describe("database release executor", () => {
   });
 
   itWithDatabase("reconciles a real PostgreSQL commit after journal update loss", async () => {
-    await assertRealAdditiveApply();
+    await assertRealUpgradeApply();
     const testDatabaseUrl = await startIsolatedPostgres();
     const sql = postgres(testDatabaseUrl, { max: 1, idle_timeout: 1 });
     expect(await inspectUserObjectInventory(sql)).toMatchObject(emptyInventory());
