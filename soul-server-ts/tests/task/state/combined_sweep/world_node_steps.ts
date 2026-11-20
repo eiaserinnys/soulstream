@@ -2,7 +2,7 @@
  * 합친 훑기 세계의 노드 걸음이다(카드 #1266 U5c). 걸음마다 원본 M의 줄을 단다.
  * 짝이 있는 걸음은 제품 판정 함수로 다음 구성을 고른다. 걸음이 일어날 수 있는 조건은 M을 따른다.
  */
-import type { RunnerHandleFacts } from "../../../../src/runner/state/runner_handle_machine.js";
+import type { RunnerHandleFacts } from "../../../../src/runner/state/runner_handle_decision.js";
 import type { RunnerLifecycleState } from "../../../../src/runner/state/runner_lifecycle_machine.js";
 import {
   NODE_DELETE_REQUEST_DISPOSITIONS,

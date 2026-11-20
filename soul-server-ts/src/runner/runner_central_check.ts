@@ -1,6 +1,6 @@
 import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
-import type { RunnerCentralLookup } from "./state/runner_central_check_machine.js";
+import type { RunnerCentralLookup } from "./state/runner_central_check_decision.js";
 
 /** 중앙 세션 한 줄에서 중앙 확인이 읽는 칸만 남긴다. */
 export interface RunnerCentralSessionRow {

@@ -1,25 +1,23 @@
 import { toMermaid, type ChartSpec } from "@soulstream/statechart";
 
-import { decideRunnerCentralCheck } from "./runner_central_check_decision.js";
 import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_CHECK_DECISIONS,
   RUNNER_CENTRAL_LOOKUPS,
-  runnerCentralCheckMachine,
+  decideRunnerCentralCheck,
   type RunnerAdoptResponse,
   type RunnerCentralCheckDecision,
   type RunnerCentralLookup,
-} from "./runner_central_check_machine.js";
-import { decideRunnerHandle } from "./runner_handle_decision.js";
+} from "./runner_central_check_decision.js";
 import {
   RUNNER_HANDLE_ACTIONS,
   RUNNER_HANDLE_ATTACHED_TERMINAL_STATES,
   RUNNER_HANDLE_BACKGROUND_STATES,
   RUNNER_HANDLE_RETENTION_STATES,
-  runnerHandleMachine,
+  decideRunnerHandle,
   type RunnerHandleAction,
   type RunnerHandleFacts,
-} from "./runner_handle_machine.js";
+} from "./runner_handle_decision.js";
 import { decideRunnerLifecycleStep } from "./runner_lifecycle_decision.js";
 import {
   RUNNER_LIFECYCLE_STATES,
@@ -216,7 +214,6 @@ export function runnerRecoveryDecisionTable(): RunnerRecoveryDecisionRow[] {
   return rows;
 }
 
-/** 중앙 확인의 모든 입력 조합에 판정을 낸다. 판정이 없으면 던진다. */
 export function runnerCentralCheckDecisionTable(): RunnerCentralCheckDecisionRow[] {
   const rows: RunnerCentralCheckDecisionRow[] = [];
   for (const lookup of RUNNER_CENTRAL_LOOKUPS) {
@@ -240,7 +237,6 @@ export function runnerCentralCheckDecisionTable(): RunnerCentralCheckDecisionRow
   return rows;
 }
 
-/** 복구 처리의 모든 입력 조합에 조치를 낸다. 조치가 없으면 던진다. */
 export function runnerHandleDecisionTable(): RunnerHandleDecisionRow[] {
   const rows: RunnerHandleDecisionRow[] = [];
   for (const disposition of RUNNER_RECOVERY_DISPOSITIONS) {
@@ -279,27 +275,8 @@ export function runnerHandleDecisionTable(): RunnerHandleDecisionRow[] {
   return rows;
 }
 
-/**
- * 복구 처리 기계 정의에서 조치 순서를 낸다. 문서와 정의가 어긋나지 않게 한다.
- */
 export function runnerHandleActionOrder(): RunnerHandleAction[] {
-  const state = runnerHandleMachine.root.states.decide;
-  type Verdict = { params?: { action?: RunnerHandleAction } };
-  const transitions = state?.on?.HANDLE as unknown as Array<{
-    actions?: Verdict | Verdict[];
-  }> | undefined;
-  if (!transitions) throw new Error("runner handle machine has no HANDLE transitions");
-  return transitions.map((transition) => {
-    const actions = Array.isArray(transition.actions)
-      ? transition.actions
-      : transition.actions
-        ? [transition.actions]
-        : [];
-    const action = actions.find((candidate) => candidate.params?.action)
-      ?.params?.action;
-    if (!action) throw new Error("runner handle transition has no action verdict");
-    return action;
-  });
+  return [...RUNNER_HANDLE_ACTIONS];
 }
 
 interface ChartPlan {
