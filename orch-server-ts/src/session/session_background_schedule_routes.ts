@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { invalidRequest } from "./session_action_command_errors.js";
 import {
-  badRequest,
   sendBackgroundScheduleCommand,
   sendDeleteScheduleCommand,
   type SessionBackgroundScheduleCommandDispatchOptions,
@@ -72,7 +72,7 @@ export function registerSessionBackgroundScheduleRoutes(
       );
       if (denied) return reply;
       const payload = backgroundTasksPayload(sessionId, request.body);
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
       return sendBackgroundScheduleCommand(reply, options, payload.value);
     },
   );

@@ -13,7 +13,7 @@ import { registerDurableHumanIntervention } from
 import { inlineUploadId } from "../attachments/upload_identity.js";
 
 import {
-  badRequest,
+  invalidRequest,
   sendActionCommand,
   sendGenericStatusError,
   executeInterveneCommand,
@@ -190,7 +190,7 @@ export function registerSessionActionCommandRoutes(
         request.body,
         "approve_tool",
       );
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
       return sendActionCommand(reply, options, payload.value, sendToolApprovalAckError);
     },
   );
@@ -210,7 +210,7 @@ export function registerSessionActionCommandRoutes(
         request.body,
         "reject_tool",
       );
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
       return sendActionCommand(reply, options, payload.value, sendToolApprovalAckError);
     },
   );
@@ -228,11 +228,11 @@ export function registerSessionActionCommandRoutes(
       if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
-        return badRequest(reply, "Request body must be a JSON object");
+        return invalidRequest(reply, "Request body must be a JSON object");
       }
 
       const payload = realtimeCreateCallPayload(sessionId, body);
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
     },
@@ -251,11 +251,11 @@ export function registerSessionActionCommandRoutes(
       if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
-        return badRequest(reply, "Request body must be a JSON object");
+        return invalidRequest(reply, "Request body must be a JSON object");
       }
 
       const payload = realtimeEventPayload(sessionId, body);
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
     },
@@ -273,14 +273,14 @@ export function registerSessionActionCommandRoutes(
       if (denied) return reply;
       const body = parseObjectBody(request.body);
       if (body === undefined) {
-        return badRequest(reply, "Request body must be a JSON object");
+        return invalidRequest(reply, "Request body must be a JSON object");
       }
 
       const payload = realtimeResolveToolApprovalPayload(
         approvalParams(request),
         body,
       );
-      if (!payload.ok) return badRequest(reply, payload.message);
+      if (!payload.ok) return invalidRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
     },

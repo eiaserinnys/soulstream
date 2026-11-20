@@ -302,7 +302,7 @@ export function realtimeResolveToolApprovalPayload(
   return { ok: true, value: payload };
 }
 
-function isJsonObject(value: unknown): value is JsonObject {
+export function isJsonObject(value: unknown): value is JsonObject {
   return (
     typeof value === "object" &&
     value !== null &&
