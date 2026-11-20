@@ -84,7 +84,7 @@ function createRunnerIsolationHost(
   deps: SessionIsolationCompositionDeps,
   runtime: SessionIsolationRuntime,
 ): RunnerIsolationHost {
-  // 재귀 `.env` 탐색 비용은 격리 준비에서만 쓰는 로그라 별도 인스턴스를 둔다.
+  // `.env` 가림 탐색 비용은 격리 준비에서만 쓰는 로그라 별도 인스턴스를 둔다.
   const scanLogger = createLogger(deps.env.LOG_LEVEL);
   return {
     prepare: async (request) =>
