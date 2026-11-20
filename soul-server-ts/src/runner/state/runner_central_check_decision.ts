@@ -80,6 +80,5 @@ export function decideRunnerCentralCheck(
     && !facts.terminalRetained
     && facts.registrationAppliedAndTurnRunning
   ) return "adopt";
-  if (facts.lookup === "inactive") return "keep";
-  throw new Error(`runner central check decision missing: ${JSON.stringify(facts)}`);
+  return "keep";
 }

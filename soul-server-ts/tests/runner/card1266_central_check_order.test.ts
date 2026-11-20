@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { decideRunnerCentralCheck } from "../../src/runner/state/runner_central_check_decision.js";
 import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_LOOKUPS,
+  decideRunnerCentralCheck,
   type RunnerCentralCheckFacts,
 } from "../../src/runner/state/runner_central_check_decision.js";
 

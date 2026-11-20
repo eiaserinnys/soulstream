@@ -1,20 +1,20 @@
 import { toMermaid, type ChartSpec } from "@soulstream/statechart";
 
-import { decideRunnerCentralCheck } from "./runner_central_check_decision.js";
 import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_CHECK_DECISIONS,
   RUNNER_CENTRAL_LOOKUPS,
+  decideRunnerCentralCheck,
   type RunnerAdoptResponse,
   type RunnerCentralCheckDecision,
   type RunnerCentralLookup,
 } from "./runner_central_check_decision.js";
-import { decideRunnerHandle } from "./runner_handle_decision.js";
 import {
   RUNNER_HANDLE_ACTIONS,
   RUNNER_HANDLE_ATTACHED_TERMINAL_STATES,
   RUNNER_HANDLE_BACKGROUND_STATES,
   RUNNER_HANDLE_RETENTION_STATES,
+  decideRunnerHandle,
   type RunnerHandleAction,
   type RunnerHandleFacts,
 } from "./runner_handle_decision.js";
@@ -214,7 +214,6 @@ export function runnerRecoveryDecisionTable(): RunnerRecoveryDecisionRow[] {
   return rows;
 }
 
-/** 중앙 확인의 모든 입력 조합에 판정을 낸다. 판정이 없으면 던진다. */
 export function runnerCentralCheckDecisionTable(): RunnerCentralCheckDecisionRow[] {
   const rows: RunnerCentralCheckDecisionRow[] = [];
   for (const lookup of RUNNER_CENTRAL_LOOKUPS) {
@@ -238,7 +237,6 @@ export function runnerCentralCheckDecisionTable(): RunnerCentralCheckDecisionRow
   return rows;
 }
 
-/** 복구 처리의 모든 입력 조합에 조치를 낸다. 조치가 없으면 던진다. */
 export function runnerHandleDecisionTable(): RunnerHandleDecisionRow[] {
   const rows: RunnerHandleDecisionRow[] = [];
   for (const disposition of RUNNER_RECOVERY_DISPOSITIONS) {

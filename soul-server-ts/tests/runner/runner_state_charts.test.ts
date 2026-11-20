@@ -22,10 +22,10 @@ import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_CHECK_DECISIONS,
   RUNNER_CENTRAL_LOOKUPS,
+  decideRunnerCentralCheck,
   type RunnerCentralCheckDecision,
   type RunnerCentralCheckFacts,
 } from "../../src/runner/state/runner_central_check_decision.js";
-import { decideRunnerCentralCheck } from "../../src/runner/state/runner_central_check_decision.js";
 import {
   RUNNER_HANDLE_ACTIONS,
   RUNNER_HANDLE_ATTACHED_TERMINAL_STATES,

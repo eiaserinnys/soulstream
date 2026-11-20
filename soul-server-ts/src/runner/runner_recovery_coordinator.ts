@@ -47,9 +47,9 @@ import {
   type RunnerCentralCheckDecision,
   type RunnerCentralLookup,
 } from "./state/runner_central_check_decision.js";
-import { decideRunnerHandle } from "./state/runner_handle_decision.js";
-import type {
-  RunnerHandleFacts,
+import {
+  decideRunnerHandle,
+  type RunnerHandleFacts,
 } from "./state/runner_handle_decision.js";
 import type {
   RunnerAdoptionApplication,
