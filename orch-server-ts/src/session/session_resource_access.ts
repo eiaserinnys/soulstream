@@ -4,6 +4,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
+  visibleBoardFolderIds,
   type BoardAccess,
   type BoardAccessFolderRecord,
 } from "../board/board_access.js";
@@ -167,7 +168,7 @@ export function firstAllowedSessionFolderId(
   folders: readonly BoardAccessFolderRecord[],
 ): string | null {
   if (!access.restricted) return null;
-  const visible = visibleFolderIdSet(access, folders);
+  const visible = visibleBoardFolderIds(access, folders);
   for (const folderId of access.allowedFolderIds) {
     if (visible.has(folderId)) return folderId;
   }
@@ -189,30 +190,4 @@ function requireAllowedFolder(
       403,
     );
   }
-}
-
-function visibleFolderIdSet(
-  access: Required<BoardAccess>,
-  folders: readonly BoardAccessFolderRecord[],
-): Set<string> {
-  const knownIds = new Set<string>();
-  const byParent = new Map<string | null, string[]>();
-  for (const folder of folders) {
-    knownIds.add(folder.id);
-    const parentId =
-      typeof folder.parentFolderId === "string" ? folder.parentFolderId : null;
-    const children = byParent.get(parentId) ?? [];
-    children.push(folder.id);
-    byParent.set(parentId, children);
-  }
-
-  const visible = new Set<string>();
-  const stack = access.allowedFolderIds.filter((folderId) => knownIds.has(folderId));
-  while (stack.length > 0) {
-    const folderId = stack.pop();
-    if (folderId === undefined || visible.has(folderId)) continue;
-    visible.add(folderId);
-    stack.push(...(byParent.get(folderId) ?? []));
-  }
-  return visible;
 }
