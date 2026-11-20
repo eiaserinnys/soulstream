@@ -190,6 +190,7 @@ export type ProductionApplication = {
   readonly closeHandoverResources?: () => Promise<void>;
   readonly beginShutdown?: () => Promise<void>;
   readonly stopBackground?: () => Promise<void>;
+  readonly fenceWrites?: () => Promise<void>;
   readonly resumeBackground?: () => Promise<void>;
   readonly waitForPendingCommands?: () => Promise<void>;
   readonly closePages?: () => Promise<void>;
@@ -229,6 +230,7 @@ export type ProductionOrchestrator = {
   readonly close: () => Promise<void>;
   readonly pageGate: HandoverGate;
   readonly stopBackground: () => Promise<void>;
+  readonly fenceWrites: () => Promise<void>;
   readonly resumeBackground: () => Promise<void>;
   readonly stopListening: () => void;
   readonly waitForPendingCommands: () => Promise<void>;
@@ -313,6 +315,7 @@ export async function createProductionOrchestrator(
       await closeApplication(application, options.onShutdownStage);
     },
     stopBackground: async () => await application.stopBackground?.(),
+    fenceWrites: async () => await application.fenceWrites?.(),
     resumeBackground: async () => await application.resumeBackground?.(),
     stopListening() { listenerClosed = new Promise<void>(resolve => application.app.server.close(() => resolve())); },
     waitForPendingCommands: async () => await application.waitForPendingCommands?.(),
@@ -328,6 +331,8 @@ export async function createProductionOrchestrator(
 
 const SESSION_SEARCH_SLOW_WARN_MS = 3_000;
 const SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS = 10_000;
+/** On handover exit, a stop that is still running gets this long before the next shutdown step. */
+const HANDOVER_BACKGROUND_STOP_WAIT_MS = 5_000;
 function unrestrictedPageGate(): HandoverGate { const gate = new HandoverGate(); gate.open(); return gate; }
 
 export async function createLiveProductionApplication(
@@ -1282,7 +1287,27 @@ export async function createLiveProductionApplication(
   let resourcesClosed = false;
   let documentIndexWarmupTimer: ReturnType<typeof setTimeout> | undefined;
   let backgroundStart: Promise<void> | undefined;
+  let backgroundStop: Promise<void> | undefined;
+  let currentStopStep: string | undefined;
+  const runStopStep = async (step: string, run: () => Promise<void> | void): Promise<void> => {
+    currentStopStep = step;
+    const startedAt = Date.now();
+    try {
+      await run();
+    } finally {
+      currentStopStep = undefined;
+      app.log.info(
+        {
+          event: "orchestrator.stop_background_step",
+          step,
+          elapsed_ms: Math.max(0, Date.now() - startedAt),
+        },
+        "orchestrator stop background step",
+      );
+    }
+  };
   const startBackground = async () => {
+    backgroundStop = undefined;
     if (!externalEventsTarget) await loadExternalEvents();
     externalEventsTarget?.resumeWrites();
     deadLetterStore.resumeWrites();
@@ -1316,22 +1341,33 @@ export async function createLiveProductionApplication(
       backgroundStart = overrides.pageGate.run(startRemaining).catch(error => context.warn(`background startup failed: ${String(error)}`));
     } else await startRemaining();
   };
-  const stopBackground = async () => {
-    backgroundActive = false;
-    await outboundWebhookService?.stop();
-    await sessionReconciliation.close();
-    await Promise.allSettled([...nodeRecoveryTasks]);
-    await backgroundStart;
-    if (documentIndexWarmupTimer !== undefined) { clearTimeout(documentIndexWarmupTimer); documentIndexWarmupTimer = undefined; }
-    await maintenanceService.stop();
-    await providers.sessionStatisticsRoutes.stopBackground?.();
-    await recurringJobScheduler?.stop();
-    await usageSummaryService.stop();
-    claudeCentralService?.stop();
-    await cardDispatchRuntime.dispatcher.pause();
-    await turnSummaryPipeline?.drain();
-    await externalEventsTarget?.pauseWrites();
-    await deadLetterStore.pauseWrites();
+  const stopBackground = (): Promise<void> => {
+    if (backgroundStop !== undefined) return backgroundStop;
+    backgroundStop = (async () => {
+      backgroundActive = false;
+      await runStopStep("outboundWebhook", () => outboundWebhookService?.stop());
+      await runStopStep("sessionReconciliation", () => sessionReconciliation.close());
+      await runStopStep("nodeRecoveryTasks", async () => { await Promise.allSettled([...nodeRecoveryTasks]); });
+      await runStopStep("backgroundStart", async () => {
+        await backgroundStart;
+        if (documentIndexWarmupTimer !== undefined) { clearTimeout(documentIndexWarmupTimer); documentIndexWarmupTimer = undefined; }
+      });
+      await runStopStep("maintenance", () => maintenanceService.stop());
+      await runStopStep("sessionStatistics", () => providers.sessionStatisticsRoutes.stopBackground?.());
+      await runStopStep("recurringJobScheduler", () => recurringJobScheduler?.stop());
+      await runStopStep("usageSummary", () => usageSummaryService.stop());
+      await runStopStep("claudeCentral", () => claudeCentralService?.stop());
+      await runStopStep("dispatcher.pause", () => cardDispatchRuntime.dispatcher.pause());
+      await runStopStep("turnSummary.drain", () => turnSummaryPipeline?.drain());
+      await runStopStep("externalEvents.pauseWrites", () => externalEventsTarget?.pauseWrites());
+      await runStopStep("deadLetter.pauseWrites", () => deadLetterStore.pauseWrites());
+    })();
+    return backgroundStop;
+  };
+  /** Closes new writes and new card work without waiting for the stop steps still running. */
+  const fenceWrites = async (): Promise<void> => {
+    cardDispatchRuntime.dispatcher.fence();
+    await Promise.all([externalEventsTarget?.pauseWrites(), deadLetterStore.pauseWrites()]);
   };
   const closeResources = async (handover: boolean) => {
     if (resourcesClosed) return;
@@ -1356,7 +1392,26 @@ export async function createLiveProductionApplication(
       }
     };
     if (handover) {
-      await runShutdownStep("background_stop", stopBackground);
+      await runShutdownStep("background_stop", async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finished = await Promise.race([
+          stopBackground().then(() => true),
+          new Promise<false>(resolve => {
+            timer = setTimeout(() => resolve(false), HANDOVER_BACKGROUND_STOP_WAIT_MS);
+            timer.unref();
+          }),
+        ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
+        if (!finished) {
+          app.log.warn(
+            {
+              event: "orchestrator.handover.background_stop_over_budget",
+              budget_ms: HANDOVER_BACKGROUND_STOP_WAIT_MS,
+              ...(currentStopStep === undefined ? {} : { step: currentStopStep }),
+            },
+            "orchestrator handover exit: background stop is still running",
+          );
+        }
+      });
     } else {
       backgroundActive = false;
       if (documentIndexWarmupTimer !== undefined) {
@@ -1379,6 +1434,7 @@ export async function createLiveProductionApplication(
     beginShutdown:()=>lifecycle.beginShutdown(),
     startBackground,
     stopBackground,
+    fenceWrites,
     resumeBackground: startBackground,
     markOwner: () => registry.beginHandoverNodeWait(),
     waitForPendingCommands: async () => {

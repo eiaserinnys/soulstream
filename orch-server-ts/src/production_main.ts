@@ -115,6 +115,7 @@ export async function runProductionMain(): Promise<void> {
   const handover = new OrchestratorHandover(locks, {
     start: async () => { const address = await server.listen(); console.info(`soulstream-orch-server-ts listening at ${address}`); },
     stopBackground: server.stopBackground,
+    fenceWrites: server.fenceWrites,
     resumeBackground: server.resumeBackground,
     stopListening: server.stopListening,
     drainCommands: server.waitForPendingCommands,
@@ -122,7 +123,11 @@ export async function runProductionMain(): Promise<void> {
     closePages: server.closePages,
     closeHttp: server.closeForHandover,
     exit: () => { modelCatalog.close(); process.exit(0); },
-    log: (step, elapsedMs) => console.info("orchestrator handover", { step, elapsed_ms: elapsedMs }),
+    log: (step, elapsedMs, currentStep) => console.info("orchestrator handover", {
+      step,
+      elapsed_ms: elapsedMs,
+      ...(currentStep === undefined ? {} : { current_step: currentStep }),
+    }),
   });
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {

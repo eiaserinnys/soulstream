@@ -12,6 +12,8 @@ export interface HandoverLocks {
 export interface HandoverActions {
   start(): Promise<void>;
   stopBackground(): Promise<void>;
+  /** Stops new writes and new card work without waiting for the stop steps still running. */
+  fenceWrites(): Promise<void>;
   resumeBackground(): Promise<void>;
   stopListening(): void;
   drainCommands(): Promise<void>;
@@ -19,15 +21,21 @@ export interface HandoverActions {
   closePages(): Promise<void>;
   closeHttp(): Promise<void>;
   exit(): void;
-  log(step: string, elapsedMs: number): void;
+  log(step: string, elapsedMs: number, currentStep?: string): void;
+  /** The stopBackground step running now, named in the over-budget log. */
+  stopBackgroundStep?(): string | undefined;
 }
+/** A normal handover gives background work this long to stop before fencing writes. */
+const DEFAULT_STOP_BUDGET_MS = 60_000;
 export class OrchestratorHandover {
   private owner = false;
   private stopping = false;
   private handingOver = false;
   private successorReady = false;
+  private inFlightStop: Promise<void> | undefined;
   constructor(private readonly locks: HandoverLocks, private readonly actions: HandoverActions,
-    private readonly retryMs = 150, private readonly readyTimeoutMs = 15_000) {}
+    private readonly retryMs = 150, private readonly readyTimeoutMs = 15_000,
+    private readonly stopBudgetMs = DEFAULT_STOP_BUDGET_MS) {}
   async start(): Promise<void> {
     const began = Date.now();
     await this.locks.subscribe(message => {
@@ -56,7 +64,17 @@ export class OrchestratorHandover {
   async close(): Promise<void> { this.stopping = true; await this.locks.close(); }
   private async handover(): Promise<void> {
     this.actions.log("handover_start", 0);
-    await this.step("stop_background", () => this.actions.stopBackground());
+    const stopBegan = Date.now();
+    const stopping = this.actions.stopBackground();
+    // An over-budget stop keeps running; the cancel path waits for it before resuming.
+    this.inFlightStop = stopping.then(
+      () => { this.actions.log("stop_background", Date.now() - stopBegan); },
+      error => { console.error("orchestrator background stop failed", error); },
+    );
+    if (!await this.stopWithinBudget(stopping)) {
+      this.actions.log("stop_background_over_budget", Date.now() - stopBegan, this.actions.stopBackgroundStep?.());
+      await this.actions.fenceWrites();
+    }
     if (this.stopping) return;
     this.owner = false;
     await this.locks.releaseOwner();
@@ -64,6 +82,7 @@ export class OrchestratorHandover {
     while (!this.successorReady && !this.stopping) {
       if (Date.now() - releasedAt >= this.readyTimeoutMs && await this.locks.tryOwner()) {
         this.owner = true;
+        await this.inFlightStop;
         await this.actions.resumeBackground();
         this.actions.log("handover_cancelled", Date.now() - releasedAt);
         this.handingOver = false;
@@ -83,6 +102,21 @@ export class OrchestratorHandover {
     if (this.stopping) return;
     await this.locks.close();
     if (!this.stopping) this.actions.exit();
+  }
+  /** True when the stop settles inside the budget; the stop keeps running when it does not. */
+  private async stopWithinBudget(stopping: Promise<void>): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        stopping.then(() => true),
+        new Promise<false>(resolve => {
+          timer = setTimeout(() => resolve(false), this.stopBudgetMs);
+          timer.unref();
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
   private async step(name: string, action: () => Promise<void>): Promise<void> {
     const began = Date.now();

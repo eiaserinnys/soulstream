@@ -386,6 +386,43 @@ describe("production orchestrator entrypoint", () => {
     }
   });
 
+  it("reuses the running background stop instead of starting another one", async () => {
+    const dashboardDir = await createDashboardDirectory();
+    const sql = Object.assign(async () => [], {
+      json: (value: unknown) => value,
+      array: (values: readonly unknown[]) => values,
+      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
+    }) as unknown as LivePostgresSql;
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(async () => undefined),
+    };
+    let releaseDrain!: () => void;
+    const drainGate = new Promise<void>(resolve => { releaseDrain = resolve; });
+    const drain = vi.fn(async () => { await drainGate; });
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment({
+        ...minimalEnvironment(),
+        PORT: "0",
+        DASHBOARD_DIR: dashboardDir,
+      }),
+      { warn: () => {} },
+      { modelCatalog: catalog, sqlResolver, turnSummaryPipeline: { accept: () => {}, drain } },
+    );
+    try {
+      const first = application.stopBackground!();
+      await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce());
+      const second = application.stopBackground!();
+      expect(second).toBe(first);
+      releaseDrain();
+      await Promise.all([first, second]);
+      expect(drain).toHaveBeenCalledOnce();
+    } finally {
+      await application.closeResources();
+      await application.app.close();
+    }
+  });
+
   it("cleans resources without listening when background startup fails", async () => {
     const closeResources = vi.fn(async () => undefined);
     const server = await createProductionOrchestrator({
