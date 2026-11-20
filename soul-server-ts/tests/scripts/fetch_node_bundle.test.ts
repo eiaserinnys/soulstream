@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -44,6 +44,15 @@ describe("fetch_node_bundle", () => {
       "release-manifest.json",
     ]);
     await expect(stat(join(world.installDir, "stale.txt"))).rejects.toThrow();
+    // bind must receive the staging directory and the env document, and no
+    // --catalog-path: the orchestrator accepts only the manifest's 12 keys.
+    const bindArgs = JSON.parse(
+      await readFile(join(dirname(world.envFile), "bind-args.json"), "utf8"),
+    ) as string[];
+    expect(bindArgs).toEqual([
+      "--release-dir", `${world.installDir}.next`,
+      "--env-file", world.envFile,
+    ]);
     await expect(stat(`${world.installDir}.next`)).rejects.toThrow();
     await expect(stat(`${world.installDir}.old`)).rejects.toThrow();
     expect((await readdir(world.cacheDir)).sort()).toEqual([
@@ -410,14 +419,22 @@ function makeBundle(
 function fakeBindScript(): string {
   return [
     'import { writeFileSync } from "node:fs";',
-    'import { join } from "node:path";',
+    'import { dirname, join } from "node:path";',
     "const args = process.argv.slice(2);",
     'const value = (name) => args[args.indexOf(name) + 1];',
     'const releaseDir = value("--release-dir");',
-    'if (!releaseDir || !value("--env-file") || !value("--catalog-path")) {',
+    'const envFile = value("--env-file");',
+    "if (!releaseDir || !envFile) {",
     '  process.stderr.write("bind-release: usage\\n");',
     "  process.exit(1);",
     "}",
+    // A bound model_catalog_path makes the orchestrator reject the manifest:
+    // it accepts exactly the 12 MANIFEST_KEYS and nothing else.
+    'if (args.includes("--catalog-path")) {',
+    '  process.stderr.write("bind-release: the worker must not pass --catalog-path\\n");',
+    "  process.exit(1);",
+    "}",
+    'writeFileSync(join(dirname(envFile), "bind-args.json"), JSON.stringify(args));',
     'writeFileSync(join(releaseDir, "release-manifest.json"), JSON.stringify({ schema_version: 1 }));',
     'process.stdout.write("bind-release: bound fixture\\n");',
     "",

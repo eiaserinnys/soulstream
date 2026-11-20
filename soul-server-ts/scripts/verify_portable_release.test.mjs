@@ -349,6 +349,15 @@ test("fetch_node_bundle downloads the release, binds it, and the swapped dist st
   const installDirectory = join(serviceDirectory, "soul-server-ts", "dist");
   const cacheDirectory = join(temporaryRoot, "fetch-cache");
   await mkdir(join(serviceDirectory, "runner-state"), { recursive: true });
+  // The worker's bind leaves model_catalog_path out, so startup derives the
+  // repository root from main.js: <repo>/soul-server-ts/dist means
+  // <repo>/packages/model-catalog/data/model-catalog.yaml. Mirror that checkout
+  // layout so the swapped dist finds the catalogue without a bound path.
+  const checkoutCatalog = join(
+    serviceDirectory, "packages", "model-catalog", "data", "model-catalog.yaml",
+  );
+  await mkdir(dirname(checkoutCatalog), { recursive: true });
+  await cp(catalogPath, checkoutCatalog);
   // bind reads this document while the payload still sits at dist.next; startup
   // later reads the same bytes from dist, so a copy is enough for identity.
   const fetchEnvFile = join(serviceDirectory, ".env.soul-server-ts");
@@ -394,7 +403,24 @@ test("fetch_node_bundle downloads the release, binds it, and the swapped dist st
       await readFile(join(installDirectory, "release-manifest.json"), "utf8"),
     );
     assert.equal(manifest.source_commit, sourceCommit);
-    assert.equal(manifest.model_catalog_path, catalogPath);
+    // The orchestrator registers a worker only when release_manifest carries
+    // exactly these 12 keys (MANIFEST_KEYS in
+    // orch-server-ts/src/node/release_activation_registration.ts:4-9); an extra
+    // model_catalog_path is rejected with closeCode 1008.
+    assert.deepEqual(Object.keys(manifest).sort(), [
+      "deployment_env_identity",
+      "executables",
+      "host_bundle_hash",
+      "manifest_id",
+      "node",
+      "release_cohort_id",
+      "runner_artifact_hash",
+      "runner_release_id",
+      "schema_generation",
+      "schema_version",
+      "source_commit",
+      "wire_generation",
+    ]);
     assert.equal(
       (await readdir(cacheDirectory)).sort().join(","),
       `node-${sourceCommit}.tar.gz,node-${sourceCommit}.tar.gz.sha256`,

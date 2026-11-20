@@ -3,6 +3,8 @@
 // 체크아웃 HEAD의 node-<sha>.tar.gz를 보관 폴더나 GitHub Release에서 받아 sha256을 검증하고,
 // 안전 검사를 거쳐 <install-dir>.next에 푼 뒤 그 자리에서 bind하고 dist와 자리를 바꾼다.
 // 노드 빌드로 되돌아가는 분기는 두지 않는다. 어느 단계든 실패하면 0이 아닌 코드로 끝난다.
+// bind에 --catalog-path를 넘기지 않는다: 오케스트레이터는 release_manifest의 12키 정확 일치만 받으므로
+// model_catalog_path 키가 붙으면 등록이 거부된다(orch-server-ts/src/node/release_activation_registration.ts MANIFEST_KEYS).
 import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -52,7 +54,7 @@ try {
   complete("verify");
 
   mark("bind");
-  await bindRelease({ nextDir, envFile: options.envFile, checkout: options.checkout });
+  await bindRelease({ nextDir, envFile: options.envFile });
   complete("bind");
 
   mark("swap");
@@ -256,13 +258,11 @@ async function assertSourceCommit(nextDir, sha) {
   }
 }
 
-async function bindRelease({ nextDir, envFile, checkout }) {
-  const catalogPath = join(checkout, "packages", "model-catalog", "data", "model-catalog.yaml");
+async function bindRelease({ nextDir, envFile }) {
   const result = await runProcess(process.execPath, [
     join(nextDir, "bind-release.mjs"),
     "--release-dir", nextDir,
     "--env-file", envFile,
-    "--catalog-path", catalogPath,
   ], { cwd: nextDir, timeoutMs: 300000 });
   if (result.code !== 0) {
     const detail = result.stderr.trim() || result.stdout.trim() || "no output";
