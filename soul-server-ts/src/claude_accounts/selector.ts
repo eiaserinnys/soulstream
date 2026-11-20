@@ -259,6 +259,24 @@ export function getCredentialEligibleCandidates(
     && !isBlockedForModel(candidate.blocks, params.model, params.nowMs));
 }
 
+/**
+ * 98% 미만 층 정렬에서 affinity로 볼 계정 id. 묶인 계정이 중앙이고 이 층에 인증 ok인
+ * 로컬 후보가 있으면 affinity를 보지 않는다(null). 그 밖에는 묶인 계정 그대로다.
+ */
+function underCapAffinityAccountId(
+  underSoftCap: SelectableAccountCandidate[],
+  boundAccountId: string | null | undefined,
+): string | null {
+  if (!boundAccountId) {
+    return null;
+  }
+  const bound = underSoftCap.find((candidate) => candidate.id === boundAccountId);
+  const hasOkLocal = underSoftCap.some(
+    (candidate) => candidate.source !== "central" && candidate.auth_state === "ok",
+  );
+  return bound?.source === "central" && hasOkLocal ? null : boundAccountId;
+}
+
 export function selectBestCandidate(
   params: SelectCandidateParams,
 ): SelectableAccountCandidate | null {
@@ -292,13 +310,20 @@ export function selectBestCandidate(
     }
   }
 
-  // 선택 순서 (카드 #1734에서 「로컬 먼저」를 더함)
+  // 선택 순서 (카드 #1734에서 「로컬 먼저」와 중앙 affinity 예외를 더함)
   // 0. 적격 필터: 꺼짐, ok와 idle이 아닌 인증 상태(needs_relogin, logging_in), exclude된 id,
   //    모델 범위의 차단, 사용량 소진은 후보에서 뺀다. 같은 턴 다시 고르기에서 묶인 계정이
   //    아직 적격이면 정렬 없이 그 계정을 그대로 쓴다.
   // 98% 미만 층(측정값이 98% 미만이거나 재지 못한 후보)이 하나라도 있으면 그 층에서 고른다.
-  //   1. 세션 affinity: 세션에 묶인 계정이 맨 앞이다. 중앙 계정으로 시작한 세션은 그 계정이
-  //      막히기 전까지 이어 간다.
+  //   1. 세션 affinity: 세션에 묶인 계정이 맨 앞이다. 로컬에 묶인 세션은 다른 로컬의 priority가
+  //      더 앞이어도 그 로컬을 이어 간다.
+  //      예외: 묶인 계정이 중앙이고 이 층에 인증 ok인 로컬 후보가 하나라도 있으면 affinity를 보지
+  //      않는다(묶인 계정이 없는 것처럼 고른다). 로컬이 98%에 닿거나 막혀 중앙으로 넘어간 세션은
+  //      바인딩이 중앙으로 덮어써지므로, 이 예외가 없으면 로컬 한도가 풀린 뒤에도 그 세션이 중앙을
+  //      계속 쓴다. 로컬이 다시 쓸 수 있게 되면 다음 턴부터 로컬로 돌아오게 한다. 이 층에 ok 로컬이
+  //      없으면(로컬이 모두 idle이거나, 98% 이상이거나, 막혀 빠졌으면) 중앙에 묶인 세션은 그 중앙을
+  //      다른 중앙보다 먼저 쓴다.
+  //      같은 턴 다시 고르기는 0번에서 이미 끝나므로 이 예외를 타지 않는다.
   //   2. 인증 ok가 idle보다 먼저: idle은 사용량을 재지 못한 상태(자격 없음, 만료, 사용량 조회
   //      401/403, 캐시 없음)다.
   //   3. 로컬이 중앙보다 먼저: 노드 로컬 계정을 먼저 쓰고, 다 쓰면 중앙 풀로 넘어간다.
@@ -312,14 +337,14 @@ export function selectBestCandidate(
   //   9. 최대 사용률이 낮은 순, 10. active_sessions가 적은 순, 11. id 오름차순.
   // 98% 미만 층이 비면 98% 이상 층에서 최대 사용률이 낮은 순으로 고른다. 이 층은 출처를 보지
   // 않는다(사용률, affinity, priority, Fable, active_sessions, id 순).
-  // 로컬이 98%에 닿거나 막히거나 exclude되면 위 규칙대로 중앙이 골라진다. 로컬이 풀리면 묶인
-  // 계정이 없는 선택에서 로컬이 다시 이긴다. 이미 중앙으로 넘어가 묶인 세션은 1번 affinity로
-  // 그 중앙 계정을 이어 쓴다.
+  // 로컬이 98%에 닿거나 막히거나 exclude되면 위 규칙대로 중앙이 골라진다. 로컬이 풀리면 다음
+  // 선택에서 로컬이 다시 이긴다. 이미 중앙에 묶인 세션도 1번의 예외로 다음 턴에 돌아온다.
   if (underSoftCap.length > 0) {
+    const affinityAccountId = underCapAffinityAccountId(underSoftCap, boundAccountId);
     underSoftCap.sort((a, b) => {
-      // 1. Session affinity
-      const affA = boundAccountId && a.id === boundAccountId ? 0 : 1;
-      const affB = boundAccountId && b.id === boundAccountId ? 0 : 1;
+      // 1. Session affinity (중앙 affinity 예외는 underCapAffinityAccountId)
+      const affA = affinityAccountId && a.id === affinityAccountId ? 0 : 1;
+      const affB = affinityAccountId && b.id === affinityAccountId ? 0 : 1;
       if (affA !== affB) {
         return affA - affB;
       }

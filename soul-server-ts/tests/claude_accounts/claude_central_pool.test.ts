@@ -217,6 +217,40 @@ describe("Claude central account pool snapshot", () => {
     expect(fallback).toMatchObject({ account_id: CENTRAL_ID, source: "central" });
   });
 
+  it("returns a session that moved to central back to the local account after the local block resets", async () => {
+    const svc = createService();
+    await registerLocal(svc, LOCAL_ID, "local-token");
+    svc.applyCentralPoolSync(syncPayload(1, [centralAccount({ id: CENTRAL_ID, priority: 0 })]));
+    await svc.getAccountList({ forceRefresh: true });
+    const sessionId = "session-local-return";
+
+    expect(await svc.select({ ...selectInput(sessionId), turn_id: "turn-1" }))
+      .toMatchObject({ account_id: LOCAL_ID });
+
+    // 턴 도중 로컬이 한도에 걸려 같은 턴에 중앙으로 넘어간다. 바인딩은 중앙으로 바뀐다.
+    const resetsAt = new Date(nowMs + 20 * 60_000).toISOString();
+    await svc.reject({
+      account_id: LOCAL_ID,
+      scope: "all",
+      resets_at: resetsAt,
+      observed_at: new Date(nowMs).toISOString(),
+      session_id: sessionId,
+    });
+    expect(await svc.select({ ...selectInput(sessionId), turn_id: "turn-1", exclude_ids: [LOCAL_ID] }))
+      .toMatchObject({ account_id: CENTRAL_ID, source: "central" });
+    expect(svc.store.readBindings()[sessionId]?.account_id).toBe(CENTRAL_ID);
+
+    // 막힘이 풀리기 전의 다음 턴은 중앙을 이어 쓴다.
+    expect(await svc.select({ ...selectInput(sessionId), turn_id: "turn-2" }))
+      .toMatchObject({ account_id: CENTRAL_ID });
+
+    // 막힘이 풀린 뒤의 다음 턴은 로컬로 돌아온다.
+    nowMs = Date.parse(resetsAt) + 1;
+    const returned = await svc.select({ ...selectInput(sessionId), turn_id: "turn-3" });
+    expect(returned).toMatchObject({ account_id: LOCAL_ID });
+    expect(returned).not.toHaveProperty("source");
+  });
+
   it("excludes a failed central token for ten minutes or until a newer token arrives", async () => {
     const svc = createService();
     svc.applyCentralPoolSync(syncPayload(1, [centralAccount()]));

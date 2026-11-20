@@ -9,6 +9,7 @@ import type { ClaudeAccountUsage } from "../../src/claude_accounts/types.js";
 
 // 카드 #1734: 98% 미만 층에서 노드 로컬 계정을 중앙 계정보다 먼저 쓴다.
 // affinity와 ok>idle은 로컬 먼저보다 앞이고, 98% 이상 층과 적격 필터는 그대로다.
+// 다만 중앙에 묶인 세션은 98% 미만 층에 ok 로컬이 있으면 affinity를 보지 않는다.
 
 const NOW_MS = Date.parse("2026-11-20T01:00:00.000Z");
 const MODEL = "claude-sonnet-4-6";
@@ -80,10 +81,48 @@ describe("selectBestCandidate local-first ordering under the 98% cap", () => {
       .toBe("central-a");
   });
 
-  it("keeps session affinity first: a session bound to a central account stays on it", () => {
+  it("returns a session bound to a central account to an ok local account on a later turn", () => {
     expect(pick(
       [local("local-a"), central("central-a")],
       { boundAccountId: "central-a", boundTurnId: "turn-1", turnId: "turn-2" },
+    )).toBe("local-a");
+  });
+
+  it("keeps a central-bound session on its central account when no local is ok under the cap", () => {
+    const centralBound = { boundAccountId: "central-b", boundTurnId: "turn-1", turnId: "turn-2" };
+    const centrals = [
+      central("central-a", { priority: 0 }),
+      central("central-b", { priority: 3 }),
+    ];
+    const blockedUntil = new Date(NOW_MS + 3_600_000).toISOString();
+    // 로컬이 98% 이상
+    expect(pick([local("local-a", { usage: usage(99) }), ...centrals], centralBound))
+      .toBe("central-b");
+    // 로컬이 막힘
+    expect(pick([
+      local("local-a", { blocks: { all: { resets_at: blockedUntil, observed_at: new Date(NOW_MS).toISOString() } } }),
+      ...centrals,
+    ], centralBound)).toBe("central-b");
+    // 로컬이 idle
+    expect(pick([local("local-a", { auth_state: "idle", usage: usage(null) }), ...centrals], centralBound))
+      .toBe("central-b");
+  });
+
+  it("keeps a local-bound session on its local account even when another local has a smaller priority", () => {
+    expect(pick(
+      [
+        local("local-a", { priority: 5 }),
+        local("local-b", { priority: 1 }),
+        central("central-a", { priority: 0 }),
+      ],
+      { boundAccountId: "local-a", boundTurnId: "turn-1", turnId: "turn-2" },
+    )).toBe("local-a");
+  });
+
+  it("returns the bound central account on a same-turn reselection without sorting", () => {
+    expect(pick(
+      [local("local-a"), central("central-a")],
+      { boundAccountId: "central-a", boundTurnId: "turn-1", turnId: "turn-1" },
     )).toBe("central-a");
   });
 
