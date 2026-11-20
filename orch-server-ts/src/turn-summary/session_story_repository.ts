@@ -1,3 +1,4 @@
+import type { SessionStoryTurnSummary } from "@soulstream/mcp-contract";
 import type {
   LiveDbSqlResolver,
 } from "../runtime/live_db_sql.js";
@@ -15,15 +16,6 @@ export interface SessionStoryDigest {
   readonly version: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
-}
-
-export interface UnfoldedTurnSummary {
-  readonly eventId: number;
-  readonly turnNumber: number;
-  readonly content: string;
-  readonly turnStartEventId: number | null;
-  readonly finalResponseEventId: number | null;
-  readonly createdAt: Date;
 }
 
 export interface StoreSessionStoryDigestInput {
@@ -62,7 +54,7 @@ export interface SessionStoryRepositoryPort {
     sessionId: string,
     afterEventId: number | null,
     limit: number,
-  ): Promise<UnfoldedTurnSummary[]>;
+  ): Promise<SessionStoryTurnSummary[]>;
   countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
   listCompletedFoldCandidates(
     input: ListCompletedFoldCandidatesInput,
@@ -86,7 +78,7 @@ export interface SessionTurnSummaryRepositoryPort {
     fromTurnNumber: number,
     toTurnNumber: number | null,
     limit: number,
-  ): Promise<UnfoldedTurnSummary[]>;
+  ): Promise<SessionStoryTurnSummary[]>;
 }
 
 export class SessionStoryRepository
@@ -178,7 +170,7 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
     fromTurnNumber: number,
     toTurnNumber: number | null,
     limit: number,
-  ): Promise<UnfoldedTurnSummary[]> {
+  ): Promise<SessionStoryTurnSummary[]> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = toTurnNumber === null
       ? await sql`
@@ -218,14 +210,14 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
         `;
     return rows
       .map(normalizeUnfoldedSummary)
-      .filter((value): value is UnfoldedTurnSummary => value !== null);
+      .filter((value): value is SessionStoryTurnSummary => value !== null);
   }
 
   async loadUnfoldedSummaries(
     sessionId: string,
     afterEventId: number | null,
     limit: number,
-  ): Promise<UnfoldedTurnSummary[]> {
+  ): Promise<SessionStoryTurnSummary[]> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql`
       WITH ordered_summaries AS (
@@ -246,7 +238,7 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
     `;
     return rows
       .map(normalizeUnfoldedSummary)
-      .filter((value): value is UnfoldedTurnSummary => value !== null);
+      .filter((value): value is SessionStoryTurnSummary => value !== null);
   }
 
   async storeDigest(input: StoreSessionStoryDigestInput): Promise<boolean> {
@@ -357,7 +349,7 @@ function normalizeDigest(row: Record<string, unknown>): SessionStoryDigest {
 
 function normalizeUnfoldedSummary(
   row: Record<string, unknown>,
-): UnfoldedTurnSummary | null {
+): SessionStoryTurnSummary | null {
   const payload = recordValue(row.payload);
   const eventId = numberValue(row.id);
   const turnNumber = numberValue(row.turn_number);

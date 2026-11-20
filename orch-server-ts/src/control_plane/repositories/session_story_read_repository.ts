@@ -6,18 +6,12 @@ import type {
   LiveSearchQueryRunner,
   LiveSearchSql,
 } from "../../runtime/live_db_sql.js";
-import type { SessionReadPeriod } from "@soulstream/mcp-contract";
+import type {
+  SessionReadPeriod,
+  SessionStoryTurnSummary,
+} from "@soulstream/mcp-contract";
 import { readTurnSummaryCounts } from "../../turn-summary/turn_summary_count_query.js";
 import { LINKED_CARD_LATERAL_SQL } from "../../runtime/live_session_link_sql.js";
-
-export interface HostSessionStoryTurnSummary {
-  readonly eventId: number;
-  readonly turnNumber: number;
-  readonly content: string;
-  readonly turnStartEventId: number | null;
-  readonly finalResponseEventId: number | null;
-  readonly createdAt: Date;
-}
 
 export interface HostSessionTurnTranscriptEvent {
   readonly eventId: number;
@@ -34,7 +28,7 @@ export interface HostSessionTurnTranscript {
 export interface HostSessionStoryView {
   readonly highlight: string | null;
   readonly narrative: string | null;
-  readonly unfoldedTurnSummaries: HostSessionStoryTurnSummary[];
+  readonly unfoldedTurnSummaries: SessionStoryTurnSummary[];
   readonly narrativeThroughEventId: number | null;
   readonly foldCount: number;
   readonly updatedAt: Date | null;
@@ -156,7 +150,7 @@ ${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
     toTurnNumber: number | null,
     limit: number,
     options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number; readonly period?: SessionReadPeriod } = {},
-  ): Promise<HostSessionStoryTurnSummary[]> {
+  ): Promise<SessionStoryTurnSummary[]> {
     const run = (query: LiveSearchSql) => {
       if (options.period) {
         return query<SummaryRow[]>`
@@ -229,7 +223,7 @@ ${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
 
   async loadTurnTranscript(
     sessionId: string,
-    selectedSummaries: readonly HostSessionStoryTurnSummary[],
+    selectedSummaries: readonly SessionStoryTurnSummary[],
     includeTools: boolean,
   ): Promise<HostSessionTurnTranscript[]> {
     if (selectedSummaries.length === 0) return [];
@@ -494,11 +488,11 @@ type DigestSearchRow = {
   match_source: string;
 };
 
-function summaries(rows: SummaryRow[]): HostSessionStoryTurnSummary[] {
-  return rows.map(normalizeSummary).filter((value): value is HostSessionStoryTurnSummary => value !== null);
+function summaries(rows: SummaryRow[]): SessionStoryTurnSummary[] {
+  return rows.map(normalizeSummary).filter((value): value is SessionStoryTurnSummary => value !== null);
 }
 
-function normalizeSummary(row: SummaryRow): HostSessionStoryTurnSummary | null {
+function normalizeSummary(row: SummaryRow): SessionStoryTurnSummary | null {
   const payload = parsePayload(row.payload);
   const content = typeof payload.content === "string" ? payload.content.trim() : "";
   if (content.length === 0) return null;

@@ -1,9 +1,10 @@
+import {
+  serializeSessionStoryTurnSummary,
+  type SessionStoryTurnSummaryResponse,
+} from "@soulstream/mcp-contract";
 import type {
   SessionTurnSummaryRepositoryPort,
-  UnfoldedTurnSummary,
 } from "../turn-summary/session_story_repository.js";
-import type { SessionStoryTurnSummaryResponse } from
-  "./session_story_read_service.js";
 
 export type SessionTurnSummaryQuery =
   | { mode: "count" }
@@ -74,7 +75,9 @@ export class SessionTurnSummaryReadService {
         session_id: sessionId,
         mode: "index",
         turn_number: query.turnNumber,
-        summary: summaries[0] ? serializeSummary(summaries[0]) : null,
+        summary: summaries[0]
+          ? serializeSessionStoryTurnSummary(summaries[0])
+          : null,
       };
     }
     const fetched = await this.repository.loadTurnSummaryRange(
@@ -91,7 +94,7 @@ export class SessionTurnSummaryReadService {
       from_turn_number: query.fromTurnNumber,
       to_turn_number: query.toTurnNumber,
       limit: query.limit,
-      summaries: page.map(serializeSummary),
+      summaries: page.map(serializeSessionStoryTurnSummary),
       has_more: hasMore,
       next_from_turn_number: hasMore
         ? fetched[query.limit]?.turnNumber ?? null
@@ -100,15 +103,3 @@ export class SessionTurnSummaryReadService {
   }
 }
 
-function serializeSummary(
-  summary: UnfoldedTurnSummary,
-): SessionStoryTurnSummaryResponse {
-  return {
-    event_id: summary.eventId,
-    turn_number: summary.turnNumber,
-    content: summary.content,
-    turn_start_event_id: summary.turnStartEventId,
-    final_response_event_id: summary.finalResponseEventId,
-    created_at: summary.createdAt.toISOString(),
-  };
-}

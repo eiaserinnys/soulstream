@@ -16,6 +16,24 @@ export interface SessionStoryView {
   readonly updatedAt: Date | null;
 }
 
+export interface SessionStoryTurnSummaryResponse {
+  readonly event_id: number;
+  readonly turn_number: number;
+  readonly content: string;
+  readonly turn_start_event_id: number | null;
+  readonly final_response_event_id: number | null;
+  readonly created_at: string;
+}
+
+export interface SessionStoryViewResponse {
+  readonly highlight: string | null;
+  readonly narrative: string | null;
+  readonly unfolded_turn_summaries: SessionStoryTurnSummaryResponse[];
+  readonly narrative_through_event_id: number | null;
+  readonly fold_count: number;
+  readonly updated_at: string | null;
+}
+
 export interface GenerationCheckpointReadLimits {
   readonly recentEventLimit: number;
   readonly unsummarizedEventLimit: number;
@@ -115,14 +133,7 @@ export interface SessionDigestSearchMatch {
 
 export function serializeSessionStoryTurnSummary(
   summary: SessionStoryTurnSummary,
-): {
-  event_id: number;
-  turn_number: number;
-  content: string;
-  turn_start_event_id: number | null;
-  final_response_event_id: number | null;
-  created_at: string;
-} {
+): SessionStoryTurnSummaryResponse {
   return {
     event_id: summary.eventId,
     turn_number: summary.turnNumber,
@@ -132,21 +143,9 @@ export function serializeSessionStoryTurnSummary(
     created_at: summary.createdAt.toISOString(),
   };
 }
-export function serializeSessionStoryView(story: SessionStoryView): {
-  highlight: string | null;
-  narrative: string | null;
-  unfolded_turn_summaries: Array<{
-    event_id: number;
-    turn_number: number;
-    content: string;
-    turn_start_event_id: number | null;
-    final_response_event_id: number | null;
-    created_at: string;
-  }>;
-  narrative_through_event_id: number | null;
-  fold_count: number;
-  updated_at: string | null;
-} {
+export function serializeSessionStoryView(
+  story: SessionStoryView,
+): SessionStoryViewResponse {
   return {
     highlight: story.highlight,
     narrative: story.narrative,
