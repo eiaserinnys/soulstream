@@ -37,13 +37,6 @@ describe('R-2 — extractMessageCaller treats source-only caller_info as a calle
     expect(caller?.source).toBe('agent');
   });
 
-  it('flat (top-level) caller fields with only source returns a caller', () => {
-    const event = makeEvent({ source: 'system' });
-    const caller = extractMessageCaller(event);
-    expect(caller).not.toBeNull();
-    expect(caller?.source).toBe('system');
-  });
-
   it.each(['agent', 'system', 'slack', 'soul-app', 'browser', 'api'] as const)(
     'every v1 source promotes to caller object — %s',
     (source) => {

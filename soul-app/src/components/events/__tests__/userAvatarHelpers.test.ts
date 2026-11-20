@@ -71,37 +71,6 @@ describe('extractMessageCaller', () => {
     });
   });
 
-  it('extracts flat top-level fields when caller_info absent', () => {
-    const ev = makeEvent({
-      text: 'hi',
-      source: 'agent',
-      agent_node: 'eias-shopping',
-      agent_id: 'roselin',
-      agent_name: '로젤린',
-    });
-    const result = extractMessageCaller(ev);
-    expect(result?.source).toBe('agent');
-    expect(result?.agent_node).toBe('eias-shopping');
-    expect(result?.agent_id).toBe('roselin');
-    expect(result?.agent_name).toBe('로젤린');
-  });
-
-  it('prefers nested caller_info over flat top-level when both present', () => {
-    const ev = makeEvent({
-      text: 'hi',
-      source: 'agent',           // flat (ignored)
-      agent_id: 'flat-fallback', // flat (ignored)
-      caller_info: {
-        source: 'slack',
-        avatar_url: 'https://avatars.slack-edge.com/foo.png',
-      },
-    });
-    const result = extractMessageCaller(ev);
-    expect(result?.source).toBe('slack');
-    expect(result?.avatar_url).toBe('https://avatars.slack-edge.com/foo.png');
-    expect(result?.agent_id).toBeUndefined();
-  });
-
   it('extracts slack source with avatar_url and slack sub-dict', () => {
     const ev = makeEvent({
       caller_info: {

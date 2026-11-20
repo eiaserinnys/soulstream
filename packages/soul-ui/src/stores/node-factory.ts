@@ -122,26 +122,12 @@ export function createNodeFromEvent(
       const e = event as UserMessageEvent;
       const content = e.text ?? extractLastUserContent(e.messages);
 
-      // caller_info(통합 v1, atom ed3a216d) → agentInfo + callerInfo 도출.
-      // 정본 우선: nested e.caller_info. 부재 시 레거시 top-level fallback (Phase 3 이전 데이터).
       const ci = e.caller_info;
-      const agentInfoFromCi = ci && ci.source === "agent" ? {
+      const agentInfo = ci && ci.source === "agent" ? {
         source: "agent" as const,
         agent_node: ci.agent_node ?? "",
         agent_id: ci.agent_id ?? null,
         agent_name: ci.agent_name ?? null,
-      } : undefined;
-      const legacy = e as unknown as {
-        source?: "agent";
-        agent_node?: string;
-        agent_id?: string | null;
-        agent_name?: string | null;
-      };
-      const agentInfoLegacy = !ci && legacy.source === "agent" ? {
-        source: legacy.source,
-        agent_node: legacy.agent_node ?? "",
-        agent_id: legacy.agent_id ?? null,
-        agent_name: legacy.agent_name ?? null,
       } : undefined;
 
       return makeNode(`user-msg-${eventId}`, "user_message", content, {
@@ -149,7 +135,7 @@ export function createNodeFromEvent(
         user: e.user ?? e.client_id ?? "llm-proxy",
         ...mapAttachmentEventSignals(e),
         context: e.context,
-        agentInfo: agentInfoFromCi ?? agentInfoLegacy,
+        agentInfo,
         callerInfo: ci,
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),
