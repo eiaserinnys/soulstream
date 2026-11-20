@@ -196,10 +196,10 @@ function createFolderProvider(): FolderRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
     listSessionAssignments: vi.fn(async () => ({
-      "sess-a": { folderId: "folder-a" },
-      "sess-child": { folderId: "folder-a-child" },
-      "sess-b": { folderId: "folder-b" },
-      "sess-none": { folderId: null },
+      "sess-a": { folderId: "folder-a", displayName: null },
+      "sess-child": { folderId: "folder-a-child", displayName: null },
+      "sess-b": { folderId: "folder-b", displayName: null },
+      "sess-none": { folderId: null, displayName: null },
     })),
   };
 }

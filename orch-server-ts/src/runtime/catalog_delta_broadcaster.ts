@@ -1,11 +1,9 @@
-import type { CatalogBoardItemsDelta } from "@soulstream/wire-schema/catalog";
-import type { FolderRecord, SessionAssignmentRecord } from "../folders/folder_routes.js";
+import type { CatalogBoardItemsDelta, CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
+import type { FolderRecord } from "../folders/folder_routes.js";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
-
-export type CatalogSessionsDelta = Record<string, SessionAssignmentRecord | null>;
 
 export type CatalogDelta = {
   readonly sessionsDelta?: CatalogSessionsDelta;

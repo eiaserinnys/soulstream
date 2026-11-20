@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 import {
   FolderRouteError,
   type FolderRecord,
   type FolderReorderInput,
   type FolderRouteProvider,
   type FolderUpdateInput,
-  type SessionAssignmentRecord,
 } from "../folders/folder_routes.js";
 import type { PublicStatusFolderCountsProvider } from "../public/public_status_routes.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
@@ -16,7 +16,7 @@ export type LiveFolderProvider = FolderRouteProvider &
     findSessionFolderId: (sessionId: string) => Promise<string | null | undefined>;
     listSessionAssignmentsByIds: (
       sessionIds: readonly string[],
-    ) => Promise<Record<string, SessionAssignmentRecord>>;
+    ) => Promise<Record<string, CatalogSessionAssignment>>;
     listBoardItemIdsForSessionDeletion: (sessionId: string) => Promise<string[]>;
   };
 
@@ -126,7 +126,7 @@ function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {
 
 function sessionAssignmentEntry(
   row: Record<string, unknown>,
-): Array<[string, SessionAssignmentRecord]> {
+): Array<[string, CatalogSessionAssignment]> {
   const sessionId = stringOrNull(row.session_id ?? row.sessionId);
   if (sessionId === null) return [];
   return [[sessionId, {

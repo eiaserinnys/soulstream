@@ -1,3 +1,4 @@
+import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 import {
   visibleBoardFolderIds,
   type BoardAccess,
@@ -5,11 +6,6 @@ import {
 } from "../board/board_access.js";
 
 export type FolderRecord = BoardAccessFolderRecord & { [key: string]: unknown };
-
-export type SessionAssignmentRecord = {
-  folderId?: string | null;
-  [key: string]: unknown;
-};
 
 export function accessPayload(access: Required<BoardAccess>): Required<BoardAccess> {
   return {
@@ -30,8 +26,8 @@ export function filterFolders(
 export function filterSessionAssignments(
   access: Required<BoardAccess>,
   folders: readonly FolderRecord[],
-  assignments: Record<string, SessionAssignmentRecord>,
-): Record<string, SessionAssignmentRecord> {
+  assignments: Record<string, CatalogSessionAssignment>,
+): Record<string, CatalogSessionAssignment> {
   if (!access.restricted) return assignments;
   const ids = visibleBoardFolderIds(access, folders);
   return Object.fromEntries(

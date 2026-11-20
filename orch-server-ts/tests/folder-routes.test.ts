@@ -21,7 +21,7 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
   const identity = { create: vi.fn(async () => ({ folder: { id: "f", name: "새 폴더" }, operation: { id: "op" }, idempotent: false })),
     mutateFromFolder: vi.fn(async () => ({ folder: { id: "f", archived: true }, operation: { id: "op" }, idempotent: false })) };
   const app = Fastify(); apps.push(app);
-  const listSessionAssignments = vi.fn(() => ({ a: { folderId: "f" }, b: { folderId: "other" } }));
+  const listSessionAssignments = vi.fn(() => ({ a: { folderId: "f", displayName: null }, b: { folderId: "other", displayName: null } }));
   const listProjectPageStates = vi.fn(async (pageIds: readonly string[]) =>
     [{ pageId: "p", starred: true, version: 7 }].filter((state) => pageIds.includes(state.pageId)));
   registerFolderRoutes(app, {
@@ -124,7 +124,7 @@ describe("unified folder HTTP and host contracts", () => {
   it("checks login, folder access, system protection and removed checklist endpoints", async () => {
     const { app, listSessionAssignments } = setup({ restricted: true });
     expect((await app.inject("/api/folders/other")).statusCode).toBe(403);
-    expect((await app.inject("/api/folders")).json().sessions).toEqual({ a: { folderId: "f" } });
+    expect((await app.inject("/api/folders")).json().sessions).toEqual({ a: { folderId: "f", displayName: null } });
     const noAssignments = await app.inject("/api/folders?sessions=false");
     expect(noAssignments.json().sessions).toEqual({});
     expect(listSessionAssignments).toHaveBeenLastCalledWith(false);
@@ -153,7 +153,7 @@ describe("unified folder HTTP and host contracts", () => {
   it("keeps the default folder response assignments when sessions is omitted", async () => {
     const { app, listSessionAssignments } = setup();
     const response = await app.inject("/api/folders");
-    expect(response.json().sessions).toEqual({ a: { folderId: "f" }, b: { folderId: "other" } });
+    expect(response.json().sessions).toEqual({ a: { folderId: "f", displayName: null }, b: { folderId: "other", displayName: null } });
     expect(listSessionAssignments).toHaveBeenCalledWith(true);
   });
   it("returns version conflicts and rejects old fields at the boundary", async () => {
