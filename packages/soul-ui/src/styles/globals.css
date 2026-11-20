@@ -1791,3 +1791,19 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
 .v3-frame-notice::before { content:""; flex:none; height:calc(var(--v3-space-4) * 2 + 1lh); font:var(--v3-type-meta) var(--v3-font-family); }
 .v3-frame-notice[data-inline]::before { height:calc(var(--v3-space-1) * 2 + 1lh); }
 .v3-frame-notice > * { min-width:0; max-width:100%; }
+
+/* 대화 화면 자동 스크롤 토글 — DashboardIconCap 부품 자체와 다른 사용처는 그대로 두고,
+   이 단추에서만 꺼짐은 흐린 아이콘, hover는 진한 아이콘, 켜짐은 파란 아이콘과 파란 테두리로
+   구별한다. 켜짐에도 유리 바탕(흐림)은 그대로 남긴다. */
+.dashboard-icon-cap[data-slot="chat-follow-toggle"] {
+  color: var(--muted-foreground);
+}
+
+.dashboard-icon-cap[data-slot="chat-follow-toggle"]:hover {
+  color: var(--foreground);
+}
+
+.dashboard-icon-cap[data-slot="chat-follow-toggle"][aria-pressed="true"] {
+  color: var(--node-user);
+  border-color: color-mix(in srgb, var(--node-user) 35%, transparent);
+}

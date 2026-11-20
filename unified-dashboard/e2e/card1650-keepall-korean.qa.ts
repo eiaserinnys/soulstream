@@ -8,7 +8,7 @@
  * 3. 대화 맨 위(1440/390): event=1 진입 뒤 마지막 이력 페이지를 붙잡아 두고, 풀린 뒤
  *    맨 위에서 마지막 휠을 한 번 더 굴렸을 때 첫 행 top 차이가 1px 이하인지 잰다.
  *    「대화의 시작」 표기가 DOM에 없어야 한다.
- * 4. 대화 한국어 문구(1440/390): 입력창 자리표시·「↓ 자동 스크롤」·「💭 생각」 이름표.
+ * 4. 대화 한국어 문구(1440/390): 입력창 자리표시·「자동 스크롤」 아이콘 단추 접근 이름·「💭 생각」 이름표.
  * 5. 문서 패널 한국어 문구(1440/390): 기본 제목 「제목 없는 문서」·빈 본문 「빈 문서」·
  *    삭제 단추 툴팁/접근 이름 「문서 삭제」·제목/본문 접근 이름.
  * 6. 문서 패널 로딩 「불러오는 중」, 편집기 로딩 「편집기를 불러오는 중」.
@@ -17,7 +17,7 @@
  *    접근 이름/툴팁. 좁은 폭에서 단추가 입력창 밖으로 밀리거나 내용이 잘리지 않는지 잰다.
  * 9. 새 메시지 배너(1440/390): 실행 중 위로 스크롤한 뒤 새 이벤트가 도착하면
  *    「↓ 새 메시지」 배너가 뜨고, 실행 중 입력창 이름이 「개입」인지 확인한다.
- * 10. 따라가기 단추(1440/390, 누름/대조): 맨 아래에서 「↓ 자동 스크롤」을 누른 경우와
+ * 10. 따라가기 단추(1440/390, 누름/대조): 맨 아래에서 「자동 스크롤」을 누른 경우와
  *    누르지 않은 경우에 새 응답이 오면, 강조 상태·맨 아래 거리·새 메시지 배너가
  *    어떻게 달라지는지 견준다.
  *
@@ -434,7 +434,7 @@ async function chatKorean(browser: Browser, width: number) {
     const composer = page.locator('textarea[placeholder="대화를 이어서 입력하세요"]').first();
     await composer.waitFor({ state: "visible", timeout: 30_000 });
     const placeholder = await composer.getAttribute("placeholder");
-    const followText = (await follow.textContent())?.trim() ?? null;
+    const followLabel = await follow.getAttribute("aria-label");
     const thinkingText = (await thinking.textContent())?.trim() ?? null;
     await page.screenshot({ path: path.join(output, `chat-korean-${width}-${suffix}.png`), animations: "disabled" });
     const composerBox = await composer.boundingBox();
@@ -452,10 +452,10 @@ async function chatKorean(browser: Browser, width: number) {
     }
     if (!baseline) {
       assert(placeholder === "대화를 이어서 입력하세요", `입력창 자리표시 불일치: ${placeholder}`);
-      assert(followText?.includes("자동 스크롤") === true, `따라가기 단추 문구 불일치: ${followText}`);
+      assert(followLabel === "자동 스크롤", `따라가기 단추 접근 이름 불일치: ${followLabel}`);
       assert(thinkingText === "💭 생각", `생각 이름표 불일치: ${thinkingText}`);
     }
-    return { placeholder, followText, thinkingText };
+    return { placeholder, followLabel, thinkingText };
   } finally {
     await context.close();
   }
