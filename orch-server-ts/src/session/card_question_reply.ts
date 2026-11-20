@@ -1,21 +1,18 @@
 import type { FastifyRequest } from "fastify";
 import { mutateCardRouteBody, readCardRouteBody, type CardRouteBodyOptions } from "../cards/card_route_body.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
-import type { FolderAccess } from "../folders/folder_route_access.js";
+import type { BoardAccess } from "../board/board_access.js";
 import type { PersistentReportReplyDecision } from "./persistent_report_service.js";
 
-/** 판에서 온 카드 질문 답 — 카드 답 저장, 이미 답한 질문의 되풀이 ACK, 또는 카드가 특정된 거절. */
 export type CardQuestionReply = Extract<PersistentReportReplyDecision, { action: "card" } | { action: "card-acked" } | { action: "reject" }>;
-/** 거절을 라우트 실패 응답으로 돌려줄 때 쓰는 모양. */
 export type CardQuestionReplyFailure = { status: number; body: unknown };
 
 export type CardQuestionReplyDeps = {
   sessionId: string;
   request: FastifyRequest;
-  /** 판(세션) 접근. 카드 폴더 접근 판정보다 먼저 통과해야 한다. */
   requireSessionAccess: (input: { request: FastifyRequest; sessionId: string }) => Promise<unknown>;
   cardOptions: CardRouteBodyOptions;
-  resolveAccess: () => FolderAccess | Promise<FolderAccess>;
+  resolveAccess: () => BoardAccess | Promise<BoardAccess>;
   resolveActor: () => FolderActorParams | Promise<FolderActorParams>;
 };
 

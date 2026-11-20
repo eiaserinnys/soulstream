@@ -1,24 +1,7 @@
-export const DELIVERY_INTENTS = [
-  "human_live_steer",
-  "durable_next_turn",
-  "completion_notification",
-  "runtime_followup",
-] as const;
-
-export type DeliveryIntent = (typeof DELIVERY_INTENTS)[number];
-
-export const DELIVERY_STATES = [
-  "pending",
-  "claimed",
-  "dispatching",
-  "queued",
-  "delivered",
-  "consumed",
-  "superseded",
-  "uncertain",
-] as const;
-
-export type DeliveryState = (typeof DELIVERY_STATES)[number];
+import type {
+  DeliveryAggregateState,
+  DeliveryIntent,
+} from "@soulstream/wire-schema/session-delivery";
 
 export const DELIVERY_ATTEMPT_OUTCOMES = [
   "accepted",
@@ -26,14 +9,6 @@ export const DELIVERY_ATTEMPT_OUTCOMES = [
   "rejected",
 ] as const;
 export type DeliveryAttemptOutcome = (typeof DELIVERY_ATTEMPT_OUTCOMES)[number];
-
-export const DELIVERY_AGGREGATE_STATES = [
-  "pending",
-  "delivered",
-  "consumed",
-  "dead_letter",
-] as const;
-export type DeliveryAggregateState = (typeof DELIVERY_AGGREGATE_STATES)[number];
 
 export function isDeliveryLayerCombinationAllowed(input: {
   outcome: DeliveryAttemptOutcome;
@@ -54,12 +29,6 @@ export function isDeliveryLayerCombinationAllowed(input: {
   return input.aggregateState === "dead_letter" && !input.hasTargetReceipt;
 }
 
-/**
- * Optional additive metadata carried across every intervention boundary.
- *
- * Missing fields deliberately preserve the legacy intervention path while the
- * persistent runtime feature gate is disabled.
- */
 export interface DeliveryMetadata {
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
@@ -71,11 +40,4 @@ export interface DeliveryMetadata {
   callerTurnId?: string;
   createdAt?: string;
   deliveryAttemptToken?: string;
-}
-
-export function isDeliveryIntent(value: unknown): value is DeliveryIntent {
-  return (
-    typeof value === "string" &&
-    DELIVERY_INTENTS.includes(value as DeliveryIntent)
-  );
 }

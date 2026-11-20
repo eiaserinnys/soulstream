@@ -9,7 +9,7 @@ import { createCardDispatchRuntime } from "../src/cards/card_dispatch_runtime.js
 import { CardExecutionService, confirmedCommandFailure, readCardExecutionRegistration, type CardExecutionOptions, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
 import { createSessionOwnerResolver } from "../src/session/session_owner.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
 import { NodeCommandTransportError } from "../src/session/session_command_transport.js";
 

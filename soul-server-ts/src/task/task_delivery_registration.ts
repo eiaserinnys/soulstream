@@ -2,11 +2,11 @@ import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
   SessionDeliveryRow,
-} from "../db/session_db_types.js";
+  DeliveryIntent,
+} from "@soulstream/wire-schema/session-delivery";
 import type { SessionDeliveryHostClient } from
   "../control_plane/persistence_host_clients.js";
 
-import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
 

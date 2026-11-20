@@ -1,9 +1,6 @@
 import { ORCHESTRATION_DECISION_PURPOSE } from "@soulstream/wire-schema/card-orchestration";
-import {
-  isFolderAllowed,
-  normalizeAccess,
-  type FolderRecord,
-} from "../folders/folder_route_access.js";
+import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
+import type { FolderRecord } from "../folders/folder_route_access.js";
 import type { DashboardUserRepository } from "../runtime/live_dashboard_access_provider.js";
 export type CardOrchestrationAccessOptions = {
   getSession(sessionId: string): Promise<Record<string, unknown> | null>;
@@ -65,12 +62,12 @@ export function createCardOrchestrationAccess(
       ]);
       const folder = folders.find((folder) => folder.id === id);
       if (!folder || folder.archived === true || !user) return false;
-      const access = normalizeAccess(
+      const access = normalizeBoardAccess(
         user.isAdmin || user.allowedFolderIds.length === 0
           ? { restricted: false }
           : { restricted: true, allowedFolderIds: user.allowedFolderIds },
       );
-      return isFolderAllowed(access, folders, id);
+      return isBoardFolderAllowed(access, folders, id);
     },
   };
 }

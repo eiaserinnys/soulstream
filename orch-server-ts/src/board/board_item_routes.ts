@@ -9,27 +9,23 @@ import {
 } from "./board_access.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
 
-export type BoardItemFolderRecord = BoardAccessFolderRecord;
-
 export type BoardItemRecord = {
   id: string;
   folderId?: string | null;
   [key: string]: unknown;
 };
 
-export type BoardItemAccess = BoardAccess;
-
 export type BoardItemListQuery = { folderId: string } | { sessionId: string };
 
 export type BoardItemCatalogSnapshot = {
-  folders: readonly BoardItemFolderRecord[];
+  folders: readonly BoardAccessFolderRecord[];
   boardItems: readonly BoardItemRecord[];
 };
 
 export type BoardItemRouteProvider = {
   listFolders: () =>
-    | Promise<readonly BoardItemFolderRecord[]>
-    | readonly BoardItemFolderRecord[];
+    | Promise<readonly BoardAccessFolderRecord[]>
+    | readonly BoardAccessFolderRecord[];
   listBoardItems: (
     query: BoardItemListQuery,
   ) => Promise<readonly BoardItemRecord[]> | readonly BoardItemRecord[];
@@ -42,7 +38,7 @@ export type BoardItemRouteProvider = {
 };
 
 export type BoardItemAccessProvider = {
-  resolveAccess: (request: FastifyRequest) => Promise<BoardItemAccess> | BoardItemAccess;
+  resolveAccess: (request: FastifyRequest) => Promise<BoardAccess> | BoardAccess;
 };
 
 export type BoardItemRouteOptions = {

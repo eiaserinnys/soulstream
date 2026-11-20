@@ -8,7 +8,7 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
-} from "../../src/db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";

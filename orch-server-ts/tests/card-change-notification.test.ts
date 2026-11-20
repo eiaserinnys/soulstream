@@ -3,7 +3,7 @@ import { buildCardChangeNotification } from "../src/cards/card_change_notificati
 import { selectCardBoardNotice } from "../src/cards/card_board_notice.js";
 import { sendCardChangeOnce } from "../src/cards/card_change_delivery.js";
 import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "../src/node/node_timeouts.js";
 import {
   PendingNodeCommandRejectedError,

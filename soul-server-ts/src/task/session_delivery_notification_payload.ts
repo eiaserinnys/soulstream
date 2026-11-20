@@ -1,4 +1,4 @@
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 
 export function isNotificationDeliveryIntent(
   intent: SessionDeliveryRow["intent"],

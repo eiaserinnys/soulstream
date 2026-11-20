@@ -1,5 +1,5 @@
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import { isDeliveryIntent } from "./delivery_contract.js";
+import { isDeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import { INSTRUCTION_UNCERTAIN_REASON } from "./state/node_instruction_decision.js";
 import type { InterventionMessage } from "./task_models.js";
 import { wasHandoffAttempted } from "./task_intervention_queue.js";

@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";

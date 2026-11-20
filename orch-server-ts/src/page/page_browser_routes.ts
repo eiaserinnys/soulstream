@@ -14,6 +14,7 @@ import {
   PageMutationVersionConflictError,
   type PageBatchOperation,
 } from "./page_mutation_core.js";
+import { batchOperationSchema } from "./page_host_operations.js";
 import {
   PageBrowserBacklinkCursorError,
   PageListCursorError,
@@ -77,35 +78,7 @@ export interface PageBrowserReads {
 }
 
 const id = z.string().trim().min(1);
-const jsonObject = z.record(z.string(), z.unknown());
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const placementFields = {
-  parent_id: id.nullable(),
-  parent_temp_id: id.nullable().optional(),
-  after_block_id: id.nullable(),
-  after_temp_id: id.nullable().optional(),
-};
-const contentFields = {
-  block_type: id,
-  text: z.string(),
-  properties: jsonObject,
-  collapsed: z.boolean().optional(),
-};
-const batchOperationSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("rename_page"), title: id }),
-  z.object({ op: z.literal("set_page_archived"), archived: z.boolean() }),
-  z.object({ op: z.literal("create_block"), temp_id: id, ...placementFields, ...contentFields }),
-  z.object({ op: z.literal("update_block_text"), block_id: id, text: z.string() }),
-  z.object({
-    op: z.literal("update_block_type_and_properties"),
-    block_id: id,
-    block_type: id,
-    properties: jsonObject,
-  }),
-  z.object({ op: z.literal("move_block"), block_id: id, ...placementFields }),
-  z.object({ op: z.literal("delete_block_subtree"), block_id: id }),
-  z.object({ op: z.literal("set_check_state"), block_id: id, checked: z.boolean() }),
-]);
 const listQuerySchema = z.object({
   starred: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   cursor: id.optional(),

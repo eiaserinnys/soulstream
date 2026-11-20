@@ -6,7 +6,8 @@ import type {
   CardCommentAttachmentUploadResult,
   FolderRouteOptions,
 } from "../folders/folder_routes.js";
-import { filterFolders, isFolderAllowed, normalizeAccess, type FolderAccess } from "../folders/folder_route_access.js";
+import { isBoardFolderAllowed, normalizeBoardAccess, type BoardAccess } from "../board/board_access.js";
+import { filterFolders } from "../folders/folder_route_access.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
 import { parseCardQuery } from "./completed_card_query.js";
@@ -14,7 +15,7 @@ import { CardOperationError, executeCardOperation, serializeCardDetail, type Car
 import type { FolderActorParams } from "./control_plane/card_types.js";
 
 export type CardRouteBodyOptions = Pick<FolderRouteOptions, "cardServiceProvider" | "provider">;
-type ResolveAccess = () => FolderAccess | Promise<FolderAccess>;
+type ResolveAccess = () => BoardAccess | Promise<BoardAccess>;
 type BoundCommentAttachmentUpload = (
   input: CardCommentAttachmentUploadInput,
 ) => Promise<CardCommentAttachmentUploadResult>;
@@ -45,7 +46,7 @@ export async function listCardRouteBody(options: CardRouteBodyOptions, input: un
   const service = await options.cardServiceProvider!();
   const query = parseCardQuery(input);
   const [access, folders] = await Promise.all([resolveAccess(), options.provider.listFolders()]);
-  const normalized = normalizeAccess(access);
+  const normalized = normalizeBoardAccess(access);
   const allowedFolderIds = normalized.restricted ? filterFolders(normalized, folders).map(folder => folder.id) : null;
   if (query.status === "done") {
     const page = await service.listCompletedCards({ ...query, allowedFolderIds });
@@ -137,7 +138,7 @@ export function cardRouteErrorResponse(error: unknown) {
 
 export async function allowed(options: CardRouteBodyOptions, resolveAccess: ResolveAccess, folderId: string) {
   const [access, folders] = await Promise.all([resolveAccess(), options.provider.listFolders()]);
-  if (!isFolderAllowed(normalizeAccess(access), folders, folderId))
+  if (!isBoardFolderAllowed(normalizeBoardAccess(access), folders, folderId))
     throw Object.assign(new Error("Folder access denied"), { statusCode: 403, code: "FOLDER_ACCESS_DENIED" });
   if (folderId === "claude" || folderId === "llm")
     throw Object.assign(new Error("System folders cannot own cards"), { statusCode: 403 });

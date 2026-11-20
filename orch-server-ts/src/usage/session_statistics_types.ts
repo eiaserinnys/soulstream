@@ -3,14 +3,15 @@ import type {
   UsageStatsQuery,
   UsageStatsRange,
 } from "@soulstream/wire-schema/session-statistics";
-import type { FolderAccess, FolderRecord } from "../folders/folder_route_access.js";
+import type { BoardAccess } from "../board/board_access.js";
+import type { FolderRecord } from "../folders/folder_route_access.js";
 import type { CanonicalSessionStatisticsRow } from "./session_statistics_canonical_sql.js";
 
 export type SessionStatisticsReadRequest = {
   query: UsageStatsQuery;
   timezone: "Asia/Seoul";
   asOf: string;
-  access: Required<FolderAccess>;
+  access: Required<BoardAccess>;
   visibleFolders: readonly FolderRecord[];
   day: string | null;
 };

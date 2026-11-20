@@ -12,7 +12,7 @@ import {
   relayCanonicalErrorTx,
 } from "../src/cards/card_work_error_delivery.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
-import type { RecordObservedChildCompletionParams, SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { RecordObservedChildCompletionParams, SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { SessionDeliveryRepository } from "../src/control_plane/repositories/session_delivery_repository.js";
 import {
   appendCardEventTx,

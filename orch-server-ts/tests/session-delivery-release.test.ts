@@ -1,12 +1,6 @@
-/**
- * card #1653 — 카드 변경 보내기와 중앙 재생이 함께 쓰는 실패 해제 판단.
- * 보내는 쪽이 실패를 안고 claim 시한까지 행을 묶어 두지 않도록, 노드가 응답을
- * 실어 보낸 명시적 거절만 같은 토큰으로 풀고, 만료와 같은 상태 전이 규칙을
- * 따른다.
- */
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import {
   DELIVERY_CLAIM_TTL_MS,
   isExplicitNodeRejection,

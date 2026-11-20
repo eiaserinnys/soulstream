@@ -5,6 +5,8 @@ import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_p
 import { compareRuntimeFollowupCandidates } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_relation_repository.js";
 import type {
   SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
   SqlClient,
 } from "../../src/db/session_db_types.js";
 

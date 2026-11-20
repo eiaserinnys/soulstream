@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { NodeInstructionVerdict } from "./state/node_instruction_decision.js";
 import type { Task } from "./task_models.js";
 

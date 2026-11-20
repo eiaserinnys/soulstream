@@ -1,6 +1,4 @@
 import {
-  isBoardFolderAllowed,
-  normalizeBoardAccess,
   visibleBoardFolderIds,
   type BoardAccess,
   type BoardAccessFolderRecord,
@@ -13,14 +11,7 @@ export type SessionAssignmentRecord = {
   [key: string]: unknown;
 };
 
-export type FolderAccess = BoardAccess;
-
-export {
-  isBoardFolderAllowed as isFolderAllowed,
-  normalizeBoardAccess as normalizeAccess,
-};
-
-export function accessPayload(access: Required<FolderAccess>): Required<FolderAccess> {
+export function accessPayload(access: Required<BoardAccess>): Required<BoardAccess> {
   return {
     restricted: access.restricted,
     allowedFolderIds: [...access.allowedFolderIds],
@@ -28,7 +19,7 @@ export function accessPayload(access: Required<FolderAccess>): Required<FolderAc
 }
 
 export function filterFolders(
-  access: Required<FolderAccess>,
+  access: Required<BoardAccess>,
   folders: readonly FolderRecord[],
 ): FolderRecord[] {
   if (!access.restricted) return [...folders];
@@ -37,7 +28,7 @@ export function filterFolders(
 }
 
 export function filterSessionAssignments(
-  access: Required<FolderAccess>,
+  access: Required<BoardAccess>,
   folders: readonly FolderRecord[],
   assignments: Record<string, SessionAssignmentRecord>,
 ): Record<string, SessionAssignmentRecord> {

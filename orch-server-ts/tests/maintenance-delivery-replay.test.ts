@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { DELIVERY_CLAIM_TTL_MS } from "../src/control_plane/session_delivery_release.js";
 import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "../src/node/node_timeouts.js";
 import { replayPendingImmediateDeliveriesForNode } from "../src/production.js";

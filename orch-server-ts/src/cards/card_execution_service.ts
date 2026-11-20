@@ -8,7 +8,7 @@ import type { CardControlPlaneService, CardMutationParams } from "./card_control
 import type { CardRow, SqlClient, RepositorySql, FolderActorParams } from "./control_plane/card_types.js";
 import { CardVersionConflict } from "./control_plane/card_models.js";
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
-import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 
 export type ExecutionTarget = {nodeId:string;agentId:string;modelPreset:string|null;folderId?:string};
 export interface CardExecutionRequest extends Record<string,unknown> {

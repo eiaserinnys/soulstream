@@ -1,6 +1,8 @@
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";

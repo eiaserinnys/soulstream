@@ -3,7 +3,7 @@ import { z, ZodError } from "zod";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import { CardVersionConflict } from "../cards/control_plane/card_models.js";
 import type { FolderRouteOptions } from "./folder_routes.js";
-import { isFolderAllowed, normalizeAccess } from "./folder_route_access.js";
+import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import { executeFolderOperation, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
 import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
 import { folderProjectPageVersion, folderStarred, loadProjectPageStates } from "./folder_starred.js";
@@ -54,7 +54,7 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
       try {
         const folderId = request.params.folder_id;
         const folders = [...(await options.provider.listFolders())];
-        if (!isFolderAllowed(normalizeAccess(await options.accessProvider.resolveAccess(request)), folders, folderId)) {
+        if (!isBoardFolderAllowed(normalizeBoardAccess(await options.accessProvider.resolveAccess(request)), folders, folderId)) {
           return failure(reply, 403, "FOLDER_ACCESS_DENIED", "Folder access denied");
         }
         if (!options.cardServiceProvider) throw new Error("Folder service is not configured");
@@ -91,7 +91,7 @@ export function registerFolderWorkspaceRoutes(app: FastifyInstance, options: Fol
 }
 
 async function allowed(request: FastifyRequest, options: FolderRouteOptions, folderId: string | null) {
-  return isFolderAllowed(normalizeAccess(await options.accessProvider.resolveAccess(request)), await options.provider.listFolders(), folderId);
+  return isBoardFolderAllowed(normalizeBoardAccess(await options.accessProvider.resolveAccess(request)), await options.provider.listFolders(), folderId);
 }
 
 export async function dashboardFolderActor(request: FastifyRequest, options: Pick<FolderRouteOptions, "resolveDashboardUserId">): Promise<FolderActorParams> {

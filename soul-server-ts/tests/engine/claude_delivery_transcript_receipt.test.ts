@@ -5,8 +5,12 @@ import {
   ClaudeDeliveryTranscriptReceiptReader,
   findClaudeDeliveryTranscriptReceipt,
 } from "../../src/engine/claude_delivery_transcript_receipt.js";
-import type { SessionDeliveryRow, SessionRow } from
-  "../../src/db/session_db_types.js";
+import type {
+  SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
+  SessionRow,
+} from "../../src/db/session_db_types.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 
 function message(

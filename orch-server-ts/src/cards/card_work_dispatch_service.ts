@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
-import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { registerSessionDelivery } from "../control_plane/repositories/session_delivery_relation_repository.js";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import { buildCardChangeNotification } from "./card_change_notification.js";

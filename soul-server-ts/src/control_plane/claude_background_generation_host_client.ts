@@ -1,7 +1,7 @@
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import {
   ORCH_HOST_REQUEST_TIMEOUT_MS,
   requestHostOperationWithRetry,

@@ -16,8 +16,9 @@ import { applyEventSessionEffect } from
   "../../../orch-server-ts/src/node/event_session_effect_applier.js";
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import type { RegisterSessionDeliveryParams } from
-  "../../../orch-server-ts/src/control_plane/control_plane_types.js";
+import type {
+  RegisterSessionDeliveryParams,
+} from "@soulstream/wire-schema/session-delivery";
 import type { SqlClient } from "../../src/db/session_db.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";

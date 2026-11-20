@@ -5,13 +5,11 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { PageMutationActor } from "../page/page_mutation_core.js";
+import { isBoardFolderAllowed, normalizeBoardAccess, type BoardAccess } from "../board/board_access.js";
 import {
   accessPayload,
   filterFolders,
   filterSessionAssignments,
-  isFolderAllowed,
-  normalizeAccess,
-  type FolderAccess,
   type FolderRecord,
   type SessionAssignmentRecord,
 } from "./folder_route_access.js";
@@ -20,7 +18,7 @@ import type { FolderControlPlaneService } from "./folder_control_plane_service.j
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
 import { folderProjectPageVersion, folderStarred, loadProjectPageStates, type ProjectPageState } from "./folder_starred.js";
 
-export type { FolderAccess, FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
+export type { FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
 
 export type FolderCreateOptions = {
   parentFolderId: string | null;
@@ -50,7 +48,7 @@ export type FolderRouteProvider = {
 };
 
 export type FolderAccessProvider = {
-  resolveAccess: (request: FastifyRequest) => Promise<FolderAccess> | FolderAccess;
+  resolveAccess: (request: FastifyRequest) => Promise<BoardAccess> | BoardAccess;
 };
 
 export type CardCommentAttachmentUploadInput = {
@@ -145,7 +143,7 @@ export function registerFolderRoutes(
     });
   }
   app.get("/api/folders", async (request, reply) => {
-    const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+    const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
     const includeSessions = queryValue(request.query, "sessions") !== "false";
     const visibleFolders = filterFolders(access, folders);
@@ -169,15 +167,15 @@ export function registerFolderRoutes(
     const items = parseReorderBody(request.body);
     if (!items.ok) return badRequest(reply, items.message);
 
-    const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+    const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
     for (const item of items.value) {
-      if (!isFolderAllowed(access, folders, item.id)) return folderAccessDenied(reply);
+      if (!isBoardFolderAllowed(access, folders, item.id)) return folderAccessDenied(reply);
       const systemGuard = rejectSystemFolderMutation(item.id, "moved or reordered");
       if (systemGuard !== null) return badRequest(reply, systemGuard);
       if (
         hasOwn(item, "parentFolderId") &&
-        !isFolderAllowed(access, folders, item.parentFolderId ?? null)
+        !isBoardFolderAllowed(access, folders, item.parentFolderId ?? null)
       ) {
         return folderAccessDenied(reply);
       }

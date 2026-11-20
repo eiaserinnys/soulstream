@@ -5,11 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { SessionDeliveryRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
 import type { SqlClient } from "../../src/db/session_db.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import { DELIVERY_INTENTS, type SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { CompletionDeliveryCoordinator } from
   "../../src/task/completion_delivery_coordinator.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
-import { DELIVERY_INTENTS } from "../../src/task/delivery_contract.js";
 import { buildCanonicalDeliveryPayload } from
   "../../src/task/delivery_payload.js";
 import { redeliverStoredDeliveryContent } from

@@ -5,8 +5,9 @@ import {
   buildCanonicalDeliveryPayload,
 } from "@soulstream/wire-schema/delivery";
 
-import type { RegisterSessionDeliveryResult } from
-  "../control_plane/control_plane_types.js";
+import type {
+  RegisterSessionDeliveryResult,
+} from "@soulstream/wire-schema/session-delivery";
 import type { RegisterSessionDeliveryRequest } from
   "../control_plane/repositories/session_delivery_relation_repository.js";
 

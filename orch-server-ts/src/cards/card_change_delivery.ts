@@ -7,7 +7,7 @@ import {
   releaseDeliveryAttemptAfterSendFailure,
 } from "../control_plane/session_delivery_release.js";
 import type { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
-import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { PendingNodeCommandRejectedError } from "../node/pending_commands.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
 

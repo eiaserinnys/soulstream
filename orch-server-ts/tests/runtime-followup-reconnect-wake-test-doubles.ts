@@ -1,6 +1,6 @@
 import type {
   SessionDeliveryRow,
-} from "../src/control_plane/control_plane_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import {
   ACTIVE_TURN_DELIVERY_IDS,
   RECONNECT_PENDING_DELIVERY_IDS,

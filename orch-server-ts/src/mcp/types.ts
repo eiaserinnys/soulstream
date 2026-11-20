@@ -12,7 +12,7 @@ import type { SessionMcpDependencies } from "./session_handlers.js";
 import type { CallToolResult } from "@soulstream/mcp-contract";
 import type { FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
 import type { CardRouteBodyOptions } from "../cards/card_route_body.js";
-import type { FolderAccess } from "../folders/folder_route_access.js";
+import type { BoardAccess } from "../board/board_access.js";
 import type { FlatFolderContentHost } from "../board/flat_folder_content_host.js";
 import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
@@ -94,7 +94,7 @@ export interface McpHostOptions {
   folders: FolderControlPlaneHostRouteOptions;
   pages?: { service: PageYjsService; logger: Pick<FastifyBaseLogger, "error"> };
   skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; catalogsNodeId?: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
-  cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess>;
+  cards: CardRouteBodyOptions & { resolveAccess: () => BoardAccess | Promise<BoardAccess>;
     cardExecutionServiceProvider?: NonNullable<import("../folders/folder_routes.js").FolderRouteOptions["cardExecutionServiceProvider"]>;
     workDispatchServiceProvider?: (authorizeFolder: (folderId: string, actor: DispatchWorkActor) => Promise<void>) => Promise<CardWorkDispatchService>;
     runConfirm?: { intervalMs: number; timeoutMs: number } };
