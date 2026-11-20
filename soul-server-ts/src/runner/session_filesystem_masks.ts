@@ -1,4 +1,5 @@
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 
 import type {
   HostDirectoryEntry,
@@ -83,17 +84,11 @@ const ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES = new Set([
   "site-packages",
 ]);
 
-/** 뿌리(깊이 0)에서 나열하는 최대 디렉터리 깊이. 뿌리 자신, 바로 아래, 모음 폴더 아래 한 층이다. */
-const ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH = 2;
-
 /**
- * 바로 아래 폴더를 한 층 더 나열하는 모음 폴더 이름. 리포·워크트리와 에이전트
- * 작업 폴더의 `.env`가 놓이는 자리다.
+ * 뿌리(깊이 0)에서 나열하는 최대 디렉터리 깊이. 뿌리 자신과 바로 아래 폴더까지다.
+ * 훑는 범위는 폴더 이름이 아니라 뿌리 목록이 정한다.
  */
-const ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES = new Set([
-  ".projects",
-  "agent-workspaces",
-]);
+const ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH = 1;
 
 /** 예시·틀 파일은 가리지 않는다. */
 const ENV_MASK_SCAN_EXCLUDED_SUFFIXES = [".example", ".sample", ".template"] as const;
@@ -132,7 +127,6 @@ function roundMs(value: number): number {
 /** 캐시한 탐색 결과가 유효한 탐색 규칙인지 가르는 지문. */
 const ENV_MASK_SCAN_RULE_KEY = [
   `layers=${ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH}`,
-  `collection=${[...ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES].sort().join(",")}`,
   `skip=${[...ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES].sort().join(",")}`,
   `exclude=${[...ENV_MASK_SCAN_EXCLUDED_SUFFIXES].sort().join(",")}`,
 ].join("|");
@@ -214,9 +208,41 @@ const envMaskScanCache = new Map<string, CachedEnvMaskRootScan>();
  */
 const envMaskScanInFlight = new Map<string, Promise<EnvMaskRootScanResult>>();
 
+/** 뿌리별 무효화 세대. 훑는 도중 무효화된 결과를 캐시에 넣지 않는 데 쓴다. */
+const envMaskScanInvalidationEpoch = new Map<string, number>();
+
 /** 시험과 측정에서 캐시 상태를 초기화할 때만 쓴다. */
 export function clearEnvMaskScanCache(): void {
   envMaskScanCache.clear();
+}
+
+/**
+ * 뿌리 하나의 캐시를 무효화한다. 캐시 열쇠 끝의 뿌리 부분이 같은 항목을 모두
+ * 지우고, 그 뿌리의 탐색이 아직 진행 중이면 그 결과도 캐시에 넣지 않아 다음
+ * 요청이 다시 훑는다. 실경로로 캐시된 항목도 함께 지운다.
+ */
+export function invalidateEnvMaskScanRoot(root: string): void {
+  invalidateEnvMaskScanRootKey(root);
+  try {
+    const real = realpathSync(root);
+    if (real !== root) invalidateEnvMaskScanRootKey(real);
+  } catch {
+    // 아직 없는 뿌리는 지울 캐시가 없다.
+  }
+}
+
+function invalidateEnvMaskScanRootKey(root: string): void {
+  envMaskScanInvalidationEpoch.set(
+    root,
+    (envMaskScanInvalidationEpoch.get(root) ?? 0) + 1,
+  );
+  const suffix = `\n${root}`;
+  for (const key of [...envMaskScanCache.keys()]) {
+    if (key.endsWith(suffix)) envMaskScanCache.delete(key);
+  }
+  for (const key of [...envMaskScanInFlight.keys()]) {
+    if (key.endsWith(suffix)) envMaskScanInFlight.delete(key);
+  }
 }
 
 /** `path`가 `root`와 같거나 그 아래인지 구성 요소 경계로 판정한다. */
@@ -228,11 +254,11 @@ function isPathAtOrUnder(path: string, root: string): boolean {
 
 /**
  * 뿌리 하나를 명시 스택으로 훑어 `.env` 후보를 모은다. 나열하는 층은 뿌리
- * 자신(깊이 0), 뿌리 바로 아래(깊이 1), 모음 폴더(`ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES`)
- * 바로 아래(깊이 2)까지다. 디렉터리 나열과 심볼릭 링크 확인은 동기 포트로 해
- * 스레드풀을 쓰지 않고, 약 `ENV_MASK_SCAN_YIELD_INTERVAL_MS`마다 이벤트 루프에
- * 양보한다. 나열 층·건너뛸 이름·대상 이름 판정은 `ENV_MASK_SCAN_RULE_KEY`에
- * 들어 있어 규칙이 바뀌면 캐시가 갈린다.
+ * 자신(깊이 0)과 뿌리 바로 아래 폴더(깊이 1)까지다. 디렉터리 나열과 심볼릭 링크
+ * 확인은 동기 포트로 해 스레드풀을 쓰지 않고, 약
+ * `ENV_MASK_SCAN_YIELD_INTERVAL_MS`마다 이벤트 루프에 양보한다. 나열 층·건너뛸
+ * 이름·대상 이름 판정은 `ENV_MASK_SCAN_RULE_KEY`에 들어 있어 규칙이 바뀌면
+ * 캐시가 갈린다.
  */
 async function scanEnvMaskRoot(
   root: string,
@@ -279,13 +305,6 @@ async function scanEnvMaskRoot(
         if (ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES.has(entry.name)) continue;
         const childDepth = current.depth + 1;
         if (childDepth > ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH) continue;
-        // 모음 폴더 바로 아래 폴더만 한 층 더 나열한다.
-        if (
-          childDepth === ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH
-          && !ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES.has(basename(current.path))
-        ) {
-          continue;
-        }
         pending.push({ path, depth: childDepth });
         continue;
       }
@@ -376,20 +395,28 @@ export async function scanEnvMaskRoots(
       scanned = await inFlight;
     } else {
       walkedRoots += 1;
-      const pending = scanEnvMaskRoot(root, ports, commonExclusions)
+      const invalidationEpoch = envMaskScanInvalidationEpoch.get(root) ?? 0;
+      let pending!: Promise<EnvMaskRootScanResult>;
+      pending = scanEnvMaskRoot(root, ports, commonExclusions)
         .then((result) => {
-          envMaskScanCache.set(key, {
-            // 적중해도 만료를 늘리지 않는다. 훑은 시점에서 5분이다.
-            expiresAt: Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS,
-            entries: result.entries,
-            files: result.files,
-            directories: result.directories,
-          });
+          // 훑는 도중 이 뿌리가 무효화됐으면 결과를 캐시에 넣지 않는다.
+          if ((envMaskScanInvalidationEpoch.get(root) ?? 0) === invalidationEpoch) {
+            envMaskScanCache.set(key, {
+              // 적중해도 만료를 늘리지 않는다. 훑은 시점에서 5분이다.
+              expiresAt: Date.now() + ENV_MASK_SCAN_CACHE_TTL_MS,
+              entries: result.entries,
+              files: result.files,
+              directories: result.directories,
+            });
+          }
           return result;
         })
         .finally(() => {
-          // 실패했으면 진행 표시를 지워 다음 요청이 다시 훑게 한다.
-          envMaskScanInFlight.delete(key);
+          // 실패했으면 진행 표시를 지워 다음 요청이 다시 훑게 한다. 무효화가
+          // 지운 자리에 같은 열쇠의 새 탐색이 들어섰으면 그 표시는 남긴다.
+          if (envMaskScanInFlight.get(key) === pending) {
+            envMaskScanInFlight.delete(key);
+          }
         });
       envMaskScanInFlight.set(key, pending);
       scanned = await pending;
@@ -424,17 +451,13 @@ function byPath(left: IsolationMask, right: IsolationMask): number {
   return left.path < right.path ? -1 : 1;
 }
 
-/** 같은 경로를 겹쳐 훑지 않도록 상위 뿌리만 남긴다. */
+/**
+ * 같은 경로의 뿌리를 하나로 합친다. 한 층 규칙에서는 상위 뿌리를 훑어도 하위
+ * 뿌리의 바로 아래 층은 나열되지 않으므로(예: 작업 폴더 아래 워크트리 뿌리)
+ * 포함 관계로 지우지 않는다.
+ */
 function dedupeRoots(roots: Iterable<string>): string[] {
-  const sorted = [...new Set(roots)].sort((left, right) =>
-    left.length - right.length || (left < right ? -1 : left > right ? 1 : 0),
-  );
-  const kept: string[] = [];
-  for (const root of sorted) {
-    if (kept.some((candidate) => isPathAtOrUnder(root, candidate))) continue;
-    kept.push(root);
-  }
-  return kept;
+  return [...new Set(roots)];
 }
 
 /**
@@ -636,8 +659,10 @@ export async function prepareIsolationMasks(
   }
 
   // 9. `.env` 가림. 상자에 RO로 다시 여는 경로(호스트 워크스페이스 루트,
-  // readOnlyReexposedPaths, 공통 파일 디렉터리, 서비스 env 디렉터리)의
-  // 정해진 층을 훑는다. 세션이 쓸 수 있게 연 경로 아래는 자기 작업물이므로 뺀다.
+  // readOnlyReexposedPaths, 공통 파일 디렉터리, 서비스 env 디렉터리)와 설정이
+  // 지목한 뿌리(워크트리 프로젝트 뿌리, 프로필 workspace_dir, 정책
+  // `envMaskScanRoots`)의 정해진 층을 훑는다. 세션이 쓸 수 있게 연 경로 아래는
+  // 자기 작업물이므로 뺀다.
   const directoryReal = async (path: string): Promise<string | null> => {
     try {
       const fact = await ports.lstatPath(path);
@@ -662,6 +687,18 @@ export async function prepareIsolationMasks(
     ? await directoryReal(serviceEnvironmentDirectory)
     : null;
   addScanRoot(serviceEnvironmentReal);
+  // 설정이 지목한 뿌리. 절대 경로가 아니거나 없는 경로는 조용히 건너뛴다.
+  // 폴더 이름으로 훑는 범위를 정하지 않는다.
+  if (input.projectsRoot && isAbsolute(input.projectsRoot)) {
+    addScanRoot(await directoryReal(input.projectsRoot));
+  }
+  for (const workspaceDir of input.agentWorkspaceDirs ?? []) {
+    if (!isAbsolute(workspaceDir)) continue;
+    addScanRoot(await directoryReal(workspaceDir));
+  }
+  for (const policyRoot of input.policy.filesystem.envMaskScanRoots ?? []) {
+    addScanRoot(await directoryReal(policyRoot));
+  }
 
   const resolveExclusions = async (
     paths: readonly string[],

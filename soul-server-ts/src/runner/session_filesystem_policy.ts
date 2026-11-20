@@ -74,6 +74,14 @@ export function validateIsolationPreparationInput(
   for (const path of input.policy.filesystem.readOnlyReexposedPaths) {
     requireAbsolute(path, "재노출 경로");
   }
+  for (const root of input.policy.filesystem.envMaskScanRoots ?? []) {
+    requireAbsolute(root, ".env 스캔 뿌리");
+    if (root.includes("*") || root.includes("?") || root.includes("[")) {
+      throw new IsolationPreparationPolicyError(
+        `.env 스캔 뿌리에 와일드카드를 쓸 수 없습니다: ${root}`,
+      );
+    }
+  }
   for (const [path, label] of [
     [input.workspaceDir, "workspace"],
     [input.sessionDirectory, "session"],

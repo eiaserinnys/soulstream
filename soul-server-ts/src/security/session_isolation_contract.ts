@@ -152,6 +152,11 @@ export interface IsolationPolicy {
     writableSensitiveRoots: string[];
     /** 가린 루트 아래에서 읽기만 허용할 디렉터리. 노드별 실제 경로. */
     readOnlyReexposedPaths: string[];
+    /**
+     * `.env` 가림 탐색에 더할 노드별 뿌리(절대 경로). 정책 문서에서 생략하면
+     * 빈 목록이다. 와일드카드는 쓸 수 없고, 없는 경로는 건너뛴다.
+     */
+    envMaskScanRoots?: string[];
   };
   testDatabases: { nodeId: string; hostPort: number; sandboxPort: number }[];
   network: {
@@ -216,6 +221,13 @@ export interface IsolationPreparationInput {
   claudeAccountsDir?: string;
   testDatabaseUrl?: string;
   scratchWorkspaceDir: string;
+  /** 워크트리 프로젝트 뿌리(`WORKTREE_PROJECTS_ROOT`). 설정된 경우에만 싣는다. */
+  projectsRoot?: string;
+  /**
+   * 서버가 아는 에이전트 프로필의 workspace_dir 목록. `.env` 가림 탐색은 각
+   * 폴더를 한 뿌리로 훑는다. 절대 경로가 아닌 값은 무시한다.
+   */
+  agentWorkspaceDirs?: readonly string[];
 }
 
 /** B2 출력. `env`만 비밀을 담을 수 있고 프레임과 러너 설정으로 나가지 않는다. */

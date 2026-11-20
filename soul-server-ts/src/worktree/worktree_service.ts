@@ -93,6 +93,8 @@ export class WorktreeService implements WorktreeExecutionResolver {
     lock: RepositoryLock;
     host: WorktreeHost;
     listActiveWorkspaceDirs: () => string[];
+    /** create가 성공한 뒤 부른다. `.env` 가림 캐시 무효화에 쓴다. */
+    onCreated?: () => void;
   }) {}
 
   async list(input: ListWorktreesInput): Promise<WorktreeListPage> {
@@ -312,10 +314,13 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   async create(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
-    return await this.options.git.withOperationDeadline(
+    const result = await this.options.git.withOperationDeadline(
       async () => await this.createWithinDeadline(input),
       this.options.createTimeoutMs,
     );
+    // 새 워크트리의 `.env`가 다음 제한 세션에서 바로 가려지도록 캐시를 지운다.
+    this.options.onCreated?.();
+    return result;
   }
 
   private async createWithinDeadline(input: CreateWorktreeInput): Promise<Record<string, unknown>> {

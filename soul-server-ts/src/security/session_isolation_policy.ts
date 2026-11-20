@@ -66,6 +66,7 @@ const filesystemSchema = z.object({
   additionalSensitiveRoots: z.array(z.string().min(1)),
   writableSensitiveRoots: z.array(z.string().min(1)),
   readOnlyReexposedPaths: z.array(z.string().min(1)),
+  envMaskScanRoots: z.array(z.string().min(1)).default([]),
 }).strict().superRefine((filesystem, ctx) => {
   // 없는 경로를 쓰기 허용으로 적으면 조용히 무시되지 않게 정책 로드에서 거절한다.
   for (const root of filesystem.writableSensitiveRoots) {
