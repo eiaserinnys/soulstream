@@ -713,6 +713,7 @@
             { "$ref": "#/$defs/SSEEventInterventionSent" },
             { "$ref": "#/$defs/SSEEventSessionNotification" },
             { "$ref": "#/$defs/SSEEventUserMessage" },
+            { "$ref": "#/$defs/SSEEventSystemMessage" },
             { "$ref": "#/$defs/SSEEventAssistantMessage" },
             { "$ref": "#/$defs/SSEEventTurnSummary" },
             { "$ref": "#/$defs/SSEEventInputRequest" },
@@ -4331,7 +4332,7 @@
     "SSEEventClaudeRuntimeHookEvent": {
       "type": "object",
       "description": "SSE: Claude Agent SDK generic hook lifecycle payload preservation.",
-      "required": ["type", "hook_event_name"],
+      "required": ["type", "hook_event_name", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_hook_event" },
