@@ -105,7 +105,6 @@ interface ActiveProcessExecution {
 export interface RunnerHostCall {
   correlationId: string;
   service:
-    | "session_store"
     | "claude_accounts"
     | "claude_runtime"
     | "detached_event"

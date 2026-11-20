@@ -692,6 +692,10 @@
     {
       "id": "171_claude_central_accounts.sql",
       "sha256": "c13f0d7c2af007264d65ec3aa926bf485b4520c867b085d68f5f0853f1c96702"
+    },
+    {
+      "id": "172_drop_claude_transcript_store.sql",
+      "sha256": "a034ae1f784c5cdb19ef851deae0cb03cd8ae67d2800c3ff1f80fb8518bc27d3"
     }
   ]
 }

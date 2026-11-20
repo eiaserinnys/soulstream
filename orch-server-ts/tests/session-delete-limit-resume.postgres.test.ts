@@ -11,10 +11,6 @@ beforeAll(async () => {
   const schema = await readFile(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
   const sessionDelete = schema.match(/CREATE OR REPLACE FUNCTION session_delete\([\s\S]*?\n\$\$;/)?.[0];
   if (!sessionDelete) throw new Error("session_delete is missing from schema.sql");
-  await h.sql.unsafe(`
-    ALTER TABLE sessions ADD COLUMN claude_session_id TEXT;
-    CREATE TABLE claude_transcript_entries (session_id TEXT NOT NULL, entry_id TEXT NOT NULL);
-  `);
   await h.sql.unsafe(sessionDelete);
   await h.sql`INSERT INTO folders(id, name) VALUES ('folder', '세션 삭제 시험')`;
   repository = new SessionDeletionRepository({ resolveSql: async () => h.liveSql, close: async () => {} });

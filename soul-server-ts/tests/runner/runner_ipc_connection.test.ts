@@ -35,7 +35,7 @@ describe("RunnerIpcConnection", () => {
     // Frozen host_call branch from 8e23da6c: frame_protocol.ts:263-273.
     const legacyHostCall = z.object({
       kind: z.literal("host_call"),
-      service: z.enum(["session_store", "claude_runtime", "detached_event", "snapshot", "event_archive"]),
+      service: z.enum(["claude_runtime", "detached_event", "snapshot", "event_archive"]),
       operation: z.string().min(1),
       args: z.array(z.json()),
     }).passthrough();
@@ -56,9 +56,6 @@ describe("RunnerIpcConnection", () => {
     const request = runnerRequestFrame("account-select", {
       kind: "host_call", service: "claude_accounts", operation: "select", args: ["session-a"],
     });
-    expect(legacyHostCall.safeParse({
-      kind: "host_call", service: "session_store", operation: "load", args: [],
-    }).success).toBe(true);
     await expect(connection.request(request, { timeoutMs: 1_000 })).rejects.toThrow();
     expect(dispatched).not.toHaveBeenCalled();
     expect(connection.pendingRequestCount).toBe(0);
@@ -478,9 +475,9 @@ describe("RunnerIpcConnection", () => {
     expect(runnerConnection.pendingRequestCount).toBe(0);
 
     await expect(client.call(
-      "session_store",
-      "load",
-      [{ projectKey: "project", sessionId: "session-1" }],
+      "snapshot",
+      "persistRunState",
+      [{}],
       { timeoutMs: 1_000 },
     )).resolves.toEqual([]);
     expect(runnerConnection.pendingRequestCount).toBe(0);

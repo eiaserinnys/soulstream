@@ -399,32 +399,6 @@ describe("SessionDB session-data host delegation", () => {
 
 });
 
-describe("session_delete SQL", () => {
-  it("세션 삭제 전 transcript mirror row를 agent/Claude session id 기준으로 정리한다", () => {
-    const schema = readFileSync(
-      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
-      "utf8",
-    );
-    const migration = readFileSync(
-      new URL("../../../packages/db-schema/sql/migrations/015_claude_transcript_store.sql", import.meta.url),
-      "utf8",
-    );
-
-    for (const sql of [schema, migration]) {
-      const start = sql.indexOf("CREATE OR REPLACE FUNCTION session_delete");
-      const end = sql.indexOf("$$;", start);
-      expect(start).toBeGreaterThanOrEqual(0);
-      expect(end).toBeGreaterThan(start);
-      const body = sql.slice(start, end);
-      expect(body).toContain("DELETE FROM claude_transcript_entries");
-      expect(body).toContain("claude_session_id");
-      expect(body.indexOf("DELETE FROM claude_transcript_entries")).toBeLessThan(
-        body.indexOf("DELETE FROM sessions"),
-      );
-    }
-  });
-});
-
 describe("board_seed_items SQL", () => {
   it("limits cleanup and insertion to the requested folder", () => {
     const schema = readFileSync(
@@ -443,34 +417,5 @@ describe("board_seed_items SQL", () => {
     expect(body).toContain("f.parent_folder_id = p_folder_id");
     expect(body).toContain("ON CONFLICT DO NOTHING");
     expect(body).toContain("existing_primary.membership_kind = 'primary'");
-  });
-});
-
-describe("claude_transcript_append SQL", () => {
-  it("normalizes JSONB batch shape before jsonb_array_elements", () => {
-    const schema = readFileSync(
-      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
-      "utf8",
-    );
-    const migration = readFileSync(
-      new URL(
-        "../../../packages/db-schema/sql/migrations/016_claude_transcript_append_jsonb_shape_guard.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-
-    for (const sql of [schema, migration]) {
-      const start = sql.indexOf("CREATE OR REPLACE FUNCTION claude_transcript_append");
-      const end = sql.indexOf("$$;", start);
-      expect(start).toBeGreaterThanOrEqual(0);
-      expect(end).toBeGreaterThan(start);
-      const body = sql.slice(start, end);
-      expect(body).toContain("jsonb_typeof(p_entries)");
-      expect(body).toContain("WHEN 'array'");
-      expect(body).toContain("WHEN 'object'");
-      expect(body).toContain("'[]'::jsonb");
-      expect(body).toContain("jsonb_array_elements(v_entries)");
-    }
   });
 });
