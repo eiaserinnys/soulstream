@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import { CardRequestView } from '../CardRequestView';
+import { AttachmentSvg } from '../../AttachmentSvg';
 import { AttachmentReadContextProvider, ContentLinkProvider } from '../../../navigation/ContentLinkProvider';
 
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
@@ -69,6 +70,23 @@ test('표시 전용 옵션은 빈 문단만 접고 썸네일을 유지하며, �
   const outside = render(<CardRequestView request={`첨부: 외부(${external})`} attachmentImageVariant="cardCheckItem" />);
   fireEvent.press(outside.getByTestId('card-request-image-0'));
   expect(within(outside.getByTestId('image-viewer-pages')).UNSAFE_getByType(Image).props.source.uri).toBe(external);
+});
+
+test('서술자 URL이어도 image/svg+xml 첨부는 react-native-svg로 그린다', () => {
+  useSettingsStore.setState({ serverUrl: 'https://app.test' });
+  useAuthStore.setState({ jwt: 'fixture-token' });
+  // The SVG read stays pending: the assertion is which renderer the attachment picks, not the drawing.
+  const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() => new Promise(() => {}));
+  const screen = render(<CardRequestView request="원문" attachments={[
+    { nodeId: 'node-b', path: '/tmp/picture', name: '그림', mimeType: 'image/svg+xml' },
+  ]} />);
+  const svg = screen.UNSAFE_getByType(AttachmentSvg);
+  expect(svg.props.source.uri).toBe('https://app.test/api/attachments/files?nodeId=node-b&path=%2Ftmp%2Fpicture');
+  expect(svg.props.source.uri).not.toContain('.svg');
+  expect(screen.UNSAFE_queryByType(Image)).toBeNull();
+  screen.unmount();
+  fetchSpy.mockRestore();
+  act(() => { useAuthStore.setState({ jwt: null }); });
 });
 
 test('첨부가 없는 펼친 커멘트의 코드 블록을 복사할 수 있다', () => {

@@ -31,8 +31,9 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const { text, attachments: legacy } = parseCardRequest(request, serverUrl);
   const displayText = collapseBlankLines ? text.replace(/(?:\r?\n[ \t]*){2,}/g, '\n') : text;
-  const attachments = [...legacy, ...files.map((file) => ({ name: file.name,
-    url: cardAttachmentUrl(serverUrl, file.nodeId, file.path), image: file.mimeType.startsWith('image/') }))];
+  const attachments = [...legacy.map((item) => ({ ...item, mimeType: undefined as string | undefined })),
+    ...files.map((file) => ({ name: file.name,
+      url: cardAttachmentUrl(serverUrl, file.nodeId, file.path), image: file.mimeType.startsWith('image/'), mimeType: file.mimeType }))];
   const bodyLinks = extractCardBodyLinks(text);
   const renderMarkdown = numberOfLines === undefined;
   const links = [...bodyLinks, ...attachments.map(({ url: href, name: label }) => ({ href, label }))];
@@ -52,6 +53,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
     {attachments.map((attachment, index) => attachment.image
       ? <AttachmentImage key={`${attachment.url}-${index}`} testID={`card-request-image-${index}`} accessibilityLabel={attachment.name}
         onOpen={internal(attachment.url) ? restoreFocus => { void openContentLink(attachment.url, attachment.name, restoreFocus); } : undefined}
+        mimeType={attachment.mimeType} filename={attachment.name}
         source={source(attachment.url)} sources={sources} index={images.indexOf(attachment)} variant={attachmentImageVariant} />
       : <CompactTouchTarget key={`${attachment.url}-${index}`} accessibilityRole="link" accessibilityLabel={attachment.name}
         frameStyle={{ alignSelf: 'flex-start' }} onPress={() => { void openContentLink(attachment.url, attachment.name); }}>
