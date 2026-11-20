@@ -1,7 +1,7 @@
 import type { RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import type { ControlCommandType } from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
-import { isDeliveryIntent, type DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
+import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -17,21 +17,6 @@ export type ExistingSessionActionPayload<TType extends ControlCommandType> =
   RequestResponseNodeCommandPayload<TType> & {
     agentSessionId: string;
   };
-
-export type DeliveryMetadataWireFields = {
-  delivery_id?: string;
-  delivery_intent?: DeliveryIntent;
-  source?: string;
-  completion_id?: string;
-  relation_key?: string;
-  producer_terminal_revision?: string;
-  parent_delivery_id?: string;
-  caller_turn_id?: string;
-  created_at?: string;
-  delivery_attempt_token?: string;
-  rate_limit_type?: string;
-  resets_at?: string;
-};
 
 export type InlineAttachmentUpload = {
   name: string;

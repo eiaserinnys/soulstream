@@ -1695,7 +1695,9 @@
         "delivery_attempt_token": {
           "type": "string",
           "description": "Opaque attempt token fencing one delivery attempt."
-        }
+        },
+        "rate_limit_type": { "type": "string" },
+        "resets_at": { "type": "string" }
       }
     },
     "InterruptSession": {

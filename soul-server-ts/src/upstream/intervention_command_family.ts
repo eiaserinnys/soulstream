@@ -2,7 +2,7 @@ import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
-import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
+import type { DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
 import { nodeResponseRejection } from "../task/state/node_response_handling.js";
 import {
   CommandDispatchError,
@@ -21,7 +21,7 @@ import {
   buildInterveneAck,
 } from "./task_runtime_commands.js";
 
-interface InterveneCmd extends CommandLike {
+interface InterveneCmd extends CommandLike, DeliveryMetadataWireFields {
   type: "intervene";
   orchestrationAdmission?: OrchestrationWorkerAdmission;
   agentSessionId?: string;
@@ -34,18 +34,6 @@ interface InterveneCmd extends CommandLike {
   attachment_bindings?: AttachmentPathBinding[];
   extra_context_items?: ContextItem[];
   _conversation_text?: string;
-  delivery_id?: string;
-  delivery_intent?: DeliveryIntent;
-  source?: string;
-  completion_id?: string;
-  relation_key?: string;
-  producer_terminal_revision?: string;
-  parent_delivery_id?: string;
-  caller_turn_id?: string;
-  created_at?: string;
-  delivery_attempt_token?: string;
-  rate_limit_type?: string;
-  resets_at?: string;
 }
 
 interface InterventionCommandFamilyDeps {
