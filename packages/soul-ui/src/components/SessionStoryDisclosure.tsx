@@ -8,6 +8,7 @@ import {
   type SessionStory,
 } from "../shared/session-story-api";
 import { Button } from "./ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 
 export function SessionStoryDisclosure({
   className,
@@ -62,15 +63,16 @@ export function SessionStoryDisclosure({
     if (mode === "settings") void loadStory();
   }, [loadStory, mode]);
 
-  const toggle = () => {
-    if (open) {
-      requestRef.current?.abort();
-      setOpen(false);
-      setLoading(false);
+  // 팝오버가 열림·닫힘을 맡는다. 열 때 스토리를 불러오고, Escape·바깥 누름으로 닫히면 요청을 끊는다.
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setOpen(true);
+      void loadStory();
       return;
     }
-    setOpen(true);
-    void loadStory();
+    requestRef.current?.abort();
+    setOpen(false);
+    setLoading(false);
   };
 
   if (mode === "settings") {
@@ -104,32 +106,39 @@ export function SessionStoryDisclosure({
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)}>
-      <button
-        type="button"
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input hover:text-foreground"
-        aria-controls={panelId}
-        aria-expanded={open}
-        data-testid="session-story-trigger"
-        onClick={toggle}
-      >
-        <BookOpenText className="size-3.5" aria-hidden="true" />
-        <span>스토리</span>
-        <ChevronDown
-          className={cn(
-            "size-3.5 transition-transform",
-            open && "rotate-180",
-          )}
-          aria-hidden="true"
-        />
-      </button>
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger
+          type="button"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-glass-border bg-input/60 px-2.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-input hover:text-foreground"
+          aria-controls={panelId}
+          aria-expanded={open}
+          data-testid="session-story-trigger"
+        >
+          <BookOpenText className="size-3.5" aria-hidden="true" />
+          <span>스토리</span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 transition-transform",
+              open && "rotate-180",
+            )}
+            aria-hidden="true"
+          />
+        </PopoverTrigger>
 
-      {open ? (
-        <div
+        {/* 포털로 body에 나온 팝업은 .v3-chat-pane의 glass-chrome 범위 밖이라 .glass-strong이
+            루트 값(알파 0.5)을 받아 팝오버 기본 바탕을 덮는다. 빼서 「…」 메뉴와 같은 기본 바탕을 쓴다.
+            한국어는 어절 가운데서 끊지 않고(break-keep), 끊을 곳 없는 긴 경로와 해시만
+            overflow-wrap:anywhere로 비상 줄바꿈한다. */}
+        <PopoverPopup
           id={panelId}
           role="region"
           aria-label="세션 스토리"
           data-testid="session-story-panel"
-          className="absolute right-0 top-full z-50 mt-2 max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-3xl border border-glass-border glass-strong glass-shadow-xs p-4 text-left"
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          collisionPadding={14}
+          className="max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-1.75rem))] overflow-y-auto rounded-3xl border border-glass-border glass-shadow-xs p-4 text-left break-keep [overflow-wrap:anywhere] [&_[data-slot=popover-viewport]]:overflow-visible [&_[data-slot=popover-viewport]]:p-0"
         >
           {loading ? <LoadingState /> : null}
           {!loading && error ? (
@@ -140,8 +149,8 @@ export function SessionStoryDisclosure({
           {!loading && !error && story ? (
             <StoryContent panelId={panelId} story={story} mode="disclosure" />
           ) : null}
-        </div>
-      ) : null}
+        </PopoverPopup>
+      </Popover>
     </span>
   );
 }

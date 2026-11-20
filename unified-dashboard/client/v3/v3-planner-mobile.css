@@ -30,6 +30,14 @@
     height: 38px;
   }
 
+  /* 작업 공간 스크림 아래의 화면(도구 막대, 폴더 목록, 플래너, 세션 패널)은 조작이 닿지 않는데,
+     유리 작업 공간이 투명해지면 그 화면의 글자·행·아이콘이 팬 너머로 비친다. 그래서 스크림이 열려 있는
+     동안은 그 화면을 그리지 않는다. display: none 대신 visibility로 상자 크기를 남겨 닫을 때 배치와
+     스크롤 위치가 흔들리지 않게 한다. 스크림·모바일 탭·토스트·다이얼로그·배너·벽지·캔버스는 그대로 둔다. */
+  .v3-shell:has(.v3-workspace-scrim) :is(.v3-global-toolbar, .v3-main, .v3-mobile-projects, .v3-session-panel) {
+    visibility: hidden;
+  }
+
   .v3-date-head {
     align-items: flex-start;
     flex-direction: column;

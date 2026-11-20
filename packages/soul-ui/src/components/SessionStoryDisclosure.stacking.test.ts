@@ -67,6 +67,16 @@ describe("SessionStoryDisclosure stacking contract", () => {
     ]);
   });
 
+  it("renders the story panel through the portaled popover so the chat pane cannot clip it", () => {
+    const source = readSource("SessionStoryDisclosure.tsx");
+    expect(source).toContain("<PopoverPopup");
+    expect(source).toMatch(/side="bottom"/);
+    expect(source).toMatch(/align="end"/);
+    expect(source).toMatch(/sideOffset=\{8\}/);
+    expect(source).toMatch(/collisionPadding=\{14\}/);
+    expect(source).not.toMatch(/absolute right-0 top-full/);
+  });
+
   it("lifts the standalone FolderWorkspace chat header above its review banner and message list", () => {
     const source = readSource("../../../../unified-dashboard/client/v3/FolderWorkspace.tsx");
     const header = source.match(/<SessionPanelHeader[\s\S]*?\/>/g)?.find(candidate => candidate.includes("onClose="));
