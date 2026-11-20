@@ -175,7 +175,7 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
     trusted_execution: true,
-    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000", ENABLE_TOOL_SEARCH: "false", ...CLAUDE_ENV },
+    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000", ENABLE_TOOL_SEARCH: "auto:10", ...CLAUDE_ENV },
   },
   "claude-fable": {
     label: "Claude - Fable 5.1",
