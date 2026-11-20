@@ -127,7 +127,7 @@ function ChoiceRow({
       testID={`${testIDPrefix}-${option.id}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={[styles.option, grid && { flex: 1, minWidth: 0, paddingHorizontal: 0 }, active && styles.optionSelected]}
+      style={[styles.option, grid && styles.gridOption, grid && { flex: 1, minWidth: 0, paddingHorizontal: 0 }, active && styles.optionSelected]}
       onPress={() => onSelect(option.id)}
     ><Text style={[styles.optionText, active && styles.optionTextSelected]}>{option.label}</Text></TouchableOpacity>;
   };
@@ -172,10 +172,12 @@ function makeStyles(t: DesignTokens) {
       alignItems: 'center',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.colors.border,
-      borderRadius: t.radius.floor,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.spacing.sm,
       paddingVertical: t.spacing.xs,
     },
+    // 달력 날짜 칸은 원형에 가까운 고정 곡률을 그대로 쓴다.
+    gridOption: { borderRadius: t.radius.floor },
     optionSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint },
     optionText: { ...t.foundation.typography.body, color: t.colors.textSecondary },
     optionTextSelected: { color: t.colors.textPrimary, fontWeight: '700' },
@@ -187,7 +189,7 @@ function makeStyles(t: DesignTokens) {
       alignItems: 'center',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.colors.border,
-      borderRadius: t.radius.floor,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.spacing.sm,
       paddingVertical: t.spacing.xs,
     },

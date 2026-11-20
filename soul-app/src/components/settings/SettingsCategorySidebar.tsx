@@ -36,7 +36,7 @@ function makeStyles(t: DesignTokens) {
     compact: { width: '100%', padding: t.foundation.pageInset, paddingTop: t.spacing.sm, backgroundColor: 'transparent', borderRightWidth: 0, gap: t.spacing.lg },
     group: { gap: t.spacing.sm },
     groupTitle: { ...t.foundation.typography.meta, fontWeight: '600', color: t.colors.textSecondary, paddingHorizontal: t.spacing.sm },
-    groupCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted, borderRadius: t.radius.floor, overflow: 'hidden' },
+    groupCard: { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted, borderRadius: t.radius.root, overflow: 'hidden' },
     row: { minHeight: t.hitTarget.min, paddingHorizontal: t.spacing.md, paddingVertical: t.spacing.sm, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, borderRadius: t.radius.floor },
     compactRow: { paddingHorizontal: t.cardLayout.padding, borderRadius: 0 },
     iconCap: { width: t.iconSize.hero, height: t.iconSize.hero, borderRadius: t.radius.capsule, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted },

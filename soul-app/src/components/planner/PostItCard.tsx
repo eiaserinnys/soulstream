@@ -188,7 +188,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                 </>}
               </Text>
               {card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
-                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.radius.capsule, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
+                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
                 {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}
               </Text> : null}
             </View>

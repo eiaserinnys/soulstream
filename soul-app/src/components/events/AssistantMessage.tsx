@@ -267,7 +267,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
       bubble: {
         ...bubbleLayout,
         ...roles.glassDense.tokenStyle,
-              },
+      },
       tokenInfo: {
         marginTop: t.spacing.xs,
         color: c.textMuted,
