@@ -436,7 +436,16 @@ export function registerNodeWsRoute(
           try {
             activation = parseReleaseActivationRegistration(parsed.frame);
           } catch (error) {
-            app.log.warn({ err: error }, "Node release activation registration rejected");
+            const rejectedNodeId = parsed.frame.node_id;
+            app.log.warn(
+              {
+                err: error,
+                ...(typeof rejectedNodeId === "string"
+                  ? { nodeId: rejectedNodeId.slice(0, 128) }
+                  : {}),
+              },
+              "Node release activation registration rejected",
+            );
             closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, "release activation invalid");
             return;
           }
