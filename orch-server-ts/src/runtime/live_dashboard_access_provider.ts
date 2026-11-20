@@ -9,7 +9,10 @@ import {
   type AuthTokenAccessResult,
   type AuthUserPayloadExtra,
 } from "../auth/auth_routes.js";
-import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import {
+  serviceBearerFailure,
+  verifyServiceBearerAuthorization,
+} from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { BoardItemAccessProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_routes.js";
@@ -366,33 +369,7 @@ function verifyServiceBearer(
       nodeCredentials,
     },
   );
-  if (verification.ok) return { ok: true };
-  if (verification.reason === "not_configured") {
-    return {
-      ok: false,
-      statusCode: 503,
-      detail: "Authentication not configured",
-    };
-  }
-  if (verification.reason === "missing") {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "Authorization header is required",
-    };
-  }
-  if (verification.reason === "malformed") {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "Bearer token format is invalid",
-    };
-  }
-  return {
-    ok: false,
-    statusCode: 401,
-    detail: "Invalid token",
-  };
+  return verification.ok ? { ok: true } : serviceBearerFailure(verification);
 }
 
 function recordValue(value: unknown, key: string): unknown {

@@ -64,6 +64,31 @@ export function verifyServiceBearerAuthorization(
   return { ok: false, reason: "invalid", statusCode: 401 };
 }
 
+type FailedServiceBearerVerification = Extract<
+  ServiceBearerVerification,
+  { readonly ok: false }
+>;
+
+const SERVICE_BEARER_FAILURE_DETAILS: Record<
+  FailedServiceBearerVerification["reason"],
+  string
+> = {
+  not_configured: "Authentication not configured",
+  missing: "Authorization header is required",
+  malformed: "Bearer token format is invalid",
+  invalid: "Invalid token",
+};
+
+export function serviceBearerFailure(
+  verification: FailedServiceBearerVerification,
+): { readonly ok: false; readonly statusCode: 401 | 503; readonly detail: string } {
+  return {
+    ok: false,
+    statusCode: verification.statusCode,
+    detail: SERVICE_BEARER_FAILURE_DETAILS[verification.reason],
+  };
+}
+
 function parseBearerAuthorization(
   authorization: string | string[] | undefined,
 ): ParsedBearerAuthorization {

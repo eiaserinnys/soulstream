@@ -15,7 +15,10 @@ import type {
   AuthUserAuthorizer,
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
-import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import {
+  serviceBearerFailure,
+  verifyServiceBearerAuthorization,
+} from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   extractDashboardJwtToken,
@@ -359,33 +362,7 @@ function verifyServiceBearer(
       nodeCredentials,
     },
   );
-  if (verification.ok) return { ok: true };
-  if (verification.reason === "not_configured") {
-    return {
-      ok: false,
-      statusCode: 503,
-      detail: "Authentication not configured",
-    };
-  }
-  if (verification.reason === "missing") {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "Authorization 헤더가 필요합니다",
-    };
-  }
-  if (verification.reason === "malformed") {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "Bearer 토큰 형식이 올바르지 않습니다",
-    };
-  }
-  return {
-    ok: false,
-    statusCode: 401,
-    detail: "유효하지 않은 토큰입니다",
-  };
+  return verification.ok ? { ok: true } : serviceBearerFailure(verification);
 }
 
 type AuthTokenAccessResult = Awaited<ReturnType<AuthTokenResolver>>;
