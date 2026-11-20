@@ -212,18 +212,32 @@ function repositoryWithResponses(
   calls: Array<{ text: string; values: unknown[] }>;
 } {
   const calls: Array<{ text: string; values: unknown[] }> = [];
-  const execute = vi.fn((
+  const execute = Object.assign(vi.fn((
     strings: TemplateStringsArray,
     ...values: unknown[]
   ) => {
+    const bindings: unknown[] = [];
+    const text = strings.reduce((result, part, index) => {
+      if (index === 0) return part;
+      const value = values[index - 1];
+      if (isSqlFragment(value)) return result + value.sqlFragment + part;
+      bindings.push(value);
+      return result + "?" + part;
+    }, "");
     calls.push({
-      text: strings.join("?").replace(/\s+/g, " ").trim(),
-      values,
+      text: text.replace(/\s+/g, " ").trim(),
+      values: bindings,
     });
     return Promise.resolve(responses[calls.length - 1] ?? []);
+  }), {
+    unsafe: (text: string) => ({ sqlFragment: text }),
   }) as unknown as SqlClient;
   return {
     repository: new SessionStoryReadRepository(execute),
     calls,
   };
+}
+
+function isSqlFragment(value: unknown): value is { sqlFragment: string } {
+  return typeof value === "object" && value !== null && "sqlFragment" in value;
 }
