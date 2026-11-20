@@ -1,0 +1,153 @@
+name: Portable node bundle
+
+env:
+  PNPM_VERSION: '10.32.1'
+  BUNDLE_TAG: node-bundles
+  BUNDLE_RETENTION: '50'
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - '.github/workflows/portable-node-bundle.yml'
+      - 'soul-server-ts/scripts/pack_portable_release.ts'
+      - 'soul-server-ts/tsup.portable.config.ts'
+      - 'soul-server-ts/scripts/fetch_node_bundle.mjs'
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: '묶음을 만들 커밋 SHA. 비우면 이 실행의 커밋을 쓴다.'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.inputs.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install repository dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Write bundle build env
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/outbox"
+          cat > .env.soul-server-ts <<EOF
+          SOULSTREAM_NODE_ID=bundle-build
+          SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:9/ws/node
+          EVENT_OUTBOX_DIR=${RUNNER_TEMP}/outbox
+          EOF
+
+      - name: Pack portable bundle
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack pnpm --filter @soulstream/soul-server-ts run pack:portable --out out
+          sha="$(git rev-parse HEAD)"
+          mv "out/${sha}/node.tar.gz" "out/node-${sha}.tar.gz"
+          rm -f "out/${sha}/node.tar.gz.sha256"
+          hex="$(sha256sum "out/node-${sha}.tar.gz" | cut -d' ' -f1)"
+          printf '%s  node-%s.tar.gz\n' "$hex" "$sha" > "out/node-${sha}.tar.gz.sha256"
+          echo "bundle_sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: node-bundle
+          path: |
+            out/node-*.tar.gz
+            out/node-*.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    if: github.event_name != 'pull_request'
+    needs: bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Download bundle artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: node-bundle
+          path: release-assets
+
+      - name: Publish bundle assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="$(find release-assets -maxdepth 1 -name 'node-*.tar.gz' -print -quit)"
+          if [ -z "$tarball" ]; then
+            echo "bundle tarball missing" >&2
+            exit 1
+          fi
+          sidecar="${tarball}.sha256"
+          if [ ! -f "$sidecar" ]; then
+            echo "sidecar missing: $sidecar" >&2
+            exit 1
+          fi
+          if ! gh release view "$BUNDLE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 동시 실행이 먼저 만들었으면 「이미 있음」만 받아들인다.
+            gh release create "$BUNDLE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "node-bundles" \
+              --notes "워커 실행 묶음, 자동 생성" \
+              --prerelease --latest=false \
+              || gh release view "$BUNDLE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          # 묶음을 먼저 올리고 사이드카를 나중에 올린다. 사이드카가 보이면 묶음도 있다.
+          gh release upload "$BUNDLE_TAG" "$tarball" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$BUNDLE_TAG" "$sidecar" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Prune old bundle assets
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${BUNDLE_TAG}" --jq '.id')"
+          mapfile -t bundles < <(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              --jq '.[] | select(.name | test("^node-[0-9a-f]{40}\\.tar\\.gz$")) | .created_at + "\t" + .name'
+          )
+          if [ "${#bundles[@]}" -eq 0 ]; then
+            echo "no bundle assets to prune"
+            exit 0
+          fi
+          mapfile -t stale < <(
+            printf '%s\n' "${bundles[@]}" | sort | head -n -"${BUNDLE_RETENTION}" | cut -f2
+          )
+          for name in "${stale[@]}"; do
+            sha="${name#node-}"
+            sha="${sha%.tar.gz}"
+            for asset in "node-${sha}.tar.gz" "node-${sha}.tar.gz.sha256"; do
+              gh release delete-asset "$BUNDLE_TAG" "$asset" --repo "$GITHUB_REPOSITORY" --yes \
+                || echo "::warning::could not delete release asset ${asset}; it may already be gone"
+            done
+          done
