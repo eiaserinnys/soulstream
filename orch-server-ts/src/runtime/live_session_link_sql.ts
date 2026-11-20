@@ -1,3 +1,21 @@
+export const LINKED_CARD_LATERAL_SQL = `    LEFT JOIN LATERAL (
+      SELECT card.id, card.number, card.title, card.status
+      FROM cards card
+      WHERE card.id = session.card_id
+        OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
+        OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
+      ORDER BY
+        CASE
+          WHEN card.id = session.card_id THEN 0
+          WHEN card.assignee_session_id = session.session_id THEN 1
+          ELSE 2
+        END,
+        card.updated_at DESC,
+        card.id ASC
+      LIMIT 1
+    ) linked_card ON TRUE
+`;
+
 export const SESSION_LINK_JOINS_SQL = `    LEFT JOIN LATERAL (
       SELECT
         linked_folder.id,
@@ -53,20 +71,4 @@ export const SESSION_LINK_JOINS_SQL = `    LEFT JOIN LATERAL (
         linked_folder.id ASC
       LIMIT 1
     ) folder_evidence ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT card.id, card.number, card.title, card.status
-      FROM cards card
-      WHERE card.id = session.card_id
-        OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
-        OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
-      ORDER BY
-        CASE
-          WHEN card.id = session.card_id THEN 0
-          WHEN card.assignee_session_id = session.session_id THEN 1
-          ELSE 2
-        END,
-        card.updated_at DESC,
-        card.id ASC
-      LIMIT 1
-    ) linked_card ON TRUE
-`;
+${LINKED_CARD_LATERAL_SQL}`;

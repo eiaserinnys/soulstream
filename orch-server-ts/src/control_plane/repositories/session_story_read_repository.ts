@@ -8,6 +8,7 @@ import type {
 } from "../../runtime/live_db_sql.js";
 import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 import { readTurnSummaryCounts } from "../../turn-summary/turn_summary_count_query.js";
+import { LINKED_CARD_LATERAL_SQL } from "../../runtime/live_session_link_sql.js";
 
 export interface HostSessionStoryTurnSummary {
   readonly eventId: number;
@@ -117,22 +118,7 @@ export class SessionStoryReadRepository {
       LEFT JOIN sessions session ON session.session_id = requested.session_id
       LEFT JOIN event_metadata ON event_metadata.session_id = requested.session_id
       LEFT JOIN session_digests d ON d.session_id = requested.session_id
-      LEFT JOIN LATERAL (
-        SELECT card.id, card.number, card.title, card.status
-        FROM cards card
-        WHERE card.id = session.card_id
-          OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
-          OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
-        ORDER BY
-          CASE
-            WHEN card.id = session.card_id THEN 0
-            WHEN card.assignee_session_id = session.session_id THEN 1
-            ELSE 2
-          END,
-          card.updated_at DESC,
-          card.id ASC
-        LIMIT 1
-      ) linked_card ON TRUE
+${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
     `;
     return rows.map((row) => [row.session_id, {
       turnCount: Number(row.turn_count),
