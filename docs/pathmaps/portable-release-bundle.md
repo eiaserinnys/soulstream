@@ -17,4 +17,12 @@
 | 9. Release 발행 | `.github/workflows/portable-node-bundle.yml` (`bundle` → `publish`) | main 푸시마다 `pack:portable`을 돌려 산출물을 `node-<sha>.tar.gz`와 사이드카(`<hex>  node-<sha>.tar.gz`)로 이름을 바꾸고, 고정 태그 `node-bundles` Release에 묶음 먼저·사이드카 나중(`--clobber`)으로 올린다. 릴리스는 prerelease이고 latest가 아니며, 최근 50쌍만 남긴다. `workflow_dispatch`는 `sha` 입력으로 임의 커밋을 다시 만들 수 있다. | PR에서는 `bundle`만 돌고 `publish`는 돌지 않는다(`github.event_name != 'pull_request'`). 동시 실행이 먼저 릴리스를 만들면 「이미 있음」만 받아들인다. 정리 실패는 경고만 남긴다. 서명과 사설 패키지는 없다. |
 | 10. 워커 소비 | `soul-server-ts/scripts/fetch_node_bundle.mjs` (post_pull) | `git rev-parse HEAD` → 보관 폴더의 같은 커밋 묶음이 사이드카 digest와 맞으면 재사용, 아니면 Release의 사이드카를 `--wait-sec`(기본 600초)까지 기다렸다가 내려받아 sha256을 대조하고 캐시에 원자 저장 → `<install-dir>.next`에 안전 검사(절대 경로·`..`·심볼릭/하드 링크 거부) 뒤 풀기 → `portable-release.json`의 `source_commit`이 HEAD와 같은지 확인 → 그 자리에서 `bind-release.mjs` 실행 → `dist`를 `dist.old`로 옮기고 `dist.next`를 `dist`로 교체(EPERM/EBUSY 재시도) → 캐시를 `--keep`(기본 5, HEAD는 항상 보존)만큼 정리한다. | 어느 단계든 실패하면 기존 `dist`를 보존하고 한 줄 사유와 함께 exit 비-0. 노드 빌드로 되돌아가는 분기는 없다. 사이드카 404·네트워크 오류는 `--wait-sec`까지 재시도하고, 그 뒤에도 없으면 실패한다. 프록시 설정은 다루지 않는다. |
 
+## 워커 haniel.yaml post_pull 예시
+
+```
+pnpm --dir src/soulstream install --frozen-lockfile && node src/soulstream/soul-server-ts/scripts/fetch_node_bundle.mjs --checkout src/soulstream --install-dir src/soulstream/soul-server-ts/dist --env-file "{root}/services/soulstream/.env.soul-server-ts" --cache-dir "{root}/services/soulstream/node-bundles"
+```
+
+`install`은 post_start_verify의 verify-release-health가 체크아웃 `node_modules`를 쓰기 때문에 남긴다. 리포의 `install/haniel-*.yaml` 예시는 이 단위에서 바꾸지 않고, 실제 노드 `haniel.yaml` 갱신은 배포 담당이 머지 뒤에 한다.
+
 이 장을 갱신해야 하는 변경 부류: `tsup.portable.config.ts` 진입·출력, `portable-release.json` 스키마, pack/bind/fetch CLI 계약, Release 자산 이름·태그·보관 개수, 워크플로의 PR 경로 필터, `HOST_RELEASE_ARTIFACTS`/runner artifact 구성, `ReleaseManifestV1` 축, 또는 노드 쪽 manifest 파일 위치 변경.
