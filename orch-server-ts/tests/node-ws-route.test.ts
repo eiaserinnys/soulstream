@@ -337,6 +337,52 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("logs the rejected node id and the mismatched manifest key", async () => {
+    const { registry } = createRegistry();
+    const lines: string[] = [];
+    const app = createApp({
+      config: productionConfig,
+      logDestination: { write: (line: string) => { lines.push(line); } },
+      nodeWsRoute: { registry, nodeCredentials: null, releaseActivationReceipts: { persist: vi.fn() } },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app, "production-service-token");
+    const closed = waitForClose(ws);
+    ws.send(JSON.stringify({
+      ...fixture.registration,
+      release_manifest: {
+        ...releaseManifest,
+        model_catalog_path: "/clone/packages/model-catalog/data/model-catalog.yaml",
+      },
+      release_activation: {
+        manifest_id: "manifest-1",
+        release_cohort_id: "cohort-1",
+        source_commit: "commit-1",
+        prewarmed_at: "2026-08-19T09:00:00.000Z",
+        verification: {
+          host: "verified",
+          runner: "verified",
+          env: "verified",
+          executable: "verified",
+        },
+        registration_idempotency_key: "registration-key",
+      },
+    }));
+
+    await expect(closed).resolves.toEqual({
+      code: 1008,
+      reason: "release activation invalid",
+    });
+    const rejection = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.msg === "Node release activation registration rejected");
+    expect(rejection).toMatchObject({ nodeId: "fake-node" });
+    expect((rejection?.err as { message?: string } | undefined)?.message)
+      .toContain("model_catalog_path");
+    await app.close();
+  });
+
   it("wires register, refresh, message relay, and close through a per-connection controller", async () => {
     const { registry, sessionCache } = createRegistry();
     const app = createApp({
