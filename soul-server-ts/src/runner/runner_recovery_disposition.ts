@@ -10,7 +10,9 @@ import {
   hydrateRunnerRegistration,
 } from "./runner_process_registry.js";
 import type { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
+import { closedRunnerTailRequiresDrain } from "./runner_recovery_scan_observer.js";
 import {
+  hasRecordedTerminal,
   prepareRecoveredTask,
 } from "./runner_recovery_task.js";
 
@@ -57,6 +59,55 @@ export async function handleRecoveryWithFailureTracking(input: {
   }
 }
 
+/**
+ * 오프라인 재생이 끝난 종료 등록을 안전할 때만 은퇴시킨다.
+ *
+ * 은퇴는 되돌릴 수 없다. `retired_terminal`은 이후 훑기에서 통째로 빠지므로 등록은
+ * 그 러너의 종료를 아직 들고 있는 마지막 자리다. 그래서 다른 은퇴 호출처와 같은
+ * 조건을 쓴다: 재생이 실제로 돌았고(안 돌았으면 "registration kept for a later
+ * scan"), 그 세션의 종료가 기록되었으며, 닫힌 꼬리가 남았으면 은퇴 전에 비운다.
+ * 조건이 안 맞으면 지금처럼 등록을 남겨 다음 훑기에 맡긴다.
+ */
+export async function retireTerminalRegistrationAfterReplay(input: {
+  registration: RunnerRegistration;
+  task: Task;
+  replayed: boolean;
+  disposition: string;
+  retireTerminal(registration: RunnerRegistration): Promise<void>;
+  drainClosedTail(registration: RunnerRegistration): Promise<void>;
+  logger: Pick<Logger, "info" | "warn">;
+}): Promise<boolean> {
+  const sessionId = input.registration.config.sessionId;
+  if (!input.replayed) {
+    input.logger.warn(
+      { sessionId, disposition: input.disposition },
+      "terminal runner replay was skipped; registration kept for a later scan",
+    );
+    return false;
+  }
+  if (!hasRecordedTerminal(input.task)) {
+    input.logger.warn(
+      { sessionId, disposition: input.disposition },
+      "terminal runner session end is not recorded; registration kept for a later scan",
+    );
+    return false;
+  }
+  // `closedTailState`가 없는 등록은 닫힌 꼬리를 읽지 않은(비종료 lifecycle) 등록이다.
+  // 꼬리가 남은 채로 은퇴시키면 그 꼬리를 다시 열 길은 주기 훑기의 retired-tail drain뿐이다.
+  if (
+    input.registration.closedTailState !== undefined
+    && closedRunnerTailRequiresDrain(input.registration)
+  ) {
+    await input.drainClosedTail(input.registration);
+  }
+  await input.retireTerminal(input.registration);
+  input.logger.info(
+    { sessionId, disposition: input.disposition },
+    "terminal runner registration retired after replay",
+  );
+  return true;
+}
+
 export async function terminalizeReapedRunner(input: {
   registration: RunnerRegistration;
   task: Task;
@@ -64,8 +115,13 @@ export async function terminalizeReapedRunner(input: {
   terminate(registration: RunnerRegistration): Promise<void>;
   invalidate(registration: RunnerRegistration): Promise<void>;
   retireAttached(registration: RunnerRegistration): Promise<boolean>;
-  recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
-  logger: Pick<Logger, "info">;
+  recoverOffline(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<{ task: Task; replayed: boolean }>;
+  retireTerminal(registration: RunnerRegistration): Promise<void>;
+  drainClosedTail(registration: RunnerRegistration): Promise<void>;
+  logger: Pick<Logger, "info" | "warn">;
 }): Promise<void> {
   const hydrated = await (input.hydrate ?? hydrateRunnerRegistration)(input.registration);
   if (heldExecutionSupersedesRegistration(input.task, hydrated)) {
@@ -80,11 +136,20 @@ export async function terminalizeReapedRunner(input: {
   await input.invalidate(hydrated);
   prepareRecoveredTask(input.task, hydrated);
   input.task.runnerTerminalFact = "reaped";
-  await input.recoverOffline({ ...hydrated, pidAlive: false }, input.task);
+  const recovered = await input.recoverOffline({ ...hydrated, pidAlive: false }, input.task);
   input.logger.info(
     { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
     "reaped runner recovery terminalized",
   );
+  await retireTerminalRegistrationAfterReplay({
+    registration: hydrated,
+    task: recovered.task,
+    replayed: recovered.replayed,
+    disposition: "already_reaped",
+    retireTerminal: input.retireTerminal,
+    drainClosedTail: input.drainClosedTail,
+    logger: input.logger,
+  });
 }
 
 export async function terminalizeFailedRunner(input: {

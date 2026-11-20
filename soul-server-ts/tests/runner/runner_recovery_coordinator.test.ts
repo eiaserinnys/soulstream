@@ -1603,6 +1603,118 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     )).toHaveLength(1);
   });
 
+  it("retires an already-reaped registration after its terminal replay so the next scan does not replay", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const replay = vi.fn(async (recovered: Task) => {
+      recovered.status = "completed";
+      recovered.terminationReason = "completed_ok";
+      recovered.terminationEventRecorded = true;
+      recovered.terminalEventId = 3;
+    });
+    const retireTerminalRegistration = vi.fn(async () => {
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner: replay },
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(replay).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(current.retiredAt).toBeTruthy();
+
+    await subject.coordinator.scanOnce();
+
+    expect(replay).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+  });
+
+  it("retires a dead running registration after its terminal replay so the next scan does not repeat the reap", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "running" });
+    const replay = vi.fn(async (recovered: Task) => {
+      recovered.status = "completed";
+      recovered.terminationReason = "completed_ok";
+      recovered.terminationEventRecorded = true;
+      recovered.terminalEventId = 3;
+    });
+    const retireTerminalRegistration = vi.fn(async () => {
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner: replay },
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(replay).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(current.retiredAt).toBeTruthy();
+
+    await subject.coordinator.scanOnce();
+
+    expect(replay).toHaveBeenCalledOnce();
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an already-reaped registration when its offline replay records no session terminal", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const replay = vi.fn(async () => {});
+    const retireTerminalRegistration = vi.fn(async () => {
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner: replay },
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(current.retiredAt).toBeUndefined();
+  });
+
+  it("keeps an already-reaped registration when its offline replay fails", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const replay = vi.fn(async () => {
+      throw new Error("offline replay failed");
+    });
+    const retireTerminalRegistration = vi.fn(async () => {
+      current.retiredAt = new Date(RECOVERY_NOW_MS).toISOString();
+    });
+    const subject = makeSubject([current], RECOVERY_NOW_MS, [], {
+      taskExecutor: { recoverRegisteredRunner: replay },
+      spawner: {
+        terminate: vi.fn(async () => {}),
+        invalidateRegistration: vi.fn(async () => {}),
+        retireTerminalRegistration,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(current.retiredAt).toBeUndefined();
+  });
+
   it("retires kernel-free runner evidence whose central session was deleted", async () => {
     const current = registration({
       pidAlive: false,

@@ -81,7 +81,10 @@ describe("terminal-only failure recovery", () => {
     const terminate = vi.fn(async () => {});
     const invalidate = vi.fn(async () => {});
     const retireAttached = vi.fn(async () => false);
-    const recoverOffline = vi.fn(async (_registration: RunnerRegistration, current: Task) => current);
+    const recoverOffline = vi.fn(async (_registration: RunnerRegistration, current: Task) => ({
+      task: current,
+      replayed: true,
+    }));
     await terminalizeReapedRunner({
       registration: registration({ pidAlive: true, lifecycleState: "reaped" }),
       task: inputTask,
@@ -90,7 +93,9 @@ describe("terminal-only failure recovery", () => {
       invalidate,
       retireAttached,
       recoverOffline,
-      logger: { info: vi.fn() },
+      retireTerminal: vi.fn(async () => {}),
+      drainClosedTail: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
     });
     expect(terminate).not.toHaveBeenCalled();
     expect(invalidate).not.toHaveBeenCalled();
@@ -117,8 +122,13 @@ describe("terminal-only failure recovery", () => {
       terminate: vi.fn(async () => {}),
       invalidate,
       retireAttached: vi.fn(async () => false),
-      recoverOffline: async (_registration, recoveredTask) => recoveredTask,
-      logger: { info: vi.fn() },
+      recoverOffline: async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: true,
+      }),
+      retireTerminal: vi.fn(async () => {}),
+      drainClosedTail: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
     });
     expect(invalidate).toHaveBeenCalledOnce();
   });
@@ -141,11 +151,134 @@ describe("terminal-only failure recovery", () => {
         order.push("recover");
         expect(owned.pidAlive).toBe(false);
         expect(recoveredTask.runnerTerminalFact).toBe("reaped");
-        return recoveredTask;
+        return { task: recoveredTask, replayed: true };
       },
-      logger: { info: vi.fn() },
+      retireTerminal: vi.fn(async () => {}),
+      drainClosedTail: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
     });
     expect(order).toEqual(["retireAttached", "terminate", "invalidate", "recover"]);
+  });
+
+  it("retires a reaped registration once its terminal replay is recorded", async () => {
+    const inputTask = recordedTerminalTask();
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const retireTerminal = vi.fn(async () => {});
+    await terminalizeReapedRunner({
+      registration: current,
+      task: inputTask,
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate: vi.fn(async () => {}),
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: true,
+      }),
+      retireTerminal,
+      drainClosedTail: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    expect(retireTerminal).toHaveBeenCalledWith(current);
+  });
+
+  it("keeps a reaped registration when its terminal replay did not run", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const retireTerminal = vi.fn(async () => {});
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    await terminalizeReapedRunner({
+      registration: current,
+      task: recordedTerminalTask(),
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate: vi.fn(async () => {}),
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: false,
+      }),
+      retireTerminal,
+      drainClosedTail: vi.fn(async () => {}),
+      logger,
+    });
+    expect(retireTerminal).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a", disposition: "already_reaped" }),
+      "terminal runner replay was skipped; registration kept for a later scan",
+    );
+  });
+
+  it("keeps a reaped registration when the session terminal is not recorded", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const retireTerminal = vi.fn(async () => {});
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    await terminalizeReapedRunner({
+      registration: current,
+      task: task(),
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate: vi.fn(async () => {}),
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: true,
+      }),
+      retireTerminal,
+      drainClosedTail: vi.fn(async () => {}),
+      logger,
+    });
+    expect(retireTerminal).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a", disposition: "already_reaped" }),
+      "terminal runner session end is not recorded; registration kept for a later scan",
+    );
+  });
+
+  it("drains a pending closed tail before retiring a reaped registration", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    current.closedTailState = {
+      status: "requires_drain",
+      streamId: "stream-session-a",
+      sessionId: "session-a",
+      latestDurableSourceSeq: 3,
+      acknowledgedThrough: 2,
+    };
+    const order: string[] = [];
+    await terminalizeReapedRunner({
+      registration: current,
+      task: recordedTerminalTask(),
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate: vi.fn(async () => {}),
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async (_registration, recoveredTask) => ({
+        task: recoveredTask,
+        replayed: true,
+      }),
+      retireTerminal: async () => { order.push("retire"); },
+      drainClosedTail: async () => { order.push("drain"); },
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    expect(order).toEqual(["drain", "retire"]);
+  });
+
+  it("keeps a reaped registration when the terminal replay fails", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const retireTerminal = vi.fn(async () => {});
+    const failure = new Error("offline replay failed");
+    await expect(terminalizeReapedRunner({
+      registration: current,
+      task: recordedTerminalTask(),
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate: vi.fn(async () => {}),
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async () => { throw failure; },
+      retireTerminal,
+      drainClosedTail: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    })).rejects.toBe(failure);
+    expect(retireTerminal).not.toHaveBeenCalled();
   });
 
   it("terminalizes a still-verified dead runner", async () => {
@@ -313,4 +446,13 @@ function task(): Task {
     lastReadEventId: 0,
     interventionQueue: [],
   };
+}
+
+function recordedTerminalTask(): Task {
+  const current = task();
+  current.status = "completed";
+  current.terminationReason = "completed_ok";
+  current.terminationEventRecorded = true;
+  current.terminalEventId = 3;
+  return current;
 }
