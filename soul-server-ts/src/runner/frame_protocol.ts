@@ -274,7 +274,6 @@ const RunnerRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("host_call"),
     service: z.enum([
-      "session_store",
       "claude_accounts",
       "claude_runtime",
       "detached_event",

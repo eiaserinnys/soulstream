@@ -1019,83 +1019,18 @@ async def test_session_delete_preserves_automatic_projection_cleanup(test_db):
     )
 
 
-async def test_claude_transcript_append_load_preserves_content_shapes(test_db):
-    now = _utc_now()
-    entries = [
-        {
-            "type": "user",
-            "uuid": "u-scalar-content",
-            "message": {"role": "user", "content": "plain text"},
-        },
-        {
-            "type": "assistant",
-            "uuid": "a-array-content",
-            "message": {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "hello"}],
-            },
-        },
-        {
-            "type": "system",
-            "uuid": "s-object-content",
-            "content": {"level": "info"},
-        },
-        {"type": "summary", "uuid": "missing-content"},
-    ]
-
-    written = await test_db.fetchval(
-        "SELECT claude_transcript_append($1, $2, $3, $4::jsonb, $5)",
-        "project-a",
-        "claude-shapes",
-        None,
-        json.dumps(entries),
-        now,
+async def test_session_delete_works_without_transcript_table(test_db):
+    assert await test_db.fetchval(
+        "SELECT to_regclass('claude_transcript_entries')::text"
+    ) is None
+    await _create_session(test_db, "s-delete-no-transcript")
+    await test_db.execute(
+        "SELECT session_delete($1)", "s-delete-no-transcript"
     )
-
-    rows = await test_db.fetch(
-        "SELECT entry FROM claude_transcript_load($1, $2, $3)",
-        "project-a",
-        "claude-shapes",
-        None,
+    assert not await test_db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE session_id = $1)",
+        "s-delete-no-transcript",
     )
-    assert written == len(entries)
-    assert [_decode_jsonb(row["entry"]) for row in rows] == entries
-
-
-async def test_claude_transcript_append_normalizes_single_object_and_scalar_batches(test_db):
-    now = _utc_now()
-    entry = {
-        "type": "user",
-        "uuid": "u-single-object",
-        "message": {"role": "user", "content": "scalar content"},
-    }
-
-    object_written = await test_db.fetchval(
-        "SELECT claude_transcript_append($1, $2, $3, $4::jsonb, $5)",
-        "project-a",
-        "claude-single",
-        None,
-        json.dumps(entry),
-        now,
-    )
-    scalar_written = await test_db.fetchval(
-        "SELECT claude_transcript_append($1, $2, $3, $4::jsonb, $5)",
-        "project-a",
-        "claude-scalar",
-        None,
-        json.dumps("stray scalar"),
-        now,
-    )
-
-    rows = await test_db.fetch(
-        "SELECT entry FROM claude_transcript_load($1, $2, $3)",
-        "project-a",
-        "claude-single",
-        None,
-    )
-    assert object_written == 1
-    assert [_decode_jsonb(row["entry"]) for row in rows] == [entry]
-    assert scalar_written == 0
 
 
 # === 세션 메타데이터 & 메시지 ===

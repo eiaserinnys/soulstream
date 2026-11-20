@@ -1,6 +1,6 @@
 import type postgres from "postgres";
 
-import type { ClaudeTranscriptEntry, SqlClient } from "./control_plane_types.js";
+import type { SqlClient } from "./control_plane_types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RepositorySql = SqlClient | postgres.TransactionSql<any>;
@@ -16,13 +16,4 @@ export function numberFromDb(
 ): number {
   if (value === null || value === undefined) throw new Error(`${field} returned null`);
   return Number(value);
-}
-
-export function normalizeTranscriptSubpath(value: string | null | undefined): string | null {
-  return value && value.length > 0 ? value : null;
-}
-
-export function isClaudeTranscriptEntry(value: unknown): value is ClaudeTranscriptEntry {
-  return value !== null && typeof value === "object" && !Array.isArray(value) &&
-    typeof (value as Record<string, unknown>).type === "string";
 }

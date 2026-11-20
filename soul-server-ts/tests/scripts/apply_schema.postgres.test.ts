@@ -160,9 +160,9 @@ describe("apply-schema.mjs", () => {
 
       expect(rows[0]).toMatchObject({
         heartbeat_table: "soulstream_node_heartbeats",
-        transcript_table: "claude_transcript_entries",
+        transcript_table: null,
         event_ingress_receipts_table: "event_ingress_receipts",
-        transcript_function_count: 1,
+        transcript_function_count: 0,
         supervisor_table_count: 0,
         supervisor_function_count: 0,
         supervisor_role_column_count: 0,
@@ -511,8 +511,8 @@ describe("apply-schema.mjs", () => {
           supervisor_role_column_count: 0,
           normal_delivery_count: 1,
           supervisor_delivery_count: 0,
-          transcript_table: "claude_transcript_entries",
-          transcript_function_count: 1,
+          transcript_table: null,
+          transcript_function_count: 0,
         });
       } finally {
         await sql.end({ timeout: 5 });

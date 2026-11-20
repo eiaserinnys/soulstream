@@ -57,11 +57,6 @@ describe("RunnerHostCallIdempotency", () => {
   });
 
   it("enumerates mutating and read-only host operations without an implicit fallback", () => {
-    expect(isMutatingRunnerHostCall("session_store", "append")).toBe(true);
-    expect(isMutatingRunnerHostCall("session_store", "delete")).toBe(true);
-    expect(isMutatingRunnerHostCall("session_store", "load")).toBe(false);
-    expect(isMutatingRunnerHostCall("session_store", "listSessions")).toBe(false);
-    expect(isMutatingRunnerHostCall("session_store", "listSubkeys")).toBe(false);
     expect(isMutatingRunnerHostCall("snapshot", "persistRunState")).toBe(true);
     expect(isMutatingRunnerHostCall("snapshot", "persistSessionItems")).toBe(true);
     expect(isMutatingRunnerHostCall("claude_runtime", "observe")).toBe(true);
