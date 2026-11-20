@@ -58,15 +58,6 @@ export async function sendDeleteScheduleCommand(
   }
 }
 
-export function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({
-    error: {
-      code: "INVALID_REQUEST",
-      message,
-    },
-  });
-}
-
 async function dispatchBackgroundScheduleCommand<
   TPayload extends SessionBackgroundSchedulePayload,
 >(

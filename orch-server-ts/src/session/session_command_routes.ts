@@ -7,7 +7,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
-import { parseAttachmentIds, parseAttachmentPaths } from "./session_action_command_payloads.js";
+import { isJsonObject, parseAttachmentIds, parseAttachmentPaths, parseObjectBody } from "./session_action_command_payloads.js";
+import { invalidRequest } from "./session_action_command_errors.js";
 import { isUuid } from "../http/uuid.js";
 
 import {
@@ -149,16 +150,16 @@ export function registerSessionCommandRoutes(
     if (denied) return reply;
     const body = parseObjectBody(request.body);
     if (body === undefined) {
-      return badRequest(reply, "Request body must be a JSON object");
+      return invalidRequest(reply, "Request body must be a JSON object");
     }
     const inputRequestId = Object.prototype.hasOwnProperty.call(body, "request_id")
       ? body.request_id
       : body.requestId;
     if (typeof inputRequestId !== "string" || inputRequestId.length === 0) {
-      return badRequest(reply, "request_id is required");
+      return invalidRequest(reply, "request_id is required");
     }
     if (!isJsonObject(body.answers)) {
-      return badRequest(reply, "answers must be a JSON object");
+      return invalidRequest(reply, "answers must be a JSON object");
     }
 
     const payload: RespondNodeCommandPayload = {
@@ -625,33 +626,12 @@ function isPageAnchor(value: unknown): value is JsonObject {
     && Number(value.expectedVersion) > 0;
 }
 
-function parseObjectBody(body: unknown): JsonObject | undefined {
-  return isJsonObject(body) ? body : undefined;
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
-}
-
 function isErrorAck(response: NodeCommandResponse): boolean {
   return response.type === "error" || response.status === "error";
 }
 
 function isRespondAckError(response: NodeCommandResponse): boolean {
   return response.status === "error";
-}
-
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({
-    error: {
-      code: "INVALID_REQUEST",
-      message,
-    },
-  });
 }
 
 function serviceUnavailable(
