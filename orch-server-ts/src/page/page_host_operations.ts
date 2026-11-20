@@ -38,13 +38,13 @@ const mutationFields = {
   expected_version: z.number().int().positive(),
   ...mutationActorFields,
 };
-export const placementFields = {
+const placementFields = {
   parent_id: id.nullable(),
   parent_temp_id: id.nullable().optional(),
   after_block_id: id.nullable(),
   after_temp_id: id.nullable().optional(),
 };
-export const contentFields = {
+const contentFields = {
   block_type: id,
   text: z.string(),
   properties: jsonObject,
