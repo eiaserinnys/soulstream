@@ -103,6 +103,40 @@ describe("PushNotifier", () => {
     );
   });
 
+  it("sends the central pool relogin push to the orchestrator owner without a node", async () => {
+    const harness = createHarness();
+
+    expect(await harness.notifier.notifyCentralClaudeAccountRelogin({
+      ownerEmail: "owner@example.com",
+      accountId: "account-a",
+      accountEmail: "a@example.com",
+    })).toBe(true);
+
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "클로드 계정 다시 로그인 필요",
+      "중앙 풀의 a@example.com 계정 자격 갱신이 끊겼습니다. 설정에서 다시 로그인해 주세요.",
+      { kind: "claude_account_relogin", accountId: "account-a" },
+    );
+  });
+
+  it("warns without leaking the account email when the central relogin owner is missing", async () => {
+    const warn = vi.fn();
+    const harness = createHarness({ onWarning: warn });
+
+    expect(await harness.notifier.notifyCentralClaudeAccountRelogin({
+      ownerEmail: "  ",
+      accountId: "account-a",
+      accountEmail: "a@example.com",
+    })).toBe(false);
+
+    expect(harness.provider.send).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    const warning = String(warn.mock.calls[0]?.[0]);
+    expect(warning).toContain("Claude central account relogin notification dropped");
+    expect(warning).not.toContain("a@example.com");
+  });
+
   it("sends open report entries to the owner using the PAS payload keys", async () => {
     const harness = createHarness();
     const ask = reportEntry({

@@ -20,7 +20,11 @@ type SyncHarnessOptions = {
   defaultReceive?: boolean;
   nodes?: Record<string, boolean>;
   poolCapable?: boolean;
-  ackFor?: (message: Record<string, unknown>) => Record<string, unknown>;
+  /** 응답을 직접 만든다. null이면 응답하지 않아 명령이 시간 초과로 끝난다. */
+  ackFor?: (message: Record<string, unknown>) => Record<string, unknown> | null | undefined;
+  listAccounts?: () => Promise<readonly ClaudeCentralPoolSyncAccount[]>;
+  timeoutMs?: number;
+  extraNodes?: number;
 };
 
 function createSyncHarness(options: SyncHarnessOptions = {}) {
@@ -30,35 +34,51 @@ function createSyncHarness(options: SyncHarnessOptions = {}) {
   });
   const registration = loadContractFixtures().fakeNodeReconnect
     .registration as NodeRegistrationPayload;
-  const registered = registry.registerNode(
+  const register = (nodeId?: string) => registry.registerNode(
     options.poolCapable === false
-      ? registration
+      ? { ...registration, ...(nodeId === undefined ? {} : { node_id: nodeId }) }
       : {
           ...registration,
+          ...(nodeId === undefined ? {} : { node_id: nodeId }),
           capabilities: { ...(registration.capabilities ?? {}), claude_account_pool_v1: true },
         },
   );
+  const registered = register();
   const nodeId = registered.node.nodeId;
   const connectionId = registered.node.connectionId;
+  const extraRegistered = Array.from(
+    { length: options.extraNodes ?? 0 },
+    (_, index) => register(`sync-node-${index + 2}`),
+  );
   const transports = new NodeCommandTransportHub();
   const sent: Array<Record<string, unknown>> = [];
-  transports.attach({
-    nodeId,
-    connectionId,
-    transport: {
-      send: (data) => {
-        const message = JSON.parse(data) as Record<string, unknown>;
-        sent.push(message);
-        const ack = options.ackFor?.(message) ?? {
-          type: `${String(message.type)}_ack`,
-          success: true,
-          ok: true,
-          revision: message.revision,
-        };
-        registry.receiveNodeMessage({ nodeId, connectionId }, { ...ack, requestId: message.requestId });
+  const sentByNode = new Map<string, Array<Record<string, unknown>>>();
+  const attach = (
+    node: { nodeId: string; connectionId: string },
+    record: Array<Record<string, unknown>>,
+  ) => {
+    sentByNode.set(node.nodeId, record);
+    transports.attach({
+      nodeId: node.nodeId,
+      connectionId: node.connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          record.push(message);
+          const ack = options.ackFor === undefined
+            ? defaultAck(message)
+            : options.ackFor(message);
+          if (ack === null) return;
+          registry.receiveNodeMessage(
+            { nodeId: node.nodeId, connectionId: node.connectionId },
+            { ...ack, requestId: message.requestId },
+          );
+        },
       },
-    },
-  });
+    });
+  };
+  attach(registered.node, sent);
+  for (const extra of extraRegistered) attach(extra.node, []);
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   const settings = new InMemoryClaudeCentralSettingsRepository({
     default_receive: options.defaultReceive ?? true,
@@ -70,11 +90,30 @@ function createSyncHarness(options: SyncHarnessOptions = {}) {
     registry,
     bridge,
     settings,
-    listAccounts: async () => accounts,
+    listAccounts: options.listAccounts ?? (async () => accounts),
     now: () => CENTRAL_NOW_MS,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     onWarning,
   });
-  return { service, sent, nodeId, connectionId, onWarning, settings };
+  return {
+    service,
+    sent,
+    sentByNode,
+    nodeId,
+    connectionId,
+    extraNodeIds: extraRegistered.map((extra) => extra.node.nodeId),
+    onWarning,
+    settings,
+  };
+}
+
+function defaultAck(message: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: `${String(message.type)}_ack`,
+    success: true,
+    ok: true,
+    revision: message.revision,
+  };
 }
 
 function syncAccount(
@@ -182,5 +221,104 @@ describe("central Claude pool sync", () => {
 
     expect(await harness.service.sendToNode(harness.nodeId)).toBe(false);
     expect(harness.sent).toHaveLength(0);
+  });
+
+  it("serializes per-node sends and resends the settings read after the queued request", async () => {
+    const accounts = [syncAccount()];
+    let releaseAccounts!: () => void;
+    const accountsGate = new Promise<void>((resolve) => { releaseAccounts = resolve; });
+    let listCalls = 0;
+    const harness = createSyncHarness({
+      listAccounts: async () => {
+        listCalls += 1;
+        await accountsGate;
+        return accounts;
+      },
+    });
+
+    const first = harness.service.sendToNode(harness.nodeId);
+    await vi.waitFor(() => { expect(listCalls).toBe(1); });
+
+    harness.settings.current = {
+      default_receive: true,
+      nodes: { [harness.nodeId]: false },
+    };
+    const second = harness.service.sendToNode(harness.nodeId);
+    releaseAccounts();
+
+    expect(await first).toBe(true);
+    expect(await second).toBe(true);
+
+    expect(harness.sent).toHaveLength(2);
+    expect(harness.sent[0]).toMatchObject({ receive: true, accounts });
+    expect(harness.sent[1]).toMatchObject({ receive: false, accounts: [] });
+    expect(Number(harness.sent[1]?.revision)).toBeGreaterThan(
+      Number(harness.sent[0]?.revision),
+    );
+  });
+
+  it("keeps revisions strictly increasing for one node when the clock does not move", async () => {
+    const harness = createSyncHarness();
+
+    await harness.service.sendToNode(harness.nodeId);
+    await harness.service.sendToNode(harness.nodeId);
+
+    expect(harness.sent).toHaveLength(2);
+    expect(Number(harness.sent[1]?.revision)).toBeGreaterThan(
+      Number(harness.sent[0]?.revision),
+    );
+  });
+
+  it("continues with the next send after a rejected send", async () => {
+    let firstResponse = true;
+    const harness = createSyncHarness({
+      ackFor: (message) => {
+        if (!firstResponse) return defaultAck(message);
+        firstResponse = false;
+        return { type: "error", success: false, message: "node rejected the command" };
+      },
+    });
+
+    expect(await harness.service.sendToNode(harness.nodeId)).toBe(false);
+    expect(await harness.service.sendToNode(harness.nodeId)).toBe(true);
+    expect(harness.sent).toHaveLength(2);
+  });
+
+  it("continues with the next send after a timed-out send", async () => {
+    let firstResponse = true;
+    const harness = createSyncHarness({
+      timeoutMs: 20,
+      ackFor: (message) => {
+        if (!firstResponse) return defaultAck(message);
+        firstResponse = false;
+        return null;
+      },
+    });
+
+    expect(await harness.service.sendToNode(harness.nodeId)).toBe(false);
+    expect(await harness.service.sendToNode(harness.nodeId)).toBe(true);
+    expect(harness.sent).toHaveLength(2);
+  });
+
+  it("does not let one node's send block another node's send", async () => {
+    let firstMessage = true;
+    const harness = createSyncHarness({
+      timeoutMs: 100,
+      extraNodes: 1,
+      ackFor: (message) => {
+        if (!firstMessage) return defaultAck(message);
+        firstMessage = false;
+        return null;
+      },
+    });
+    const [otherNodeId] = harness.extraNodeIds;
+
+    const blocked = harness.service.sendToNode(harness.nodeId);
+    await vi.waitFor(() => { expect(harness.sent).toHaveLength(1); }, { interval: 5 });
+    const other = await harness.service.sendToNode(otherNodeId!);
+
+    expect(other).toBe(true);
+    expect(harness.sentByNode.get(otherNodeId!)).toHaveLength(1);
+    expect(await blocked).toBe(false);
   });
 });

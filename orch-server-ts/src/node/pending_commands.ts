@@ -1,4 +1,4 @@
-import type { ControlCommandType } from "@soulstream/wire-schema";
+import type { ClaudeCentralPoolSync, ControlCommandType } from "@soulstream/wire-schema";
 
 import { DEFAULT_NODE_COMMAND_TIMEOUT_MS } from "./node_timeouts.js";
 
@@ -37,6 +37,14 @@ export type FireAndForgetNodeCommandPayload<
   requestId?: never;
   [key: string]: unknown;
 };
+
+/**
+ * 오케스트레이터→노드 `claude_central_pool_sync` payload. 명령 이름과 칸 타입은
+ * wire-schema의 생성 타입(`ClaudeCentralPoolSync`)을 그대로 쓴다(응답 전용 칸은 뺀다).
+ */
+export type ClaudeCentralPoolSyncNodeCommandPayload =
+  RequestResponseNodeCommandPayload<ClaudeCentralPoolSync["type"]>
+  & Pick<ClaudeCentralPoolSync, "revision" | "receive" | "accounts">;
 
 export type RespondNodeCommandPayload = RequestResponseNodeCommandPayload<"respond"> & {
   agentSessionId: string;

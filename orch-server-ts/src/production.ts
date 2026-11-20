@@ -677,9 +677,9 @@ export async function createLiveProductionApplication(
     bridge: runtimeServices.sessionBridge,
     clientId: () => config.claude_oauth_client_id,
     notifyRelogin: (alert) => {
-      // 중앙 계정은 노드 하나에 매이지 않으므로 기본 실행 노드의 소유자에게 알린다(기존 문구 그대로).
-      void pushNotifier.notifyClaudeAccountRelogin({
-        nodeId: config.default_execution_node_id,
+      // 중앙 계정은 노드 하나에 매이지 않으므로 오케스트레이터 소유자에게 알린다.
+      void pushNotifier.notifyCentralClaudeAccountRelogin({
+        ownerEmail: config.allowed_email,
         accountId: alert.accountId,
         accountEmail: alert.accountEmail,
       });

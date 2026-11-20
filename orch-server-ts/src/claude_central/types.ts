@@ -1,3 +1,5 @@
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
+
 export type ClaudeCentralAuthState = "ok" | "needs_relogin";
 
 export type ClaudeCentralAccountRecord = {
@@ -88,24 +90,8 @@ export type ClaudeCentralSettingsView = {
   readonly effective: ClaudeCentralEffectiveNode[];
 };
 
-/** 오케스트레이터→노드 `claude_central_pool_sync` 계약(payload.accounts 항목). */
-export type ClaudeCentralPoolSyncAccount = {
-  readonly id: string;
-  readonly email: string;
-  readonly plan: string | null;
-  readonly enabled: boolean;
-  readonly priority: number;
-  readonly auth_state: ClaudeCentralAuthState;
-  readonly relogin_reason: string | null;
-  readonly access_token: string | null;
-  readonly expires_at: string | null;
-  readonly usage_raw: Record<string, unknown> | null;
-  readonly usage_fetched_at: string | null;
-};
-
-export type ClaudeCentralPoolSyncPayload = {
-  readonly type: "claude_central_pool_sync";
-  readonly revision: number;
-  readonly receive: boolean;
-  readonly accounts: readonly ClaudeCentralPoolSyncAccount[];
-};
+/**
+ * 오케스트레이터→노드 `claude_central_pool_sync` 계약(payload.accounts 항목).
+ * wire-schema의 생성 타입과 같은 정의이므로 별칭만 둔다.
+ */
+export type ClaudeCentralPoolSyncAccount = ClaudeCentralPoolAccount;

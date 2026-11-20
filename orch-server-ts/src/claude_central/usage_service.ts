@@ -92,6 +92,7 @@ export class ClaudeCentralUsageService {
           Authorization: `Bearer ${accessToken}`,
           "anthropic-beta": CLAUDE_OAUTH_BETA,
           Accept: "application/json",
+          "User-Agent": "soulstream-claude-account-pool/1.0",
         },
         signal: AbortSignal.timeout(USAGE_TIMEOUT_MS),
       });

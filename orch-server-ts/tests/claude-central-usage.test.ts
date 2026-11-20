@@ -55,6 +55,7 @@ describe("central Claude usage", () => {
     expect(request[1].headers).toMatchObject({
       Authorization: "Bearer access-token-1",
       "anthropic-beta": "oauth-2025-04-20",
+      "User-Agent": "soulstream-claude-account-pool/1.0",
     });
     expect(service.getObservation(CENTRAL_ACCOUNT_ID)).toEqual({
       raw: USAGE_BODY,

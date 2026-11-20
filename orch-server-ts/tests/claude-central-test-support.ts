@@ -3,8 +3,14 @@ import type {
   SaveRefreshedTokensInput,
   UpsertCentralLoginInput,
 } from "../src/claude_central/account_repository.js";
-import type { ClaudeCentralSettingsRepository } from "../src/claude_central/settings_repository.js";
-import { defaultCentralPoolSettings } from "../src/claude_central/settings_repository.js";
+import type {
+  ClaudeCentralSettingsPatch,
+  ClaudeCentralSettingsRepository,
+} from "../src/claude_central/settings_repository.js";
+import {
+  applySettingsPatch,
+  defaultCentralPoolSettings,
+} from "../src/claude_central/settings_repository.js";
 import type {
   ClaudeCentralAccountRecord,
   ClaudeCentralPoolSettings,
@@ -146,8 +152,8 @@ export class InMemoryClaudeCentralSettingsRepository implements ClaudeCentralSet
     return { default_receive: this.current.default_receive, nodes: { ...this.current.nodes } };
   }
 
-  async write(settings: ClaudeCentralPoolSettings): Promise<ClaudeCentralPoolSettings> {
-    this.current = { default_receive: settings.default_receive, nodes: { ...settings.nodes } };
+  async merge(patch: ClaudeCentralSettingsPatch): Promise<ClaudeCentralPoolSettings> {
+    this.current = applySettingsPatch(this.current, patch);
     return this.read();
   }
 }
