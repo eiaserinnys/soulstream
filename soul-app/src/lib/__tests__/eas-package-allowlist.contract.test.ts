@@ -6,7 +6,6 @@ const repoRoot = path.resolve(__dirname, '../../../../');
 const appSourceRoot = path.join(repoRoot, 'soul-app', 'src');
 const packagesRoot = path.join(repoRoot, 'packages');
 const chatUiRoot = path.join(packagesRoot, 'chat-ui');
-const chatUiSourceRoot = path.join(chatUiRoot, 'src');
 const chatUiSourceFiles = [
   'canonical.ts',
   'controller.ts',
@@ -209,10 +208,8 @@ function resolveRelativePackageImport(importer: string, specifier: string): stri
   const basePath = path.resolve(path.dirname(importer), specifier);
   if (!isWithin(packagesRoot, basePath)) return null;
 
-  const chatUiJsRequest = isWithin(chatUiSourceRoot, importer)
-    && isWithin(chatUiSourceRoot, basePath)
-    && basePath.endsWith('.js');
-  const candidates = chatUiJsRequest
+  const jsRequest = basePath.endsWith('.js');
+  const candidates = jsRequest
     ? [`${basePath.slice(0, -3)}.ts`, `${basePath.slice(0, -3)}.tsx`, basePath]
     : path.extname(basePath)
       ? [basePath]
