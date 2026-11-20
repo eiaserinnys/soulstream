@@ -295,6 +295,9 @@ describe('ClaudeAccountPoolSection central receive row', () => {
     fireEvent(toggle, 'valueChange', false);
 
     await waitFor(() => expect(view.getByText('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.')).toBeTruthy());
+    // 오류 글은 낱말 가운데서 끊기지 않게 그린다.
+    expect(view.getByText('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.').props.lineBreakStrategyIOS)
+      .toBe('hangul-word');
     // 스위치는 돌아간 값 그대로 제자리에 있고 눌린다. 별도 다시 시도 단추는 없다.
     expect(view.getByTestId('claude-central-receive-switch').props.value).toBe(true);
     expect(view.getByTestId('claude-central-receive-switch').props.disabled).toBe(false);
@@ -314,6 +317,7 @@ describe('ClaudeAccountPoolSection central receive row', () => {
     const view = renderNode(harness, harness.current(), { centralSettingsApi: harness.api });
 
     await waitFor(() => expect(view.getByText('받기 설정을 불러오지 못했습니다.')).toBeTruthy());
+    expect(view.getByText('받기 설정을 불러오지 못했습니다.').props.lineBreakStrategyIOS).toBe('hangul-word');
     expect(view.getByText('중앙 풀 받기')).toBeTruthy();
     expect(view.queryByText('계정 목록을 갱신하지 못했습니다.')).toBeNull();
     expect(view.queryByTestId('claude-central-receive-switch')).toBeNull();

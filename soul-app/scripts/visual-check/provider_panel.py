@@ -43,7 +43,9 @@ STATES = [
     ("legacy-stale", "legacy-stale", False),
     ("codex-both", "codex-both", False),
 ]
-VIEWPORTS = [(820, 1180), (390, 844)]
+VIEWPORTS = [(820, 1180), (390, 844), (360, 780)]
+# 360 폭은 받기 줄 촬영에만 쓴다. 중앙·공급자 장면의 단언은 820·390에서만 잰다.
+MEASURED_WIDTHS = (820, 390)
 THEMES = ("light", "dark")
 PROVIDER_ROW_RE = r"^provider-row-(claude|opencode_go|codex|antigravity)$"
 
@@ -281,6 +283,39 @@ CENTRAL_METRICS_SCRIPT = r"""
     ? Array.from(receive.querySelectorAll('*')).filter((element) => element.children.length === 0
       && ['받기 설정을 불러오지 못했습니다.', '계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'].includes(text(element)))
     : [];
+  // 오류 글을 글자마다 Range로 재어 줄로 묶는다. 둘째 줄부터 첫 글자 앞이 공백이 아니면 어절 가운데서 끊긴 것이다.
+  const lineBreakOf = (message) => {
+    const leaf = receive && Array.from(receive.querySelectorAll('*'))
+      .find((element) => element.children.length === 0 && (element.textContent || '').trim() === message);
+    if (!leaf) return { found: false };
+    const walker = document.createTreeWalker(leaf, NodeFilter.SHOW_TEXT);
+    const chars = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (let index = 0; index < node.data.length; index += 1) {
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        chars.push({ ch: node.data[index], top: Math.round(range.getBoundingClientRect().top),
+          width: range.getBoundingClientRect().width });
+      }
+    }
+    const lines = [];
+    let current = null;
+    chars.forEach((char, index) => {
+      if (char.width === 0 && /\s/.test(char.ch)) return;
+      if (!current || Math.abs(char.top - current.top) > 2) {
+        current = { top: char.top, start: index, text: '' };
+        lines.push(current);
+      }
+      current.text += char.ch;
+    });
+    const midWord = lines.slice(1)
+      .filter((line) => !/\s/.test(chars[line.start - 1]?.ch ?? ' '))
+      .map((line) => ({ before: chars[line.start - 1].ch, start: line.text.slice(0, 4) }));
+    const style = getComputedStyle(leaf);
+    return { found: true, lines: lines.map((line) => line.text), midWord,
+      wordBreak: style.wordBreak, overflowWrap: style.overflowWrap };
+  };
   // 받기 줄과 첫 계정 줄 사이의 가로 구분선. 줄 안쪽 아래 테두리이거나 별도 구분선 요소다.
   // 단추 테두리는 폭이 좁아 걸러진다(가로로 긴 선만 센다).
   const firstRow = rows.length ? rows[0] : null;
@@ -347,6 +382,10 @@ CENTRAL_METRICS_SCRIPT = r"""
     receiveErrorInSwitchRow: !!(receiveRow && receiveErrors.length && receiveRow.contains(receiveErrors[0])),
     receiveRowPaddingBottom: receiveRow
       ? Math.round((parseFloat(getComputedStyle(receiveRow).paddingBottom) || 0) * 10) / 10 : null,
+    receiveLineBreaks: {
+      save: lineBreakOf('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'),
+      read: lineBreakOf('받기 설정을 불러오지 못했습니다.'),
+    },
     receiveDivider,
     bodyText: document.body.innerText,
     document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
@@ -594,6 +633,10 @@ def capture_receive_state(
             if gap < float(padding) - 0.5:
                 failures.append({"check": "receive failure error bottom padding", "label": label,
                                  "gap": gap, "padding": padding, "error": error, "line": line})
+        line_break = (metrics.get("receiveLineBreaks") or {}).get("save") or {}
+        if not line_break.get("found") or line_break.get("midWord"):
+            failures.append({"check": "receive save failure line break", "label": label,
+                             "lineBreak": line_break})
     if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
         failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
 
@@ -606,6 +649,10 @@ def capture_receive_state(
             failures.append({"check": "settings error copy", "label": label})
         if "계정 목록을 갱신하지 못했습니다." in metrics["bodyText"]:
             failures.append({"check": "settings error borrowed copy", "label": label})
+        line_break = (metrics.get("receiveLineBreaks") or {}).get("read") or {}
+        if not line_break.get("found") or line_break.get("midWord"):
+            failures.append({"check": "receive read failure line break", "label": label,
+                             "lineBreak": line_break})
     elif state_name == "receive-on":
         if switch_value(metrics["switch"]) is not True:
             failures.append({"check": "receive on value", "label": label, "switch": metrics["switch"]})
@@ -798,7 +845,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Provider panel visual check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
     parser.add_argument("output", help="directory for captures and metrics JSON")
-    parser.add_argument("--width", type=int, choices=(820, 390), help="한 폭만 잰다.")
+    parser.add_argument("--width", type=int, choices=(820, 390, 360), help="한 폭만 잰다.")
     parser.add_argument("--theme", choices=("light", "dark"), help="한 테마만 잰다.")
     parser.add_argument(
         "--scenes", choices=("all", "provider", "central"), default="all",
@@ -857,26 +904,30 @@ def main() -> int:
                     ))
                     context.route("**/*", route_request)
                     try:
-                        if args.scenes in ("all", "provider"):
+                        measured_width = width in MEASURED_WIDTHS
+                        if args.scenes in ("all", "provider") and measured_width:
                             for state_name, fixture_state, expanded in STATES:
                                 result["states"].append(capture_state(
                                     page, args.base_url, state_name, fixture_state, expanded,
                                     width, theme, output, failures, page_errors,
                                 ))
                         if args.scenes in ("all", "central"):
-                            for state_name, fixture_state in CENTRAL_STATES:
-                                result["centralStates"].append(capture_central_state(
-                                    page, args.base_url, state_name, fixture_state,
-                                    width, theme, output, failures,
-                                ))
+                            if measured_width:
+                                for state_name, fixture_state in CENTRAL_STATES:
+                                    result["centralStates"].append(capture_central_state(
+                                        page, args.base_url, state_name, fixture_state,
+                                        width, theme, output, failures,
+                                    ))
+                                central_title_alignment(result["centralStates"], width, theme, failures)
                             for state_name, fixture_state in RECEIVE_STATES:
                                 result["receiveStates"].append(capture_receive_state(
                                     page, args.base_url, state_name, fixture_state,
                                     width, theme, output, failures,
                                 ))
-                            central_title_alignment(result["centralStates"], width, theme, failures)
-                            if args.scenes == "central":
+                            if args.scenes == "central" or not measured_width:
                                 continue
+                        if not measured_width:
+                            continue
                         # One deliberately delayed summary frame: the fixture never
                         # resolves getUsageSummary, so Claude shows its loading
                         # indicator while the other provider rows are absent.

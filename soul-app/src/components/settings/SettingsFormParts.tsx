@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions, type TextStyle } from 'react-native';
 
 import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -90,7 +90,8 @@ export function SettingsToggleRow({ label, value, onValueChange, disabled, testI
     <View style={styles.grow}>
       <Text style={styles.body}>{label}</Text>
       {help ? <Text style={styles.help}>{help}</Text> : null}
-      {error ? <Text accessibilityRole="alert" style={styles.errorHelp}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" lineBreakStrategyIOS="hangul-word"
+        style={[styles.errorHelp, Platform.OS === 'web' ? ({ wordBreak: 'keep-all' } as TextStyle) : undefined]}>{error}</Text> : null}
     </View>
     <Switch accessibilityLabel={label} testID={testID} value={value} disabled={disabled} onValueChange={onValueChange} />
   </View>;

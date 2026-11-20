@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View, type TextStyle } from 'react-native';
 import type { ClaudeCentralSettings } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import type { ApiClient } from '../../api/client';
 import { useTokens } from '../../theme';
@@ -83,7 +83,8 @@ export function ClaudeCentralReceiveRow({ nodeId, api, onSaved }: Props) {
       <View style={formStyles.listRow}>
         <View style={formStyles.grow}>
           <Text style={formStyles.body}>중앙 풀 받기</Text>
-          <Text accessibilityRole="alert" style={styles.errorText}>받기 설정을 불러오지 못했습니다.</Text>
+          <Text accessibilityRole="alert" lineBreakStrategyIOS="hangul-word"
+            style={[styles.errorText, Platform.OS === 'web' ? ({ wordBreak: 'keep-all' } as TextStyle) : undefined]}>받기 설정을 불러오지 못했습니다.</Text>
         </View>
         <SettingsAction label="다시 시도" testID="claude-central-receive-retry" disabled={loading} onPress={() => void load()} />
       </View>

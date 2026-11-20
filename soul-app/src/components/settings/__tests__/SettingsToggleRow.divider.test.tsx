@@ -38,5 +38,6 @@ test('토글 행은 error를 이름 아래 alert 글로 그리고 구분선은 �
 
   const error = screen.getByText('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.');
   expect(error.props.accessibilityRole).toBe('alert');
+  expect(error.props.lineBreakStrategyIOS).toBe('hangul-word');
   expect(rowStyle('toggle-error', screen).borderBottomWidth).toBe(StyleSheet.hairlineWidth);
 });
