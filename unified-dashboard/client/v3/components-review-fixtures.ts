@@ -1,5 +1,6 @@
 import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 import type { CardCheckItem, CardComment, CardDetail, CardNow, CardNowHistoryEntry, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { PlannerFolder } from "./planner-data";
 
 export const reviewTitle = "목록의 안쪽 여백과 긴 한국어 제목, 오른쪽 아이콘과 버튼의 정렬을 함께 확인하는 검수 샘플입니다";
@@ -82,6 +83,29 @@ export const reviewDetail: CardDetail = {
   reports: [{ id: "components-report", title: "말풍선과 첨부 검수", format: "markdown", sessionId: null, createdAt: now,
     body: "긴 한국어 본문이 자연스럽게 줄바꿈되는지 확인합니다.\n\n![검수 이미지](/icon-192.png)\n\n[샘플 첨부 열기](/icon-512.png)" }],
 };
+
+// 카드 #1524: 전달 장부에서 실패로 닫힌 이벤트 말풍선 표본과 전달된 표본.
+// 마지막 행은 실패 표시가 붙지 않는 대조군이다.
+export const reviewDeliveryFailureMessages: ChatMessage[] = [
+  {
+    id: "review-delivery-failure-long", role: "user",
+    treeNodeId: "review-delivery-failure-long", treeNodeType: "user_message",
+    inputId: "review-input-failed-long",
+    content: "오늘 오후에 진행한 배포 검수 결과를 정리해서 알려주세요. 웹과 앱 양쪽에서 같은 문장이 어떻게 보이는지, 실패 줄과 두 단추가 말풍선 폭 안에서 자연스럽게 이어지는지 함께 확인하는 긴 문장 표본입니다.",
+  },
+  {
+    id: "review-delivery-failure-question", role: "user",
+    treeNodeId: "review-delivery-failure-question", treeNodeType: "user_message",
+    inputId: "review-input-failed-question",
+    content: "???",
+  },
+  {
+    id: "review-delivery-delivered", role: "user",
+    treeNodeId: "review-delivery-delivered", treeNodeType: "user_message",
+    inputId: "review-input-delivered",
+    content: "이 메시지는 전달까지 끝난 표본입니다.",
+  },
+];
 
 export const reviewFolders: CatalogFolder[] = [
   { id: "components-folder", name: "검수 폴더", parentFolderId: null, sortOrder: 0, status: "open", version: 1, archived: false },

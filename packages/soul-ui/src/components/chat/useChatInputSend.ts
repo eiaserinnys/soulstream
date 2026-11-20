@@ -54,6 +54,10 @@ export interface UseChatInputSendResult {
   reset: () => void;
   send: (rawText: string) => Promise<void>;
   retry: (sessionId: string, pending: PendingChatSend) => Promise<void>;
+  retryDelivery: (
+    sessionId: string,
+    message: { text: string; attachmentPaths: readonly string[] },
+  ) => Promise<void>;
 }
 
 const UNKNOWN_DELIVERY_REASON = "전달을 확인하지 못했습니다";
@@ -210,6 +214,40 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     await submitPending(sessionId, retrying);
   }, [args, submitPending]);
 
+  /**
+   * 전달 장부에서 실패로 닫힌 말풍선의 다시 보내기 (카드 #1524).
+   *
+   * 입력창의 초안·첨부는 건드리지 않는다. 보내는 중 표시는 기존 전송과 같은
+   * pending 칸이 만들고, 이미 전송 중인 칸이 있으면 기존 규칙대로 막는다.
+   */
+  const retryDelivery = useCallback(async (
+    sessionId: string,
+    message: { text: string; attachmentPaths: readonly string[] },
+  ) => {
+    if (sessionId !== args.activeSessionKey || args.isLlmFinished) return;
+    if (args.getPendingChatSend(sessionId)) return;
+    const text = message.text.trim();
+    const attachmentPaths = [...message.attachmentPaths];
+    if (!text && attachmentPaths.length === 0) return;
+    if (text.length > MAX_MESSAGE_LENGTH) {
+      setError(`메시지가 너무 깁니다 (${text.length}/${MAX_MESSAGE_LENGTH})`);
+      return;
+    }
+    const pending: PendingChatSend = {
+      id: globalThis.crypto.randomUUID(),
+      status: "sending",
+      text,
+      messageText: appendAttachmentPathNotes(text, attachmentPaths),
+      attachmentPaths,
+      attachments: [],
+      mode: args.isFinished ? "resume" : "intervention",
+      ...args.getMessageContext?.(text),
+    };
+    setError(null);
+    args.setPendingChatSend(sessionId, pending);
+    await submitPending(sessionId, pending);
+  }, [args, submitPending]);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -218,5 +256,5 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
     setError(null);
   }, []);
 
-  return { sending, error, reset, send, retry };
+  return { sending, error, reset, send, retry, retryDelivery };
 }

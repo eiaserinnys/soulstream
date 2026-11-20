@@ -6,6 +6,7 @@ import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { ContextBlock } from "./ContextBlock";
+import { DeliveryFailureBlock, type DeliveryFailureActions } from "./DeliveryFailureBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
 import { extractCallerAvatarUrl } from "./userAvatarSelectors";
 import { computeInterventionDisplay } from "./InterventionMessage.helpers";
@@ -21,7 +22,7 @@ import { computeInterventionDisplay } from "./InterventionMessage.helpers";
  * InterventionMessage.helpers의 computeInterventionDisplay로 추출 (design-principles
  * §1 깊이 + §10 인터페이스가 테스트 표면).
  */
-export const InterventionMessage = memo(function InterventionMessage({ msg, presentation = "default", attachments }: { msg: ChatMessage; presentation?: "default" | "manuscript"; attachments?: ReactNode }) {
+export const InterventionMessage = memo(function InterventionMessage({ msg, presentation = "default", attachments, deliveryFailure }: { msg: ChatMessage; presentation?: "default" | "manuscript"; attachments?: ReactNode; deliveryFailure?: DeliveryFailureActions }) {
   // 세션-수준 caller_info avatar_url — 메시지 단위 caller_info 부재 시 fallback.
   const callerAvatarUrl = useChatStore((s) =>
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
@@ -51,6 +52,13 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
             세 경로 모두 동일 UX 표면. */}
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} variant={manuscript ? "caption" : "default"} />
+        )}
+        {deliveryFailure && (
+          <DeliveryFailureBlock
+            manuscript={manuscript}
+            onRetry={deliveryFailure.onRetry}
+            onRestore={deliveryFailure.onRestore}
+          />
         )}
       </div>
       {!manuscript && <ProfileAvatar

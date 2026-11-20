@@ -80,6 +80,13 @@ export interface UseChatSendFlowResult {
    * @param flowId 입력창 비우기 전 현재 compose flow ID.
    */
   handleSend: (text: string, onCleared: () => void, flowId?: string | null) => Promise<void>;
+  /**
+   * 전달 장부에서 실패로 닫힌 말풍선의 글을 같은 세션으로 다시 보낸다.
+   * 입력창·대기 첨부는 건드리지 않고, 기존 전송과 같은 pending 칸으로 보내는 중을 표시한다.
+   */
+  retryFailedDelivery: (
+    message: { text: string; attachmentPaths: readonly string[] },
+  ) => Promise<void>;
 }
 
 export const CHAT_SEND_ERROR_MESSAGES = {
@@ -203,6 +210,58 @@ export function useChatSendFlow(
     await sendPendingOptimistic(optimistic);
   }
 
+  async function retryFailedDelivery(
+    message: { text: string; attachmentPaths: readonly string[] },
+  ): Promise<void> {
+    const msg = message.text.trim();
+    const paths = message.attachmentPaths.filter(
+      (path, index, all) => path.length > 0 && all.indexOf(path) === index,
+    );
+    if (!attachmentsReady || (!msg && paths.length === 0)) return;
+    if (!api) {
+      setSendError(CHAT_SEND_ERROR_MESSAGES.apiUnavailable);
+      return;
+    }
+    if (!sessionId) {
+      setSendError(CHAT_SEND_ERROR_MESSAGES.sessionUnavailable);
+      return;
+    }
+    if (useChatStore.getState().pendingOptimisticBySession[sessionId]?.pendingStatus) {
+      return;
+    }
+    if (disabledRef.current) {
+      setSendError(CHAT_SEND_ERROR_MESSAGES.disabled);
+      return;
+    }
+    setSendError(null);
+    const messageText = appendAttachmentPathNotes(
+      msg,
+      paths.length > 0 ? paths : undefined,
+    );
+    const attachmentItems = paths.map((path) => ({ path }));
+    const variant = pickOptimisticVariant(session?.status);
+    const optimisticEvent = createOptimisticUserEvent(messageText, variant);
+    const optimistic: PendingOptimisticEvent = {
+      ...optimisticEvent,
+      data: {
+        ...optimisticEvent.data,
+        ...(paths.length > 0 ? { attachments: paths } : {}),
+        ...(session?.nodeId ? { node_id: session.nodeId } : {}),
+      },
+      pendingStatus: 'sending',
+      originalText: message.text,
+      attachmentItems,
+      ...getMessageContext?.(message.text),
+    };
+    useChatStore.getState().setPendingOptimistic(sessionId, optimistic, true);
+    scrollToBottom();
+    reportUsage(onUsageEvent, {
+      kind: 'submit',
+      draftLength: message.text.length,
+    });
+    await sendPendingOptimistic(optimistic);
+  }
+
   async function retryPendingOptimistic(eventId: string): Promise<void> {
     if (!api || !sessionId) return;
     const pending = useChatStore.getState().pendingOptimisticBySession[sessionId];
@@ -299,6 +358,7 @@ export function useChatSendFlow(
     handleSend,
     retryPendingOptimistic,
     restorePendingOptimistic,
+    retryFailedDelivery,
   };
 }
 

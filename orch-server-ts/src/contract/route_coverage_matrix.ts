@@ -197,6 +197,7 @@ export const tsOnlyRouteKeys = [
 
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
+  "GET /api/sessions/{session_id}/delivery-failures",
   "GET /api/sessions/{session_id}/events/{event_id}",
   "GET /api/sessions/{session_id}/events/{event_id}/attachments",
   "GET /api/sessions/{session_id}/resume-after-limit",

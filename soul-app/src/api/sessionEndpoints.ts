@@ -78,6 +78,12 @@ export interface ScheduleResumeAfterLimitResponse {
   reused: boolean;
 }
 
+export interface SessionDeliveryFailure {
+  input_id: string;
+  reason: string | null;
+  failed_at: string | null;
+}
+
 export function createSessionEndpoints({
   base,
   authFetch,
@@ -95,6 +101,16 @@ export function createSessionEndpoints({
       if (response.status === 404) return null;
       return readJson<SessionStoryResponse>(response, 'getSessionStory');
     },
+
+    /** 카드 #1524: 전달 장부에서 사람 발신이 실패로 닫힌 목록 (최신순, 최대 100). */
+    getDeliveryFailures: (
+      sessionId: string,
+      signal?: AbortSignal,
+    ): Promise<SessionDeliveryFailure[]> =>
+      authFetch(
+        `${base}/api/sessions/${encodeURIComponent(sessionId)}/delivery-failures`,
+        signal ? { signal } : undefined,
+      ).then((r) => readJson(r, 'getDeliveryFailures')),
 
     // 세션 과거 메시지 페이지네이션 조회.
     getMessages: (

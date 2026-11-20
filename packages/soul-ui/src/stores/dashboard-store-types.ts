@@ -171,6 +171,15 @@ export interface DashboardState {
   /** HTTP 응답과 서버 사용자 이벤트 사이의 세션별 임시 전송 한 칸. persist 대상이 아니다. */
   pendingChatSends: Record<string, PendingChatSend>;
 
+  /**
+   * 전달 장부에서 dead_letter로 닫힌 사람 발신 메시지의 input_id -> 실패 사유.
+   * 말풍선 실패 표시의 정본이며, 서버 조회로만 채운다(카드 #1524).
+   */
+  deliveryFailuresBySession: Record<string, Record<string, string>>;
+
+  /** 전역 스트림·재연결이 그 세션의 실패 목록을 다시 읽으라고 알린 횟수. */
+  deliveryFailureRefreshBySession: Record<string, number>;
+
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
 
@@ -346,6 +355,10 @@ export interface DashboardActions {
 
   // 전송 중 메시지
   setPendingChatSend: (sessionId: string, pending: PendingChatSend | null) => void;
+
+  // 전달 실패 목록 (카드 #1524)
+  setDeliveryFailures: (sessionId: string, failures: Record<string, string>) => void;
+  requestDeliveryFailureRefresh: (sessionId: string) => void;
 
   // prompt_suggestion (chip) 저장/삭제
   setPromptSuggestion: (sessionId: string, text: string | null) => void;

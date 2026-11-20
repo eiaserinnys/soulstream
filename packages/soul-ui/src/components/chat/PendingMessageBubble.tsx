@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
-import { Button } from "../ui/button";
+import { DeliveryFailureBlock } from "./DeliveryFailureBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
 
 export const PendingMessageBubble = memo(function PendingMessageBubble({
@@ -38,29 +38,12 @@ export const PendingMessageBubble = memo(function PendingMessageBubble({
             보내는 중
           </div>
         ) : (
-          <>
-            <div className={manuscript ? "mt-1 text-right text-xs text-destructive" : "mt-1 text-right text-xs text-white/90"} role="status">
-              {pending.reason}
-            </div>
-            <div className="mt-2 flex justify-end gap-2">
-              <Button
-                size="sm"
-                variant="glass"
-                className={manuscript ? "text-foreground" : "border-white/30 text-white hover:bg-white/15 hover:text-white"}
-                onClick={() => onRetry(sessionId, pending)}
-              >
-                다시 보내기
-              </Button>
-              <Button
-                size="sm"
-                variant="glass"
-                className={manuscript ? "text-foreground" : "border-white/30 text-white hover:bg-white/15 hover:text-white"}
-                onClick={() => onRestore(sessionId, pending)}
-              >
-                입력창으로
-              </Button>
-            </div>
-          </>
+          <DeliveryFailureBlock
+            text={pending.reason}
+            manuscript={manuscript}
+            onRetry={() => onRetry(sessionId, pending)}
+            onRestore={() => onRestore(sessionId, pending)}
+          />
         )}
       </div>
     </div>

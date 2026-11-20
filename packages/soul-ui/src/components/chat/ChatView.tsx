@@ -27,6 +27,7 @@ import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreA
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectPersistentWorkDetails } from "../../lib/persistent-work-details-projection";
 import { projectChatOutputAttachments } from "../../lib/chat-output-attachment-projection";
+import { fetchDeliveryFailures } from "../../lib/delivery-failures";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
 import {
@@ -168,6 +169,13 @@ function ChatViewContent({
   const pendingChatSend = useDashboardStore((s) => (
     activeSessionKey ? s.pendingChatSends[activeSessionKey] : undefined
   ));
+  const deliveryFailures = useDashboardStore((s) => (
+    activeSessionKey ? s.deliveryFailuresBySession[activeSessionKey] : undefined
+  ));
+  const deliveryFailureRefresh = useDashboardStore((s) => (
+    activeSessionKey ? s.deliveryFailureRefreshBySession[activeSessionKey] ?? 0 : 0
+  ));
+  const setDeliveryFailures = useDashboardStore((s) => s.setDeliveryFailures);
   const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
   const requestedFocusEventId = useChatStore((s) => (
     s.focusEventSessionId === null || s.focusEventSessionId === s.activeSessionKey
@@ -197,6 +205,16 @@ function ChatViewContent({
   const handlePendingRestore = useCallback((pending: PendingChatSend) => {
     if (activeSessionKey) {
       pendingSendActionsRef.current?.restore(activeSessionKey, pending);
+    }
+  }, [activeSessionKey]);
+  const handleRetryDelivery = useCallback((message: { text: string; attachmentPaths: readonly string[] }) => {
+    if (activeSessionKey) {
+      pendingSendActionsRef.current?.retryDelivery(activeSessionKey, message);
+    }
+  }, [activeSessionKey]);
+  const handleRestoreDelivery = useCallback((text: string) => {
+    if (activeSessionKey) {
+      pendingSendActionsRef.current?.restoreDelivery(activeSessionKey, text);
     }
   }, [activeSessionKey]);
   const setFocusEventId = useChatStore((s) => s.setFocusEventId);
@@ -625,6 +643,22 @@ function ChatViewContent({
   ]);
   const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled && transcriptFallback == null, isManuscript);
   requestOlderRef.current = history.requestOlder;
+
+  // 카드 #1524: 사람 발신 전달 실패 목록을 채팅 열림(첫 history fetch)·세션 SSE
+  // 재연결(historyEnabled false→true)·전역 session_delivery_failed 신호에서 다시 읽는다.
+  // 응답이 늦게 와 세션이 바뀌었으면 그 응답은 버린다.
+  useEffect(() => {
+    if (!activeSessionKey || !historyEnabled) return;
+    let cancelled = false;
+    void fetchDeliveryFailures(activeSessionKey)
+      .then((failures) => {
+        if (!cancelled) setDeliveryFailures(activeSessionKey, failures);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionKey, historyEnabled, deliveryFailureRefresh, setDeliveryFailures]);
   useEffect(() => {
     if (focusHistoryCrawlRef.current.requestId !== focusEventRequestId) {
       focusHistoryCrawlRef.current = { requestId: focusEventRequestId, pagesRequested: 0 };
@@ -1037,6 +1071,9 @@ function ChatViewContent({
                 onToolGroupExpandedChange={handleToolGroupExpansionChange}
                 onRetryPending={handlePendingRetry}
                 onRestorePending={handlePendingRestore}
+                deliveryFailures={deliveryFailures}
+                onRetryDelivery={handleRetryDelivery}
+                onRestoreDelivery={handleRestoreDelivery}
               />
             </div>
           );

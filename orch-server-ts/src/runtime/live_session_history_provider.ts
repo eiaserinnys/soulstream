@@ -1,6 +1,8 @@
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import { readSessionConversation } from "../session/session_conversation_projection.js";
 import type {
+  SessionDeliveryFailureRecord,
   SessionHistoryEventRecord,
   SessionHistoryProvider,
   SessionHistoryRawEvent,
@@ -194,6 +196,38 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     query: Parameters<SessionTurnSummaryReadService["read"]>[1],
   ) {
     return this.turnSummaryReader.read(sessionId, query);
+  }
+
+  /**
+   * 사람이 웹이나 앱에서 보낸 글(human_live_steer)이 dead_letter로 닫힌 행만
+   * 최근 것부터 돌려준다. 에이전트 발신(caller_info.source=agent)은 사람 화면에
+   * 실패로 보이면 안 되므로 뺀다. input_id는 이벤트 payload의 input_id와 같은
+   * 계산(buildDeliveryInputUuid)으로 만든다.
+   */
+  async readDeliveryFailures(
+    sessionId: string,
+  ): Promise<SessionDeliveryFailureRecord[]> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<Array<{
+      readonly delivery_id: string;
+      readonly dead_letter_reason: string | null;
+      readonly last_error: string | null;
+      readonly dead_lettered_at: Date | null;
+    }>>`
+      SELECT delivery_id, dead_letter_reason, last_error, dead_lettered_at
+      FROM session_deliveries
+      WHERE target_session_id = ${sessionId}
+        AND intent = 'human_live_steer'
+        AND aggregate_state = 'dead_letter'
+        AND (payload->'caller_info'->>'source') IS DISTINCT FROM 'agent'
+      ORDER BY COALESCE(dead_lettered_at, updated_at) DESC
+      LIMIT 100
+    `;
+    return rows.map((row) => ({
+      input_id: buildDeliveryInputUuid(row.delivery_id),
+      reason: row.dead_letter_reason ?? row.last_error,
+      failed_at: row.dead_lettered_at,
+    }));
   }
 
   async readLastEventId(sessionId: string): Promise<number> {

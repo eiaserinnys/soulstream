@@ -8,6 +8,7 @@ import {
 } from '../lib/session-attention';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useChatStore } from '../store/chatStore';
 import type { PersistentReportBaseline } from '../store/sessionStore';
 import { useSSEStream, CATALOG_STREAM_EVENTS } from './useSSEStream';
 import { plannerSourceForStreamEvent } from '../lib/planner-invalidation';
@@ -364,6 +365,12 @@ export function useSessionsStream() {
           });
         }
         break;
+      case 'session_delivery_failed': {
+        // 열려 있는 채팅만 자기 세션 몫을 다시 읽는다. 닫힌 세션은 열 때 첫 조회가 덮는다.
+        const sessionId = data?.agent_session_id as string | undefined;
+        if (sessionId) useChatStore.getState().requestDeliveryFailureRefresh(sessionId);
+        break;
+      }
     }
     const plannerSource = plannerSourceForStreamEvent(type);
     if (plannerSource) usePlannerStore.getState().invalidate(plannerSource);

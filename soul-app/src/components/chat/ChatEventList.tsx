@@ -61,6 +61,8 @@ interface Props {
   items: ChatRenderItem[];
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
+  onRetryFailedDelivery?: (message: { text: string; attachmentPaths: readonly string[] }) => void;
+  onRestoreFailedDelivery?: (text: string) => void;
   session: ChatMessageSession | undefined;
   sessionId: string;
   api: { getTimelineTrace: (sessionId: string, timelineId: string) => Promise<ToolTraceResponse> } | null;
@@ -93,6 +95,8 @@ export const ChatEventList = memo(function ChatEventList({
   items,
   onRetryPending,
   onRestorePending,
+  onRetryFailedDelivery,
+  onRestoreFailedDelivery,
   session,
   sessionId,
   api,
@@ -136,13 +140,14 @@ export const ChatEventList = memo(function ChatEventList({
     return (
       <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' || item.kind === 'activity' ? session : undefined} sessionId={sessionId} api={api}
         onRetryPending={onRetryPending} onRestorePending={onRestorePending}
+        onRetryFailedDelivery={onRetryFailedDelivery} onRestoreFailedDelivery={onRestoreFailedDelivery}
         onOpenReportCard={onOpenReportCard}
         selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
         activeSelection={activeSelection}
         highlighted={highlighted} highlightedItemKey={highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
         presentation={presentation} narration={narration} />
     );
-  }, [items, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+  }, [items, session, sessionId, api, onRetryPending, onRestorePending, onRetryFailedDelivery, onRestoreFailedDelivery, onOpenReportCard, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   const list = (
     <FlatList
@@ -220,6 +225,8 @@ interface RowProps {
   api: Props['api'];
   onRetryPending: Props['onRetryPending'];
   onRestorePending: Props['onRestorePending'];
+  onRetryFailedDelivery: Props['onRetryFailedDelivery'];
+  onRestoreFailedDelivery: Props['onRestoreFailedDelivery'];
   onOpenReportCard?: Props['onOpenReportCard'];
   selection: MessageSelectionModel | null;
   activeSelection: { eventKey: string; model: MessageSelectionModel } | null;
@@ -232,7 +239,8 @@ interface RowProps {
 }
 
 const ChatEventRow = memo(function ChatEventRow({
-  item, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard,
+  item, session, sessionId, api, onRetryPending, onRestorePending,
+  onRetryFailedDelivery, onRestoreFailedDelivery, onOpenReportCard,
   selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation, narration,
 }: RowProps) {
   const t = useTokens();
@@ -251,6 +259,8 @@ const ChatEventRow = memo(function ChatEventRow({
               api={api}
               onRetryPending={onRetryPending}
               onRestorePending={onRestorePending}
+              onRetryFailedDelivery={onRetryFailedDelivery}
+              onRestoreFailedDelivery={onRestoreFailedDelivery}
               onOpenReportCard={onOpenReportCard}
               selection={activeSelection?.eventKey === eventItem.key ? activeSelection.model : null}
               activeSelection={activeSelection}
@@ -388,6 +398,8 @@ const ChatEventRow = memo(function ChatEventRow({
             session={session}
             onRetryPending={onRetryPending}
             onRestorePending={onRestorePending}
+            onRetryFailedDelivery={onRetryFailedDelivery}
+            onRestoreFailedDelivery={onRestoreFailedDelivery}
             presentation={presentation}
             narration={narration}
             selectionModel={

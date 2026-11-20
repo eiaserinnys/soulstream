@@ -23,7 +23,7 @@ import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderTodayToggle } from "./FolderTodayToggle";
 import { ComponentsReviewControls } from "./ComponentsReviewControls";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
-import { reviewCard, reviewCardItems, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewTitle } from "./components-review-fixtures";
+import { reviewCard, reviewCardItems, reviewDeliveryFailureMessages, reviewDetail, reviewFolder, reviewFolders, reviewNow, reviewSession, reviewTitle } from "./components-review-fixtures";
 import "./components-review.css";
 import { PostItCardSamples } from "./PostItCardSamples";
 import { ReadOnlyCardListSample } from "./ReadOnlyCardListSample";
@@ -114,6 +114,18 @@ function ExternalSenderSamples({ presentation }: { presentation: "default" | "ma
   </div>;
 }
 
+// 카드 #1524: 전달 장부 실패 표본. 앞의 두 말풍선만 실패 표시를 켜고 마지막은 대조군이다.
+function DeliveryFailureSamples() {
+  const failedIds = new Set(["review-delivery-failure-long", "review-delivery-failure-question"]);
+  return <div data-testid="review-delivery-failure-samples" style={{ minWidth: 0 }}>
+    {reviewDeliveryFailureMessages.map(msg => <div key={msg.id} data-testid={msg.id.replace(/^review-/, "review-sample-")}>
+      <UserMessage msg={msg} {...(failedIds.has(msg.id)
+        ? { deliveryFailure: { onRetry: () => {}, onRestore: () => {} } }
+        : {})} />
+    </div>)}
+  </div>;
+}
+
 export function ComponentsReviewPage() {
   const [title, setTitle] = useState("컴포넌트 검수");
   const [notice, setNotice] = useState("샘플을 눌러 비교합니다. 입력과 버튼은 이 페이지 안에서만 동작합니다.");
@@ -149,6 +161,7 @@ export function ComponentsReviewPage() {
   const sampleParams = new URLSearchParams(window.location.search);
   if (sampleParams.get('sample') === 'runtime-loading') return <RuntimeLoadingReviewSample />;
   if (sampleParams.get('sample') === 'external-sender') return <div className="v3-detail-pane v3-detail-pane--inline"><ExternalSenderSamples presentation={sampleParams.get('presentation') === 'manuscript' ? 'manuscript' : 'default'} /></div>;
+  if (sampleParams.get('sample') === 'delivery-failure') return <div className="v3-detail-pane v3-detail-pane--inline"><DeliveryFailureSamples /></div>;
   if (sampleParams.get('sample') === 'weekly-usage') return <div className="v3-detail-pane v3-detail-pane--inline">
     <p className="v3-components-label">PersistentSessionWeeklyUsage</p>
     <PersistentSessionWeeklyUsageReviewSample />
@@ -319,6 +332,7 @@ export function ComponentsReviewPage() {
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
             <Sample name="외부 발신자" state="기본과 원고"><ExternalSenderSamples presentation="default" /><ExternalSenderSamples presentation="manuscript" /></Sample>
+            <Sample name="전달 실패 말풍선" state="긴 문장 · ??? · 전달됨"><DeliveryFailureSamples /></Sample>
             <Sample name="PAS 카드 펼친 장" state="카드와 질문"><PersistentReportReviewSample cardPreview bubble /></Sample>
             <Sample name="PAS 카드 완료" state="검수 대기 · 완료 버튼"><PersistentReportReviewSample completionScenario="review" bubble /></Sample>
             <Sample name="PAS 막힘 카드" state="확인했어 유지"><PersistentReportReviewSample completionScenario="blocked" bubble /></Sample>

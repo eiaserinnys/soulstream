@@ -85,6 +85,8 @@ interface UseChatSseStreamOptions {
     data: unknown,
   ) => void;
   streamFailureRef: MutableRefObject<(error: unknown) => void>;
+  /** 상세 스트림이 새로 열릴 때(앱 foreground 복귀 포함) 호출된다. */
+  onStreamOpen?: () => void;
 }
 
 export function useChatSseStream({
@@ -106,6 +108,7 @@ export function useChatSseStream({
   finalizeStreamingEvent,
   applyClaudeRuntimeEvent,
   streamFailureRef,
+  onStreamOpen,
 }: UseChatSseStreamOptions): void {
   const ownsSessionConnectionRef = useRef(ownsSessionConnection);
   ownsSessionConnectionRef.current = ownsSessionConnection;
@@ -485,6 +488,7 @@ export function useChatSseStream({
       pendingCatchupQueueRef.current = [];
       isCatchingUpRef.current = true;
       resetRecoveryRefs();
+      onStreamOpen?.();
     },
     onEvent: processAcceptedEvent,
     onError: (err) => {

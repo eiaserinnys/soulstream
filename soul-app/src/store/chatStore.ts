@@ -166,6 +166,15 @@ interface ChatStore {
    */
   pendingOptimisticBySession: Record<string, PendingOptimisticEvent>;
   /**
+   * 전달 장부에서 dead_letter로 닫힌 사람 발신 메시지의 input_id -> 실패 사유.
+   * 서버 조회로만 채우며, 말풍선 실패 표시의 정본이다 (카드 #1524).
+   */
+  deliveryFailuresBySession: Record<string, Record<string, string>>;
+  /** 전역 스트림·상세 스트림 재연결이 그 세션의 실패 목록을 다시 읽으라고 알린 횟수. */
+  deliveryFailureRefreshBySession: Record<string, number>;
+  setDeliveryFailures: (sessionId: string, failures: Record<string, string>) => void;
+  requestDeliveryFailureRefresh: (sessionId: string) => void;
+  /**
    * 라이브 text_delta / thinking_delta 전용 임시 슬롯.
    *
    * 스트리밍 중 누적 텍스트는 events 배열에 매번 append하지 않는다. 세션별 슬롯에
@@ -503,6 +512,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   lastEventIdBySession: {},
   pendingFirstMessageBySession: {},
   pendingOptimisticBySession: {},
+  deliveryFailuresBySession: {},
+  deliveryFailureRefreshBySession: {},
   streamingSlotsBySession: {},
   claudeRuntimeBySession: {},
   mergeEvents: (sessionId, events) =>
@@ -911,6 +922,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     }),
+  setDeliveryFailures: (sessionId, failures) =>
+    set((state) => {
+      const current = state.deliveryFailuresBySession[sessionId];
+      const currentKeys = current ? Object.keys(current) : [];
+      const nextKeys = Object.keys(failures);
+      if (
+        current !== undefined
+        && currentKeys.length === nextKeys.length
+        && nextKeys.every((key) => current[key] === failures[key])
+      ) return state;
+      return {
+        deliveryFailuresBySession: {
+          ...state.deliveryFailuresBySession,
+          [sessionId]: failures,
+        },
+      };
+    }),
+  requestDeliveryFailureRefresh: (sessionId) =>
+    set((state) => ({
+      deliveryFailureRefreshBySession: {
+        ...state.deliveryFailureRefreshBySession,
+        [sessionId]: (state.deliveryFailureRefreshBySession[sessionId] ?? 0) + 1,
+      },
+    })),
   clearPendingOptimistic: (sessionId, expectedId) =>
     set((state) => {
       const current = state.pendingOptimisticBySession[sessionId];
@@ -969,12 +1004,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { [sessionId]: _e, ...restEvents } = state.eventsBySession;
       const { [sessionId]: _l, ...restIds } = state.lastEventIdBySession;
       const { [sessionId]: _o, ...restOpt } = state.pendingOptimisticBySession;
+      const { [sessionId]: _d, ...restDeliveryFailures } = state.deliveryFailuresBySession;
       const { [sessionId]: _s, ...restStreamingSlots } = state.streamingSlotsBySession;
       const { [sessionId]: _r, ...restRuntime } = state.claudeRuntimeBySession;
       return {
         eventsBySession: restEvents,
         lastEventIdBySession: restIds,
         pendingOptimisticBySession: restOpt,
+        deliveryFailuresBySession: restDeliveryFailures,
         streamingSlotsBySession: restStreamingSlots,
         claudeRuntimeBySession: restRuntime,
       };
@@ -990,6 +1027,8 @@ subscribeAuthScope(() => {
     lastEventIdBySession: {},
     pendingFirstMessageBySession: {},
     pendingOptimisticBySession: {},
+    deliveryFailuresBySession: {},
+    deliveryFailureRefreshBySession: {},
     streamingSlotsBySession: {},
     claudeRuntimeBySession: {},
   });

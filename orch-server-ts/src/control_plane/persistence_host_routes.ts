@@ -15,6 +15,11 @@ export interface PersistenceHostRouteOptions {
    * 넘긴다. 그 노드의 연결이 없으면 undefined를 돌려준다.
    */
   nodeConnectedAtMs?: (nodeId: string) => number | undefined;
+  /**
+   * 사람이 보낸 글(human_live_steer)이 전달 장부에서 dead_letter로 닫혔을 때
+   * 세션마다 한 번 부른다. 클라이언트는 그 세션의 실패 목록을 다시 읽는다.
+   */
+  onSessionDeliveryFailed?: (sessionId: string) => void;
 }
 
 type RepositoryKey = keyof PersistenceHostRepositories;
@@ -29,6 +34,17 @@ const RETRY_DELAY_ARG_INDEX = new Map<string, number>([
   ["defer_pending", 2],
   ["retry_delivery_attempt", 3],
   ["defer_queued_transcript_check", 3],
+]);
+
+/**
+ * 결과에서 사람 발신 dead_letter 행을 볼 수 있는 전달 연산. 나머지 연산은
+ * 실패를 만들지 않는다.
+ */
+const DELIVERY_FAILURE_OPERATIONS = new Set([
+  "mark_uncertain",
+  "defer_pending",
+  "retry_delivery_attempt",
+  "expire_stale_delivery_attempts",
 ]);
 
 const deliveryOperations = {
@@ -206,6 +222,18 @@ function registerDomain(
       const routedArgs = request.params.operation === "claim_queued_after_node_restart"
         ? withRestartClaimCutoff(args, options.nodeConnectedAtMs)
         : args;
+      // 사람이 보낸 글이 dead_letter로 닫히면 그 세션을 열고 있는 클라이언트가
+      // 바로 알아야 한다. 커밋이 끝난 뒤(호출 반환 뒤) 세션마다 한 번 알린다.
+      const deliveryFailureCollector = options.onSessionDeliveryFailed !== undefined
+        && domain === "session-deliveries"
+        && DELIVERY_FAILURE_OPERATIONS.has(request.params.operation)
+        ? createDeliveryFailureCollector(options.onSessionDeliveryFailed)
+        : undefined;
+      const invokeArgs = deliveryFailureCollector !== undefined
+        && request.params.operation === "expire_stale_delivery_attempts"
+        // 이 연산은 결과가 개수(number)뿐이라 관찰자 인자로 마감된 행을 받는다.
+        ? [...routedArgs, deliveryFailureCollector.observe]
+        : routedArgs;
       const isCancellableOperation = domain === "session-data"
         && [
           "event_search", "event_session_id_search", "digest_search", "history_search",
@@ -228,9 +256,15 @@ function registerDomain(
           repositories,
           target,
           abortController
-            ? withAbortSignal(request.params.operation, routedArgs, abortController.signal)
-            : routedArgs,
+            ? withAbortSignal(request.params.operation, invokeArgs, abortController.signal)
+            : invokeArgs,
         );
+        if (deliveryFailureCollector !== undefined) {
+          for (const row of deliveryResultRows(result)) {
+            deliveryFailureCollector.observe(row);
+          }
+          deliveryFailureCollector.notifyAll();
+        }
         return sendTimed(request, reply, timing, 200, () =>
           reply.type("application/json").send(JSON.stringify(result ?? null)));
       } catch (error) {
@@ -403,6 +437,53 @@ function isDateValue(value: string, key?: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
   if (key === undefined) return true;
   return /(?:At|Before|Until|ExpiresAt)$/.test(key) && key !== "timestamp";
+}
+
+type DeliveryFailureCollector = {
+  observe: (row: unknown) => void;
+  notifyAll: () => void;
+};
+
+function createDeliveryFailureCollector(
+  onSessionDeliveryFailed: (sessionId: string) => void,
+): DeliveryFailureCollector {
+  const sessionIds = new Set<string>();
+  return {
+    observe: (row) => {
+      const sessionId = humanDeadLetterSessionId(row);
+      if (sessionId !== null) sessionIds.add(sessionId);
+    },
+    notifyAll: () => {
+      for (const sessionId of sessionIds) onSessionDeliveryFailed(sessionId);
+    },
+  };
+}
+
+/**
+ * 사람이 보낸 글(human_live_steer)이 전달 장부에서 dead_letter로 닫힌 행인가.
+ * 에이전트 발신(caller_info.source=agent)은 사람 화면에 실패로 보이면 안 되므로
+ * 뺀다. 대상 세션이 비어 있으면(삭제로 target이 비워진 줄) 알릴 곳이 없다.
+ */
+function humanDeadLetterSessionId(row: unknown): string | null {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const record = row as Record<string, unknown>;
+  if (record.intent !== "human_live_steer") return null;
+  if (record.aggregate_state !== "dead_letter") return null;
+  const sessionId = record.target_session_id;
+  if (typeof sessionId !== "string" || sessionId.length === 0) return null;
+  const payload = record.payload;
+  const callerInfo = payload !== null && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>).caller_info
+    : null;
+  const source = callerInfo !== null && typeof callerInfo === "object" && !Array.isArray(callerInfo)
+    ? (callerInfo as Record<string, unknown>).source
+    : undefined;
+  return source === "agent" ? null : sessionId;
+}
+
+function deliveryResultRows(result: unknown): unknown[] {
+  if (Array.isArray(result)) return result;
+  return result !== null && typeof result === "object" ? [result] : [];
 }
 
 function errorReply(reply: FastifyReply, status: number, code: string, message: string) {

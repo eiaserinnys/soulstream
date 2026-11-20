@@ -155,7 +155,7 @@ export function ChatInput({
   const canSendAttachmentOnly = Boolean(effectiveFileUploadUrl && isReady && uploadedPaths.length > 0);
 
   // submit 디스패처 훅 — sending / error / abort 관리 + 전략 호출
-  const { sending, error, reset, send, retry } = useChatInputSend({
+  const { sending, error, reset, send, retry, retryDelivery } = useChatInputSend({
     activeSessionKey,
     tree,
     flattenMessages,
@@ -226,15 +226,31 @@ export function ChatInput({
     })));
   }, [activeSessionKey, restoreUploadedFiles, setDraft, setPendingChatSend]);
 
+  /** 전달 실패 말풍선의 글을 입력창으로 옮긴다. 입력창의 첨부는 건드리지 않는다. */
+  const restoreDeliveryText = useCallback((sessionId: string, failedText: string) => {
+    if (sessionId !== activeSessionKey || failedText.length === 0) return;
+    const restoredText = mergePendingTextIntoComposer(failedText, textRef.current);
+    clearGeneratedUndo();
+    textRef.current = restoredText;
+    setText(restoredText);
+    setDraft(sessionId, restoredText);
+    // clearGeneratedUndo는 useGeneratedTextActions(아래)에서 오므로 deps에 넣으면 선언 전 참조가 된다.
+    // restorePendingSend와 같은 이유로 deps에서 뺀다 — ref 기반이라 stale 참조가 무해하다.
+  }, [activeSessionKey, setDraft]);
+
   useEffect(() => {
     registerPendingSendActions?.({
       retry: (sessionId, pending) => {
         void retry(sessionId, pending);
       },
       restore: restorePendingSend,
+      retryDelivery: (sessionId, message) => {
+        void retryDelivery(sessionId, message);
+      },
+      restoreDelivery: restoreDeliveryText,
     });
     return () => registerPendingSendActions?.(null);
-  }, [registerPendingSendActions, restorePendingSend, retry]);
+  }, [registerPendingSendActions, restorePendingSend, retry, retryDelivery, restoreDeliveryText]);
 
   // 세션 변경 시 상태 초기화 & in-flight 요청 취소
   useEffect(() => {

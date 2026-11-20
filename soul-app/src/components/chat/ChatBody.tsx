@@ -134,6 +134,11 @@ export function ChatBody({
   const pendingOptimistic = useChatStore((s) =>
     sessionId ? s.pendingOptimisticBySession[sessionId] : undefined,
   );
+  const deliveryFailureRefresh = useChatStore((s) =>
+    sessionId ? s.deliveryFailureRefreshBySession[sessionId] ?? 0 : 0,
+  );
+  const setDeliveryFailures = useChatStore((s) => s.setDeliveryFailures);
+  const requestDeliveryFailureRefresh = useChatStore((s) => s.requestDeliveryFailureRefresh);
   const mergeEvents = useChatStore((s) => s.mergeEvents);
   const setLastEventId = useChatStore((s) => s.setLastEventId);
   const setStreamingEvent = useChatStore((s) => s.setStreamingEvent);
@@ -184,6 +189,15 @@ export function ChatBody({
     composerRef.current?.appendGeneratedText(targetSessionId, text, reportReply) ?? { ok: false, reason: 'not_ready' }, []);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
   const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
+  const handleRetryFailedDelivery = useCallback(
+    (message: { text: string; attachmentPaths: readonly string[] }) =>
+      composerRef.current?.retryFailedDelivery(message),
+    [],
+  );
+  const handleRestoreFailedDelivery = useCallback(
+    (text: string) => composerRef.current?.restoreFailedDelivery(text),
+    [],
+  );
 
   // FlatList ref — history pagination과 bottom follow가 같은 viewport를 제어한다.
   const flatListRef = useRef<FlatList<ChatRenderItem>>(null);
@@ -208,6 +222,31 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
+
+  // 카드 #1524: 사람 발신 전달 실패 목록은 채팅 열림(상세 네트워크 활성)·앱 foreground
+  // 복귀·상세 SSE 재연결·전역 session_delivery_failed 신호에서 다시 읽는다.
+  useEffect(() => {
+    if (!api || !sessionId || !detailedNetworkActive) return;
+    let cancelled = false;
+    void api.getDeliveryFailures(sessionId)
+      .then((rows) => {
+        if (cancelled) return;
+        const failures: Record<string, string> = {};
+        for (const row of rows) {
+          if (typeof row?.input_id !== 'string' || row.input_id.length === 0) continue;
+          failures[row.input_id] = typeof row.reason === 'string' ? row.reason : '';
+        }
+        setDeliveryFailures(sessionId, failures);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, sessionId, detailedNetworkActive, deliveryFailureRefresh, setDeliveryFailures]);
+
+  const handleChatStreamOpen = useCallback(() => {
+    if (sessionId) requestDeliveryFailureRefresh(sessionId);
+  }, [sessionId, requestDeliveryFailureRefresh]);
   const { persistentDisplaySettings, turnUsageMode } = usePersistentChatDisplaySettings(
     api, detailedNetworkActive, sessionId, ownsSessionConnection,
   );
@@ -346,6 +385,7 @@ export function ChatBody({
     finalizeStreamingEvent,
     applyClaudeRuntimeEvent,
     streamFailureRef: detailStreamFailureRef,
+    onStreamOpen: handleChatStreamOpen,
   });
 
   const { reversedItems, bottomFollowItemKey } = useChatRenderItems({
@@ -496,6 +536,8 @@ export function ChatBody({
         items={reversedItems}
         onRetryPending={handleRetryPending}
         onRestorePending={handleRestorePending}
+        onRetryFailedDelivery={handleRetryFailedDelivery}
+        onRestoreFailedDelivery={handleRestoreFailedDelivery}
         session={messageSession}
         sessionId={sessionId}
         api={api}
