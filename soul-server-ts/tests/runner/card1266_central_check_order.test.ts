@@ -5,7 +5,7 @@ import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_LOOKUPS,
   type RunnerCentralCheckFacts,
-} from "../../src/runner/state/runner_central_check_machine.js";
+} from "../../src/runner/state/runner_central_check_decision.js";
 
 function check(facts: Partial<RunnerCentralCheckFacts>) {
   return decideRunnerCentralCheck({

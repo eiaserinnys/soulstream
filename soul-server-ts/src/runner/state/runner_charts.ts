@@ -5,21 +5,19 @@ import {
   RUNNER_ADOPT_RESPONSES,
   RUNNER_CENTRAL_CHECK_DECISIONS,
   RUNNER_CENTRAL_LOOKUPS,
-  runnerCentralCheckMachine,
   type RunnerAdoptResponse,
   type RunnerCentralCheckDecision,
   type RunnerCentralLookup,
-} from "./runner_central_check_machine.js";
+} from "./runner_central_check_decision.js";
 import { decideRunnerHandle } from "./runner_handle_decision.js";
 import {
   RUNNER_HANDLE_ACTIONS,
   RUNNER_HANDLE_ATTACHED_TERMINAL_STATES,
   RUNNER_HANDLE_BACKGROUND_STATES,
   RUNNER_HANDLE_RETENTION_STATES,
-  runnerHandleMachine,
   type RunnerHandleAction,
   type RunnerHandleFacts,
-} from "./runner_handle_machine.js";
+} from "./runner_handle_decision.js";
 import { decideRunnerLifecycleStep } from "./runner_lifecycle_decision.js";
 import {
   RUNNER_LIFECYCLE_STATES,
@@ -279,27 +277,8 @@ export function runnerHandleDecisionTable(): RunnerHandleDecisionRow[] {
   return rows;
 }
 
-/**
- * 복구 처리 기계 정의에서 조치 순서를 낸다. 문서와 정의가 어긋나지 않게 한다.
- */
 export function runnerHandleActionOrder(): RunnerHandleAction[] {
-  const state = runnerHandleMachine.root.states.decide;
-  type Verdict = { params?: { action?: RunnerHandleAction } };
-  const transitions = state?.on?.HANDLE as unknown as Array<{
-    actions?: Verdict | Verdict[];
-  }> | undefined;
-  if (!transitions) throw new Error("runner handle machine has no HANDLE transitions");
-  return transitions.map((transition) => {
-    const actions = Array.isArray(transition.actions)
-      ? transition.actions
-      : transition.actions
-        ? [transition.actions]
-        : [];
-    const action = actions.find((candidate) => candidate.params?.action)
-      ?.params?.action;
-    if (!action) throw new Error("runner handle transition has no action verdict");
-    return action;
-  });
+  return [...RUNNER_HANDLE_ACTIONS];
 }
 
 interface ChartPlan {

@@ -1,31 +1,59 @@
-import { transition } from "xstate";
-
 import {
   TERMINAL_ADOPT_REJECTION_REASONS,
   classifyRunnerAdoptRejection,
 } from "../../task/state/node_adopt_rejection.js";
-import {
-  runnerCentralCheckMachine,
-  type RunnerAdoptResponse,
-  type RunnerCentralCheckDecision,
-  type RunnerCentralCheckFacts,
-} from "./runner_central_check_machine.js";
 
-interface VerdictAction {
-  type: "verdict";
-  params: { decision: RunnerCentralCheckDecision };
+export type RunnerCentralLookup =
+  | "missing"
+  | "lookup_error"
+  | "owner_node_changed"
+  | "active"
+  | "inactive";
+
+export type RunnerAdoptResponse =
+  | "none"
+  | "retryable_rejection"
+  | "terminal_rejection";
+
+export type RunnerCentralCheckDecision =
+  | "reap"
+  | "adopt"
+  | "keep"
+  | "keep_retry";
+
+export interface RunnerCentralCheckFacts {
+  lookup: RunnerCentralLookup;
+  terminalRetained: boolean;
+  registrationAppliedAndTurnRunning: boolean;
+  adoptResponse: RunnerAdoptResponse;
 }
 
-/** 사유 분류의 정본은 task/state다. 기존 호출자를 위해 다시 내보낸다. */
+export const RUNNER_CENTRAL_LOOKUPS: readonly RunnerCentralLookup[] = [
+  "missing",
+  "lookup_error",
+  "owner_node_changed",
+  "active",
+  "inactive",
+];
+
+export const RUNNER_ADOPT_RESPONSES: readonly RunnerAdoptResponse[] = [
+  "none",
+  "retryable_rejection",
+  "terminal_rejection",
+];
+
+export const RUNNER_CENTRAL_CHECK_DECISIONS: readonly RunnerCentralCheckDecision[] = [
+  "reap",
+  "adopt",
+  "keep",
+  "keep_retry",
+];
+
 export { TERMINAL_ADOPT_REJECTION_REASONS, classifyRunnerAdoptRejection };
 
 export const RUNNER_CENTRAL_RETRY_BASE_MS = 15_000;
 export const RUNNER_CENTRAL_RETRY_MAX_MS = 300_000;
 
-/**
- * 다시 될 수 있는 거절 뒤 다음 판정까지의 간격이다.
- * 15초에서 시작해 두 배씩 늘고 5분에서 멈춘다.
- */
 export function runnerCentralRetryDelayMs(attempt: number): number {
   const exponent = Math.max(0, Math.floor(attempt) - 1);
   return Math.min(
@@ -34,25 +62,24 @@ export function runnerCentralRetryDelayMs(attempt: number): number {
   );
 }
 
-/**
- * 중앙 확인 판정을 기계 정의에서 낸다. 판정이 없으면 빈 칸이므로 던진다.
- */
 export function decideRunnerCentralCheck(
   facts: RunnerCentralCheckFacts,
 ): RunnerCentralCheckDecision {
-  const snapshot = runnerCentralCheckMachine.resolveState({
-    value: "decide",
-    context: {},
-  });
-  const [, actions] = transition(runnerCentralCheckMachine, snapshot, {
-    type: "CHECK",
-    ...facts,
-  });
-  const verdict = (actions as { type: string; params?: unknown }[]).find(
-    (action) => action.type === "verdict",
-  ) as VerdictAction | undefined;
-  if (verdict === undefined) {
-    throw new Error(`runner central check decision missing: ${JSON.stringify(facts)}`);
+  if (facts.lookup === "missing") return "reap";
+  if (facts.lookup === "owner_node_changed") return "reap";
+  if (facts.adoptResponse === "terminal_rejection" && facts.terminalRetained) {
+    return "keep";
   }
-  return verdict.params.decision;
+  if (facts.adoptResponse === "terminal_rejection") return "reap";
+  if (facts.lookup === "lookup_error") return "keep";
+  if (facts.lookup === "active") return "keep";
+  if (facts.adoptResponse === "retryable_rejection") return "keep_retry";
+  if (facts.lookup === "inactive" && facts.terminalRetained) return "keep";
+  if (
+    facts.lookup === "inactive"
+    && !facts.terminalRetained
+    && facts.registrationAppliedAndTurnRunning
+  ) return "adopt";
+  if (facts.lookup === "inactive") return "keep";
+  throw new Error(`runner central check decision missing: ${JSON.stringify(facts)}`);
 }

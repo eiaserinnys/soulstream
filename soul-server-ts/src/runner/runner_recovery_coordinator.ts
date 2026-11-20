@@ -43,16 +43,14 @@ import {
   classifyRunnerAdoptRejection,
   decideRunnerCentralCheck,
   runnerCentralRetryDelayMs,
+  type RunnerAdoptResponse,
+  type RunnerCentralCheckDecision,
+  type RunnerCentralLookup,
 } from "./state/runner_central_check_decision.js";
-import type {
-  RunnerAdoptResponse,
-  RunnerCentralCheckDecision,
-  RunnerCentralLookup,
-} from "./state/runner_central_check_machine.js";
 import { decideRunnerHandle } from "./state/runner_handle_decision.js";
 import type {
   RunnerHandleFacts,
-} from "./state/runner_handle_machine.js";
+} from "./state/runner_handle_decision.js";
 import type {
   RunnerAdoptionApplication,
 } from "../task/runner_adoption_rejected_error.js";

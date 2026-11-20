@@ -16,9 +16,9 @@ import type { NodeRequestDisposition, NodeRequestKind } from "../../../../src/ta
 import { decideNodeResponse, type NodeResponseDecision } from "../../../../src/task/state/node_response_decision.js";
 import type { NodeResponseFacts } from "../../../../src/task/state/node_response_machine.js";
 import { decideRunnerCentralCheck } from "../../../../src/runner/state/runner_central_check_decision.js";
-import type { RunnerCentralCheckDecision, RunnerCentralCheckFacts } from "../../../../src/runner/state/runner_central_check_machine.js";
+import type { RunnerCentralCheckDecision, RunnerCentralCheckFacts } from "../../../../src/runner/state/runner_central_check_decision.js";
 import { decideRunnerHandle } from "../../../../src/runner/state/runner_handle_decision.js";
-import type { RunnerHandleAction, RunnerHandleFacts } from "../../../../src/runner/state/runner_handle_machine.js";
+import type { RunnerHandleAction, RunnerHandleFacts } from "../../../../src/runner/state/runner_handle_decision.js";
 import { decideRunnerLifecycleStep } from "../../../../src/runner/state/runner_lifecycle_decision.js";
 import type {
   RunnerLifecycleDecision,

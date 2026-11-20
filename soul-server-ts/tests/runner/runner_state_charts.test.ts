@@ -24,14 +24,14 @@ import {
   RUNNER_CENTRAL_LOOKUPS,
   type RunnerCentralCheckDecision,
   type RunnerCentralCheckFacts,
-} from "../../src/runner/state/runner_central_check_machine.js";
+} from "../../src/runner/state/runner_central_check_decision.js";
 import { decideRunnerCentralCheck } from "../../src/runner/state/runner_central_check_decision.js";
 import {
   RUNNER_HANDLE_ACTIONS,
   RUNNER_HANDLE_ATTACHED_TERMINAL_STATES,
   RUNNER_HANDLE_BACKGROUND_STATES,
   RUNNER_HANDLE_RETENTION_STATES,
-} from "../../src/runner/state/runner_handle_machine.js";
+} from "../../src/runner/state/runner_handle_decision.js";
 import {
   RUNNER_LIFECYCLE_STATES,
   RUNNER_LIFECYCLE_STEPS,
