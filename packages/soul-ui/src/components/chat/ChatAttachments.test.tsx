@@ -198,7 +198,7 @@ describe("ChatAttachments", () => {
       status: "done",
       onRemove: () => {},
     }));
-    expect(markup).toContain("relative shrink-0 w-20 h-20 rounded border border-border bg-muted overflow-hidden");
+    expect(markup).toContain("relative shrink-0 w-20 h-20 rounded-floor border border-border bg-muted overflow-hidden");
 
     const onOpen = vi.fn();
     const onRemove = vi.fn();
