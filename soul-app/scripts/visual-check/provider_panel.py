@@ -43,7 +43,10 @@ STATES = [
     ("legacy-stale", "legacy-stale", False),
     ("codex-both", "codex-both", False),
 ]
-VIEWPORTS = [(820, 1180), (390, 844)]
+VIEWPORTS = [(820, 1180), (390, 844), (360, 780)]
+# 820·390은 모든 장면을 잰다. 360은 중앙 네 장면의 제목 정렬, 노드 머리, 받기 줄을 잰다.
+PROVIDER_WIDTHS = (820, 390)
+CENTRAL_WIDTHS = (820, 390, 360)
 THEMES = ("light", "dark")
 PROVIDER_ROW_RE = r"^provider-row-(claude|opencode_go|codex|antigravity)$"
 
@@ -168,6 +171,59 @@ METRICS_SCRIPT = r"""
 """
 
 
+NODE_HEAD_JS = r"""
+() => {
+  const rect = (element) => {
+    if (!element) return null;
+    const bounds = element.getBoundingClientRect();
+    return {
+      left: Math.round(bounds.left * 10) / 10, top: Math.round(bounds.top * 10) / 10,
+      right: Math.round(bounds.right * 10) / 10, bottom: Math.round(bounds.bottom * 10) / 10,
+      width: Math.round(bounds.width * 10) / 10, height: Math.round(bounds.height * 10) / 10,
+    };
+  };
+  const lineCount = (element) => {
+    if (!element) return null;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return new Set(Array.from(range.getClientRects()).filter((line) => line.width > 0)
+      .map((line) => Math.round(line.top))).size;
+  };
+  const style = (element) => element ? {
+    minHeight: getComputedStyle(element).minHeight,
+    paddingTop: getComputedStyle(element).paddingTop,
+    alignItems: getComputedStyle(element).alignItems,
+  } : null;
+  // 노드 목록 머리: 공급자 패널의 Claude 머리. 풀 구역은 노드 대상에서 showHeader=false라
+  // 목록 위에 서는 머리는 이 공급자 머리다.
+  const panel = document.querySelector('[data-testid="provider-panel"]');
+  const header = panel ? panel.querySelector('[data-testid="claude-provider-header"]') : null;
+  if (!header) return null;
+  const leaves = Array.from(header.querySelectorAll('*')).filter((element) => element.children.length === 0);
+  const title = leaves.find((element) => (element.textContent || '').trim() === 'Claude') ?? null;
+  const summary = leaves.find((element) => /가용/.test((element.textContent || '').trim())) ?? null;
+  const add = header.querySelector('[data-testid="claude-account-add"]');
+  const toggle = header.querySelector('[data-testid="claude-provider-toggle"]');
+  const content = header.firstElementChild;
+  const divider = header.nextElementSibling;
+  return {
+    row: rect(header.parentElement), header: rect(header), content: rect(content), title: rect(title),
+    add: rect(add), toggle: rect(toggle), divider: rect(divider),
+    summary: summary ? { text: (summary.textContent || '').trim(), rect: rect(summary), lines: lineCount(summary) } : null,
+    headerStyle: style(header), contentStyle: style(content),
+  };
+}
+"""
+
+
+# 08eb747 번들에서 잰 노드 목록 머리 좌표(머리 top 기준 상대값). 새 머리에서도 같아야 한다.
+NODE_HEAD_BASELINE = {
+    820: {"height": 82, "titleTop": 30, "summaryTop": 32, "addTop": 16, "dividerTop": 82},
+    390: {"height": 74, "titleTop": 12, "summaryTop": 14, "addTop": 13, "dividerTop": 74},
+    360: {"height": 74, "titleTop": 12, "summaryTop": 14, "addTop": 13, "dividerTop": 74},
+}
+
+
 def rounded(value: float) -> float:
     return round(value, 2)
 
@@ -219,6 +275,597 @@ def alignment_failures(metrics: dict, label: str) -> list[dict]:
                 failures.append({"check": "circle button right", "label": label, "button": button["id"],
                                  "visualRight": button["visualRight"], "reference": reference})
     return failures
+
+
+CENTRAL_STATES = [
+    ("central-empty", "central-empty"),
+    ("central-accounts", "central-accounts"),
+    ("central-login-url-ready", "central-login-url-ready"),
+    ("central-login-verifying", "central-login-verifying"),
+    ("central-login-failed", "central-login-failed"),
+    ("central-loading", "central-loading"),
+    ("central-error", "central-error"),
+]
+RECEIVE_STATES = [
+    ("receive-on", "receive-on"),
+    ("receive-off", "receive-off"),
+    ("receive-pending", "receive-pending"),
+    ("receive-failure", "receive-failure"),
+    ("receive-settings-error", "receive-settings-error"),
+]
+LONG_CENTRAL_EMAIL = "seosoyoung.workspace+central-primary@example.invalid"
+
+CENTRAL_METRICS_SCRIPT = r"""
+() => {
+  const text = (element) => (element?.innerText ?? '').replace(/\s+/g, ' ').trim();
+  const rect = (element) => {
+    const bounds = element.getBoundingClientRect();
+    return {
+      left: Math.round(bounds.left * 10) / 10, top: Math.round(bounds.top * 10) / 10,
+      right: Math.round(bounds.right * 10) / 10, bottom: Math.round(bounds.bottom * 10) / 10,
+      width: Math.round(bounds.width * 10) / 10, height: Math.round(bounds.height * 10) / 10,
+    };
+  };
+  const central = document.querySelector('[data-testid="settings-section-central-pool"]');
+  const backend = document.querySelector('[data-testid="settings-section-backend-scope"]');
+  const pool = document.querySelector('[data-testid="claude-account-pool-section"]');
+  const receive = document.querySelector('[data-testid="claude-central-receive"]');
+  const rows = Array.from(document.querySelectorAll('[data-testid^="claude-account-row-"]'));
+  const toggleBox = document.querySelector('[data-testid="claude-central-receive-switch"]');
+  // RN-web Switch는 testID 상자 안의 input[role=switch]에 값과 disabled를 담는다.
+  const toggle = toggleBox?.querySelector('input[role="switch"]') ?? toggleBox;
+  // 스위치가 든 listRow. 오류 글이 이 줄 안에 서는지, 줄 아래 여백이 남는지 잰다.
+  let receiveRow = null;
+  if (receive && toggleBox) {
+    let node = toggleBox.parentElement;
+    while (node && node !== receive) {
+      if (text(node).includes('중앙 풀 받기')) { receiveRow = node; break; }
+      node = node.parentElement;
+    }
+  }
+  const login = document.querySelector('[data-testid="claude-login-flow"]');
+  // 「중앙 풀」 머리는 목록일 때 풀 머리 제목, 로딩·실패일 때 구역이 직접 그린다.
+  const centralTitleLeaf = central
+    ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '중앙 풀')
+    : null;
+  const centralTitleRow = centralTitleLeaf ? centralTitleLeaf.parentElement : null;
+  const centralTopBar = centralTitleRow ? centralTitleRow.parentElement : null;
+  const centralSummary = centralTitleRow
+    ? Array.from(centralTitleRow.children).find((element) => element !== centralTitleLeaf) ?? null : null;
+  const centralAdd = central ? central.querySelector('[data-testid="claude-account-add"]') : null;
+  const centralDivider = centralTopBar ? centralTopBar.nextElementSibling : null;
+  const styleOf = (element) => element ? {
+    minHeight: getComputedStyle(element).minHeight,
+    paddingTop: getComputedStyle(element).paddingTop,
+    alignItems: getComputedStyle(element).alignItems,
+  } : null;
+  const centralLineCount = centralSummary ? (() => {
+    const range = document.createRange();
+    range.selectNodeContents(centralSummary);
+    return new Set(Array.from(range.getClientRects()).filter((line) => line.width > 0)
+      .map((line) => Math.round(line.top))).size;
+  })() : null;
+  const loadingBox = document.querySelector('[data-testid="central-pool-loading"]');
+  const centralErrorCopy = central
+    ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '계정 목록을 갱신하지 못했습니다.')
+    : null;
+  // 받기 줄의 오류 글은 줄 아래에 선다. 설정 읽기 실패와 저장 실패 두 문구만 받기 줄 안에서 찾는다.
+  const receiveErrors = receive
+    ? Array.from(receive.querySelectorAll('*')).filter((element) => element.children.length === 0
+      && ['받기 설정을 불러오지 못했습니다.', '계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'].includes(text(element)))
+    : [];
+  // 오류 글을 글자마다 Range로 재어 줄로 묶는다. 둘째 줄부터 첫 글자 앞이 공백이 아니면 어절 가운데서 끊긴 것이다.
+  const lineBreakOf = (message) => {
+    const leaf = receive && Array.from(receive.querySelectorAll('*'))
+      .find((element) => element.children.length === 0 && (element.textContent || '').trim() === message);
+    if (!leaf) return { found: false };
+    const walker = document.createTreeWalker(leaf, NodeFilter.SHOW_TEXT);
+    const chars = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (let index = 0; index < node.data.length; index += 1) {
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        chars.push({ ch: node.data[index], top: Math.round(range.getBoundingClientRect().top),
+          width: range.getBoundingClientRect().width });
+      }
+    }
+    const lines = [];
+    let current = null;
+    chars.forEach((char, index) => {
+      if (char.width === 0 && /\s/.test(char.ch)) return;
+      if (!current || Math.abs(char.top - current.top) > 2) {
+        current = { top: char.top, start: index, text: '' };
+        lines.push(current);
+      }
+      current.text += char.ch;
+    });
+    const midWord = lines.slice(1)
+      .filter((line) => !/\s/.test(chars[line.start - 1]?.ch ?? ' '))
+      .map((line) => ({ before: chars[line.start - 1].ch, start: line.text.slice(0, 4) }));
+    const style = getComputedStyle(leaf);
+    return { found: true, lines: lines.map((line) => line.text), midWord,
+      wordBreak: style.wordBreak, overflowWrap: style.overflowWrap };
+  };
+  // 받기 줄과 첫 계정 줄 사이의 가로 구분선. 줄 안쪽 아래 테두리이거나 별도 구분선 요소다.
+  // 단추 테두리는 폭이 좁아 걸러진다(가로로 긴 선만 센다).
+  const firstRow = rows.length ? rows[0] : null;
+  const receiveDivider = (() => {
+    if (!receive || !pool) return null;
+    const receiveBox = receive.getBoundingClientRect();
+    const rowBox = firstRow ? firstRow.getBoundingClientRect() : null;
+    const lines = [];
+    for (const element of pool.querySelectorAll('*')) {
+      const box = element.getBoundingClientRect();
+      if (box.top < receiveBox.top - 0.5) continue;
+      if (rowBox && box.top > rowBox.top + 0.5) continue;
+      if (box.width < 200) continue;
+      const style = getComputedStyle(element);
+      const border = parseFloat(style.borderBottomWidth) || 0;
+      if (border >= 0.5 || (box.height > 0 && box.height <= 1.5)) {
+        // 줄 아래 테두리면 그 선의 위치는 요소 바닥에서 테두리 두께만큼 위다.
+        const lineTop = border >= 0.5 && box.height > 1.5 ? box.bottom - border : box.top;
+        const lineHeight = border >= 0.5 ? border : box.height;
+        lines.push({
+          top: Math.round(lineTop * 10) / 10,
+          bottom: Math.round((lineTop + lineHeight) * 10) / 10,
+          height: Math.round(lineHeight * 10) / 10,
+          borderBottomWidth: style.borderBottomWidth,
+          elementTop: Math.round(box.top * 10) / 10,
+          elementHeight: Math.round(box.height * 10) / 10,
+        });
+      }
+    }
+    return { count: lines.length, lines };
+  })();
+  return {
+    central: central ? { text: text(central), rect: rect(central) } : null,
+    centralTitle: centralTitleLeaf ? { text: text(centralTitleLeaf), rect: rect(centralTitleLeaf) } : null,
+    centralHead: centralTitleLeaf ? {
+      bar: rect(centralTopBar), row: rect(centralTitleRow), title: rect(centralTitleLeaf),
+      add: centralAdd ? rect(centralAdd) : null, divider: centralDivider ? rect(centralDivider) : null,
+      summary: centralSummary ? { text: text(centralSummary), rect: rect(centralSummary), lines: centralLineCount } : null,
+      barStyle: styleOf(centralTopBar), rowStyle: styleOf(centralTitleRow),
+    } : null,
+    loadingRect: loadingBox ? rect(loadingBox) : null,
+    centralErrorRect: centralErrorCopy ? rect(centralErrorCopy) : null,
+    backend: backend ? { rect: rect(backend) } : null,
+    pool: pool ? rect(pool) : null,
+    receive: receive ? { text: text(receive), rect: rect(receive) } : null,
+    receiveFirst: !!receive && rows.length > 0 && rect(receive).top < rect(rows[0]).top,
+    receiveInPool: !!receive && !!pool && pool.contains(receive),
+    switch: toggle ? {
+      role: toggle.getAttribute('role'),
+      ariaChecked: toggle.getAttribute('aria-checked'),
+      checked: typeof toggle.checked === 'boolean' ? toggle.checked : null,
+      disabled: typeof toggle.disabled === 'boolean' ? toggle.disabled : null,
+      ariaDisabled: toggle.getAttribute('aria-disabled'),
+    } : null,
+    rows: rows.length,
+    rowTexts: rows.map(row => text(row).slice(0, 140)),
+    login: login ? {
+      text: text(login).slice(0, 220),
+      code: !!document.querySelector('[data-testid="claude-login-code"]'),
+      openAuth: !!document.querySelector('[data-testid="claude-login-open-auth"]'),
+      cancel: !!document.querySelector('[data-testid="claude-login-cancel"]'),
+      submit: !!document.querySelector('[data-testid="claude-login-submit"]'),
+    } : null,
+    addButton: !!document.querySelector('[data-testid="claude-account-add"]'),
+    loading: !!document.querySelector('[data-testid="central-pool-loading"]'),
+    receiveRetry: !!document.querySelector('[data-testid="claude-central-receive-retry"]'),
+    receiveError: receiveErrors.length ? text(receiveErrors[0]) : null,
+    receiveErrorRect: receiveErrors.length ? rect(receiveErrors[0]) : null,
+    receiveRow: receiveRow ? rect(receiveRow) : null,
+    receiveErrorInSwitchRow: !!(receiveRow && receiveErrors.length && receiveRow.contains(receiveErrors[0])),
+    receiveRowPaddingBottom: receiveRow
+      ? Math.round((parseFloat(getComputedStyle(receiveRow).paddingBottom) || 0) * 10) / 10 : null,
+    receiveLineBreaks: {
+      save: lineBreakOf('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'),
+      read: lineBreakOf('받기 설정을 불러오지 못했습니다.'),
+    },
+    receiveDivider,
+    bodyText: document.body.innerText,
+    document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
+  };
+}
+"""
+
+
+CENTRAL_TITLE_STATES = ("central-loading", "central-error", "central-empty", "central-accounts")
+
+
+def central_title_alignment(states: list[dict], width: int, theme: str, failures: list[dict]) -> None:
+    """중앙 장면 넷의 「중앙 풀」 제목 top이 1px 안에서 같은지 본다.
+
+    로딩·실패 머리에 「계정 추가」 단추가 없어 목록 머리보다 낮으면 제목이 뛴다.
+    """
+    tops: dict[str, float] = {}
+    for state in states:
+        if state.get("width") != width or state.get("theme") != theme:
+            continue
+        if state.get("state") not in CENTRAL_TITLE_STATES:
+            continue
+        metrics = state.get("metrics") or {}
+        title = metrics.get("centralTitle")
+        if title:
+            tops[state["state"]] = title["rect"]["top"]
+    label = f"{width}-{theme}"
+    missing = [name for name in CENTRAL_TITLE_STATES if name not in tops]
+    if missing:
+        failures.append({"check": "central title alignment", "label": label, "missing": missing})
+        return
+    if max(tops.values()) - min(tops.values()) > 1:
+        failures.append({"check": "central title alignment", "label": label, "tops": tops})
+
+
+def wait_for_backends(page: Page) -> None:
+    page.get_by_test_id("settings-section-backends").wait_for(state="visible")
+    page.evaluate("document.fonts.ready")
+
+
+def switch_value(state: dict) -> bool | None:
+    if not state:
+        return None
+    if state["checked"] is not None:
+        return state["checked"]
+    value = state["ariaChecked"]
+    return None if value is None else value == "true"
+
+
+def capture_central_state(
+    page: Page,
+    base: str,
+    state_name: str,
+    fixture_state: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """중앙 풀 구역과 그 로그인 상태를 820/390에서 잰다."""
+    label = f"{state_name}-{width}-{theme}"
+    page.goto(build_url(base, fixture_state, theme), wait_until="networkidle")
+    wait_for_backends(page)
+    # 고치기 전 코드에는 중앙 구역이 없다. 화면을 남기고 단언이 실패를 보고하게 둔다.
+    if count(page.get_by_test_id("settings-section-central-pool")) == 0:
+        failures.append({"check": "central section", "label": label})
+        page.screenshot(path=str(output / f"app-central-{state_name}-{width}-{theme}-screen.png"))
+        return {
+            "state": state_name, "fixtureState": fixture_state, "width": width, "theme": theme,
+            "capture": None, "screenCapture": f"app-central-{state_name}-{width}-{theme}-screen.png",
+            "metrics": None,
+        }
+    page.get_by_test_id("settings-section-central-pool").wait_for(state="visible")
+    if state_name == "central-loading":
+        page.get_by_test_id("central-pool-loading").wait_for(state="visible")
+    elif state_name == "central-error":
+        page.get_by_text("계정 목록을 갱신하지 못했습니다.").wait_for(state="visible")
+    else:
+        page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+        if state_name != "central-empty":
+            page.wait_for_function(
+                'document.querySelectorAll(\'[data-testid^="claude-account-row-"]\').length === 3',
+            )
+    if state_name.startswith("central-login-"):
+        page.get_by_test_id("claude-account-add").click()
+        page.get_by_test_id("claude-login-flow").wait_for(state="visible")
+        if state_name == "central-login-url-ready":
+            page.get_by_test_id("claude-login-code").wait_for(state="visible")
+            page.get_by_test_id("claude-login-open-auth").wait_for(state="visible")
+    settle(page)
+    metrics = page.evaluate(CENTRAL_METRICS_SCRIPT)
+
+    central = metrics["central"]
+    if central is None:
+        failures.append({"check": "central section", "label": label})
+    else:
+        # 검수 표본은 SettingsWorkspaceContext를 주므로 SettingsSection이 구역 제목을 그리지 않는다.
+        # 그래서 「중앙 풀」 머리는 풀 머리(목록)나 구역(로딩·실패)이 직접 그린다.
+        title = metrics["centralTitle"]
+        if title is None or title["rect"]["width"] <= 0 or title["rect"]["height"] <= 0:
+            failures.append({"check": "central title", "label": label})
+        elif state_name == "central-loading":
+            if metrics["loadingRect"] and title["rect"]["top"] >= metrics["loadingRect"]["top"]:
+                failures.append({"check": "central title above loading", "label": label,
+                                 "title": title["rect"], "loading": metrics["loadingRect"]})
+        elif state_name == "central-error":
+            if metrics["centralErrorRect"] and title["rect"]["top"] >= metrics["centralErrorRect"]["top"]:
+                failures.append({"check": "central title above error", "label": label,
+                                 "title": title["rect"], "error": metrics["centralErrorRect"]})
+        if metrics["backend"] is None:
+            failures.append({"check": "backend section", "label": label})
+        elif central["rect"]["bottom"] > metrics["backend"]["rect"]["top"] + 1:
+            failures.append({"check": "central above picker", "label": label,
+                             "centralBottom": central["rect"]["bottom"],
+                             "backendTop": metrics["backend"]["rect"]["top"]})
+    # 목록 머리의 제목·요약·단추 자리. 360은 요약이 둘째 줄로 가고, 390은 한 줄에 남는다.
+    head = metrics.get("centralHead")
+    if state_name == "central-accounts" and head and head.get("bar") and head.get("title") and head.get("add"):
+        bar = head["bar"]; title = head["title"]; add = head["add"]
+        summary = head.get("summary") or {}; summary_rect = summary.get("rect") or {}
+        title_top = title["top"]; add_top = add["top"]
+        title_center = round((title["top"] + title["bottom"]) / 2, 1)
+        add_center = round((add["top"] + add["bottom"]) / 2, 1)
+        # 검수원 시제품의 절대 좌표. 360은 요약이 둘째 줄로 가 머리가 85로 커진다.
+        expected = {
+            360: {"bar": 85, "titleTop": 26, "addTop": 13, "summaryTop": 56, "dividerTop": 86},
+            390: {"bar": 72, "titleTop": 26, "addTop": 13, "summaryTop": 30, "dividerTop": 73},
+        }.get(width)
+        if expected:
+            actual = {
+                "bar": bar["height"], "titleTop": title_top, "addTop": add_top,
+                "summaryTop": summary_rect.get("top") if summary_rect else None,
+                "dividerTop": head["divider"]["top"] if head.get("divider") else None,
+            }
+            mismatches = {key: {"actual": actual[key], "expected": value}
+                          for key, value in expected.items()
+                          if actual[key] is None or abs(actual[key] - value) > 1}
+            if mismatches:
+                failures.append({"check": "central head layout", "label": label, "mismatches": mismatches})
+            if abs(title_center - add_center) > 1:
+                failures.append({"check": "central head centers", "label": label,
+                                 "titleCenter": title_center, "addCenter": add_center})
+            # 요약이 둘째 줄로 간 360에서만 제목과 같은 왼쪽 선에 서는지 본다.
+            if width == 360 and summary_rect and abs(summary_rect["left"] - title["left"]) > 1:
+                failures.append({"check": "central summary left", "label": label,
+                                 "summaryLeft": summary_rect["left"], "titleLeft": title["left"]})
+            if width == 360 and summary_rect:
+                gap = round(summary_rect["top"] - title["bottom"], 1)
+                if abs(gap - 8) > 1:
+                    failures.append({"check": "central summary gap", "label": label, "gap": gap})
+        elif width == 820 and abs(title_top - 30) > 1:
+            failures.append({"check": "central head layout", "label": label,
+                             "mismatches": {"titleTop": {"actual": title_top, "expected": 30}}})
+    if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
+        failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
+
+    if state_name == "central-loading":
+        if not metrics["loading"]:
+            failures.append({"check": "central loading skeleton", "label": label})
+    elif state_name == "central-error":
+        if "계정 목록을 갱신하지 못했습니다." not in metrics["bodyText"]:
+            failures.append({"check": "central error copy", "label": label})
+        if not page.get_by_text("다시 시도").count():
+            failures.append({"check": "central error retry", "label": label})
+    else:
+        expected_rows = 0 if state_name == "central-empty" else 3
+        if metrics["rows"] != expected_rows:
+            failures.append({"check": "central account rows", "label": label,
+                             "expected": expected_rows, "actual": metrics["rows"]})
+        if state_name != "central-empty":
+            if LONG_CENTRAL_EMAIL not in metrics["bodyText"]:
+                failures.append({"check": "long central email", "label": label})
+            if not metrics["addButton"]:
+                failures.append({"check": "central add button", "label": label})
+    if state_name.startswith("central-login-"):
+        login = metrics["login"]
+        if login is None:
+            failures.append({"check": "login panel", "label": label})
+        elif state_name == "central-login-url-ready":
+            if not (login["code"] and login["openAuth"] and login["cancel"] and login["submit"]):
+                failures.append({"check": "login url_ready controls", "label": label, "login": login})
+        elif state_name == "central-login-verifying":
+            if "확인 중" not in login["text"] or not login["cancel"]:
+                failures.append({"check": "login verifying state", "label": label, "login": login})
+        elif state_name == "central-login-failed":
+            if "오류" not in login["text"] or not login["openAuth"]:
+                failures.append({"check": "login failed state", "label": label, "login": login})
+
+    page.get_by_test_id("settings-section-central-pool").screenshot(
+        path=str(output / f"app-central-{state_name}-{width}-{theme}.png"),
+    )
+    capture_full_screen(page, output, f"app-central-{state_name}-{width}-{theme}-screen.png")
+    return {
+        "state": state_name,
+        "fixtureState": fixture_state,
+        "width": width,
+        "theme": theme,
+        "capture": f"app-central-{state_name}-{width}-{theme}.png",
+        "screenCapture": f"app-central-{state_name}-{width}-{theme}-screen.png",
+        "metrics": metrics,
+    }
+
+
+def capture_node_header(
+    page: Page,
+    base: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """노드 목록 머리(공급자 패널 Claude 머리)의 제목·요약·단추·구분선 자리를 잰다."""
+    label = f"node-head-{width}-{theme}"
+    page.goto(build_url(base, "default", theme), wait_until="networkidle")
+    wait_for_panel(page)
+    page.get_by_test_id("claude-provider-toggle").click()
+    page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+    page.wait_for_function(
+        "document.querySelectorAll('[data-testid^=\"claude-account-row-\"]').length === 3",
+    )
+    settle(page)
+    head = page.evaluate(NODE_HEAD_JS)
+    if head is None:
+        failures.append({"check": "node head", "label": label})
+        page.screenshot(path=str(output / f"app-node-head-{width}-{theme}-screen.png"))
+        return {"width": width, "theme": theme, "head": None,
+                "capture": None, "screenCapture": f"app-node-head-{width}-{theme}-screen.png"}
+    baseline = NODE_HEAD_BASELINE.get(width)
+    if baseline:
+        bar = head.get("header")
+        summary_rect = (head.get("summary") or {}).get("rect") or {}
+        def relative(box, key):
+            return round(box[key] - bar["top"], 1) if box and bar else None
+        actual = {
+            "height": bar["height"] if bar else None,
+            "titleTop": relative(head.get("title"), "top"),
+            "summaryTop": relative(summary_rect, "top") if summary_rect else None,
+            "addTop": relative(head.get("add"), "top"),
+            "dividerTop": relative(head.get("divider"), "top") if head.get("divider") else None,
+        }
+        mismatches = {key: {"actual": actual[key], "expected": value}
+                      for key, value in baseline.items()
+                      if actual[key] is None or abs(actual[key] - value) > 1}
+        if mismatches:
+            failures.append({"check": "node head baseline", "label": label,
+                             "mismatches": mismatches})
+    name = f"app-node-head-{width}-{theme}.png"
+    section = page.get_by_test_id("provider-row-claude").first
+    box = section.bounding_box()
+    if box:
+        page.screenshot(path=str(output / name),
+                        clip={"x": box["x"], "y": box["y"], "width": box["width"],
+                              "height": min(160, box["height"])})
+    else:
+        section.screenshot(path=str(output / name))
+    return {"width": width, "theme": theme, "head": head, "capture": name,
+            "screenCapture": None}
+
+
+def capture_receive_state(
+    page: Page,
+    base: str,
+    state_name: str,
+    fixture_state: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """노드 클로드 목록 맨 위의 「중앙 풀 받기」 줄을 820/390에서 잰다."""
+    label = f"{state_name}-{width}-{theme}"
+    page.goto(build_url(base, fixture_state, theme), wait_until="networkidle")
+    wait_for_backends(page)
+    page.get_by_test_id("claude-provider-toggle").click()
+    page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+    # 고치기 전 코드에는 받기 줄이 없다. 화면을 남기고 단언이 실패를 보고하게 둔다.
+    if count(page.get_by_test_id("claude-central-receive")) == 0:
+        failures.append({"check": "receive row", "label": label})
+        page.screenshot(path=str(output / f"app-receive-{state_name}-{width}-{theme}-screen.png"))
+        return {
+            "state": state_name, "fixtureState": fixture_state, "width": width, "theme": theme,
+            "capture": None, "screenCapture": f"app-receive-{state_name}-{width}-{theme}-screen.png",
+            "metrics": None,
+        }
+    page.get_by_test_id("claude-central-receive").wait_for(state="visible")
+    if state_name == "receive-settings-error":
+        page.get_by_test_id("claude-central-receive-retry").wait_for(state="visible")
+    else:
+        page.get_by_test_id("claude-central-receive-switch").wait_for(state="visible")
+    if state_name == "receive-pending":
+        page.get_by_test_id("claude-central-receive-switch").click()
+        page.wait_for_function(
+            """() => {
+              const box = document.querySelector('[data-testid="claude-central-receive-switch"]');
+              const toggle = box?.querySelector('input[role="switch"]') ?? box;
+              if (!toggle) return false;
+              const checked = typeof toggle.checked === 'boolean' ? toggle.checked : toggle.getAttribute('aria-checked') === 'true';
+              const disabled = (typeof toggle.disabled === 'boolean' && toggle.disabled)
+                || toggle.getAttribute('aria-disabled') === 'true';
+              return checked === false && disabled;
+            }""",
+            timeout=5000,
+        )
+    elif state_name == "receive-failure":
+        page.get_by_test_id("claude-central-receive-switch").click()
+        page.get_by_text("계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.").wait_for(state="visible")
+    settle(page)
+    metrics = page.evaluate(CENTRAL_METRICS_SCRIPT)
+
+    receive = metrics["receive"]
+    if receive is None:
+        failures.append({"check": "receive row", "label": label})
+    else:
+        # 설정을 못 읽어도 「중앙 풀 받기」 이름은 남는다. 스위치 자리만 다시 시도로 바뀐다.
+        if "중앙 풀 받기" not in receive["text"]:
+            failures.append({"check": "receive label", "label": label, "actual": receive["text"][:120]})
+        if metrics["rows"] > 0 and not metrics["receiveFirst"]:
+            failures.append({"check": "receive first row", "label": label,
+                             "receive": receive["rect"], "rows": metrics["rowTexts"][:2]})
+        if not metrics["receiveInPool"]:
+            failures.append({"check": "receive in pool", "label": label})
+    # 어느 상태든 받기 줄과 계정 목록 사이 구분선은 하나다.
+    divider = metrics.get("receiveDivider") or {}
+    if divider.get("count") != 1:
+        failures.append({"check": "receive single divider", "label": label, "divider": divider})
+    if state_name == "receive-failure":
+        # 오류 글은 스위치가 든 listRow 안에 서고, 그 윗선에서 구분선까지 listRow 아래 여백(spacing.sm) 이상 남는다.
+        error = metrics.get("receiveErrorRect")
+        line = (divider.get("lines") or [{}])[0]
+        padding = metrics.get("receiveRowPaddingBottom")
+        if not metrics.get("receiveErrorInSwitchRow"):
+            failures.append({"check": "receive failure error in switch row", "label": label,
+                             "error": error, "row": metrics.get("receiveRow")})
+        if not error or "top" not in line or padding is None:
+            failures.append({"check": "receive failure error bottom padding", "label": label,
+                             "error": error, "line": line, "padding": padding})
+        else:
+            gap = round(line["top"] - error["bottom"], 1)
+            if gap < float(padding) - 0.5:
+                failures.append({"check": "receive failure error bottom padding", "label": label,
+                                 "gap": gap, "padding": padding, "error": error, "line": line})
+        line_break = (metrics.get("receiveLineBreaks") or {}).get("save") or {}
+        if not line_break.get("found") or line_break.get("midWord"):
+            failures.append({"check": "receive save failure line break", "label": label,
+                             "lineBreak": line_break})
+    if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
+        failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
+
+    if state_name == "receive-settings-error":
+        if metrics["switch"] is not None:
+            failures.append({"check": "settings error hides switch", "label": label})
+        if not metrics["receiveRetry"]:
+            failures.append({"check": "settings error retry", "label": label})
+        if "받기 설정을 불러오지 못했습니다." not in metrics["bodyText"]:
+            failures.append({"check": "settings error copy", "label": label})
+        if "계정 목록을 갱신하지 못했습니다." in metrics["bodyText"]:
+            failures.append({"check": "settings error borrowed copy", "label": label})
+        line_break = (metrics.get("receiveLineBreaks") or {}).get("read") or {}
+        if not line_break.get("found") or line_break.get("midWord"):
+            failures.append({"check": "receive read failure line break", "label": label,
+                             "lineBreak": line_break})
+    elif state_name == "receive-on":
+        if switch_value(metrics["switch"]) is not True:
+            failures.append({"check": "receive on value", "label": label, "switch": metrics["switch"]})
+        if metrics["rows"] != 0:
+            failures.append({"check": "receive on hides central rows", "label": label, "rows": metrics["rows"]})
+    elif state_name == "receive-off":
+        if switch_value(metrics["switch"]) is not False:
+            failures.append({"check": "receive off value", "label": label, "switch": metrics["switch"]})
+        if metrics["rows"] != 2:
+            failures.append({"check": "receive off local rows", "label": label, "rows": metrics["rows"]})
+    elif state_name == "receive-pending":
+        if switch_value(metrics["switch"]) is not False:
+            failures.append({"check": "receive pending value", "label": label, "switch": metrics["switch"]})
+        if not (metrics["switch"] or {}).get("disabled") and (metrics["switch"] or {}).get("ariaDisabled") != "true":
+            failures.append({"check": "receive pending disabled", "label": label, "switch": metrics["switch"]})
+    elif state_name == "receive-failure":
+        # 저장에 실패해도 스위치는 제자리에서 되돌아간 값을 보이며 눌린다. 다시 시도는 그 스위치를 다시 누르는 것이다.
+        if metrics["switch"] is None:
+            failures.append({"check": "receive failure switch kept", "label": label})
+        elif switch_value(metrics["switch"]) is not True:
+            failures.append({"check": "receive failure revert", "label": label, "switch": metrics["switch"]})
+        if metrics["switch"] and ((metrics["switch"].get("disabled") is True)
+                                  or metrics["switch"].get("ariaDisabled") == "true"):
+            failures.append({"check": "receive failure switch enabled", "label": label, "switch": metrics["switch"]})
+        if metrics["receiveError"] != "계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.":
+            failures.append({"check": "receive failure copy", "label": label, "error": metrics["receiveError"]})
+        if metrics["receiveRetry"]:
+            failures.append({"check": "receive failure no retry button", "label": label})
+
+    page.get_by_test_id("claude-account-pool-section").screenshot(
+        path=str(output / f"app-receive-{state_name}-{width}-{theme}.png"),
+    )
+    capture_full_screen(page, output, f"app-receive-{state_name}-{width}-{theme}-screen.png")
+    return {
+        "state": state_name,
+        "fixtureState": fixture_state,
+        "width": width,
+        "theme": theme,
+        "capture": f"app-receive-{state_name}-{width}-{theme}.png",
+        "screenCapture": f"app-receive-{state_name}-{width}-{theme}-screen.png",
+        "metrics": metrics,
+    }
 
 
 def count(locator: Locator) -> int:
@@ -369,6 +1016,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Provider panel visual check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
     parser.add_argument("output", help="directory for captures and metrics JSON")
+    parser.add_argument("--width", type=int, choices=(820, 390, 360), help="한 폭만 잰다.")
+    parser.add_argument("--theme", choices=("light", "dark"), help="한 테마만 잰다.")
+    parser.add_argument(
+        "--scenes", choices=("all", "provider", "central"), default="all",
+        help="provider는 지금의 공급자 장면만, central은 중앙 풀·받기 장면만 잰다.",
+    )
     args = parser.parse_args()
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -379,6 +1032,9 @@ def main() -> int:
         "passed": False,
         "states": [],
         "loadingFrames": [],
+        "centralStates": [],
+        "receiveStates": [],
+        "nodeHeads": [],
         "failures": [],
         "pageErrors": [],
         "consoleErrors": [],
@@ -401,7 +1057,11 @@ def main() -> int:
         browser = playwright.chromium.launch(headless=True)
         try:
             for width, height in VIEWPORTS:
+                if args.width not in (None, width):
+                    continue
                 for theme in THEMES:
+                    if args.theme not in (None, theme):
+                        continue
                     context = browser.new_context(
                         viewport={"width": width, "height": height},
                         color_scheme=theme,
@@ -416,11 +1076,35 @@ def main() -> int:
                     ))
                     context.route("**/*", route_request)
                     try:
-                        for state_name, fixture_state, expanded in STATES:
-                            result["states"].append(capture_state(
-                                page, args.base_url, state_name, fixture_state, expanded,
-                                width, theme, output, failures, page_errors,
+                        provider_width = width in PROVIDER_WIDTHS
+                        central_width = width in CENTRAL_WIDTHS
+                        if args.scenes in ("all", "provider"):
+                            states = STATES if provider_width else [state for state in STATES if state[0] == "pool-expanded"]
+                            for state_name, fixture_state, expanded in states:
+                                result["states"].append(capture_state(
+                                    page, args.base_url, state_name, fixture_state, expanded,
+                                    width, theme, output, failures, page_errors,
+                                ))
+                        if args.scenes in ("all", "central"):
+                            if central_width:
+                                for state_name, fixture_state in CENTRAL_STATES:
+                                    result["centralStates"].append(capture_central_state(
+                                        page, args.base_url, state_name, fixture_state,
+                                        width, theme, output, failures,
+                                    ))
+                                central_title_alignment(result["centralStates"], width, theme, failures)
+                            for state_name, fixture_state in RECEIVE_STATES:
+                                result["receiveStates"].append(capture_receive_state(
+                                    page, args.base_url, state_name, fixture_state,
+                                    width, theme, output, failures,
+                                ))
+                            result["nodeHeads"].append(capture_node_header(
+                                page, args.base_url, width, theme, output, failures,
                             ))
+                            if args.scenes == "central":
+                                continue
+                        if not provider_width:
+                            continue
                         # One deliberately delayed summary frame: the fixture never
                         # resolves getUsageSummary, so Claude shows its loading
                         # indicator while the other provider rows are absent.

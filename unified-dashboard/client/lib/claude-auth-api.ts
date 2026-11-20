@@ -4,12 +4,27 @@ import type {
   ClaudeAccount,
   ClaudeAuthError,
   ClaudeAuthLoginFlow,
+  ClaudeCentralSettings,
 } from "@seosoyoung/soul-ui";
 
 export type ClaudeAccountPatch = {
   enabled?: boolean;
   priority?: number | null;
 };
+
+/**
+ * 같은 풀 줄이 그리는 대상. 노드는 그 노드의 계정 API를, 중앙은 오케스트레이터의
+ * 중앙 풀 API를 쓴다. 경로 문자열을 만드는 곳은 이 파일 하나뿐이다.
+ */
+export type ClaudeAccountTarget =
+  | { readonly scope: "node"; readonly nodeId: string }
+  | { readonly scope: "central" };
+
+export const CENTRAL_CLAUDE_TARGET: ClaudeAccountTarget = { scope: "central" };
+
+export function nodeClaudeTarget(nodeId: string): ClaudeAccountTarget {
+  return { scope: "node", nodeId };
+}
 
 export class ClaudeAuthRequestError extends Error {
   constructor(
@@ -74,31 +89,61 @@ export async function requestClaudeAuthData<T>(
   return payload as T;
 }
 
-export function claudeAccountsPath(nodeId: string): string {
-  return `/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/accounts`;
+export function claudeAccountsPath(target: ClaudeAccountTarget): string {
+  return target.scope === "central"
+    ? "/api/claude-auth/central/accounts"
+    : `/api/nodes/${encodeURIComponent(target.nodeId)}/claude-auth/accounts`;
+}
+
+export function claudeLoginsPath(target: ClaudeAccountTarget): string {
+  return target.scope === "central"
+    ? "/api/claude-auth/central/logins"
+    : `/api/nodes/${encodeURIComponent(target.nodeId)}/claude-auth/logins`;
+}
+
+export function claudeCentralSettingsPath(): string {
+  return "/api/claude-auth/central/settings";
 }
 
 export async function getClaudeAccounts(
   request: typeof fetch,
-  nodeId: string,
+  target: ClaudeAccountTarget,
 ): Promise<ClaudeAccountList> {
-  return requestClaudeAuthData<ClaudeAccountList>(request, claudeAccountsPath(nodeId));
+  return requestClaudeAuthData<ClaudeAccountList>(request, claudeAccountsPath(target));
 }
 
-export function accountPath(nodeId: string, accountId: string): string {
-  return `${claudeAccountsPath(nodeId)}/${encodeURIComponent(accountId)}`;
+export async function getClaudeCentralSettings(
+  request: typeof fetch,
+): Promise<ClaudeCentralSettings> {
+  return requestClaudeAuthData<ClaudeCentralSettings>(request, claudeCentralSettingsPath());
 }
 
-export function loginPath(nodeId: string, loginId: string): string {
-  return `/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`;
+/** 응답은 그 노드가 새 설정을 이미 받은 상태이므로 그대로 화면 값으로 쓴다. */
+export async function putClaudeCentralReceive(
+  request: typeof fetch,
+  nodeId: string,
+  receive: boolean,
+): Promise<ClaudeCentralSettings> {
+  return requestClaudeAuthData<ClaudeCentralSettings>(request, claudeCentralSettingsPath(), {
+    method: "PUT",
+    body: { nodes: { [nodeId]: receive } },
+  });
+}
+
+export function accountPath(target: ClaudeAccountTarget, accountId: string): string {
+  return `${claudeAccountsPath(target)}/${encodeURIComponent(accountId)}`;
+}
+
+export function loginPath(target: ClaudeAccountTarget, loginId: string): string {
+  return `${claudeLoginsPath(target)}/${encodeURIComponent(loginId)}`;
 }
 
 export async function cancelClaudeAccountLogin(
   request: typeof fetch,
-  nodeId: string,
+  target: ClaudeAccountTarget,
   loginId: string,
 ): Promise<ClaudeAuthLoginFlow> {
-  return requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(nodeId, loginId), { method: "DELETE" });
+  return requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(target, loginId), { method: "DELETE" });
 }
 
 export function replaceAccount(

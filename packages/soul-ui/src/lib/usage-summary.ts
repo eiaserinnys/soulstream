@@ -12,6 +12,9 @@ export type ClaudeAccountBlocked = {
   readonly scope: "all" | "fable";
 };
 
+/** 노드 목록에서 이 계정이 중앙 풀에서 내려온 것인지. 칸이 없으면 local로 본다. */
+export type ClaudeAccountSource = "central" | "local";
+
 export type ClaudeAccount = {
   readonly id: string;
   readonly email: string;
@@ -29,6 +32,12 @@ export type ClaudeAccount = {
   readonly observed_at: string | null;
   readonly blocked: ClaudeAccountBlocked | null;
   readonly active_sessions: number;
+  /** 노드 목록에서만 오는 출처 칸. 중앙 목록에는 없다. */
+  readonly source?: ClaudeAccountSource;
+  /** 중앙 목록에만 있는 토큰 만료·갱신·재로그인 사유. */
+  readonly expires_at?: string | null;
+  readonly refreshed_at?: string | null;
+  readonly relogin_reason?: string | null;
 };
 
 export type ClaudeAccountPool = {
@@ -50,6 +59,19 @@ export type ClaudeAccountDeleteResult = {
   readonly deferred: boolean;
   readonly accounts: readonly ClaudeAccount[];
   readonly pool: ClaudeAccountPool | null;
+};
+
+/** 중앙 설정 `effective`의 노드 한 줄. 그 노드가 지금 중앙 풀을 받는지다. */
+export type ClaudeCentralEffectiveNode = {
+  readonly node_id: string;
+  readonly receive: boolean;
+  readonly connected: boolean;
+};
+
+export type ClaudeCentralSettings = {
+  readonly default_receive: boolean;
+  readonly nodes: Readonly<Record<string, boolean>>;
+  readonly effective: readonly ClaudeCentralEffectiveNode[];
 };
 
 export type ClaudeAuthError = {

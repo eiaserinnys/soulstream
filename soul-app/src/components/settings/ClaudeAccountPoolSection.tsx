@@ -18,6 +18,7 @@ import { ApiHttpError } from '../../api/clientCore';
 import { useDeviceType, useTokens } from '../../theme';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ClaudeAccountLoginFlowPanel } from './ClaudeAccountLoginFlowPanel';
+import { ClaudeCentralReceiveRow, type ClaudeCentralSettingsApi } from './ClaudeCentralReceiveRow';
 import { GlassButton } from '../GlassSurface';
 import { ProviderQuotaGrid, type QuotaGridCell } from './ProviderQuotaGrid';
 import { SettingsDivider } from './SettingsSection';
@@ -32,22 +33,42 @@ export type ClaudeAccountPoolApi = Pick<ApiClient,
   | 'cancelClaudeAuthLogin'
 >;
 
+/** 중앙 풀의 같은 동작을 부르는 함수 묶음. 노드 함수와 대상만 다르다. */
+export type ClaudeCentralPoolApi = Pick<ApiClient,
+  | 'getCentralClaudeAuthAccounts'
+  | 'patchCentralClaudeAuthAccount'
+  | 'deleteCentralClaudeAuthAccount'
+  | 'startCentralClaudeAuthLogin'
+  | 'getCentralClaudeAuthLogin'
+  | 'submitCentralClaudeAuthLoginCode'
+  | 'cancelCentralClaudeAuthLogin'
+>;
+
 export type ClaudeAccountPoolSectionHandle = {
   startLogin(): void;
 };
 
-type Props = {
-  nodeId: string;
+type CommonProps = {
   initialList: ClaudeAccountList;
-  api: ClaudeAccountPoolApi;
   showHeader?: boolean;
+  /** 머리 제목. 중앙 대상은 「중앙 풀」을 넘긴다. */
+  title?: string;
   onListChange?(list: ClaudeAccountList): void;
   onLoginStartingChange?(starting: boolean): void;
+  /** 노드 목록 맨 위에 「중앙 풀 받기」 한 줄을 그릴 때 넘긴다. */
+  centralSettingsApi?: ClaudeCentralSettingsApi;
+  /** 중앙 계정을 수정·삭제했거나 로그인을 마쳤을 때 알린다. 노드 화면이 목록과 사용량을 다시 읽는다. */
+  onCentralChange?(): void;
 };
+
+type Props = CommonProps & (
+  | { nodeId: string; central?: false; api: ClaudeAccountPoolApi }
+  | { central: true; nodeId?: never; api: ClaudeAccountPoolApi & ClaudeCentralPoolApi }
+);
 
 const terminalStates = new Set(['done', 'failed', 'cancelled']);
 
-type TrackedLogin = { nodeId: string; loginId: string; state: ClaudeAuthLoginFlow['state'] };
+type TrackedLogin = { scope: string; loginId: string; state: ClaudeAuthLoginFlow['state'] };
 
 function sortedAccounts(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
   return accounts.map((account, index) => ({ account, index }))
@@ -158,9 +179,19 @@ function accountAvailable(account: ClaudeAccount): boolean {
 }
 
 export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandle, Props>(function ClaudeAccountPoolSection(
-  { nodeId, initialList, api, showHeader = true, onListChange, onLoginStartingChange },
+  props,
   ref,
 ) {
+  const {
+    initialList, showHeader = true, title = 'Claude 계정',
+    onListChange, onLoginStartingChange, centralSettingsApi, onCentralChange,
+  } = props;
+  const api = props.api;
+  const central = props.central === true;
+  const centralApi: ClaudeCentralPoolApi | null = props.central === true ? props.api : null;
+  const nodeApi: ClaudeAccountPoolApi = props.api;
+  const nodeId = props.central === true ? '' : props.nodeId;
+  const scopeKey = props.central === true ? 'central' : props.nodeId;
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const [accountList, setAccountList] = useState<ClaudeAccountList>(initialList);
@@ -180,30 +211,35 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
   const trackedLoginRef = useRef<TrackedLogin | null>(null);
   const currentLoginFlowRef = useRef<ClaudeAuthLoginFlow | null>(null);
   const closedLoginIdRef = useRef<string | null>(null);
-  const currentNodeIdRef = useRef(nodeId);
-  const previousNodeIdRef = useRef(nodeId);
+  const currentScopeRef = useRef(scopeKey);
+  const previousScopeRef = useRef(scopeKey);
   const mountedRef = useRef(false);
-  const cancelRequestRef = useRef<{ nodeId: string; loginId: string } | null>(null);
-  const ordered = useMemo(() => sortedAccounts(accounts), [accounts]);
+  const cancelRequestRef = useRef<{ scope: string; loginId: string } | null>(null);
+  // 노드 목록에는 그 노드의 로컬 계정만 그린다. 중앙 계정은 중앙 풀에서만 다룬다.
+  const ordered = useMemo(
+    () => sortedAccounts(central ? accounts : accounts.filter(account => account.source !== 'central')),
+    [accounts, central],
+  );
   const prioritized = useMemo(() => ordered.filter(account => account.enabled), [ordered]);
 
-  const updateLoginFlow = useCallback((flow: ClaudeAuthLoginFlow | null, ownerNodeId: string) => {
+  const updateLoginFlow = useCallback((flow: ClaudeAuthLoginFlow | null, ownerScope: string) => {
     if (flow && flow.login_id === closedLoginIdRef.current) return;
     currentLoginFlowRef.current = flow;
     trackedLoginRef.current = flow && !terminalStates.has(flow.state)
-      ? { nodeId: ownerNodeId, loginId: flow.login_id, state: flow.state }
+      ? { scope: ownerScope, loginId: flow.login_id, state: flow.state }
       : null;
     setLoginFlow(flow);
   }, []);
 
-  const cancelTrackedLogin = useCallback((expectedNodeId?: string) => {
+  const cancelTrackedLogin = useCallback((expectedScope?: string) => {
     const tracked = trackedLoginRef.current;
     if (!tracked || terminalStates.has(tracked.state)
-      || (expectedNodeId !== undefined && tracked.nodeId !== expectedNodeId)) return;
+      || (expectedScope !== undefined && tracked.scope !== expectedScope)) return;
     trackedLoginRef.current = null;
     closedLoginIdRef.current = tracked.loginId;
-    void api.cancelClaudeAuthLogin(tracked.nodeId, tracked.loginId).catch(() => {});
-  }, [api]);
+    if (centralApi) void centralApi.cancelCentralClaudeAuthLogin(tracked.loginId).catch(() => {});
+    else void api.cancelClaudeAuthLogin(tracked.scope, tracked.loginId).catch(() => {});
+  }, [api, centralApi]);
 
   function applyList(result: ClaudeAccountList) {
     setAccountList(result);
@@ -211,14 +247,16 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
 
   async function refreshAccounts() {
     try {
-      const result = await api.getClaudeAuthAccounts(nodeId);
+      const result = centralApi
+        ? await centralApi.getCentralClaudeAuthAccounts()
+        : await api.getClaudeAuthAccounts(nodeId);
       if (result.mode === 'pool') applyList(result);
     } catch { setNotice('계정 목록을 갱신하지 못했습니다.'); }
   }
 
   useLayoutEffect(() => {
-    currentNodeIdRef.current = nodeId;
-  }, [nodeId]);
+    currentScopeRef.current = scopeKey;
+  }, [scopeKey]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -229,11 +267,11 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
   }, [cancelTrackedLogin]);
 
   useEffect(() => {
-    const previousNodeId = previousNodeIdRef.current;
-    if (previousNodeId === nodeId) return;
-    previousNodeIdRef.current = nodeId;
-    cancelTrackedLogin(previousNodeId);
-    updateLoginFlow(null, previousNodeId);
+    const previousScope = previousScopeRef.current;
+    if (previousScope === scopeKey) return;
+    previousScopeRef.current = scopeKey;
+    cancelTrackedLogin(previousScope);
+    updateLoginFlow(null, previousScope);
     closedLoginIdRef.current = null;
     cancelRequestRef.current = null;
     submitLock.current = false;
@@ -242,22 +280,24 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     setLoginStarting(false);
     setSubmittingCode(false);
     setCancellingLogin(false);
-  }, [cancelTrackedLogin, nodeId, updateLoginFlow]);
+  }, [cancelTrackedLogin, scopeKey, updateLoginFlow]);
 
   useEffect(() => {
     const flow = loginFlow;
     if (!flow || terminalStates.has(flow.state)) return;
     const tracked = trackedLoginRef.current;
-    if (!tracked || tracked.loginId !== flow.login_id || tracked.nodeId !== nodeId) return;
-    const flowNodeId = tracked.nodeId;
+    if (!tracked || tracked.loginId !== flow.login_id || tracked.scope !== scopeKey) return;
+    const flowScope = tracked.scope;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
       let shouldContinue = true;
       try {
-        const latest = await api.getClaudeAuthLogin(flowNodeId, flow.login_id);
+        const latest = centralApi
+          ? await centralApi.getCentralClaudeAuthLogin(flow.login_id)
+          : await api.getClaudeAuthLogin(flowScope, flow.login_id);
         if (!active || closedLoginIdRef.current === flow.login_id) return;
-        updateLoginFlow(latest, flowNodeId);
+        updateLoginFlow(latest, flowScope);
         setLoginError(loginFlowError(latest));
         shouldContinue = !terminalStates.has(latest.state);
       } catch {
@@ -267,22 +307,24 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     };
     timer = setTimeout(() => { void poll(); }, 1_000);
     return () => { active = false; if (timer) clearTimeout(timer); };
-  }, [api, loginFlow?.login_id, loginFlow?.state, nodeId, updateLoginFlow]);
+  }, [api, centralApi, loginFlow?.login_id, loginFlow?.state, scopeKey, updateLoginFlow]);
 
   useEffect(() => {
     if (loginFlow?.state === 'done') {
-      updateLoginFlow(null, nodeId);
+      updateLoginFlow(null, scopeKey);
       setCode('');
       setLoginError(null);
       setNotice('Claude 계정이 연결되었습니다.');
       void refreshAccounts();
+      // 중앙에 계정이 늘면 이 노드가 받는 목록과 사용량도 달라진다.
+      if (centralApi) onCentralChange?.();
     } else if (loginFlow?.state === 'cancelled') {
-      updateLoginFlow(null, nodeId);
+      updateLoginFlow(null, scopeKey);
       setCode('');
       setLoginError(null);
       setNotice('인증을 취소했습니다.');
     }
-  }, [loginFlow?.state, nodeId, updateLoginFlow]);
+  }, [loginFlow?.state, scopeKey, updateLoginFlow]);
 
   async function patchAccount(account: ClaudeAccount, patch: { enabled?: boolean; priority?: number | null }) {
     if (busyAccountId) return;
@@ -309,7 +351,16 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
       });
     }
     try {
-      applyList(await api.patchClaudeAuthAccount(nodeId, account.id, patch));
+      if (centralApi) {
+        // 중앙은 priority null을 0으로 바꾸므로 null을 보내지 않는다.
+        applyList(await centralApi.patchCentralClaudeAuthAccount(account.id, {
+          ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+          ...(typeof patch.priority === 'number' ? { priority: patch.priority } : {}),
+        }));
+        onCentralChange?.();
+      } else {
+        applyList(await api.patchClaudeAuthAccount(nodeId, account.id, patch));
+      }
     } catch {
       setAccountList(previousList);
       setNotice('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.');
@@ -327,13 +378,20 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
       let latest: ClaudeAccountList | null = null;
       for (const item of normalized) {
         if (item.priority === desiredOrder.find(entry => entry.id === item.id)?.priority) continue;
-        latest = await api.patchClaudeAuthAccount(nodeId, item.id, { priority: item.priority });
+        latest = centralApi
+          ? await centralApi.patchCentralClaudeAuthAccount(item.id, { priority: item.priority })
+          : await api.patchClaudeAuthAccount(nodeId, item.id, { priority: item.priority });
       }
-      if (latest) applyList(latest);
+      if (latest) {
+        applyList(latest);
+        if (centralApi) onCentralChange?.();
+      }
     } catch {
       let reconciled = false;
       try {
-        const latest = await api.getClaudeAuthAccounts(nodeId);
+        const latest = centralApi
+          ? await centralApi.getCentralClaudeAuthAccounts()
+          : await api.getClaudeAuthAccounts(nodeId);
         if (latest.mode === 'pool') {
           applyList(latest);
           reconciled = true;
@@ -366,39 +424,51 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     setBusyAccountId(accountId);
     setNotice(null);
     try {
-      const result = await api.deleteClaudeAuthAccount(nodeId, accountId);
-      setAccountList(current => ({ ...current, accounts: result.accounts, pool: result.pool }));
-      setConfirmingDelete(null);
-      setNotice(result.deferred ? '현재 세션이 끝난 뒤 삭제합니다.' : 'Claude 계정을 삭제했습니다.');
-      await refreshAccounts();
+      if (centralApi) {
+        // 중앙 삭제는 deferred 없이 곧바로 지워지므로 목록을 다시 읽어 화면을 맞춘다.
+        await centralApi.deleteCentralClaudeAuthAccount(accountId);
+        setConfirmingDelete(null);
+        setNotice('Claude 계정을 삭제했습니다.');
+        await refreshAccounts();
+        onCentralChange?.();
+      } else {
+        const result = await api.deleteClaudeAuthAccount(nodeId, accountId);
+        setAccountList(current => ({ ...current, accounts: result.accounts, pool: result.pool }));
+        setConfirmingDelete(null);
+        setNotice(result.deferred ? '현재 세션이 끝난 뒤 삭제합니다.' : 'Claude 계정을 삭제했습니다.');
+        await refreshAccounts();
+      }
     } catch { setNotice('Claude 계정을 삭제하지 못했습니다. 다시 시도해 주세요.'); }
     finally { setBusyAccountId(null); }
   }
 
   async function startLogin(accountId?: string) {
-    const requestedNodeId = nodeId;
+    const requestedScope = scopeKey;
     setLoginStarting(true);
     setLoginError(null);
     setCode('');
     setNotice(null);
     try {
-      const flow = await api.startClaudeAuthLogin(requestedNodeId, accountId);
-      if (!mountedRef.current || currentNodeIdRef.current !== requestedNodeId) {
+      const flow = centralApi
+        ? await centralApi.startCentralClaudeAuthLogin(accountId)
+        : await api.startClaudeAuthLogin(nodeId, accountId);
+      if (!mountedRef.current || currentScopeRef.current !== requestedScope) {
         if (!terminalStates.has(flow.state)) {
           closedLoginIdRef.current = flow.login_id;
-          void api.cancelClaudeAuthLogin(requestedNodeId, flow.login_id).catch(() => {});
+          if (centralApi) void centralApi.cancelCentralClaudeAuthLogin(flow.login_id).catch(() => {});
+          else void api.cancelClaudeAuthLogin(requestedScope, flow.login_id).catch(() => {});
         }
         return;
       }
       closedLoginIdRef.current = null;
-      updateLoginFlow(flow, requestedNodeId);
+      updateLoginFlow(flow, requestedScope);
       setLoginError(loginFlowError(flow));
     }
     catch (caught) {
-      if (mountedRef.current && currentNodeIdRef.current === requestedNodeId) setLoginError(loginErrorMessage(caught));
+      if (mountedRef.current && currentScopeRef.current === requestedScope) setLoginError(loginErrorMessage(caught));
     }
     finally {
-      if (mountedRef.current && currentNodeIdRef.current === requestedNodeId) setLoginStarting(false);
+      if (mountedRef.current && currentScopeRef.current === requestedScope) setLoginStarting(false);
     }
   }
 
@@ -410,21 +480,23 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
 
   async function submitCode() {
     const flow = loginFlow;
-    const requestNodeId = nodeId;
+    const requestScope = scopeKey;
     const value = code.trim();
     if (!flow || !value || submitLock.current) return;
     submitLock.current = true;
     setSubmittingCode(true);
     setLoginError(null);
     try {
-      const result = await api.submitClaudeAuthLoginCode(requestNodeId, flow.login_id, value);
-      if (!mountedRef.current || currentNodeIdRef.current !== requestNodeId
+      const result = centralApi
+        ? await centralApi.submitCentralClaudeAuthLoginCode(flow.login_id, value)
+        : await api.submitClaudeAuthLoginCode(requestScope, flow.login_id, value);
+      if (!mountedRef.current || currentScopeRef.current !== requestScope
         || closedLoginIdRef.current === flow.login_id) return;
       setCode('');
-      updateLoginFlow(result, requestNodeId);
+      updateLoginFlow(result, requestScope);
       setLoginError(loginFlowError(result));
     } catch (caught) {
-      if (mountedRef.current && currentNodeIdRef.current === requestNodeId
+      if (mountedRef.current && currentScopeRef.current === requestScope
         && closedLoginIdRef.current !== flow.login_id) {
         setCode('');
         setLoginError(loginErrorMessage(caught));
@@ -432,34 +504,36 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     }
     finally {
       submitLock.current = false;
-      if (mountedRef.current && currentNodeIdRef.current === requestNodeId) setSubmittingCode(false);
+      if (mountedRef.current && currentScopeRef.current === requestScope) setSubmittingCode(false);
     }
   }
 
   async function cancelLogin() {
     const flow = loginFlow;
-    const requestNodeId = nodeId;
+    const requestScope = scopeKey;
     if (!flow || cancellingLogin) return;
-    const request = { nodeId: requestNodeId, loginId: flow.login_id };
+    const request = { scope: requestScope, loginId: flow.login_id };
     cancelRequestRef.current = request;
     setCancellingLogin(true);
     let result: ClaudeAuthLoginFlow | null = null;
     let requestFailed = false;
     try {
-      result = await api.cancelClaudeAuthLogin(requestNodeId, flow.login_id);
+      result = centralApi
+        ? await centralApi.cancelCentralClaudeAuthLogin(flow.login_id)
+        : await api.cancelClaudeAuthLogin(requestScope, flow.login_id);
     }
     catch { requestFailed = true; }
     finally {
       const currentFlow = currentLoginFlowRef.current;
       const stillOwnsFlow = currentFlow?.login_id === flow.login_id;
       const currentFlowIsTerminal = terminalStates.has(currentFlow?.state ?? flow.state);
-      if (mountedRef.current && currentNodeIdRef.current === requestNodeId && stillOwnsFlow) {
+      if (mountedRef.current && currentScopeRef.current === requestScope && stillOwnsFlow) {
         if (requestFailed && !currentFlowIsTerminal) {
           setLoginError('인증을 취소하지 못했습니다. 다시 시도해 주세요.');
         } else {
           closedLoginIdRef.current = flow.login_id;
           trackedLoginRef.current = null;
-          updateLoginFlow(null, requestNodeId);
+          updateLoginFlow(null, requestScope);
           setCode('');
           setLoginError(null);
           if (result?.state === 'cancelled') setNotice('인증을 취소했습니다.');
@@ -486,7 +560,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     {showHeader ? <>
       <View style={styles.poolTopBar}>
         <View style={styles.poolTitleRow}>
-          <Text style={styles.poolTitle}>Claude 계정</Text>
+          <Text style={styles.poolTitle}>{title}</Text>
           {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
         </View>
         <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} busy={loginStarting}>
@@ -499,9 +573,12 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
       <SettingsDivider />
     </> : null}
     <View style={styles.accountList}>
+      {!central && centralSettingsApi
+        ? <ClaudeCentralReceiveRow nodeId={nodeId} api={centralSettingsApi} onSaved={() => void refreshAccounts()} />
+        : null}
       {ordered.map((account, index) => <React.Fragment key={account.id}>
         <AccountRow account={account} index={account.enabled ? prioritized.findIndex(item => item.id === account.id) : index} totalCount={prioritized.length}
-          confirmingDelete={confirmingDelete === account.id} busy={busyAccountId !== null}
+          confirmingDelete={confirmingDelete === account.id} busy={busyAccountId !== null} central={central}
           onToggle={() => void patchAccount(account, { enabled: !account.enabled })}
           onMoveUp={() => movePriority(account, prioritized.findIndex(item => item.id === account.id), -1)}
           onMoveDown={() => movePriority(account, prioritized.findIndex(item => item.id === account.id), 1)}
@@ -514,8 +591,8 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
         <View style={styles.loginPanel}>
           <ClaudeAccountLoginFlowPanel flow={loginFlow} code={code} error={loginError}
             starting={loginStarting} submitting={submittingCode} cancelling={cancellingLogin}
-            existingAccountCount={accounts.length}
-            accountEmail={accounts.find(account => account.id === loginFlow.account_id)?.email ?? null}
+            existingAccountCount={ordered.length}
+            accountEmail={ordered.find(account => account.id === loginFlow.account_id)?.email ?? null}
             onOpenAuth={() => void openAuthPage()} onCodeChange={setCode}
             onSubmit={() => void submitCode()} onCancel={() => void cancelLogin()}
             onRestart={() => void startLogin(loginFlow.account_id ?? undefined)} />
@@ -528,7 +605,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
 });
 
 function AccountRow({
-  account, index, totalCount, confirmingDelete, busy, onToggle, onMoveUp, onMoveDown,
+  account, index, totalCount, confirmingDelete, busy, central, onToggle, onMoveUp, onMoveDown,
   onRelogin, onAskDelete, onCancelDelete, onConfirmDelete,
 }: {
   account: ClaudeAccount;
@@ -536,6 +613,7 @@ function AccountRow({
   totalCount: number;
   confirmingDelete: boolean;
   busy: boolean;
+  central: boolean;
   onToggle(): void;
   onMoveUp(): void;
   onMoveDown(): void;
@@ -597,15 +675,15 @@ function AccountRow({
       <Text style={styles.metaText}>{account.auth_state === 'needs_relogin' ? '인증 만료로 사용량 조회 중단' : '미측정 (실제 호출 시 갱신)'}</Text>
       <Text style={styles.metaText}>{observedAtLabel(account.observed_at)}</Text>
     </View>}
-    {confirmingDelete ? <DeleteConfirmation accountId={account.id} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
+    {confirmingDelete ? <DeleteConfirmation accountId={account.id} central={central} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
   </View>;
 }
 
-function DeleteConfirmation({ accountId, busy, onCancel, onConfirm }: { accountId: string; busy: boolean; onCancel(): void; onConfirm(): void }) {
+function DeleteConfirmation({ accountId, central, busy, onCancel, onConfirm }: { accountId: string; central: boolean; busy: boolean; onCancel(): void; onConfirm(): void }) {
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   return <View testID={`claude-account-delete-confirmation-${accountId}`} style={styles.confirmRow}>
-    <Text style={styles.confirmPrompt}>이 계정을 노드에서 삭제할까요?</Text>
+    <Text style={styles.confirmPrompt}>{central ? '이 계정을 중앙 풀에서 삭제할까요?' : '이 계정을 노드에서 삭제할까요?'}</Text>
     <View style={styles.confirmActions}>
       <GlassButton testID="claude-account-delete-cancel" accessibilityLabel="삭제 취소" onPress={onCancel} busy={busy} style={styles.confirmButton}>
         <Text style={styles.secondaryButtonText}>취소</Text>

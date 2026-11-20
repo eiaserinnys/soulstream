@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { findUsageSummaryNode } from '../../../../packages/soul-ui/src/lib/usage-summary';
@@ -11,6 +11,8 @@ import type {
 import { useAuthStore } from '../../store/authStore';
 import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
+import type { ClaudeCentralPoolApi } from './ClaudeAccountPoolSection';
+import type { ClaudeCentralSettingsApi } from './ClaudeCentralReceiveRow';
 import { ClaudeProviderSection, type ClaudeProviderApi } from './ClaudeProviderSection';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ProviderQuotaGrid, providerQuotaCells } from './ProviderQuotaGrid';
@@ -20,7 +22,25 @@ import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 export type NodeProviderSectionsApi = ClaudeProviderApi & Pick<
   ApiClient,
   'getUsageSummary' | 'refreshUsageSummary'
->;
+> & Partial<ClaudeCentralPoolApi & ClaudeCentralSettingsApi>;
+
+/** 중앙 풀 화면을 그릴 수 있는 API인지 런타임에 가른다. 옛 시험 대역은 이 함수들이 없다. */
+export type CentralCapableApi = NodeProviderSectionsApi & ClaudeCentralPoolApi;
+
+export function hasCentralPool(api: NodeProviderSectionsApi): api is CentralCapableApi {
+  return typeof api.getCentralClaudeAuthAccounts === 'function'
+    && typeof api.patchCentralClaudeAuthAccount === 'function'
+    && typeof api.deleteCentralClaudeAuthAccount === 'function'
+    && typeof api.startCentralClaudeAuthLogin === 'function'
+    && typeof api.getCentralClaudeAuthLogin === 'function'
+    && typeof api.submitCentralClaudeAuthLoginCode === 'function'
+    && typeof api.cancelCentralClaudeAuthLogin === 'function';
+}
+
+function hasCentralSettings(api: NodeProviderSectionsApi): api is NodeProviderSectionsApi & ClaudeCentralSettingsApi {
+  return typeof api.getClaudeCentralSettings === 'function'
+    && typeof api.putClaudeCentralReceive === 'function';
+}
 
 const providerOrder = ['opencode_go', 'codex', 'antigravity'] as const;
 
@@ -73,15 +93,19 @@ export function NodeProviderSections({
   nodeId,
   serverUrl,
   apiClient,
+  centralRevision = 0,
 }: {
   nodeId: string;
   serverUrl: string;
   apiClient?: NodeProviderSectionsApi;
+  /** 중앙 계정이 바뀔 때마다 늘어난다. 늘어나면 이 노드의 목록과 사용량을 다시 읽는다. */
+  centralRevision?: number;
 }) {
   const t = useTokens();
   const workspace = useSettingsWorkspace();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const api = useMemo(() => apiClient ?? createApiClient(serverUrl), [apiClient, serverUrl]);
+  const centralSettingsApi = hasCentralSettings(api) ? api : undefined;
   const jwt = useAuthStore(state => state.jwt);
   const revision = useRef(0);
   const [summary, setSummary] = useState<AppUsageSummarySnapshot | null>(null);
@@ -127,14 +151,22 @@ export function NodeProviderSections({
     }
   }
 
-  async function reloadAfterTokenChange() {
+  const reloadAfterTokenChange = useCallback(async () => {
     const scope = revision.current;
     setClaudeReloadKey(value => value + 1);
     try {
       const result = await api.getUsageSummary();
       if (scope === revision.current) setSummary(result);
     } catch { /* the previous gauges stay visible */ }
-  }
+  }, [api]);
+
+  // 중앙 계정이 바뀐 뒤에는 이 노드가 받는 목록과 사용량도 달라진다. 처음 그릴 때는 부르지 않는다.
+  const seenCentralRevision = useRef(centralRevision);
+  useEffect(() => {
+    if (centralRevision === seenCentralRevision.current) return;
+    seenCentralRevision.current = centralRevision;
+    void reloadAfterTokenChange();
+  }, [centralRevision, reloadAfterTokenChange]);
 
   const node = findUsageSummaryNode(summary, nodeId) as AppUsageSummaryNode | null;
   const updated = nodeUpdatedLabel(node, loadingSummary);
@@ -146,6 +178,7 @@ export function NodeProviderSections({
     loadingSummary={loadingSummary}
     reloadKey={claudeReloadKey}
     onTokenDeleted={() => void reloadAfterTokenChange()}
+    centralSettingsApi={centralSettingsApi}
   />];
   for (const provider of providerOrder) {
     const value = node?.providers[provider];

@@ -3,6 +3,7 @@ import type {
   ClaudeAccountDeleteResult,
   ClaudeAccountList,
   ClaudeAuthLoginFlow,
+  ClaudeCentralSettings,
 } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type {
   UsageData,
@@ -81,6 +82,63 @@ export function createAuthEndpoints({ base, authFetch, readJson }: ApiRequestCon
       authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`, {
         method: 'DELETE',
       }).then((r) => readJson(r, 'cancelClaudeAuthLogin')),
+
+    getCentralClaudeAuthAccounts: (): Promise<ClaudeAccountList> =>
+      authFetch(`${base}/api/claude-auth/central/accounts`).then((r) =>
+        readJson(r, 'getCentralClaudeAuthAccounts'),
+      ),
+
+    // 중앙은 priority null을 0으로 바꾸므로 본문에 null을 보내지 않는다.
+    patchCentralClaudeAuthAccount: (
+      accountId: string,
+      patch: { enabled?: boolean; priority?: number },
+    ): Promise<ClaudeAccountList> =>
+      authFetch(`${base}/api/claude-auth/central/accounts/${encodeURIComponent(accountId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then((r) => readJson(r, 'patchCentralClaudeAuthAccount')),
+
+    deleteCentralClaudeAuthAccount: (accountId: string): Promise<{ success: boolean }> =>
+      authFetch(`${base}/api/claude-auth/central/accounts/${encodeURIComponent(accountId)}`, {
+        method: 'DELETE',
+      }).then((r) => readJson(r, 'deleteCentralClaudeAuthAccount')),
+
+    startCentralClaudeAuthLogin: (accountId?: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/claude-auth/central/logins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accountId ? { account_id: accountId } : {}),
+      }).then((r) => readJson(r, 'startCentralClaudeAuthLogin')),
+
+    getCentralClaudeAuthLogin: (loginId: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/claude-auth/central/logins/${encodeURIComponent(loginId)}`)
+        .then((r) => readJson(r, 'getCentralClaudeAuthLogin')),
+
+    submitCentralClaudeAuthLoginCode: (loginId: string, code: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/claude-auth/central/logins/${encodeURIComponent(loginId)}/code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      }).then((r) => readJson(r, 'submitCentralClaudeAuthLoginCode')),
+
+    cancelCentralClaudeAuthLogin: (loginId: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/claude-auth/central/logins/${encodeURIComponent(loginId)}`, {
+        method: 'DELETE',
+      }).then((r) => readJson(r, 'cancelCentralClaudeAuthLogin')),
+
+    getClaudeCentralSettings: (): Promise<ClaudeCentralSettings> =>
+      authFetch(`${base}/api/claude-auth/central/settings`).then((r) =>
+        readJson(r, 'getClaudeCentralSettings'),
+      ),
+
+    // 응답은 그 노드가 새 설정을 이미 받은 상태이므로 그대로 화면 값으로 쓴다.
+    putClaudeCentralReceive: (nodeId: string, receive: boolean): Promise<ClaudeCentralSettings> =>
+      authFetch(`${base}/api/claude-auth/central/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodes: { [nodeId]: receive } }),
+      }).then((r) => readJson(r, 'putClaudeCentralReceive')),
 
     startClaudeAuth: (nodeId: string): Promise<{ authUrl: string }> =>
       authFetch(`${base}/api/nodes/${nodeId}/claude-auth/headless/start`).then((r) =>

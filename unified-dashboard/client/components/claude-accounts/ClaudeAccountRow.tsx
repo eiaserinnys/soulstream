@@ -11,6 +11,8 @@ type Props = {
   busy: boolean;
   confirmingDelete: boolean;
   highlighted: boolean;
+  /** 중앙 풀 대상이면 삭제 확인 문구가 「중앙 풀에서」가 된다. */
+  central?: boolean;
   onEnabledChange: (enabled: boolean) => void;
   onMove: (direction: -1 | 1) => void;
   onRelogin: () => void;
@@ -75,6 +77,7 @@ export function ClaudeAccountRow({
   busy,
   confirmingDelete,
   highlighted,
+  central = false,
   onEnabledChange,
   onMove,
   onRelogin,
@@ -137,7 +140,7 @@ export function ClaudeAccountRow({
     </div>}
 
     {confirmingDelete ? <div className="c724-confirm-bar" data-testid={`delete-confirm-${account.id}`}>
-      <span className="c724-confirm-text">이 계정을 노드에서 삭제할까요?</span>
+      <span className="c724-confirm-text">{central ? "이 계정을 중앙 풀에서 삭제할까요?" : "이 계정을 노드에서 삭제할까요?"}</span>
       <div className="c724-confirm-actions">
         <Button variant="outline" size="sm" disabled={busy} onClick={onCancelDelete}>취소</Button>
         <Button variant="destructive" size="sm" disabled={busy} onClick={onDelete}>{busy ? "삭제 중" : "삭제"}</Button>

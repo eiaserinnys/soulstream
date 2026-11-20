@@ -244,6 +244,20 @@ test('refresh posts once, applies the returned snapshot, and reloads Claude acco
   await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(2));
 });
 
+test('rereads the node list and usage when the central revision changes, not on the first render', async () => {
+  const api = createApi();
+  const screen = render(<NodeProviderSections nodeId="node-a" serverUrl="https://soul.test" apiClient={api} centralRevision={0} />);
+
+  await waitFor(() => expect(api.getUsageSummary).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(1));
+
+  screen.rerender(<NodeProviderSections nodeId="node-a" serverUrl="https://soul.test" apiClient={api} centralRevision={1} />);
+
+  await waitFor(() => expect(api.getUsageSummary).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(2));
+  expect(await screen.findByTestId('provider-row-claude')).toBeTruthy();
+});
+
 test('refresh failure keeps the previous gauges and shows a short failure mark', async () => {
   const api = createApi();
   api.getUsageSummary.mockResolvedValue(summaryFor('node-a', {

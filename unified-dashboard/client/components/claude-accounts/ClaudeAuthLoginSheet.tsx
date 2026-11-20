@@ -8,10 +8,11 @@ import {
   loginPath,
   requestClaudeAuthData,
   requestErrorMessage,
+  type ClaudeAccountTarget,
 } from "../../lib/claude-auth-api";
 
 type Props = {
-  nodeId: string;
+  target: ClaudeAccountTarget;
   request: typeof fetch;
   account: ClaudeAccount | null;
   isAdditionalAccount: boolean;
@@ -39,7 +40,7 @@ function stateLabel(state: ClaudeAuthLoginFlow["state"]): string {
 }
 
 export function ClaudeAuthLoginSheet({
-  nodeId,
+  target,
   request,
   account,
   isAdditionalAccount,
@@ -54,10 +55,11 @@ export function ClaudeAuthLoginSheet({
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const codeInputRef = useRef<HTMLInputElement | null>(null);
   const activeLogin = useRef({ loginId: initialFlow.login_id, shouldCancel: !isTerminalLoginState(initialFlow.state) });
   const lifecycle = useRef(0);
-  const cancellationContext = useRef({ nodeId, request });
-  cancellationContext.current = { nodeId, request };
+  const cancellationContext = useRef({ target, request });
+  cancellationContext.current = { target, request };
   const isChecking = submitting || flow.state === "code_submitted" || flow.state === "verifying";
 
   const updateFlow = useCallback((next: ClaudeAuthLoginFlow) => {
@@ -73,16 +75,21 @@ export function ClaudeAuthLoginSheet({
         const pending = activeLogin.current;
         if (!pending.shouldCancel) return;
         const current = cancellationContext.current;
-        void cancelClaudeAccountLogin(current.request, current.nodeId, pending.loginId).catch(() => {});
+        void cancelClaudeAccountLogin(current.request, current.target, pending.loginId).catch(() => {});
       });
     };
   }, []);
+
+  // 시트를 열거나 코드가 틀려 되돌아오면 첫 입력인 인증 코드 칸으로 초점을 옮긴다(ui-design 0절 14번).
+  useEffect(() => {
+    if (flow.state === "url_ready" || flow.state === "failed") codeInputRef.current?.focus();
+  }, [flow.state]);
 
   useEffect(() => {
     if (!isPolling(flow)) return;
     let active = true;
     const timer = globalThis.setTimeout(() => {
-      void requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(nodeId, flow.login_id))
+      void requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(target, flow.login_id))
         .then(async (next) => {
           if (!active) return;
           updateFlow(next);
@@ -101,7 +108,7 @@ export function ClaudeAuthLoginSheet({
       active = false;
       globalThis.clearTimeout(timer);
     };
-  }, [flow, isAdditionalAccount, nodeId, onComplete, onExistingAccount, request, updateFlow]);
+  }, [flow, isAdditionalAccount, target, onComplete, onExistingAccount, request, updateFlow]);
 
   async function submitCode() {
     if (inFlight.current || !code.trim()) return;
@@ -113,7 +120,7 @@ export function ClaudeAuthLoginSheet({
     try {
       const next = await requestClaudeAuthData<ClaudeAuthLoginFlow>(
         request,
-        `${loginPath(nodeId, flow.login_id)}/code`,
+        `${loginPath(target, flow.login_id)}/code`,
         { method: "POST", body: { code: submittedCode } },
       );
       updateFlow(next);
@@ -138,7 +145,7 @@ export function ClaudeAuthLoginSheet({
     setSubmitting(true);
     setActionError(null);
     try {
-      await cancelClaudeAccountLogin(request, nodeId, flow.login_id);
+      await cancelClaudeAccountLogin(request, target, flow.login_id);
       onClose();
     } catch (error) {
       activeLogin.current.shouldCancel = !isTerminalLoginState(flow.state);
@@ -177,7 +184,18 @@ export function ClaudeAuthLoginSheet({
         ? "계정 목록에 반영했습니다."
         : null;
 
-  return <section className="c724-auth-sheet" data-testid="claude-login-sheet" data-login-state={flow.state}>
+  return <section
+    className="c724-auth-sheet"
+    data-testid="claude-login-sheet"
+    data-login-state={flow.state}
+    onKeyDown={(event) => {
+      // 인라인 시트지만 Esc로 닫는 것이 기대 동작이다. 언마운트 정리가 진행 중 로그인을 취소한다.
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }}
+  >
     <div className="c724-auth-sheet-header">
       <span className="c724-auth-sheet-title">{title}</span>
       <Button variant="outline" size="sm" disabled={submitting} onClick={() => void cancel()}>취소</Button>
@@ -200,6 +218,7 @@ export function ClaudeAuthLoginSheet({
     </div> : null}
     {flow.state === "url_ready" || flow.state === "failed" || flow.state === "code_submitted" || flow.state === "verifying" ? <div className="c724-auth-code-row">
       <Input
+        ref={codeInputRef}
         aria-label="Claude 인증 코드"
         autoComplete="off"
         className="flex-1"

@@ -27,6 +27,7 @@ vi.mock("./NodeProvidersPanel", () => ({
       data-loading={String(props.loading)}
     />
   ),
+  PendingClaudeRow: () => <div data-testid="pending-claude-row" />,
 }));
 
 import { NodePanel } from "./NodePanel";
@@ -123,6 +124,33 @@ describe("NodePanel", () => {
     await expand();
     expect(request.mock.calls.some(([input]) => String(input).endsWith("/api/usage/summary"))).toBe(true);
     expect(providers()).not.toBeNull();
+  });
+
+  it("opens the node from the keyboard toggle at the end of the header", async () => {
+    const request = vi.fn(async () => data(snapshot(summaryNode("2026-11-07T15:50:00+09:00"))));
+
+    await mount(request as unknown as typeof fetch);
+
+    const toggle = head().querySelector<HTMLButtonElement>('button[aria-label="펼치기"]')!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toBe("▼");
+    // 층 밖 `.v3-shell button` 규칙이 단추 글자를 키우지 않게, 글리프는 text-xs span이 그린다.
+    const glyph = toggle.querySelector("span");
+    expect(glyph?.textContent).toBe("▼");
+    expect(glyph?.classList.contains("text-xs")).toBe(true);
+    expect(toggle.classList.contains("inline-flex")).toBe(true);
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    await act(async () => toggle.click());
+    await settle();
+
+    expect(providers()).not.toBeNull();
+    const close = head().querySelector<HTMLButtonElement>('button[aria-label="접기"]')!;
+    expect(close.getAttribute("aria-expanded")).toBe("true");
+    expect(close.textContent).toBe("▲");
   });
 
   it("shows the update time of the expanded node next to the node name", async () => {
@@ -296,5 +324,23 @@ describe("NodePanel", () => {
     await settle();
 
     expect(providers()).not.toBeNull();
+  });
+
+  it("puts the central pool card above the node cards and does not read its list until it is opened", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/api/usage/summary")) return data(snapshot(summaryNode("2026-11-07T15:50:00+09:00")));
+      return data({});
+    });
+
+    await mount(request as unknown as typeof fetch);
+
+    const body = host.querySelector<HTMLElement>('[data-testid="node-panel-body"]')!;
+    const central = host.querySelector<HTMLElement>('[data-testid="claude-central-pool-card"]')!;
+    const list = host.querySelector<HTMLElement>('[data-testid="node-card-list"]')!;
+    expect(body.firstElementChild).toBe(central);
+    expect(central.textContent).toContain("중앙 풀");
+    expect(central.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(request.mock.calls.some(([input]) => String(input) === "/api/claude-auth/central/accounts")).toBe(false);
   });
 });

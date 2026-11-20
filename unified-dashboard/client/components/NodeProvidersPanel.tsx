@@ -14,9 +14,10 @@ import type {
   UsageSummaryNode,
   UsageSummaryProvider,
 } from "@seosoyoung/soul-ui";
-import { getClaudeAccounts } from "../lib/claude-auth-api";
+import { getClaudeAccounts, nodeClaudeTarget } from "../lib/claude-auth-api";
 import { useClaudeAuthFlow } from "../hooks/useClaudeAuthFlow";
 import { ClaudePoolRow } from "./claude-accounts/ClaudePoolRow";
+import { ClaudeCentralReceiveRow } from "./claude-accounts/ClaudeCentralReceiveRow";
 import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./claude-accounts/ProviderQuotaGrid";
 import "./claude-accounts/claude-account-pool.css";
 
@@ -166,7 +167,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
   </div>;
 }
 
-function PendingClaudeRow() {
+export function PendingClaudeRow() {
   return <div className="c724-account-row" data-provider-id="claude" data-state="pending">
     <div className="c724-account-top">
       <div className="c724-account-identity">
@@ -181,7 +182,7 @@ function PendingClaudeRow() {
 export function NodeProvidersPanel({ nodeId, request, node, loading }: Props) {
   const accounts = useQuery({
     queryKey: ["claude-auth-accounts", nodeId],
-    queryFn: () => getClaudeAccounts(request, nodeId),
+    queryFn: () => getClaudeAccounts(request, nodeClaudeTarget(nodeId)),
     retry: false,
     staleTime: Infinity,
   });
@@ -202,6 +203,7 @@ export function NodeProvidersPanel({ nodeId, request, node, loading }: Props) {
           initialList={list}
           slots={claudeSlots}
           loading={loading}
+          centralReceiveRow={<ClaudeCentralReceiveRow nodeId={nodeId} request={request} />}
         />
         : <LegacyClaudeRow nodeId={nodeId} request={request} slots={claudeSlots} loading={loading} />}
     {PROVIDER_ROWS.map((spec) => {

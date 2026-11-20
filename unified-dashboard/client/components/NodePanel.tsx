@@ -16,6 +16,8 @@ import { useCogitoHealth } from "../hooks/useCogitoHealth";
 import { CogitoNodeHealthNote, CogitoNodeHealthRow } from "./CogitoHealthPanel";
 import { clockLabel } from "./CogitoNodeHealthClock";
 import { NodeProvidersPanel } from "./NodeProvidersPanel";
+import { NodePanelCentralCard } from "./NodePanelCentralCard";
+import { NodeCardBody, NodeCardFrame, NodeCardHeader } from "./NodePanelFrame";
 import "./claude-accounts/claude-account-pool.css";
 
 export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sampleNodes?: ReturnType<typeof useOrchestratorStore.getState>["nodes"] } = {}) {
@@ -63,6 +65,8 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
 
   return (
     <div data-testid="node-panel-body" className="space-y-2">
+      {/* 노드 탭 맨 위의 중앙 풀 카드. 사용자가 합의한 자리다. */}
+      <NodePanelCentralCard request={request ?? fetch} />
       {nodeList.length === 0 ? (
         <div
           data-testid="node-card-list"
@@ -83,17 +87,10 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
             const cogitoNode = cogitoByNode.get(node.nodeId);
 
             return (
-              <div
-                key={node.nodeId}
-                data-testid="node-card"
-                className={cn(
-                  "overflow-hidden rounded-xl border border-border bg-muted/10",
-                  isDead && "opacity-60",
-                )}
-              >
+              <NodeCardFrame key={node.nodeId} testId="node-card" dimmed={isDead}>
                 {/* Node header row — 클릭 시 공급자 패널 토글 */}
-                <div
-                  className="flex items-center gap-2 px-3 py-2 select-none cursor-pointer hover:bg-muted/30"
+                <NodeCardHeader
+                  expanded={isExpanded}
                   onClick={() =>
                     setExpandedNodeId(isExpanded ? null : node.nodeId)
                   }
@@ -151,12 +148,9 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                         : "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]",
                     )}
                   />
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {isExpanded ? "▲" : "▼"}
-                  </span>
-                </div>
+                </NodeCardHeader>
                 {/* 확장 패널 — 공급자 중립 사용량 아래에 그 노드의 cogito 상태 */}
-                {isExpanded && <div className="border-t border-border px-3 py-3">
+                {isExpanded && <NodeCardBody>
                   {staleSince ? (
                     <div className="mb-2 sm:hidden">
                       <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
@@ -175,8 +169,8 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                   ) : cogitoNode ? (
                     <CogitoNodeHealthRow node={cogitoNode} embedded />
                   ) : null}
-                </div>}
-              </div>
+                </NodeCardBody>}
+              </NodeCardFrame>
             );
           })}
         </div>

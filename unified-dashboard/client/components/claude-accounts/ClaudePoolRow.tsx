@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
@@ -6,23 +6,37 @@ import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, Claud
 import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
 import {
   accountPath,
+  CENTRAL_CLAUDE_TARGET,
+  claudeLoginsPath,
   ClaudeAuthRequestError,
   getClaudeAccounts,
+  nodeClaudeTarget,
   requestClaudeAuthData,
   requestErrorMessage,
   replaceAccount,
+  type ClaudeAccountPatch,
+  type ClaudeAccountTarget,
 } from "../../lib/claude-auth-api";
 import { ClaudeAccountRow } from "./ClaudeAccountRow";
 import { ClaudeAuthLoginSheet } from "./ClaudeAuthLoginSheet";
 import { planPriorityMove } from "./priority-order";
 import "./claude-account-pool.css";
 
-type Props = {
-  nodeId: string;
+/**
+ * 같은 풀 줄이 대상만 바꿔 그린다. 노드는 그 노드의 계정 API를, 중앙은 오케스트레이터의
+ * 중앙 풀 API를 부른다. 기존 호출지와 시험은 `nodeId`만 넘긴다.
+ */
+type TargetProps =
+  | { nodeId: string; central?: false }
+  | { central: true; nodeId?: never };
+
+type Props = TargetProps & {
   request: typeof fetch;
   initialList: ClaudeAccountList;
   slots: ProviderQuotaSlots;
   loading?: boolean;
+  /** 노드 대상의 펼친 영역 맨 위에 그릴 줄(중앙 풀 받기). 중앙 대상에는 그리지 않는다. */
+  centralReceiveRow?: ReactNode;
 };
 
 function ordered(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
@@ -52,6 +66,15 @@ function existingAccountId(error: unknown): string | null {
   return error instanceof ClaudeAuthRequestError ? error.apiError?.existing_account_id ?? null : null;
 }
 
+/** 중앙은 priority null을 0으로 바꾸므로 null을 보내지 않는다. */
+function patchBody(target: ClaudeAccountTarget, patch: ClaudeAccountPatch): ClaudeAccountPatch {
+  if (target.scope !== "central") return patch;
+  return {
+    ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+    ...(typeof patch.priority === "number" ? { priority: patch.priority } : {}),
+  };
+}
+
 /** 새 흐름이 살아 있는 상태. 이 상태로 시작·대체되면 계정 목록을 다시 받아 남은 시간을 맞춘다. */
 const ACTIVE_LOGIN_STATES: ReadonlySet<ClaudeAuthLoginFlow["state"]> = new Set([
   "requested",
@@ -60,17 +83,32 @@ const ACTIVE_LOGIN_STATES: ReadonlySet<ClaudeAuthLoginFlow["state"]> = new Set([
   "verifying",
 ]);
 
-export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = false }: Props) {
+export function ClaudePoolRow(props: Props) {
+  const { request, initialList, slots, loading = false, centralReceiveRow } = props;
+  const target = useMemo<ClaudeAccountTarget>(
+    () => props.central ? CENTRAL_CLAUDE_TARGET : nodeClaudeTarget(props.nodeId),
+    [props.central, props.nodeId],
+  );
+  const isCentral = target.scope === "central";
+  const nodeId = target.scope === "node" ? target.nodeId : null;
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => ["claude-auth-accounts", nodeId] as const, [nodeId]);
+  const queryKey = useMemo(
+    () => ["claude-auth-accounts", nodeId ?? { scope: "central" }] as const,
+    [nodeId],
+  );
   const query = useQuery({
     queryKey,
-    queryFn: () => getClaudeAccounts(request, nodeId),
+    queryFn: () => getClaudeAccounts(request, target),
     initialData: initialList,
     staleTime: Infinity,
   });
   const list = query.data ?? initialList;
-  const accounts = useMemo(() => ordered(list.accounts), [list.accounts]);
+  const orderedAccounts = useMemo(() => ordered(list.accounts), [list.accounts]);
+  // 노드 목록에는 그 노드의 로컬 계정만 그린다. 중앙 계정은 중앙 풀에서만 다룬다.
+  const accounts = useMemo(
+    () => isCentral ? orderedAccounts : orderedAccounts.filter((account) => account.source !== "central"),
+    [isCentral, orderedAccounts],
+  );
   const enabledCount = accounts.filter((account) => account.enabled).length;
   const [expanded, setExpanded] = useState(false);
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
@@ -80,14 +118,37 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const accountIdsBeforeLogin = useRef<Set<string>>(new Set());
+  const loginOpenerRef = useRef<HTMLElement | null>(null);
+  const loginSheetWasOpen = useRef(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const expiredLoginsHandled = useRef<Set<string>>(new Set());
 
+  // 시트를 닫으면 연 요소로 초점을 돌린다(ui-design 0절 14번). 그 사이 행이 사라졌으면 옮기지 않는다.
+  useEffect(() => {
+    if (loginFlow) {
+      loginSheetWasOpen.current = true;
+      return;
+    }
+    if (!loginSheetWasOpen.current) return;
+    loginSheetWasOpen.current = false;
+    const opener = loginOpenerRef.current;
+    if (opener?.isConnected) opener.focus();
+    loginOpenerRef.current = null;
+  }, [loginFlow]);
+
   const reloadAccounts = useCallback(async () => {
-    const next = await getClaudeAccounts(request, nodeId);
+    const next = await getClaudeAccounts(request, target);
     queryClient.setQueryData(queryKey, next);
     return next;
-  }, [nodeId, queryClient, queryKey, request]);
+  }, [queryClient, queryKey, request, target]);
+
+  /** 중앙을 바꾼 뒤에는 노드가 받는 계정도 달라지므로 노드 계정 목록 질의를 무효로 한다. */
+  const invalidateNodeAccounts = useCallback(() => {
+    if (!isCentral) return;
+    void queryClient.invalidateQueries({
+      predicate: (candidate) => candidate.queryKey[0] === "claude-auth-accounts" && typeof candidate.queryKey[1] === "string",
+    });
+  }, [isCentral, queryClient]);
 
   const loginExpiries = useMemo(() => {
     const entries: Array<{ accountId: string; expiresAt: number }> = [];
@@ -119,12 +180,14 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
 
   const completeLogin = useCallback(async (accountId: string | null) => {
     const next = await reloadAccounts();
-    const added = next.accounts.find((account) => !accountIdsBeforeLogin.current.has(account.id));
+    const added = next.accounts.find((account) => !accountIdsBeforeLogin.current.has(account.id)
+      && (isCentral || account.source !== "central"));
     const updated = accountId ? next.accounts.find((account) => account.id === accountId) : null;
     const completed = added ?? updated;
     if (completed) setHighlightAccountId(completed.id);
     setLoginFlow(null);
-  }, [reloadAccounts]);
+    invalidateNodeAccounts();
+  }, [invalidateNodeAccounts, isCentral, reloadAccounts]);
 
   const startLogin = useCallback(async (accountId: string | null = null) => {
     setActionError(null);
@@ -132,7 +195,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     accountIdsBeforeLogin.current = new Set(accounts.map((account) => account.id));
     const next = await requestClaudeAuthData<ClaudeAuthLoginFlow>(
       request,
-      `/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins`,
+      claudeLoginsPath(target),
       { method: "POST", body: accountId ? { account_id: accountId } : {} },
     );
     setLoginFlow(next);
@@ -141,7 +204,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     // 시작·대체된 새 흐름 기준으로 남은 시간이 보이도록 목록을 다시 받는다.
     else if (ACTIVE_LOGIN_STATES.has(next.state)) await reloadAccounts();
     return next;
-  }, [accounts, completeLogin, nodeId, reloadAccounts, request]);
+  }, [accounts, completeLogin, reloadAccounts, request, target]);
 
   const completeCurrentLogin = useCallback(async () => {
     await completeLogin(loginFlow?.account_id ?? null);
@@ -151,7 +214,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     setHighlightAccountId(accountId);
   }, []);
 
-  const patchAccount = useCallback(async (accountId: string, patch: { enabled?: boolean; priority?: number | null }, optimistic?: (current: ClaudeAccountList) => ClaudeAccountList) => {
+  const patchAccount = useCallback(async (accountId: string, patch: ClaudeAccountPatch, optimistic?: (current: ClaudeAccountList) => ClaudeAccountList) => {
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
     const next = optimistic ? optimistic(previous) : replaceAccount(previous, accountId, (account) => ({ ...account, ...patch }));
     queryClient.setQueryData(queryKey, next);
@@ -159,11 +222,12 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     setActionError(null);
     setNotice(null);
     try {
-      const returned = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, accountId), {
+      const returned = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(target, accountId), {
         method: "PATCH",
-        body: patch,
+        body: patchBody(target, patch),
       });
       queryClient.setQueryData(queryKey, returned);
+      invalidateNodeAccounts();
     } catch (error) {
       queryClient.setQueryData(queryKey, previous);
       setActionError(requestErrorMessage(error));
@@ -172,13 +236,19 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     } finally {
       setBusyAccountId(null);
     }
-  }, [list, nodeId, queryClient, queryKey, request]);
+  }, [invalidateNodeAccounts, list, queryClient, queryKey, request, target]);
 
   const moveAccount = useCallback(async (account: ClaudeAccount, index: number, direction: -1 | 1) => {
+    // 순위와 이동은 보이는 로컬 계정만으로 센다. 중앙 계정의 순서에는 손대지 않는다.
     const plan = planPriorityMove(accounts, index, direction);
     if (!plan) return;
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
-    queryClient.setQueryData(queryKey, { ...previous, accounts: plan.accounts });
+    // 숨긴 중앙 계정은 그대로 두고, 보이는 로컬 계정의 우선순위만 먼저 바꿔 그린다.
+    const planned = new Map(plan.accounts.map((item) => [item.id, item]));
+    queryClient.setQueryData(queryKey, {
+      ...previous,
+      accounts: previous.accounts.map((item) => planned.get(item.id) ?? item),
+    });
     setBusyAccountId(account.id);
     setActionError(null);
     setNotice(null);
@@ -191,12 +261,13 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
       ));
       let latest: ClaudeAccountList | null = null;
       for (const patch of patches) {
-        latest = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, patch.id), {
+        latest = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(target, patch.id), {
           method: "PATCH",
-          body: { priority: patch.priority },
+          body: patchBody(target, { priority: patch.priority }),
         });
       }
       if (latest) queryClient.setQueryData(queryKey, latest);
+      invalidateNodeAccounts();
     } catch (error) {
       try {
         await reloadAccounts();
@@ -207,7 +278,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     } finally {
       setBusyAccountId(null);
     }
-  }, [accounts, list, nodeId, queryClient, queryKey, reloadAccounts, request]);
+  }, [accounts, invalidateNodeAccounts, list, queryClient, queryKey, reloadAccounts, request, target]);
 
   const deleteAccount = useCallback(async (accountId: string) => {
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
@@ -216,19 +287,28 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     setActionError(null);
     setNotice(null);
     try {
-      const result = await requestClaudeAuthData<ClaudeAccountDeleteResult>(request, accountPath(nodeId, accountId), { method: "DELETE" });
-      await reloadAccounts();
-      setNotice(result.deferred ? "삭제 예약됨 · 활성 세션 종료 후 제거" : "계정 삭제됨");
+      if (isCentral) {
+        // 중앙 삭제는 deferred 없이 곧바로 지워지므로 목록을 다시 읽어 화면을 맞춘다.
+        await requestClaudeAuthData<{ success: boolean }>(request, accountPath(target, accountId), { method: "DELETE" });
+        await reloadAccounts();
+        setNotice("계정 삭제됨");
+      } else {
+        const result = await requestClaudeAuthData<ClaudeAccountDeleteResult>(request, accountPath(target, accountId), { method: "DELETE" });
+        await reloadAccounts();
+        setNotice(result.deferred ? "삭제 예약됨 · 활성 세션 종료 후 제거" : "계정 삭제됨");
+      }
       setConfirmingDeleteId(null);
+      invalidateNodeAccounts();
     } catch (error) {
       queryClient.setQueryData(queryKey, previous);
       setActionError(requestErrorMessage(error));
     } finally {
       setBusyAccountId(null);
     }
-  }, [list, nodeId, queryClient, queryKey, reloadAccounts, request]);
+  }, [invalidateNodeAccounts, isCentral, list, queryClient, queryKey, reloadAccounts, request, target]);
 
   async function beginLogin(accountId: string | null = null) {
+    loginOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setBusyAccountId(accountId);
     try {
       await startLogin(accountId);
@@ -249,7 +329,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
   const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
   const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
   const releaseLabel = poolBlocked ? localClock(earliestAvailableAt) : null;
-  const sessionCount = accounts.reduce((total, account) => total + account.active_sessions, 0);
+  const sessionCount = list.accounts.reduce((total, account) => total + account.active_sessions, 0);
   const statusColor = available > 0
     ? "var(--color-emerald-400)"
     : enabledCount > 0
@@ -283,6 +363,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     </div>
 
     {expanded ? <div className="c724-pool-account-body">
+      {!isCentral && centralReceiveRow ? centralReceiveRow : null}
       {notice ? <p className="c724-pool-notice" role="status">{notice}</p> : null}
       {actionError ? <p className="c724-pool-error" role="alert" data-v3-selectable-content="true">{actionError}</p> : null}
       <div className="c724-account-list">
@@ -295,6 +376,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
             busy={busyAccountId !== null || loginFlow !== null}
             confirmingDelete={confirmingDeleteId === account.id}
             highlighted={highlightAccountId === account.id}
+            central={isCentral}
             onEnabledChange={(enabled) => void patchAccount(account.id, { enabled })}
             onMove={(direction) => moveAccount(account, index, direction)}
             onRelogin={() => void beginLogin(account.id)}
@@ -309,7 +391,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
       : null}
 
     {loginFlow ? <ClaudeAuthLoginSheet
-      nodeId={nodeId}
+      target={target}
       request={request}
       account={loginAccount}
       isAdditionalAccount={!loginFlow.account_id && accounts.length > 0}

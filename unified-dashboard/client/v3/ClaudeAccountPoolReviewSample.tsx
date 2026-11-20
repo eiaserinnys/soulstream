@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   ClaudeAccount,
   ClaudeAccountList,
   ClaudeAuthLoginFlow,
+  ClaudeCentralSettings,
   UsageSummaryGauge,
   UsageSummaryNode,
   UsageSummaryProvider,
@@ -381,6 +382,292 @@ function sampleNode(nodeId: string): OrchestratorNode {
     connectedAt: 0,
     sessionCount: 2,
   };
+}
+
+export const CENTRAL_REVIEW_SCENES = [
+  "empty",
+  "accounts",
+  "login-url-ready",
+  "login-verifying",
+  "login-failed",
+  "loading",
+  "failure",
+  "receive-off",
+  "receive-pending",
+  "receive-failure",
+  "receive-settings-error",
+] as const;
+
+export type CentralReviewScene = (typeof CENTRAL_REVIEW_SCENES)[number];
+
+export function isCentralReviewScene(value: string | null): value is CentralReviewScene {
+  return value !== null && (CENTRAL_REVIEW_SCENES as readonly string[]).includes(value);
+}
+
+const CENTRAL_NODE_ID = "sample-central-node";
+
+function centralAccountList(): ClaudeAccountList {
+  const accounts: ClaudeAccount[] = [
+    {
+      id: "8f42c1a6-4b1e-4f5a-9ad3-0d6b1f5c2e71",
+      email: "eiaserinnys.central.primary@example.invalid",
+      plan: "Max 20x",
+      enabled: true,
+      priority: 1,
+      auth_state: "ok",
+      usage: {
+        five_hour: { used_percent: 18, resets_at: isoIn(resetSoon) },
+        seven_day: { used_percent: 64, resets_at: isoIn(resetHalf) },
+        fable_weekly: { used_percent: 22, resets_at: isoIn(resetSixty) },
+      },
+      observed_at: isoIn(nowSeconds - 5 * 60),
+      blocked: null,
+      active_sessions: 0,
+      expires_at: isoIn(nowSeconds + 2 * HOUR),
+      refreshed_at: isoIn(nowSeconds - 5 * 60),
+      relogin_reason: null,
+    },
+    {
+      id: "2d7a90fe-6c3b-4a18-b2f4-9e8d7c650a13",
+      email: "eiaserinnys.central.backup@example.invalid",
+      plan: "Max 5x",
+      enabled: true,
+      priority: 2,
+      auth_state: "needs_relogin",
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+      observed_at: isoIn(nowSeconds - 3 * DAY),
+      blocked: null,
+      active_sessions: 0,
+      expires_at: isoIn(nowSeconds - 2 * DAY),
+      refreshed_at: isoIn(nowSeconds - 3 * DAY),
+      relogin_reason: "refresh_token_expired",
+    },
+    {
+      id: "c56e18b9-3f04-4d72-a0c8-51b9e2f74d68",
+      email: "eiaserinnys.central.archive.long.address@example.invalid",
+      plan: "Pro",
+      enabled: false,
+      priority: 3,
+      auth_state: "ok",
+      usage: {
+        five_hour: { used_percent: 9, resets_at: isoIn(resetSoon) },
+        seven_day: { used_percent: 31, resets_at: isoIn(resetWeek) },
+        fable_weekly: null,
+      },
+      observed_at: isoIn(nowSeconds - 26 * HOUR),
+      blocked: null,
+      active_sessions: 0,
+      expires_at: isoIn(nowSeconds + 6 * HOUR),
+      refreshed_at: isoIn(nowSeconds - 26 * HOUR),
+      relogin_reason: null,
+    },
+  ];
+  return {
+    mode: "pool",
+    accounts,
+    pool: {
+      available_count: 1,
+      total_count: 3,
+      best_weekly_remaining_percent: 69,
+      best_weekly_resets_at: isoIn(resetHalf),
+      earliest_available_at: null,
+    },
+    fable_pool: {
+      available_count: 1,
+      total_count: 3,
+      best_weekly_remaining_percent: 78,
+      best_weekly_resets_at: isoIn(resetHalf),
+      earliest_available_at: null,
+    },
+  };
+}
+
+function centralNodeAccounts(scene: CentralReviewScene): ClaudeAccountList {
+  const localAccounts: ClaudeAccount[] = scene === "receive-off" || scene === "receive-pending" || scene === "receive-failure" || scene === "receive-settings-error"
+    ? [
+      {
+        id: "local-4f1e2d3c",
+        email: "node-local.primary@example.invalid",
+        plan: "Max 5x",
+        enabled: true,
+        priority: 1,
+        auth_state: "ok",
+        usage: {
+          five_hour: { used_percent: 42, resets_at: isoIn(resetSoon) },
+          seven_day: { used_percent: 36, resets_at: isoIn(resetWeek) },
+          fable_weekly: null,
+        },
+        observed_at: isoIn(nowSeconds - 12 * 60),
+        blocked: null,
+        active_sessions: 1,
+      },
+      {
+        id: "local-9a8b7c6d",
+        email: "node-local.second@example.invalid",
+        plan: "Pro",
+        enabled: true,
+        priority: 2,
+        auth_state: "idle",
+        usage: { five_hour: null, seven_day: null, fable_weekly: null },
+        observed_at: isoIn(nowSeconds - 2 * DAY),
+        blocked: null,
+        active_sessions: 0,
+      },
+    ]
+    : [];
+  const centralAccounts = scene === "empty"
+    ? []
+    : centralAccountList().accounts.map((account) => ({ ...account, source: "central" as const }));
+  const total = localAccounts.length + centralAccounts.length;
+  return {
+    mode: "pool",
+    accounts: [...localAccounts, ...centralAccounts],
+    pool: {
+      available_count: Math.min(total, localAccounts.length + 1),
+      total_count: total,
+      best_weekly_remaining_percent: total === 0 ? null : 69,
+      best_weekly_resets_at: total === 0 ? null : isoIn(resetHalf),
+      earliest_available_at: null,
+    },
+    fable_pool: null,
+  };
+}
+
+function centralSettings(scene: CentralReviewScene): ClaudeCentralSettings {
+  const receive = scene !== "receive-off";
+  return {
+    default_receive: true,
+    nodes: { [CENTRAL_NODE_ID]: receive },
+    effective: [{ node_id: CENTRAL_NODE_ID, receive, connected: true }],
+  };
+}
+
+function centralSummary(): UsageSummarySnapshot {
+  const snapshot = summarySnapshot("pool");
+  return { ...snapshot, nodes: [{ ...snapshot.nodes[0]!, nodeId: CENTRAL_NODE_ID }] };
+}
+
+function neverResponse(init?: RequestInit): Promise<Response> {
+  const signal = init?.signal;
+  return new Promise<Response>((_resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+      return;
+    }
+    signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true });
+  });
+}
+
+/** 중앙 풀 카드와 노드 받기 스위치의 검수 상태를 만든다. 실제 API는 부르지 않는다. */
+export function createCentralReviewRequest(scene: CentralReviewScene): typeof fetch {
+  let settings = centralSettings(scene);
+  let centralList = scene === "empty"
+    ? { ...centralAccountList(), accounts: [], pool: { ...centralAccountList().pool!, available_count: 0, total_count: 0 } }
+    : centralAccountList();
+  let nodeList = centralNodeAccounts(scene);
+  let flow: ClaudeAuthLoginFlow | null = null;
+
+  return async (input, init) => {
+    const path = String(input);
+    const method = init?.method ?? "GET";
+
+    if (path === "/api/usage/summary" && method === "GET") return jsonData(centralSummary());
+    if (path === "/cogito/briefs") return jsonData(sampleCogitoBriefs([{ nodeId: CENTRAL_NODE_ID }]));
+    if (path === `/api/nodes/${CENTRAL_NODE_ID}/claude-auth/accounts` && method === "GET") return jsonData(nodeList);
+    if (path === "/api/claude-auth/central/accounts" && method === "GET") {
+      if (scene === "loading") return neverResponse(init);
+      if (scene === "failure") {
+        return Response.json({ code: "central_unavailable", message: "중앙 풀을 읽지 못했습니다." }, { status: 503 });
+      }
+      return jsonData(centralList);
+    }
+    if (path === "/api/claude-auth/central/settings" && method === "GET") {
+      if (scene === "receive-settings-error") {
+        return Response.json({ code: "settings_unavailable", message: "받기 설정을 읽지 못했습니다." }, { status: 503 });
+      }
+      return jsonData(settings);
+    }
+    if (path === "/api/claude-auth/central/settings" && method === "PUT") {
+      if (scene === "receive-pending") return neverResponse(init);
+      if (scene === "receive-failure") {
+        return Response.json({ code: "settings_failed", message: "받기 설정을 저장하지 못했습니다." }, { status: 503 });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}")) as { nodes?: Record<string, boolean> };
+      const next = body.nodes ?? {};
+      settings = {
+        ...settings,
+        nodes: { ...settings.nodes, ...next },
+        effective: settings.effective.map((entry) => next[entry.node_id] === undefined
+          ? entry
+          : { ...entry, receive: next[entry.node_id]! }),
+      };
+      // 설정을 받은 노드는 그 자리에서 계정 목록이 달라진다.
+      const receive = settings.effective.find((entry) => entry.node_id === CENTRAL_NODE_ID)?.receive ?? true;
+      nodeList = receive ? centralNodeAccounts("accounts") : centralNodeAccounts("receive-off");
+      return jsonData(settings);
+    }
+    if (path === "/api/claude-auth/central/logins" && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { account_id?: string };
+      flow = {
+        login_id: "review-central-login",
+        account_id: body.account_id ?? null,
+        state: "url_ready",
+        auth_url: "https://example.invalid/claude-central-auth",
+        expires_at: isoIn(nowSeconds + HOUR),
+        error: null,
+      };
+      return jsonData(flow);
+    }
+    if (path === "/api/claude-auth/central/logins/review-central-login" && method === "GET") {
+      return jsonData(flow);
+    }
+    if (path === "/api/claude-auth/central/logins/review-central-login/code" && method === "POST") {
+      flow = scene === "login-failed"
+        ? { ...flow!, state: "failed", auth_url: null, error: { code: "invalid_login_code", message: "인증 코드가 만료되었거나 이미 사용되었습니다." } }
+        : { ...flow!, state: "verifying", auth_url: null };
+      return jsonData(flow);
+    }
+    if (path === "/api/claude-auth/central/logins/review-central-login" && method === "DELETE") {
+      flow = { ...flow!, state: "cancelled", auth_url: null };
+      return jsonData(flow);
+    }
+    const accountMatch = path.match(/^\/api\/claude-auth\/central\/accounts\/([^/]+)$/);
+    if (accountMatch && method === "PATCH") {
+      const accountId = decodeURIComponent(accountMatch[1]!);
+      const body = JSON.parse(String(init?.body ?? "{}")) as { enabled?: boolean; priority?: number };
+      centralList = {
+        ...centralList,
+        accounts: centralList.accounts.map((account) => account.id === accountId ? { ...account, ...body } : account),
+      };
+      return jsonData(centralList);
+    }
+    if (accountMatch && method === "DELETE") {
+      const accountId = decodeURIComponent(accountMatch[1]!);
+      centralList = { ...centralList, accounts: centralList.accounts.filter((account) => account.id !== accountId) };
+      return jsonData({ success: true });
+    }
+    return Response.json({ code: "not_found", message: "Not found" }, { status: 404 });
+  };
+}
+
+export function ClaudeCentralPoolReviewSample({ scene: initialScene }: { scene: CentralReviewScene }) {
+  // 시각 검수 스크립트가 페이지를 다시 적재하지 않고 장면만 바꿀 수 있게 주소의 scene을 따라간다.
+  const [scene, setScene] = useState<CentralReviewScene>(initialScene);
+  useEffect(() => {
+    const apply = () => {
+      const next = new URLSearchParams(window.location.search).get("scene");
+      if (isCentralReviewScene(next)) setScene(next);
+    };
+    window.addEventListener("popstate", apply);
+    return () => window.removeEventListener("popstate", apply);
+  }, []);
+  const request = useMemo(() => createCentralReviewRequest(scene), [scene]);
+  const nodes = useMemo(() => new Map([[CENTRAL_NODE_ID, sampleNode(CENTRAL_NODE_ID)]]), []);
+  // 장면마다 질의 캐시와 펼침 상태를 새로 시작한다.
+  const client = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), [scene]);
+  return <QueryClientProvider key={scene} client={client}>
+    <div className="p-2" data-scene={scene}><NodePanel request={request} sampleNodes={nodes} /></div>
+  </QueryClientProvider>;
 }
 
 // cogito 로딩·실패는 컴포넌트 검수 창 주소의 cogitoState로 연다(ComponentsReviewPage는 이 값을 넘기지 않는다).

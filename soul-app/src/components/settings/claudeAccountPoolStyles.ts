@@ -1,13 +1,17 @@
 import { StyleSheet } from 'react-native';
-import { type DesignTokens } from '../../theme';
+import { createPrimitiveRoles, type DesignTokens } from '../../theme';
 
 export function makeClaudePoolStyles(t: DesignTokens) {
+  // GlassButton 표준 높이와 같은 식. 제목 줄이 이 높이를 스스로 갖고 첫 줄을 단추 가운데에 둔다.
+  const buttonMinHeight = Math.max(t.hitTarget.min, createPrimitiveRoles(t).buttonSecondary.minHeight);
   return StyleSheet.create({
     section: { minWidth: 0 },
-    poolTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.md },
-    poolTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: t.spacing.sm },
+    poolTopBar: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.md },
+    poolTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: t.spacing.sm,
+      minHeight: buttonMinHeight, paddingTop: (buttonMinHeight - t.foundation.typography.cardTitle.lineHeight) / 2 },
     poolTitle: { ...t.foundation.typography.cardTitle, color: t.colors.textPrimary },
     accountList: { minWidth: 0, paddingBottom: t.spacing.xs },
+    centralReceiveRow: { paddingHorizontal: t.cardLayout.padding },
     accountBlock: { minWidth: 0, paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.sm },
     providerHeaderRow: { minWidth: 0, minHeight: t.hitTarget.min, paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.sm },
     disabledAccount: { opacity: 0.62 },

@@ -25,6 +25,7 @@ import {
   type ClaudeAccountPoolApi,
   type ClaudeAccountPoolSectionHandle,
 } from './ClaudeAccountPoolSection';
+import type { ClaudeCentralSettingsApi } from './ClaudeCentralReceiveRow';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ProviderQuotaGrid, ProviderQuotaSkeleton, providerQuotaCells } from './ProviderQuotaGrid';
 import { SettingsDivider } from './SettingsSection';
@@ -44,6 +45,8 @@ type Props = {
   loadingSummary: boolean;
   reloadKey: number;
   onTokenDeleted(): void;
+  /** 중앙 풀 설정을 읽고 쓸 수 있으면 펼친 목록 맨 위에 「중앙 풀 받기」를 둔다. */
+  centralSettingsApi?: ClaudeCentralSettingsApi;
 };
 
 function localClock(value: string | null): string | null {
@@ -74,6 +77,7 @@ export function ClaudeProviderSection({
   loadingSummary,
   reloadKey,
   onTokenDeleted,
+  centralSettingsApi,
 }: Props) {
   const jwt = useAuthStore(state => state.jwt);
   const [list, setList] = useState<ClaudeAccountList | null>(null);
@@ -137,6 +141,7 @@ export function ClaudeProviderSection({
       onLoginStartingChange={setLoginStarting}
       onListChange={applyList}
       poolRef={poolRef}
+      centralSettingsApi={centralSettingsApi}
     />;
   }
 
@@ -163,6 +168,7 @@ function PoolClaudeRow({
   onLoginStartingChange,
   onListChange,
   poolRef,
+  centralSettingsApi,
 }: {
   list: ClaudeAccountList;
   summaryProvider: AppUsageSummaryProvider | null;
@@ -175,6 +181,7 @@ function PoolClaudeRow({
   onLoginStartingChange(starting: boolean): void;
   onListChange(list: ClaudeAccountList): void;
   poolRef: React.RefObject<ClaudeAccountPoolSectionHandle | null>;
+  centralSettingsApi?: ClaudeCentralSettingsApi;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
@@ -231,6 +238,7 @@ function PoolClaudeRow({
         api={api}
         onListChange={onListChange}
         onLoginStartingChange={onLoginStartingChange}
+        centralSettingsApi={centralSettingsApi}
       />
     </> : null}
   </View>;
