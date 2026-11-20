@@ -1,11 +1,11 @@
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
+import type { BoardAccessFolderRecord } from "../src/board/board_access.js";
 import {
   SessionCreateLifecycleError,
   createSessionCreateLifecycle,
   type BoardItemRouteProvider,
-  type BoardItemFolderRecord,
   type BoardItemRecord,
   type SessionResourceAccessProvider,
 } from "../src/index.js";
@@ -127,7 +127,7 @@ function request(): FastifyRequest {
 }
 
 function boardItemProvider(input: {
-  folders?: readonly BoardItemFolderRecord[];
+  folders?: readonly BoardAccessFolderRecord[];
   boardItems?: readonly BoardItemRecord[];
 } = {}): BoardItemRouteProvider {
   const folders = input.folders ?? [];

@@ -12,12 +12,8 @@ import { modelDisplayName, type ModelCatalogConfig } from "@soulstream/model-cat
 
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
-import {
-  filterFolders,
-  normalizeAccess,
-  type FolderAccess,
-  type FolderRecord,
-} from "../folders/folder_route_access.js";
+import { normalizeBoardAccess, type BoardAccess } from "../board/board_access.js";
+import { filterFolders, type FolderRecord } from "../folders/folder_route_access.js";
 import type { FolderRouteProvider } from "../folders/folder_routes.js";
 import {
   DashboardAccessError,
@@ -149,7 +145,7 @@ function decorateDay(detail: UsageStatsDayDetail, catalog: ModelCatalogConfig): 
 }
 
 type ResolvedScope = {
-  readonly access: Required<FolderAccess>;
+  readonly access: Required<BoardAccess>;
   readonly visibleFolders: readonly FolderRecord[];
   readonly asOf: string;
 };
@@ -159,7 +155,7 @@ async function resolveScope(
   reply: FastifyReply,
   options: SessionStatisticsRouteOptions,
 ): Promise<ResolvedScope | null> {
-  let rawAccess: FolderAccess;
+  let rawAccess: BoardAccess;
   try {
     rawAccess = await options.accessProvider.resolveAccess(request);
   } catch (error) {
@@ -184,7 +180,7 @@ async function resolveScope(
   }
 
   try {
-    const access = normalizeAccess(rawAccess);
+    const access = normalizeBoardAccess(rawAccess);
     if (access.restricted && access.allowedFolderIds.length === 0) {
       reply.code(403).send(ACCESS_DENIED);
       return null;

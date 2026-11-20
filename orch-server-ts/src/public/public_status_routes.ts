@@ -18,10 +18,6 @@ export type PublicStatusRouteConfigProvider = {
   getConfig: () => PublicStatusRouteConfig | Promise<PublicStatusRouteConfig>;
 };
 
-export type PublicStatusFolderAccess = BoardAccess;
-
-export type PublicStatusFolderRecord = BoardAccessFolderRecord;
-
 export type PublicStatusFolderCounts =
   | ReadonlyMap<string | null, number>
   | Record<string, number>;
@@ -29,11 +25,11 @@ export type PublicStatusFolderCounts =
 export type PublicStatusFolderCountsProvider = {
   getFolderCounts: () => PublicStatusFolderCounts | Promise<PublicStatusFolderCounts>;
   listFolders: () =>
-    | readonly PublicStatusFolderRecord[]
-    | Promise<readonly PublicStatusFolderRecord[]>;
+    | readonly BoardAccessFolderRecord[]
+    | Promise<readonly BoardAccessFolderRecord[]>;
   resolveAccess: (
     request: FastifyRequest,
-  ) => PublicStatusFolderAccess | Promise<PublicStatusFolderAccess>;
+  ) => BoardAccess | Promise<BoardAccess>;
 };
 
 export type PublicStatusRouteOptions = {
