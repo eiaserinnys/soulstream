@@ -68,9 +68,9 @@ describe("committed card reference notifications",()=>{
   it("adds the card status, current target item state, confirmations, and next-step instruction",()=>{
     const c=change();c.result.operation.operation_type="add_card_comment";
     expect(buildCardChangeNotification(c,{id:"comment-2",author_kind:"user",body:"수정해 주세요",delivered_at:null},undefined,
-      {itemTarget:{id:2,title:"검색 결과",state:"done",confirmed:false},confirmedItemIds:[1,2]})).toMatchObject({text:"[카드 커멘트] 사용자가 카드 「작업」(card)에 커멘트를 남겼습니다: 수정해 주세요\n커멘트 ID: comment-2\n카드 상태: 실행 중\n대상 항목: 2번 검색 결과 (지금 끝남)\n그동안 확인한 항목: 1번, 2번\n수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다."});
+      {itemTarget:{id:2,title:"검색 결과",state:"done",confirmed:false},confirmedItemIds:[1,2]})).toMatchObject({text:"[카드 커멘트] 사용자가 카드 「작업」(card)에 커멘트를 남겼습니다: 수정해 주세요\n커멘트 ID: comment-2\n카드 상태: 실행 중\n대상 항목: 2번 검색 결과 (지금 결과 있음)\n그동안 확인한 항목: 1번, 2번\n수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다."});
   });
-  it.each([["todo","아직"],["doing","하는 중"],["done","끝남"],["dropped","뺌"]] as const)("labels current target item state %s",(state,label)=>{
+  it.each([["todo","아직"],["doing","하는 중"],["done","결과 있음"],["dropped","뺌"]] as const)("labels current target item state %s",(state,label)=>{
     const c=change();c.result.operation.operation_type="add_card_comment";
     const notice=buildCardChangeNotification(c,{id:"comment-3",author_kind:"user",body:"확인해 주세요",delivered_at:null},undefined,
       {itemTarget:{id:2,title:"검색 결과",state,confirmed:false}});

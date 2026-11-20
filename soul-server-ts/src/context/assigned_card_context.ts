@@ -1,3 +1,4 @@
+import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import type { Logger } from "pino";
 import type { SessionDB } from "../db/session_db.js";
 import type { ContextItem } from "./prompt_assembler.js";
@@ -56,5 +57,5 @@ function preview(text: string, max: number): string {
 }
 
 export function cardStatusLabel(status: string): string {
-  return ({todo:"할 일",queued:"대기",blocked:"막힘",running:"실행 중",awaiting_verification:"검증 대기",review:"검수 대기",on_hold:"보류",done:"완료",cancelled:"취소"} as Record<string,string>)[status] ?? status;
+  return (CARD_STATUS_LABELS as Record<string,string>)[status] ?? status;
 }

@@ -105,7 +105,7 @@ describe("durable card status reminders", () => {
     const id = await seed("review", "running");
     await dispatcher.sessionEnded("root"); await dispatcher.sessionEnded("root");
     expect(messages).toHaveBeenCalledTimes(1);
-    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`);
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수 대기'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`);
     expect(messages.mock.calls[0]![3]!.deliveryId).toBe(`card-reminder:${id}:not_running:${(origin - 3600000) * 1000}:root`);
     await cards.setCardStatus({ ...human, cardId: id, status: "blocked" });
     await dispatcher.sessionEnded("root"); expect(messages).toHaveBeenCalledTimes(2);
@@ -119,7 +119,7 @@ describe("durable card status reminders", () => {
     await dispatcher.sessionEnded("root");
     expect(messages).toHaveBeenCalledTimes(1);
     expect(messages.mock.calls[0]![0]).toBe("root");
-    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수'인데, 사용자 커멘트(ID ${comment.id})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`);
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수 대기'인데, 사용자 커멘트(ID ${comment.id})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`);
     expect(messages.mock.calls[0]![3]!.deliveryId).toBe(`card-reminder:${id}:comment_unhandled:${comment.id}:root`);
     await unchanged(id, "review");
   });

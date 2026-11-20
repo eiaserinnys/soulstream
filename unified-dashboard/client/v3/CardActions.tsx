@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
 import { StatusChip } from "./StatusChip";
 
 export function useCardCompletion(card:CardRow) {
@@ -9,7 +10,8 @@ export function useCardCompletion(card:CardRow) {
  return {pending,onComplete:()=>void complete()};
 }
 export function cardStatusLabel(card:Pick<CardRow,"status"|"blockedKind"> & Partial<Pick<CardRow,"blockedDetail">>) {
- return {todo:"드래프트",queued:"대기",blocked:card.blockedKind==="question"?"질문":card.blockedKind==="limit"?"한도 대기":"막힘",running:"실행 중",awaiting_verification:"검증 대기",review:"검수 대기",on_hold:"보류",done:"완료",cancelled:"취소"}[card.status];
+ if (card.status === "blocked") return card.blockedKind==="question" ? "질문" : card.blockedKind==="limit" ? "한도 대기" : "막힘";
+ return CARD_BOARD_STATUS_LABELS[card.status];
 }
 
 export function CardStatusChip({card}:{card:Pick<CardRow,"status"|"blockedKind"> & Partial<Pick<CardRow,"blockedDetail">>}) {

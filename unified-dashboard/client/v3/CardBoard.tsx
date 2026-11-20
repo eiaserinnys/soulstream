@@ -1,5 +1,6 @@
 import { Fragment,useLayoutEffect,useRef,useState,type ReactNode } from "react";
 import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
 import { PostItGrid } from "./PostItCard";
 import type { CardCompletionOption } from "./CardCompletionFilter";
 import "./v3-card-board.css";
@@ -9,14 +10,9 @@ import { CompletedCardGrid, type CompletedGridSnapshot } from "./CompletedCardGr
 import type { CompletedBrowser } from "./use-completed-cards";
 import { exhaustiveList } from "@shared/exhaustive";
 
-const BOARD_COLUMN_LABELS = {
-  todo:"드래프트", queued:"대기", running:"실행 중", blocked:"막힘", awaiting_verification:"검증 대기",
-  review:"검수 대기", on_hold:"보류", done:"완료", cancelled:"취소",
-} satisfies Record<CardStatus,string>;
-
 export const boardColumns = exhaustiveList<CardStatus>()([
   "todo", "queued", "running", "blocked", "awaiting_verification", "review", "on_hold", "done", "cancelled",
-]).map(status => ({ status, label: BOARD_COLUMN_LABELS[status] }));
+]).map(status => ({ status, label: CARD_BOARD_STATUS_LABELS[status] }));
 
 /** Existing active lanes and a viewport-sized completed lane share card mutations. */
 export function CardBoard({cards, renderCard, completion, draftAction,completed,hideEmptyLanes=false,completedGridSnapshot,onCompletedGridSnapshotChange}: {

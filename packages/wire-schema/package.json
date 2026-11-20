@@ -19,6 +19,7 @@
     "./card-attachments": "./src/card_attachments.ts",
     "./attachments": "./src/attachments.ts",
     "./card-colors": "./src/card_colors.ts",
+    "./card-status-labels": "./src/card_status_labels.ts",
     "./persistent-session-settings": "./src/persistent_session_settings.ts",
     "./persistent-session-instructions": "./src/persistent_session_instructions.ts",
     "./persistent-report": "./src/persistent_report.ts",

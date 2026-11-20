@@ -407,10 +407,10 @@ describe("card dispatch and session lifecycle", () => {
         const detail=(await cards.getCard(id))!;messages.mockClear();
         await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'늦은 답',idempotencyKey:key()});await dispatcher.drain();
         expect(messages).toHaveBeenCalledWith(sessionId, `[카드 질문 답변] 카드 「작업」(${id})`
-            + `\n질문: 늦은 질문\n질문 ID: ${String(detail.questions[0]!.id)}\n글 답: 늦은 답\n카드 상태: ${status==='review'?'검수':'실행 중'}`,undefined,
+            + `\n질문: 늦은 질문\n질문 ID: ${String(detail.questions[0]!.id)}\n글 답: 늦은 답\n카드 상태: ${status==='review'?'검수 대기':'실행 중'}`,undefined,
             expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
         expect(messages.mock.calls[0]![1]).toBe(`[카드 질문 답변] 카드 「작업」(${id})`
-            + `\n질문: 늦은 질문\n질문 ID: ${String(detail.questions[0]!.id)}\n글 답: 늦은 답\n카드 상태: ${status==='review'?'검수':'실행 중'}`);
+            + `\n질문: 늦은 질문\n질문 ID: ${String(detail.questions[0]!.id)}\n글 답: 늦은 답\n카드 상태: ${status==='review'?'검수 대기':'실행 중'}`);
         expect((await cards.getCard(id))!.card).toMatchObject({status,version:detail.card.version});
         expect(launch).toHaveBeenCalledOnce();
     });
