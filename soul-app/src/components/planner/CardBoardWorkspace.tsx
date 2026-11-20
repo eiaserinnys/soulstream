@@ -33,15 +33,15 @@ export function CardBoardHeaderActions({ cardDisplay, refreshing, onCreate, onEx
   const t = useTokens();
   return <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
     <AutomaticRefreshSlot active={refreshing} testID={slotTestID} indicatorTestID="card-board-auto-progress" />
-    {compact ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="board-header-overflow-button"
+    {compact ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} testID="board-header-overflow-button"
       accessibilityLabel="보드 메뉴" accessibilityState={{ expanded: overflowOpen }} onPress={() => onToggleOverflow?.()}>
       <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : <>
-      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={onCreate}>
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} accessibilityLabel="드래프트 카드 추가" onPress={onCreate}>
         <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
       </LiquidGlassButton>
       <CompletedCardsToggle {...cardDisplay} />
-      {onExpand ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={onExpand}>
+      {onExpand ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} accessibilityLabel="보드 확대" onPress={onExpand}>
         <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
       </LiquidGlassButton> : null}
     </>}
@@ -126,12 +126,12 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}><PlannerSectionHeader testID="card-board-heading-title" variant={titled ? 'board' : 'default'} title={headingTitle} /></View>
       <AutomaticRefreshSlot active={autoRefreshing && (expandedBoard || !expanded)} testID={expandedBoard ? 'card-board-expanded-refresh-slot' : 'card-board-refresh-slot'} indicatorTestID={expandedBoard ? 'card-board-expanded-auto-progress' : 'card-board-auto-progress'} />
     </View>
-    {!(duo && expandedBoard) ? <><LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
+    {!(duo && expandedBoard) ? <><LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} testID="card-board-create"
       surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
       <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
-    {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
+    {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}</> : null}
   </View>;

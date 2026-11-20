@@ -1,5 +1,5 @@
 import type { MarkdownStyle } from 'react-native-enriched-markdown';
-import type { DesignTokens } from './tokens';
+import { concentricRadius, type DesignTokens } from './tokens';
 
 export function markdownTableStyle(t: DesignTokens) {
   const c = t.colors;
@@ -7,7 +7,7 @@ export function markdownTableStyle(t: DesignTokens) {
     color: c.textPrimary,
     borderColor: c.border,
     borderWidth: 1,
-    borderRadius: t.radius.sm,
+    borderRadius: concentricRadius(t.spacing.lg),
     headerBackgroundColor: c.surfaceCode,
     headerTextColor: c.textPrimary,
     rowEvenBackgroundColor: c.surface,
@@ -51,7 +51,7 @@ export function createAssistantMarkdownStyle(t: DesignTokens, narration = false)
         fontFamily: 'Courier',
         fontSize: t.fontSize.body,
         padding: t.spacing.sm,
-        borderRadius: t.radius.sm,
+        borderRadius: concentricRadius(t.spacing.lg),
         borderColor: c.accent,
         borderWidth: 0,
         marginTop: t.spacing.sm,

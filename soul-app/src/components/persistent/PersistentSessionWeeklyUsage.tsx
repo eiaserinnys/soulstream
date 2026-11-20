@@ -81,7 +81,7 @@ export function PersistentSessionWeeklyUsage({
       <View testID={`persistent-session-weekly-usage-track-${gauge.id}`} accessibilityRole="progressbar"
         accessibilityLabel={`${gaugeLabel} 주간 사용량`}
         accessibilityValue={{ min: 0, max: 100, now: used ?? undefined, text: percent }}
-        style={{ height: trackHeight, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
+        style={{ height: trackHeight, borderRadius: t.radius.capsule, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
         <View style={{ height: '100%', width: `${used ?? 0}%`, backgroundColor: warning ? t.colors.warning : t.colors.accent }} />
       </View>
     </View>;
@@ -103,7 +103,7 @@ export function PersistentSessionWeeklyUsage({
       </LiquidGlassButton> : null}
     </View>
     <View testID="persistent-session-weekly-usage-status-track" accessibilityElementsHidden
-      style={{ height: trackHeight, borderRadius: t.radius.sm }} />
+      style={{ height: trackHeight, borderRadius: t.radius.capsule }} />
   </View>;
 
   return <View testID="persistent-session-weekly-usage" accessibilityRole="summary" accessibilityLabel={accessibilityLabel}

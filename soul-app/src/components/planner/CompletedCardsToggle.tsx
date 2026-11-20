@@ -9,7 +9,7 @@ export function CompletedCardsToggle({ includeCompleted, onChange }: {
 }) {
   const t = useTokens();
   const hideCompleted = !includeCompleted;
-  return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+  return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule}
     testID={`completed-cards-toggle-${hideCompleted ? 'on' : 'off'}`}
     accessibilityLabel="완료·취소 숨김" accessibilityState={{ selected: hideCompleted }} aria-pressed={hideCompleted}
     onPress={() => onChange(!includeCompleted)}>

@@ -124,7 +124,7 @@ export function ReviewAutoRefresh() {
     {mode === 'boardExternal' ? <TabletPaneHeader testID={phone ? 'review-phone-card-header' : 'review-tablet-card-header'} style={phone ? { paddingHorizontal: t.cardLayout.padding } : undefined}>
       <Text testID="review-external-title" style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드</Text>
       {phone ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="드래프트 카드 추가" onPress={() => board.current?.openCreate()}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton>
+        <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} accessibilityLabel="드래프트 카드 추가" onPress={() => board.current?.openCreate()}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} /></LiquidGlassButton>
         <CompletedCardsToggle includeCompleted={includeCompleted} onChange={setIncludeCompleted} />
       </View> : <CardBoardHeaderActions cardDisplay={{ includeCompleted, onChange: setIncludeCompleted }} refreshing={refreshing}
         slotTestID="review-external-refresh-slot" onCreate={() => board.current?.openCreate()} onExpand={() => board.current?.openExpanded()} />}

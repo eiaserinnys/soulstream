@@ -102,7 +102,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {onMenuPress ? (
           <LiquidGlassButton
             iconOnly
-            borderRadius={t.foundation.radius.round}
+            borderRadius={t.foundation.radius.capsule}
             onPress={onMenuPress}
             accessibilityLabel="메뉴"
             contentStyle={styles.headerAction}
@@ -204,7 +204,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           }}>
           <AppGlassCard
             role="modal"
-            cornerRadius={t.foundation.radius.card}
+            cornerRadius={t.foundation.radius.root}
             testID="board-header-overflow-menu"
             style={{ overflow: 'hidden' }}
           >

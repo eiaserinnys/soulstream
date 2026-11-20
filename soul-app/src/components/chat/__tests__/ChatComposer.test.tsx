@@ -11,7 +11,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 import { ChatComposer } from '../ChatComposer';
 import { ChatInterruptButton } from '../ChatInterruptButton';
 import { makeStyles } from '../ChatBody.styles';
-import { useTokens } from '../../../theme';
+import { createSessionVisualRoles, useTokens } from '../../../theme';
 import { ADD_GLYPH_INSET_RATIO } from '../ChatBody.styles';
 import * as inputMeasurement from '../useTextInputContentHeight';
 
@@ -61,6 +61,16 @@ function MountProbe({ count, testID }: { count: MountCount; testID: string }) {
 describe('ChatComposer', () => {
   test('공통 한 줄 시작과 입력 표면 계약을 snapshot으로 기록한다', () => {
     expect(renderComposer('hello').toJSON()).toMatchSnapshot();
+  });
+  test('입력 상자 곡률은 한 줄 높이의 절반이고 여러 줄에서도 같은 값을 지킨다', () => {
+    const t = renderHook(() => useTokens()).result.current;
+    const expected = createSessionVisualRoles(t).chat.composer.minHeight / 2;
+    for (const input of ['hello', '첫 줄\n둘째 줄']) {
+      const radius = StyleSheet.flatten(
+        renderComposer(input).getByTestId('chat-composer-box').props.style,
+      ).borderRadius;
+      expect(radius).toBe(expected);
+    }
   });
   test('rounded input surface keeps the single-line composer in one control row', () => {
     const screen = renderComposer();

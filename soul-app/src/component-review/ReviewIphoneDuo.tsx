@@ -262,7 +262,7 @@ function DuoSettingsLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT
               <View style={{ flex: 1, paddingRight: duo ? frame.insets.right : 0 }}>
                 <View testID="settings-layout-sheet-frame"
                   style={{ flex: 1, marginTop: frame.insets.top,
-                    borderTopLeftRadius: t.foundation.radius.card, borderTopRightRadius: t.foundation.radius.card,
+                    borderTopLeftRadius: t.foundation.radius.root, borderTopRightRadius: t.foundation.radius.root,
                     overflow: 'hidden' }}>
                   <AppGlassCard role="nativeSheet" style={{ flex: 1 }}>
                     <SafeAreaView testID="settings-layout-safe-area"
@@ -380,7 +380,7 @@ export function ReviewIphoneDuo() {
                       width: frame.width,
                       height: frame.height,
                       flexDirection: 'row',
-                      borderRadius: t.foundation.radius.panel,
+                      borderRadius: t.foundation.radius.root,
                       borderWidth: 1,
                       borderColor: t.colors.border,
                       backgroundColor: t.colors.background,

@@ -652,20 +652,20 @@ function AccountRow({
           value={account.enabled} onValueChange={onToggle} disabled={busy}
           trackColor={{ false: t.colors.border, true: t.colors.accent }} />
         {totalCount > 1 && account.enabled ? <>
-          <GlassButton testID={`claude-priority-up-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === 0} busy={busy}
+          <GlassButton testID={`claude-priority-up-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.capsule} disabled={index === 0} busy={busy}
             accessibilityLabel="우선순위 올리기" onPress={onMoveUp}>
             <Ionicons name="arrow-up" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton>
-          <GlassButton testID={`claude-priority-down-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} disabled={index === totalCount - 1} busy={busy}
+          <GlassButton testID={`claude-priority-down-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.capsule} disabled={index === totalCount - 1} busy={busy}
             accessibilityLabel="우선순위 내리기" onPress={onMoveDown}>
             <Ionicons name="arrow-down" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton>
         </> : null}
-        <GlassButton testID={`claude-account-relogin-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} busy={busy}
+        <GlassButton testID={`claude-account-relogin-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.capsule} busy={busy}
           accessibilityLabel="재로그인" onPress={onRelogin}>
           <Ionicons name="refresh" size={t.iconSize.compact} color={t.colors.textSecondary} />
         </GlassButton>
-        <GlassButton testID={`claude-account-delete-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.round} busy={busy}
+        <GlassButton testID={`claude-account-delete-${account.id}`} iconOnly size="compact" borderRadius={t.foundation.radius.capsule} busy={busy}
           accessibilityLabel="계정 삭제" onPress={onAskDelete}>
           <Ionicons name="trash-outline" size={t.iconSize.compact} color={t.colors.textSecondary} />
         </GlassButton>

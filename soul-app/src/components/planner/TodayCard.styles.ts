@@ -5,15 +5,15 @@ import type { DesignTokens } from '../../theme';
 export function todayCardStyles(t: DesignTokens) {
   const s = t.uiSpacing;
   const type = t.foundation.typography;
-  const round = t.foundation.radius.round;
+  const round = t.foundation.radius.capsule;
   return StyleSheet.create({
     groups: { gap: s.lg },
     section: { gap: s.sm },
     empty: { borderWidth: StyleSheet.hairlineWidth, borderStyle: 'dashed', borderColor: t.colors.border,
-      borderRadius: t.radius.lg, paddingVertical: t.controlHeight.chip, paddingHorizontal: s.lg, gap: s.xs },
+      borderRadius: t.radius.root, paddingVertical: t.controlHeight.chip, paddingHorizontal: s.lg, gap: s.xs },
     emptyTitle: { ...type.body, color: t.colors.textSecondary, textAlign: 'center' },
     emptyText: { ...type.meta, color: t.colors.textMuted, textAlign: 'center' },
-    frame: { borderRadius: t.radius.lg },
+    frame: { borderRadius: t.radius.root },
     composerLayout: { paddingHorizontal: t.spacing.md, paddingTop: s.lg - (t.hitTarget.min - t.controlHeight.chip) / 2, paddingBottom: s.lg, gap: s.xxs },
     chips: { minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: s.xs + s.xxs },
     chipFrame: { minWidth: 0, maxWidth: '100%', flexShrink: 1 },

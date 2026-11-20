@@ -110,7 +110,7 @@ export function DisplaySettingsSection({
                 style={[styles.wallpaperTile, wide && styles.wallpaperTileWide, selected && styles.wallpaperTileSelected]}
                 onPress={() => onWallpaperModeChange(option.value)}
               >
-                {option.value === 'photo' ? <SettingsPhoto testID="settings-wallpaper-photo-tile" source={wallpaperPreviewSource} onFailureChange={onPhotoFailure} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: t.foundation.radius.field }}/> : <Ionicons
+                {option.value === 'photo' ? <SettingsPhoto testID="settings-wallpaper-photo-tile" source={wallpaperPreviewSource} onFailureChange={onPhotoFailure} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: t.radius.floor }}/> : <Ionicons
                   name={option.icon}
                   color={selected ? t.colors.accent : t.colors.textSecondary}
                   size={t.iconSize.prominent}
@@ -209,7 +209,7 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.hitTarget.min,
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.md,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       borderWidth: 1,
       borderColor: t.colors.border,
       backgroundColor: t.colors.surfaceMuted,
@@ -235,7 +235,7 @@ function makeStyles(t: DesignTokens) {
       maxHeight: 270,
       aspectRatio: 16 / 9,
       alignSelf: 'center',
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       borderWidth: 1,
       borderColor: t.colors.border,
       backgroundColor: t.colors.surfaceMuted,

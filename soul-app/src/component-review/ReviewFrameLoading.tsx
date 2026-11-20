@@ -78,7 +78,7 @@ export function ReviewFrameLoading() {
       return <View testID="frame-loading-sample" style={{
         height: t.foundation.minHeight.row * 3,
         justifyContent: 'center',
-        borderRadius: t.foundation.radius.panel,
+        borderRadius: t.foundation.radius.root,
         backgroundColor: t.colors.surfaceMuted,
       }}>
         <FrameLoading testID="frame-loading-sample-loader" text={mode === 'frame' ? '불러오는 중…' : undefined} />

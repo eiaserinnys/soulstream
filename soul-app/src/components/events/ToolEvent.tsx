@@ -310,7 +310,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       position: 'relative',
     },
     wrapper: {
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.root,
       borderWidth: 1,
       borderColor: c.border,
       overflow: 'hidden',

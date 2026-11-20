@@ -1,5 +1,6 @@
 import {
   DARK_COLORS,
+  DESIGN_SPACING,
   LIGHT_COLORS,
   resolveMode,
   type ColorScheme,
@@ -144,9 +145,10 @@ describe('theme color contrast', () => {
     const roles = createSurfaceRoles({
       mode,
       colors,
-      radius: { sm: 8, md: 12, lg: 16 },
+      spacing: DESIGN_SPACING,
+      radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
       foundation: {
-        radius: { chip: 8, field: 14, row: 16, card: 18, panel: 24, round: 999 },
+        radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
       },
     } as DesignTokens);
     const worstCaseWallpaper = mode === 'dark' ? '#ffffff' : '#000000';

@@ -138,7 +138,7 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.foundation.minHeight.field,
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.md,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       backgroundColor: t.colors.surfaceMuted,
       borderWidth: 1,
       borderColor: t.colors.border,

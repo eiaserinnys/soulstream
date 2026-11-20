@@ -216,7 +216,7 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.controlHeight.button,
       justifyContent: 'center',
       paddingHorizontal: t.spacing.lg,
-      borderRadius: t.radius.lg,
+      borderRadius: t.radius.capsule,
       backgroundColor: c.accent,
     },
     emptyActionText: {

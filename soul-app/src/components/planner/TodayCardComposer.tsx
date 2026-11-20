@@ -94,14 +94,14 @@ export function TodayCardComposer({ api, onCreated, autoFocus = false, onCollaps
     <Text style={styles.chipText} numberOfLines={1}>{content} ▾</Text>
   </CompactTouchTarget>;
   return <>
-    <PlannerForegroundCard testID="card-composer" role="chrome" style={styles.frame} cornerRadius={t.radius.lg}>
+    <PlannerForegroundCard testID="card-composer" role="chrome" style={styles.frame} cornerRadius={t.radius.root}>
       <View testID="card-composer-layout" style={styles.composerLayout}>
         <View testID="card-composer-chips" style={styles.chips}>
           {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
           {chip('실행 대상 선택', <>{value.agentId ? labels.selectedAgentName : '에이전트'} · {labels.selectedNodeName || value.nodeId || settings.nodeId} · <SelectedModelPresetName selection={labels} /></>, 'execution')}
           {onCollapse ? <View style={{ marginLeft: 'auto' }}><GlassButton testID="card-composer-collapse"
             surfaceTestID="card-composer-collapse-surface" accessibilityLabel="새 대화 입력창 접기" iconOnly size="compact"
-            borderRadius={t.foundation.radius.round} onPress={onCollapse}>
+            borderRadius={t.foundation.radius.capsule} onPress={onCollapse}>
             <Ionicons name="chevron-down" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton></View> : null}
         </View>

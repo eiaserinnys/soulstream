@@ -43,7 +43,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppGlassCard } from '../AppGlassCard';
 import { CompactTouchTarget } from '../CompactTouchTarget';
@@ -425,13 +425,48 @@ function expectRoleRadius(
 
 test('오늘 전경 카드의 명시적 토큰 반경은 native와 fallback 표면에 동일하게 전달된다', () => {
   const { PlannerForegroundCard } = require('../planner/PlannerForegroundCard');
-  const { DESIGN_RADIUS } = require('../../theme');
+  const { ROOT_RADIUS } = require('../../theme');
   mockNativeAvailable.mockReturnValue(true);
   mockApiAvailable.mockReturnValue(true);
-  const screen = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
-  expect(StyleSheet.flatten(screen.getByTestId('native-today-radius').props.style).borderRadius).toBe(16);
+  const screen = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={ROOT_RADIUS}><Text>오늘</Text></PlannerForegroundCard>);
+  expect(StyleSheet.flatten(screen.getByTestId('native-today-radius').props.style).borderRadius).toBe(24);
   screen.unmount();
   mockNativeAvailable.mockReturnValue(false);
-  const fallback = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
-  expect(StyleSheet.flatten(fallback.getByTestId('blur-today-radius').props.style).borderRadius).toBe(16);
+  const fallback = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={ROOT_RADIUS}><Text>오늘</Text></PlannerForegroundCard>);
+  expect(StyleSheet.flatten(fallback.getByTestId('blur-today-radius').props.style).borderRadius).toBe(24);
+});
+
+test.each([
+  ['standard', 24],
+  ['compact', 16],
+  ['card', 22],
+] as const)('알약 유리 단추 %s는 native에 999가 아니라 높이의 절반(%d)을 넘긴다', (size, radius) => {
+  mockNativeAvailable.mockReturnValue(true);
+  mockApiAvailable.mockReturnValue(true);
+  const screen = render(
+    <LiquidGlassButton iconOnly size={size} accessibilityLabel="알약" testID="pill" surfaceTestID="pill-surface" onPress={() => undefined}>
+      <Text>+</Text>
+    </LiquidGlassButton>,
+  );
+  const native = screen.getByTestId('native-pill-surface');
+  expect(native.props.borderRadius).toBe(radius);
+  expect(native.props.borderRadius).toBeLessThan(999);
+});
+
+test.each([
+  [44, 22],
+  [52, 26],
+  [80, 40],
+] as const)('알약 유리는 잰 높이 %d의 절반(%d)을 native에 넘긴다', (height, radius) => {
+  mockNativeAvailable.mockReturnValue(true);
+  mockApiAvailable.mockReturnValue(true);
+  const screen = render(
+    <LiquidGlassButton iconOnly accessibilityLabel="알약" testID="pill" surfaceTestID="pill-surface" onPress={() => undefined}>
+      <Text>+</Text>
+    </LiquidGlassButton>,
+  );
+  // 재기 전 첫 그리기는 토큰 높이(standard 48→24)를 쓴다.
+  expect(screen.getByTestId('native-pill-surface').props.borderRadius).toBe(24);
+  fireEvent(screen.getByTestId('native-pill-surface'), 'layout', { nativeEvent: { layout: { height, width: 200 } } });
+  expect(screen.getByTestId('native-pill-surface').props.borderRadius).toBe(radius);
 });

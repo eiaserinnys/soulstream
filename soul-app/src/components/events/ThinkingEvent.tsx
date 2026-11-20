@@ -109,7 +109,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,
       marginRight: getChatRowHorizontalInset(t, presentation),
       marginVertical: 3,
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.root,
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: c.borderSubtle,

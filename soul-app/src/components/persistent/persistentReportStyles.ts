@@ -14,7 +14,7 @@ export function reportStyles(t: DesignTokens, _bleed: number, showNav: boolean) 
   const iconOverhang = (t.hitTarget.min - t.foundation.iconFrame.compact) / 2;
   return StyleSheet.create({
     deck: { backgroundColor: t.persistentSession.panel, borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.persistentSession.line, borderRadius: t.foundation.radius.card, overflow: 'hidden' },
+      borderColor: t.persistentSession.line, borderRadius: t.radius.root, overflow: 'hidden' },
     band: { marginVertical: t.uiSpacing.sm },
     track: { alignItems: 'stretch' },
     sheet: { flexGrow: 1 },

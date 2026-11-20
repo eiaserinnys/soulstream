@@ -19,7 +19,7 @@ function ConnectedEntry({ rail }: { rail: boolean }) {
   if (rail) return <RailCapsuleItem testID="tablet-persistent-entry" label="영구 세션 열기" onPress={onPress}>
     {color => portrait(color)}
   </RailCapsuleItem>;
-  return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+  return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule}
     testID="tablet-persistent-entry" accessibilityLabel="영구 세션 열기"
     onPress={onPress}>
     {portrait()}

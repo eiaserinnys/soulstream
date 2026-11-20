@@ -92,7 +92,7 @@ function makeStyles(t: DesignTokens) {
       alignItems: 'stretch',
       overflow: 'hidden',
       borderWidth: 1,
-      borderRadius: t.foundation.radius.row,
+      borderRadius: t.foundation.radius.root,
     },
     toneBar: {
       width: t.uiSpacing.xs,

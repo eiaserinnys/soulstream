@@ -293,7 +293,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
     }}>
       <View testID="card-detail-header" style={styles.header}>
         <View style={styles.titleRow}>
-          {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose} frameStyle={styles.backFrame}>
+          {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule} accessibilityLabel="뒤로" onPress={onClose} frameStyle={styles.backFrame}>
             <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
@@ -303,12 +303,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
             </Text>
           </CompactTouchTarget>
           {card ? <View style={styles.headerActions}>
-            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} variant="secondary"
+            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule} variant="secondary"
               accessibilityLabel="상태 변경 메뉴" disabled={!api} busy={locked} surfaceTestID="card-detail-status-menu-visual"
               onPress={() => setStatusMenuOpen(true)}>
               <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textSecondary} />
             </GlassButton>
-            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
               variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
               disabled={!api} busy={locked || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
               onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>

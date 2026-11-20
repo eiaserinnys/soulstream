@@ -28,7 +28,7 @@ export function CardItemCheckbox(props: CardItemCheckboxProps) {
   const square = {
     width: t.iconSize.prominent,
     height: t.iconSize.prominent,
-    borderRadius: 6,
+    borderRadius: t.radius.mark,
     borderWidth: 1,
     borderColor: checked ? t.colors.statusCompleted : t.colors.textPlaceholder,
     backgroundColor: checked ? t.colors.statusCompleted : 'transparent',

@@ -6,6 +6,7 @@ import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { createSessionVisualRoles, TABLET_SPACING, useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import {
   extractMessageCaller,
@@ -375,8 +376,7 @@ function makeStyles(t: DesignTokens) {
     bubble: {
       flexShrink: 1,
       backgroundColor: c.accent,
-      borderRadius: t.radius.lg,
-      borderBottomRightRadius: 4,
+      borderRadius: t.radius.floor,
       paddingHorizontal: sessionRoles.chat.bubblePaddingHorizontal,
       paddingVertical: sessionRoles.chat.bubblePaddingVertical,
       maxWidth: sessionRoles.chat.bubbleMaxWidth,
@@ -384,8 +384,7 @@ function makeStyles(t: DesignTokens) {
     bubbleIntervention: {
       flexShrink: 1,
       backgroundColor: c.intervention,
-      borderRadius: t.radius.lg,
-      borderBottomRightRadius: 4,
+      borderRadius: t.radius.floor,
       paddingHorizontal: sessionRoles.chat.bubblePaddingHorizontal,
       paddingVertical: sessionRoles.chat.bubblePaddingVertical,
       maxWidth: sessionRoles.chat.bubbleMaxWidth,
@@ -474,7 +473,7 @@ function makeStyles(t: DesignTokens) {
     avatar: {
       width: AVATAR,
       height: AVATAR,
-      borderRadius: AVATAR / 2,
+      borderRadius: capsuleRadius(AVATAR),
       backgroundColor: c.border,
       marginTop: t.spacing.xxs,
     },

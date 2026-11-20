@@ -34,7 +34,7 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
     headerTitleAlign: 'left',
     headerLeft: () => null,
     headerRight: () => <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule}
         accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
         <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
       </LiquidGlassButton>

@@ -93,7 +93,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     {question?.meta}
     </View>
     {onToggleCard ? <View style={styles.toggleSeat}>
-      <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.round}
+      <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
         accessibilityLabel={expanded ? '축소' : '확대'} accessibilityState={{ expanded }}
         onPress={onToggleCard}>
         <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />

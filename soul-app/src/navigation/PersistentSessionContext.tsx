@@ -16,6 +16,7 @@ import { createPersistentSessionScene, type PersistentSessionScene } from '../st
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useTokens } from '../theme';
+import { capsuleRadius } from '../theme/tokens';
 import { useAppNoticeStore } from '../store/appNoticeStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -185,7 +186,7 @@ export function PersistentSessionPortrait({ session, size }: {
     agentName: session?.agent_name, agentPortraitUrl: storedPortrait ?? (session?.agent_id && session.node_id
       ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
   }, serverUrl);
-  const style = { width: size, height: size, borderRadius: size / 2 };
+  const style = { width: size, height: size, borderRadius: capsuleRadius(size) };
   return avatar.uri && failedUri !== avatar.uri
     ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
       onError={() => setFailedUri(avatar.uri)} style={style} />

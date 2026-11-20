@@ -4,8 +4,7 @@ exports[`채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다 1`
 {
   "bubble": {
     "backgroundColor": "#0a84ff",
-    "borderBottomRightRadius": 4,
-    "borderRadius": 16,
+    "borderRadius": 12,
     "flexShrink": 1,
     "maxWidth": "86%",
     "paddingHorizontal": 16,

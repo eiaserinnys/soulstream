@@ -16,7 +16,7 @@ test('새 메시지 버튼은 panel 원형, outline 화살표, 이름을 쓰고 
 
   expect(StyleSheet.flatten(surface.props.style)).toMatchObject({
     backgroundColor: tokens.persistentSession.panel,
-    borderRadius: tokens.foundation.radius.round,
+    borderRadius: tokens.foundation.radius.capsule,
   });
   expect(surface.props.children.props.name).toBe('arrow-down-outline');
   fireEvent.press(button);

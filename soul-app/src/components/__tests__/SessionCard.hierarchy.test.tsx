@@ -130,7 +130,7 @@ test.each([
       minHeight: 24,
       paddingHorizontal: 8,
       paddingVertical: 0,
-      borderRadius: 8,
+      borderRadius: 999,
     });
 });
 
@@ -183,7 +183,7 @@ test.each([
       minHeight: 24,
       paddingHorizontal: 8,
       paddingVertical: 0,
-      borderRadius: 8,
+      borderRadius: 999,
     });
   }
 

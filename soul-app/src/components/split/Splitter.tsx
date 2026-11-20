@@ -82,7 +82,7 @@ function makeStyles(t: DesignTokens) {
     grabber: {
       width: t.uiSpacing.xs,
       height: t.uiSpacing.xxxl,
-      borderRadius: t.foundation.radius.round,
+      borderRadius: t.foundation.radius.capsule,
       backgroundColor: c.border,
       opacity: 0.58,
     },

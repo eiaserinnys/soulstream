@@ -52,7 +52,7 @@ export function MarkdownDocumentContent({ api, documentId, onClose, visible = tr
   return <View style={styles.frame}>
     <View style={styles.header}>
       <View style={styles.headerRow}>
-        {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+        {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="뒤로" onPress={onClose}>
           <Ionicons name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
         </GlassButton> : null}

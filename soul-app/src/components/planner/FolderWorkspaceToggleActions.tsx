@@ -11,6 +11,7 @@ import {
   useTokens,
   type DesignTokens,
 } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 
 type ToggleAction = 'starred' | 'today';
 
@@ -170,7 +171,7 @@ function makeStyles(t: DesignTokens) {
       height: size,
       minWidth: t.hitTarget.min,
       minHeight: t.hitTarget.min,
-      borderRadius: size / 2,
+      borderRadius: capsuleRadius(size),
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,

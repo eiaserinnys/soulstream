@@ -94,7 +94,7 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, fullW
       bottom: outerInset,
       width: sheetWidth,
     }}>
-      <AppGlassCard role="glassSoft" testID={testID} style={{ flex: 1, borderRadius: t.foundation.radius.panel }}>
+      <AppGlassCard role="glassSoft" testID={testID} style={{ flex: 1, borderRadius: t.foundation.radius.root }}>
         <View style={{ flex: 1, backgroundColor: createSurfaceRoles(t).glassCard.tokenStyle.backgroundColor }}>
           {children}
         </View>

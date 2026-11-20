@@ -28,7 +28,7 @@ export function makeHistoryFetchErrorStyles(t: DesignTokens) {
       justifyContent: 'center',
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.xs,
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.capsule,
       borderWidth: 1,
       borderColor: t.colors.border,
       backgroundColor: t.colors.surface,

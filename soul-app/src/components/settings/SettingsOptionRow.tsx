@@ -31,7 +31,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
   if (!items.length) return <Text style={styles.body}>{emptyLabel}</Text>;
   const rows = items.filter(option => `${option.label} ${option.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <View>
-    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}>
+    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : { borderRadius: t.radius.floor })} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}>
       {stabilizePickerWidth ? <View style={{ alignItems: 'center' }}>
         {selectedText}
         {/* 모든 선택지 라벨을 높이 0으로 겹쳐 두어 첫 레이아웃부터 폭이 가장 긴 라벨을 따른다. 읽히지도 눌리지도 않는다. */}
@@ -47,7 +47,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
             contentStyle={selected === option.id ? { backgroundColor: t.colors.accentTint } : undefined}>
             <Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}
           </GlassButton>
-        : <TouchableOpacity key={option.id} accessibilityRole="button" accessibilityState={{ selected: selected === option.id }} onPress={() => choose(option.id)} style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, borderWidth: StyleSheet.hairlineWidth, borderColor: selected === option.id ? t.colors.accent : t.colors.border, backgroundColor: selected === option.id ? t.colors.accentTint : t.colors.surfaceMuted }}><Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}</TouchableOpacity>)}
+        : <TouchableOpacity key={option.id} accessibilityRole="button" accessibilityState={{ selected: selected === option.id }} onPress={() => choose(option.id)} style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, padding: t.spacing.sm, borderRadius: t.radius.capsule, borderWidth: StyleSheet.hairlineWidth, borderColor: selected === option.id ? t.colors.accent : t.colors.border, backgroundColor: selected === option.id ? t.colors.accentTint : t.colors.surfaceMuted }}><Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}</TouchableOpacity>)}
     </View>}
     {open ? <AppModalSurface visible modalId="modal_card_assignment" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setOpen(false)}>
       <View style={{ flex: 1, padding: t.cardLayout.padding, gap: t.spacing.md }}>

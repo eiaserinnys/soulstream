@@ -150,6 +150,6 @@ function makeStyles(t: DesignTokens) {
     primary: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
     buttonContent: { minHeight: t.foundation.minHeight.secondary },
     modal: { flexShrink: 1 },
-    input: { ...t.foundation.typography.body, color: t.colors.textPrimary, minHeight: t.foundation.minHeight.field, padding: t.spacing.md, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted, borderColor: t.colors.border, borderWidth: StyleSheet.hairlineWidth },
+    input: { ...t.foundation.typography.body, color: t.colors.textPrimary, minHeight: t.foundation.minHeight.field, padding: t.spacing.md, borderRadius: t.radius.floor, backgroundColor: t.colors.surfaceMuted, borderColor: t.colors.border, borderWidth: StyleSheet.hairlineWidth },
   });
 }

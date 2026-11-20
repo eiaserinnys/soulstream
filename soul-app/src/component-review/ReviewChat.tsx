@@ -564,7 +564,7 @@ export function ReviewChat() {
       {sent ? <UserMessage event={message('user_message', sent)} /> : null}
     </ReviewSection>
     <ReviewSection title="입력창 · embedded · 프레임이 바깥 여백 소유">
-      <View style={{ padding: t.uiSpacing.md }}>
+      <View testID="review-chat-composer-embedded" style={{ padding: t.uiSpacing.md }}>
         <ChatComposer embedded input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
           onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
           sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
@@ -579,7 +579,7 @@ export function ReviewChat() {
     <ReviewSection title="외부 발신자 기본과 원고">
       <ExternalSenderSamples presentation="default" /><ExternalSenderSamples presentation="manuscript" />
     </ReviewSection>
-    <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">
+    <ReviewSection testID="review-chat-bubbles" title="사용자 말풍선 · 일반·개입·전송 실패">
       <UserMessage event={message('user_message', '이 프로젝트의 화면을 검수해주세요. 긴 문장과 여러 줄을 확인합니다.')} />
       <UserMessage variant="intervention" event={message('intervention_sent', '추가 지시를 보내는 공개 예시입니다.')} />
       {failure ? <UserMessage event={message('user_message', '다시 보낼 공개 예시 메시지')}

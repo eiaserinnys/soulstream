@@ -176,7 +176,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
               {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
                 {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-                  style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
+                  style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.capsule,
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
                 {cardProgressText(itemSummary) ? <Text style={roles.label} accessibilityLabel={cardProgressText(itemSummary)}>{cardProgressText(itemSummary)}</Text> : null}
               </View> : null}
@@ -188,7 +188,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                 </>}
               </Text>
               {card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
-                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
+                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.radius.floor, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
                 {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}
               </Text> : null}
             </View>
@@ -199,7 +199,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               {...directHoldProps}
               style={{ flex: 1, minWidth: 0, minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
               {avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt && avatar.uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
-                style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round }} />
+                style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule }} />
                 : <Text style={roles.label}>{card.assigneeKind === 'human' ? '👤' : card.assigneeKind ? '🤖' : '·'}</Text>}
               <Text style={{ ...roles.label, flex: 1, minWidth: 0 }} numberOfLines={1}>{name}</Text>
             </Pressable>
@@ -207,10 +207,10 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
               disabled={!api || pending} onPress={openStatusMenu}>
               <CardStatusChip card={card} board colors={roles.colors} />
             </CompactTouchTarget>
-            {!api && card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+            {!api && card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
               accessibilityLabel="완료" disabled onPress={() => {}} surfaceTestID={`postit-complete-${card.id}`}>
               <Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} />
-            </GlassButton> : card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+            </GlassButton> : card.status === 'review' ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
               busy={pending} accessibilityLabel="완료" surfaceTestID={`postit-complete-${card.id}`} onPress={() => { if (canInteract()) void transition(card, 'done'); }}>
               <Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} />
             </GlassButton> : null}

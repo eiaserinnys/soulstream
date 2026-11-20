@@ -145,7 +145,7 @@ function makeStyles(t: DesignTokens, embedded = false) {
       top: embedded ? planner.sectionRhythm.before : t.uiSpacing.lg,
       left: planner.pageInset,
       right: planner.pageInset,
-      borderRadius: t.foundation.radius.card,
+      borderRadius: t.foundation.radius.root,
       overflow: 'hidden',
     },
     content: {

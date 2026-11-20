@@ -196,7 +196,7 @@ export function NodeProviderSections({
         testID="provider-panel-refresh"
         iconOnly
         size="compact"
-        borderRadius={t.foundation.radius.round}
+        borderRadius={t.foundation.radius.capsule}
         accessibilityLabel="사용량 새로고침"
         onPress={() => void refreshSummary()}
         busy={refreshing}

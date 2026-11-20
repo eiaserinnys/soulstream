@@ -18,7 +18,7 @@ import { GlassSurface } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { resolveChatComposerBottomGap } from '../split/tabletShellInsets';
 import { createSessionVisualRoles, useTokens } from '../../theme';
-import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
+import { ADD_GLYPH_INSET_RATIO, chatComposerRadius, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
 
 export const CHAT_COMPOSER_MAX_LENGTH = 4000;
@@ -164,6 +164,7 @@ export function ChatComposer({
         presentation={presentation}
         surface={surface}
         testID="chat-composer-box"
+        cornerRadius={chatComposerRadius(t)}
         style={focusAccent && focusAccentActive
           ? [composerSurfaceStyle, { borderColor: t.colors.accent }]
           : composerSurfaceStyle}
@@ -318,6 +319,7 @@ function ComposerSurface({
   presentation,
   surface,
   testID,
+  cornerRadius,
   style,
   children,
   onLayout,
@@ -325,6 +327,7 @@ function ComposerSurface({
   presentation: 'default' | 'manuscript';
   surface?: 'box' | 'none';
   testID: string;
+  cornerRadius: number;
   style: React.ComponentProps<typeof View>['style'];
   children: React.ReactNode;
   onLayout?: React.ComponentProps<typeof View>['onLayout'];
@@ -334,5 +337,5 @@ function ComposerSurface({
     return <View testID={testID} style={[style, surface === 'none' ? { borderWidth: 0, borderColor: 'transparent' } : undefined]}
       onLayout={onLayout}>{children}</View>;
   }
-  return <GlassSurface role="glassDense" testID={testID} style={style} onLayout={onLayout}>{children}</GlassSurface>;
+  return <GlassSurface role="glassDense" testID={testID} cornerRadius={cornerRadius} style={style} onLayout={onLayout}>{children}</GlassSurface>;
 }

@@ -372,7 +372,7 @@ test('탭 밖에서 보낸 뒤 안내는 불투명한 알약 표면으로 목록
   expect(surface.backgroundColor).toBe(tokens.colors.warningBg);
   expect(surface.borderColor).toBe(tokens.colors.warning);
   expect(surface.borderWidth).toBe(StyleSheet.hairlineWidth);
-  expect(surface.borderRadius).toBe(tokens.foundation.radius.round);
+  expect(surface.borderRadius).toBe(tokens.foundation.radius.capsule);
   expect(surface.height).toBe(tokens.controlHeight.chip + tokens.uiSpacing.xs + tokens.uiSpacing.xxs);
   await settleTimers();
 });

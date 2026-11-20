@@ -31,7 +31,7 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
         <GroupedGlassSheet>{selection.agents.map((agent) => <GroupedGlassRow compact testID={`execution-agent-${agent.id}`} key={agent.id} accessibilityLabel={`에이전트 ${agent.name ?? agent.id}`} selected={selection.agentId === agent.id}
           style={styles.padded} onPress={() => { selection.setAgentId(agent.id); selection.setSelectedModelPresetId(agent.default_preset ?? null); }}>
           <View style={styles.actions}>{agent.portraitUrl ? <Image source={{ uri: agent.portraitUrl.startsWith('/') ? `${settings.serverUrl}${agent.portraitUrl}` : agent.portraitUrl }}
-            style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round }} /> : null}<Text style={styles.body}>{agent.name ?? agent.id}</Text></View>
+            style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule }} /> : null}<Text style={styles.body}>{agent.name ?? agent.id}</Text></View>
         </GroupedGlassRow>)}</GroupedGlassSheet>
       </View>
       <View testID="execution-nodes" style={styles.section}><PlannerSectionHeader title="노드" />

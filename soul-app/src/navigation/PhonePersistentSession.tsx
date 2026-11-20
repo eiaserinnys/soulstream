@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { GLASS_BUTTON_BORDER_WIDTH } from '../components/GlassSurface';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { usePersistentSessionHost, usePersistentSessionScene, PersistentSessionPortrait } from './PersistentSessionContext';
+import { capsuleRadius } from '../theme/tokens';
 import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
 
 export function PhonePersistentSession({ navigation }: { navigation: any }) {
@@ -41,7 +42,7 @@ export function PersistentPhoneTabIcon({ color, size, active }: { color: ColorVa
   return <View testID="persistent-phone-tab-portrait" style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <PersistentSessionPortrait session={host.portrait} size={size - GLASS_BUTTON_BORDER_WIDTH * 2} />
     <View testID="persistent-phone-tab-ring" pointerEvents="none" style={{ position: 'absolute', inset: 0,
-      borderRadius: size / 2, borderWidth: active ? GLASS_BUTTON_BORDER_WIDTH : 0, borderColor: color }} />
+      borderRadius: capsuleRadius(size), borderWidth: active ? GLASS_BUTTON_BORDER_WIDTH : 0, borderColor: color }} />
     {active && scene === 'cards' ? <View testID="persistent-phone-tab-list" pointerEvents="none"
       style={{ position: 'absolute', inset: 0 }}>
       <Ionicons name="list-outline" color={color} size={size} />

@@ -101,6 +101,15 @@ test('말풍선 폭은 기본 내용 폭을 유지하고 fill에서만 가용 �
   expect(StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style)).toEqual({ ...base, flexGrow: 1 });
 });
 
+test('어시스턴트 말풍선 네 모서리는 같은 곡률을 쓴다', () => {
+  const screen = render(<AssistantMessage event={ev('assistant_message', { text: '네 모서리' })} />);
+  const style = StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style);
+  expect(style.borderRadius).toBe(PHONE_FOUNDATION.radius.floor);
+  for (const corner of ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius']) {
+    expect(style).not.toHaveProperty(corner);
+  }
+});
+
 test('attachment-only output keeps horizontal content inset without vertical bubble padding', () => {
   const screen = render(<AssistantMessage attachmentsOnly event={ev('assistant_message', {})}><Text>첨부</Text></AssistantMessage>);
   const style = StyleSheet.flatten(screen.getByTestId('assistant-attachment-content').props.style);

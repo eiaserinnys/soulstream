@@ -19,8 +19,7 @@ exports[`카드 슬롯을 쓰지 않는 채팅은 기존 말풍선·본문·아�
         [
           {
             "backgroundColor": "#0a84ff",
-            "borderBottomRightRadius": 4,
-            "borderRadius": 16,
+            "borderRadius": 12,
             "flexShrink": 1,
             "maxWidth": "86%",
             "paddingHorizontal": 16,
@@ -119,8 +118,7 @@ exports[`카드 슬롯을 쓰지 않는 채팅은 기존 말풍선·본문·아�
       style={
         {
           "backgroundColor": "rgba(216, 227, 238, 0.76)",
-          "borderBottomLeftRadius": 4,
-          "borderRadius": 14,
+          "borderRadius": 12,
           "flexShrink": 1,
           "maxWidth": "86%",
           "paddingHorizontal": 16,

@@ -44,7 +44,7 @@ test('인계와 노트는 같은 본문 크기와 확인 항목 프레임 토큰
   for (const markdown of screen.UNSAFE_getAllByType(PlannerMarkdownText)) expect(markdown.props.variant).toBe('note');
   for (const id of ['card-brief-frame', 'card-note-note-1']) {
     expect(StyleSheet.flatten(screen.getByTestId(id).props.style)).toMatchObject({
-      borderWidth: StyleSheet.hairlineWidth, borderRadius: t.foundation.radius.field,
+      borderWidth: StyleSheet.hairlineWidth, borderRadius: t.radius.floor,
       paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.md,
     });
   }

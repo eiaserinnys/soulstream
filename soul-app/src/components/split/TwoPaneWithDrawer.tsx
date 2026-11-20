@@ -416,7 +416,7 @@ function makeStyles(t: DesignTokens) {
     overlayClip: {
       ...StyleSheet.absoluteFill,
       overflow: 'hidden',
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: t.foundation.radius.root,
     },
     backdrop: {
       ...StyleSheet.absoluteFill,
@@ -426,7 +426,7 @@ function makeStyles(t: DesignTokens) {
       top: 0,
       bottom: 0,
       left: 0,
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: t.foundation.radius.root,
       // iOS-style soft shadow.
       shadowColor: '#000',
       shadowOpacity: 0.2,
@@ -439,7 +439,7 @@ function makeStyles(t: DesignTokens) {
       top: 0,
       bottom: 0,
       right: 0,
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: t.foundation.radius.root,
       shadowColor: '#000',
       shadowOpacity: 0.2,
       shadowRadius: 12,

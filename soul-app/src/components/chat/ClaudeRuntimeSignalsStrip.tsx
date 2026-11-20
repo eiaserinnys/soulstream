@@ -15,6 +15,7 @@ import type {
 import { useChatStore } from '../../store/chatStore';
 import { DESIGN_ICON_SIZE, useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
+import { capsuleRadius } from '../../theme/tokens';
 import { RUNTIME_STRIP_DETAILS_MAX_HEIGHT } from './runtimeStripOverflow';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { CompactTouchTarget } from '../CompactTouchTarget';
@@ -246,7 +247,7 @@ function makeStyles(t: DesignTokens) {
     badge: {
       textAlignVertical: 'center',
       overflow: 'hidden',
-      borderRadius: 6,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.uiSpacing.sm,
       paddingVertical: t.uiSpacing.xxs,
       color: c.textMuted,
@@ -257,7 +258,7 @@ function makeStyles(t: DesignTokens) {
     errorBadge: {
       textAlignVertical: 'center',
       overflow: 'hidden',
-      borderRadius: 6,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.uiSpacing.sm,
       paddingVertical: t.uiSpacing.xxs,
       color: c.textPrimary,
@@ -276,7 +277,7 @@ function makeStyles(t: DesignTokens) {
       alignItems: 'center',
       minHeight: t.foundation.minHeight.tool,
       gap: t.uiSpacing.xs,
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.floor,
       paddingHorizontal: t.uiSpacing.sm,
       paddingVertical: t.uiSpacing.xs,
     },
@@ -295,7 +296,7 @@ function makeStyles(t: DesignTokens) {
       flexShrink: 1,
       textAlignVertical: 'center',
       overflow: 'hidden',
-      borderRadius: 4,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.uiSpacing.xs,
       paddingVertical: t.uiSpacing.xxs,
       color: c.textMuted,
@@ -329,7 +330,7 @@ function makeStyles(t: DesignTokens) {
       height: t.controlHeight.chip,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 15,
+      borderRadius: capsuleRadius(t.controlHeight.chip),
     },
     buttonDisabled: { opacity: 0.45 },
   });

@@ -4,6 +4,7 @@ import type { Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { ThinkingOrb } from './ThinkingOrb';
 import { getChatRowHorizontalInset } from './ChatBody.styles';
 
@@ -80,7 +81,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     avatar: {
       width: AVATAR,
       height: AVATAR,
-      borderRadius: AVATAR / 2,
+      borderRadius: capsuleRadius(AVATAR),
       backgroundColor: c.border,
       marginTop: t.spacing.xxs,
     },
@@ -95,8 +96,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       alignItems: 'center',
       gap: t.spacing.sm,
       backgroundColor: c.surface,
-      borderRadius: t.radius.lg,
-      borderBottomLeftRadius: 4,
+      borderRadius: t.radius.floor,
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.sm,
       borderWidth: 1,

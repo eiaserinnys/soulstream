@@ -41,7 +41,7 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
       <View style={{ flex: 1 }} />
       {count > 1 ? <View testID="attachment-viewer-navigation" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
-        <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
+        <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="이전 첨부" testID="chat-image-viewer-previous"
           accessibilityState={{ disabled: currentIndex === 0 }}
           onPress={() => { if (currentIndex > 0) onIndexChange(currentIndex - 1); }}>
@@ -53,7 +53,7 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
           borderRadius: attachment.radius,
           minWidth: t.foundation.minHeight.secondary, textAlign: 'center',
         }}>{currentIndex + 1} / {count}</Text>
-        <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
+        <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="다음 첨부" testID="chat-image-viewer-next"
           accessibilityState={{ disabled: currentIndex === count - 1 }}
           onPress={() => { if (currentIndex < count - 1) onIndexChange(currentIndex + 1); }}>
@@ -67,7 +67,7 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
           accessibilityElementsHidden={!saveAvailable} importantForAccessibility={saveAvailable ? 'auto' : 'no-hide-descendants'}
           aria-hidden={!saveAvailable}>
           <GlassButton iconOnly={phone} size="card" disabled={!saveAvailable} busy={saving}
-            borderRadius={phone ? t.foundation.radius.round : undefined}
+            borderRadius={phone ? t.foundation.radius.capsule : undefined}
             accessibilityLabel="원본 저장" testID="chat-image-viewer-save-original" onPress={() => { void save(); }}>
             <Ionicons name="download-outline" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
             {!phone ? <Text numberOfLines={1} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>

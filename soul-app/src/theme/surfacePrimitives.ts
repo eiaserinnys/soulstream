@@ -1,5 +1,5 @@
 import type { SurfaceRoleName } from './surfaceRoles';
-import type { DesignTokens } from './tokens';
+import { CAPSULE_RADIUS, concentricRadius, ROOT_RADIUS, type DesignTokens } from './tokens';
 
 export const PRIMITIVE_ROLE_NAMES = [
   'card',
@@ -53,26 +53,26 @@ export function createPrimitiveRoles(t: DesignTokens): PrimitiveRoles {
     card: {
       ...neutral,
       surfaceRole: 'glassCard',
-      radius: t.foundation.radius.card,
+      radius: ROOT_RADIUS,
       minHeight: 0,
     },
     row: {
       ...neutral,
       surfaceRole: 'glassCard',
-      radius: t.foundation.radius.row,
+      radius: ROOT_RADIUS,
       minHeight: t.foundation.minHeight.row,
     },
     chip: {
       ...neutral,
       surfaceRole: 'glassDense',
-      radius: t.foundation.radius.chip,
+      radius: CAPSULE_RADIUS,
       minHeight: t.controlHeight.chip,
       padding: { horizontal: t.spacing.sm, vertical: t.spacing.xs },
     },
     buttonPrimary: {
       ...base,
       surfaceRole: 'canvas',
-      radius: t.foundation.radius.field,
+      radius: CAPSULE_RADIUS,
       minHeight: t.foundation.minHeight.primary,
       backgroundColor: t.colors.accent,
       focusedColor: t.colors.accentText,
@@ -81,32 +81,32 @@ export function createPrimitiveRoles(t: DesignTokens): PrimitiveRoles {
     buttonSecondary: {
       ...neutral,
       surfaceRole: 'chrome',
-      radius: t.foundation.radius.field,
+      radius: CAPSULE_RADIUS,
       minHeight: t.foundation.minHeight.secondary,
     },
     input: {
       ...neutral,
       surfaceRole: 'glassDense',
-      radius: t.foundation.radius.field,
+      radius: concentricRadius(t.spacing.md),
       minHeight: t.foundation.minHeight.field,
     },
     segment: {
       ...neutral,
       surfaceRole: 'glassSoft',
-      radius: t.foundation.radius.chip,
+      radius: CAPSULE_RADIUS,
       minHeight: t.foundation.minHeight.segment,
     },
     avatar: {
       ...neutral,
       surfaceRole: 'glassDense',
-      radius: t.foundation.radius.round,
+      radius: CAPSULE_RADIUS,
       minHeight: t.avatarSize.message,
       padding: { horizontal: 0, vertical: 0 },
     },
     iconFrame: {
       ...neutral,
       surfaceRole: 'glassDense',
-      radius: t.foundation.radius.round,
+      radius: CAPSULE_RADIUS,
       minHeight: t.foundation.hitTarget,
       padding: { horizontal: 0, vertical: 0 },
     },

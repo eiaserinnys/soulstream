@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { createSessionVisualRoles, type DesignTokens } from '../theme';
+import { capsuleRadius, concentricRadius, createSessionVisualRoles, type DesignTokens } from '../theme';
 
 /**
  * Shared SessionCard and card-row frame; small removes one text row only.
@@ -24,7 +24,7 @@ export function makeSessionCardStyles(
       paddingHorizontal: sessionRoles.feed.cardPadding,
       paddingVertical: sessionRoles.feed.cardPadding,
       gap: t.uiSpacing.md,
-      borderRadius: t.radius.md,
+      borderRadius: concentricRadius(sessionRoles.feed.cardPadding),
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'transparent',
       // Explicit form of the existing transparent background/no-shadow defaults.
@@ -36,7 +36,7 @@ export function makeSessionCardStyles(
     avatar: {
       width: AVATAR,
       height: AVATAR,
-      borderRadius: AVATAR / 2,
+      borderRadius: capsuleRadius(AVATAR),
       backgroundColor: c.border,
     },
     avatarFallback: { alignItems: 'center', justifyContent: 'center' },

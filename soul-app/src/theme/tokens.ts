@@ -122,11 +122,7 @@ export interface DesignTokens {
     maxWidthAssistant: DimensionValue;
     maxWidthUser: DimensionValue;
   };
-  radius: {
-    sm: number;
-    md: number;
-    lg: number;
-  };
+  radius: typeof RADIUS_SCALE;
   keyboardOffset: number;
   // 어시스턴트 메시지의 좌측 아바타(32pt) + 갭(8pt) 폭 — ToolEvent 등 보조 항목을
   // 메시지 본문과 좌측 정렬 맞추기 위한 들여쓰기 양으로 사용.
@@ -140,7 +136,7 @@ export interface DesignTokens {
 export interface FoundationTokens {
   pageInset: number;
   typography: typeof FOUNDATION_TYPOGRAPHY;
-  radius: typeof FOUNDATION_RADIUS;
+  radius: typeof RADIUS_SCALE;
   minHeight: {
     segment: number;
     field: number;
@@ -290,31 +286,19 @@ export const DESIGN_CONTROL_HEIGHT = {
   sendBtn: 44,
 } as const;
 
-export const CONCENTRIC_RADIUS_INSET = {
-  panelToCard: 6,
-  cardToField: 4,
-  rowToChip: 8,
-} as const;
+// 곡률 정본. 뿌리 하나에서 바닥, 표시가 나오고 안쪽은 동심으로 계산한다(웹 globals.css와 같은 값).
+export const ROOT_RADIUS = 24;
+export const FLOOR_RADIUS = ROOT_RADIUS / 2;
+export const MARK_RADIUS = ROOT_RADIUS / 6;
+export const CAPSULE_RADIUS = 999;
+export function concentricRadius(inset: number): number { return Math.max(FLOOR_RADIUS, ROOT_RADIUS - inset); }
+export function capsuleRadius(height: number): number { return height / 2; }
 
-const CHIP_RADIUS = 8;
-const FIELD_RADIUS = 14;
-const ROW_RADIUS = CHIP_RADIUS + CONCENTRIC_RADIUS_INSET.rowToChip;
-const CARD_RADIUS = FIELD_RADIUS + CONCENTRIC_RADIUS_INSET.cardToField;
-
-export const FOUNDATION_RADIUS = {
-  chip: CHIP_RADIUS,
-  field: FIELD_RADIUS,
-  row: ROW_RADIUS,
-  card: CARD_RADIUS,
-  panel: CARD_RADIUS + CONCENTRIC_RADIUS_INSET.panelToCard,
-  round: 999,
-} as const;
-
-// 기존 소비자의 단계적 이관을 위한 호환 alias. 신규 UI는 foundation.radius 역할명을 쓴다.
-export const DESIGN_RADIUS = {
-  sm: FOUNDATION_RADIUS.chip,
-  md: 12,
-  lg: FOUNDATION_RADIUS.row,
+export const RADIUS_SCALE = {
+  root: ROOT_RADIUS,
+  floor: FLOOR_RADIUS,
+  mark: MARK_RADIUS,
+  capsule: CAPSULE_RADIUS,
 } as const;
 
 export const FOUNDATION_MIN_HEIGHT = {
@@ -338,7 +322,7 @@ const FOUNDATION_ICON_FRAME = {
 export const PHONE_FOUNDATION: FoundationTokens = {
   pageInset: 20,
   typography: FOUNDATION_TYPOGRAPHY,
-  radius: FOUNDATION_RADIUS,
+  radius: RADIUS_SCALE,
   minHeight: FOUNDATION_MIN_HEIGHT,
   hitTarget: DESIGN_HIT_TARGET.min,
   iconFrame: { ...FOUNDATION_ICON_FRAME, action: DESIGN_HIT_TARGET.min },
@@ -347,7 +331,7 @@ export const PHONE_FOUNDATION: FoundationTokens = {
 export const TABLET_FOUNDATION: FoundationTokens = {
   pageInset: 20,
   typography: FOUNDATION_TYPOGRAPHY,
-  radius: FOUNDATION_RADIUS,
+  radius: RADIUS_SCALE,
   minHeight: FOUNDATION_MIN_HEIGHT,
   hitTarget: TABLET_HIT_TARGET.min,
   iconFrame: { ...FOUNDATION_ICON_FRAME, action: TABLET_HIT_TARGET.min },
@@ -362,7 +346,7 @@ const SHARED_BASE = {
   controlHeight: DESIGN_CONTROL_HEIGHT,
   iconSize: DESIGN_ICON_SIZE,
   avatarSize: DESIGN_AVATAR_SIZE,
-  radius: DESIGN_RADIUS,
+  radius: RADIUS_SCALE,
   keyboardOffset: 0,
   assistantBubbleIndent:
     DESIGN_SPACING.md + DESIGN_AVATAR_SIZE.message + DESIGN_SPACING.sm,

@@ -11,7 +11,7 @@ export function ChatNewMessageButton({ onPress }: { onPress: () => void }) {
       iconOnly
       size="compact"
       variant="plain"
-      borderRadius={t.foundation.radius.round}
+      borderRadius={t.foundation.radius.capsule}
       style={{ backgroundColor: t.persistentSession.panel }}
       accessibilityLabel="새 메시지로 이동"
       onPress={onPress}
