@@ -30,6 +30,12 @@
     height: 38px;
   }
 
+  /* 작업 공간 스크림이 열려 있는 동안 전역 도구 막대는 스크림 아래에서 조작도 닿지 않는다.
+     유리 작업 공간이 투명해지면 그 뒤의 막대 알약과 아이콘이 채팅 머리 위로 비치므로 그리지 않는다. */
+  .v3-shell:has(.v3-workspace-scrim) .v3-global-toolbar {
+    visibility: hidden;
+  }
+
   .v3-date-head {
     align-items: flex-start;
     flex-direction: column;

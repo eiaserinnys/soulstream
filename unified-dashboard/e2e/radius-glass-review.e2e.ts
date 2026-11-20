@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 
-import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { prepare } from "./glass-review-helpers";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const OUT = process.env.RADIUS_REVIEW_OUT ?? path.resolve(REPO_ROOT, ".local/card1735/after2");
@@ -22,23 +22,6 @@ interface RadiusReport {
   frame: Corners;
   glass: Corners | null;
   rims: Corners[];
-}
-
-async function prepare(page: Page, width: number, webgl: boolean, opts: Parameters<typeof installV3VisualQaRoutes>[1] = {}) {
-  await page.setViewportSize({ width, height: 1000 });
-  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await page.addInitScript((webgl) => {
-    localStorage.setItem("soul-dashboard-theme", "dark");
-    localStorage.setItem("ls.webglGlass", webgl ? "1" : "0");
-    Object.defineProperty(navigator.serviceWorker, "register", {
-      configurable: true,
-      value: async () => ({ update: async () => undefined, active: null, addEventListener: () => undefined }),
-    });
-    Object.defineProperty(navigator.serviceWorker, "controller", { configurable: true, get: () => null });
-  }, webgl);
-  await installV3VisualQaRoutes(page, opts);
-  await page.route("**/api/auth/config", (r) => r.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
-  await page.route("**/api/auth/status", (r) => r.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } }));
 }
 
 async function readRadii(locator: Locator): Promise<RadiusReport> {

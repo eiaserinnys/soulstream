@@ -156,6 +156,10 @@ export function packVisibleGlassSurfaces(
   for (const registration of registrations) {
     const element = registration.ref.current;
     if (!element) continue;
+    // 숨김 처리된 표면(예: 스크림 아래로 내려간 전역 도구 막대)은 캔버스에 남기지 않는다.
+    // 계산 스타일은 아래 곡률 읽기와 함께 쓴다.
+    const style = getComputedStyleForElement(element);
+    if (style?.visibility === "hidden" || style?.visibility === "collapse") continue;
     const rect = element.getBoundingClientRect();
     const clipRect = getSurfaceClipRect(element, viewportClip, options.clipAncestorCache);
     if (!clipRect) continue;
@@ -176,7 +180,7 @@ export function packVisibleGlassSurfaces(
     clips[offset + 2] = clipRect.width;
     clips[offset + 3] = clipRect.height;
     clipRadii[count] = clipRect.radius;
-    radii[count] = readMaxBorderRadius(element, rect) ?? DEFAULT_GLASS_SURFACE_RADIUS;
+    radii[count] = readMaxBorderRadiusFromStyle(style, rect) ?? DEFAULT_GLASS_SURFACE_RADIUS;
     count += 1;
   }
 
@@ -290,7 +294,10 @@ function intersectRects(a: RectLike, b: RectLike): RectLike | null {
 }
 
 function readMaxBorderRadius(element: Element, bounds: RectLike): number | null {
-  const style = getComputedStyleForElement(element);
+  return readMaxBorderRadiusFromStyle(getComputedStyleForElement(element), bounds);
+}
+
+function readMaxBorderRadiusFromStyle(style: CSSStyleDeclaration | null, bounds: RectLike): number | null {
   if (!style) return null;
   return Math.max(
     parseBorderRadius(style.borderTopLeftRadius, bounds),

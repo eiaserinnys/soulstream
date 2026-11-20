@@ -185,6 +185,29 @@ describe("webgl glass registry utilities", () => {
     expect(packed.visibleCount).toBe(0);
   });
 
+  it("skips surfaces hidden by computed visibility while keeping visible ones", () => {
+    const hidden = document.createElement("div");
+    hidden.style.visibility = "hidden";
+    mockBounds(hidden, rect(12, 20, 260, 132));
+
+    const collapsed = document.createElement("div");
+    collapsed.style.visibility = "collapse";
+    mockBounds(collapsed, rect(12, 60, 260, 44));
+
+    const visible = document.createElement("div");
+    mockBounds(visible, rect(24, 200, 220, 44));
+
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, hidden), registrationElement(2, collapsed), registrationElement(3, visible)],
+      { width: 800, height: 600, overscan: 40 },
+    );
+
+    expect(packed.count).toBe(1);
+    expect(packed.visibleCount).toBe(1);
+    expect(Array.from(packed.rects.slice(0, 4))).toEqual([24, 200, 220, 44]);
+    expect(Array.from(packed.rects.slice(4, 8))).toEqual([0, 0, 0, 0]);
+  });
+
   it("caps packed uniforms at the shader limit while reporting overflow", () => {
     const registrations = Array.from({ length: MAX_WEBGL_GLASS_CARDS + 3 }, (_, index) =>
       registration(index, rect(0, index * 2, 120, 80)),
