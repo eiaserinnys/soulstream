@@ -312,7 +312,11 @@ async function registerConsumedRuntimeFollowup(
       conflict: false,
     };
   }
-  const rows = await insertSessionDeliveryRow(transaction, params, consumption);
+  const rows = await insertSessionDeliveryRow(
+    transaction,
+    { ...params, callerTurnId: consumption.consumed_turn_id },
+    consumption,
+  );
   if (!rows[0]) {
     const conflicts = await transaction<SessionDeliveryRow[]>`
       SELECT * FROM session_deliveries
