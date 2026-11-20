@@ -24,12 +24,11 @@ import {
   registerRuntimeFollowupDelivery,
 } from "./session_delivery_runtime_followup_repository.js";
 import { isTerminalSessionStatus } from "../../session/session_status.js";
+import {
+  insertSessionDeliveryRow,
+  markDeliveryIdentityConflict,
+} from "./session_delivery_repository.js";
 
-/**
- * 등록 요청. `reviveDeadLetter`는 보낸 쪽의 명시적 되살림 요청이다: 같은
- * relation_key의 행이 uncertain/dead_letter면 이번 등록의 내용과 새 재시도
- * 예산으로 pending에 되돌린다. 없으면 기존 동작이다.
- */
 export type RegisterSessionDeliveryRequest = RegisterSessionDeliveryParams & {
   reviveDeadLetter?: boolean;
 };
@@ -68,34 +67,11 @@ export async function registerSessionDelivery(
         `Completion relation identity conflict: ${params.relationKey}`,
       );
     }
-    const createdAt = params.createdAt ?? new Date();
-    const insertedRows = await transaction<SessionDeliveryRow[]>`
-      INSERT INTO session_deliveries (
-        delivery_id, target_session_id, source_session_id, relation_key,
-        completion_id, intent, source, producer_kind, producer_id,
-        producer_terminal_revision, parent_delivery_id, caller_turn_id,
-        payload_hash, payload, state, aggregate_state,
-        target_receipt_id, target_receipt_at,
-        created_at, updated_at, consumed_at, consumed_reason
-      ) VALUES (
-        ${params.deliveryId}, ${params.targetSessionId ?? null},
-        ${params.sourceSessionId ?? null}, ${params.relationKey},
-        ${params.completionId ?? null}, ${params.intent}, ${params.source},
-        ${params.producerKind ?? null}, ${params.producerId ?? null},
-        ${params.producerTerminalRevision ?? null},
-        ${params.parentDeliveryId ?? null}, ${params.callerTurnId ?? null},
-        ${params.payloadHash},
-        ${transaction.json(asPostgresJsonValue(params.payload))},
-        ${consumption ? "consumed" : "pending"},
-        ${consumption ? "consumed" : "pending"},
-        ${consumption?.consumed_turn_id ?? null},
-        ${consumption?.consumed_at ?? null},
-        ${createdAt}, ${createdAt}, ${consumption?.consumed_at ?? null},
-        ${consumption ? "relation already consumed" : null}
-      )
-      ON CONFLICT DO NOTHING
-      RETURNING *
-    `;
+    const insertedRows = await insertSessionDeliveryRow(
+      transaction,
+      params,
+      consumption,
+    );
     const inserted = insertedRows[0];
     if (inserted) {
       return { row: inserted, inserted: true, conflict: false };
@@ -134,25 +110,9 @@ export async function registerSessionDelivery(
     }
 
     let current = existing;
-    // 되살림을 요청한 등록이 이미 죽은 행을 만나면 다시 죽이지 않고 곧장 되살린다.
     if (conflict && !(revive && isDeadLetterRow(existing))) {
-      const uncertainRows = await transaction<SessionDeliveryRow[]>`
-        UPDATE session_deliveries
-        SET state = 'uncertain', aggregate_state = 'dead_letter',
-            dead_letter_reason = 'delivery identity conflict',
-            dead_lettered_at = NOW(), updated_at = NOW()
-        WHERE delivery_id = ${existing.delivery_id}
-          AND state NOT IN ('consumed', 'superseded')
-        RETURNING *
-      `;
-      if (uncertainRows[0]) {
-        await appendSessionDeliveryAttempt(transaction, {
-          deliveryId: existing.delivery_id,
-          outcome: "rejected",
-          reason: "delivery identity conflict",
-        });
-      }
-      current = uncertainRows[0] ?? existing;
+      current = (await markDeliveryIdentityConflict(transaction, existing))
+        ?? existing;
     }
     if (
       revive
