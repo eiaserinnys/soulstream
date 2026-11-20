@@ -7,11 +7,6 @@ import { SettingsInput } from './SettingsFormParts';
 import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet';
 import { cardStyles } from '../planner/Card.styles';
 
-// 선택지 폭 고정용 측정 상자. 높이 0으로 접혀 화면을 차지하지 않고 접근성 트리에서도 숨는다.
-const widthProbeStyles = StyleSheet.create({
-  probe: { position: 'absolute', left: 0, top: 0, height: 0, overflow: 'hidden', alignItems: 'flex-start' },
-});
-
 export interface SettingsOption { id: string; label: string; available?: boolean; reason?: string | null }
 export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto', stabilizePickerWidth = false }: {
   selected: string; options: SettingsOption[]; onSelect(value: string): void; emptyLabel: string; label?: string;
@@ -27,21 +22,23 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
     : baseStyles;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [widestLabelWidth, setWidestLabelWidth] = useState(0);
   const items = selected && !options.some(option => option.id === selected) ? [...options, { id: selected, label: selected, available: false, reason: '저장된 값이 현재 목록에 없습니다.' }] : options;
   const selectedOption = items.find(option => option.id === selected);
   const description = (option: SettingsOption) => option.reason ?? (option.available === false ? '현재 사용 불가' : null);
   const choose = (id: string) => { onSelect(id); setOpen(false); setQuery(''); };
-  const measureOptionWidth = (width: number) => setWidestLabelWidth(current => (width > current ? width : current));
+  const selectedText = <Text style={styles.body}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text>;
   const large = pickerMode === 'picker' || items.length > 5 || items.some(option => option.label.length > 24);
   if (!items.length) return <Text style={styles.body}>{emptyLabel}</Text>;
   const rows = items.filter(option => `${option.label} ${option.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <View>
     {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}>
-      <Text style={[styles.body, stabilizePickerWidth ? { minWidth: widestLabelWidth, textAlign: 'center' as const } : null]}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text>
-      {stabilizePickerWidth ? <View testID="settings-option-width-probe" aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={widthProbeStyles.probe}>
-        {items.map(option => <Text key={option.id} testID={`settings-option-width-probe-${option.id}`} numberOfLines={1} onLayout={event => measureOptionWidth(event.nativeEvent.layout.width)} style={styles.body}>{option.label}</Text>)}
-      </View> : null}
+      {stabilizePickerWidth ? <View style={{ alignItems: 'center' }}>
+        {selectedText}
+        {/* 모든 선택지 라벨을 높이 0으로 겹쳐 두어 첫 레이아웃부터 폭이 가장 긴 라벨을 따른다. 읽히지도 눌리지도 않는다. */}
+        <View testID="settings-option-hidden-labels" aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={{ height: 0, overflow: 'hidden', alignItems: 'center' }}>
+          {items.map(option => <Text key={option.id} numberOfLines={1} style={styles.body}>{option.label}</Text>)}
+        </View>
+      </View> : selectedText}
     </GlassButton> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
       {items.map(option => variant === 'chat'
         ? <GlassButton key={option.id} variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact"

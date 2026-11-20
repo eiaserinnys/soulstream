@@ -17,6 +17,9 @@
      차트(usage-stats-*-chart-chart) 위쪽 끝 차이가 1px 이하다
   7) 조작 단언: 한 페이지에서 「모델별」→「프로젝트별」→「모델별」로 바꾸며 차트 위쪽 끝과 묶음 위치를
      전후로 재어 차이가 1px 이하다(376과 390)
+  8) 376(과 390)에서 첫 진입과 기간 「주간」→「월간」 동안 layout-shift를 걸어, 출처에
+     usage-stats-view-measure-bundle, 차트(usage-stats-*-chart-chart), 제어 줄이 든 이동이 0건이다.
+     피커 폭을 그린 뒤에 재서 첫 그림이 다른 모양으로 한 프레임 그려지는 결함을 잡는다.
 
 사용: python3 -P scripts/visual-check/usage_stats_controls.py --output <출력 폴더>
 앞선 번들 내보내기는 scripts/visual-check/usage_stats_controls.sh가 맡는다.
@@ -406,6 +409,69 @@ def run_view_switch(browser, base: str, failures: list[str], store: dict) -> Non
                                     + " (" + ", ".join(f"{value:.1f}" for value in values) + ")")
         context.close()
 
+SHIFT_OBSERVER = """
+(() => {
+  window.__shifts = [];
+  const watched = '[data-testid="usage-stats-view-measure-bundle"], [data-testid="usage-stats-view-measure-row"], [data-testid$="-chart-chart"]';
+  const describe = source => {
+    // 글자 노드가 출처로 오면 그 부모 요소로 판정한다.
+    const node = source && source.nodeType === 3 ? source.parentElement : source;
+    if (!node || !node.closest) return { node: node ? node.nodeName : null, watched: false };
+    const own = node.closest('[data-testid]');
+    return { node: (own ? own.getAttribute('data-testid') : '') + '|' + (node.getAttribute('aria-label') || (node.textContent || '').slice(0, 16)),
+             watched: !!node.closest(watched) };
+  };
+  new PerformanceObserver(list => {
+    for (const entry of list.getEntries()) {
+      window.__shifts.push({
+        t: Math.round(entry.startTime), value: entry.value, hadRecentInput: entry.hadRecentInput,
+        sources: (entry.sources || []).map(source => ({
+          ...describe(source.node),
+          prev: [Math.round(source.previousRect.x), Math.round(source.previousRect.y), Math.round(source.previousRect.width)],
+          cur: [Math.round(source.currentRect.x), Math.round(source.currentRect.y), Math.round(source.currentRect.width)],
+        })),
+      });
+    }
+  }).observe({ type: 'layout-shift', buffered: true });
+})();
+"""
+
+
+def run_layout_shift(browser, base: str, failures: list[str], store: dict) -> None:
+    """단언 8): 첫 진입과 기간 전환 동안 제어 줄과 차트가 그려진 뒤에 움직이지 않는다.
+
+    브라우저는 입력 직후 500ms의 이동에 hadRecentInput을 달아 누적값에서 빼지만, 이 단언은
+    그 표시와 상관없이 모든 이동을 센다. 기간 전환이 곧 입력이기 때문이다.
+    """
+    for width, height in ((376, 812), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height},
+                                      color_scheme="dark", reduced_motion="reduce")
+        context.add_init_script(SHIFT_OBSERVER)
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        install_routes(page, urllib.parse.urlsplit(base).netloc)
+        page.clock.set_fixed_time(FIXED_NOW)
+        page.goto(build_url(base, "dark"))
+        page.get_by_test_id("native-settings-review").wait_for()
+        page.get_by_test_id("settings-category-usage-stats").click()
+        page.get_by_test_id("usage-stats-view-measure-row").wait_for()
+        page.get_by_test_id("usage-stats-total-tokens").wait_for()
+        page.wait_for_timeout(800)
+        first = page.evaluate("() => window.__shifts.splice(0)")
+        page.get_by_text("월간", exact=True).click()
+        page.wait_for_timeout(1200)
+        period = page.evaluate("() => window.__shifts.splice(0)")
+        store[f"layout-shift-{width}"] = {"firstEntry": first, "periodSwitch": period}
+        for scene, entries in (("첫 진입", first), ("기간 전환", period)):
+            hits = [entry for entry in entries if any(source["watched"] for source in entry["sources"])]
+            print(f"layout-shift {width} {scene}: 이동 {len(entries)}건, 제어 줄·차트 관련 {len(hits)}건")
+            if hits:
+                value = sum(entry["value"] for entry in hits)
+                moved = [source["node"] for entry in hits for source in entry["sources"] if source["watched"]]
+                failures.append(f"8) {width}: {scene}에 제어 줄·차트가 그려진 뒤 움직였다 {len(hits)}건"
+                                f"(값 {value:.4f}, 출처 {sorted(set(moved))[:3]})")
+        context.close()
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -472,8 +538,9 @@ def main() -> int:
                             context.close()
 
                 compare_views(measurements, failures)
-                print("[usage-stats] 조작 항목 7·14·15·18")
+                print("[usage-stats] 조작 항목 7·8·14·15·18")
                 run_view_switch(browser, base, failures, measurements)
+                run_layout_shift(browser, base, failures, measurements)
                 run_interactions(browser, base, out_dir, failures, measurements)
             finally:
                 browser.close()
