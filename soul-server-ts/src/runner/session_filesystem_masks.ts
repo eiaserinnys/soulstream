@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 
 import type {
   HostDirectoryEntry,
@@ -44,7 +44,7 @@ export interface IsolationMaskPlan {
   masks: IsolationMask[];
   /** mask한 부모 아래에서 RO로 다시 여는 경로. */
   rebindings: MountBinding[];
-  /** 재귀 `.env` 탐색 통계. 로그로만 쓴다. */
+  /** `.env` 가림 탐색 통계. 로그로만 쓴다. */
   envScan: IsolationEnvMaskScan;
 }
 
@@ -83,8 +83,17 @@ const ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES = new Set([
   "site-packages",
 ]);
 
-/** 뿌리(깊이 0)에서 내려가는 최대 깊이. 그보다 깊은 항목은 보지 않는다. */
-const ENV_MASK_SCAN_MAX_DEPTH = 5;
+/** 뿌리(깊이 0)에서 나열하는 최대 디렉터리 깊이. 뿌리 자신, 바로 아래, 모음 폴더 아래 한 층이다. */
+const ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH = 2;
+
+/**
+ * 바로 아래 폴더를 한 층 더 나열하는 모음 폴더 이름. 리포·워크트리와 에이전트
+ * 작업 폴더의 `.env`가 놓이는 자리다.
+ */
+const ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES = new Set([
+  ".projects",
+  "agent-workspaces",
+]);
 
 /** 예시·틀 파일은 가리지 않는다. */
 const ENV_MASK_SCAN_EXCLUDED_SUFFIXES = [".example", ".sample", ".template"] as const;
@@ -122,7 +131,8 @@ function roundMs(value: number): number {
 
 /** 캐시한 탐색 결과가 유효한 탐색 규칙인지 가르는 지문. */
 const ENV_MASK_SCAN_RULE_KEY = [
-  `depth=${ENV_MASK_SCAN_MAX_DEPTH}`,
+  `layers=${ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH}`,
+  `collection=${[...ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES].sort().join(",")}`,
   `skip=${[...ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES].sort().join(",")}`,
   `exclude=${[...ENV_MASK_SCAN_EXCLUDED_SUFFIXES].sort().join(",")}`,
 ].join("|");
@@ -217,11 +227,12 @@ function isPathAtOrUnder(path: string, root: string): boolean {
 }
 
 /**
- * 뿌리 하나를 명시 스택으로 훑어 `.env` 후보를 모은다. 디렉터리 나열과
- * 심볼릭 링크 확인은 동기 포트로 해 스레드풀을 쓰지 않고, 약
- * `ENV_MASK_SCAN_YIELD_INTERVAL_MS`마다 이벤트 루프에 양보한다. 깊이·건너뛸
- * 이름·대상 이름 판정은 `ENV_MASK_SCAN_RULE_KEY`에 들어 있어 규칙이 바뀌면
- * 캐시가 갈린다.
+ * 뿌리 하나를 명시 스택으로 훑어 `.env` 후보를 모은다. 나열하는 층은 뿌리
+ * 자신(깊이 0), 뿌리 바로 아래(깊이 1), 모음 폴더(`ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES`)
+ * 바로 아래(깊이 2)까지다. 디렉터리 나열과 심볼릭 링크 확인은 동기 포트로 해
+ * 스레드풀을 쓰지 않고, 약 `ENV_MASK_SCAN_YIELD_INTERVAL_MS`마다 이벤트 루프에
+ * 양보한다. 나열 층·건너뛸 이름·대상 이름 판정은 `ENV_MASK_SCAN_RULE_KEY`에
+ * 들어 있어 규칙이 바뀌면 캐시가 갈린다.
  */
 async function scanEnvMaskRoot(
   root: string,
@@ -249,7 +260,7 @@ async function scanEnvMaskRoot(
       lastYieldAt = performance.now();
     }
     const current = pending.pop();
-    if (!current || current.depth >= ENV_MASK_SCAN_MAX_DEPTH) continue;
+    if (!current || current.depth > ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH) continue;
     let entriesInDirectory: HostDirectoryEntry[];
     const listStarted = performance.now();
     try {
@@ -266,7 +277,16 @@ async function scanEnvMaskRoot(
       if (excluded(path)) continue;
       if (entry.kind === "directory") {
         if (ENV_MASK_SCAN_SKIPPED_DIRECTORY_NAMES.has(entry.name)) continue;
-        pending.push({ path, depth: current.depth + 1 });
+        const childDepth = current.depth + 1;
+        if (childDepth > ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH) continue;
+        // 모음 폴더 바로 아래 폴더만 한 층 더 나열한다.
+        if (
+          childDepth === ENV_MASK_SCAN_MAX_DIRECTORY_DEPTH
+          && !ENV_MASK_SCAN_COLLECTION_DIRECTORY_NAMES.has(basename(current.path))
+        ) {
+          continue;
+        }
+        pending.push({ path, depth: childDepth });
         continue;
       }
       if (entry.kind !== "file" && entry.kind !== "symlink") continue;
@@ -592,7 +612,7 @@ export async function prepareIsolationMasks(
   // 보이지 않게 늘 가리고, 이 세션 폴더만 plan이 RO로 다시 연다.
   await addMask(input.incomingRoot, false);
 
-  // 재귀 `.env` 탐색에 쓸 RO 재노출 뿌리. mask 아래에서 다시 여는 경로는
+  // `.env` 가림 탐색에 쓸 RO 재노출 뿌리. mask 아래에서 다시 여는 경로는
   // 그 아래 `.env`도 다시 보이므로 함께 훑는다.
   const readOnlyRoots: string[] = [];
 
@@ -615,9 +635,9 @@ export async function prepareIsolationMasks(
     await addMask("/run/WSL", true);
   }
 
-  // 9. `.env` 재귀 가림. 상자에 RO로 다시 여는 경로(호스트 워크스페이스 루트,
-  // readOnlyReexposedPaths, 공통 파일 디렉터리, 서비스 env 디렉터리) 아래를
-  // 훑는다. 세션이 쓸 수 있게 연 경로 아래는 자기 작업물이므로 뺀다.
+  // 9. `.env` 가림. 상자에 RO로 다시 여는 경로(호스트 워크스페이스 루트,
+  // readOnlyReexposedPaths, 공통 파일 디렉터리, 서비스 env 디렉터리)의
+  // 정해진 층을 훑는다. 세션이 쓸 수 있게 연 경로 아래는 자기 작업물이므로 뺀다.
   const directoryReal = async (path: string): Promise<string | null> => {
     try {
       const fact = await ports.lstatPath(path);
