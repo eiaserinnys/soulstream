@@ -15,7 +15,8 @@ uniform int uCount;
 uniform vec4 uCards[${MAX_WEBGL_GLASS_CARDS}];
 uniform vec4 uClips[${MAX_WEBGL_GLASS_CARDS}];
 uniform float uClipRadii[${MAX_WEBGL_GLASS_CARDS}];
-uniform float uRadius, uDpr, uScale, uBlur, uAb, uRim, uGlass;
+uniform float uRadii[${MAX_WEBGL_GLASS_CARDS}];
+uniform float uDpr, uScale, uBlur, uAb, uRim, uGlass;
 float sdRound(vec2 p, vec2 b, float r){ vec2 q=abs(p)-b+r; return min(max(q.x,q.y),0.0)+length(max(q,0.0))-r; }
 vec2 roundNormal(vec2 p, vec2 b, float r){
   vec2 s=sign(p);
@@ -56,7 +57,7 @@ void main(){
       }
       vec2 lp=fragPx-center;
       if(abs(lp.x)>hsz.x || abs(lp.y)>hsz.y) continue;
-      float R=min(uRadius, min(hsz.x,hsz.y));
+      float R=min(uRadii[i], min(hsz.x,hsz.y));
       float d=sdRound(lp,hsz,R);
       if(d<0.0){
         float inside=-d;

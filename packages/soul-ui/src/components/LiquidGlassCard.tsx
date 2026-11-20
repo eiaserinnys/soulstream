@@ -247,10 +247,8 @@ function ensureSharedLiquidGlassResource() {
 }
 
 export function LiquidGlassLayer({
-  cornerRadius = "2xl",
   enhanced = supportsLiquidGlassEnhancement(),
 }: {
-  cornerRadius?: LiquidGlassCornerRadius;
   enhanced?: boolean;
 }) {
   useLayoutEffect(() => {
@@ -269,7 +267,6 @@ export function LiquidGlassLayer({
     transition: "all ease-out 0.2s",
   } as CSSProperties;
   const glassStyle = {
-    borderRadius: `var(--radius-${cornerRadius})`,
     position: "relative",
     display: "inline-flex",
     alignItems: "center",
@@ -294,7 +291,6 @@ export function LiquidGlassLayer({
   } as CSSProperties;
   const rimStyle = {
     ...effectStyle,
-    borderRadius: `var(--radius-${cornerRadius})`,
     pointerEvents: "none",
     padding: "1.5px",
     WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
@@ -357,7 +353,7 @@ export const LiquidGlassCard = forwardRef<HTMLDivElement, LiquidGlassCardProps>(
         className={cn("liquid-glass-card", className)}
         style={liquidGlassStyle(cornerRadius, style)}
       >
-        <LiquidGlassLayer cornerRadius={cornerRadius} enhanced={enhanced && !webglActive} />
+        <LiquidGlassLayer enhanced={enhanced && !webglActive} />
         {children}
       </div>
     );

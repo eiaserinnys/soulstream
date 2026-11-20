@@ -2,6 +2,8 @@ export const WEBGL_GLASS_STORAGE_KEY = "ls.webglGlass";
 export const WEBGL_GLASS_CHANGE_EVENT = "ls.webglGlass:change";
 export const MAX_WEBGL_GLASS_CARDS = 64;
 export const WEBGL_GLASS_OVERSCAN_PX = 40;
+/** 표면의 계산 곡률을 읽지 못했을 때만 쓰는 대체 곡률. */
+export const DEFAULT_GLASS_SURFACE_RADIUS = 22;
 
 const ENABLED_VALUES = new Set(["1", "true", "on", "enabled", "yes"]);
 const DISABLED_VALUES = new Set(["0", "false", "off", "disabled", "no"]);
@@ -28,6 +30,8 @@ export interface PackedGlassSurfaces {
   rects: Float32Array;
   clips: Float32Array;
   clipRadii: Float32Array;
+  /** 표면마다 등록 요소의 계산 곡률. 읽지 못한 표면만 DEFAULT_GLASS_SURFACE_RADIUS. */
+  radii: Float32Array;
 }
 
 export interface WebglGlassStats {
@@ -118,6 +122,7 @@ export interface GlassSurfacePackingOptions {
   rects?: Float32Array;
   clips?: Float32Array;
   clipRadii?: Float32Array;
+  radii?: Float32Array;
   maxCards?: number;
   clipAncestorCache?: GlassSurfaceClipAncestorCache;
 }
@@ -133,6 +138,7 @@ export function packVisibleGlassSurfaces(
   const rects = options.rects ?? createGlassSurfaceBuffer(maxCards);
   const clips = options.clips ?? createGlassSurfaceBuffer(maxCards);
   const clipRadii = options.clipRadii ?? createGlassSurfaceScalarBuffer(maxCards);
+  const radii = options.radii ?? createGlassSurfaceScalarBuffer(maxCards);
   const overscan = viewport.overscan ?? WEBGL_GLASS_OVERSCAN_PX;
   const viewportClip = {
     left: -overscan,
@@ -170,6 +176,7 @@ export function packVisibleGlassSurfaces(
     clips[offset + 2] = clipRect.width;
     clips[offset + 3] = clipRect.height;
     clipRadii[count] = clipRect.radius;
+    radii[count] = readMaxBorderRadius(element, rect) ?? DEFAULT_GLASS_SURFACE_RADIUS;
     count += 1;
   }
 
@@ -177,9 +184,10 @@ export function packVisibleGlassSurfaces(
     rects.fill(0, count * 4, maxCards * 4);
     clips.fill(0, count * 4, maxCards * 4);
     clipRadii.fill(0, count, maxCards);
+    radii.fill(0, count, maxCards);
   }
 
-  return { count, visibleCount, overflowCount, rects, clips, clipRadii };
+  return { count, visibleCount, overflowCount, rects, clips, clipRadii, radii };
 }
 
 function getSurfaceClipRect(
@@ -198,7 +206,7 @@ function getSurfaceClipRect(
       ...nextRect,
       radius: Math.max(
         clipRect.radius,
-        readMaxBorderRadius(ancestor, ancestorRect),
+        readMaxBorderRadius(ancestor, ancestorRect) ?? 0,
       ),
     };
   }
@@ -281,9 +289,9 @@ function intersectRects(a: RectLike, b: RectLike): RectLike | null {
   return { left, top, right, bottom, width, height };
 }
 
-function readMaxBorderRadius(element: Element, bounds: RectLike): number {
+function readMaxBorderRadius(element: Element, bounds: RectLike): number | null {
   const style = getComputedStyleForElement(element);
-  if (!style) return 0;
+  if (!style) return null;
   return Math.max(
     parseBorderRadius(style.borderTopLeftRadius, bounds),
     parseBorderRadius(style.borderTopRightRadius, bounds),
