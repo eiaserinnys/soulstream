@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { intervenePayload, parseAttachmentIds } from
   "../src/session/session_action_command_payloads.js";
 import { sessionDeliveryInterventionPayload } from

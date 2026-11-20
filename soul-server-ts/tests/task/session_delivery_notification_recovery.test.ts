@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryNotificationOutboxRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
 import { SessionDeliveryNotificationRecovery } from "../../src/task/session_delivery_notification_recovery.js";
 import type { Task } from "../../src/task/task_models.js";
 

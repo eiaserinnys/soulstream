@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { SessionDeliveryNotificationHostClient } from "../control_plane/persistence_host_clients.js";
-import type { SessionDeliveryNotificationOutboxRow } from "../db/session_db_types.js";
+import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
 import type { InterventionMessage, Task } from "./task_models.js";
 import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,

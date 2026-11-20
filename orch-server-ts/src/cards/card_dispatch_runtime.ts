@@ -18,7 +18,8 @@ import { createLiveAttachmentReadRepository } from "../runtime/live_attachment_r
 import { resolveCardSessionTarget } from "./card_session_target.js";
 import { sendCardChangeOnce } from "./card_change_delivery.js";
 import { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
-import type { SessionDeliveryRow, SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
 import { sessionDeliveryInterventionPayload } from "../session/session_delivery_intervention_payload.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";

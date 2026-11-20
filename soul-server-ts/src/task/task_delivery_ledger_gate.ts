@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type {
   SessionDeliveryRow,
-} from "../db/session_db_types.js";
+  DeliveryIntent,
+} from "@soulstream/wire-schema/session-delivery";
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import type { ClaudeRuntimeHostClient } from
   "../control_plane/persistence_host_clients.js";
@@ -12,7 +13,7 @@ import type {
   AddInterventionResult,
 } from "./task_intervention_route.js";
 import type { InterventionMessage, Task } from "./task_models.js";
-import { isDeliveryIntent, type DeliveryIntent } from "./delivery_contract.js";
+import { isDeliveryIntent } from "./delivery_contract.js";
 import { loadOrRegisterDelivery } from "./task_delivery_registration.js";
 import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,

@@ -7,7 +7,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow, SqlClient } from "../src/control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionDeliveryRepository } from
   "../src/control_plane/repositories/session_delivery_repository.js";
 

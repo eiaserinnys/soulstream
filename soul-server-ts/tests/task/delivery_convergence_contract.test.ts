@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DELIVERY_AGGREGATE_STATES,
+} from "@soulstream/wire-schema/session-delivery";
+import {
   DELIVERY_ATTEMPT_OUTCOMES,
 } from "../../src/task/delivery_contract.js";
 

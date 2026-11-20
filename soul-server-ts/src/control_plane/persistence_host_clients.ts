@@ -6,10 +6,15 @@ import type {
   RecordSessionDeliveryRelationConsumptionResult,
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
-  RegisterSessionReviewResult,
   SessionDeliveryNotificationOutboxRow,
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
+  ClaudeTranscriptEntry,
+  ClaudeTranscriptKey,
+  ClaudeTranscriptSessionSummary,
+  RegisterSessionReviewResult,
   AcknowledgeReviewOutcome,
   RegisterSessionParams,
   RegisterSessionWithWorktreeParams,

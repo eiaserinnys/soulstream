@@ -16,7 +16,7 @@ import type {
 } from "../task/task_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
-import type { DeliveryIntent } from "../task/delivery_contract.js";
+import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { PurposeDecisionCommand, PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";

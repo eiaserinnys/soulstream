@@ -6,7 +6,7 @@ import type { Env } from "../../src/config.js";
 import { SessionDataHostError } from
   "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type {
   EngineExecuteParams,
   EnginePort,

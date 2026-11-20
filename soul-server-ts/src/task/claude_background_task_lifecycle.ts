@@ -18,7 +18,7 @@ import type {
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import { PersistenceHostRequestError } from
   "../control_plane/persistence_host_transport.js";
 import type { ExecutionRegistration } from "./execution_registration.js";

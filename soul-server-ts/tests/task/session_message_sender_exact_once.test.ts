@@ -3,7 +3,7 @@
 // the oracle cannot drift from the failure model it judges.
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { AutoResumeTransition } from
   "../../src/task/task_auto_resume_transition.js";
 import type {

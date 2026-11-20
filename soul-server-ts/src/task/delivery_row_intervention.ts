@@ -1,4 +1,4 @@
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type {
   AddInterventionParams,

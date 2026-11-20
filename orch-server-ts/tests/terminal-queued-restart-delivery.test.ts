@@ -5,7 +5,7 @@ import type { SessionDB } from "../../soul-server-ts/src/db/session_db.js";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
-} from "../../soul-server-ts/src/db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import type {
   EngineExecuteParams,
   EnginePort,

@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryNotificationOutboxRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import {

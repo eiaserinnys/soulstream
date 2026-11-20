@@ -6,7 +6,7 @@ import {
 } from "./task_intervention_route.js";
 import { OrchInterveneClient, OrchInterveneRequestError } from "./orch_intervene_client.js";
 import { TaskOwnedByAnotherNodeError } from "./task_hydration_errors.js";
-import type { DeliveryIntent } from "./delivery_contract.js";
+import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import type { CallerInfo } from "./task_models.js";
 import type {
   AddInterventionResult,

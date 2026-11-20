@@ -1,6 +1,6 @@
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 
-import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import {
   intervenePayload,
   type InterveneNodeCommandPayload,

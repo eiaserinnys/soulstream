@@ -6,7 +6,7 @@
  * 출처(`MCP_INTERNAL_PORT`/`PORT`+1, `MCP_PATH`)에서 만들고, 토큰은 지금처럼
  * `AUTH_BEARER_TOKEN`(세션 안 ssf1, 세션 밖 서비스 토큰)이다.
  */
-import type { SessionDeliveryNotificationOutboxRow } from "../src/db/session_db_types.js";
+import type { SessionDeliveryNotificationOutboxRow } from "@soulstream/wire-schema/session-delivery";
 import { localInternalMcpUrlFromEnv } from "../src/mcp/endpoint_paths.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;

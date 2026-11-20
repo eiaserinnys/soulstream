@@ -3,7 +3,7 @@ import type { SessionDeliveryHostClient } from
 import type {
   RecordObservedChildCompletionBatchResult,
   RecordObservedChildCompletionParams,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 
 import { buildDeterministicDeliveryIdentity } from "./delivery_identity.js";
 

@@ -1,6 +1,6 @@
 import type {
   SessionDeliveryNotificationOutboxRow,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 
 export interface NotificationReceiptRepository {
   markPublished(

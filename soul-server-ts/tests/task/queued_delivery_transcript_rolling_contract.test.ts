@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
-import { DELIVERY_INTENTS, type DeliveryIntent } from
-  "../../src/task/delivery_contract.js";
+import {
+  DELIVERY_INTENTS,
+  type DeliveryIntent,
+  type SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
 import { redeliverStoredDeliveryContent } from
   "../../src/task/delivery_row_intervention.js";
 import { hasLiveRunner } from "../../src/task/delivery_instruction_receipt.js";

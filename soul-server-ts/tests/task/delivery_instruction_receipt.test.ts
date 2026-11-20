@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { Task } from "../../src/task/task_models.js";
 import { hasLiveRunner } from "../../src/task/delivery_instruction_receipt.js";
 

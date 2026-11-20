@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { buildCanonicalDeliveryPayload, buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 import { readCardExecutionRegistration, type CardExecutionRequest } from "./card_execution_service.js";
-import type { SessionDeliveryRow, SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
 import { registerSessionDelivery } from "../control_plane/repositories/session_delivery_relation_repository.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
 

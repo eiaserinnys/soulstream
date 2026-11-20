@@ -40,7 +40,7 @@ import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { composeClaudeRuntime, composeClaudeAccountServices, composeQueuedDeliveryStartupRecovery, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";

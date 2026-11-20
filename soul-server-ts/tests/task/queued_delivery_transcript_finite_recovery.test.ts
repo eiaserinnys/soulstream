@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { ClaudeRuntimeStartupRecovery } from
