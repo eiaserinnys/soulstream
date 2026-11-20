@@ -1,10 +1,3 @@
-/**
- * SSE 이벤트 처리 로직
- *
- * dashboard-store의 processEvent/processEvents에서 사용하는 핵심 처리 함수.
- * 순수 함수로 분리하여 store set() 호출과 이벤트 처리 로직을 분리한다.
- */
-
 import type {
   SessionSummary,
   SoulSSEEvent,

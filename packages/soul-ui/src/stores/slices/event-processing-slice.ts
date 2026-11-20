@@ -1,17 +1,3 @@
-/**
- * Event Processing Slice
- *
- * SSE 이벤트 트리에 대한 처리 책임을 모은 슬라이스.
- * - 트리 상태(tree, treeVersion 등)와 이벤트 처리 컨텍스트(processingCtx) 소유.
- * - processEvent / processEvents / processHistoryEvents 액션을 제공.
- *
- * 핵심 invariants:
- * - tree, treeVersion, chatPrependedCount는 한 set({}) 호출 안에 묶여야
- *   Zustand subscribe가 1회만 발화하여 React 한 렌더 사이클에서 정합 (atom 816060d2).
- * - chatPrependedCount는 grouped 차분(messages 차분 아님)으로 갱신해야 Virtuoso
- *   firstItemIndex 변화량과 data 추가량이 정합 (atom 3eb91fad).
- */
-
 import type { StateCreator } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import type { SessionNotice, EventTreeNode, SoulSSEEvent } from "@shared/types";

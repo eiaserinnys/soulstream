@@ -1,12 +1,3 @@
-/**
- * createSSESubscribe 재연결 테스트 (Phase 3 viewport API)
- *
- * SSE 연결이 끊긴 후:
- * 1) 지수 백오프로 재연결을 시도하는지
- * 2) 재연결 URL에 `?lastEventId=N`이 포함되는지
- * 를 검증한다.
- */
-
 import {
   describe,
   it,
@@ -290,19 +281,16 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
       getLastEventId: () => committed,
     });
 
-    // 1. 첫 이벤트로 currentLastEventId = 15
     instances[0].emit(
       "folder_updated",
       { type: "folder_updated", folderId: "folder-1" },
       15,
     );
 
-    // 2. 연결 오류 → 원본 EventSource는 close되고 reconnect가 스케줄된다
     instances[0].emitError();
     expect(instances[0].closed).toBe(true);
     expect(onStatusChange).toHaveBeenCalledWith("error");
 
-    // 3. 재연결 지연(3000ms × 2^0 = 3000ms) 경과 → 새 EventSource 생성
     vi.advanceTimersByTime(3000);
     expect(instances).toHaveLength(2);
     expect(instances[1].url).toBe(`${baseUrl}?lastEventId=15`);

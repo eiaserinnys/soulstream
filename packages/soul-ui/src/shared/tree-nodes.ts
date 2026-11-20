@@ -21,18 +21,10 @@ interface BaseNode {
   children: EventTreeNode[];
   content: string;
   completed: boolean;
-  /**
-   * @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 wire에서 NULL.
-   * FE는 트리 배치에 사용하지 않는다 (tree-placer가 모든 노드를 root.children에 push).
-   *
-   * 부모 이벤트 ID (서브에이전트 내부 노드 배치용)
-   */
   parentEventId?: string;
-  /** 이벤트 발행 시각 (Unix epoch, 초) */
   timestamp?: number;
 }
 
-/** Attachment event fields kept from durable message payloads. */
 export interface AttachmentEventSignalFields {
   attachmentIds?: string[];
   attachmentCount?: number;
