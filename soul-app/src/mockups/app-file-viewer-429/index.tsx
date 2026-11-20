@@ -138,7 +138,7 @@ function sceneFromUrl(): Scene {
 
 const saveNothing = async () => {};
 
-/** 시안 페이지의 코멘트 단추가 좁은 화면에서 바닥 원본 저장을 덮지 않게 왼쪽으로 비킨다(시안 페이지만). */
+/** 시안 페이지의 코멘트 단추가 바닥 원본 저장을 덮지 않게 왼쪽 아래로 비킨다(시안 페이지만). */
 function useReviewButtonAside() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -148,7 +148,7 @@ function useReviewButtonAside() {
       if (!root.querySelector('style[data-mockup-aside]')) {
         const style = document.createElement('style');
         style.setAttribute('data-mockup-aside', '');
-        style.textContent = '@media (max-width: 40rem) { #toggle { right: auto; left: 16px; } }';
+        style.textContent = '#toggle { right: auto; left: 16px; }';
         root.append(style);
       }
       return true;
