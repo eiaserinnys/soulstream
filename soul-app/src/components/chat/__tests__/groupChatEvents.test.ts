@@ -56,10 +56,6 @@ describe('groupChatEvents', () => {
       role: 'user',
       caller_info: { source: 'agent' },
     });
-    const legacyAgentUser = ev('legacy-agent-user', 'user_message', {
-      text: '레거시 보고',
-      source: 'agent',
-    });
     const personAttachments = ['/image.png'];
     const callerInfoWins = ev('person', 'user_message', {
       text: '사람 입력',
@@ -85,7 +81,6 @@ describe('groupChatEvents', () => {
       callerInfoWins,
       agentIntervention,
       resumedFollowup,
-      legacyAgentUser,
       legacyIntervention,
       agentRealtimeUser,
       unmarkedInput,

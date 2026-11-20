@@ -420,29 +420,6 @@ describe("createNodeFromEvent", () => {
       expect(u.callerInfo?.source).toBe("slack");
     });
 
-    it("user_message with legacy top-level source=agent (no caller_info) → agentInfo set, callerInfo undefined", () => {
-      // Phase 3 이전 데이터 호환 (atom ed3a216d 도입 전 형식).
-      const event = {
-        type: "user_message",
-        text: "legacy agent message",
-        source: "agent",
-        agent_node: "node-x",
-        agent_id: "alpha",
-        agent_name: "Alpha",
-      } as unknown as UserMessageEvent;
-
-      const node = createNodeFromEvent(event, 103);
-
-      const u = node as UserMessageNode;
-      expect(u.agentInfo).toEqual({
-        source: "agent",
-        agent_node: "node-x",
-        agent_id: "alpha",
-        agent_name: "Alpha",
-      });
-      expect(u.callerInfo).toBeUndefined();
-    });
-
     it("user_message with no caller_info and no top-level source → both undefined", () => {
       const event: UserMessageEvent = {
         type: "user_message",

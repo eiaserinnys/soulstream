@@ -118,7 +118,7 @@ function shouldHideManuscriptEvent(event: SessionEvent): boolean {
     return typeof callerInfo === 'object'
       && (callerInfo as Record<string, unknown>).source === 'agent';
   }
-  return event.type === 'user_message' && data?.source === 'agent';
+  return false;
 }
 
 const SILENT_MANUSCRIPT_TOKEN = '[SILENT]';
