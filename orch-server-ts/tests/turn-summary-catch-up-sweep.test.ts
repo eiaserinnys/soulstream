@@ -69,6 +69,7 @@ describe("TurnSummaryCatchUpSweep", () => {
       since: new Date(NOW - 72 * 3_600_000),
       olderThan: new Date(NOW - 10 * 60_000),
       excludedFolderIds: BASE_CONFIG.excludedFolderIds,
+      excludedTurns: [],
       limit: 100,
     });
     expect(enqueue.mock.calls.map((call) => call[0])).toEqual(CANDIDATES);
@@ -120,14 +121,17 @@ describe("TurnSummaryCatchUpSweep", () => {
     );
   });
 
-  it("continues after a non-usage-limit failure", async () => {
-    const { sweep, enqueue, info } = createSweep({
+  it("continues after a non-usage-limit failure and remembers it", async () => {
+    const { sweep, listCatchUpCandidates, enqueue, info } = createSweep({
       candidates: CANDIDATES,
       outcomes: [
         { status: "failed", error: new Error("statement timeout") },
         { status: "stored" },
       ],
     });
+    listCatchUpCandidates
+      .mockResolvedValueOnce(CANDIDATES)
+      .mockResolvedValueOnce([]);
 
     await sweep.sweep();
 
@@ -141,6 +145,14 @@ describe("TurnSummaryCatchUpSweep", () => {
       }),
       "Turn summary catch-up",
     );
+
+    await sweep.sweep();
+
+    expect(listCatchUpCandidates).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        excludedTurns: [{ sessionId: "session-a", completeEventId: 11 }],
+      }),
+    );
   });
 
   it("remembers non-error skips and leaves them out of the next round", async () => {
@@ -153,6 +165,11 @@ describe("TurnSummaryCatchUpSweep", () => {
     await sweep.sweep();
 
     expect(listCatchUpCandidates).toHaveBeenCalledTimes(2);
+    expect(listCatchUpCandidates).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        excludedTurns: [{ sessionId: "session-a", completeEventId: 11 }],
+      }),
+    );
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenLastCalledWith(
       expect.objectContaining({

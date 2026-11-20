@@ -6,10 +6,16 @@ export interface TurnSummaryCatchUpCandidate {
   readonly completeEventId: number;
 }
 
+export interface TurnSummaryCatchUpExcludedTurn {
+  readonly sessionId: string;
+  readonly completeEventId: number;
+}
+
 export interface TurnSummaryCatchUpCandidateQuery {
   readonly since: Date;
   readonly olderThan: Date;
   readonly excludedFolderIds: readonly string[];
+  readonly excludedTurns: readonly TurnSummaryCatchUpExcludedTurn[];
   readonly limit: number;
 }
 
@@ -27,6 +33,12 @@ implements TurnSummaryCatchUpRepositoryPort {
     input: TurnSummaryCatchUpCandidateQuery,
   ): Promise<TurnSummaryCatchUpCandidate[]> {
     const sql = await this.sqlResolver.resolveSql();
+    const excludedSessionIds = input.excludedTurns.map(
+      (turn) => turn.sessionId,
+    );
+    const excludedEventIds = input.excludedTurns.map(
+      (turn) => turn.completeEventId,
+    );
     const rows = await sql`
       SELECT c.session_id, c.id, s.node_id
       FROM events c
@@ -34,9 +46,51 @@ implements TurnSummaryCatchUpRepositoryPort {
       WHERE c.event_type = 'complete'
         AND c.created_at >= ${input.since}
         AND c.created_at < ${input.olderThan}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM unnest(
+            ${excludedSessionIds}::text[],
+            ${excludedEventIds}::bigint[]
+          ) AS skip(session_id, event_id)
+          WHERE skip.session_id = c.session_id
+            AND skip.event_id = c.id
+        )
         AND (
           s.folder_id IS NULL
           OR s.folder_id <> ALL(${input.excludedFolderIds}::text[])
+        )
+        AND NOT (
+          CASE WHEN jsonb_typeof(s.metadata) = 'array' THEN
+            EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(s.metadata) AS entry
+              WHERE entry->>'type' = 'turn_summary_internal'
+                OR entry->>'turn_summary_internal' = 'true'
+            )
+          ELSE false END
+        )
+        AND NOT (
+          COALESCE(
+            CASE WHEN jsonb_typeof(s.metadata) = 'array' THEN
+              (
+                SELECT entry->'value'->>'source'
+                FROM jsonb_array_elements(s.metadata) AS entry
+                WHERE entry->>'type' = 'caller_info'
+                LIMIT 1
+              )
+            END,
+            ''
+          ) = 'agent'
+          AND NOT (
+            CASE WHEN jsonb_typeof(s.metadata) = 'array' THEN
+              EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(s.metadata) AS entry
+                WHERE entry->>'type' = 'persistent_session'
+                  AND entry->'value'->>'enabled' = 'true'
+              )
+            ELSE false END
+          )
         )
         AND NOT EXISTS (
           SELECT 1

@@ -25,14 +25,19 @@ describe("TurnSummaryCatchUpRepository candidates (PostgreSQL)", () => {
     await sql.unsafe(
       "ALTER TABLE events ADD COLUMN parent_event_id INTEGER",
     );
+    await sql.unsafe("ALTER TABLE sessions ADD COLUMN metadata JSONB");
 
     const insertSession = async (
       sessionId: string,
       folderId: string | null,
       nodeId: string,
+      metadata: unknown = null,
     ) => await sql`
-      INSERT INTO sessions (session_id, folder_id, node_id, status)
-      VALUES (${sessionId}, ${folderId}, ${nodeId}, 'running')
+      INSERT INTO sessions (session_id, folder_id, node_id, status, metadata)
+      VALUES (
+        ${sessionId}, ${folderId}, ${nodeId}, 'running',
+        ${metadata === null ? null : JSON.stringify(metadata)}::text::jsonb
+      )
     `;
     const insertEvent = async (
       sessionId: string,
@@ -75,6 +80,28 @@ describe("TurnSummaryCatchUpRepository candidates (PostgreSQL)", () => {
     await insertSession("g-later", null, "node-g");
     await insertEvent("g-later", 10, "complete", null, "2026-11-19T03:00:00Z");
 
+    await insertSession("h-agent", null, "node-h", [
+      { type: "caller_info", value: { source: "agent" } },
+    ]);
+    await insertEvent("h-agent", 10, "complete", null, "2026-11-19T01:30:00Z");
+
+    await insertSession("i-internal", null, "node-i", [
+      { type: "turn_summary_internal" },
+    ]);
+    await insertEvent("i-internal", 10, "complete", null, "2026-11-19T01:45:00Z");
+
+    await insertSession("j-agent-persistent", null, "node-j", [
+      { type: "caller_info", value: { source: "agent" } },
+      { type: "persistent_session", value: { enabled: true } },
+    ]);
+    await insertEvent(
+      "j-agent-persistent",
+      10,
+      "complete",
+      null,
+      "2026-11-19T04:00:00Z",
+    );
+
     const repository = new TurnSummaryCatchUpRepository({
       resolveSql: async () => harness!.liveSql,
     });
@@ -82,6 +109,7 @@ describe("TurnSummaryCatchUpRepository candidates (PostgreSQL)", () => {
       since: SINCE,
       olderThan: OLDER_THAN,
       excludedFolderIds: [EXCLUDED_FOLDER],
+      excludedTurns: [],
       limit: 100,
     };
 
@@ -89,6 +117,25 @@ describe("TurnSummaryCatchUpRepository candidates (PostgreSQL)", () => {
       { sessionId: "a-partial", nodeId: "node-a", completeEventId: 20 },
       { sessionId: "f-older", nodeId: "node-f", completeEventId: 10 },
       { sessionId: "g-later", nodeId: "node-g", completeEventId: 10 },
+      {
+        sessionId: "j-agent-persistent",
+        nodeId: "node-j",
+        completeEventId: 10,
+      },
+    ]);
+    await expect(
+      repository.listCatchUpCandidates({
+        ...input,
+        excludedTurns: [{ sessionId: "a-partial", completeEventId: 20 }],
+      }),
+    ).resolves.toEqual([
+      { sessionId: "f-older", nodeId: "node-f", completeEventId: 10 },
+      { sessionId: "g-later", nodeId: "node-g", completeEventId: 10 },
+      {
+        sessionId: "j-agent-persistent",
+        nodeId: "node-j",
+        completeEventId: 10,
+      },
     ]);
     await expect(
       repository.listCatchUpCandidates({ ...input, limit: 2 }),

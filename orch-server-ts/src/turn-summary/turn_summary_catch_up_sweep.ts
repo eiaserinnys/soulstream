@@ -12,12 +12,18 @@ import type { TurnSummaryPipeline } from "./turn_summary_pipeline.js";
 const INITIAL_SWEEP_DELAY_MS = 60_000;
 const CANDIDATE_MIN_AGE_MS = 10 * 60_000;
 
+interface RememberedTurn {
+  readonly sessionId: string;
+  readonly completeEventId: number;
+  readonly rememberedAt: number;
+}
+
 export class TurnSummaryCatchUpSweep {
   private timer: ReturnType<typeof setInterval> | undefined;
   private initialTimer: ReturnType<typeof setTimeout> | undefined;
   private activeSweep: Promise<void> | undefined;
   private stopped = false;
-  private readonly remembered = new Map<number, number>();
+  private readonly remembered = new Map<string, RememberedTurn>();
   private readonly nowMs: () => number;
 
   constructor(private readonly deps: {
@@ -83,6 +89,9 @@ export class TurnSummaryCatchUpSweep {
         since: new Date(now - config.catchUpWindowHours * 3_600_000),
         olderThan: new Date(now - CANDIDATE_MIN_AGE_MS),
         excludedFolderIds: config.excludedFolderIds,
+        excludedTurns: [...this.remembered.values()].map(
+          ({ sessionId, completeEventId }) => ({ sessionId, completeEventId }),
+        ),
         limit: config.catchUpMaxJobsPerRound,
       });
       let enqueued = 0;
@@ -93,7 +102,7 @@ export class TurnSummaryCatchUpSweep {
       let stoppedByUsageLimit = false;
       for (const candidate of candidates) {
         if (this.stopped) break;
-        if (this.remembered.has(candidate.completeEventId)) {
+        if (this.remembered.has(rememberedKey(candidate))) {
           remembered += 1;
           continue;
         }
@@ -113,7 +122,7 @@ export class TurnSummaryCatchUpSweep {
             outcome.reason !== "provider_unavailable" &&
             outcome.reason !== "disabled"
           ) {
-            this.remembered.set(candidate.completeEventId, now);
+            this.remember(candidate, now);
           }
           continue;
         }
@@ -134,6 +143,7 @@ export class TurnSummaryCatchUpSweep {
           break;
         }
         failed += 1;
+        this.remember(candidate, now);
       }
       this.deps.logger.info?.(
         {
@@ -152,11 +162,29 @@ export class TurnSummaryCatchUpSweep {
     }
   }
 
+  private remember(
+    candidate: { readonly sessionId: string; readonly completeEventId: number },
+    now: number,
+  ): void {
+    this.remembered.set(rememberedKey(candidate), {
+      sessionId: candidate.sessionId,
+      completeEventId: candidate.completeEventId,
+      rememberedAt: now,
+    });
+  }
+
   private pruneRemembered(now: number, windowHours: number): void {
     const cutoff = now - windowHours * 3_600_000;
-    for (const [eventId, rememberedAt] of this.remembered) {
-      if (rememberedAt < cutoff) this.remembered.delete(eventId);
+    for (const [key, turn] of this.remembered) {
+      if (turn.rememberedAt < cutoff) this.remembered.delete(key);
     }
   }
+}
+
+function rememberedKey(candidate: {
+  readonly sessionId: string;
+  readonly completeEventId: number;
+}): string {
+  return `${candidate.sessionId}\u0000${candidate.completeEventId}`;
 }
 
