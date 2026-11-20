@@ -85,7 +85,8 @@
     "packages/soul-ui/src/components/ui/table.tsx": 1,
     "unified-dashboard/client/components/ChatTypographyTab.tsx": 1,
     "unified-dashboard/client/components/LiquidGlassTab.tsx": 2,
-    "unified-dashboard/client/components/NodePanel.tsx": 2,
+    "unified-dashboard/client/components/NodePanel.tsx": 1,
+    "unified-dashboard/client/components/NodePanelFrame.tsx": 1,
     "unified-dashboard/client/v3/DailyMemo.tsx": 1
   },
   "tw-text-arbitrary": {

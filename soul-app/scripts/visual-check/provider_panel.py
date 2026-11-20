@@ -221,6 +221,305 @@ def alignment_failures(metrics: dict, label: str) -> list[dict]:
     return failures
 
 
+CENTRAL_STATES = [
+    ("central-empty", "central-empty"),
+    ("central-accounts", "central-accounts"),
+    ("central-login-url-ready", "central-login-url-ready"),
+    ("central-login-verifying", "central-login-verifying"),
+    ("central-login-failed", "central-login-failed"),
+    ("central-loading", "central-loading"),
+    ("central-error", "central-error"),
+]
+RECEIVE_STATES = [
+    ("receive-on", "receive-on"),
+    ("receive-off", "receive-off"),
+    ("receive-pending", "receive-pending"),
+    ("receive-failure", "receive-failure"),
+    ("receive-settings-error", "receive-settings-error"),
+]
+LONG_CENTRAL_EMAIL = "seosoyoung.workspace+central-primary@example.invalid"
+
+CENTRAL_METRICS_SCRIPT = r"""
+() => {
+  const text = (element) => (element?.innerText ?? '').replace(/\s+/g, ' ').trim();
+  const rect = (element) => {
+    const bounds = element.getBoundingClientRect();
+    return {
+      left: Math.round(bounds.left * 10) / 10, top: Math.round(bounds.top * 10) / 10,
+      right: Math.round(bounds.right * 10) / 10, bottom: Math.round(bounds.bottom * 10) / 10,
+      width: Math.round(bounds.width * 10) / 10, height: Math.round(bounds.height * 10) / 10,
+    };
+  };
+  const central = document.querySelector('[data-testid="settings-section-central-pool"]');
+  const backend = document.querySelector('[data-testid="settings-section-backend-scope"]');
+  const pool = document.querySelector('[data-testid="claude-account-pool-section"]');
+  const receive = document.querySelector('[data-testid="claude-central-receive"]');
+  const rows = Array.from(document.querySelectorAll('[data-testid^="claude-account-row-"]'));
+  const toggleBox = document.querySelector('[data-testid="claude-central-receive-switch"]');
+  // RN-web Switch는 testID 상자 안의 input[role=switch]에 값과 disabled를 담는다.
+  const toggle = toggleBox?.querySelector('input[role="switch"]') ?? toggleBox;
+  const login = document.querySelector('[data-testid="claude-login-flow"]');
+  return {
+    central: central ? { text: text(central), rect: rect(central) } : null,
+    backend: backend ? { rect: rect(backend) } : null,
+    pool: pool ? rect(pool) : null,
+    receive: receive ? { text: text(receive), rect: rect(receive) } : null,
+    receiveFirst: !!receive && rows.length > 0 && rect(receive).top < rect(rows[0]).top,
+    receiveInPool: !!receive && !!pool && pool.contains(receive),
+    switch: toggle ? {
+      role: toggle.getAttribute('role'),
+      ariaChecked: toggle.getAttribute('aria-checked'),
+      checked: typeof toggle.checked === 'boolean' ? toggle.checked : null,
+      disabled: typeof toggle.disabled === 'boolean' ? toggle.disabled : null,
+      ariaDisabled: toggle.getAttribute('aria-disabled'),
+    } : null,
+    rows: rows.length,
+    rowTexts: rows.map(row => text(row).slice(0, 140)),
+    login: login ? {
+      text: text(login).slice(0, 220),
+      code: !!document.querySelector('[data-testid="claude-login-code"]'),
+      openAuth: !!document.querySelector('[data-testid="claude-login-open-auth"]'),
+      cancel: !!document.querySelector('[data-testid="claude-login-cancel"]'),
+      submit: !!document.querySelector('[data-testid="claude-login-submit"]'),
+    } : null,
+    addButton: !!document.querySelector('[data-testid="claude-account-add"]'),
+    loading: !!document.querySelector('[data-testid="central-pool-loading"]'),
+    receiveRetry: !!document.querySelector('[data-testid="claude-central-receive-retry"]'),
+    bodyText: document.body.innerText,
+    document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
+  };
+}
+"""
+
+
+def wait_for_backends(page: Page) -> None:
+    page.get_by_test_id("settings-section-backends").wait_for(state="visible")
+    page.evaluate("document.fonts.ready")
+
+
+def switch_value(state: dict) -> bool | None:
+    if not state:
+        return None
+    if state["checked"] is not None:
+        return state["checked"]
+    value = state["ariaChecked"]
+    return None if value is None else value == "true"
+
+
+def capture_central_state(
+    page: Page,
+    base: str,
+    state_name: str,
+    fixture_state: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """중앙 풀 구역과 그 로그인 상태를 820/390에서 잰다."""
+    label = f"{state_name}-{width}-{theme}"
+    page.goto(build_url(base, fixture_state, theme), wait_until="networkidle")
+    wait_for_backends(page)
+    # 고치기 전 코드에는 중앙 구역이 없다. 화면을 남기고 단언이 실패를 보고하게 둔다.
+    if count(page.get_by_test_id("settings-section-central-pool")) == 0:
+        failures.append({"check": "central section", "label": label})
+        page.screenshot(path=str(output / f"app-central-{state_name}-{width}-{theme}-screen.png"))
+        return {
+            "state": state_name, "fixtureState": fixture_state, "width": width, "theme": theme,
+            "capture": None, "screenCapture": f"app-central-{state_name}-{width}-{theme}-screen.png",
+            "metrics": None,
+        }
+    page.get_by_test_id("settings-section-central-pool").wait_for(state="visible")
+    if state_name == "central-loading":
+        page.get_by_test_id("central-pool-loading").wait_for(state="visible")
+    elif state_name == "central-error":
+        page.get_by_text("계정 목록을 갱신하지 못했습니다.").wait_for(state="visible")
+    else:
+        page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+        if state_name != "central-empty":
+            page.wait_for_function(
+                'document.querySelectorAll(\'[data-testid^="claude-account-row-"]\').length === 3',
+            )
+    if state_name.startswith("central-login-"):
+        page.get_by_test_id("claude-account-add").click()
+        page.get_by_test_id("claude-login-flow").wait_for(state="visible")
+        if state_name == "central-login-url-ready":
+            page.get_by_test_id("claude-login-code").wait_for(state="visible")
+            page.get_by_test_id("claude-login-open-auth").wait_for(state="visible")
+    settle(page)
+    metrics = page.evaluate(CENTRAL_METRICS_SCRIPT)
+
+    central = metrics["central"]
+    if central is None:
+        failures.append({"check": "central section", "label": label})
+    else:
+        # 검수 표본은 SettingsWorkspaceContext를 주므로 SettingsSection이 구역 제목을 그리지 않는다
+        # (기존 공급자 장면과 같은 하네스 동작). 제목 「중앙 풀」은 jest가 본다.
+        if metrics["backend"] is None:
+            failures.append({"check": "backend section", "label": label})
+        elif central["rect"]["bottom"] > metrics["backend"]["rect"]["top"] + 1:
+            failures.append({"check": "central above picker", "label": label,
+                             "centralBottom": central["rect"]["bottom"],
+                             "backendTop": metrics["backend"]["rect"]["top"]})
+    if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
+        failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
+
+    if state_name == "central-loading":
+        if not metrics["loading"]:
+            failures.append({"check": "central loading skeleton", "label": label})
+    elif state_name == "central-error":
+        if "계정 목록을 갱신하지 못했습니다." not in metrics["bodyText"]:
+            failures.append({"check": "central error copy", "label": label})
+        if not page.get_by_text("다시 시도").count():
+            failures.append({"check": "central error retry", "label": label})
+    else:
+        expected_rows = 0 if state_name == "central-empty" else 3
+        if metrics["rows"] != expected_rows:
+            failures.append({"check": "central account rows", "label": label,
+                             "expected": expected_rows, "actual": metrics["rows"]})
+        if state_name != "central-empty":
+            if LONG_CENTRAL_EMAIL not in metrics["bodyText"]:
+                failures.append({"check": "long central email", "label": label})
+            if not metrics["addButton"]:
+                failures.append({"check": "central add button", "label": label})
+    if state_name.startswith("central-login-"):
+        login = metrics["login"]
+        if login is None:
+            failures.append({"check": "login panel", "label": label})
+        elif state_name == "central-login-url-ready":
+            if not (login["code"] and login["openAuth"] and login["cancel"] and login["submit"]):
+                failures.append({"check": "login url_ready controls", "label": label, "login": login})
+        elif state_name == "central-login-verifying":
+            if "확인 중" not in login["text"] or not login["cancel"]:
+                failures.append({"check": "login verifying state", "label": label, "login": login})
+        elif state_name == "central-login-failed":
+            if "오류" not in login["text"] or not login["openAuth"]:
+                failures.append({"check": "login failed state", "label": label, "login": login})
+
+    page.get_by_test_id("settings-section-central-pool").screenshot(
+        path=str(output / f"app-central-{state_name}-{width}-{theme}.png"),
+    )
+    capture_full_screen(page, output, f"app-central-{state_name}-{width}-{theme}-screen.png")
+    return {
+        "state": state_name,
+        "fixtureState": fixture_state,
+        "width": width,
+        "theme": theme,
+        "capture": f"app-central-{state_name}-{width}-{theme}.png",
+        "screenCapture": f"app-central-{state_name}-{width}-{theme}-screen.png",
+        "metrics": metrics,
+    }
+
+
+def capture_receive_state(
+    page: Page,
+    base: str,
+    state_name: str,
+    fixture_state: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """노드 클로드 목록 맨 위의 「중앙 풀 받기」 줄을 820/390에서 잰다."""
+    label = f"{state_name}-{width}-{theme}"
+    page.goto(build_url(base, fixture_state, theme), wait_until="networkidle")
+    wait_for_backends(page)
+    page.get_by_test_id("claude-provider-toggle").click()
+    page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+    # 고치기 전 코드에는 받기 줄이 없다. 화면을 남기고 단언이 실패를 보고하게 둔다.
+    if count(page.get_by_test_id("claude-central-receive")) == 0:
+        failures.append({"check": "receive row", "label": label})
+        page.screenshot(path=str(output / f"app-receive-{state_name}-{width}-{theme}-screen.png"))
+        return {
+            "state": state_name, "fixtureState": fixture_state, "width": width, "theme": theme,
+            "capture": None, "screenCapture": f"app-receive-{state_name}-{width}-{theme}-screen.png",
+            "metrics": None,
+        }
+    page.get_by_test_id("claude-central-receive").wait_for(state="visible")
+    if state_name == "receive-settings-error":
+        page.get_by_test_id("claude-central-receive-retry").wait_for(state="visible")
+    else:
+        page.get_by_test_id("claude-central-receive-switch").wait_for(state="visible")
+    if state_name == "receive-pending":
+        page.get_by_test_id("claude-central-receive-switch").click()
+        page.wait_for_function(
+            """() => {
+              const box = document.querySelector('[data-testid="claude-central-receive-switch"]');
+              const toggle = box?.querySelector('input[role="switch"]') ?? box;
+              if (!toggle) return false;
+              const checked = typeof toggle.checked === 'boolean' ? toggle.checked : toggle.getAttribute('aria-checked') === 'true';
+              const disabled = (typeof toggle.disabled === 'boolean' && toggle.disabled)
+                || toggle.getAttribute('aria-disabled') === 'true';
+              return checked === false && disabled;
+            }""",
+            timeout=5000,
+        )
+    elif state_name == "receive-failure":
+        page.get_by_test_id("claude-central-receive-switch").click()
+        page.get_by_text("계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.").wait_for(state="visible")
+        page.get_by_test_id("claude-central-receive-retry").wait_for(state="visible")
+    settle(page)
+    metrics = page.evaluate(CENTRAL_METRICS_SCRIPT)
+
+    receive = metrics["receive"]
+    if receive is None:
+        failures.append({"check": "receive row", "label": label})
+    else:
+        # 설정을 못 읽으면 그 줄 자체가 실패 안내로 바뀌므로 이름은 그때만 면제한다.
+        if state_name != "receive-settings-error" and "중앙 풀 받기" not in receive["text"]:
+            failures.append({"check": "receive label", "label": label, "actual": receive["text"][:120]})
+        if metrics["rows"] > 0 and not metrics["receiveFirst"]:
+            failures.append({"check": "receive first row", "label": label,
+                             "receive": receive["rect"], "rows": metrics["rowTexts"][:2]})
+        if not metrics["receiveInPool"]:
+            failures.append({"check": "receive in pool", "label": label})
+    if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
+        failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
+
+    if state_name == "receive-settings-error":
+        if metrics["switch"] is not None:
+            failures.append({"check": "settings error hides switch", "label": label})
+        if not metrics["receiveRetry"]:
+            failures.append({"check": "settings error retry", "label": label})
+        if "계정 목록을 갱신하지 못했습니다." not in metrics["bodyText"]:
+            failures.append({"check": "settings error copy", "label": label})
+    elif state_name == "receive-on":
+        if switch_value(metrics["switch"]) is not True:
+            failures.append({"check": "receive on value", "label": label, "switch": metrics["switch"]})
+        if metrics["rows"] != 0:
+            failures.append({"check": "receive on hides central rows", "label": label, "rows": metrics["rows"]})
+    elif state_name == "receive-off":
+        if switch_value(metrics["switch"]) is not False:
+            failures.append({"check": "receive off value", "label": label, "switch": metrics["switch"]})
+        if metrics["rows"] != 2:
+            failures.append({"check": "receive off local rows", "label": label, "rows": metrics["rows"]})
+    elif state_name == "receive-pending":
+        if switch_value(metrics["switch"]) is not False:
+            failures.append({"check": "receive pending value", "label": label, "switch": metrics["switch"]})
+        if not (metrics["switch"] or {}).get("disabled") and (metrics["switch"] or {}).get("ariaDisabled") != "true":
+            failures.append({"check": "receive pending disabled", "label": label, "switch": metrics["switch"]})
+    elif state_name == "receive-failure":
+        if switch_value(metrics["switch"]) is not True:
+            failures.append({"check": "receive failure revert", "label": label, "switch": metrics["switch"]})
+        if not metrics["receiveRetry"]:
+            failures.append({"check": "receive failure retry", "label": label})
+
+    page.get_by_test_id("claude-account-pool-section").screenshot(
+        path=str(output / f"app-receive-{state_name}-{width}-{theme}.png"),
+    )
+    capture_full_screen(page, output, f"app-receive-{state_name}-{width}-{theme}-screen.png")
+    return {
+        "state": state_name,
+        "fixtureState": fixture_state,
+        "width": width,
+        "theme": theme,
+        "capture": f"app-receive-{state_name}-{width}-{theme}.png",
+        "screenCapture": f"app-receive-{state_name}-{width}-{theme}-screen.png",
+        "metrics": metrics,
+    }
+
+
 def count(locator: Locator) -> int:
     try:
         return locator.count()
@@ -369,6 +668,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Provider panel visual check")
     parser.add_argument("base_url", help="review bundle URL, e.g. http://127.0.0.1:4173/assets/ios-components/index.html")
     parser.add_argument("output", help="directory for captures and metrics JSON")
+    parser.add_argument("--width", type=int, choices=(820, 390), help="한 폭만 잰다.")
+    parser.add_argument("--theme", choices=("light", "dark"), help="한 테마만 잰다.")
+    parser.add_argument(
+        "--scenes", choices=("all", "provider", "central"), default="all",
+        help="provider는 지금의 공급자 장면만, central은 중앙 풀·받기 장면만 잰다.",
+    )
     args = parser.parse_args()
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -379,6 +684,8 @@ def main() -> int:
         "passed": False,
         "states": [],
         "loadingFrames": [],
+        "centralStates": [],
+        "receiveStates": [],
         "failures": [],
         "pageErrors": [],
         "consoleErrors": [],
@@ -401,7 +708,11 @@ def main() -> int:
         browser = playwright.chromium.launch(headless=True)
         try:
             for width, height in VIEWPORTS:
+                if args.width not in (None, width):
+                    continue
                 for theme in THEMES:
+                    if args.theme not in (None, theme):
+                        continue
                     context = browser.new_context(
                         viewport={"width": width, "height": height},
                         color_scheme=theme,
@@ -416,11 +727,25 @@ def main() -> int:
                     ))
                     context.route("**/*", route_request)
                     try:
-                        for state_name, fixture_state, expanded in STATES:
-                            result["states"].append(capture_state(
-                                page, args.base_url, state_name, fixture_state, expanded,
-                                width, theme, output, failures, page_errors,
-                            ))
+                        if args.scenes in ("all", "provider"):
+                            for state_name, fixture_state, expanded in STATES:
+                                result["states"].append(capture_state(
+                                    page, args.base_url, state_name, fixture_state, expanded,
+                                    width, theme, output, failures, page_errors,
+                                ))
+                        if args.scenes in ("all", "central"):
+                            for state_name, fixture_state in CENTRAL_STATES:
+                                result["centralStates"].append(capture_central_state(
+                                    page, args.base_url, state_name, fixture_state,
+                                    width, theme, output, failures,
+                                ))
+                            for state_name, fixture_state in RECEIVE_STATES:
+                                result["receiveStates"].append(capture_receive_state(
+                                    page, args.base_url, state_name, fixture_state,
+                                    width, theme, output, failures,
+                                ))
+                            if args.scenes == "central":
+                                continue
                         # One deliberately delayed summary frame: the fixture never
                         # resolves getUsageSummary, so Claude shows its loading
                         # indicator while the other provider rows are absent.

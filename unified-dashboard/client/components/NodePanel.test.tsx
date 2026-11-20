@@ -27,6 +27,7 @@ vi.mock("./NodeProvidersPanel", () => ({
       data-loading={String(props.loading)}
     />
   ),
+  PendingClaudeRow: () => <div data-testid="pending-claude-row" />,
 }));
 
 import { NodePanel } from "./NodePanel";
@@ -296,5 +297,23 @@ describe("NodePanel", () => {
     await settle();
 
     expect(providers()).not.toBeNull();
+  });
+
+  it("puts the central pool card above the node cards and does not read its list until it is opened", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/api/usage/summary")) return data(snapshot(summaryNode("2026-11-07T15:50:00+09:00")));
+      return data({});
+    });
+
+    await mount(request as unknown as typeof fetch);
+
+    const body = host.querySelector<HTMLElement>('[data-testid="node-panel-body"]')!;
+    const central = host.querySelector<HTMLElement>('[data-testid="claude-central-pool-card"]')!;
+    const list = host.querySelector<HTMLElement>('[data-testid="node-card-list"]')!;
+    expect(body.firstElementChild).toBe(central);
+    expect(central.textContent).toContain("중앙 풀");
+    expect(central.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(request.mock.calls.some(([input]) => String(input) === "/api/claude-auth/central/accounts")).toBe(false);
   });
 });

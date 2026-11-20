@@ -54,7 +54,7 @@ import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWee
 import { ReportTimelineRow } from './ReportTimelineRow';
 import type { ReportTimelineRowLine, ReportTimelineRowStatus } from '@seosoyoung/soul-ui';
 import { exhaustiveList } from '@shared/exhaustive';
-import { ClaudeAccountPoolReviewSample, ClaudePoolPasReviewSample } from './ClaudeAccountPoolReviewSample';
+import { CENTRAL_REVIEW_SCENES, ClaudeAccountPoolReviewSample, ClaudeCentralPoolReviewSample, ClaudePoolPasReviewSample, isCentralReviewScene } from './ClaudeAccountPoolReviewSample';
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
 
@@ -173,6 +173,13 @@ export function ComponentsReviewPage() {
       loading={sampleParams.get('loading') === '1'}
     />
   </div>;
+  if (sampleParams.get('sample') === 'claude-central') {
+    const requested = sampleParams.get('scene');
+    return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-central-review">
+      <p className="v3-components-label">NodePanel · 중앙 풀 카드 · 노드 받기 스위치 · 가짜 API</p>
+      <ClaudeCentralPoolReviewSample scene={isCentralReviewScene(requested) ? requested : CENTRAL_REVIEW_SCENES[1]} />
+    </div>;
+  }
   if (sampleParams.get('sample') === 'claude-pas') return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-pas-review">
     <p className="v3-components-label">PersistentSessionWeeklyUsage · Claude 계정 풀 · 가짜 요약</p>
     <ClaudePoolPasReviewSample availableCount={Number(sampleParams.get('count') ?? 2)} />
@@ -462,6 +469,14 @@ export function ComponentsReviewPage() {
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
             <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="NodeProvidersPanel / ClaudeAuthLoginSheet" state="공급자 중립 행 · 계정 풀 접힘/펼침 · 미설정 · 조회 오류 · 수집 지연 · 새로 고침"><ClaudeAccountPoolReviewSample/></Sample>
+            <Sample name="NodePanel · 중앙 풀 / 중앙 풀 받기" state="중앙 빈 상태 · 계정 셋 · 로그인 · 목록 로딩/실패 · 받기 켬/끔/대기/실패">
+              <div className="space-y-3">
+                {CENTRAL_REVIEW_SCENES.map((scene) => <div key={scene} data-review-scene={scene}>
+                  <p className="v3-components-label">{scene}</p>
+                  <ClaudeCentralPoolReviewSample scene={scene} />
+                </div>)}
+              </div>
+            </Sample>
             <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>

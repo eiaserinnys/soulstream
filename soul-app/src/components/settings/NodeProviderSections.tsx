@@ -11,6 +11,8 @@ import type {
 import { useAuthStore } from '../../store/authStore';
 import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
+import type { ClaudeCentralPoolApi } from './ClaudeAccountPoolSection';
+import type { ClaudeCentralSettingsApi } from './ClaudeCentralReceiveRow';
 import { ClaudeProviderSection, type ClaudeProviderApi } from './ClaudeProviderSection';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ProviderQuotaGrid, providerQuotaCells } from './ProviderQuotaGrid';
@@ -20,7 +22,25 @@ import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 export type NodeProviderSectionsApi = ClaudeProviderApi & Pick<
   ApiClient,
   'getUsageSummary' | 'refreshUsageSummary'
->;
+> & Partial<ClaudeCentralPoolApi & ClaudeCentralSettingsApi>;
+
+/** 중앙 풀 화면을 그릴 수 있는 API인지 런타임에 가른다. 옛 시험 대역은 이 함수들이 없다. */
+export type CentralCapableApi = NodeProviderSectionsApi & ClaudeCentralPoolApi;
+
+export function hasCentralPool(api: NodeProviderSectionsApi): api is CentralCapableApi {
+  return typeof api.getCentralClaudeAuthAccounts === 'function'
+    && typeof api.patchCentralClaudeAuthAccount === 'function'
+    && typeof api.deleteCentralClaudeAuthAccount === 'function'
+    && typeof api.startCentralClaudeAuthLogin === 'function'
+    && typeof api.getCentralClaudeAuthLogin === 'function'
+    && typeof api.submitCentralClaudeAuthLoginCode === 'function'
+    && typeof api.cancelCentralClaudeAuthLogin === 'function';
+}
+
+function hasCentralSettings(api: NodeProviderSectionsApi): api is NodeProviderSectionsApi & ClaudeCentralSettingsApi {
+  return typeof api.getClaudeCentralSettings === 'function'
+    && typeof api.putClaudeCentralReceive === 'function';
+}
 
 const providerOrder = ['opencode_go', 'codex', 'antigravity'] as const;
 
@@ -82,6 +102,7 @@ export function NodeProviderSections({
   const workspace = useSettingsWorkspace();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const api = useMemo(() => apiClient ?? createApiClient(serverUrl), [apiClient, serverUrl]);
+  const centralSettingsApi = hasCentralSettings(api) ? api : undefined;
   const jwt = useAuthStore(state => state.jwt);
   const revision = useRef(0);
   const [summary, setSummary] = useState<AppUsageSummarySnapshot | null>(null);
@@ -146,6 +167,7 @@ export function NodeProviderSections({
     loadingSummary={loadingSummary}
     reloadKey={claudeReloadKey}
     onTokenDeleted={() => void reloadAfterTokenChange()}
+    centralSettingsApi={centralSettingsApi}
   />];
   for (const provider of providerOrder) {
     const value = node?.providers[provider];

@@ -8,6 +8,7 @@ export function makeClaudePoolStyles(t: DesignTokens) {
     poolTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: t.spacing.sm },
     poolTitle: { ...t.foundation.typography.cardTitle, color: t.colors.textPrimary },
     accountList: { minWidth: 0, paddingBottom: t.spacing.xs },
+    centralReceiveRow: { paddingHorizontal: t.cardLayout.padding },
     accountBlock: { minWidth: 0, paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.sm },
     providerHeaderRow: { minWidth: 0, minHeight: t.hitTarget.min, paddingHorizontal: t.cardLayout.padding, paddingVertical: t.spacing.md, gap: t.spacing.sm },
     disabledAccount: { opacity: 0.62 },

@@ -79,3 +79,34 @@ test('account DELETE keeps its P6 response and GET keeps both pool summaries', a
   await expect(api.deleteClaudeAuthAccount('node-a', 'account-a')).resolves.toEqual(deleted);
   await expect(api.getClaudeAuthAccounts('node-a')).resolves.toEqual(refreshed);
 });
+
+test('central account, login and settings endpoints use the orchestrator contract', async () => {
+  const api = createApiClient('https://accounts.example');
+  await api.getCentralClaudeAuthAccounts();
+  await api.patchCentralClaudeAuthAccount('account/1', { priority: 2 });
+  await api.deleteCentralClaudeAuthAccount('account-a');
+  await api.startCentralClaudeAuthLogin('account-a');
+  await api.getCentralClaudeAuthLogin('login-a');
+  await api.submitCentralClaudeAuthLoginCode('login-a', 'x');
+  await api.cancelCentralClaudeAuthLogin('login-a');
+  await api.getClaudeCentralSettings();
+  await api.putClaudeCentralReceive('node/a', true);
+
+  const calls = (global.fetch as jest.Mock).mock.calls as [string, RequestInit][];
+  expect(calls.map(([url, init]) => [new URL(url).pathname, init.method ?? 'GET'])).toEqual([
+    ['/api/claude-auth/central/accounts', 'GET'],
+    ['/api/claude-auth/central/accounts/account%2F1', 'PATCH'],
+    ['/api/claude-auth/central/accounts/account-a', 'DELETE'],
+    ['/api/claude-auth/central/logins', 'POST'],
+    ['/api/claude-auth/central/logins/login-a', 'GET'],
+    ['/api/claude-auth/central/logins/login-a/code', 'POST'],
+    ['/api/claude-auth/central/logins/login-a', 'DELETE'],
+    ['/api/claude-auth/central/settings', 'GET'],
+    ['/api/claude-auth/central/settings', 'PUT'],
+  ]);
+  expect(JSON.parse(String(calls[1]?.[1].body))).toEqual({ priority: 2 });
+  expect(JSON.parse(String(calls[3]?.[1].body))).toEqual({ account_id: 'account-a' });
+  expect(JSON.parse(String(calls[5]?.[1].body))).toEqual({ code: 'x' });
+  expect(JSON.parse(String(calls[8]?.[1].body))).toEqual({ nodes: { 'node/a': true } });
+  expect((calls[0]?.[1].headers as Headers).get('Authorization')).toBe('Bearer accounts-jwt');
+});

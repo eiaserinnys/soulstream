@@ -590,6 +590,37 @@ describe("ClaudePoolRow", () => {
     expect(host.textContent).toContain("updated@example.test");
   });
 
+  it("focuses the code input when the login sheet opens, and Escape returns focus to the opener", async () => {
+    vi.useFakeTimers();
+    const initial = list([account("first", 1)]);
+    const requestMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(data(flow("requested")))
+      .mockResolvedValueOnce(data(initial))
+      .mockResolvedValueOnce(data(flow("url_ready")))
+      .mockImplementation(() => Promise.resolve(data(flow("cancelled"))));
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    // 브라우저는 눌린 버튼에 초점을 준다. jsdom은 click으로 초점을 옮기지 않으므로 직접 준다.
+    const opener = button("계정 추가");
+    opener.focus();
+    await act(async () => opener.click());
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await settle();
+
+    const code = host.querySelector<HTMLInputElement>('input[aria-label="Claude 인증 코드"]')!;
+    expect(code).not.toBeNull();
+    expect(document.activeElement).toBe(code);
+
+    await act(async () => {
+      code.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("retries login status polling after a transient request error", async () => {
     vi.useFakeTimers();
     const initial = list([account("first", 1)]);
@@ -797,4 +828,200 @@ describe("ClaudePoolRow", () => {
 
     expect(host.textContent).toContain("로그인 중, 10분 남음");
   });
+
+
+async function mountCentral(initial: ClaudeAccountList, request: typeof fetch) {
+  const panel = <ClaudePoolRow central request={request} initialList={initial} slots={[null, null, null]} />;
+  await act(async () => root.render(<QueryClientProvider client={client}>{panel}</QueryClientProvider>));
+  await settle();
+}
+
+describe("ClaudePoolRow central target", () => {
+  it("sends account changes to the central API and never sends a null priority", async () => {
+    const initial = list([account("a", null), account("b", null), account("c", null)]);
+    let serverList = initial;
+    const patches: Array<{ path: string; body: { enabled?: boolean; priority?: number } }> = [];
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { enabled?: boolean; priority?: number };
+        patches.push({ path: String(input), body });
+        const accountId = String(input).split("/").at(-1)!;
+        serverList = {
+          ...serverList,
+          accounts: serverList.accounts.map((item) => item.id === accountId ? { ...item, ...body } : item),
+        };
+        return data(serverList);
+      }
+      return data(serverList);
+    });
+    await mountCentral(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    const first = host.querySelector('[data-account-id="a"]')!;
+    await act(async () => button("a@example.test 사용", first).click());
+    await settle();
+    await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="c"]')!).click());
+    await settle();
+
+    expect(patches.length).toBeGreaterThan(0);
+    expect(patches.every((entry) => entry.path.startsWith("/api/claude-auth/central/accounts/"))).toBe(true);
+    expect(patches.every((entry) => entry.body.priority === undefined || typeof entry.body.priority === "number")).toBe(true);
+    expect(patches.some((entry) => entry.body.enabled === false)).toBe(true);
+  });
+
+  it("deletes a central account immediately, reloads the central list, and reports it without deferred wording", async () => {
+    const initial = list([account("a", 1), account("b", 2)]);
+    const refreshed = list([account("b", 2)]);
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/claude-auth/central/accounts" && (init?.method ?? "GET") === "GET") return data(refreshed);
+      if (init?.method === "DELETE") return data({ success: true });
+      return data(initial);
+    });
+    await mountCentral(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    await act(async () => button("계정 삭제", host.querySelector('[data-account-id="a"]')!).click());
+    await act(async () => button("삭제", host.querySelector('[data-testid="delete-confirm-a"]')!).click());
+    await settle();
+
+    expect(requestMock).toHaveBeenCalledWith("/api/claude-auth/central/accounts/a", expect.objectContaining({ method: "DELETE" }));
+    expect(requestMock).toHaveBeenCalledWith("/api/claude-auth/central/accounts", expect.objectContaining({ method: "GET" }));
+    expect(host.textContent).toContain("계정 삭제됨");
+    expect(host.textContent).not.toContain("삭제 예약됨");
+    expect(accountIds()).toEqual(["b"]);
+  });
+
+  it("starts and completes a central login, then invalidates the node account queries", async () => {
+    const initial = list([account("a", 1)]);
+    const added = account("new", 2, "new@example.test");
+    const refreshed = list([account("a", 1), added]);
+    let loginFlow: ClaudeAuthLoginFlow | null = null;
+    let listState = initial;
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      if (path === "/api/claude-auth/central/logins" && method === "POST") {
+        loginFlow = flow("url_ready");
+        return data(loginFlow);
+      }
+      if (path === "/api/claude-auth/central/logins/login-a/code" && method === "POST") {
+        loginFlow = flow("done");
+        listState = refreshed;
+        return data(loginFlow);
+      }
+      if (path === "/api/claude-auth/central/accounts") return data(listState);
+      return data(initial);
+    });
+    client.setQueryData(["claude-auth-accounts", "node-a"], initial);
+    await mountCentral(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    await act(async () => button("계정 추가").click());
+    await settle();
+    expect(requestMock).toHaveBeenCalledWith("/api/claude-auth/central/logins", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({}),
+    }));
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')?.getAttribute("data-login-state")).toBe("url_ready");
+
+    const code = host.querySelector<HTMLInputElement>('input[aria-label="Claude 인증 코드"]')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(code, "central-code#state");
+      code.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("확인").click());
+    await settle();
+
+    expect(requestMock).toHaveBeenCalledWith("/api/claude-auth/central/logins/login-a/code", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ code: "central-code#state" }),
+    }));
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')).toBeNull();
+    expect(accountIds()).toEqual(["a", "new"]);
+    expect(client.getQueryState(["claude-auth-accounts", "node-a"])?.isInvalidated).toBe(true);
+  });
+
+  it("does not draw the central receive row in the central target", async () => {
+    const initial = list([account("a", 1)]);
+    const panel = <ClaudePoolRow central request={vi.fn(async () => data(initial)) as unknown as typeof fetch}
+      initialList={initial} slots={[null, null, null]}
+      centralReceiveRow={<div data-testid="receive-row" />} />;
+    await act(async () => root.render(<QueryClientProvider client={client}>{panel}</QueryClientProvider>));
+    await settle();
+    await expand();
+
+    expect(host.querySelector('[data-testid="receive-row"]')).toBeNull();
+  });
+});
+
+describe("ClaudePoolRow node target with central accounts", () => {
+  const nodeList = (): ClaudeAccountList => list([
+    account("local-a", 1),
+    account("local-b", 2),
+    {
+      ...account("central-a", 1),
+      source: "central",
+      expires_at: "2030-01-01T01:00:00.000Z",
+      refreshed_at: "2030-01-01T00:00:00.000Z",
+      relogin_reason: null,
+    },
+  ], { available_count: 2, total_count: 3 });
+
+  it("draws only local accounts and counts ranks and enabled accounts from them", async () => {
+    const initial = nodeList();
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+    expect(header().textContent).toContain("계정 2");
+
+    await expand();
+    expect(accountIds()).toEqual(["local-a", "local-b"]);
+    expect(host.textContent).not.toContain("central-a@example.test");
+    // 로컬 계정 둘만으로 순위 화살표를 그린다. 중앙 계정은 순위 계산에 들지 않는다.
+    expect(button("우선순위 내리기", host.querySelector('[data-account-id="local-b"]')!).disabled).toBe(true);
+    expect(host.querySelectorAll(".c724-pool-account-item")).toHaveLength(2);
+  });
+
+  it("passes local-only priorities when moving a node account", async () => {
+    const initial = list([
+      account("local-a", 5),
+      { ...account("central-a", 6), source: "central" },
+      account("local-b", 4),
+    ]);
+    const patched: Array<{ id: string; priority: number }> = [];
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.method === "PATCH") {
+        const id = String(input).split("/").at(-1)!;
+        const body = JSON.parse(String(init.body)) as { priority: number };
+        patched.push({ id, priority: body.priority });
+        return data(initial);
+      }
+      return data(initial);
+    });
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+    expect(accountIds()).toEqual(["local-b", "local-a"]);
+
+    await act(async () => button("우선순위 내리기", host.querySelector('[data-account-id="local-b"]')!).click());
+    await settle();
+
+    expect(patched.length).toBeGreaterThan(0);
+    expect(patched.every((entry) => entry.id.startsWith("local-"))).toBe(true);
+  });
+
+  it("draws the injected central receive row at the top of the expanded body", async () => {
+    const initial = nodeList();
+    const panel = <ClaudePoolRow nodeId="node-a" request={vi.fn(async () => data(initial)) as unknown as typeof fetch}
+      initialList={initial} slots={[null, null, null]}
+      centralReceiveRow={<div data-testid="receive-row" />} />;
+    await act(async () => root.render(<QueryClientProvider client={client}>{panel}</QueryClientProvider>));
+    await settle();
+    await expand();
+
+    const slot = host.querySelector('[data-testid="receive-row"]');
+    const body = host.querySelector(".c724-pool-account-body")!;
+    expect(slot).not.toBeNull();
+    expect(body.firstElementChild).toBe(slot);
+  });
+});
 });

@@ -1,4 +1,4 @@
-import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow, ClaudeCentralSettings } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type { NodeProviderSectionsApi } from '../components/settings/NodeProviderSections';
 import { reviewUsageSummary } from './usage-summary-fixtures';
 
@@ -55,6 +55,73 @@ export const providerPanelClaudeReviewList: ClaudeAccountList = {
   fable_pool: { ...claudePoolReviewList.fable_pool!, available_count: 2, total_count: 3 },
 };
 
+const centralReviewAccounts: ClaudeAccount[] = [
+  {
+    id: '3f5c2f5e-9f43-4c61-9d0e-0c2a4c8b1a01',
+    email: 'seosoyoung.workspace+central-primary@example.invalid',
+    plan: 'Max 20x', enabled: true, priority: 1, auth_state: 'ok', source: 'central',
+    usage: {
+      five_hour: { used_percent: 18, resets_at: reviewResetSoon },
+      seven_day: { used_percent: 64, resets_at: reviewResetHalf },
+      fable_weekly: { used_percent: 26, resets_at: reviewResetSixty },
+    },
+    observed_at: '2026-10-28T09:10:00.000Z', blocked: null, active_sessions: 0,
+    expires_at: reviewIsoIn(reviewNowSeconds + 60 * 60), refreshed_at: '2026-10-28T09:00:00.000Z', relogin_reason: null,
+  },
+  {
+    id: '8b1e46d2-2a55-4f0b-b0a1-5c6f7d9e4b02',
+    email: 'central-backup@example.invalid',
+    plan: 'Max 5x', enabled: false, priority: 2, auth_state: 'ok', source: 'central',
+    usage: {
+      five_hour: { used_percent: 100, resets_at: reviewResetSoon },
+      seven_day: { used_percent: 48, resets_at: reviewResetHalf },
+      fable_weekly: { used_percent: 46, resets_at: reviewResetSixty },
+    },
+    observed_at: '2026-10-28T09:08:00.000Z', blocked: null, active_sessions: 0,
+    expires_at: reviewIsoIn(reviewNowSeconds + 30 * 60), refreshed_at: '2026-10-28T08:58:00.000Z', relogin_reason: null,
+  },
+  {
+    id: 'c47a0d19-6b3e-4a82-8f3d-1e9b2c0a7d03',
+    email: 'central-reserve@example.invalid',
+    plan: 'Pro', enabled: true, priority: 3, auth_state: 'needs_relogin', source: 'central',
+    usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    observed_at: null, blocked: null, active_sessions: 0,
+    expires_at: null, refreshed_at: null, relogin_reason: 'refresh_failed',
+  },
+];
+
+function centralReviewList(accounts: ClaudeAccount[], available = accounts.filter(entry => entry.enabled && entry.auth_state === 'ok').length): ClaudeAccountList {
+  return {
+    mode: 'pool',
+    accounts,
+    pool: {
+      available_count: available,
+      total_count: accounts.length,
+      best_weekly_remaining_percent: accounts.length ? 87 : null,
+      best_weekly_resets_at: accounts.length ? reviewResetHalf : null,
+      earliest_available_at: null,
+    },
+    fable_pool: null,
+  };
+}
+
+function reviewCentralSettings(receive: boolean): ClaudeCentralSettings {
+  return {
+    default_receive: true,
+    nodes: { 'node-a': receive },
+    effective: [
+      { node_id: 'node-a', receive, connected: true },
+      { node_id: 'node-b', receive: true, connected: true },
+    ],
+  };
+}
+
+function receiveSettingsState(state: string | null | undefined): boolean | null {
+  if (state === 'receive-on' || state === 'receive-pending' || state === 'receive-failure') return true;
+  if (state === 'receive-off') return false;
+  return null;
+}
+
 export function createClaudePoolReviewApi(state?: string | null): NodeProviderSectionsApi {
   const legacy = state === 'legacy' || state === 'legacy-stale';
   let current: ClaudeAccountList = legacy
@@ -76,7 +143,22 @@ export function createClaudePoolReviewApi(state?: string | null): NodeProviderSe
     startClaudeAuth: async () => ({ authUrl: 'fixture' }),
     submitClaudeCode: async () => ({ ok: true } as unknown as Response),
     deleteClaudeToken: async () => ({ ok: true } as unknown as Response),
-    getClaudeAuthAccounts: async () => current,
+    getClaudeAuthAccounts: async () => {
+      // 받기 장면에서는 노드가 중앙 계정까지 함께 준 상태를 그린다. 화면은 로컬만 그려야 한다.
+      if (state === 'receive-on') return centralReviewList(centralReviewAccounts);
+      if (state === 'receive-off' || state === 'receive-pending' || state === 'receive-failure') {
+        return {
+          ...providerPanelClaudeReviewList,
+          accounts: [
+            { ...providerPanelClaudeReviewList.accounts[0]!, source: 'local' as const },
+            { ...providerPanelClaudeReviewList.accounts[1]!, source: 'local' as const },
+            { ...centralReviewAccounts[0]!, source: 'central' as const },
+          ],
+          pool: { ...providerPanelClaudeReviewList.pool!, available_count: 2, total_count: 3 },
+        };
+      }
+      return current;
+    },
     patchClaudeAuthAccount: async (_nodeId, accountId, patch) => {
       current = { ...current, accounts: current.accounts.map(account => account.id === accountId ? { ...account, ...patch } : account) };
       return current;
@@ -100,8 +182,66 @@ export function createClaudePoolReviewApi(state?: string | null): NodeProviderSe
       flow = { ...flow!, state: 'cancelled', auth_url: null };
       return flow;
     },
+    getCentralClaudeAuthAccounts: async () => {
+      if (state === 'central-loading') return new Promise<never>(() => {});
+      if (state === 'central-error') throw new Error('공개 예시 중앙 목록 실패');
+      if (state === 'central-empty') return centralReviewList([]);
+      if (state?.startsWith('central')) return centralReviewList(centralReviewAccounts);
+      if (state === 'receive-on') return centralReviewList(centralReviewAccounts.map(account => ({ ...account, source: 'central' as const })));
+      if (state === 'receive-off' || state === 'receive-pending' || state === 'receive-failure') {
+        // 노드가 받은 목록에는 로컬 계정과 중앙 계정이 함께 온다. 화면은 로컬만 그린다.
+        return {
+          ...providerPanelClaudeReviewList,
+          accounts: [
+            { ...providerPanelClaudeReviewList.accounts[0]!, source: 'local' as const },
+            { ...providerPanelClaudeReviewList.accounts[1]!, source: 'local' as const },
+            { ...centralReviewAccounts[0]!, source: 'central' as const },
+          ],
+          pool: { ...providerPanelClaudeReviewList.pool!, available_count: 2, total_count: 3 },
+        };
+      }
+      return current;
+    },
+    patchCentralClaudeAuthAccount: async (accountId, patch) => {
+      current = {
+        ...centralReviewList(centralReviewAccounts),
+        accounts: centralReviewAccounts.map(account => account.id === accountId ? { ...account, ...patch } : account),
+      };
+      return current;
+    },
+    deleteCentralClaudeAuthAccount: async () => ({ success: true }),
+    startCentralClaudeAuthLogin: async (accountId) => {
+      const stateName = state === 'central-login-verifying' ? 'verifying'
+        : state === 'central-login-failed' ? 'failed' : 'url_ready';
+      flow = {
+        login_id: 'review-central-login', account_id: accountId ?? null, state: stateName,
+        auth_url: stateName === 'url_ready' ? 'fixture' : null,
+        expires_at: '2026-10-28T12:00:00.000Z',
+        error: stateName === 'failed' ? { code: 'invalid_code', message: 'fixture' } : null,
+      };
+      return flow;
+    },
+    getCentralClaudeAuthLogin: async () => flow!,
+    submitCentralClaudeAuthLoginCode: async () => {
+      flow = { ...flow!, state: 'verifying', auth_url: null };
+      return flow;
+    },
+    cancelCentralClaudeAuthLogin: async () => {
+      flow = { ...flow!, state: 'cancelled', auth_url: null };
+      return flow;
+    },
+    getClaudeCentralSettings: async () => {
+      if (state === 'receive-settings-error') throw new Error('공개 예시 설정 실패');
+      return reviewCentralSettings(receiveSettingsState(state) ?? true);
+    },
+    putClaudeCentralReceive: async (_nodeId, receive) => {
+      if (state === 'receive-pending') return new Promise<never>(() => {});
+      if (state === 'receive-failure') throw new Error('공개 예시 저장 실패');
+      return reviewCentralSettings(receive);
+    },
   };
 }
+
 
 export function allBlockedReviewAccountList(): ClaudeAccountList {
   const accounts: ClaudeAccount[] = claudePoolReviewList.accounts.map(account => ({
