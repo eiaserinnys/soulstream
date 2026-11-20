@@ -74,13 +74,15 @@ export function SettingsFormGroup({ title, children }: { title?: string; childre
   return <View style={styles.group}>{title ? <Text style={styles.heading}>{title}</Text> : null}{children}</View>;
 }
 
-export function SettingsToggleRow({ label, value, onValueChange, disabled, testID, help, divider = true }: {
+export function SettingsToggleRow({ label, value, onValueChange, disabled, testID, help, error, divider = true }: {
   label: string;
   value: boolean;
   onValueChange(value: boolean): void;
   disabled?: boolean;
   testID?: string;
   help?: string;
+  /** 이름 아래에 서는 오류 글. 읽기 실패의 오류 글과 같은 색·꼴이다. */
+  error?: string;
   divider?: boolean;
 }) {
   const styles = useSettingsFormStyles();
@@ -88,6 +90,7 @@ export function SettingsToggleRow({ label, value, onValueChange, disabled, testI
     <View style={styles.grow}>
       <Text style={styles.body}>{label}</Text>
       {help ? <Text style={styles.help}>{help}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={styles.errorHelp}>{error}</Text> : null}
     </View>
     <Switch accessibilityLabel={label} testID={testID} value={value} disabled={disabled} onValueChange={onValueChange} />
   </View>;
@@ -114,6 +117,7 @@ function makeStyles(t: DesignTokens) {
     heading: { ...t.foundation.typography.body, fontWeight: '700', color: t.colors.textPrimary },
     label: { ...t.foundation.typography.body, color: t.colors.textSecondary, marginBottom: t.spacing.xs },
     help: { ...t.foundation.typography.body, color: t.colors.textMuted },
+    errorHelp: { ...t.foundation.typography.body, color: t.colors.errorText },
     error: { ...t.foundation.typography.body, color: t.colors.error },
     listRow: { flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center', minHeight: t.hitTarget.min, paddingVertical: t.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border },
     listRowNoDivider: { borderBottomWidth: 0 },

@@ -258,6 +258,15 @@ CENTRAL_METRICS_SCRIPT = r"""
   const toggleBox = document.querySelector('[data-testid="claude-central-receive-switch"]');
   // RN-web Switch는 testID 상자 안의 input[role=switch]에 값과 disabled를 담는다.
   const toggle = toggleBox?.querySelector('input[role="switch"]') ?? toggleBox;
+  // 스위치가 든 listRow. 오류 글이 이 줄 안에 서는지, 줄 아래 여백이 남는지 잰다.
+  let receiveRow = null;
+  if (receive && toggleBox) {
+    let node = toggleBox.parentElement;
+    while (node && node !== receive) {
+      if (text(node).includes('중앙 풀 받기')) { receiveRow = node; break; }
+      node = node.parentElement;
+    }
+  }
   const login = document.querySelector('[data-testid="claude-login-flow"]');
   // 「중앙 풀」 머리는 목록일 때 풀 머리 제목, 로딩·실패일 때 구역이 직접 그린다.
   const centralTitleLeaf = central
@@ -288,11 +297,16 @@ CENTRAL_METRICS_SCRIPT = r"""
       const style = getComputedStyle(element);
       const border = parseFloat(style.borderBottomWidth) || 0;
       if (border >= 0.5 || (box.height > 0 && box.height <= 1.5)) {
+        // 줄 아래 테두리면 그 선의 위치는 요소 바닥에서 테두리 두께만큼 위다.
+        const lineTop = border >= 0.5 && box.height > 1.5 ? box.bottom - border : box.top;
+        const lineHeight = border >= 0.5 ? border : box.height;
         lines.push({
-          top: Math.round(box.top * 10) / 10,
-          bottom: Math.round(box.bottom * 10) / 10,
-          height: Math.round(box.height * 10) / 10,
+          top: Math.round(lineTop * 10) / 10,
+          bottom: Math.round((lineTop + lineHeight) * 10) / 10,
+          height: Math.round(lineHeight * 10) / 10,
           borderBottomWidth: style.borderBottomWidth,
+          elementTop: Math.round(box.top * 10) / 10,
+          elementHeight: Math.round(box.height * 10) / 10,
         });
       }
     }
@@ -329,8 +343,10 @@ CENTRAL_METRICS_SCRIPT = r"""
     receiveRetry: !!document.querySelector('[data-testid="claude-central-receive-retry"]'),
     receiveError: receiveErrors.length ? text(receiveErrors[0]) : null,
     receiveErrorRect: receiveErrors.length ? rect(receiveErrors[0]) : null,
-    receiveErrorBelowSwitch: !!(receiveErrors.length && toggle
-      && receiveErrors[0].getBoundingClientRect().top >= toggle.getBoundingClientRect().bottom - 0.5),
+    receiveRow: receiveRow ? rect(receiveRow) : null,
+    receiveErrorInSwitchRow: !!(receiveRow && receiveErrors.length && receiveRow.contains(receiveErrors[0])),
+    receiveRowPaddingBottom: receiveRow
+      ? Math.round((parseFloat(getComputedStyle(receiveRow).paddingBottom) || 0) * 10) / 10 : null,
     receiveDivider,
     bodyText: document.body.innerText,
     document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
@@ -563,12 +579,21 @@ def capture_receive_state(
     if divider.get("count") != 1:
         failures.append({"check": "receive single divider", "label": label, "divider": divider})
     if state_name == "receive-failure":
-        # 저장 실패의 오류 글은 구분선 위, 받기 줄 안에 선다.
-        line = (divider.get("lines") or [{}])[0]
+        # 오류 글은 스위치가 든 listRow 안에 서고, 그 윗선에서 구분선까지 listRow 아래 여백(spacing.sm) 이상 남는다.
         error = metrics.get("receiveErrorRect")
-        if "top" not in line or not error or error["bottom"] > line["top"] + 0.5:
-            failures.append({"check": "receive failure error inside row", "label": label,
-                             "error": error, "line": line})
+        line = (divider.get("lines") or [{}])[0]
+        padding = metrics.get("receiveRowPaddingBottom")
+        if not metrics.get("receiveErrorInSwitchRow"):
+            failures.append({"check": "receive failure error in switch row", "label": label,
+                             "error": error, "row": metrics.get("receiveRow")})
+        if not error or "top" not in line or padding is None:
+            failures.append({"check": "receive failure error bottom padding", "label": label,
+                             "error": error, "line": line, "padding": padding})
+        else:
+            gap = round(line["top"] - error["bottom"], 1)
+            if gap < float(padding) - 0.5:
+                failures.append({"check": "receive failure error bottom padding", "label": label,
+                                 "gap": gap, "padding": padding, "error": error, "line": line})
     if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
         failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
 
@@ -609,8 +634,6 @@ def capture_receive_state(
             failures.append({"check": "receive failure copy", "label": label, "error": metrics["receiveError"]})
         if metrics["receiveRetry"]:
             failures.append({"check": "receive failure no retry button", "label": label})
-        if not metrics["receiveErrorBelowSwitch"]:
-            failures.append({"check": "receive failure error below", "label": label})
 
     page.get_by_test_id("claude-account-pool-section").screenshot(
         path=str(output / f"app-receive-{state_name}-{width}-{theme}.png"),
