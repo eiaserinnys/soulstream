@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { FolderContentSqlResolver } from "./folder_content_sql.js";
 import { toCatalogBoardItemRow, toMarkdownDocumentRow, type BoardItemDbRow, type MarkdownDbRow } from "./folder_content_serialization.js";
-import type { CatalogBoardItemRow, MarkdownDocumentRow } from "./folder_content_types.js";
-import { MarkdownDocumentVersionConflictError } from "./markdown_document_version.js";
+import { MarkdownDocumentVersionConflictError, type CatalogBoardItemRow, type MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
 
 export interface MarkdownMutation {
   documentId: string;

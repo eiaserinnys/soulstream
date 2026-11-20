@@ -2,8 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { CustomViewProjectionRepository } from
   "../src/board/custom_view_repository.js";
-import { CustomViewRevisionConflictError } from
-  "../src/board/folder_content_types.js";
+import { CustomViewRevisionConflictError } from "@soulstream/wire-schema/catalog";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import {
   createPagePostgresHarness,

@@ -5,7 +5,7 @@ import { FolderContentRepository } from "./folder_content_repository.js";
 import { FolderContentSqlResolver } from "./folder_content_sql.js";
 import { toCatalogBoardItemRow, type BoardItemDbRow } from "./folder_content_serialization.js";
 import type { MarkdownDocumentService } from "./markdown_document_service.js";
-import type { CatalogBoardItemRow } from "./folder_content_types.js";
+import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
 
 export class FlatFolderContentHost {
   readonly reads: FolderContentRepository;

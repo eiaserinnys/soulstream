@@ -5,7 +5,7 @@ import {
   loadContractFixtures,
   markdownDocumentRouteAuthRequirements,
 } from "../src/index.js";
-import { MarkdownDocumentVersionConflictError } from "../src/board/markdown_document_version.js";
+import { MarkdownDocumentVersionConflictError } from "@soulstream/wire-schema/catalog";
 import {
   config,
   createAppWithMarkdownDocuments,

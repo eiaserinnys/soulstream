@@ -8,7 +8,7 @@ import type {
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
-import { boardItemsDelta, type CatalogBoardItemsDelta } from "../mcp/board_catalog_delta.js";
+import { boardItemsDelta, type CatalogBoardItemsDelta } from "@soulstream/wire-schema/catalog";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 
 export function withSessionCatalogMutationBroadcasts(

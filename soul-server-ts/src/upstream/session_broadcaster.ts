@@ -16,7 +16,7 @@ import type {
   CatalogBoardItemsDelta,
   CatalogFolderRecord,
   CatalogSessionsDelta,
-} from "../catalog/catalog_delta.js";
+} from "@soulstream/wire-schema/catalog";
 
 import type { SendFn } from "./dispatcher.js";
 

@@ -1,4 +1,5 @@
-import type { CatalogBoardItemRow, MarkdownDocumentRow, SessionDB } from "../db/session_db.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
+import type { SessionDB } from "../db/session_db.js";
 import type { FlatFolderContentHostClient } from "./flat_folder_content_host_client.js";
 
 export interface CatalogBoardItemMoveResult {

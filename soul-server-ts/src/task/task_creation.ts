@@ -13,7 +13,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   serializeCatalogFolders,
   sessionAssignmentFromRow,
-} from "../catalog/catalog_delta.js";
+} from "@soulstream/wire-schema/catalog";
 
 import type {
   CallerInfo,

@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
 
-import type { CatalogBoardItemRow } from "../board/folder_content_types.js";
-import type { CustomViewRow, BoardProjectionHost, CustomViewWithBoardItem } from "../board/folder_content_types.js";
+import type { CatalogBoardItemRow, CustomViewRow } from "@soulstream/wire-schema/catalog";
+import type { BoardProjectionHost, CustomViewWithBoardItem } from "../board/folder_content_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
-import { boardItemsDelta } from "./board_catalog_delta.js";
+import { boardItemsDelta } from "@soulstream/wire-schema/catalog";
 import type { CatalogDelta } from "../runtime/catalog_delta_broadcaster.js";
-import {
-  CustomViewRevisionConflictError,
-} from "../board/folder_content_types.js";
-
-export { CustomViewRevisionConflictError };
-
 export interface CustomViewDbPort {
   getAllFolders(): Promise<FolderRow[]>;
 }

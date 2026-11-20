@@ -2,10 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
-import { CustomViewRevisionConflictError } from "./folder_content_types.js";
+import { CustomViewRevisionConflictError, MarkdownDocumentVersionConflictError } from "@soulstream/wire-schema/catalog";
 import { dispatchFlatReadOperation, getFlatReadOperationSchema, isFlatReadOperation } from "./flat_folder_content_operations.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
-import { MarkdownDocumentVersionConflictError } from "./markdown_document_version.js";
 
 const schemas = {
   "create-markdown-document": z.object({ folderId: z.string().min(1), title: z.string(), body: z.string(),

@@ -108,7 +108,7 @@ import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_reposit
 import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import { broadcastTargetedSessionCatalogDelta } from
   "./runtime/live_session_catalog_mutation_broadcaster.js";
-import { boardItemsDelta } from "./mcp/board_catalog_delta.js";
+import { boardItemsDelta } from "@soulstream/wire-schema/catalog";
 import { isTerminalSessionStatus } from "./session/session_status.js";
 import {
   createLiveSearchDbConnectionFactory,

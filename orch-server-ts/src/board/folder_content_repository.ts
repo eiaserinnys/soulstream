@@ -17,7 +17,7 @@ import type {
 import type {
   CatalogBoardItemRow,
   MarkdownDocumentRow,
-} from "./folder_content_types.js";
+} from "@soulstream/wire-schema/catalog";
 
 export class FolderContentRepository {
   private readonly sqlResolver: FolderContentSqlResolver;

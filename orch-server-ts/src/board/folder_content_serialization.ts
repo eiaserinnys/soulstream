@@ -1,11 +1,11 @@
+import type { BoardItemType } from "./folder_content_types.js";
 import type {
-  BoardItemType,
   CatalogBoardItemRow,
+  CustomViewRow,
   MarkdownDocumentRow,
-} from "./folder_content_types.js";
+} from "@soulstream/wire-schema/catalog";
 import type {
   FolderItemRecord,
-  CustomViewRow,
   CustomViewWithBoardItem,
 } from "./folder_content_types.js";
 

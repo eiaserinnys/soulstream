@@ -32,7 +32,8 @@ import {
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import type { CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
+import type { CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 

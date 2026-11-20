@@ -4,8 +4,8 @@
 import type {
   CatalogBoardItemRow,
   MarkdownDocumentRow,
-  SessionDB,
-} from "../db/session_db.js";
+} from "@soulstream/wire-schema/catalog";
+import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   CatalogBoardItemService,
@@ -18,7 +18,7 @@ import {
   sessionAssignmentFromRow,
   type CatalogMutationDelta,
   type CatalogSessionsDelta,
-} from "./catalog_delta.js";
+} from "@soulstream/wire-schema/catalog";
 
 /** Emits catalog deltas after orch-owned mutations and lifecycle deletion. */
 export class CatalogService {
