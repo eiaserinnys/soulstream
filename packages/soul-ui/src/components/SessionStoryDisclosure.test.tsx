@@ -37,7 +37,7 @@ describe("SessionStoryDisclosure", () => {
   it("stays collapsed without fetching until the user opens it", () => {
     expect(storyButton().getAttribute("aria-expanded")).toBe("false");
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-testid="session-story-panel"]')).toBeNull();
+    expect(storyPanel()).toBeNull();
   });
 
   it("fetches lazily and renders highlight before the full chronological story", async () => {
@@ -60,14 +60,14 @@ describe("SessionStoryDisclosure", () => {
     await act(async () => storyButton().click());
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("최근 턴 요약");
+      expect(storyText()).toContain("최근 턴 요약");
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/sess%2F1/story", {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
       signal: expect.any(AbortSignal),
     });
-    const text = container.textContent ?? "";
+    const text = storyText();
     expect(text.indexOf("하이라이트 문장")).toBeLessThan(text.indexOf("[T1-T4] 접힌 줄거리"));
     expect(text.indexOf("[T1-T4] 접힌 줄거리")).toBeLessThan(text.indexOf("최근 턴 요약"));
   });
@@ -84,7 +84,7 @@ describe("SessionStoryDisclosure", () => {
 
     await act(async () => storyButton().click());
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("아직 정리된 스토리가 없습니다.");
+      expect(storyText()).toContain("아직 정리된 스토리가 없습니다.");
     });
 
     await act(async () => storyButton().click());
@@ -164,6 +164,17 @@ describe("SessionStoryDisclosure", () => {
     );
     if (!button) throw new Error("story trigger not rendered");
     return button;
+  }
+
+  // 패널은 Popover 포털로 document.body에 붙는다. 컨테이너가 아니라 문서에서 찾는다.
+  function storyPanel(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(
+      '[data-testid="session-story-panel"]',
+    );
+  }
+
+  function storyText(): string {
+    return storyPanel()?.textContent ?? "";
   }
 });
 

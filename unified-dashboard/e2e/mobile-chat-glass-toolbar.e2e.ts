@@ -51,6 +51,18 @@ const CARD_DETAIL = {
   notes: [],
   nowHistory: [],
 };
+// 픽스처에 스토리 경로가 없어 시험 안에서 채운다. 패널이 잘리지 않는지 경계와 함께 글이 보이는지 본다.
+const STORY = {
+  highlight: "스토리 하이라이트: 390 채팅 머리에서 패널이 화면 안에 들어옵니다.",
+  narrative: Array.from(
+    { length: 8 },
+    (_, index) => `스토리 구간 ${index + 1}: 패널 본문이 화면 안에서 잘리지 않고 읽힙니다.`,
+  ).join("\n\n"),
+  unfolded_turn_summaries: [],
+  narrative_through_event_id: 80,
+  fold_count: 1,
+  updated_at: "2026-11-20T00:00:00.000Z",
+};
 
 async function openRoot(page: Page, width: number) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -75,6 +87,19 @@ async function openChat(page: Page) {
   await page.locator("[data-task-section=sessions] .v3-run-open").first().click();
   await expect(page.locator(".v3-chat-pane [data-slot=chat-input-body]")).toBeVisible({ timeout: 120_000 });
   await page.waitForTimeout(2500);
+}
+
+async function openStory(page: Page) {
+  await page.route(/\/api\/sessions\/[^/]+\/story(?:\?|$)/, (route) => route.fulfill({ json: STORY }));
+  const trigger = page.getByTestId("session-story-trigger");
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const panel = page.getByTestId("session-story-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("스토리 구간 1");
+  // 위치 계산이 끝난 뒤의 상자를 재도록 잠깐 둔다.
+  await page.waitForTimeout(500);
+  return panel;
 }
 
 async function titleCenterHit(page: Page) {
@@ -118,6 +143,44 @@ for (const webgl of [true, false]) {
     await expect(page.getByTestId("v3-mobile-project-list")).toBeVisible();
   });
 }
+
+for (const webgl of [true, false]) {
+  test(`390 스토리 패널 (WebGL ${webgl ? "켬" : "끔"})`, async ({ page }) => {
+    test.setTimeout(300_000);
+    await prepare(page, 390, webgl, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: LIVE_TEXT });
+    await openRoot(page, 390);
+    await openSoulstreamProject(page, 390);
+    await openChat(page);
+    const panel = await openStory(page);
+    const box = await panel.boundingBox();
+    expect(box, "스토리 패널 상자를 읽지 못했습니다").not.toBeNull();
+    // 모바일 채팅 머리 좌우 여백 14px 안에 패널이 들어와야 한다.
+    expect(box!.x).toBeGreaterThanOrEqual(14);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390 - 14);
+    await page.screenshot({ path: path.join(OUT, `chat-390-webgl${webgl ? 1 : 0}-story.png`), animations: "disabled" });
+  });
+}
+
+test("1440 스토리 패널 (WebGL 켬)", async ({ page }) => {
+  test.setTimeout(300_000);
+  await prepare(page, 1440, true, { unifiedFolderView: true, timelineEventCount: 1, liveEventText: LIVE_TEXT });
+  await openRoot(page, 1440);
+  await openSoulstreamProject(page, 1440);
+  await openChat(page);
+  const panel = await openStory(page);
+  const box = await panel.boundingBox();
+  expect(box, "스토리 패널 상자를 읽지 못했습니다").not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
+  // 패널 안쪽 왼쪽 위가 패널 안 요소에 닿아야 한다(채팅 팬에 잘리지 않음).
+  const hit = await panel.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + 16, rect.top + 16);
+    return Boolean(target && element.contains(target));
+  });
+  expect(hit, "패널 안쪽 왼쪽 위가 패널 밖 요소에 닿았습니다(팬에 잘림)").toBe(true);
+  await page.screenshot({ path: path.join(OUT, "chat-1440-webgl1-story.png"), animations: "disabled" });
+});
 
 test("1440 채팅 머리와 전역 도구 막대 (WebGL 켬)", async ({ page }) => {
   test.setTimeout(300_000);
