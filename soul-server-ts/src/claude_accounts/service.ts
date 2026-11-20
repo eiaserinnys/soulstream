@@ -50,9 +50,15 @@ import type {
 } from "./types.js";
 import {
   ClaudeAccountUsageCollector,
+  isUnobservedObservation,
   type ClaudeAccountAuthOutcome,
   type CollectAccountUsageOptions,
 } from "./usage.js";
+import {
+  UNMEASURED_LOCAL_USAGE_WAIT_MS,
+  unmeasuredLocalWaitTargets,
+  waitAtMost,
+} from "./local_usage_wait.js";
 
 export { ClaudeAccountNotFoundError } from "./errors.js";
 
@@ -106,6 +112,18 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       onAuthOutcome: (accountId, outcome) => this.applyAuthOutcome(accountId, outcome),
     });
     this.loadCentralSnapshot();
+  }
+
+  /**
+   * 카드 #1734: 로컬 계정의 사용량 관측은 메모리에만 있어 재시작하면 비고, 오케스트레이터의 첫
+   * 조회(약 5분 주기)가 올 때까지 로컬이 idle로 보여 늘 ok인 중앙이 이겼다. 서비스를 만든 뒤
+   * 오케스트레이터 조회와 같은 길로 로컬 사용량을 한 번 잰다. 기다리지 않고 띄우며, 실패는
+   * 경고 로그만 남기고 서비스 시작을 막지 않는다.
+   */
+  startLocalUsageWarmup(): void {
+    void this.getAccountList().catch((err: unknown) => {
+      this.logger?.warn({ err }, "Startup Claude account usage measurement failed");
+    });
   }
 
   private loadCentralSnapshot(): void {
@@ -366,63 +384,42 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     input: ClaudeAccountSelectionInput,
     options: ClaudeAccountSelectionOptions = {},
   ): Promise<ClaudeAccountSelectionResponse | ClaudeAccountSelectionWithCredential> {
-    const nowMs = this.now();
-    const accounts = this.store.readAccounts();
-    const bindings = this.store.readBindings();
-    const blocks = this.store.readBlocks();
-    const relogin = this.store.readRelogin();
+    let nowMs = this.now();
+    let pool = this.buildSelectionPool(input, nowMs);
 
-    // 중앙 스냅샷에 같은 id가 있으면 그 로컬 계정은 가린다(파일은 지우지 않는다).
-    const centralById = new Map(
-      this.centralAccounts.map((account) => [account.id, account]),
-    );
-    const candidates: SelectableAccountCandidate[] = accounts
-      .filter((acc) => !centralById.has(acc.id))
-      .map((acc) => {
-        const obs = this.usageCollector.getCachedObservation(
-          acc.id,
-          this.store.profileDir(acc.id),
-        );
-        return {
-          id: acc.id,
-          enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
-          priority: acc.priority,
-          auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin),
-          active_sessions: this.activeSessions(acc.id),
-          stale: obs.stale,
-          usage: obs.usage,
-          blocks: blocks[acc.id],
-          source: "local",
-        };
+    // 카드 #1734: 재시작 직후에는 로컬 사용량 관측이 비어 로컬이 idle로 보이고, 늘 ok인 중앙이
+    // ok>idle 규칙으로 이겼다. 아직 한 번도 재지 않은 적격 로컬이 있으면 그 측정(시작 측정이나
+    // 오케스트레이터 조회가 돌고 있으면 거기에 합류)을 짧은 상한까지 기다린 뒤 후보를 다시 만든다.
+    const waitTargets = unmeasuredLocalWaitTargets({
+      candidates: pool.candidates,
+      unmeasuredLocalIds: pool.unmeasuredLocalIds,
+      profileDir: (accountId) => this.store.profileDir(accountId),
+      model: input.model,
+      boundAccountId: pool.boundAccountId,
+      boundTurnId: pool.boundTurnId,
+      turnId: input.turn_id,
+      excludeIds: input.exclude_ids,
+      nowMs,
+    });
+    if (waitTargets.length > 0) {
+      const measured = this.usageCollector.collectAll(waitTargets).catch((err: unknown) => {
+        this.logger?.warn({ err }, "Claude account usage measurement before selection failed");
       });
-
-    // 중앙 후보: 켜져 있고, 인증 ok이며, 10분 넘게 살아 있는 토큰을 가진 계정만.
-    // 이 노드에서 실패한 (계정, 토큰 지문)은 잠시 뺀다.
-    const centralTokens = new Map<string, string>();
-    for (const centralAccount of this.centralAccounts) {
-      if (!isCentralAccountFresh(centralAccount, nowMs)) continue;
-      if (this.isCentralExcluded(centralAccount, nowMs)) continue;
-      if (this.isCredentialExcluded(centralAccount, input.exclude_credentials)) continue;
-      centralTokens.set(centralAccount.id, centralAccount.access_token!);
-      candidates.push({
-        id: centralAccount.id,
-        enabled: true,
-        priority: centralAccount.priority,
-        auth_state: "ok",
-        active_sessions: this.activeSessions(centralAccount.id),
-        stale: centralAccount.usage_raw === null,
-        usage: centralAccountUsage(centralAccount),
-        blocks: blocks[centralAccount.id],
-        source: "central",
-      });
+      await waitAtMost(measured, UNMEASURED_LOCAL_USAGE_WAIT_MS);
+      nowMs = this.now();
+      pool = this.buildSelectionPool(input, nowMs);
     }
 
-    const existingBinding = bindings[input.session_id];
-    const boundAccountId =
-      this.sessionActivity.assignment(input.session_id) ??
-      existingBinding?.account_id ??
-      null;
-    const boundTurnId = existingBinding?.turn_id ?? null;
+    const {
+      bindings,
+      blocks,
+      centralById,
+      centralTokens,
+      candidates,
+      existingBinding,
+      boundAccountId,
+      boundTurnId,
+    } = pool;
 
     // restricted(격리) Claude는 접근 토큰을 낼 수 있는 계정만 후보로 삼는다.
     // 자격이 없는 후보는 이 선택에서 탈락하고, 남은 후보가 없으면 CLI를
@@ -547,6 +544,80 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         kind: "access-token",
         access_token: accessTokens.get(chosen.id)!,
       },
+    };
+  }
+
+  /** select의 후보와 바인딩. 측정을 기다린 뒤 다시 만들 수 있게 한곳에 모은다. */
+  private buildSelectionPool(input: ClaudeAccountSelectionInput, nowMs: number) {
+    const accounts = this.store.readAccounts();
+    const bindings = this.store.readBindings();
+    const blocks = this.store.readBlocks();
+    const relogin = this.store.readRelogin();
+
+    // 중앙 스냅샷에 같은 id가 있으면 그 로컬 계정은 가린다(파일은 지우지 않는다).
+    const centralById = new Map(
+      this.centralAccounts.map((account) => [account.id, account]),
+    );
+    const unmeasuredLocalIds = new Set<string>();
+    const candidates: SelectableAccountCandidate[] = accounts
+      .filter((acc) => !centralById.has(acc.id))
+      .map((acc) => {
+        const obs = this.usageCollector.getCachedObservation(
+          acc.id,
+          this.store.profileDir(acc.id),
+        );
+        if (isUnobservedObservation(obs)) unmeasuredLocalIds.add(acc.id);
+        return {
+          id: acc.id,
+          enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
+          priority: acc.priority,
+          auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin),
+          active_sessions: this.activeSessions(acc.id),
+          stale: obs.stale,
+          usage: obs.usage,
+          blocks: blocks[acc.id],
+          source: "local",
+        };
+      });
+
+    // 중앙 후보: 켜져 있고, 인증 ok이며, 10분 넘게 살아 있는 토큰을 가진 계정만.
+    // 이 노드에서 실패한 (계정, 토큰 지문)은 잠시 뺀다.
+    const centralTokens = new Map<string, string>();
+    for (const centralAccount of this.centralAccounts) {
+      if (!isCentralAccountFresh(centralAccount, nowMs)) continue;
+      if (this.isCentralExcluded(centralAccount, nowMs)) continue;
+      if (this.isCredentialExcluded(centralAccount, input.exclude_credentials)) continue;
+      centralTokens.set(centralAccount.id, centralAccount.access_token!);
+      candidates.push({
+        id: centralAccount.id,
+        enabled: true,
+        priority: centralAccount.priority,
+        auth_state: "ok",
+        active_sessions: this.activeSessions(centralAccount.id),
+        stale: centralAccount.usage_raw === null,
+        usage: centralAccountUsage(centralAccount),
+        blocks: blocks[centralAccount.id],
+        source: "central",
+      });
+    }
+
+    const existingBinding = bindings[input.session_id];
+    const boundAccountId =
+      this.sessionActivity.assignment(input.session_id) ??
+      existingBinding?.account_id ??
+      null;
+    const boundTurnId = existingBinding?.turn_id ?? null;
+
+    return {
+      bindings,
+      blocks,
+      centralById,
+      centralTokens,
+      candidates,
+      unmeasuredLocalIds,
+      existingBinding,
+      boundAccountId,
+      boundTurnId,
     };
   }
 

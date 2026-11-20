@@ -283,6 +283,14 @@ export interface CachedAccountObservation {
   lastPolledAtMs: number;
 }
 
+/**
+ * 「관측 없음」: 자격이 있고 만료되지 않았는데 아직 한 번도 재지 않은 관측(카드 #1734).
+ * 자격 없음, 만료, 401/403, 죽은 refresh token, 일시 실패(stale)는 lastPolledAtMs가 남아 여기에 들지 않는다.
+ */
+export function isUnobservedObservation(observation: CachedAccountObservation): boolean {
+  return observation.observed_at === null && observation.lastPolledAtMs === 0;
+}
+
 /** 자격 갱신과 사용량 조회에서 관측한 인증 결과. 서비스가 needs_relogin 기록으로 옮긴다. */
 export type ClaudeAccountAuthOutcome = "renew_failed" | "rejected" | "recovered";
 
@@ -319,6 +327,8 @@ export class ClaudeAccountUsageCollector {
   private readonly credentialRenewer?: ClaudeProfileCredentialRenewer;
   private readonly onAuthOutcome?: (accountId: string, outcome: ClaudeAccountAuthOutcome) => void;
   private readonly cache = new Map<string, CachedAccountObservation>();
+  /** 계정별로 지금 도는 사용량 측정. 같은 계정의 요청은 이 측정 하나를 함께 기다린다. */
+  private readonly measurements = new Map<string, Promise<CachedAccountObservation>>();
   private readonly renewals = new Map<string, Promise<void>>();
   private readonly lastRenewalAttempt = new Map<string, number>();
 
@@ -440,24 +450,58 @@ export class ClaudeAccountUsageCollector {
         if (!item) {
           break;
         }
-        const previous = this.cache.get(item.input.accountId);
-        const obs = await this.fetchSingleAccountUsage(
+        const result = await this.measureAccount(
           item.input.accountId,
           item.accessToken,
           options,
         );
-        const current = this.cache.get(item.input.accountId);
-        // A concurrent success must not be replaced by this request's stale fallback.
-        const result = obs.stale && current !== previous && current?.auth_state === "ok" && !current.stale
-          ? current
-          : obs;
-        this.cache.set(item.input.accountId, result);
         results.set(item.input.accountId, result);
       }
     };
 
     await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
     return results;
+  }
+
+  /**
+   * 같은 계정의 사용량 측정을 하나로 합친다(single-flight, 카드 #1734). 재시작 직후에는 시작 측정,
+   * 오케스트레이터 조회, 여러 select가 한꺼번에 같은 계정을 재려 하므로 도는 측정이 있으면 그 결과를
+   * 함께 기다린다. forceRefresh는 자격을 갱신한 뒤처럼 새로 재야 하는 요청이라 합류하지 않고 새로 재며,
+   * 그 측정이 다음 요청의 합류 대상이 된다.
+   */
+  private measureAccount(
+    accountId: string,
+    accessToken: string,
+    options: CollectAccountUsageOptions,
+  ): Promise<CachedAccountObservation> {
+    const running = this.measurements.get(accountId);
+    if (running && !options.forceRefresh) {
+      return running;
+    }
+    const measurement = this.fetchAndCacheAccountUsage(accountId, accessToken, options)
+      .finally(() => {
+        if (this.measurements.get(accountId) === measurement) {
+          this.measurements.delete(accountId);
+        }
+      });
+    this.measurements.set(accountId, measurement);
+    return measurement;
+  }
+
+  private async fetchAndCacheAccountUsage(
+    accountId: string,
+    accessToken: string,
+    options: CollectAccountUsageOptions,
+  ): Promise<CachedAccountObservation> {
+    const previous = this.cache.get(accountId);
+    const obs = await this.fetchSingleAccountUsage(accountId, accessToken, options);
+    const current = this.cache.get(accountId);
+    // A concurrent success must not be replaced by this request's stale fallback.
+    const result = obs.stale && current !== previous && current?.auth_state === "ok" && !current.stale
+      ? current
+      : obs;
+    this.cache.set(accountId, result);
+    return result;
   }
 
   private renewExpiredCredentials(input: CollectAccountUsageInput, nowMs: number): void {
