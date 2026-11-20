@@ -577,6 +577,9 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     };
     const inspectNativeTaskNotification = vi.fn()
       .mockResolvedValueOnce(null)
+      // assistant, UUID-less Result, foreign Result 모두 증거가 없다.
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(proof);
     const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification, undefined, undefined, generationId);
 
@@ -584,12 +587,13 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     await fixture.controller.collectDetached(fixture.task, fixture.assistant);
     await fixture.controller.collectDetached(fixture.task, sdkResultPayload(undefined));
     await fixture.controller.collectDetached(fixture.task, sdkResultPayload("foreign-input"));
+    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(3);
     expect(fixture.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
     fixture.releaseRetainedRunner.mockClear();
 
     await fixture.controller.reconcileTranscriptAppend(fixture.task);
 
-    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(2);
+    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(4);
     expect(inspectNativeTaskNotification).toHaveBeenLastCalledWith("sess-1", {
       taskId: "task-native",
       initiatingToolUseId: "toolu-native",
@@ -917,6 +921,97 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       expect(fixture.releaseRetainedRunner).not.toHaveBeenCalled();
     },
   );
+
+  it("result 시점 재확인이 assistant 때 증거가 없던 awaiting-transcript 소유를 소비한다", async () => {
+    const proof = {
+      kind: "completed" as const,
+      inputUuid: "input-native",
+      assistantMessageUuid: "assistant-native",
+    };
+    const inspectNativeTaskNotification = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(proof);
+    const fixture = makeNativeTranscriptReconciliation(inspectNativeTaskNotification);
+
+    await fixture.controller.collectDetached(fixture.task, fixture.terminal);
+    await fixture.controller.collectDetached(fixture.task, fixture.assistant);
+    expect(inspectNativeTaskNotification).toHaveBeenCalledOnce();
+    expect(fixture.recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+
+    await fixture.controller.collectDetached(fixture.task, sdkResultPayload(undefined));
+
+    expect(inspectNativeTaskNotification).toHaveBeenCalledTimes(2);
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+    expect(fixture.recordRuntimeFollowupRelationConsumed).toHaveBeenCalledWith(
+      fixture.task,
+      { kind: "exact_generation", taskId: "task-native", initiatingToolUseId: "toolu-native" },
+      "assistant-native",
+    );
+    expect(fixture.addIntervention).not.toHaveBeenCalled();
+  });
+
+  it("시한 재확인이 소유를 소비하면 flushPending이 followup을 직접 보내지 않는다", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = makeTask();
+      task.status = "completed";
+      task.claudeRuntime!.tasks["task-native"] = {
+        taskId: "task-native", status: "completed", updatedAt: 1,
+        isBackgrounded: true, toolUseId: "toolu-native",
+      };
+      const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+      const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
+      const releaseRetainedRunner = vi.fn(async () => undefined);
+      const inspectNativeTaskNotification = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({
+          kind: "completed" as const,
+          inputUuid: "input-native",
+          assistantMessageUuid: "assistant-native",
+        });
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: {
+          addIntervention,
+          getDeliveryConsumptionRecorder: () => ({ recordRuntimeFollowupRelationConsumed }),
+        },
+        transcriptReceipt: { inspectInput: vi.fn(), inspectNativeTaskNotification },
+        onResume: vi.fn(), releaseRetainedRunner,
+        logger: silentLogger, deliveryV2Enabled: true, sourceNode: "node-1",
+        followupDeadlineMs: 120_000,
+      } as never);
+      const identity = buildClaudeBackgroundGenerationIdentity({
+        sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
+        sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
+      });
+      const terminal = {
+        type: "claude_runtime_task_updated", task_id: "task-native",
+        session_id: "sdk-sess-1", patch: { status: "completed", is_backgrounded: true },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(terminal, "sdk_membership");
+      attachClaudeBackgroundDeliveryMetadata(terminal, {
+        initiatingToolUseId: "toolu-native", deliveryId: identity.deliveryId,
+        completionId: identity.completionId, relationKey: identity.relationKey,
+        producerTerminalRevision: "1", deliveryCreatedAt: "2026-09-07T00:00:00.000Z",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        storedPayload: { text: "done", user: "system" }, storedPayloadHash: "hash",
+      });
+
+      await controller.collectDetached(task, terminal);
+      await controller.collectDetached(task, {
+        type: "assistant_message", content: "native done",
+        _dedupe_key: "claude-sdk:assistant:assistant-native:0",
+      } as unknown as SSEEventPayload);
+      expect(inspectNativeTaskNotification).toHaveBeenCalledOnce();
+      expect(recordRuntimeFollowupRelationConsumed).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(recordRuntimeFollowupRelationConsumed).toHaveBeenCalledOnce();
+      expect(addIntervention).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it.each([0, 2])(
     "does not infer native ownership when the published assistant has %i candidates",
