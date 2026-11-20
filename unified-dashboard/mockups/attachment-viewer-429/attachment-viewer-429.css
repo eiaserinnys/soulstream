@@ -1,0 +1,54 @@
+/* 카드 #429 시안: 지금 이미지 원본 창(.image-viewer-popup, .chat-image-viewer-*)에서 바뀌는 곳만 더한다.
+   값은 모두 기존 토큰과 원본 창의 변수다. */
+
+/* 머리줄 오른쪽 단추 묶음. 닫기 단추와 같은 자리(end-2, top-2)에서 왼쪽으로 하나를 더한다. */
+.attachment-viewer-429-actions {
+  position: absolute;
+  inset-block-start: calc(var(--spacing) * 2);
+  inset-inline-end: calc(var(--spacing) * 2);
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+}
+.chat-image-viewer-popup:has(.attachment-viewer-429-actions) > .chat-image-viewer-header {
+  padding-inline-end: calc(2 * var(--v3-action-size) + var(--v3-space-1) + var(--v3-space-2));
+}
+
+/* 긴 캡처 폭 맞춤: 창은 화면 높이를 쓰고, 그림은 창 폭에 맞춰 그림 영역 안에서 세로로 스크롤한다.
+   창 폭은 문서 창과 같은 읽기 폭(max-w-3xl)까지만 넓히고 원본 폭을 넘기지 않는다. */
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-image-fit="width"] {
+  width: min(
+    var(--container-3xl),
+    calc(100dvw - 2rem),
+    calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
+  );
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+}
+.chat-image-viewer-popup[data-image-fit="width"] > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup[data-image-fit="width"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  flex: 1 1 auto;
+}
+.attachment-viewer-429-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border-radius: var(--chat-attachment-radius);
+}
+.attachment-viewer-429-scroll [data-slot="scroll-area-viewport"] {
+  border-radius: var(--chat-attachment-radius);
+}
+.chat-image-viewer-popup[data-image-fit="width"] .attachment-viewer-429-scroll img {
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  margin: 0;
+  border-radius: var(--chat-attachment-radius);
+}
+
+/* 시안 장면 고르기(창을 닫으면 보인다). */
+.attachment-viewer-429-scenes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-2);
+  padding: var(--v3-space-6);
+}

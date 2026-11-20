@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이번 주 작업 카드</title>
+<style>
+  body { margin: 0; padding: 32px; font: 15px/1.5 -apple-system, "Pretendard", "Noto Sans KR", sans-serif; background: #f6f7fb; color: #1d1d1f; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  p.lead { margin: 0 0 24px; color: #6e6e78; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  li { background: #fff; border: 1px solid #e3e4ea; border-radius: 16px; padding: 16px 18px; }
+  li b { display: block; margin-bottom: 6px; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; background: #eef2ff; color: #3949ab; }
+  .done .tag { background: #e6f4ea; color: #1e7b34; }
+  button { margin-top: 24px; padding: 8px 16px; border-radius: 10px; border: 1px solid #cfd2dc; background: #fff; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>이번 주 작업 카드</h1>
+  <p class="lead" id="lead">카드 4장</p>
+  <ul id="cards">
+    <li><b>긴 캡처 폭 맞춤</b><span class="tag">진행</span></li>
+    <li class="done"><b>HEIC 미리보기 생성</b><span class="tag">완료</span></li>
+    <li><b>앱 안 파일 보기</b><span class="tag">진행</span></li>
+    <li><b>SVG를 img로만 표시</b><span class="tag">검수</span></li>
+  </ul>
+  <button id="toggle" type="button">완료만 보기</button>
+  <script>
+    const button = document.getElementById("toggle");
+    let onlyDone = false;
+    button.addEventListener("click", () => {
+      onlyDone = !onlyDone;
+      for (const li of document.querySelectorAll("#cards li")) li.hidden = onlyDone && !li.classList.contains("done");
+      button.textContent = onlyDone ? "모두 보기" : "완료만 보기";
+    });
+  </script>
+</body>
+</html>
