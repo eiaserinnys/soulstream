@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { createServer as createHttpServer } from "node:http";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -341,6 +342,134 @@ test("the payload's own engine code spawns the claude CLI from a clean directory
 test("the payload's own engine code spawns the codex app-server from a clean directory", async () => {
   await exerciseRunnerEngineSpawn({ backend: "codex", cliEnvName: "CODEX_CLI_PATH" });
 });
+
+test("fetch_node_bundle downloads the release, binds it, and the swapped dist starts", async () => {
+  const release = await startBundleReleaseServer(packSummary.tarball);
+  const serviceDirectory = join(temporaryRoot, "fetch-service");
+  const installDirectory = join(serviceDirectory, "soul-server-ts", "dist");
+  const cacheDirectory = join(temporaryRoot, "fetch-cache");
+  await mkdir(join(serviceDirectory, "runner-state"), { recursive: true });
+  // bind reads this document while the payload still sits at dist.next; startup
+  // later reads the same bytes from dist, so a copy is enough for identity.
+  const fetchEnvFile = join(serviceDirectory, ".env.soul-server-ts");
+  const port = await reservePort();
+  const envLines = [
+    "SOULSTREAM_NODE_ID=fetch-node-bundle-e2e",
+    "SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:9/ws/node",
+    `EVENT_OUTBOX_DIR=${join(serviceDirectory, "event-outbox")}`,
+    `PORT=${port}`,
+    "HOST=127.0.0.1",
+    "LOG_LEVEL=error",
+    `AGENTS_CONFIG_PATH=${join(appRoot, "agents.yaml")}`,
+    `AGENT_PROFILE_CACHE_PATH=${join(serviceDirectory, "agent-profile-cache.json")}`,
+    "SOUL_RUNNER_PROCESS_ENABLED=true",
+    `SOUL_RUNNER_STATE_DIR=${join(serviceDirectory, "runner-state")}`,
+    `SOUL_RUNNER_ARTIFACT_DIR=${join(installDirectory, "runner")}`,
+    `SOUL_RUNNER_RELEASES_DIR=${join(serviceDirectory, "releases")}`,
+  ];
+  await writeFile(fetchEnvFile, `${envLines.join("\n")}\n`, "utf8");
+  try {
+    const fetch = await runProcess(process.execPath, [
+      join(packageRoot, "scripts", "fetch_node_bundle.mjs"),
+      "--checkout", repositoryRoot,
+      "--install-dir", installDirectory,
+      "--env-file", fetchEnvFile,
+      "--cache-dir", cacheDirectory,
+      "--repo", "test/repo",
+      "--tag", "node-bundles",
+      "--base-url", release.url,
+      "--wait-sec", "5",
+    ], { cwd: packageRoot, env: CLEAN_AMBIENT, timeoutMs: 300_000 });
+    assert.equal(fetch.code, 0, fetch.output);
+    assert.match(fetch.output, new RegExp(`^fetch-node-bundle: commit ${sourceCommit}$`, "m"));
+    assert.match(fetch.output, /^fetch-node-bundle: source download$/m);
+    // The tarball goes through a 127.0.0.1 -> 127.0.0.2 redirect; only the blob
+    // route on the second host serves the bytes.
+    assert.equal(release.requests.some((path) => path.includes("/blob/")), true);
+
+    for (const leftover of [`${installDirectory}.next`, `${installDirectory}.old`]) {
+      assert.equal(await exists(leftover), false, `${leftover} must not survive the swap`);
+    }
+    const manifest = JSON.parse(
+      await readFile(join(installDirectory, "release-manifest.json"), "utf8"),
+    );
+    assert.equal(manifest.source_commit, sourceCommit);
+    assert.equal(manifest.model_catalog_path, catalogPath);
+    assert.equal(
+      (await readdir(cacheDirectory)).sort().join(","),
+      `node-${sourceCommit}.tar.gz,node-${sourceCommit}.tar.gz.sha256`,
+      "the cached bundle must stay for a rollback",
+    );
+
+    await cp(fetchEnvFile, join(installDirectory, ".env.soul-server-ts"));
+    const child = spawn(process.execPath, [join(installDirectory, "main.js")], {
+      cwd: installDirectory,
+      env: CLEAN_AMBIENT,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+    try {
+      const response = await waitForHealth(child, port, () => output);
+      assert.equal(response.status, 503, output);
+      const health = await response.json();
+      assert.equal(health.status, "starting");
+      assert.equal(health.node_id, "fetch-node-bundle-e2e");
+      assert.equal(health.manifest_id, manifest.manifest_id);
+      assert.doesNotMatch(output, /release manifest mismatch|Cannot find module/);
+    } finally {
+      await stopProcess(child);
+    }
+  } finally {
+    await release.close();
+  }
+});
+
+/**
+ * Serves a packed node.tar.gz as the GitHub Releases downloads the fetch script
+ * expects: sidecar on 127.0.0.1, tarball behind a cross-host 302 to 127.0.0.2.
+ */
+async function startBundleReleaseServer(tarballPath) {
+  const tarball = await readFile(tarballPath);
+  const digest = sha256(tarball);
+  const requests = [];
+  let port = 0;
+  const server = createHttpServer((request, response) => {
+    const { pathname } = new URL(request.url, "http://127.0.0.1");
+    requests.push(pathname);
+    if (pathname.startsWith("/blob/") && pathname.endsWith(".tar.gz")) {
+      response.writeHead(200, { "content-type": "application/octet-stream" });
+      response.end(tarball);
+      return;
+    }
+    if (pathname.endsWith(".tar.gz.sha256")) {
+      // The publish job renames node.tar.gz and regenerates the sidecar for the
+      // asset name; pack's own sidecar still says node.tar.gz.
+      const assetName = basename(pathname).replace(/\.sha256$/, "");
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end(`${digest}  ${assetName}\n`);
+      return;
+    }
+    if (pathname.endsWith(".tar.gz")) {
+      response.writeHead(302, { location: `http://127.0.0.2:${port}/blob${pathname}` });
+      response.end();
+      return;
+    }
+    response.writeHead(404);
+    response.end("missing");
+  });
+  await new Promise((resolve) => server.listen(0, "0.0.0.0", resolve));
+  port = server.address().port;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    requests,
+    close: async () => {
+      server.closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
 
 async function walkFiles(root, prefix = "") {
   const entries = await readdir(join(root, prefix), { withFileTypes: true });
