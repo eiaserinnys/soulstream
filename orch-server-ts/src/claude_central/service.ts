@@ -177,20 +177,7 @@ export class ClaudeCentralService {
     readonly default_receive?: boolean;
     readonly nodes?: Readonly<Record<string, boolean | null>>;
   }): Promise<ClaudeCentralSettingsView> {
-    const current = await this.settingsRepository.read();
-    const nodes: Record<string, boolean> = { ...current.nodes };
-    if (input.nodes !== undefined) {
-      for (const [nodeId, receive] of Object.entries(input.nodes)) {
-        if (nodeId.length === 0) continue;
-        if (receive === null) delete nodes[nodeId];
-        else nodes[nodeId] = receive;
-      }
-    }
-    const next: ClaudeCentralPoolSettings = {
-      default_receive: input.default_receive ?? current.default_receive,
-      nodes,
-    };
-    await this.settingsRepository.write(next);
+    await this.settingsRepository.merge(input);
     await this.sync.sendAll();
     return this.getSettings();
   }

@@ -48,6 +48,15 @@ export type PushSessionReviewState = {
   readonly reviewRequired: boolean;
 };
 
+/**
+ * 중앙 풀 계정은 노드에 매이지 않으므로 재로그인 알림 payload에 nodeId를 두지 않는다.
+ * 알림 종류(`claude_account_relogin`)는 노드 로컬 계정 알림과 같다.
+ */
+export type ClaudeCentralAccountReloginPushData = {
+  readonly kind: "claude_account_relogin";
+  readonly accountId: string;
+};
+
 export type PushNotifierOptions = {
   readonly provider: PushNotificationProvider;
   readonly repository: PushNotificationRepository;
@@ -211,6 +220,7 @@ export class PushNotifier {
     );
   }
 
+  /** 노드 로컬 계정의 재로그인 알림. 노드 소유자에게 보낸다. */
   async notifyClaudeAccountRelogin(input: {
     nodeId: string;
     accountId: string;
@@ -222,6 +232,29 @@ export class PushNotifier {
       "클로드 계정 다시 로그인 필요",
       `${input.nodeId}의 ${input.accountEmail} 계정 자격 갱신이 끊겼습니다. 설정에서 다시 로그인해 주세요.`,
       { kind: "claude_account_relogin", nodeId: input.nodeId, accountId: input.accountId },
+    ));
+  }
+
+  /** 중앙 풀 계정의 재로그인 알림. 계정이 노드에 매이지 않으므로 소유자에게 보낸다. */
+  async notifyCentralClaudeAccountRelogin(input: {
+    ownerEmail: string | undefined;
+    accountId: string;
+    accountEmail: string;
+  }): Promise<boolean> {
+    if (this.closed) return false;
+    const email = input.ownerEmail?.trim();
+    if (!email) {
+      this.warn(
+        "Claude central account relogin notification dropped: "
+          + "no orchestrator owner email configured",
+      );
+      return false;
+    }
+    return this.trackSend(this.sendToEmail(
+      email,
+      "클로드 계정 다시 로그인 필요",
+      `중앙 풀의 ${input.accountEmail} 계정 자격 갱신이 끊겼습니다. 설정에서 다시 로그인해 주세요.`,
+      { kind: "claude_account_relogin", accountId: input.accountId },
     ));
   }
 
@@ -281,7 +314,7 @@ export class PushNotifier {
     email: string,
     title: string,
     body: string,
-    data: PushNotificationData,
+    data: PushNotificationData | ClaudeCentralAccountReloginPushData,
   ): Promise<boolean> {
     let tokens: readonly PushDeviceToken[];
     try {
