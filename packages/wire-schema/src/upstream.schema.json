@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 200개 $defs (top-level wire 95 + supporting/SSE 105). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 202개 $defs (top-level wire 95 + supporting/SSE 107). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -229,6 +229,68 @@
             "channel_id": { "type": "string" },
             "thread_ts": { "type": "string" },
             "user_id": { "type": "string" }
+          }
+        }
+      }
+    },
+    "ContextItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["key", "label", "content"],
+      "properties": {
+        "key": { "type": "string" },
+        "label": { "type": "string" },
+        "content": {}
+      }
+    },
+    "EventTruncation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["original_bytes", "attachment"],
+      "properties": {
+        "original_bytes": { "type": "number" },
+        "attachment": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "required": [
+            "attachment_id",
+            "name",
+            "mime_type",
+            "byte_size",
+            "checksum_sha256",
+            "width",
+            "height",
+            "preview_kind",
+            "preview_mime_type"
+          ],
+          "properties": {
+            "attachment_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "mime_type": {
+              "type": "string"
+            },
+            "byte_size": {
+              "type": "number"
+            },
+            "checksum_sha256": {
+              "type": ["string", "null"]
+            },
+            "width": {
+              "type": ["number", "null"]
+            },
+            "height": {
+              "type": ["number", "null"]
+            },
+            "preview_kind": {
+              "enum": ["image", "text", "info"]
+            },
+            "preview_mime_type": {
+              "type": ["string", "null"]
+            }
           }
         }
       }
@@ -2882,9 +2944,12 @@
     "SSEEventProgress": {
       "type": "object",
       "description": "SSE: 진행 상태.",
-      "required": ["type"],
+      "required": ["type", "text"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "progress" } }
+      "properties": {
+        "type": { "const": "progress" },
+        "text": {}
+      }
     },
     "SSEEventMemory": {
       "type": "object",
@@ -2896,23 +2961,32 @@
     "SSEEventSession": {
       "type": "object",
       "description": "SSE: 세션 메타.",
-      "required": ["type"],
+      "required": ["type", "session_id"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "session" },
-        "resume_lost_from": { "type": "string", "minLength": 1, "description": "Requested backend session ID that could not be resumed." }
+        "resume_lost_from": { "type": "string", "minLength": 1, "description": "Requested backend session ID that could not be resumed." },
+        "session_id": { "type": "string" },
+        "pid": { "type": "number" }
       }
     },
     "SSEEventInterventionSent": {
       "type": "object",
       "description": "SSE: 사용자 개입 메시지 발신.",
-      "required": ["type"],
+      "required": ["type", "user", "text"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "intervention_sent" },
         "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "attachment_ids": { "type": "array", "items": { "type": "string" } },
-        "attachment_count": { "type": "integer", "minimum": 0 }
+        "attachment_count": { "type": "integer", "minimum": 0 },
+        "user": { "type": "string" },
+        "text": { "type": "string" },
+        "attachments": { "type": "array", "items": { "type": "string" } },
+        "purpose": {},
+        "input_id": { "type": "string" },
+        "caller_info": { "$ref": "#/$defs/CallerInfo" },
+        "context": { "type": "array", "items": { "$ref": "#/$defs/ContextItem" } }
       }
     },
     "SSEEventSessionNotification": {
@@ -2924,7 +2998,8 @@
         "delivery_intent",
         "source",
         "text",
-        "disposition"
+        "disposition",
+        "timestamp"
       ],
       "additionalProperties": true,
       "properties": {
@@ -2956,13 +3031,36 @@
         "type": { "const": "user_message" },
         "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "attachment_ids": { "type": "array", "items": { "type": "string" } },
-        "attachment_count": { "type": "integer", "minimum": 0 }
+        "attachment_count": { "type": "integer", "minimum": 0 },
+        "user": { "type": "string" },
+        "text": { "type": "string" },
+        "purpose": { "enum": ["cache_keepalive", "card_orchestration"] },
+        "input_id": { "type": "string" },
+        "caller_info": { "$ref": "#/$defs/CallerInfo" },
+        "attachments": { "type": "array", "items": { "type": "string" } },
+        "context": { "type": "array", "items": { "$ref": "#/$defs/ContextItem" } },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["role", "content"],
+            "properties": {
+              "role": {
+                "type": "string"
+              },
+              "content": {}
+            }
+          }
+        },
+        "client_id": { "type": "string" },
+        "timestamp": { "type": "number" }
       }
     },
     "SSEEventAssistantMessage": {
       "type": "object",
       "description": "SSE: 어시스턴트 메시지 완료본.",
-      "required": ["type"],
+      "required": ["type", "content"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "assistant_message" },
@@ -2979,7 +3077,26 @@
             "revision": { "const": 1 },
             "document": { "type": "object", "additionalProperties": true }
           }
-        }
+        },
+        "content": { "type": "string" },
+        "usage": {
+          "type": "object",
+          "required": ["input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": {
+              "type": "number"
+            },
+            "output_tokens": {
+              "type": "number"
+            }
+          }
+        },
+        "model": { "type": "string" },
+        "provider": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] },
+        "_final_for_live_stream": { "type": "boolean" },
+        "truncation": { "$ref": "#/$defs/EventTruncation" }
       }
     },
     "SSEEventTurnSummary": {
@@ -3022,23 +3139,76 @@
     "SSEEventInputRequest": {
       "type": "object",
       "description": "SSE: AskUserQuestion 요청. 별도 wire 메시지로도 forwarding.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "request_id", "questions", "started_at", "timeout_sec"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "input_request" } }
+      "properties": {
+        "type": { "const": "input_request" },
+        "timestamp": { "type": "number" },
+        "request_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["question", "options"],
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "header": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["label"],
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "multiSelect": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "started_at": { "type": "number" },
+        "timeout_sec": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventInputRequestExpired": {
       "type": "object",
       "description": "SSE: input_request 만료.",
-      "required": ["type"],
+      "required": ["type", "request_id", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "input_request_expired" } }
+      "properties": {
+        "type": { "const": "input_request_expired" },
+        "request_id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventInputRequestResponded": {
       "type": "object",
       "description": "SSE: input_request 응답 도착.",
-      "required": ["type"],
+      "required": ["type", "request_id", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "input_request_responded" } }
+      "properties": {
+        "type": { "const": "input_request_responded" },
+        "request_id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventDebug": {
       "type": "object",
@@ -3047,7 +3217,11 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "debug" },
-        "observation": { "$ref": "#/$defs/PersistentJevObservation" }
+        "observation": { "$ref": "#/$defs/PersistentJevObservation" },
+        "message": { "type": "string" },
+        "kind": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "PersistentJevCandidateCounts": {
@@ -3508,13 +3682,46 @@
         "type": { "const": "complete" },
         "output_command_id": { "type": "string" },
         "input_id": { "type": ["string", "null"] },
-        "usage_snapshot": { "$ref": "#/$defs/UsageSnapshotV1" }
+        "usage_snapshot": { "$ref": "#/$defs/UsageSnapshotV1" },
+        "result": { "type": "string" },
+        "attachments": { "type": "array", "items": { "type": "string" } },
+        "claude_session_id": { "type": "string" },
+        "usage": {
+          "type": "object",
+          "required": ["input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": {
+              "type": "number"
+            },
+            "output_tokens": {
+              "type": "number"
+            },
+            "cache_creation_input_tokens": {
+              "type": "number"
+            },
+            "cache_read_input_tokens": {
+              "type": "number"
+            },
+            "cached_input_tokens": {
+              "type": "number"
+            },
+            "reasoning_output_tokens": {
+              "type": "number"
+            }
+          }
+        },
+        "total_cost_usd": { "type": "number" },
+        "model": { "type": "string" },
+        "turn_cost_usd": { "type": "number" },
+        "session_cost_usd": { "type": "number" },
+        "session_cost_partial": { "type": "boolean" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventError": {
       "type": "object",
       "description": "SSE: 에러.",
-      "required": ["type"],
+      "required": ["type", "message"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "error" },
@@ -3538,7 +3745,8 @@
         "rate_limit_type": { "type": "string" },
         "resets_at": { "type": "string" },
         "thread_id": { "type": "string" },
-        "turn_id": { "type": "string" }
+        "turn_id": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventCredentialAlert": {
@@ -3546,7 +3754,15 @@
       "description": "SSE: Claude credential/rate-limit alert.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "credential_alert" } }
+      "properties": {
+        "type": { "const": "credential_alert" },
+        "utilization": { "type": "number" },
+        "rate_limit_type": { "type": "string" },
+        "status": { "type": "string" },
+        "resets_at": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventSessionEnded": {
       "type": "object",
@@ -3567,9 +3783,17 @@
     "SSEEventThinking": {
       "type": "object",
       "description": "SSE: thinking 블록.",
-      "required": ["type"],
+      "required": ["type", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "thinking" } }
+      "properties": {
+        "type": { "const": "thinking" },
+        "timestamp": { "type": "number" },
+        "thinking": { "type": "string" },
+        "text": { "type": "string" },
+        "signature": { "type": "string" },
+        "truncation": { "$ref": "#/$defs/EventTruncation" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventTextStart": {
       "type": "object",
@@ -3578,17 +3802,28 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "text_start" },
-        "output_command_id": { "type": "string" }
+        "output_command_id": { "type": "string" },
+        "streamIdentity": { "type": "string" },
+        "liveSeq": { "type": "number" },
+        "liveTextMode": { "enum": ["replace", "append"] },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventTextDelta": {
       "type": "object",
       "description": "SSE: text delta.",
-      "required": ["type"],
+      "required": ["type", "text"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "text_delta" },
-        "output_command_id": { "type": "string" }
+        "output_command_id": { "type": "string" },
+        "streamIdentity": { "type": "string" },
+        "liveSeq": { "type": "number" },
+        "liveTextMode": { "enum": ["replace", "append"] },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] },
+        "text": { "type": "string" }
       }
     },
     "SSEEventTextEnd": {
@@ -3598,7 +3833,12 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "text_end" },
-        "output_command_id": { "type": "string" }
+        "output_command_id": { "type": "string" },
+        "streamIdentity": { "type": "string" },
+        "liveSeq": { "type": "number" },
+        "liveTextMode": { "enum": ["replace", "append"] },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventTextSnapshot": {
@@ -3658,58 +3898,131 @@
     "SSEEventToolStart": {
       "type": "object",
       "description": "SSE: tool 호출 시작.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "tool_name"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "tool_start" } }
+      "properties": {
+        "type": { "const": "tool_start" },
+        "timestamp": { "type": "number" },
+        "tool_name": { "type": "string" },
+        "tool_input": {},
+        "tool_input_preview": { "type": "string" },
+        "tool_input_truncated": { "type": "boolean" },
+        "truncation": { "$ref": "#/$defs/EventTruncation" },
+        "timeline_id": { "type": "string" },
+        "has_trace": { "type": "boolean" },
+        "status": { "enum": ["running", "completed", "error"] },
+        "started_at": { "type": ["number", "null"] },
+        "completed_at": { "type": ["number", "null"] },
+        "duration_ms": { "type": ["number", "null"] },
+        "tool_use_id": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventToolResult": {
       "type": "object",
       "description": "SSE: tool 호출 결과.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "tool_name", "is_error"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "tool_result" } }
+      "properties": {
+        "type": { "const": "tool_result" },
+        "timestamp": { "type": "number" },
+        "tool_name": { "type": "string" },
+        "result": {},
+        "result_preview": { "type": "string" },
+        "result_truncated": { "type": "boolean" },
+        "truncation": { "$ref": "#/$defs/EventTruncation" },
+        "timeline_id": { "type": "string" },
+        "has_trace": { "type": "boolean" },
+        "status": { "enum": ["completed", "error"] },
+        "started_at": { "type": ["number", "null"] },
+        "completed_at": { "type": ["number", "null"] },
+        "duration_ms": { "type": ["number", "null"] },
+        "is_error": { "type": "boolean" },
+        "tool_use_id": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventAgentUpdated": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK active agent 변경.",
-      "required": ["type"],
+      "required": ["type", "agent_name", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "agent_updated" } }
+      "properties": {
+        "type": { "const": "agent_updated" },
+        "agent_name": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventHandoffRequested": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK handoff 요청.",
-      "required": ["type"],
+      "required": ["type", "source_agent", "target_agent", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "handoff_requested" } }
+      "properties": {
+        "type": { "const": "handoff_requested" },
+        "source_agent": { "type": "string" },
+        "target_agent": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "handoff_input": {},
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventHandoffOccurred": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK handoff 완료.",
-      "required": ["type"],
+      "required": ["type", "source_agent", "target_agent", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "handoff_occurred" } }
+      "properties": {
+        "type": { "const": "handoff_occurred" },
+        "source_agent": { "type": "string" },
+        "target_agent": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventToolApprovalRequested": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK tool approval 요청.",
-      "required": ["type"],
+      "required": ["type", "approval_id", "tool_name", "tool_input", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "tool_approval_requested" } }
+      "properties": {
+        "type": { "const": "tool_approval_requested" },
+        "approval_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "tool_input": { "type": "object", "additionalProperties": true },
+        "agent_name": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventToolApprovalResolved": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK tool approval 승인/거부 완료.",
-      "required": ["type"],
+      "required": ["type", "approval_id", "decision", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "tool_approval_resolved" } }
+      "properties": {
+        "type": { "const": "tool_approval_resolved" },
+        "approval_id": { "type": "string" },
+        "decision": { "enum": ["approved", "rejected"] },
+        "approved": { "type": "boolean" },
+        "rejected": { "type": "boolean" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventGuardrailTripwire": {
       "type": "object",
       "description": "SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.",
-      "required": ["type"],
+      "required": ["type", "guardrail_type", "guardrail_name", "message", "timestamp"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "guardrail_tripwire" } }
+      "properties": {
+        "type": { "const": "guardrail_tripwire" },
+        "guardrail_type": { "type": "string" },
+        "guardrail_name": { "type": "string" },
+        "message": { "type": "string" },
+        "output_info": {},
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventRealtimeStatus": {
       "type": "object",
@@ -3744,40 +4057,90 @@
     "SSEEventResult": {
       "type": "object",
       "description": "SSE: 최종 result.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "success", "output"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "result" },
         "output_command_id": { "type": "string" },
         "input_id": { "type": ["string", "null"] },
-        "usage_snapshot": { "$ref": "#/$defs/UsageSnapshotV1" }
+        "usage_snapshot": { "$ref": "#/$defs/UsageSnapshotV1" },
+        "timestamp": { "type": "number" },
+        "success": { "type": "boolean" },
+        "output": { "type": "string" },
+        "error": { "type": "string" },
+        "usage": {
+          "type": "object",
+          "required": ["input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": {
+              "type": "number"
+            },
+            "output_tokens": {
+              "type": "number"
+            },
+            "cache_creation_input_tokens": {
+              "type": "number"
+            },
+            "cache_read_input_tokens": {
+              "type": "number"
+            },
+            "cached_input_tokens": {
+              "type": "number"
+            },
+            "reasoning_output_tokens": {
+              "type": "number"
+            }
+          }
+        },
+        "total_cost_usd": { "type": "number" },
+        "stop_reason": { "type": "string" },
+        "errors": { "type": "array", "items": { "type": "string" } },
+        "model_usage": { "type": "object", "additionalProperties": true },
+        "permission_denials": { "type": "array", "items": { "type": "string" } },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventPromptSuggestion": {
       "type": "object",
       "description": "SSE: Claude prompt suggestion.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "text"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "prompt_suggestion" } }
+      "properties": {
+        "type": { "const": "prompt_suggestion" },
+        "timestamp": { "type": "number" },
+        "text": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventSubagentStart": {
       "type": "object",
       "description": "SSE: subagent 시작.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "agent_id", "agent_type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "subagent_start" } }
+      "properties": {
+        "type": { "const": "subagent_start" },
+        "timestamp": { "type": "number" },
+        "agent_id": { "type": "string" },
+        "agent_type": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventSubagentStop": {
       "type": "object",
       "description": "SSE: subagent 종료.",
-      "required": ["type"],
+      "required": ["type", "timestamp", "agent_id"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "subagent_stop" } }
+      "properties": {
+        "type": { "const": "subagent_stop" },
+        "timestamp": { "type": "number" },
+        "agent_id": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventClaudeRuntimeSessionState": {
       "type": "object",
       "description": "SSE: Claude Agent SDK session runtime 상태. idle은 background-agent loop 종료 후 authoritative turn-over signal.",
-      "required": ["type", "state"],
+      "required": ["type", "state", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_session_state" },
@@ -3789,7 +4152,7 @@
     "SSEEventClaudeRuntimeTaskStarted": {
       "type": "object",
       "description": "SSE: Claude Agent SDK background/runtime task 시작.",
-      "required": ["type", "task_id"],
+      "required": ["type", "task_id", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_started" },
@@ -3807,7 +4170,7 @@
     "SSEEventClaudeRuntimeTaskCreated": {
       "type": "object",
       "description": "SSE: Claude Agent SDK TaskCreated hook lifecycle.",
-      "required": ["type", "task_id", "subject"],
+      "required": ["type", "task_id", "subject", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_created" },
@@ -3823,7 +4186,7 @@
     "SSEEventClaudeRuntimeTaskUpdated": {
       "type": "object",
       "description": "SSE: Claude Agent SDK runtime task 상태 patch.",
-      "required": ["type", "task_id", "patch"],
+      "required": ["type", "task_id", "patch", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_updated" },
@@ -3841,6 +4204,7 @@
             "end_time": { "type": "number" },
             "total_paused_ms": { "type": "number" },
             "error": { "type": "string" },
+            "close_reason": { "type": "string" },
             "is_backgrounded": { "type": "boolean" }
           }
         },
@@ -3850,7 +4214,7 @@
     "SSEEventClaudeRuntimeTaskProgress": {
       "type": "object",
       "description": "SSE: Claude Agent SDK runtime task 진행 상태.",
-      "required": ["type", "task_id"],
+      "required": ["type", "task_id", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_progress" },
@@ -3867,7 +4231,7 @@
     "SSEEventClaudeRuntimeTaskCompleted": {
       "type": "object",
       "description": "SSE: Claude Agent SDK TaskCompleted hook lifecycle.",
-      "required": ["type", "task_id", "subject"],
+      "required": ["type", "task_id", "subject", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_completed" },
@@ -3883,7 +4247,7 @@
     "SSEEventClaudeRuntimeTaskNotification": {
       "type": "object",
       "description": "SSE: Claude Agent SDK runtime task terminal notification. 기존 subagent_stop과 병행 발행.",
-      "required": ["type", "task_id", "status"],
+      "required": ["type", "task_id", "status", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_notification" },
@@ -3901,7 +4265,7 @@
     "SSEEventClaudeRuntimeNotification": {
       "type": "object",
       "description": "SSE: Claude Agent SDK Notification/PushNotification을 Soulstream in-app 알림으로 노출. 외부 APNs/Expo 발송은 포함하지 않는다.",
-      "required": ["type", "notification_id", "source", "message"],
+      "required": ["type", "notification_id", "source", "message", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_notification" },
@@ -3920,7 +4284,7 @@
     "SSEEventClaudeRuntimeRemoteTrigger": {
       "type": "object",
       "description": "SSE: Claude Agent SDK RemoteTrigger/tool 또는 remote-origin user message를 기존 intervention/capability 표면에 맞춘 runtime 관찰 이벤트로 노출.",
-      "required": ["type", "trigger_id", "source"],
+      "required": ["type", "trigger_id", "source", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_remote_trigger" },
@@ -3942,7 +4306,14 @@
     "SSEEventClaudeRuntimeTranscriptMirrorError": {
       "type": "object",
       "description": "SSE: Claude Agent SDK SessionStore mirror_error. transcript mirror 손실을 조용히 삼키지 않고 runtime 표면에 남긴다.",
-      "required": ["type", "mirror_id", "project_key", "transcript_session_id", "error"],
+      "required": [
+        "type",
+        "mirror_id",
+        "project_key",
+        "transcript_session_id",
+        "error",
+        "timestamp"
+      ],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_transcript_mirror_error" },
@@ -3973,7 +4344,7 @@
     "SSEEventClaudeRuntimeModeState": {
       "type": "object",
       "description": "SSE: Claude Agent SDK plan/worktree mode state.",
-      "required": ["type", "mode", "active", "source"],
+      "required": ["type", "mode", "active", "source", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_mode_state" },
@@ -3992,7 +4363,7 @@
     "SSEEventClaudeRuntimeScheduleUpdated": {
       "type": "object",
       "description": "SSE: Soulstream durable schedule 상태 변경.",
-      "required": ["type", "schedule_id", "schedule_kind", "status"],
+      "required": ["type", "schedule_id", "schedule_kind", "status", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_schedule_updated" },
@@ -4022,7 +4393,7 @@
     "SSEEventClaudeRuntimeScheduleDeleted": {
       "type": "object",
       "description": "SSE: Soulstream durable schedule 삭제/취소.",
-      "required": ["type", "schedule_id", "status"],
+      "required": ["type", "schedule_id", "status", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_schedule_deleted" },
@@ -4039,9 +4410,15 @@
     "SSEEventContextUsage": {
       "type": "object",
       "description": "SSE: 컨텍스트 사용량.",
-      "required": ["type"],
+      "required": ["type", "used_tokens", "max_tokens", "percent"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "context_usage" } }
+      "properties": {
+        "type": { "const": "context_usage" },
+        "used_tokens": { "type": "number" },
+        "max_tokens": { "type": "number" },
+        "percent": { "type": "number" },
+        "estimated": { "type": "boolean" }
+      }
     },
     "SSEEventContextManifest": {
       "type": "object",
@@ -4282,9 +4659,14 @@
     "SSEEventCompact": {
       "type": "object",
       "description": "SSE: compact 안내.",
-      "required": ["type"],
+      "required": ["type", "trigger", "message"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "compact" } }
+      "properties": {
+        "type": { "const": "compact" },
+        "trigger": { "type": "string" },
+        "message": { "type": "string" },
+        "parent_event_id": { "type": ["string", "number"] }
+      }
     },
     "SSEEventReconnect": {
       "type": "object",
@@ -4296,13 +4678,14 @@
     "SSEEventHistorySync": {
       "type": "object",
       "description": "SSE: 과거 이력 동기화.",
-      "required": ["type"],
+      "required": ["type", "last_event_id", "is_live"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "history_sync" },
         "last_event_id": { "type": "integer", "minimum": 0 },
         "is_live": { "type": "boolean" },
-        "reset_required": { "type": "boolean" }
+        "reset_required": { "type": "boolean" },
+        "reset_reason": { "enum": ["cursor_ahead", "history_gap", "catchup_overflow"] }
       }
     },
     "SSEEventCardUpdated": {
@@ -4358,23 +4741,27 @@
     "SSEEventAssistantError": {
       "type": "object",
       "description": "SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.",
-      "required": ["type", "error_type"],
+      "required": ["type", "error_type", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "assistant_error" },
         "error_type": { "type": "string" },
         "model": { "type": "string" },
-        "message_id": { "type": "string" }
+        "message_id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventAwaySummary": {
       "type": "object",
       "description": "SSE: Claude CLI가 세션 복귀 시 발행하는 요약.",
-      "required": ["type", "content"],
+      "required": ["type", "content", "timestamp"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "away_summary" },
-        "content": { "type": "string" }
+        "content": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "parent_event_id": { "type": ["string", "number"] }
       }
     },
     "SSEEventSystemMessage": {

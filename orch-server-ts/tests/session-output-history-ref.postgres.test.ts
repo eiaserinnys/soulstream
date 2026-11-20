@@ -66,14 +66,14 @@ describePostgres("session output attachment history references PostgreSQL contra
       attachment_output: true,
       output_command_id: "command-output",
       _dedupe_key: "assistant-output:command-output",
-    } as SSEEventPayload;
+    } as unknown as SSEEventPayload;
     const retryEvent = { ...outputEvent } as SSEEventPayload;
     const toolResultEvent = {
       type: "tool_result",
       id: "tool-1",
       attachment_ids: ["asset-tool-result"],
       timestamp,
-    } as SSEEventPayload;
+    } as unknown as SSEEventPayload;
     const otherSessionEvent = {
       type: "assistant_message",
       content: "",
@@ -81,7 +81,7 @@ describePostgres("session output attachment history references PostgreSQL contra
       attachment_ids: ["asset-other-session"],
       attachment_output: true,
       output_command_id: "command-other",
-    } as SSEEventPayload;
+    } as unknown as SSEEventPayload;
 
     await outbox.append(buildEventOutboxAppendInput(sessionId, outputEvent).appendInput);
     await outbox.append(buildEventOutboxAppendInput(sessionId, retryEvent).appendInput);

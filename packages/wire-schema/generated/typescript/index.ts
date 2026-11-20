@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 200개 $defs (top-level wire 95 + supporting/SSE 105). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 202개 $defs (top-level wire 95 + supporting/SSE 107). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -99,7 +99,6 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeRuntimeDeleteSchedule
   | ProviderUsageGet
   | ReflectBrief;
-export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 export type CallerInfoSource =
   | "agent"
   | "api"
@@ -112,6 +111,7 @@ export type CallerInfoSource =
   | "soul-app"
   | "system"
   | "trello_watcher";
+export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 
 /**
  * 노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
@@ -496,6 +496,7 @@ export interface SSEEventReconnected {
  */
 export interface SSEEventProgress {
   type: "progress";
+  text: unknown;
   [k: string]: unknown;
 }
 /**
@@ -514,6 +515,8 @@ export interface SSEEventSession {
    * Requested backend session ID that could not be resumed.
    */
   resume_lost_from?: string;
+  session_id: string;
+  pid?: number;
   [k: string]: unknown;
 }
 /**
@@ -527,6 +530,36 @@ export interface SSEEventInterventionSent {
   _conversation_text?: string;
   attachment_ids?: string[];
   attachment_count?: number;
+  user: string;
+  text: string;
+  attachments?: string[];
+  purpose?: unknown;
+  input_id?: string;
+  caller_info?: CallerInfo;
+  context?: ContextItem[];
+  [k: string]: unknown;
+}
+export interface CallerInfo {
+  source: CallerInfoSource;
+  display_name?: string | null;
+  user_id?: string | null;
+  avatar_url?: string | null;
+  email?: string | null;
+  agent_node?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  slack?: {
+    channel_id?: string;
+    thread_ts?: string;
+    user_id?: string;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+export interface ContextItem {
+  key: string;
+  label: string;
+  content: unknown;
   [k: string]: unknown;
 }
 /**
@@ -543,7 +576,7 @@ export interface SSEEventSessionNotification {
   relation_key?: string;
   rate_limit_type?: string;
   resets_at?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -557,6 +590,20 @@ export interface SSEEventUserMessage {
   _conversation_text?: string;
   attachment_ids?: string[];
   attachment_count?: number;
+  user?: string;
+  text?: string;
+  purpose?: "cache_keepalive" | "card_orchestration";
+  input_id?: string;
+  caller_info?: CallerInfo;
+  attachments?: string[];
+  context?: ContextItem[];
+  messages?: {
+    role: string;
+    content: unknown;
+    [k: string]: unknown;
+  }[];
+  client_id?: string;
+  timestamp?: number;
   [k: string]: unknown;
 }
 /**
@@ -576,6 +623,33 @@ export interface SSEEventAssistantMessage {
       [k: string]: unknown;
     };
   };
+  content: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+  model?: string;
+  provider?: string;
+  timestamp?: number;
+  parent_event_id?: string | number;
+  _final_for_live_stream?: boolean;
+  truncation?: EventTruncation;
+  [k: string]: unknown;
+}
+export interface EventTruncation {
+  original_bytes: number;
+  attachment: {
+    attachment_id: string;
+    name: string;
+    mime_type: string;
+    byte_size: number;
+    checksum_sha256: string | null;
+    width: number | null;
+    height: number | null;
+    preview_kind: "image" | "text" | "info";
+    preview_mime_type: string | null;
+    [k: string]: unknown;
+  } | null;
   [k: string]: unknown;
 }
 /**
@@ -604,6 +678,23 @@ export interface SSEEventTurnSummary {
  */
 export interface SSEEventInputRequest {
   type: "input_request";
+  timestamp: number;
+  request_id: string;
+  tool_use_id?: string;
+  questions: {
+    question: string;
+    header?: string;
+    options: {
+      label: string;
+      description?: string;
+      [k: string]: unknown;
+    }[];
+    multiSelect?: boolean;
+    [k: string]: unknown;
+  }[];
+  started_at: number;
+  timeout_sec: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -611,6 +702,9 @@ export interface SSEEventInputRequest {
  */
 export interface SSEEventInputRequestExpired {
   type: "input_request_expired";
+  request_id: string;
+  timestamp: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -618,6 +712,9 @@ export interface SSEEventInputRequestExpired {
  */
 export interface SSEEventInputRequestResponded {
   type: "input_request_responded";
+  request_id: string;
+  timestamp: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -626,6 +723,10 @@ export interface SSEEventInputRequestResponded {
 export interface SSEEventDebug {
   type: "debug";
   observation?: PersistentJevObservation;
+  message?: string;
+  kind?: string;
+  timestamp?: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -776,6 +877,23 @@ export interface SSEEventComplete {
   output_command_id?: string;
   input_id?: string | null;
   usage_snapshot?: UsageSnapshotV1;
+  result?: string;
+  attachments?: string[];
+  claude_session_id?: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cached_input_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  total_cost_usd?: number;
+  model?: string;
+  turn_cost_usd?: number;
+  session_cost_usd?: number;
+  session_cost_partial?: boolean;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 export interface UsageSnapshotV1 {
@@ -794,7 +912,7 @@ export interface SSEEventError {
   output_command_id?: string;
   input_id?: string | null;
   usage_snapshot?: UsageSnapshotV1;
-  message?: string;
+  message: string;
   error_code?: string;
   fatal?: boolean;
   /**
@@ -812,6 +930,7 @@ export interface SSEEventError {
   resets_at?: string;
   thread_id?: string;
   turn_id?: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -819,6 +938,12 @@ export interface SSEEventError {
  */
 export interface SSEEventCredentialAlert {
   type: "credential_alert";
+  utilization?: number;
+  rate_limit_type?: string;
+  status?: string;
+  resets_at?: string;
+  timestamp?: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -837,6 +962,12 @@ export interface SSEEventSessionEnded {
  */
 export interface SSEEventThinking {
   type: "thinking";
+  timestamp: number;
+  thinking?: string;
+  text?: string;
+  signature?: string;
+  truncation?: EventTruncation;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -845,6 +976,11 @@ export interface SSEEventThinking {
 export interface SSEEventTextStart {
   type: "text_start";
   output_command_id?: string;
+  streamIdentity?: string;
+  liveSeq?: number;
+  liveTextMode?: "replace" | "append";
+  timestamp?: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -853,6 +989,12 @@ export interface SSEEventTextStart {
 export interface SSEEventTextDelta {
   type: "text_delta";
   output_command_id?: string;
+  streamIdentity?: string;
+  liveSeq?: number;
+  liveTextMode?: "replace" | "append";
+  timestamp?: number;
+  parent_event_id?: string | number;
+  text: string;
   [k: string]: unknown;
 }
 /**
@@ -861,6 +1003,11 @@ export interface SSEEventTextDelta {
 export interface SSEEventTextEnd {
   type: "text_end";
   output_command_id?: string;
+  streamIdentity?: string;
+  liveSeq?: number;
+  liveTextMode?: "replace" | "append";
+  timestamp?: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -899,6 +1046,20 @@ export interface SSEEventTextSnapshot {
  */
 export interface SSEEventToolStart {
   type: "tool_start";
+  timestamp: number;
+  tool_name: string;
+  tool_input?: unknown;
+  tool_input_preview?: string;
+  tool_input_truncated?: boolean;
+  truncation?: EventTruncation;
+  timeline_id?: string;
+  has_trace?: boolean;
+  status?: "running" | "completed" | "error";
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration_ms?: number | null;
+  tool_use_id?: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -906,6 +1067,21 @@ export interface SSEEventToolStart {
  */
 export interface SSEEventToolResult {
   type: "tool_result";
+  timestamp: number;
+  tool_name: string;
+  result?: unknown;
+  result_preview?: string;
+  result_truncated?: boolean;
+  truncation?: EventTruncation;
+  timeline_id?: string;
+  has_trace?: boolean;
+  status?: "completed" | "error";
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration_ms?: number | null;
+  is_error: boolean;
+  tool_use_id?: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -913,6 +1089,8 @@ export interface SSEEventToolResult {
  */
 export interface SSEEventAgentUpdated {
   type: "agent_updated";
+  agent_name: string;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -920,6 +1098,11 @@ export interface SSEEventAgentUpdated {
  */
 export interface SSEEventHandoffRequested {
   type: "handoff_requested";
+  source_agent: string;
+  target_agent: string;
+  tool_use_id?: string;
+  handoff_input?: unknown;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -927,6 +1110,10 @@ export interface SSEEventHandoffRequested {
  */
 export interface SSEEventHandoffOccurred {
   type: "handoff_occurred";
+  source_agent: string;
+  target_agent: string;
+  tool_use_id?: string;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -934,6 +1121,14 @@ export interface SSEEventHandoffOccurred {
  */
 export interface SSEEventToolApprovalRequested {
   type: "tool_approval_requested";
+  approval_id: string;
+  tool_use_id?: string;
+  tool_name: string;
+  tool_input: {
+    [k: string]: unknown;
+  };
+  agent_name?: string;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -941,6 +1136,12 @@ export interface SSEEventToolApprovalRequested {
  */
 export interface SSEEventToolApprovalResolved {
   type: "tool_approval_resolved";
+  approval_id: string;
+  decision: "approved" | "rejected";
+  approved?: boolean;
+  rejected?: boolean;
+  message?: string;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -948,6 +1149,11 @@ export interface SSEEventToolApprovalResolved {
  */
 export interface SSEEventGuardrailTripwire {
   type: "guardrail_tripwire";
+  guardrail_type: string;
+  guardrail_name: string;
+  message: string;
+  output_info?: unknown;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -984,6 +1190,26 @@ export interface SSEEventResult {
   output_command_id?: string;
   input_id?: string | null;
   usage_snapshot?: UsageSnapshotV1;
+  timestamp: number;
+  success: boolean;
+  output: string;
+  error?: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cached_input_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  total_cost_usd?: number;
+  stop_reason?: string;
+  errors?: string[];
+  model_usage?: {
+    [k: string]: unknown;
+  };
+  permission_denials?: string[];
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -991,6 +1217,9 @@ export interface SSEEventResult {
  */
 export interface SSEEventPromptSuggestion {
   type: "prompt_suggestion";
+  timestamp: number;
+  text: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -998,6 +1227,10 @@ export interface SSEEventPromptSuggestion {
  */
 export interface SSEEventSubagentStart {
   type: "subagent_start";
+  timestamp: number;
+  agent_id: string;
+  agent_type: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1005,6 +1238,9 @@ export interface SSEEventSubagentStart {
  */
 export interface SSEEventSubagentStop {
   type: "subagent_stop";
+  timestamp: number;
+  agent_id: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1014,7 +1250,7 @@ export interface SSEEventClaudeRuntimeSessionState {
   type: "claude_runtime_session_state";
   state: "idle" | "running" | "requires_action";
   session_id?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1030,7 +1266,7 @@ export interface SSEEventClaudeRuntimeTaskStarted {
   workflow_name?: string;
   prompt?: string;
   skip_transcript?: boolean;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1044,7 +1280,7 @@ export interface SSEEventClaudeRuntimeTaskCreated {
   description?: string;
   teammate_name?: string;
   team_name?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1060,10 +1296,11 @@ export interface SSEEventClaudeRuntimeTaskUpdated {
     end_time?: number;
     total_paused_ms?: number;
     error?: string;
+    close_reason?: string;
     is_backgrounded?: boolean;
     [k: string]: unknown;
   };
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1080,7 +1317,7 @@ export interface SSEEventClaudeRuntimeTaskProgress {
   };
   last_tool_name?: string;
   summary?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1094,7 +1331,7 @@ export interface SSEEventClaudeRuntimeTaskCompleted {
   description?: string;
   teammate_name?: string;
   team_name?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1112,7 +1349,7 @@ export interface SSEEventClaudeRuntimeTaskNotification {
     [k: string]: unknown;
   };
   skip_transcript?: boolean;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1129,7 +1366,7 @@ export interface SSEEventClaudeRuntimeNotification {
   priority?: string;
   session_id?: string;
   tool_use_id?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1151,7 +1388,7 @@ export interface SSEEventClaudeRuntimeRemoteTrigger {
   payload?: {
     [k: string]: unknown;
   };
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1165,7 +1402,7 @@ export interface SSEEventClaudeRuntimeTranscriptMirrorError {
   transcript_session_id: string;
   subpath?: string;
   error: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1197,7 +1434,7 @@ export interface SSEEventClaudeRuntimeModeState {
   worktree_name?: string;
   worktree_path?: string;
   worktree_action?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1222,7 +1459,7 @@ export interface SSEEventClaudeRuntimeScheduleUpdated {
   last_error?: string | null;
   created_at?: string;
   updated_at?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1234,7 +1471,7 @@ export interface SSEEventClaudeRuntimeScheduleDeleted {
   session_id?: string;
   status: "active" | "dispatching" | "firing" | "completed" | "cancelled" | "failed" | "orphaned";
   updated_at?: string;
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**
@@ -1268,6 +1505,10 @@ export interface SSEEventCustomViewUpdated {
  */
 export interface SSEEventContextUsage {
   type: "context_usage";
+  used_tokens: number;
+  max_tokens: number;
+  percent: number;
+  estimated?: boolean;
   [k: string]: unknown;
 }
 /**
@@ -1483,6 +1724,9 @@ export interface SSEEventUsageObservation {
  */
 export interface SSEEventCompact {
   type: "compact";
+  trigger: string;
+  message: string;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1497,9 +1741,10 @@ export interface SSEEventReconnect {
  */
 export interface SSEEventHistorySync {
   type: "history_sync";
-  last_event_id?: number;
-  is_live?: boolean;
+  last_event_id: number;
+  is_live: boolean;
   reset_required?: boolean;
+  reset_reason?: "cursor_ahead" | "history_gap" | "catchup_overflow";
   [k: string]: unknown;
 }
 /**
@@ -1517,6 +1762,8 @@ export interface SSEEventAssistantError {
   error_type: string;
   model?: string;
   message_id?: string;
+  timestamp: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1525,6 +1772,8 @@ export interface SSEEventAssistantError {
 export interface SSEEventAwaySummary {
   type: "away_summary";
   content: string;
+  timestamp: number;
+  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -2192,23 +2441,6 @@ export interface CreateSession {
     pageId: string;
     blockId: string;
     expectedVersion: number;
-  };
-  [k: string]: unknown;
-}
-export interface CallerInfo {
-  source: CallerInfoSource;
-  display_name?: string | null;
-  user_id?: string | null;
-  avatar_url?: string | null;
-  email?: string | null;
-  agent_node?: string | null;
-  agent_id?: string | null;
-  agent_name?: string | null;
-  slack?: {
-    channel_id?: string;
-    thread_ts?: string;
-    user_id?: string;
-    [k: string]: unknown;
   };
   [k: string]: unknown;
 }

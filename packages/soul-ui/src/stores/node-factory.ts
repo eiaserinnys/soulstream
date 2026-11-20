@@ -131,11 +131,17 @@ export function createNodeFromEvent(
         agent_id: ci.agent_id ?? null,
         agent_name: ci.agent_name ?? null,
       } : undefined;
-      const agentInfoLegacy = !ci && e.source === "agent" ? {
-        source: e.source,
-        agent_node: e.agent_node ?? "",
-        agent_id: e.agent_id ?? null,
-        agent_name: e.agent_name ?? null,
+      const legacy = e as unknown as {
+        source?: "agent";
+        agent_node?: string;
+        agent_id?: string | null;
+        agent_name?: string | null;
+      };
+      const agentInfoLegacy = !ci && legacy.source === "agent" ? {
+        source: legacy.source,
+        agent_node: legacy.agent_node ?? "",
+        agent_id: legacy.agent_id ?? null,
+        agent_name: legacy.agent_name ?? null,
       } : undefined;
 
       return makeNode(`user-msg-${eventId}`, "user_message", content, {
