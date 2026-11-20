@@ -1,13 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { z } from "zod";
+import {
+  isBoardFolderAllowed,
+  normalizeBoardAccess,
+  type BoardAccess,
+  type BoardAccessFolderRecord,
+} from "./board_access.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
 
-export type BoardItemFolderRecord = {
-  id: string;
-  parentFolderId?: string | null;
-  [key: string]: unknown;
-};
+export type BoardItemFolderRecord = BoardAccessFolderRecord;
 
 export type BoardItemRecord = {
   id: string;
@@ -15,10 +17,7 @@ export type BoardItemRecord = {
   [key: string]: unknown;
 };
 
-export type BoardItemAccess = {
-  restricted: boolean;
-  allowedFolderIds?: readonly string[];
-};
+export type BoardItemAccess = BoardAccess;
 
 export type BoardItemListQuery = { folderId: string } | { sessionId: string };
 
@@ -88,16 +87,16 @@ export function registerBoardItemRoutes(
     const folders = [...(await options.provider.listFolders())];
     if ("sessionId" in query.value) {
       const boardItems = await options.provider.listBoardItems(query.value);
-      const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+      const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
       if (boardItems.some((item) => (
-        !isFolderAllowed(access, folders, stringOrNull(item.folderId))
+        !isBoardFolderAllowed(access, folders, stringOrNull(item.folderId))
       ))) {
         return folderAccessDenied(reply);
       }
       return reply.send({ boardItems });
     }
-    const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
-    if (!isFolderAllowed(access, folders, query.value.folderId)) return folderAccessDenied(reply);
+    const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
+    if (!isBoardFolderAllowed(access, folders, query.value.folderId)) return folderAccessDenied(reply);
     const boardItems = await options.provider.listBoardItems(query.value);
     return reply.send({ boardItems });
   });
@@ -109,15 +108,15 @@ export function registerBoardItemRoutes(
       if (!body.ok) return validationError(reply, body);
 
       const boardItemId = boardItemParams(request).board_item_id;
-      const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
+      const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
       const folders = access.restricted ? await options.provider.listFolders() : [];
       const boardItem = await options.provider.getBoardItemById(boardItemId);
       if (boardItem === null) return boardItemNotFound(reply);
-      if (!isFolderAllowed(access, folders, stringOrNull(boardItem.folderId))) {
+      if (!isBoardFolderAllowed(access, folders, stringOrNull(boardItem.folderId))) {
         return folderAccessDenied(reply);
       }
 
-      if (!isFolderAllowed(access, folders, body.value.folderId)) return folderAccessDenied(reply);
+      if (!isBoardFolderAllowed(access, folders, body.value.folderId)) return folderAccessDenied(reply);
       try {
         const moved = await options.host.moveBoardItem(boardItemId, body.value.folderId, body.value.idempotencyKey);
         return reply.send({ ok: true, boardItem: moved });
@@ -142,49 +141,6 @@ function parseFolderMoveBody(body: unknown): Validation<{ folderId: string; idem
     x: z.number().finite().optional(), y: z.number().finite().optional(),
   }).strict().refine(value => (value.x === undefined) === (value.y === undefined), "x and y must be supplied together").safeParse(body);
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
-}
-
-function normalizeAccess(access: BoardItemAccess): Required<BoardItemAccess> {
-  return {
-    restricted: access.restricted,
-    allowedFolderIds: [...(access.allowedFolderIds ?? [])],
-  };
-}
-
-function isFolderAllowed(
-  access: Required<BoardItemAccess>,
-  folders: readonly BoardItemFolderRecord[],
-  folderId: string | null,
-): boolean {
-  if (!access.restricted) return true;
-  if (folderId === null) return false;
-  return visibleFolderIds(access, folders).has(folderId);
-}
-
-function visibleFolderIds(
-  access: Required<BoardItemAccess>,
-  folders: readonly BoardItemFolderRecord[],
-): Set<string> {
-  const knownIds = new Set<string>();
-  const byParent = new Map<string | null, string[]>();
-  for (const folder of folders) {
-    knownIds.add(folder.id);
-    const parentId =
-      typeof folder.parentFolderId === "string" ? folder.parentFolderId : null;
-    const children = byParent.get(parentId) ?? [];
-    children.push(folder.id);
-    byParent.set(parentId, children);
-  }
-
-  const visible = new Set<string>();
-  const stack = access.allowedFolderIds.filter((folderId) => knownIds.has(folderId));
-  while (stack.length > 0) {
-    const folderId = stack.pop();
-    if (folderId === undefined || visible.has(folderId)) continue;
-    visible.add(folderId);
-    stack.push(...(byParent.get(folderId) ?? []));
-  }
-  return visible;
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {

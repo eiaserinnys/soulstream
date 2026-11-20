@@ -1,5 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import {
+  normalizeBoardAccess,
+  visibleBoardFolderIds,
+  type BoardAccess,
+  type BoardAccessFolderRecord,
+} from "../board/board_access.js";
 import type { PublicDatabaseSchemaProvider } from "./database_schema_provider.js";
 
 export type PublicStatusRouteConfig = {
@@ -12,15 +18,9 @@ export type PublicStatusRouteConfigProvider = {
   getConfig: () => PublicStatusRouteConfig | Promise<PublicStatusRouteConfig>;
 };
 
-export type PublicStatusFolderAccess = {
-  restricted: boolean;
-  allowedFolderIds?: readonly string[];
-};
+export type PublicStatusFolderAccess = BoardAccess;
 
-export type PublicStatusFolderRecord = {
-  id: string;
-  parentFolderId?: string | null;
-};
+export type PublicStatusFolderRecord = BoardAccessFolderRecord;
 
 export type PublicStatusFolderCounts =
   | ReadonlyMap<string | null, number>
@@ -117,12 +117,12 @@ export function registerPublicStatusRoutes(
 
   app.get("/api/sessions/folder-counts", async (request) => {
     let counts = folderCountEntries(await options.folderCountsProvider.getFolderCounts());
-    const access = normalizeAccess(
+    const access = normalizeBoardAccess(
       await options.folderCountsProvider.resolveAccess(request),
     );
     if (access.restricted) {
       const folders = await options.folderCountsProvider.listFolders();
-      const visible = visibleFolderIds(access, folders);
+      const visible = visibleBoardFolderIds(access, folders);
       counts = counts.filter(([folderId]) => (
         typeof folderId === "string" && visible.has(folderId)
       ));
@@ -133,15 +133,6 @@ export function registerPublicStatusRoutes(
 
 function currentSeconds(): number {
   return Math.floor(Date.now() / 1000);
-}
-
-function normalizeAccess(
-  access: PublicStatusFolderAccess,
-): Required<PublicStatusFolderAccess> {
-  return {
-    restricted: access.restricted,
-    allowedFolderIds: [...(access.allowedFolderIds ?? [])],
-  };
 }
 
 function folderCountEntries(
@@ -157,30 +148,4 @@ function serializeFolderCounts(
   return Object.fromEntries(
     counts.map(([folderId, count]) => [folderId === null ? "null" : folderId, count]),
   );
-}
-
-function visibleFolderIds(
-  access: Required<PublicStatusFolderAccess>,
-  folders: readonly PublicStatusFolderRecord[],
-): Set<string> {
-  const knownIds = new Set<string>();
-  const byParent = new Map<string | null, string[]>();
-  for (const folder of folders) {
-    knownIds.add(folder.id);
-    const parentId =
-      typeof folder.parentFolderId === "string" ? folder.parentFolderId : null;
-    const children = byParent.get(parentId) ?? [];
-    children.push(folder.id);
-    byParent.set(parentId, children);
-  }
-
-  const visible = new Set<string>();
-  const stack = access.allowedFolderIds.filter((folderId) => knownIds.has(folderId));
-  while (stack.length > 0) {
-    const folderId = stack.pop();
-    if (folderId === undefined || visible.has(folderId)) continue;
-    visible.add(folderId);
-    stack.push(...(byParent.get(folderId) ?? []));
-  }
-  return visible;
 }
