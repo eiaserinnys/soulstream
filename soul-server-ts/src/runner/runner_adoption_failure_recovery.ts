@@ -15,6 +15,7 @@ import {
 import {
   prepareRecoveredTask,
 } from "./runner_recovery_task.js";
+import { retireTerminalRegistrationAfterReplay } from "./runner_recovery_disposition.js";
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 
 export type RunnerAdoptionDisposition = "adopt_prebootstrap" | "adopt_running";
@@ -32,7 +33,12 @@ export interface RunnerAdoptionFailureRecoveryDeps {
     progressedAt: string,
     error: { code: string; message: string },
   ): Promise<void>;
-  recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
+  recoverOffline(
+    registration: RunnerRegistration,
+    task: Task,
+  ): Promise<{ task: Task; replayed: boolean }>;
+  retireTerminal(registration: RunnerRegistration): Promise<void>;
+  drainClosedTail(registration: RunnerRegistration): Promise<void>;
   markFailure(task: Task, message: string): Promise<void>;
   onFailure(
     registration: RunnerRegistration,
@@ -116,7 +122,7 @@ export class RunnerAdoptionFailureRecovery {
     await this.deps.invalidateRegistration(registration);
     if (registration.lifecycle) {
       task.runnerTerminalFact = "reaped";
-      await this.deps.recoverOffline({
+      const recovered = await this.deps.recoverOffline({
           ...registration,
           pidAlive: false,
           lifecycle: {
@@ -125,6 +131,17 @@ export class RunnerAdoptionFailureRecovery {
             terminal_error: error,
           },
         }, task);
+      // 거둔 등록을 정리만 하고 두면 다음 훑기가 같은 등록을 already_reaped로 다시
+      // 잡아 오프라인 재생과 종료 송신을 되풀이한다. 안전 조건이 맞을 때만 은퇴한다.
+      await retireTerminalRegistrationAfterReplay({
+        registration,
+        task: recovered.task,
+        replayed: recovered.replayed,
+        disposition,
+        retireTerminal: this.deps.retireTerminal,
+        drainClosedTail: this.deps.drainClosedTail,
+        logger: this.deps.logger,
+      });
     } else {
       prepareRecoveredTask(task, registration);
       task.runnerTerminalFact = "reaped";

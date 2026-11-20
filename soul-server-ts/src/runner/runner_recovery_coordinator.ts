@@ -28,6 +28,7 @@ import {
 } from "./runner_recovery_disposition.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
 import {
+  hasRecordedTerminal,
   markRegistrationReaped,
   prepareRecoveredTask,
   requireRecoveryTask,
@@ -230,7 +231,13 @@ export class RunnerRecoveryCoordinator {
         }
       },
       recoverOffline: async (registration, task) =>
-        (await this.recoverRegistered(registration, task, "offline")).task,
+        await this.recoverRegistered(registration, task, "offline"),
+      retireTerminal: async (registration) => {
+        await this.registrationControl.retireTerminal(registration);
+      },
+      drainClosedTail: async (registration) => {
+        await this.drainClosedTailBeforeRetirement(registration);
+      },
       markFailure: async (task, message) =>
         await this.options.taskManager.markRunnerFailure(task, message),
       onFailure: (registration, disposition, error) =>
@@ -572,6 +579,26 @@ export class RunnerRecoveryCoordinator {
         ...(failure ? { err: failure } : {}),
       }, "retired runner tail drain completed");
     })().finally(() => { this.retiredTailDrain = undefined; });
+  }
+
+  /**
+   * 은퇴 전에 남은 닫힌 꼬리를 비운다. 등록을 은퇴시키면 그 꼬리를 다시 열 길은
+   * 주기 훑기의 retired-tail drain뿐이라, 은퇴하는 자리에서 끝내 둔다. 이미 흐르는
+   * 펌프가 그 꼬리를 맡고 있으면 겹치지 않게 건너뛴다.
+   */
+  private async drainClosedTailBeforeRetirement(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<void> {
+    const tail = registration.closedTailState;
+    if (tail === undefined) return;
+    const streamId = ("streamId" in tail ? tail.streamId : undefined)
+      ?? registration.bootstrap?.stream_id;
+    if (streamId && this.options.closedTailDrainer.hasActivePump?.(streamId)) return;
+    await this.options.closedTailDrainer.drain(
+      { ...registration, pidAlive: false },
+      phaseObservation,
+    );
   }
 
   async stop(): Promise<void> {
@@ -934,7 +961,7 @@ export class RunnerRecoveryCoordinator {
       retireAttached: async (owned) =>
         await this.retireAttachedTerminalAdmission(owned, recoveryTask),
       recoverOffline: async (owned, recoveredTask) =>
-        (await this.recoverRegistered(
+        await this.recoverRegistered(
           owned,
           recoveredTask,
           "offline",
@@ -942,7 +969,11 @@ export class RunnerRecoveryCoordinator {
           undefined,
           onRunnerAttached,
           phaseObservation,
-        )).task,
+        ),
+      retireTerminal: async (owned) =>
+        await this.registrationControl.retireTerminal(owned),
+      drainClosedTail: async (owned) =>
+        await this.drainClosedTailBeforeRetirement(owned, phaseObservation),
       logger: this.options.logger,
     });
   }
@@ -1680,14 +1711,6 @@ export class RunnerRecoveryCoordinator {
     );
     return true;
   }
-}
-
-function hasRecordedTerminal(task: Task): boolean {
-  return isTerminalTaskStatus(task.status)
-    && task.terminationEventRecorded === true
-    && typeof task.terminalEventId === "number"
-    && Number.isSafeInteger(task.terminalEventId)
-    && task.terminalEventId > 0;
 }
 
 /**

@@ -154,6 +154,66 @@ describe("RunnerAdoptionFailureRecovery", () => {
     expect(subject.deps.markFailure).not.toHaveBeenCalled();
     expect(subject.recovery.shouldSkip("session-a")).toBe(true);
   });
+
+  it("retires the reaped registration after its terminal replay is recorded", async () => {
+    const dead = registration({ pidAlive: false });
+    let replayedTask: Task | undefined;
+    const subject = makeSubject({
+      refreshRegistration: vi.fn(async () => dead),
+      hydrateRegistration: vi.fn(async () => dead),
+      recoverOffline: vi.fn(async (_registration: RunnerRegistration, current: Task) => {
+        current.status = "completed";
+        current.terminationReason = "completed_ok";
+        current.terminationEventRecorded = true;
+        current.terminalEventId = 3;
+        replayedTask = current;
+        return { task: current, replayed: true };
+      }),
+    });
+    const currentTask = task();
+    await scheduleAndWait(subject.recovery, registration(), currentTask);
+
+    expect(replayedTask).toBe(currentTask);
+    expect(subject.deps.retireTerminal).toHaveBeenCalledWith(dead);
+  });
+
+  it("keeps the reaped registration when the terminal replay was skipped", async () => {
+    const dead = registration({ pidAlive: false });
+    const subject = makeSubject({
+      refreshRegistration: vi.fn(async () => dead),
+      hydrateRegistration: vi.fn(async () => dead),
+      recoverOffline: vi.fn(async (_registration: RunnerRegistration, current: Task) => ({
+        task: current,
+        replayed: false,
+      })),
+    });
+    await scheduleAndWait(subject.recovery, registration(), task());
+
+    expect(subject.deps.retireTerminal).not.toHaveBeenCalled();
+    expect(subject.deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a", disposition: "reap_dead" }),
+      "terminal runner replay was skipped; registration kept for a later scan",
+    );
+  });
+
+  it("keeps the reaped registration when the session terminal is not recorded", async () => {
+    const dead = registration({ pidAlive: false });
+    const subject = makeSubject({
+      refreshRegistration: vi.fn(async () => dead),
+      hydrateRegistration: vi.fn(async () => dead),
+      recoverOffline: vi.fn(async (_registration: RunnerRegistration, current: Task) => ({
+        task: current,
+        replayed: true,
+      })),
+    });
+    await scheduleAndWait(subject.recovery, registration(), task());
+
+    expect(subject.deps.retireTerminal).not.toHaveBeenCalled();
+    expect(subject.deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a", disposition: "reap_dead" }),
+      "terminal runner session end is not recorded; registration kept for a later scan",
+    );
+  });
 });
 
 function makeSubject(overrides: Partial<RunnerAdoptionFailureRecoveryDeps> = {}) {
@@ -166,7 +226,12 @@ function makeSubject(overrides: Partial<RunnerAdoptionFailureRecoveryDeps> = {})
     terminateRegistration: vi.fn(async () => {}),
     invalidateRegistration: vi.fn(async () => {}),
     markReaped: vi.fn(async () => {}),
-    recoverOffline: vi.fn(async (_registration: RunnerRegistration, recoveredTask: Task) => recoveredTask),
+    recoverOffline: vi.fn(async (_registration: RunnerRegistration, recoveredTask: Task) => ({
+      task: recoveredTask,
+      replayed: true,
+    })),
+    retireTerminal: vi.fn(async () => {}),
+    drainClosedTail: vi.fn(async () => {}),
     markFailure: vi.fn(async () => {}),
     onFailure: vi.fn(),
     ...overrides,
