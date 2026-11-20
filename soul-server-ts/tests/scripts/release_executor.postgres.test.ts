@@ -21,6 +21,7 @@ import {
   readDatabaseReleaseJournal,
   runDatabaseRelease,
 } from "../../../packages/db-schema/scripts/release-executor.mjs";
+import { classifyMigrationSql } from "../../../packages/db-schema/scripts/migration-additive.mjs";
 import { assertDatabaseReleaseApplyGate, writeDatabaseReleaseJournal } from
   "../../../packages/db-schema/scripts/database-release-journal.mjs";
 
@@ -45,6 +46,10 @@ if (!MANIFEST_MIGRATIONS.at(-1)) {
 }
 const MANIFEST_MIGRATION_COUNT = MANIFEST_MIGRATIONS.length;
 const LAST_MANIFEST_MIGRATION_ID = MANIFEST_MIGRATIONS.at(-1)!.id;
+const LAST_MANIFEST_MIGRATION_ADDITIVE = classifyMigrationSql(readFileSync(
+  new URL(`../../../packages/db-schema/sql/migrations/${LAST_MANIFEST_MIGRATION_ID}`, import.meta.url),
+  "utf8",
+)).additive;
 
 afterEach(async () => {
   for (const directory of directories.splice(0)) {
@@ -230,13 +235,18 @@ describe("database release executor", () => {
     await runDatabaseRelease("apply", { env: freshEnv });
     const sql = postgres(testDatabaseUrl, { max: 1 });
     try {
-      // The terminal migration may be destructive, so re-applying it needs the
-      // same quiescence evidence as any non-additive upgrade.
       await sql`DELETE FROM schema_migrations WHERE migration_id = ${LAST_MANIFEST_MIGRATION_ID}`;
     } finally { await sql.end({ timeout: 5 }); }
-    const env = { ...await writeReceipt(environment(upgradeDir)), ...databaseEnv };
-    expect(await runDatabaseRelease("preflight", { env })).toMatchObject({ pending_count: 1, pending_additive_only: false });
-    await setHanielState(env, "migrating");
+    // Only a non-additive terminal migration needs quiescence evidence and a
+    // Haniel migrating state. An additive one re-applies through the normal path.
+    const env = LAST_MANIFEST_MIGRATION_ADDITIVE
+      ? { ...environment(upgradeDir), ...databaseEnv }
+      : { ...await writeReceipt(environment(upgradeDir)), ...databaseEnv };
+    expect(await runDatabaseRelease("preflight", { env })).toMatchObject({
+      pending_count: 1,
+      pending_additive_only: LAST_MANIFEST_MIGRATION_ADDITIVE,
+    });
+    if (!LAST_MANIFEST_MIGRATION_ADDITIVE) await setHanielState(env, "migrating");
     await expect(runDatabaseRelease("apply", { env })).resolves.toMatchObject({ status: "applied" });
     await expect(runDatabaseRelease("verify", { env })).resolves.toMatchObject({ status: "verified" });
   }
