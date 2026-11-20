@@ -7,7 +7,6 @@ import { MoreHorizontal, Star } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
-import { singleLinePreview } from "./session-preview";
 import type { PageSessionDefaults } from "./folder-workspace-page-api";
 import {
   descriptionMarkdown,
@@ -26,6 +25,7 @@ import { FolderPanelHeader } from "./WorkspacePanelHeaders";
 import { FolderTodayToggle } from "./FolderTodayToggle";
 import "./v3-context-succession.css";
 import { useFolderStar } from "./use-folder-star";
+import { buildFolderSessionContextItems } from "./folder-session-context-items";
 import {
   mergeProjectContextPages,
 } from "./project-context-inheritance";
@@ -146,42 +146,10 @@ export function FolderDetailPane({
       details: folderContext,
     },
   ]), [inheritedContext, task.page.id, folderContext]);
-  const contextItems = useMemo(() => [
-    ...effectiveContext.guidance.map((guidance) => ({
-      id: `${guidance.source.pageId}:${guidance.blockId}`,
-      kind: "guidance" as const,
-      blockId: guidance.blockId,
-      direct: guidance.source.pageId === task.page.id,
-      icon: "✦",
-      contentLabel: singleLinePreview(guidance.text, 96) ?? guidance.text,
-      sourceLabel: contextSourceLabel(guidance.source.folderName),
-      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
-    })),
-    ...effectiveContext.atomReferences.map((reference) => ({
-      id: `${reference.source.pageId}:${reference.blockId}`,
-      kind: "atom" as const,
-      blockId: reference.blockId,
-      direct: reference.source.pageId === task.page.id,
-      reference,
-      icon: "⚛",
-      contentLabel: reference.nodeTitle,
-      sourceLabel: contextSourceLabel(reference.source.folderName),
-      label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName)}`,
-    })),
-    ...contextBlocks.flatMap((block) => {
-      const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-      return match ? [{
-        id: block.id,
-        kind: "page" as const,
-        blockId: block.id,
-        direct: true,
-        icon: "📄",
-        contentLabel: match[1],
-        sourceLabel: "이 폴더",
-        label: `${match[1]} · 이 폴더`,
-      }] : [];
-    }),
-  ], [contextBlocks, effectiveContext]);
+  const contextItems = useMemo(
+    () => buildFolderSessionContextItems(effectiveContext, contextBlocks, task.page.id),
+    [contextBlocks, effectiveContext, task.page.id],
+  );
   const sourcedDefaults = effectiveContext.sessionDefaults.at(-1);
   const effectiveSessionDefaults = sourcedDefaults ? {
     agentId: sourcedDefaults.agentId,
@@ -310,8 +278,4 @@ export function FolderDetailPane({
       </div>
     </article>
   );
-}
-
-function contextSourceLabel(folderName: string): string {
-  return folderName === "이 폴더" ? folderName : `${folderName}에서 상속`;
 }

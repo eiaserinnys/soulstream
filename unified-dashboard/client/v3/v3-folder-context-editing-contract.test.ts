@@ -27,7 +27,7 @@ describe("PR-CJ task context editing contract", () => {
     const sections = read("./FolderWorkspaceSections.tsx");
     const editor = read("./ProjectContextEditor.tsx");
 
-    expect(detail).toContain('direct: reference.source.pageId === task.page.id');
+    expect(detail).toContain("buildFolderSessionContextItems(effectiveContext, contextBlocks, task.page.id)");
     expect(sections).toContain("<ProjectContextEditor");
     expect(editor).toContain("saveProjectAtomReference");
     expect(editor).toContain("deleteProjectContextBlock");
