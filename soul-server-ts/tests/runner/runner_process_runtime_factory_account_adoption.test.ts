@@ -128,7 +128,6 @@ describe("Claude account pool live runner adoption", () => {
       } as never,
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       claudeAccounts,
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       releasePool: {

@@ -1,7 +1,3 @@
-import type { SessionKey, SessionStore } from "@anthropic-ai/claude-agent-sdk";
-
-import { materializeClaudeAccountTranscript } from "./claude_account_pool_transcript.js";
-
 import type {
   ClaudeAccountAccessTokenCredential,
   ClaudeAccountAuthFailureInput,
@@ -87,21 +83,4 @@ export function buildClaudeAccountPoolEnvironment(
     env.CLAUDE_CODE_OAUTH_TOKEN = turn.credential.access_token;
   }
   return env;
-}
-/**
- * The SDK's SessionStore.load path materializes DB entries under a temporary
- * config root and overrides CLAUDE_CONFIG_DIR. Restore into the selected
- * profile's shared projects tree first and keep the SDK on that profile.
- */
-export function useLocalClaudeAccountPoolResume(store: SessionStore, configDir: string): SessionStore {
-  return new Proxy(store, {
-    get(target, property) {
-      if (property === "load") return async (key: SessionKey) => {
-        await materializeClaudeAccountTranscript(target, configDir, key);
-        return null;
-      };
-      const value = Reflect.get(target, property, target) as unknown;
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
 }

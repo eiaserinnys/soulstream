@@ -40,7 +40,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       },
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       claudeAccounts: {
         select: vi.fn(),
         reject: vi.fn(),
@@ -109,7 +108,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       env: runnerEnv(),
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       releasePool: {
         resolveCurrentRelease,
@@ -162,7 +160,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       env: { ...runnerEnv(), OPENCODE_CLI_PATH: "/opt/opencode" },
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(async () => ({
@@ -212,7 +209,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       env: runnerEnv(),
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
@@ -267,7 +263,6 @@ describe("createRunnerProcessRuntimeFactory", () => {
       env: runnerEnv(),
       logger: pino({ level: "silent" }),
       pumpMux: {} as never,
-      sessionStore: {} as never,
       mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
       releasePool: {
         resolveCurrentRelease: vi.fn(),
@@ -566,45 +561,29 @@ describe("applyRunnerHostCall", () => {
     expect(service.select).toHaveBeenCalledWith(selectInput);
   });
 
-  it("registers transcript reconciliation after append success and runs it post-response", async () => {
-    let finishAppend!: () => void;
-    const appendPending = new Promise<void>((resolve) => {
-      finishAppend = resolve;
-    });
-    const appendIdempotent = vi.fn(() => appendPending);
-    const load = vi.fn(async () => []);
-    const deleteIdempotent = vi.fn(async () => undefined);
+  it("answers legacy session_store host calls without a store and reconciles appends", async () => {
     const reconcileClaudeTranscriptAppend = vi.fn(async () => undefined);
     const registerPostResponse = vi.fn();
     const task = { agentSessionId: "session-a" } as Task;
-    const options = {
-      sessionStore: { appendIdempotent, load, deleteIdempotent },
-      reconcileClaudeTranscriptAppend,
-    } as never;
-    const call = applyRunnerHostCall(
+    const options = { reconcileClaudeTranscriptAppend } as never;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+    const key = { projectKey: "project-a", sessionId: "sdk-session-a" };
+
+    await expect(applyRunnerHostCall(
       {
         service: "session_store",
         operation: "append",
-        args: [
-          { projectKey: "project-a", sessionId: "sdk-session-a" },
-          [{ type: "assistant", uuid: "assistant-a" }],
-        ],
+        args: [key, [{ type: "assistant", uuid: "assistant-a" }]],
         correlationId: "host:append",
       },
       task,
-      {
-        persistRunState: vi.fn(async () => undefined),
-        persistSessionItems: vi.fn(async () => undefined),
-      },
+      snapshots,
       options,
       registerPostResponse,
-    );
-
-    await Promise.resolve();
-    expect(registerPostResponse).not.toHaveBeenCalled();
-    expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
-    finishAppend();
-    await call;
+    )).resolves.toBeNull();
     expect(registerPostResponse).toHaveBeenCalledOnce();
     expect(reconcileClaudeTranscriptAppend).not.toHaveBeenCalled();
 
@@ -613,48 +592,45 @@ describe("applyRunnerHostCall", () => {
     expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledOnce();
     expect(reconcileClaudeTranscriptAppend).toHaveBeenCalledWith(task);
 
-    appendIdempotent.mockRejectedValueOnce(new Error("append failed"));
-    await expect(applyRunnerHostCall(
-      {
-        service: "session_store", operation: "append",
-        args: [{ projectKey: "project-a", sessionId: "sdk-session-a" }, []],
-        correlationId: "host:append-failed",
-      },
-      task,
-      {
-        persistRunState: vi.fn(async () => undefined),
-        persistSessionItems: vi.fn(async () => undefined),
-      },
-      options,
-      registerPostResponse,
-    )).rejects.toThrow("append failed");
-    expect(registerPostResponse).toHaveBeenCalledOnce();
-
     for (const [operation, args] of [
-      ["load", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
-      ["delete", [{ projectKey: "project-a", sessionId: "sdk-session-a" }]],
+      ["load", [key]],
+      ["delete", [key]],
     ] as const) {
-      await applyRunnerHostCall(
+      await expect(applyRunnerHostCall(
         { service: "session_store", operation, args: [...args], correlationId: `host:${operation}` },
         task,
-        {
-          persistRunState: vi.fn(async () => undefined),
-          persistSessionItems: vi.fn(async () => undefined),
-        },
+        snapshots,
         options,
         registerPostResponse,
-      );
+      )).resolves.toBeNull();
     }
-    expect(load).toHaveBeenCalledOnce();
-    expect(deleteIdempotent).toHaveBeenCalledOnce();
+    for (const [operation, args] of [
+      ["listSessions", ["project-a"]],
+      ["listSubkeys", [key]],
+    ] as const) {
+      await expect(applyRunnerHostCall(
+        { service: "session_store", operation, args: [...args], correlationId: `host:${operation}` },
+        task,
+        snapshots,
+        options,
+        registerPostResponse,
+      )).resolves.toEqual([]);
+    }
     expect(registerPostResponse).toHaveBeenCalledOnce();
+
+    await expect(applyRunnerHostCall(
+      {
+        service: "session_store", operation: "compact", args: [key],
+        correlationId: "host:unknown",
+      },
+      task,
+      snapshots,
+      options,
+      registerPostResponse,
+    )).rejects.toThrow("unsupported SessionStore operation: compact");
   });
 
-  it("threads correlation to all six mutating host operations", async () => {
-    const sessionStore = {
-      appendIdempotent: vi.fn(async () => undefined),
-      deleteIdempotent: vi.fn(async () => undefined),
-    };
+  it("threads correlation to the mutating host operations", async () => {
     const snapshots = {
       persistRunState: vi.fn(async () => undefined),
       persistSessionItems: vi.fn(async () => undefined),
@@ -662,7 +638,6 @@ describe("applyRunnerHostCall", () => {
     const observeClaudeRuntime = vi.fn(async () => true);
     const publishDetachedClaudeEvent = vi.fn(async () => async () => undefined);
     const options = {
-      sessionStore,
       observeClaudeRuntime,
       publishDetachedClaudeEvent,
     } as never;
@@ -679,12 +654,8 @@ describe("applyRunnerHostCall", () => {
         executionCommandId: "owner-a",
       },
     } as Task;
-    const key = { projectKey: "project-a", sessionId: "sdk-session-a" };
-    const entries = [{ type: "user", message: { content: "hello" } }];
     const event = { type: "text", text: "hello", timestamp: 1 };
     const calls = [
-      { service: "session_store" as const, operation: "append", args: [key, entries] },
-      { service: "session_store" as const, operation: "delete", args: [key] },
       {
         service: "snapshot" as const,
         operation: "persistRunState",
@@ -708,35 +679,24 @@ describe("applyRunnerHostCall", () => {
       );
     }
 
-    expect(sessionStore.appendIdempotent).toHaveBeenCalledWith(
-      key,
-      entries,
-      "host:0",
-      "session-a",
-    );
-    expect(sessionStore.deleteIdempotent).toHaveBeenCalledWith(
-      key,
-      "host:1",
-      "session-a",
-    );
     expect(snapshots.persistRunState).toHaveBeenCalledWith(
       { backendId: "openai-agents", serialized: "state" },
-      "host:2",
+      "host:0",
     );
     expect(snapshots.persistSessionItems).toHaveBeenCalledWith(
       { backendId: "openai-agents", items: [] },
-      "host:3",
+      "host:1",
     );
     expect(observeClaudeRuntime).toHaveBeenCalledWith(
       "session-a",
       event,
-      "host:4",
+      "host:2",
       expect.objectContaining({
         registrationId: "registration-a",
         executionCommandId: "owner-a",
       }),
     );
-    expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
+    expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:3");
   });
 
   it("registers archived runner output with the active task execution context", async () => {
@@ -860,7 +820,6 @@ describe("applyRunnerHostCall", () => {
         persistSessionItems: vi.fn(async () => undefined),
       },
       {
-        sessionStore: {},
         observeClaudeRuntime,
       } as never,
     );

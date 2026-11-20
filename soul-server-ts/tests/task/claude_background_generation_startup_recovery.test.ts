@@ -24,7 +24,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
       logger: { error: vi.fn(), info: vi.fn() },
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -54,10 +53,10 @@ describe("Claude background generation upgrade recovery", () => {
     await startup.stop();
 
     expect(observe).toHaveBeenCalledOnce();
-    expect(loadMessages).toHaveBeenCalledWith("sdk-session", expect.objectContaining({
+    expect(loadMessages).toHaveBeenCalledWith("sdk-session", {
       dir: "/workspace/worktree",
-      sessionStore: expect.anything(),
-    }));
+      includeSystemMessages: true,
+    });
     expect(resolveWorktreeWorkspace).toHaveBeenCalledWith("worktree-1");
     expect(observe).toHaveBeenCalledWith(
       "caller-session",
@@ -89,8 +88,7 @@ describe("Claude background generation upgrade recovery", () => {
         recordRelationConsumed: vi.fn(async () => undefined),
         sourceNode: "node-a",
         logger: { error: vi.fn(), info: vi.fn() },
-        sessionStore: {} as never,
-        getSession: vi.fn(async () => ({
+          getSession: vi.fn(async () => ({
           session_id: "caller-session",
           claude_session_id: "sdk-session",
           agent_id: "claude-agent",
@@ -126,7 +124,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
       logger,
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -178,7 +175,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
       logger,
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -220,7 +216,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
       logger,
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -260,7 +255,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed: vi.fn(async () => undefined),
       sourceNode: "node-a",
       logger: { error: vi.fn(), info: vi.fn() },
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -312,7 +306,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed,
       sourceNode: "node-a",
       logger: generationLogger,
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -371,7 +364,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed,
       sourceNode: "node-a",
       logger: { error: vi.fn(), info: vi.fn() },
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -418,7 +410,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed,
       sourceNode: "node-a",
       logger: { error: vi.fn(), info: vi.fn() },
-      sessionStore: {} as never,
       getSession: vi.fn(async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -478,7 +469,6 @@ describe("Claude background generation upgrade recovery", () => {
       recordRelationConsumed,
       sourceNode: "node-a",
       logger: generationLogger,
-      sessionStore: {} as never,
       getSession: vi.fn(async (sessionId: string) => ({
         session_id: sessionId,
         claude_session_id: sessionId === "caller-X" ? "sdk-X" : "sdk-Y",

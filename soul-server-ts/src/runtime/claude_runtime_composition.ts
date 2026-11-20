@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
-import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 
 import type { Env } from "../config.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
@@ -55,7 +54,6 @@ interface ComposeClaudeRuntimeParams {
   modelCatalog: Pick<ModelCatalog, "resolve">;
   /** Latest catalogue snapshot for turn pricing; resolved per terminal event. */
   getModelCatalog?: () => ModelCatalogConfig;
-  sessionStore: SessionStore;
   sourceNode: string;
   idleTtlMs: number;
   maxEntries: number;
@@ -76,7 +74,6 @@ export interface ComposeQueuedDeliveryRecoveryParams {
   db: SessionDB;
   agentRegistry: AgentRegistry;
   modelCatalog: Pick<ModelCatalog, "resolve">;
-  sessionStore: SessionStore;
   sourceNode: string;
   logger: Logger;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
@@ -99,7 +96,6 @@ export function composeQueuedDeliveryRecovery(
   const deliveryRepository = params.db.sessionDeliveries();
   const transcriptReceipt = new ClaudeDeliveryTranscriptReceiptReader({
     sourceNode: params.sourceNode,
-    sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
     ...(params.resolveWorktreeWorkspace
@@ -171,7 +167,6 @@ export async function composeClaudeRuntime(
       deliveryRepository.recordRelationConsumed(input),
     sourceNode: params.sourceNode,
     logger: params.logger,
-    sessionStore: params.sessionStore,
     getSession: (sessionId) => params.db.getSession(sessionId),
     getAgent: (agentId) => params.agentRegistry.get(agentId),
     ...(params.resolveWorktreeWorkspace

@@ -165,7 +165,6 @@ function makeFactory(options: {
     },
     logger: pino({ level: "silent" }),
     pumpMux: {} as never,
-    sessionStore: {} as never,
     claudeAccounts: {
       select: vi.fn(),
       reject: vi.fn(),

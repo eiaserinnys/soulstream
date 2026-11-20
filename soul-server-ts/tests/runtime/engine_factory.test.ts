@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import pino from "pino";
 import { describe, expect, it } from "vitest";
@@ -20,12 +19,6 @@ const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
   "utf-8",
 ));
 const getModelCatalog = () => MODEL_CATALOG;
-const sessionStore: SessionStore = {
-  async append() {},
-  async load() {
-    return null;
-  },
-};
 const factoryEnv = {
   CODEX_ADAPTER_MODE: "sdk" as const,
   CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 30_000,
@@ -50,7 +43,6 @@ describe("createEngineFactory", () => {
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
-      claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
       }),
@@ -92,7 +84,6 @@ describe("createEngineFactory", () => {
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
-      claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
       }),
@@ -133,7 +124,6 @@ describe("createEngineFactory", () => {
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
-      claudeSessionStore: sessionStore,
       claudeAccountTurnPort,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
@@ -168,7 +158,6 @@ describe("createEngineFactory", () => {
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
-      claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
       }),

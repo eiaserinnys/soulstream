@@ -337,7 +337,6 @@ describe("card1266 instruction path: restart recovery of a Codex queue (I6)", ()
       } as never,
       agentRegistry: { get: vi.fn() } as never,
       modelCatalog: { resolve: vi.fn() },
-      sessionStore: {} as never,
       sourceNode: "node-codex",
       logger: silentLogger,
       redeliverContent: vi.fn(),

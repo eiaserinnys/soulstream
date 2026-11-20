@@ -154,11 +154,6 @@ export function buildClaudeSdkOptions({
       ...CLAUDE_ALWAYS_DISALLOWED_TOOLS,
     ])],
     ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-    ...(options.sessionStore !== undefined ? { sessionStore: options.sessionStore } : {}),
-    ...(options.sessionStoreFlush !== undefined
-      ? { sessionStoreFlush: options.sessionStoreFlush }
-      : {}),
-    ...(options.loadTimeoutMs !== undefined ? { loadTimeoutMs: options.loadTimeoutMs } : {}),
     ...buildMcpOptions(options, logger),
   };
 }

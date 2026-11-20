@@ -244,12 +244,6 @@ describe("ClaudeEngineAdapter options parity", () => {
       reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn().mockResolvedValue(undefined),
     };
-    const sessionStore = {
-      append: vi.fn(async () => undefined),
-      load: vi.fn(async () => [{ type: "assistant", uuid: "db-transcript" }] as never),
-      listSessions: vi.fn(async () => []),
-      listSubkeys: vi.fn(async () => []),
-    };
     const state = {
       read: () => null,
       write: vi.fn().mockResolvedValue(undefined),
@@ -273,8 +267,6 @@ describe("ClaudeEngineAdapter options parity", () => {
       },
       claudeAccountPoolEnabled: true,
       trackChildExit: true,
-      sessionStore,
-      sessionStoreFlush: "eager",
       claudeAccountTurnPort: accountTurnPort,
       claudeAccountTurnState: state,
       persistentSessionRegistry: registry,
@@ -314,17 +306,6 @@ describe("ClaudeEngineAdapter options parity", () => {
       expect(captured[0]?.env).not.toHaveProperty(key);
     }
     expect(captured[0]?.trackChildExit).toBe(true);
-    expect(captured[0]?.sessionStore).not.toBe(sessionStore);
-    await expect(captured[0]?.sessionStore?.load({
-      projectKey: "project",
-      sessionId: "session-a",
-    } as never)).resolves.toBeNull();
-    const mirrorKey = { projectKey: "project", sessionId: "session-a" };
-    const mirrorEntries = [{ type: "assistant", uuid: "mirrored-entry" }] as never;
-    await captured[0]?.sessionStore?.append(mirrorKey, mirrorEntries);
-    expect(sessionStore.load).toHaveBeenCalledWith(mirrorKey);
-    expect(sessionStore.append).toHaveBeenCalledWith(mirrorKey, mirrorEntries);
-    expect(captured[0]?.sessionStoreFlush).toBe("eager");
     expect(state.write).toHaveBeenCalledWith({
       turn_id: "turn-a",
       account_id: "account-a",
@@ -1273,10 +1254,6 @@ describe("ClaudeEngineAdapter options parity", () => {
       compact,
     };
     const select = vi.fn();
-    const sessionStore = {
-      append: vi.fn(async () => undefined),
-      load: vi.fn(async () => null),
-    };
     const registry = {
       acquire: () => client,
       close: vi.fn().mockResolvedValue(true),
@@ -1291,7 +1268,6 @@ describe("ClaudeEngineAdapter options parity", () => {
         ANTHROPIC_API_KEY: "legacy-key",
         CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
       },
-      sessionStore,
       claudeAccountTurnPort: {
         select,
         reject: vi.fn(),
@@ -1332,8 +1308,6 @@ describe("ClaudeEngineAdapter options parity", () => {
       ANTHROPIC_API_KEY: "legacy-key",
       CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
     });
-    expect(captured[0]?.sessionStore).toBe(sessionStore);
-    expect(captured[1]?.sessionStore).toBe(sessionStore);
     expect(captured[0]?.trackChildExit).toBeUndefined();
     expect(captured[1]?.trackChildExit).toBeUndefined();
   });
