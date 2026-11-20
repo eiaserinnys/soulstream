@@ -32,7 +32,7 @@
   min-width: 0;
   gap: 8px;
   border: 1px solid color-mix(in srgb, var(--destructive) 32%, var(--border));
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   color: var(--destructive-foreground);
   background: color-mix(in srgb, var(--destructive) 8%, transparent);
@@ -60,7 +60,7 @@
   max-height: 12rem;
   overflow: auto;
   margin: 8px 0 0;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 9px 10px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--background) 78%, transparent);

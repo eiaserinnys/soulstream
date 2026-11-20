@@ -10,7 +10,6 @@ import {
   type WallpaperRenderInput,
 } from "./webgl-glass-wallpaper";
 
-const DEFAULT_RADIUS = 22;
 const MAX_TEXTURE_SIDE = 4096;
 
 interface Uniforms {
@@ -20,7 +19,7 @@ interface Uniforms {
   uCards: WebGLUniformLocation | null;
   uClips: WebGLUniformLocation | null;
   uClipRadii: WebGLUniformLocation | null;
-  uRadius: WebGLUniformLocation | null;
+  uRadii: WebGLUniformLocation | null;
   uDpr: WebGLUniformLocation | null;
   uScale: WebGLUniformLocation | null;
   uBlur: WebGLUniformLocation | null;
@@ -92,7 +91,7 @@ export function createWebglGlassRenderer(canvas: HTMLCanvasElement): WebglGlassR
       gl.uniform4fv(uniforms.uCards, packed.rects);
       gl.uniform4fv(uniforms.uClips, packed.clips);
       gl.uniform1fv(uniforms.uClipRadii, packed.clipRadii);
-      gl.uniform1f(uniforms.uRadius, DEFAULT_RADIUS);
+      gl.uniform1fv(uniforms.uRadii, packed.radii);
       gl.uniform1f(uniforms.uScale, glassSettings.refraction);
       gl.uniform1f(uniforms.uBlur, glassSettings.blur);
       gl.uniform1f(uniforms.uAb, glassSettings.chromatic);
@@ -173,7 +172,7 @@ function getUniforms(gl: WebGL2RenderingContext, program: WebGLProgram): Uniform
     uCards: gl.getUniformLocation(program, "uCards"),
     uClips: gl.getUniformLocation(program, "uClips"),
     uClipRadii: gl.getUniformLocation(program, "uClipRadii"),
-    uRadius: gl.getUniformLocation(program, "uRadius"),
+    uRadii: gl.getUniformLocation(program, "uRadii"),
     uDpr: gl.getUniformLocation(program, "uDpr"),
     uScale: gl.getUniformLocation(program, "uScale"),
     uBlur: gl.getUniformLocation(program, "uBlur"),

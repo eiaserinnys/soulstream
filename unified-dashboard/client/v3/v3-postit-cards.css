@@ -7,7 +7,7 @@
   --postit-title-height: calc(50px * var(--postit-scale));
   --postit-body-height: calc(100px * var(--postit-scale) + 20px * var(--postit-scale) + var(--postit-gap-2));
   --postit-footer-height: max(var(--v3-space-8), calc(32px * var(--postit-scale)));
-  --postit-radius: calc(3px * var(--postit-scale));
+  --postit-radius: calc(var(--radius-sm) * var(--postit-scale));
   --postit-padding: calc(var(--v3-space-5) * var(--postit-scale));
   --postit-gap-2: calc(var(--v3-space-2) * var(--postit-scale));
   --postit-gap-3: calc(var(--v3-space-3) * var(--postit-scale));
@@ -112,7 +112,7 @@
 .v3-postit-error { position: absolute; inset-inline: var(--postit-padding); bottom: calc(var(--postit-footer-height) + var(--postit-padding)); background: var(--postit-paper); color: #a54d3b; font: var(--postit-meta-font) var(--v3-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Shared chip appearance; its trigger keeps the original small action hit area. */
-.v3-postit-status-trigger { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: var(--v3-space-8); min-height: var(--v3-space-8); padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: var(--v3-space-8); }
+.v3-postit-status-trigger { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: var(--v3-space-8); min-height: var(--v3-space-8); padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: var(--radius-pill); }
 .v3-postit-status-trigger:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
 .v3-shell .v3-postit-footer [data-slot="status-chip"] { gap: calc(var(--v3-space-1) * var(--postit-scale)); padding: calc(var(--v3-space-1) / 2 * var(--postit-scale)) var(--postit-gap-2); }
 .v3-postit-footer .v3-status-dot { width: calc(var(--v3-space-1) * var(--postit-scale)); height: calc(var(--v3-space-1) * var(--postit-scale)); }

@@ -22,7 +22,7 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   font-size: 19px;
 }
@@ -71,7 +71,7 @@
   flex: 1;
   height: 6px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--muted);
 }
 
@@ -96,7 +96,7 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   padding: 22px;
   background: color-mix(in srgb, var(--card) 76%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
@@ -104,7 +104,7 @@
 
 .v3-ritual-card > span {
   display: inline-flex;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 8px;
   color: var(--warning-foreground);
   background: color-mix(in srgb, var(--warning) 13%, transparent);

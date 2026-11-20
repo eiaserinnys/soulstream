@@ -58,6 +58,7 @@ export function LiquidGlassProvider({
   const rectBufferRef = useRef(createGlassSurfaceBuffer());
   const clipBufferRef = useRef(createGlassSurfaceBuffer());
   const clipRadiusBufferRef = useRef(createGlassSurfaceScalarBuffer());
+  const radiusBufferRef = useRef(createGlassSurfaceScalarBuffer());
   const clipAncestorCacheRef = useRef<GlassSurfaceClipAncestorCache>(new WeakMap());
   const statsRef = useRef<WebglGlassStats>({
     fps: 0,
@@ -169,6 +170,7 @@ export function LiquidGlassProvider({
           rects: rectBufferRef.current,
           clips: clipBufferRef.current,
           clipRadii: clipRadiusBufferRef.current,
+          radii: radiusBufferRef.current,
           clipAncestorCache: clipAncestorCacheRef.current,
         },
       );

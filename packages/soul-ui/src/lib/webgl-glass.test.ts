@@ -138,6 +138,34 @@ describe("webgl glass registry utilities", () => {
     expect(Array.from(packed.clipRadii.slice(0, 1))).toEqual([24]);
   });
 
+  it("passes each surface's computed border radius to the shader", () => {
+    const row = document.createElement("div");
+    row.style.borderRadius = "12px";
+    mockBounds(row, rect(12, 120, 320, 44));
+
+    const card = document.createElement("div");
+    card.style.borderRadius = "16px";
+    mockBounds(card, rect(12, 200, 320, 108));
+
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, row), registrationElement(2, card)],
+      { width: 800, height: 600, overscan: 40 },
+    );
+
+    expect(packed.count).toBe(2);
+    expect(Array.from(packed.radii.slice(0, 2))).toEqual([12, 16]);
+  });
+
+  it("falls back to 22 only when the surface radius cannot be read", () => {
+    const packed = packVisibleGlassSurfaces(
+      [registration(1, rect(12, 20, 260, 132))],
+      { width: 800, height: 600, overscan: 40 },
+    );
+
+    expect(packed.count).toBe(1);
+    expect(Array.from(packed.radii.slice(0, 1))).toEqual([22]);
+  });
+
   it("excludes WebGL cards fully outside their overflow ancestor", () => {
     const scrollRoot = document.createElement("div");
     scrollRoot.style.overflowY = "auto";

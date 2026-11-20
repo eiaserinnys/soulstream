@@ -88,7 +88,7 @@ function showUpdateBanner(
     alignItems: "center",
     gap: "12px",
     padding: "12px 14px",
-    borderRadius: "12px",
+    borderRadius: "var(--radius-xl)",
     background: "#171717",
     color: "#fff",
     boxShadow: "0 8px 30px rgba(0, 0, 0, 0.35)",
@@ -102,7 +102,7 @@ function showUpdateBanner(
   action.textContent = "새 버전 적용";
   Object.assign(action.style, {
     border: "1px solid rgba(255, 255, 255, 0.35)",
-    borderRadius: "8px",
+    borderRadius: "var(--radius-lg)",
     padding: "6px 10px",
     background: "#fff",
     color: "#111",

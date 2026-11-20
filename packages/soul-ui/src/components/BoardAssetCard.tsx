@@ -81,7 +81,7 @@ export function BoardAssetCard({
         )}
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[13px] border border-[var(--lg-line)] bg-muted/40">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--lg-line)] bg-muted/40">
         {kind === "image" && mediaUrl && (
           <img
             data-testid="board-asset-image"
@@ -115,7 +115,7 @@ export function BoardAssetCard({
         )}
         {uploadState && (
           <div className={cn(
-            "absolute inset-x-2 bottom-2 rounded-[13px] border border-[var(--lg-line)] bg-[var(--lg-card)] p-2 shadow-sm",
+            "absolute inset-x-2 bottom-2 rounded-xl border border-[var(--lg-line)] bg-[var(--lg-card)] p-2 shadow-sm",
             uploadState === "error" && "border-destructive/50",
           )}>
             <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">

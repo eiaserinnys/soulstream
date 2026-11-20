@@ -33,7 +33,7 @@ export function LiquidGlassTab({ preference }: { preference?: { value: LiquidGla
   const setLiquidGlassEnabled = preference ? (enabled: boolean) => preference.set({enabled}) : storedSetLiquidGlassEnabled;
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[var(--lg-line)] bg-muted/30 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--lg-line)] bg-muted/30 px-3 py-2">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground">리퀴드 글래스</div>
           <div className="text-xs text-muted-foreground">WebGL</div>
@@ -45,7 +45,7 @@ export function LiquidGlassTab({ preference }: { preference?: { value: LiquidGla
         />
       </div>
 
-      <div className="space-y-3 rounded-[14px] border border-[var(--lg-line)] bg-muted/20 px-3 py-3">
+      <div className="space-y-3 rounded-xl border border-[var(--lg-line)] bg-muted/20 px-3 py-3">
         {SLIDERS.map((item) => (
           <GlassSlider
             key={item.key}

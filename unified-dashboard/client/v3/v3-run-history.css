@@ -30,7 +30,7 @@
   align-items: center;
   gap: 0;
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
 }
 
 .v3-run-row:hover { border-color: var(--glass-border); }
@@ -84,7 +84,7 @@
   height: 100%;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: var(--v3-space-2);
+  border-radius: var(--radius-lg);
   background: var(--muted);
 }
 .v3-run-avatar > * { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -124,7 +124,7 @@
 .v3-run-number {
   flex: none;
   border: 1px solid var(--glass-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 1px 5px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--muted) 72%, transparent);
@@ -198,7 +198,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px 6px;
   color: var(--muted-foreground);
   background: var(--muted);
@@ -251,13 +251,13 @@
 
 .v3-run-skeleton {
   display: block;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--muted) 25%, color-mix(in srgb, var(--foreground) 10%, var(--muted)) 50%, var(--muted) 75%);
   background-size: 200% 100%;
   animation: v3-run-skeleton 1.25s ease-in-out infinite;
 }
 
-.v3-run-skeleton--avatar { width: 32px; height: 32px; flex: none; border-radius: 9px; }
+.v3-run-skeleton--avatar { width: 32px; height: 32px; flex: none; border-radius: var(--radius-lg); }
 .v3-run-skeleton--title { width: min(240px, 70%); height: 11px; }
 .v3-run-skeleton--preview { width: min(320px, 88%); height: 8px; }
 .v3-run-skeleton--badge { width: 54px; height: 18px; flex: none; }

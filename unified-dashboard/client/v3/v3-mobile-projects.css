@@ -10,7 +10,7 @@
     min-height: 0;
     flex-direction: column;
     overflow: hidden;
-    border-radius: 20px;
+    border-radius: var(--radius-3xl);
     padding: 18px 14px;
   }
 
@@ -58,7 +58,7 @@
     align-items: center;
     gap: 10px;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
     padding: 10px 12px 10px calc(12px + var(--v3-mobile-project-depth) * 18px);
     color: var(--foreground);
     background: transparent;

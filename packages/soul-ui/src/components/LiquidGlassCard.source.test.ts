@@ -16,4 +16,15 @@ describe("LiquidGlassCard source contract", () => {
     expect(source).not.toContain("globalMousePos");
     expect(source).not.toContain("mousemove");
   });
+
+  it("inherits the frame radius through the glass layer chain", () => {
+    const source = readSource();
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf-8");
+
+    expect(source).not.toContain("borderRadius: `var(--radius-${cornerRadius})`");
+    expect(css).toMatch(/\.liquid-glass-card__effect\s*\{[^}]*border-radius:\s*inherit !important;/s);
+    expect(css).toMatch(/\.liquid-glass-card__effect > \.glass\s*\{[^}]*border-radius:\s*inherit !important;/s);
+    expect(css).toMatch(/\.liquid-glass-card__layer > span\s*\{\s*border-radius:\s*inherit;/);
+    expect(css).not.toContain("border-radius: var(--liquid-glass-radius, inherit)");
+  });
 });
