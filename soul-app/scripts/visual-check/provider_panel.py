@@ -272,6 +272,32 @@ CENTRAL_METRICS_SCRIPT = r"""
     ? Array.from(receive.querySelectorAll('*')).filter((element) => element.children.length === 0
       && ['받기 설정을 불러오지 못했습니다.', '계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'].includes(text(element)))
     : [];
+  // 받기 줄과 첫 계정 줄 사이의 가로 구분선. 줄 안쪽 아래 테두리이거나 별도 구분선 요소다.
+  // 단추 테두리는 폭이 좁아 걸러진다(가로로 긴 선만 센다).
+  const firstRow = rows.length ? rows[0] : null;
+  const receiveDivider = (() => {
+    if (!receive || !pool) return null;
+    const receiveBox = receive.getBoundingClientRect();
+    const rowBox = firstRow ? firstRow.getBoundingClientRect() : null;
+    const lines = [];
+    for (const element of pool.querySelectorAll('*')) {
+      const box = element.getBoundingClientRect();
+      if (box.top < receiveBox.top - 0.5) continue;
+      if (rowBox && box.top > rowBox.top + 0.5) continue;
+      if (box.width < 200) continue;
+      const style = getComputedStyle(element);
+      const border = parseFloat(style.borderBottomWidth) || 0;
+      if (border >= 0.5 || (box.height > 0 && box.height <= 1.5)) {
+        lines.push({
+          top: Math.round(box.top * 10) / 10,
+          bottom: Math.round(box.bottom * 10) / 10,
+          height: Math.round(box.height * 10) / 10,
+          borderBottomWidth: style.borderBottomWidth,
+        });
+      }
+    }
+    return { count: lines.length, lines };
+  })();
   return {
     central: central ? { text: text(central), rect: rect(central) } : null,
     centralTitle: centralTitleLeaf ? { text: text(centralTitleLeaf), rect: rect(centralTitleLeaf) } : null,
@@ -302,13 +328,42 @@ CENTRAL_METRICS_SCRIPT = r"""
     loading: !!document.querySelector('[data-testid="central-pool-loading"]'),
     receiveRetry: !!document.querySelector('[data-testid="claude-central-receive-retry"]'),
     receiveError: receiveErrors.length ? text(receiveErrors[0]) : null,
+    receiveErrorRect: receiveErrors.length ? rect(receiveErrors[0]) : null,
     receiveErrorBelowSwitch: !!(receiveErrors.length && toggle
       && receiveErrors[0].getBoundingClientRect().top >= toggle.getBoundingClientRect().bottom - 0.5),
+    receiveDivider,
     bodyText: document.body.innerText,
     document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
   };
 }
 """
+
+
+CENTRAL_TITLE_STATES = ("central-loading", "central-error", "central-empty", "central-accounts")
+
+
+def central_title_alignment(states: list[dict], width: int, theme: str, failures: list[dict]) -> None:
+    """중앙 장면 넷의 「중앙 풀」 제목 top이 1px 안에서 같은지 본다.
+
+    로딩·실패 머리에 「계정 추가」 단추가 없어 목록 머리보다 낮으면 제목이 뛴다.
+    """
+    tops: dict[str, float] = {}
+    for state in states:
+        if state.get("width") != width or state.get("theme") != theme:
+            continue
+        if state.get("state") not in CENTRAL_TITLE_STATES:
+            continue
+        metrics = state.get("metrics") or {}
+        title = metrics.get("centralTitle")
+        if title:
+            tops[state["state"]] = title["rect"]["top"]
+    label = f"{width}-{theme}"
+    missing = [name for name in CENTRAL_TITLE_STATES if name not in tops]
+    if missing:
+        failures.append({"check": "central title alignment", "label": label, "missing": missing})
+        return
+    if max(tops.values()) - min(tops.values()) > 1:
+        failures.append({"check": "central title alignment", "label": label, "tops": tops})
 
 
 def wait_for_backends(page: Page) -> None:
@@ -503,6 +558,17 @@ def capture_receive_state(
                              "receive": receive["rect"], "rows": metrics["rowTexts"][:2]})
         if not metrics["receiveInPool"]:
             failures.append({"check": "receive in pool", "label": label})
+    # 어느 상태든 받기 줄과 계정 목록 사이 구분선은 하나다.
+    divider = metrics.get("receiveDivider") or {}
+    if divider.get("count") != 1:
+        failures.append({"check": "receive single divider", "label": label, "divider": divider})
+    if state_name == "receive-failure":
+        # 저장 실패의 오류 글은 구분선 위, 받기 줄 안에 선다.
+        line = (divider.get("lines") or [{}])[0]
+        error = metrics.get("receiveErrorRect")
+        if "top" not in line or not error or error["bottom"] > line["top"] + 0.5:
+            failures.append({"check": "receive failure error inside row", "label": label,
+                             "error": error, "line": line})
     if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
         failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
 
@@ -785,6 +851,7 @@ def main() -> int:
                                     page, args.base_url, state_name, fixture_state,
                                     width, theme, output, failures,
                                 ))
+                            central_title_alignment(result["centralStates"], width, theme, failures)
                             if args.scenes == "central":
                                 continue
                         # One deliberately delayed summary frame: the fixture never

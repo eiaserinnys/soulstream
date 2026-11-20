@@ -136,6 +136,11 @@ describe("NodePanel", () => {
     expect(toggle.getAttribute("type")).toBe("button");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(toggle.textContent).toBe("▼");
+    // 층 밖 `.v3-shell button` 규칙이 단추 글자를 키우지 않게, 글리프는 text-xs span이 그린다.
+    const glyph = toggle.querySelector("span");
+    expect(glyph?.textContent).toBe("▼");
+    expect(glyph?.classList.contains("text-xs")).toBe(true);
+    expect(toggle.classList.contains("inline-flex")).toBe(true);
     toggle.focus();
     expect(document.activeElement).toBe(toggle);
 

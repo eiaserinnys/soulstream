@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native';
 import type { ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import { createApiClient } from '../../api/client';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createPrimitiveRoles, useTokens, type DesignTokens } from '../../theme';
 import { FrameLoading } from '../FrameLoading';
 import {
   hasCentralPool,
@@ -101,6 +101,12 @@ function CentralPoolZone({ flattened, api, onCentralChange }: { flattened: boole
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const poolStyles = useMemo(() => makeClaudePoolStyles(t), [t]);
+  // 목록 머리는 GlassButton 표준 높이가 줄 내용을 정하고, poolTopBar의 위아래 여백이 그 위에 더해진다.
+  // 로딩·실패 머리에도 같은 내용 높이를 줘야 「중앙 풀」 제목 윗선이 계정 목록 머리와 같은 자리에 선다(카드 #1734).
+  const headerMinHeight = useMemo(() => {
+    const buttonMinHeight = Math.max(t.hitTarget.min, createPrimitiveRoles(t).buttonSecondary.minHeight);
+    return buttonMinHeight + t.spacing.md * 2;
+  }, [t]);
   const mountedRef = useRef(true);
   const [list, setList] = useState<ClaudeAccountList | null>(null);
   const [failed, setFailed] = useState(false);
@@ -129,7 +135,7 @@ function CentralPoolZone({ flattened, api, onCentralChange }: { flattened: boole
       : <>
         {/* 실제 설정 화면은 SettingsWorkspaceContext를 넘겨 SettingsSection 제목을 숨긴다.
             그래서 목록이 오기 전에도 풀 머리와 같은 꼴로 「중앙 풀」을 직접 그린다. */}
-        <View style={poolStyles.poolTopBar} testID="central-pool-title">
+        <View style={[poolStyles.poolTopBar, { minHeight: headerMinHeight }]} testID="central-pool-title">
           <View style={poolStyles.poolTitleRow}>
             <Text style={poolStyles.poolTitle}>중앙 풀</Text>
           </View>

@@ -83,6 +83,7 @@ SCENES: tuple[tuple[str, str, str], ...] = (
     ("receive-failure", "receive-failure", "receive"),
     ("receive-settings-error", "receive-settings-error", "receive"),
     ("node-card-invariant", "accounts", "node-invariant"),
+    ("collapsed-cards", "accounts", "collapsed"),
 )
 
 LONG_EMAIL = "eiaserinnys.central.archive.long.address@example.invalid"
@@ -190,14 +191,26 @@ MEASURE_SCRIPT = """
       statusDot: !!header.querySelector('.c724-status-dot'),
       toggle: (() => {
         const button = toggleOf(header);
-        return button ? {
+        if (!button) return null;
+        // 글리프는 단추 안 span이 그린다. 층 밖 `.v3-shell button` 규칙이 단추 글자를
+        // 머리 글자(16px/24px)로 키우므로, span의 계산값까지 따로 잰다.
+        const glyph = button.querySelector('span') ?? button;
+        const buttonStyle = getComputedStyle(button);
+        const glyphStyle = getComputedStyle(glyph);
+        return {
           tag: button.tagName,
           type: button.getAttribute('type'),
           ariaLabel: button.getAttribute('aria-label'),
           ariaExpanded: button.getAttribute('aria-expanded'),
           text: text(button),
           tabIndex: button.tabIndex,
-        } : null;
+          buttonFontSize: buttonStyle.fontSize,
+          buttonLineHeight: buttonStyle.lineHeight,
+          glyphTag: glyph.tagName,
+          glyphClassName: String(glyph.className),
+          glyphFontSize: glyphStyle.fontSize,
+          glyphLineHeight: glyphStyle.lineHeight,
+        };
       })(),
     } : null,
     nodeHeader: nodeHeader ? {
@@ -205,14 +218,24 @@ MEASURE_SCRIPT = """
       expanded: nodeHeader.getAttribute('aria-expanded'),
       toggle: (() => {
         const button = toggleOf(nodeHeader);
-        return button ? {
+        if (!button) return null;
+        const glyph = button.querySelector('span') ?? button;
+        const buttonStyle = getComputedStyle(button);
+        const glyphStyle = getComputedStyle(glyph);
+        return {
           tag: button.tagName,
           type: button.getAttribute('type'),
           ariaLabel: button.getAttribute('aria-label'),
           ariaExpanded: button.getAttribute('aria-expanded'),
           text: text(button),
           tabIndex: button.tabIndex,
-        } : null;
+          buttonFontSize: buttonStyle.fontSize,
+          buttonLineHeight: buttonStyle.lineHeight,
+          glyphTag: glyph.tagName,
+          glyphClassName: String(glyph.className),
+          glyphFontSize: glyphStyle.fontSize,
+          glyphLineHeight: glyphStyle.lineHeight,
+        };
       })(),
     } : null,
     gapCentralToList: card && nodeList
@@ -285,6 +308,16 @@ MEASURE_SCRIPT = """
       scrollY: round(window.scrollY),
     },
     overflow: overflow.slice(0, 12),
+    textXsFontSize: (() => {
+      const probe = document.createElement('span');
+      probe.className = 'text-xs';
+      probe.style.position = 'absolute';
+      probe.style.visibility = 'hidden';
+      (document.querySelector('[data-testid="node-panel-body"]') ?? document.body).appendChild(probe);
+      const size = getComputedStyle(probe).fontSize;
+      probe.remove();
+      return size;
+    })(),
   };
 }
 """
@@ -441,6 +474,13 @@ def open_scene(page: Page, base: str, scene: str, kind: str) -> None:
     elif kind == "node-invariant":
         expand_node(page)
         page.get_by_test_id("claude-pool-row").wait_for(state="visible")
+    elif kind == "collapsed":
+        # 앞 장면에서 펼쳐 둔 카드가 남는다. 접힌 중앙 카드와 노드 카드 머리를 찍으려면 둘 다 접는다.
+        if page.locator('[data-testid="claude-central-pool-header"][aria-expanded="true"]').count():
+            page.get_by_test_id("claude-central-pool-header").click(force=True)
+        for header in page.locator('[data-testid="node-card"] > div[aria-expanded="true"]').all():
+            header.click(force=True)
+        page.wait_for_timeout(300)
     else:
         raise ValueError(kind)
 
@@ -799,9 +839,57 @@ def email_checks(capture: dict) -> list[dict]:
     return failures
 
 
+def capture_width(capture: dict) -> int | None:
+    for part in capture["capture"].split("-"):
+        if part in ("1280", "390", "360"):
+            return int(part)
+    return None
+
+
+def collapsed_header_checks(capture: dict) -> list[dict]:
+    """접힌 머리 높이와 글리프 크기를 고정값으로 잰다.
+
+    중앙 머리와 노드 머리를 서로 견주는 예전 단언은 같은 틀에서 함께 커진 것을 놓쳤다.
+    main의 접힌 머리는 1280에서 36px, 390에서 38px이고 글리프는 text-xs(12px)다.
+    """
+    data = capture["measure"]
+    width = capture_width(capture)
+    if width is None:
+        return []
+    expected = 36.0 if width >= 1000 else 38.0
+    failures: list[dict] = []
+    for key, check in (("header", "central-header-fixed-height"), ("nodeHeader", "node-card-header-fixed-height")):
+        header = data.get(key)
+        if not header or header.get("expanded") != "false":
+            continue
+        if abs(header["height"] - expected) > TOLERANCE_PX:
+            failures.append({
+                "capture": capture["capture"],
+                "check": check,
+                "detail": f"접힌 머리 {header['height']}px (기대 {expected}px)",
+            })
+        toggle = header.get("toggle")
+        if not toggle:
+            continue
+        if toggle.get("glyphTag") != "SPAN":
+            failures.append({
+                "capture": capture["capture"],
+                "check": f"{check}-glyph-span",
+                "detail": f"글리프가 {toggle.get('glyphTag')}입니다.",
+            })
+        expected_font = data.get("textXsFontSize")
+        if expected_font and toggle.get("glyphFontSize") != expected_font:
+            failures.append({
+                "capture": capture["capture"],
+                "check": f"{check}-glyph-size",
+                "detail": f"글리프 {toggle.get('glyphFontSize')} ≠ text-xs {expected_font}",
+            })
+    return failures
+
+
 def scene_checks(label: str, capture: dict) -> list[dict]:
     data = capture["measure"]
-    failures: list[dict] = []
+    failures: list[dict] = collapsed_header_checks(capture)
     name = capture["capture"]
 
     def fail(check: str, detail) -> None:

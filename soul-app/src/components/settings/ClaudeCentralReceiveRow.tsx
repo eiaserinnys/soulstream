@@ -4,6 +4,7 @@ import type { ClaudeCentralSettings } from '../../../../packages/soul-ui/src/lib
 import type { ApiClient } from '../../api/client';
 import { useTokens } from '../../theme';
 import { SettingsAction, SettingsToggleRow, useSettingsFormStyles } from './SettingsFormParts';
+import { SettingsDivider } from './SettingsSection';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 
 export type ClaudeCentralSettingsApi = Pick<
@@ -80,7 +81,7 @@ export function ClaudeCentralReceiveRow({ nodeId, api, onSaved }: Props) {
   // 값을 모르는 설정 읽기 실패에만 스위치 자리를 「다시 시도」로 바꾼다. 이름은 그대로 남는다.
   if (loadFailed) {
     return <View testID="claude-central-receive" style={styles.centralReceiveRow}>
-      <View style={[formStyles.listRow, formStyles.listRowNoDivider]}>
+      <View style={formStyles.listRow}>
         <View style={formStyles.grow}>
           <Text style={formStyles.body}>중앙 풀 받기</Text>
           <Text accessibilityRole="alert" style={styles.errorText}>받기 설정을 불러오지 못했습니다.</Text>
@@ -95,11 +96,16 @@ export function ClaudeCentralReceiveRow({ nodeId, api, onSaved }: Props) {
       label="중앙 풀 받기"
       value={current}
       disabled={busy}
+      divider={!saveFailed}
       testID="claude-central-receive-switch"
       onValueChange={value => { if (!busy) void save(value); }}
     />
-    {saveFailed ? <Text accessibilityRole="alert" style={styles.errorText}>
-      계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.
-    </Text> : null}
+    {saveFailed ? <>
+      {/* 오류 글은 받기 줄 안에 두고, 받기 줄과 계정 목록 사이 구분선은 하나만 둔다. */}
+      <Text accessibilityRole="alert" style={styles.errorText}>
+        계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.
+      </Text>
+      <SettingsDivider />
+    </> : null}
   </View>;
 }

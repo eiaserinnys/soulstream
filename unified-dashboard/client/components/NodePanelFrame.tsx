@@ -52,13 +52,15 @@ export function NodeCardHeader({
       type="button"
       aria-expanded={expanded}
       aria-label={expanded ? "접기" : "펼치기"}
-      className="shrink-0 rounded text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      className="shrink-0 inline-flex items-center rounded text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
     >
-      {expanded ? "▲" : "▼"}
+      {/* 층 밖 `.v3-shell button` 규칙이 단추 글자를 머리 글자(16px/24px)로 키운다.
+          글리프를 text-xs span이 그려야 접힌 머리 높이와 글자 크기가 main과 같다(카드 #1734). */}
+      <span className="text-xs">{expanded ? "▲" : "▼"}</span>
     </button>
   </div>;
 }
