@@ -12,8 +12,9 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import type { AttachmentView } from '../lib/attachment-view';
+import { isSvgImageMimeType, isSvgImageName, isSvgImageUri, type AttachmentView } from '../lib/attachment-view';
 import { createSessionVisualRoles, useTokens } from '../theme';
+import { AttachmentSvg } from './AttachmentSvg';
 
 export function ImageViewerPages({
   sources,
@@ -21,6 +22,7 @@ export function ImageViewerPages({
   onIndexChange,
   captions,
   items,
+  mimeTypes,
   style,
   activeImageTestID,
   renderAttachment,
@@ -30,6 +32,7 @@ export function ImageViewerPages({
   onIndexChange(index: number): void;
   captions?: readonly string[];
   items?: readonly AttachmentView[];
+  mimeTypes?: readonly (string | undefined)[];
   style?: StyleProp<ViewStyle>;
   activeImageTestID?: string;
   renderAttachment?(item: AttachmentView, index: number): React.ReactNode;
@@ -79,12 +82,18 @@ export function ImageViewerPages({
           ? item.source.availability === 'missing' ? '찾을 수 없음' : '불러오지 못함'
           : '불러오지 못함';
         const failed = item?.source.kind === 'unavailable' || !!failedPages[sourceKey];
+        const sourceUri = typeof source === 'object' && source !== null && 'uri' in source
+          ? (source as ImageURISource).uri : undefined;
+        const svg = isSvgImageMimeType(item?.mimeType ?? mimeTypes?.[index])
+          || isSvgImageName(item?.name ?? captions?.[index])
+          || isSvgImageUri(sourceUri);
         return <ViewerImagePage
           key={sourceKey}
           source={source}
           index={index}
           name={item?.name}
           caption={captions?.[index]}
+          svg={svg}
           viewport={viewport}
           failed={failed}
           failureMessage={failureMessage}
@@ -98,11 +107,12 @@ export function ImageViewerPages({
   </View>;
 }
 
-function ViewerImagePage({ source, index, name, caption, viewport, failed, failureMessage, onError, roleStyles, tokens, imageTestID }: {
+function ViewerImagePage({ source, index, name, caption, svg = false, viewport, failed, failureMessage, onError, roleStyles, tokens, imageTestID }: {
   source: ImageSourcePropType;
   index: number;
   name?: string;
   caption?: string;
+  svg?: boolean;
   viewport: { width: number; height: number };
   failed: boolean;
   failureMessage: string;
@@ -121,9 +131,14 @@ function ViewerImagePage({ source, index, name, caption, viewport, failed, failu
       <ScrollView testID="image-viewer-zoom" style={{ flex: 1 }} contentContainerStyle={imageArea}
         minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
         showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-        <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
-          accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />
-        {failed ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+        {svg
+          ? <View style={imageArea}>
+            <AttachmentSvg source={imageSource} label={name || `이미지 ${index + 1}`}
+              radius={roleStyles.radius} testID={imageTestID ?? `image-viewer-svg-${index}`} onError={onError} />
+          </View>
+          : <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
+            accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />}
+        {failed && !svg ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
           <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary, textAlign: 'center' }}>{failureMessage}</Text>
         </View> : null}
       </ScrollView>

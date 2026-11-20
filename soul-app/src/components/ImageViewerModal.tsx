@@ -25,6 +25,7 @@ export type ImageViewerModalProps = {
   filenames?: readonly string[];
   alts?: readonly string[];
   metadataLabels?: readonly string[];
+  mimeTypes?: readonly (string | undefined)[];
   byteSizes?: readonly (number | undefined)[];
   renderAttachment?(item: AttachmentView, index: number): React.ReactNode;
   items?: readonly AttachmentView[];
@@ -37,7 +38,7 @@ export function ImageViewerModal(props: ImageViewerModalProps) {
     : <DefaultImageViewerModal {...props} />;
 }
 
-function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, items, onSaveOriginal }: ImageViewerModalProps) {
+function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, items, mimeTypes, onSaveOriginal }: ImageViewerModalProps) {
   const t = useTokens();
   const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
   const viewerCaptions = captions ?? items?.map((item) => item.name);
@@ -50,7 +51,7 @@ function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, ite
           </GlassButton>
         </View>
         <View style={{ flex: 1, marginVertical: t.spacing.md }}>
-          <ImageViewerPages sources={sources} items={items} captions={viewerCaptions} currentIndex={currentIndex}
+          <ImageViewerPages sources={sources} items={items} mimeTypes={mimeTypes} captions={viewerCaptions} currentIndex={currentIndex}
             onIndexChange={setCurrentIndex} style={{ flex: 1, marginVertical: t.spacing.md }} />
         </View>
         {sources.length > 1 || onSaveOriginal ? <View style={{ padding: t.spacing.md }}>

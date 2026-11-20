@@ -1,5 +1,16 @@
 import type { CardAttachmentAssetEvidence } from '../../api/cardTypes';
-import { attachmentContentUrl, isHtmlAttachmentView, isMarkdownAttachmentView, toCardAttachmentView } from '../attachment-view';
+import {
+  attachmentContentUrl,
+  isHtmlAttachmentView,
+  isLegacyAttachmentImage,
+  isMarkdownAttachmentView,
+  isPdfAttachmentView,
+  isSvgAttachmentImage,
+  isSvgImageMimeType,
+  isSvgImageName,
+  isSvgImageUri,
+  toCardAttachmentView,
+} from '../attachment-view';
 
 const descriptor = {
   attachment_id: 'asset/1',
@@ -90,4 +101,37 @@ test('Markdown 문서는 정규화한 MIME이나 md·markdown 확장자로 판�
   expect(isMarkdownAttachmentView({ mimeType: null, name: 'proposal.markdown' })).toBe(true);
   expect(isMarkdownAttachmentView({ mimeType: 'text/plain', name: 'memo.txt' })).toBe(false);
   expect(isMarkdownAttachmentView({ mimeType: 'text/plain', name: 'markdown' })).toBe(false);
+});
+
+test('레거시 이미지 확장자 판정은 서버의 새 이미지 집합과 같다', () => {
+  for (const name of ['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.avif', 'a.svg', 'a.HEIC', 'a.heif']) {
+    expect(isLegacyAttachmentImage(name)).toBe(true);
+  }
+  for (const name of ['a.pdf', 'a.zip', 'a.txt', 'a.md', 'a.bin', 'svg']) {
+    expect(isLegacyAttachmentImage(name)).toBe(false);
+  }
+});
+
+test('PDF는 MIME과 확장자 양쪽으로 판별한다', () => {
+  expect(isPdfAttachmentView({ mimeType: 'application/pdf', name: 'doc.bin' })).toBe(true);
+  expect(isPdfAttachmentView({ mimeType: ' Application/PDF ; charset=binary ', name: 'doc' })).toBe(true);
+  expect(isPdfAttachmentView({ mimeType: null, name: '보고서.PDF' })).toBe(true);
+  expect(isPdfAttachmentView({ mimeType: 'image/png', name: 'doc.pdf' })).toBe(true);
+  expect(isPdfAttachmentView({ mimeType: 'application/zip', name: '자료.zip' })).toBe(false);
+  expect(isPdfAttachmentView({ mimeType: null, name: 'pdf' })).toBe(false);
+});
+
+test('SVG는 MIME, 파일 이름, 레거시 URL의 path로 판별한다', () => {
+  expect(isSvgImageMimeType('image/svg+xml')).toBe(true);
+  expect(isSvgImageMimeType(' IMAGE/SVG+XML ; charset=utf-8 ')).toBe(true);
+  expect(isSvgImageMimeType('image/png')).toBe(false);
+  expect(isSvgImageName('도형.SVG')).toBe(true);
+  expect(isSvgImageName('svg')).toBe(false);
+  expect(isSvgImageUri('/api/attachments/files?nodeId=n1&path=icons%2Flogo.svg')).toBe(true);
+  expect(isSvgImageUri('https://example.test/api/attachments/asset%2F1/content')).toBe(false);
+  expect(isSvgImageUri('')).toBe(false);
+  expect(isSvgAttachmentImage({ mimeType: 'image/svg+xml', name: 'logo' })).toBe(true);
+  expect(isSvgAttachmentImage({ mimeType: null, name: 'logo.svg' })).toBe(true);
+  expect(isSvgAttachmentImage({ mimeType: null, name: 'logo.png' }, '/files?path=logo.svg')).toBe(true);
+  expect(isSvgAttachmentImage({ mimeType: 'image/png', name: 'logo.png' }, '/api/attachments/a/content')).toBe(false);
 });

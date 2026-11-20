@@ -240,7 +240,9 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
   expect(state.openExternal).not.toHaveBeenCalled();
 });
 
-test.each([['svg', 'info'], ['heic', 'image']] as const)('legacy %s uses %s without a descriptor, with or without an alias', async (extension, previewKind) => {
+// SVG joins the server's image set (card #429): the RN Image cannot draw it, but
+// react-native-svg does, so the legacy hint resolves to an image view.
+test.each([['svg', 'image'], ['heic', 'image']] as const)('legacy %s uses %s without a descriptor, with or without an alias', async (extension, previewKind) => {
   const originalFetch = global.fetch;
   const state = deps(`/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.${extension}&context_type=card&context_id=card-1`);
   try {

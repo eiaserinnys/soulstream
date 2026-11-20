@@ -1,10 +1,11 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { LIGHT_COLORS } from '../../theme/colors';
 import { useTokens } from '../../theme';
+import { useSettingsStore } from '../../store/settingsStore';
 import { DuoSideBandContext, DuoTopBandContext } from '../../navigation/tabContract';
 import { PlannerMarkdownText } from '../planner/PlannerMarkdownText';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
@@ -17,6 +18,30 @@ jest.mock('../../api/client', () => ({
     readAttachmentMedia: (...args: unknown[]) => mockReadAttachmentMedia(...args),
   }),
 }));
+// PDF 미리보기는 캐시 파일로 내려받은 뒤 WebView에 file URI를 넘긴다.
+jest.mock('expo-file-system', () => {
+  class Directory {
+    exists = true;
+
+    create() {}
+  }
+  class File {
+    uri: string;
+
+    constructor(_parent: unknown, name: string) {
+      this.uri = `file:///mock/cache/attachment-pdf/${name}`;
+    }
+
+    get exists() {
+      return false;
+    }
+
+    static readonly downloadFileAsync = jest.fn(async (_url: string, destination: { uri: string }) => ({
+      uri: destination.uri,
+    }));
+  }
+  return { Directory, File, Paths: { cache: { uri: 'file:///mock/cache' } } };
+});
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('react-native-enriched-markdown', () => ({
   EnrichedMarkdownText: (props: any) => require('react').createElement(
@@ -48,10 +73,14 @@ beforeEach(() => {
   mockReadAttachmentText.mockResolvedValue({ text: '<b>plain text</b> **not markdown**', truncated: false });
   mockReadAttachmentMedia.mockReset();
   mockReadAttachmentMedia.mockResolvedValue({ uri: 'data:video/mp4;base64,AAAA', mimeType: 'video/mp4' });
+  const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+  File.downloadFileAsync.mockClear();
+  useSettingsStore.setState({ serverUrl: 'https://soul.test' });
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
+  useSettingsStore.setState({ serverUrl: '' });
 });
 
 test('text preview renders bounded content as plain text and omits MIME from the modal header', async () => {
@@ -364,6 +393,74 @@ test.each([
   await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
   fireEvent(screen.getByTestId('chat-image-viewer-frame'), 'layout', { nativeEvent: { layout: { height: 500 } } });
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-surface').props.style).width).toBe('100%');
+});
+
+test('plain text keeps a fixed-width font and stays selectable', async () => {
+  const screen = render(<AttachmentPreviewModal item={makeView()} onClose={jest.fn()} />);
+  const text = await waitFor(() => screen.getByText('<b>plain text</b> **not markdown**'));
+  const style = StyleSheet.flatten(text.props.style);
+  expect(style.fontFamily).toBe(Platform.OS === 'ios' ? 'Menlo' : 'monospace');
+  expect(style.fontSize).toBe(useTokensFontSize());
+  expect(text.props.selectable).toBe(true);
+});
+
+function useTokensFontSize(): number {
+  return renderHook(() => useTokens()).result.current.foundation.typography.mono.fontSize;
+}
+
+const pdfView = (overrides: Partial<AttachmentView> = {}): AttachmentView => makeView({
+  key: 'pdf-1',
+  name: '제안서.pdf',
+  mimeType: 'application/pdf',
+  byteSize: 4096,
+  previewKind: 'info',
+  ...overrides,
+});
+
+test('PDF는 문서 레이아웃에서 내려받은 파일을 WebView로 열고 저장을 남긴다', async () => {
+  const screen = render(<AttachmentPreviewModal item={pdfView()} onClose={jest.fn()} onSaveOriginal={jest.fn()} />);
+  const preview = await waitFor(() => screen.getByTestId('attachment-preview-pdf'));
+
+  expect(preview.props.source.uri).toMatch(/^file:\/\/\/mock\/cache\/attachment-pdf\/.+\.pdf$/);
+  expect(preview.props.javaScriptEnabled).toBe(false);
+  // 문서 미리보기: 미디어 프레임 높이 대신 가용 높이를 쓴다.
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();
+  expect(screen.getByLabelText('원본 저장')).toBeTruthy();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
+test('안드로이드는 PDF를 지금처럼 아이콘과 저장으로 둔다', async () => {
+  const platform = jest.replaceProperty(Platform, 'OS', 'android');
+  try {
+    const screen = render(<AttachmentPreviewModal item={pdfView()} onClose={jest.fn()} onSaveOriginal={jest.fn()} />);
+    expect(screen.getByLabelText('PDF 파일')).toBeTruthy();
+    expect(screen.queryByTestId('attachment-preview-pdf')).toBeNull();
+    expect(screen.getByLabelText('원본 저장')).toBeTruthy();
+    const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+    expect(File.downloadFileAsync).not.toHaveBeenCalled();
+  } finally {
+    platform.restore();
+  }
+});
+
+test('빈 PDF는 빈 파일로 표시하고 내려받지 않는다', () => {
+  const screen = render(<AttachmentPreviewModal item={pdfView({ byteSize: 0 })} onClose={jest.fn()} />);
+  expect(screen.getByText('빈 파일')).toBeTruthy();
+  expect(screen.queryByTestId('attachment-preview-pdf')).toBeNull();
+  const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+  expect(File.downloadFileAsync).not.toHaveBeenCalled();
+});
+
+test('PDF를 내려받지 못하면 다시 시도할 수 있다', async () => {
+  const { File } = require('expo-file-system') as { File: { downloadFileAsync: jest.Mock } };
+  File.downloadFileAsync.mockRejectedValueOnce(new Error('download failed (status 503)'));
+  const screen = render(<AttachmentPreviewModal item={pdfView()} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('미리보기를 불러오지 못했습니다.')).toBeTruthy());
+  expect(File.downloadFileAsync).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByText('다시 시도'));
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-pdf')).toBeTruthy());
+  expect(File.downloadFileAsync).toHaveBeenCalledTimes(2);
 });
 
 test('media 403 failures have no retry and 503 failures can be retried', async () => {

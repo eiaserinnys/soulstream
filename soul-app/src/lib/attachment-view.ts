@@ -89,7 +89,40 @@ function validByteSize(value: number): number | null {
 
 /** Preserve the legacy app image extension contract; descriptor previews use preview_kind. */
 export function isLegacyAttachmentImage(path: string): boolean {
-  return /\.(?:png|jpe?g|gif|webp|heic|avif)$/i.test(path);
+  return /\.(?:png|jpe?g|gif|webp|avif|svg|heic|heif)$/i.test(path);
+}
+
+/** SVG attachments are images, but the RN Image cannot draw them; react-native-svg does. */
+export function isSvgImageMimeType(mimeType: string | null | undefined): boolean {
+  return mimeType?.split(';', 1)[0]?.trim().toLowerCase() === 'image/svg+xml';
+}
+
+export function isSvgImageName(name: string | null | undefined): boolean {
+  return typeof name === 'string' && /\.svg$/i.test(name);
+}
+
+/** Legacy attachment URLs carry the file name in the path query. */
+export function isSvgImageUri(uri: string | null | undefined): boolean {
+  if (!uri) return false;
+  try {
+    const url = new URL(uri, 'https://attachment.invalid');
+    return isSvgImageName(url.searchParams.get('path') ?? url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function isSvgAttachmentImage(
+  view: { mimeType?: string | null; name?: string | null },
+  uri?: string | null,
+): boolean {
+  return isSvgImageMimeType(view.mimeType) || isSvgImageName(view.name) || isSvgImageUri(uri);
+}
+
+/** PDF opens in the attachment preview modal as a document, not as an image. */
+export function isPdfAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
+  const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  return mimeType === 'application/pdf' || /\.pdf$/i.test(view.name);
 }
 
 /** HTML attachments open as documents: text/html (parameters stripped) or an html/htm name. */

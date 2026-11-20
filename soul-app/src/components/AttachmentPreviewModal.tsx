@@ -14,9 +14,11 @@ import {
   attachmentContentUrl,
   isHtmlAttachmentView,
   isMarkdownAttachmentView,
+  isPdfAttachmentView,
   type AttachmentMediaKind,
   type AttachmentView,
 } from '../lib/attachment-view';
+import { attachmentPdfViewerUri } from '../lib/attachment-pdf';
 import { captureAuthScope } from '../lib/auth-scope';
 import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
 import { LIGHT_COLORS } from '../theme/colors';
@@ -42,6 +44,7 @@ type PreviewState =
   | { kind: 'text'; text: string; truncated: boolean }
   | { kind: 'markdown'; text: string; truncated: boolean }
   | { kind: 'html'; text: string; truncated: boolean }
+  | { kind: 'pdf'; uri: string }
   | { kind: 'empty' }
   | { kind: 'media'; mediaKind: AttachmentMediaKind; uri: string; mimeType: string | null }
   | { kind: 'info' }
@@ -77,7 +80,8 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
   const views = items.map(entry => resolved[entry.key] ?? entry);
   // A bundle that holds a readable document opens whole in the document layout so
   // paging never moves the header, close, save, or paging controls.
-  const layout = views.some(view => isHtmlAttachmentView(view) || isMarkdownAttachmentView(view)) ? 'document' : 'media';
+  const layout = views.some(view => isHtmlAttachmentView(view) || isMarkdownAttachmentView(view)
+    || isPdfAttachmentView(view)) ? 'document' : 'media';
   return <View testID="attachment-preview-modal">
     <ImageViewerModal variant="chatRefined" layout={layout} items={views} initialIndex={initialIndex} onClose={onClose}
       sources={views.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
@@ -95,6 +99,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const html = isHtmlAttachmentView(item);
   const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
+  const pdf = !html && !markdown && isPdfAttachmentView(item);
   const mediaKind = attachmentMediaKind(item);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
@@ -107,6 +112,44 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
     if (item.source.kind === 'unavailable') {
       setState(initialPreviewState(item));
       return;
+    }
+    if (pdf) {
+      const source = item.source;
+      if (Platform.OS === 'android') {
+        setState({ kind: 'info' });
+        return;
+      }
+      if (item.byteSize === 0) {
+        setState({ kind: 'empty' });
+        return;
+      }
+      const controller = new AbortController();
+      const scope = captureAuthScope();
+      const pdfSource = attachmentImageSource({ ...item, source }, scope.serverUrl, scope.jwt);
+      let blobUri: string | null = null;
+      setState({ kind: 'loading' });
+      void attachmentPdfViewerUri({
+        uri: pdfSource.uri,
+        ...(pdfSource.headers ? { headers: pdfSource.headers } : {}),
+        cacheKey: source.attachmentId,
+        signal: controller.signal,
+      })
+        .then((uri) => {
+          if (controller.signal.aborted) {
+            releaseBlobUri(uri.startsWith('blob:') ? uri : null);
+            return;
+          }
+          if (uri.startsWith('blob:') && uri !== pdfSource.uri) blobUri = uri;
+          setState({ kind: 'pdf', uri });
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setState(readFailureState(error));
+        });
+      return () => {
+        controller.abort();
+        releaseBlobUri(blobUri);
+        blobUri = null;
+      };
     }
     if (mediaKind !== null) {
       const source = item.source;
@@ -185,7 +228,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [item, retryKey, textContent, html, mediaKind]);
+  }, [item, retryKey, textContent, html, mediaKind, pdf]);
 
   const htmlDocument = useMemo(
     () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
@@ -203,7 +246,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   </View>;
 
   function renderPreviewState(current: PreviewState, tokens: ReturnType<typeof useTokens>, roles: ReturnType<typeof createSessionVisualRoles>['chat']['attachment']) {
-    if (current.kind === 'loading') return <ActivityIndicator color={tokens.colors.accent} />;
+    if (current.kind === 'loading') return <ActivityIndicator testID="attachment-preview-loading" color={tokens.colors.accent} />;
     if (current.kind === 'info') {
       return <View accessibilityLabel={`${fileExtension(item.name)} 파일`} style={{ alignItems: 'center', justifyContent: 'center' }}>
         <Ionicons name="document-outline" size={tokens.foundation.iconFrame.standard} color={roles.textMuted} />
@@ -264,6 +307,25 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         style={{ flex: 1, width: '100%', backgroundColor: 'transparent' }}
       />;
     }
+    if (current.kind === 'pdf') {
+      return Platform.OS === 'web'
+        ? <View testID="attachment-preview-pdf" style={{ flex: 1, width: '100%' }}>
+          {React.createElement('iframe', {
+            src: current.uri,
+            title: item.name,
+            'aria-label': item.name,
+            style: { border: 0, width: '100%', height: '100%', display: 'block', backgroundColor: LIGHT_COLORS.background },
+          })}
+        </View>
+        : <WebView
+          testID="attachment-preview-pdf"
+          source={{ uri: current.uri }}
+          originWhitelist={['*']}
+          javaScriptEnabled={false}
+          style={{ flex: 1, width: '100%', backgroundColor: 'transparent' }}
+          onError={() => setState({ kind: 'failed', message: '미리보기를 불러오지 못했습니다.', retryable: true })}
+        />;
+    }
     if (current.text.length === 0) {
       return <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>빈 파일</Text>;
     }
@@ -282,8 +344,9 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
       </ScrollView>;
     }
+    // Plain text, logs, and JSON keep their column alignment; the text stays selectable.
     return <ScrollView testID="attachment-preview-text" style={{ flex: 1, width: '100%' }} contentContainerStyle={{ gap: tokens.spacing.sm }}>
-      <Text selectable style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>{current.text}</Text>
+      <Text selectable style={{ ...tokens.foundation.typography.mono, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: tokens.colors.textPrimary }}>{current.text}</Text>
       {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
     </ScrollView>;
   }
@@ -299,12 +362,22 @@ function initialPreviewState(item: AttachmentView): PreviewState {
   if (mediaKind !== null) return item.byteSize === 0 ? { kind: 'empty' } : { kind: 'loading' };
   const html = isHtmlAttachmentView(item);
   const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
+  if (!html && !markdown && isPdfAttachmentView(item)) {
+    if (item.byteSize === 0) return { kind: 'empty' };
+    return Platform.OS === 'android' ? { kind: 'info' } : { kind: 'loading' };
+  }
   if (html || item.previewKind === 'text') {
     if (item.byteSize === 0) return html ? { kind: 'html', text: '', truncated: false }
       : markdown ? { kind: 'markdown', text: '', truncated: false } : { kind: 'text', text: '', truncated: false };
     return { kind: 'loading' };
   }
   return { kind: 'info' };
+}
+
+function releaseBlobUri(uri: string | null): void {
+  if (uri?.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(uri);
+  }
 }
 
 function readFailureState(error: unknown): PreviewState {

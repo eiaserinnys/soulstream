@@ -15,6 +15,7 @@ import {
   MAX_ATTACHMENT_TEXT_BYTES,
   attachmentMediaKind,
   isHtmlAttachmentView,
+  isLegacyAttachmentImage,
   type AttachmentView,
 } from '../../lib/attachment-view';
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
@@ -285,8 +286,8 @@ function unavailablePendingAttachment(attachment: ChatAttachment, nodeId?: strin
 }
 
 function previewKindFor(mimeType: string | null, name: string, idBacked: boolean): AttachmentView['previewKind'] {
-  if (/\.svg$/i.test(name)) return 'info';
-  if (/\.(?:png|jpe?g|gif|webp|heic|avif)$/i.test(name)) return 'image';
+  // Same image set the server judges as images; SVG is drawn by react-native-svg.
+  if (isLegacyAttachmentImage(name)) return 'image';
   if (idBacked && (mimeType?.startsWith('text/') || /\.(?:txt|md|json)$/i.test(name))) return 'text';
   return 'info';
 }
