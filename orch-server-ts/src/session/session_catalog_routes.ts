@@ -9,6 +9,12 @@ import {
   type SessionDeleteOutcome,
   type SessionDeleteTarget,
 } from "./session_delete.js";
+import {
+  hasOwn,
+  optionalStringOrNull,
+  parseObjectBody,
+  type Validation,
+} from "../http/route_validation.js";
 
 export type SessionCatalogCallerInfo = Record<string, unknown> | null | undefined;
 
@@ -94,10 +100,6 @@ type SessionParams = {
   session_id: string;
 };
 
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string };
-
 export const sessionCatalogRouteAuthRequirements = {
   "PATCH /api/sessions/:session_id/display-name": true,
   "PUT /api/sessions/folder": true,
@@ -122,7 +124,7 @@ export function registerSessionCatalogRoutes(
   app.patch<{ Params: SessionParams }>(
     "/api/sessions/:session_id/display-name",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return badRequest(reply, body.message);
 
       const displayName = optionalStringOrNull(body.value, "displayName");
@@ -153,7 +155,7 @@ export function registerSessionCatalogRoutes(
   app.put<{ Params: SessionParams }>(
     "/api/sessions/:session_id",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return badRequest(reply, body.message);
 
       const update = sessionCatalogUpdate(body.value);
@@ -192,7 +194,7 @@ export function registerSessionCatalogRoutes(
   app.delete<{ Params: SessionParams }>(
     "/api/sessions/:session_id",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return badRequest(reply, body.message);
       const callerInfo = optionalCallerInfo(body.value);
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
@@ -245,7 +247,7 @@ export function registerSessionCatalogRoutes(
   app.put<{ Params: SessionParams }>(
     "/api/sessions/:session_id/read-position",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return badRequest(reply, body.message);
 
       const lastReadEventId = requiredInteger(body.value, "last_read_event_id");
@@ -293,7 +295,7 @@ async function batchMoveFolder(
   reply: FastifyReply,
   options: SessionCatalogRouteOptions,
 ): Promise<FastifyReply> {
-  const body = parseObjectBody(request.body);
+  const body = parseObjectBody(request.body, { allowEmpty: true });
   if (!body.ok) return badRequest(reply, body.message);
 
   const sessionIds = requiredStringArray(body.value, "sessionIds");
@@ -354,14 +356,6 @@ async function requireFolderAccess(
   });
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  if (typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
 function sessionCatalogUpdate(
   body: Record<string, unknown>,
 ): Validation<SessionCatalogUpdateInput> {
@@ -377,16 +371,6 @@ function sessionCatalogUpdate(
     update.displayName = displayName.value;
   }
   return { ok: true, value: update };
-}
-
-function optionalStringOrNull(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string | null | undefined> {
-  if (!hasOwn(body, key)) return { ok: true, value: undefined };
-  const value = body[key];
-  if (value === null || typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string or null` };
 }
 
 function optionalCallerInfo(
@@ -494,8 +478,4 @@ function sendProviderError(reply: FastifyReply, error: unknown): FastifyReply {
 
 function sessionParams(request: FastifyRequest): SessionParams {
   return request.params as SessionParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

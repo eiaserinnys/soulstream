@@ -4,6 +4,7 @@ import type {
   ModelPresetAvailability,
   ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
+import { hasOwn, parseObjectBody, type Validation } from "../http/route_validation.js";
 
 export type RawNodeAgentProfile = {
   name?: unknown;
@@ -119,10 +120,6 @@ type AgentParams = NodeParams & {
   agent_id: string;
 };
 
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; statusCode?: number };
-
 export const nodeAgentProfileRouteAuthRequirements = {
   "GET /api/nodes/:node_id/agents": true,
   "GET /api/nodes/:node_id/model-presets": true,
@@ -166,7 +163,7 @@ export function registerNodeAgentProfileRoutes(
   app.post<{ Params: NodeParams }>(
     "/api/nodes/:node_id/agents/context-preview",
     async (request, reply) => {
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return validationError(reply, body);
       const input = contextPreviewInput(body.value);
       if (!input.ok) return validationError(reply, input);
@@ -260,7 +257,7 @@ export async function executeNodeAgentProfileRoute(
     return !presets ? { status: 404, body: { detail: `Node ${nodeId} not connected` } }
       : { status: 200, body: { model_presets: presets } };
   }
-  const body = parseObjectBody(input);
+  const body = parseObjectBody(input, { allowEmpty: true });
   const parsed = !body.ok ? body : operation === "plan" ? profileUpdateInput(body.value)
     : operation === "apply" ? applyProfileUpdateInput(body.value)
     : operation === "rollback" ? rollbackInput(body.value) : { ok: true as const, value: {} };
@@ -352,14 +349,6 @@ function detectPortraitMime(data: Buffer): string {
   }
   if (data.subarray(0, 4).toString() === "GIF8") return "image/gif";
   return "application/octet-stream";
-}
-
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  if (typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
 }
 
 function profileUpdateInput(
@@ -555,8 +544,4 @@ function nodeParams(request: FastifyRequest): NodeParams {
 
 function agentParams(request: FastifyRequest): AgentParams {
   return request.params as AgentParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

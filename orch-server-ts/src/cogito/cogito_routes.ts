@@ -1,5 +1,6 @@
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { Validation } from "../http/route_validation.js";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
@@ -154,10 +155,6 @@ export type CogitoRouteOptions = {
   nowIso?: () => string;
 };
 
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; statusCode: number; detail: string };
-
 export const cogitoRouteAuthRequirements = {
   "GET /cogito/search": true,
   "GET /cogito/briefs": true,
@@ -181,10 +178,9 @@ export function registerCogitoRoutes(
   });
 }
 
-/** Same brief aggregation as the HTTP route; search keeps its separate request lifecycle. */
 export async function executeCogitoBriefRoute(options: CogitoRouteOptions, query: unknown) {
   const timeout = parseBriefTimeout(query);
-  if (!timeout.ok) return { status: timeout.statusCode, body: { detail: timeout.detail } };
+  if (!timeout.ok) return { status: timeout.statusCode ?? 400, body: { detail: timeout.message } };
   const nodes = await options.provider.listConnectedNodes();
   return { status: 200, body: await collectCogitoBriefs(nodes, {
     collector: options.briefCollector,
@@ -202,7 +198,7 @@ export async function executeCogitoSearch(
   reply?: FastifyReply,
 ): Promise<{ statusCode: number; body: unknown }> {
     const query = parseSearchQuery(queryInput);
-    if (!query.ok) return { statusCode: query.statusCode, body: { detail: query.detail } };
+    if (!query.ok) return { statusCode: query.statusCode ?? 400, body: { detail: query.message } };
 
     const deadlineMs = cogitoSearchDeadlineMs(query.value);
     const deadlineAt = Date.now() + deadlineMs;
@@ -422,17 +418,17 @@ async function collectSingleNodeBrief(
 
 function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
   const q = stringQuery(query, "q", { allowEmpty: false });
-  if (q === undefined) return { ok: false, statusCode: 422, detail: "q is required" };
+  if (q === undefined) return { ok: false, statusCode: 422, message: "q is required" };
   const topK = integerQuery(query, "top_k", 10);
   if (!Number.isInteger(topK) || topK < 1 || topK > 100) {
-    return { ok: false, statusCode: 422, detail: "top_k must be between 1 and 100" };
+    return { ok: false, statusCode: 422, message: "top_k must be between 1 and 100" };
   }
   const searchSessionId = booleanQuery(query, "search_session_id", false);
   if (searchSessionId === undefined) {
     return {
       ok: false,
       statusCode: 422,
-      detail: "search_session_id must be a boolean",
+      message: "search_session_id must be a boolean",
     };
   }
   const includeTurnSummaries = booleanQuery(
@@ -453,35 +449,35 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
     return {
       ok: false,
       statusCode: 422,
-      detail: "include_turn_summaries must be a boolean",
+      message: "include_turn_summaries must be a boolean",
     };
   }
   if (includeHighlight === undefined) {
     return {
       ok: false,
       statusCode: 422,
-      detail: "include_highlight must be a boolean",
+      message: "include_highlight must be a boolean",
     };
   }
   if (includeStory === undefined) {
     return {
       ok: false,
       statusCode: 422,
-      detail: "include_story must be a boolean",
+      message: "include_story must be a boolean",
     };
   }
   if (includeSessionResults === undefined) {
     return {
       ok: false,
       statusCode: 422,
-      detail: "include_session_results must be a boolean",
+      message: "include_session_results must be a boolean",
     };
   }
   if (searchModePresent && sessionSearchMode === undefined) {
     return {
       ok: false,
       statusCode: 422,
-      detail: "session_search_mode must be lexical or expanded",
+      message: "session_search_mode must be lexical or expanded",
     };
   }
   const eventTypes = stringQuery(query, "event_types", { allowEmpty: true });
@@ -505,7 +501,7 @@ function parseSearchQuery(query: unknown): Validation<CogitoSearchParams> {
     return {
       ok: false,
       statusCode: 422,
-      detail: "session filters contain an invalid value",
+      message: "session filters contain an invalid value",
     };
   }
   return {
@@ -548,7 +544,7 @@ function parseBriefTimeout(query: unknown): Validation<number> {
     return {
       ok: false,
       statusCode: 422,
-      detail: "timeout must be greater than 0 and less than or equal to 30",
+      message: "timeout must be greater than 0 and less than or equal to 30",
     };
   }
   return { ok: true, value: timeoutSeconds };

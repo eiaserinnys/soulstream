@@ -28,6 +28,7 @@ import {
   registerMultipartFormParser,
   type MultipartFile,
 } from "../http/multipart_form.js";
+import { validationError, type Validation } from "../http/route_validation.js";
 
 export const MAX_ATTACHMENT_SIZE_BYTES = 100 * 1024 * 1024;
 export const LEGACY_ATTACHMENT_MAX_SIZE_BYTES = 8 * 1024 * 1024;
@@ -156,10 +157,6 @@ export class AttachmentTransportTimeoutError extends Error {
 
 type UploadParams = Record<string, never>;
 type DeleteParams = { session_id: string };
-
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; statusCode?: number };
 
 export const attachmentRouteAuthRequirements = {
   ...multipartAttachmentRouteAuthRequirements,
@@ -572,10 +569,6 @@ function mappedTransportError(
 
 function attachmentError(reply: FastifyReply, error: AttachmentRouteError): FastifyReply {
   return resetErrorReply(reply).code(error.statusCode).send({ detail: error.message });
-}
-
-function validationError<T>(reply: FastifyReply, result: Extract<Validation<T>, { ok: false }>): FastifyReply {
-  return reply.code(result.statusCode ?? 400).send({ detail: result.message });
 }
 
 function routeErrorFromUnknown(error: unknown, fallbackStatusCode: number): AttachmentRouteError {

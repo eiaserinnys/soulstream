@@ -14,6 +14,14 @@ import {
   documentFolderId,
   updateLocalMarkdownDocument,
 } from "./markdown_document_local_mutations.js";
+import {
+  folderAccessDenied,
+  hasOwn,
+  parseObjectBody,
+  requiredString,
+  validationError,
+  type Validation,
+} from "../http/route_validation.js";
 
 export type MarkdownDocumentFolderRecord = {
   id: string;
@@ -80,10 +88,6 @@ type MarkdownDocumentParams = {
 type CustomViewParams = {
   custom_view_id: string;
 };
-
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; statusCode?: number };
 
 export const markdownDocumentRouteAuthRequirements = {
   "GET /api/markdown-documents": true,
@@ -268,22 +272,6 @@ function parseUpdateBody(
   return { ok: true, value: payload };
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string> {
-  const value = body[key];
-  if (typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string` };
-}
-
 function optionalBodyString(
   body: Record<string, unknown>,
   key: string,
@@ -301,29 +289,6 @@ function requiredInteger(
     return { ok: true, value };
   }
   return { ok: false, message: `${key} must be a number` };
-}
-
-function optionalFiniteNumber(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number | undefined> {
-  const value = body[key];
-  if (value === undefined || value === null) return { ok: true, value: undefined };
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
-}
-
-function validationError<T>(
-  reply: FastifyReply,
-  validation: Extract<Validation<T>, { ok: false }>,
-): FastifyReply {
-  return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
-}
-
-function folderAccessDenied(reply: FastifyReply): FastifyReply {
-  return reply.code(403).send({ detail: "Folder access denied" });
 }
 
 function documentNotFound(reply: FastifyReply): FastifyReply {
@@ -357,8 +322,4 @@ function customViewParams(request: FastifyRequest): CustomViewParams {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

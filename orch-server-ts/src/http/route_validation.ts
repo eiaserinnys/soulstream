@@ -1,0 +1,79 @@
+import type { FastifyReply } from "fastify";
+
+export type Validation<T> =
+  | { ok: true; value: T }
+  | { ok: false; message: string; statusCode?: number };
+
+export function parseObjectBody(
+  body: unknown,
+  options: { allowEmpty?: boolean } = {},
+): Validation<Record<string, unknown>> {
+  if (options.allowEmpty && (body === undefined || body === null)) {
+    return { ok: true, value: {} };
+  }
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    return { ok: true, value: body as Record<string, unknown> };
+  }
+  return { ok: false, message: "Request body must be a JSON object" };
+}
+
+export function requiredString(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<string> {
+  const value = body[key];
+  if (typeof value === "string") return { ok: true, value };
+  return { ok: false, message: `${key} must be a string` };
+}
+
+export function requiredFiniteNumber(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<number> {
+  const value = body[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { ok: true, value };
+  }
+  return { ok: false, message: `${key} must be a number` };
+}
+
+export function optionalStringOrNull(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<string | null | undefined> {
+  if (!hasOwn(body, key)) return { ok: true, value: undefined };
+  const value = body[key];
+  if (value === null || typeof value === "string") return { ok: true, value };
+  return { ok: false, message: `${key} must be a string or null` };
+}
+
+export function optionalFiniteNumber(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<number | undefined> {
+  const value = body[key];
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { ok: true, value };
+  }
+  return { ok: false, message: `${key} must be a number` };
+}
+
+export function badRequest(reply: FastifyReply, message: string): FastifyReply {
+  return reply.code(400).send({ detail: message });
+}
+
+export function validationError<T>(
+  reply: FastifyReply,
+  validation: Extract<Validation<T>, { ok: false }>,
+): FastifyReply {
+  return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
+}
+
+export function folderAccessDenied(reply: FastifyReply): FastifyReply {
+  return reply.code(403).send({ detail: "Folder access denied" });
+}
+
+export function hasOwn(object: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}

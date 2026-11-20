@@ -8,6 +8,12 @@ import {
   type BoardAccessFolderRecord,
 } from "./board_access.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
+import {
+  badRequest,
+  folderAccessDenied,
+  validationError,
+  type Validation,
+} from "../http/route_validation.js";
 
 export type BoardItemRecord = {
   id: string;
@@ -62,10 +68,6 @@ export class BoardItemRouteError extends Error {
 type BoardItemParams = {
   board_item_id: string;
 };
-
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; statusCode?: number };
 
 export const boardItemRouteAuthRequirements = {
   "GET /api/board-items": true,
@@ -139,54 +141,12 @@ function parseFolderMoveBody(body: unknown): Validation<{ folderId: string; idem
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
 function optionalQueryString(
   query: Record<string, unknown>,
   key: string,
 ): string | undefined {
   const value = query[key];
   return typeof value === "string" ? value : undefined;
-}
-
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string> {
-  const value = body[key];
-  if (typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string` };
-}
-
-function requiredFiniteNumber(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
-}
-
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
-function validationError<T>(
-  reply: FastifyReply,
-  validation: Extract<Validation<T>, { ok: false }>,
-): FastifyReply {
-  return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
-}
-
-function folderAccessDenied(reply: FastifyReply): FastifyReply {
-  return reply.code(403).send({ detail: "Folder access denied" });
 }
 
 function boardItemNotFound(reply: FastifyReply): FastifyReply {
@@ -211,8 +171,4 @@ function boardItemParams(request: FastifyRequest): BoardItemParams {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

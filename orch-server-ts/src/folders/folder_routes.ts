@@ -17,6 +17,14 @@ import type { FolderProjectIdentityService } from "./folder_project_identity_ser
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
 import { folderProjectPageVersion, folderStarred, loadProjectPageStates, type ProjectPageState } from "./folder_starred.js";
+import {
+  badRequest,
+  folderAccessDenied,
+  hasOwn,
+  optionalStringOrNull,
+  requiredString,
+  type Validation,
+} from "../http/route_validation.js";
 
 export type { FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
 
@@ -112,10 +120,6 @@ export class FolderRouteError extends Error {
 type FolderParams = {
   folder_id: string;
 };
-
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string };
 
 const SYSTEM_FOLDER_IDS = new Set(["claude", "llm"]);
 
@@ -299,33 +303,6 @@ function rejectSystemFolderMutation(folderId: string, operation: string): string
   return `System folder '${folderId}' cannot be ${operation}.`;
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  if (typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string> {
-  const value = body[key];
-  if (typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string` };
-}
-
-function optionalStringOrNull(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string | null | undefined> {
-  if (!hasOwn(body, key)) return { ok: true, value: undefined };
-  const value = body[key];
-  if (value === null || typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string or null` };
-}
-
 function requiredInteger(
   body: Record<string, unknown>,
   key: string,
@@ -369,14 +346,6 @@ function optionalObjectOrNull(
   return { ok: false, message: `${key} must be an object or null` };
 }
 
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
-function folderAccessDenied(reply: FastifyReply): FastifyReply {
-  return reply.code(403).send({ detail: "Folder access denied" });
-}
-
 function sendProviderError(
   reply: FastifyReply,
   error: unknown,
@@ -391,8 +360,4 @@ function sendProviderError(
 
 function folderParams(request: FastifyRequest): FolderParams {
   return request.params as FolderParams;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

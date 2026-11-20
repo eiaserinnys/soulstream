@@ -8,6 +8,13 @@ import {
   requireAdmin,
   type AdminAccessProvider,
 } from "./admin_access.js";
+import {
+  badRequest,
+  hasOwn,
+  optionalStringOrNull,
+  parseObjectBody,
+  type Validation,
+} from "../http/route_validation.js";
 
 export { requireAdmin, type AdminAccessProvider } from "./admin_access.js";
 
@@ -65,10 +72,6 @@ export class AdminUsersRouteError extends Error {
   }
 }
 
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string };
-
 type AdminUsersParams = {
   email: string;
 };
@@ -104,7 +107,7 @@ export function registerAdminUsersRoutes(
     const adminEmail = await requireAdmin(request, reply, options.provider);
     if (adminEmail === undefined) return reply;
 
-    const body = parseObjectBody(request.body);
+    const body = parseObjectBody(request.body, { allowEmpty: true });
     if (!body.ok) return badRequest(reply, body.message);
     const createInput = parseCreateBody(body.value, adminEmail);
     if (!createInput.ok) return badRequest(reply, createInput.message);
@@ -127,7 +130,7 @@ export function registerAdminUsersRoutes(
       const targetEmail = normalizeEmail(adminUsersParams(request).email);
       if (!targetEmail.ok) return badRequest(reply, targetEmail.message);
 
-      const body = parseObjectBody(request.body);
+      const body = parseObjectBody(request.body, { allowEmpty: true });
       if (!body.ok) return badRequest(reply, body.message);
       const update = parsePatchBody(body.value);
       if (!update.ok) return badRequest(reply, update.message);
@@ -232,24 +235,6 @@ function parsePatchBody(
   return { ok: true, value: update };
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  if (typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
-function optionalStringOrNull(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string | null | undefined> {
-  if (!hasOwn(body, key)) return { ok: true, value: undefined };
-  const value = body[key];
-  if (value === null || typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string or null` };
-}
-
 function optionalBooleanOrNull(
   body: Record<string, unknown>,
   key: string,
@@ -297,10 +282,6 @@ function normalizeFolderIds(values: readonly unknown[]): string[] {
   return result;
 }
 
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
 function sendProviderError(
   reply: FastifyReply,
   error: unknown,
@@ -315,8 +296,4 @@ function sendProviderError(
 
 function adminUsersParams(request: FastifyRequest): AdminUsersParams {
   return request.params as AdminUsersParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }
