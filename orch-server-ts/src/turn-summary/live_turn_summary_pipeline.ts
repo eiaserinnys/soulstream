@@ -35,6 +35,10 @@ import { SessionStoryCompletionSweep } from
   "./session_story_completion_sweep.js";
 import { SessionStoryFoldService } from "./session_story_fold_service.js";
 import { SessionStoryRepository } from "./session_story_repository.js";
+import { TurnSummaryCatchUpSweep } from
+  "./turn_summary_catch_up_sweep.js";
+import { TurnSummaryCatchUpRepository } from
+  "./turn_summary_catch_up_repository.js";
 
 export type LiveTurnSummaryPipeline = Pick<
   TurnSummaryPipeline,
@@ -121,21 +125,22 @@ export function createLiveTurnSummaryPipeline(options: {
     generate: (prompt, config, generationOptions) =>
       codexSummarizer.generate(prompt, config, generationOptions),
   });
+  const turnSummaryRepository = new TurnSummaryRepository(options.sqlResolver, {
+    resolveAgentName: ({ agentId, nodeId }) => {
+      const profile = findRegisteredAgentProfile(
+        options.registry,
+        agentId,
+        nodeId ?? undefined,
+        options.agentProfiles?.() ?? [],
+      );
+      const name = profile?.agent.name;
+      return typeof name === "string" && name.trim().length > 0
+        ? name.trim()
+        : undefined;
+    },
+  });
   const pipeline = new TurnSummaryPipeline({
-    repository: new TurnSummaryRepository(options.sqlResolver, {
-      resolveAgentName: ({ agentId, nodeId }) => {
-        const profile = findRegisteredAgentProfile(
-          options.registry,
-          agentId,
-          nodeId ?? undefined,
-          options.agentProfiles?.() ?? [],
-        );
-        const name = profile?.agent.name;
-        return typeof name === "string" && name.trim().length > 0
-          ? name.trim()
-          : undefined;
-      },
-    }),
+    repository: turnSummaryRepository,
     configService,
     summarizer,
     persistentInstructionExtractor,
@@ -151,11 +156,22 @@ export function createLiveTurnSummaryPipeline(options: {
     configService,
     logger: options.logger,
   });
+  const catchUpSweep = new TurnSummaryCatchUpSweep({
+    repository: new TurnSummaryCatchUpRepository(options.sqlResolver),
+    pipeline,
+    configService,
+    logger: options.logger,
+  });
   return {
     accept: (events) => pipeline.accept(events),
-    start: () => completionSweep.start(),
+    start: () => {
+      completionSweep.start();
+      catchUpSweep.start();
+    },
     drain: async () => {
       completionSweep.stop();
+      catchUpSweep.stop();
+      await catchUpSweep.drain();
       await pipeline.drain();
       await completionSweep.drain();
     },

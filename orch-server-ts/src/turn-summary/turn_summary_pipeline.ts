@@ -53,6 +53,17 @@ type TurnSummarySkipReason =
   | "already_summarized"
   | "session_not_summarizable";
 
+export type TurnSummaryJobOutcome =
+  | { readonly status: "stored" }
+  | {
+      readonly status: "skipped";
+      readonly reason:
+        | TurnSummarySkipReason
+        | "disabled"
+        | "provider_unavailable";
+    }
+  | { readonly status: "failed"; readonly error: unknown };
+
 export class TurnSummaryPipeline {
   private readonly tails = new Map<string, Promise<void>>();
   private readonly nowEpochSeconds: () => number;
@@ -79,7 +90,7 @@ export class TurnSummaryPipeline {
 
   accept(events: readonly NodeRegistryEvent[]): void {
     for (const job of collectTurnSummaryCompleteJobs(events)) {
-      this.enqueue(job);
+      void this.enqueue(job);
     }
   }
 
@@ -89,12 +100,14 @@ export class TurnSummaryPipeline {
     }
   }
 
-  private enqueue(job: TurnSummaryCompleteJob): void {
+  enqueue(job: TurnSummaryCompleteJob): Promise<TurnSummaryJobOutcome> {
     const previous = this.tails.get(job.sessionId) ?? Promise.resolve();
-    const next = previous
+    const outcome = previous
       .then(async () => await this.process(job))
-      .catch((error) => {
-        if (error instanceof TurnSummaryProviderUnavailableError) return;
+      .catch((error): TurnSummaryJobOutcome => {
+        if (error instanceof TurnSummaryProviderUnavailableError) {
+          return { status: "skipped", reason: "provider_unavailable" };
+        }
         this.deps.logger.warn(
           {
             err: error,
@@ -104,31 +117,34 @@ export class TurnSummaryPipeline {
           },
           "Turn summary skipped",
         );
-      })
-      .finally(() => {
-        if (this.tails.get(job.sessionId) === next) {
-          this.tails.delete(job.sessionId);
-        }
+        return { status: "failed", error };
       });
-    this.tails.set(job.sessionId, next);
+    const tail = outcome.then(() => undefined);
+    this.tails.set(job.sessionId, tail);
+    void tail.finally(() => {
+      if (this.tails.get(job.sessionId) === tail) {
+        this.tails.delete(job.sessionId);
+      }
+    });
+    return outcome;
   }
 
-  private async process(job: TurnSummaryCompleteJob): Promise<void> {
+  private async process(
+    job: TurnSummaryCompleteJob,
+  ): Promise<TurnSummaryJobOutcome> {
     const config = this.deps.configService.read();
-    if (!config.enabled) return;
+    if (!config.enabled) return { status: "skipped", reason: "disabled" };
     const turn = await this.deps.repository.loadTurn(
       job.sessionId,
       job.completeEventId,
     );
     if (turn === null) {
-      this.debugSkip(job, "turn_not_reconstructable");
-      return;
+      return this.debugSkip(job, "turn_not_reconstructable");
     }
     if (isCacheKeepaliveTurn(turn)) {
-      this.debugSkip(job, "cache_keepalive", {
+      return this.debugSkip(job, "cache_keepalive", {
         turnStartEventId: turn.turnStartEventId,
       });
-      return;
     }
     const eligibility = resolveTurnSummaryEligibility({
       metadata: turn.metadata,
@@ -137,12 +153,11 @@ export class TurnSummaryPipeline {
       startEvidence: turn.startEvidence,
     });
     if (!eligibility.include) {
-      this.debugSkip(job, eligibility.reason, {
+      return this.debugSkip(job, eligibility.reason, {
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
         ...startEvidenceLogFields(turn.startEvidence),
       });
-      return;
     }
     if (
       await this.deps.repository.hasSummary(
@@ -151,19 +166,17 @@ export class TurnSummaryPipeline {
         turn.finalResponseEventId,
       )
     ) {
-      this.debugSkip(job, "already_summarized", {
+      return this.debugSkip(job, "already_summarized", {
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
       });
-      return;
     }
     if (!await this.deps.repository.isSessionSummarizable(job.sessionId)) {
-      this.debugSkip(job, "session_not_summarizable", {
+      return this.debugSkip(job, "session_not_summarizable", {
         phase: "before_summarization",
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
       });
-      return;
     }
     const previousSummaries =
       await this.deps.repository.loadPreviousSummaries(
@@ -184,12 +197,11 @@ export class TurnSummaryPipeline {
       config,
     );
     if (!await this.deps.repository.isSessionSummarizable(job.sessionId)) {
-      this.debugSkip(job, "session_not_summarizable", {
+      return this.debugSkip(job, "session_not_summarizable", {
         phase: "after_summarization",
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
       });
-      return;
     }
     const payload = buildTurnSummaryPayload(
       turn.turnStartEventId,
@@ -203,12 +215,11 @@ export class TurnSummaryPipeline {
       summaryDedupeKey(turn.turnStartEventId, turn.finalResponseEventId),
     );
     if (!persisted.inserted) {
-      this.debugSkip(job, "already_summarized", {
+      return this.debugSkip(job, "already_summarized", {
         phase: "append",
         turnStartEventId: turn.turnStartEventId,
         finalResponseEventId: turn.finalResponseEventId,
       });
-      return;
     }
     const gapEvents = await this.deps.repository.loadGapEvents(
       job.sessionId,
@@ -254,6 +265,7 @@ export class TurnSummaryPipeline {
         config,
       );
     }
+    return { status: "stored" };
   }
 
   private async extractPersistentInstructions(
@@ -373,7 +385,7 @@ export class TurnSummaryPipeline {
     job: TurnSummaryCompleteJob,
     reason: TurnSummarySkipReason,
     details: Record<string, unknown> = {},
-  ): void {
+  ): TurnSummaryJobOutcome {
     this.deps.logger.debug?.(
       {
         ...details,
@@ -383,6 +395,7 @@ export class TurnSummaryPipeline {
       },
       "Turn summary skipped",
     );
+    return { status: "skipped", reason };
   }
 }
 
