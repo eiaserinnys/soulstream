@@ -44,9 +44,12 @@ function writeTranscript(configDir: string, key: string, sessionId: string): voi
   writeFileSync(join(directory, `${sessionId}.jsonl`), '{"type":"summary"}\n');
 }
 
-/** 실제 SDK가 띄우는 CLI 자리에 놓는 stub. argv만 남기고 종료한다. */
+/**
+ * 실제 SDK가 띄우는 CLI 자리에 놓는 stub. argv만 남기고 종료한다.
+ * 확장자를 .cjs로 둬서 상위 폴더의 package.json "type"에 따라 ESM으로 해석되지 않게 한다.
+ */
 function writeCaptureCli(root: string): { executablePath: string; capturePath: string } {
-  const executablePath = join(root, "capture-claude");
+  const executablePath = join(root, "capture-claude.cjs");
   const capturePath = join(root, "spawn-argv.json");
   writeFileSync(executablePath, [
     "#!/usr/bin/env node",

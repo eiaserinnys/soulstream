@@ -17,6 +17,10 @@ import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js
 import type { Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import { makeHarness, sdkInit, sdkResult } from "../engine/claude_sdk_persistent_test_harness.js";
+import {
+  makeClaudeResumeTranscriptFixture,
+  removeClaudeResumeTranscriptFixture,
+} from "./claude_resume_transcript_fixture.js";
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const logger = pino({ level: "silent" });
@@ -80,9 +84,14 @@ describe("#438 same durable delivery across resume and startup redelivery", () =
     const context = new ExecutionContextBuilder(db, {} as AgentRegistry, {
       nodeId: "node-a", atom: { enabled: false, serverUrl: "", apiKey: "" },
     }, logger);
+    const resumeConfigDir = makeClaudeResumeTranscriptFixture({
+      workspaceDir: agent.workspace_dir,
+      sessionIds: ["old-backend-session", "backend-438"],
+    });
     const engine = new ClaudeEngineAdapter({
       workspaceDir: agent.workspace_dir, agentId: agent.id, client,
-      processEnv: {}, persistentSessionRegistry: registry,
+      processEnv: { CLAUDE_CONFIG_DIR: resumeConfigDir },
+      persistentSessionRegistry: registry,
     }, logger);
     const executeInputs: Array<{ prompt: string; inputUuid?: string }> = [];
     const executeToFrameChannel = engine.executeToFrameChannel.bind(engine);
@@ -162,6 +171,7 @@ describe("#438 same durable delivery across resume and startup redelivery", () =
     } finally {
       sdk.end();
       await client.close();
+      removeClaudeResumeTranscriptFixture(resumeConfigDir);
     }
   }, 60_000);
 });
