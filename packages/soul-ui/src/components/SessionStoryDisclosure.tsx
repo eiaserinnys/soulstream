@@ -125,6 +125,10 @@ export function SessionStoryDisclosure({
           />
         </PopoverTrigger>
 
+        {/* 포털로 body에 나온 팝업은 .v3-chat-pane의 glass-chrome 범위 밖이라 .glass-strong이
+            루트 값(알파 0.5)을 받아 팝오버 기본 바탕을 덮는다. 빼서 「…」 메뉴와 같은 기본 바탕을 쓴다.
+            한국어는 어절 가운데서 끊지 않고(break-keep), 끊을 곳 없는 긴 경로와 해시만
+            overflow-wrap:anywhere로 비상 줄바꿈한다. */}
         <PopoverPopup
           id={panelId}
           role="region"
@@ -134,7 +138,7 @@ export function SessionStoryDisclosure({
           align="end"
           sideOffset={8}
           collisionPadding={14}
-          className="max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-3xl border border-glass-border glass-strong glass-shadow-xs p-4 text-left [&_[data-slot=popover-viewport]]:overflow-visible [&_[data-slot=popover-viewport]]:p-0"
+          className="max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-1.75rem))] overflow-y-auto rounded-3xl border border-glass-border glass-shadow-xs p-4 text-left break-keep [overflow-wrap:anywhere] [&_[data-slot=popover-viewport]]:overflow-visible [&_[data-slot=popover-viewport]]:p-0"
         >
           {loading ? <LoadingState /> : null}
           {!loading && error ? (

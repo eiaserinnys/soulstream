@@ -5,7 +5,7 @@
 // - 390 켬/끔 카드 작업 공간: 픽스처 카드로 열어 막대와 .v3-main이 숨고, 모바일 탭과 카드 작업 공간이
 //   보이는지 확인한다. 카드를 닫으면 .v3-main과 막대가 다시 보인다. 카드 상세는 시험 안에서 채운다.
 // 실행: corepack pnpm --dir unified-dashboard exec playwright test --config e2e/radius-glass.config.ts mobile-chat-glass-toolbar
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -97,9 +97,29 @@ async function openStory(page: Page) {
   const panel = page.getByTestId("session-story-panel");
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("스토리 구간 1");
+  // SwiftShader에서는 rAF가 초당 1번 남짓이라 시작 전환의 opacity 0에서 찍히면 패널이 빈다.
+  // 캡처와 상자·바탕 단언 전에 시작 전환이 끝나고 opacity가 1이 될 때까지 기다린다.
+  await expect(panel).not.toHaveAttribute("data-starting-style", undefined, { timeout: 30_000 });
+  await expect(panel).toHaveCSS("opacity", "1", { timeout: 30_000 });
   // 위치 계산이 끝난 뒤의 상자를 재도록 잠깐 둔다.
   await page.waitForTimeout(500);
   return panel;
+}
+
+// 포털로 body에 붙은 패널의 계산 바탕색 알파. color-mix 결과가 rgba()나 color(srgb ...)로 온다.
+async function panelBackgroundAlpha(panel: Locator): Promise<number> {
+  const color = await panel.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const rgba = color.match(/^rgba?\(([^)]+)\)$/);
+  if (rgba) {
+    const parts = rgba[1].split(/[,\s/]+/).filter(Boolean);
+    return parts.length >= 4 ? Number(parts[3]) : 1;
+  }
+  const srgb = color.match(/^color\(srgb ([^)]+)\)$/);
+  if (srgb) {
+    const parts = srgb[1].split(/[\s/]+/).filter(Boolean);
+    return parts.length >= 4 ? Number(parts[3]) : 1;
+  }
+  throw new Error(`패널 바탕색을 해석하지 못했습니다: ${color}`);
 }
 
 async function titleCenterHit(page: Page) {
@@ -154,9 +174,15 @@ for (const webgl of [true, false]) {
     const panel = await openStory(page);
     const box = await panel.boundingBox();
     expect(box, "스토리 패널 상자를 읽지 못했습니다").not.toBeNull();
-    // 모바일 채팅 머리 좌우 여백 14px 안에 패널이 들어와야 한다.
-    expect(box!.x).toBeGreaterThanOrEqual(14);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(390 - 14);
+    // 모바일 채팅 머리 좌우 여백과 같은 14px에 맞춘다(폭 calc(100vw-1.75rem)).
+    // 고치기 전(afc3d0eb)에는 폭이 calc(100vw-2rem)이라 오른쪽 여백이 18이었다(오른쪽 372).
+    expect.soft(Math.abs(box!.x - 14), `패널 왼쪽이 14가 아닙니다: ${box!.x}`).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(box!.x + box!.width - 376), `패널 오른쪽이 376이 아닙니다: ${box!.x + box!.width}`).toBeLessThanOrEqual(1);
+    // 켬에서는 포털이 .v3-chat-pane의 glass-chrome 범위를 벗어나므로 팝오버 기본 바탕을 받아야 한다.
+    if (webgl) {
+      const alpha = await panelBackgroundAlpha(panel);
+      expect.soft(alpha, `패널 바탕 알파가 0.85보다 묽습니다: ${alpha}`).toBeGreaterThanOrEqual(0.85);
+    }
     await page.screenshot({ path: path.join(OUT, `chat-390-webgl${webgl ? 1 : 0}-story.png`), animations: "disabled" });
   });
 }
@@ -179,6 +205,8 @@ test("1440 스토리 패널 (WebGL 켬)", async ({ page }) => {
     return Boolean(target && element.contains(target));
   });
   expect(hit, "패널 안쪽 왼쪽 위가 패널 밖 요소에 닿았습니다(팬에 잘림)").toBe(true);
+  const alpha = await panelBackgroundAlpha(panel);
+  expect.soft(alpha, `패널 바탕 알파가 0.85보다 묽습니다: ${alpha}`).toBeGreaterThanOrEqual(0.85);
   await page.screenshot({ path: path.join(OUT, "chat-1440-webgl1-story.png"), animations: "disabled" });
 });
 
