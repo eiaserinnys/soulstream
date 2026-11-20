@@ -4,7 +4,7 @@ import type {
   ModelPresetAvailability,
   ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
-import { parseObjectBody, type Validation } from "../http/route_validation.js";
+import { hasOwn, parseObjectBody, type Validation } from "../http/route_validation.js";
 
 export type RawNodeAgentProfile = {
   name?: unknown;
@@ -544,8 +544,4 @@ function nodeParams(request: FastifyRequest): NodeParams {
 
 function agentParams(request: FastifyRequest): AgentParams {
   return request.params as AgentParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

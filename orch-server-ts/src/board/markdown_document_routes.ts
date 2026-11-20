@@ -16,6 +16,7 @@ import {
 } from "./markdown_document_local_mutations.js";
 import {
   folderAccessDenied,
+  hasOwn,
   parseObjectBody,
   requiredString,
   validationError,
@@ -321,8 +322,4 @@ function customViewParams(request: FastifyRequest): CustomViewParams {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

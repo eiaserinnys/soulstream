@@ -26,6 +26,17 @@ export function requiredString(
   return { ok: false, message: `${key} must be a string` };
 }
 
+export function requiredFiniteNumber(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<number> {
+  const value = body[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { ok: true, value };
+  }
+  return { ok: false, message: `${key} must be a number` };
+}
+
 export function optionalStringOrNull(
   body: Record<string, unknown>,
   key: string,
@@ -48,6 +59,10 @@ export function optionalFiniteNumber(
   return { ok: false, message: `${key} must be a number` };
 }
 
+export function badRequest(reply: FastifyReply, message: string): FastifyReply {
+  return reply.code(400).send({ detail: message });
+}
+
 export function validationError<T>(
   reply: FastifyReply,
   validation: Extract<Validation<T>, { ok: false }>,
@@ -59,6 +74,6 @@ export function folderAccessDenied(reply: FastifyReply): FastifyReply {
   return reply.code(403).send({ detail: "Folder access denied" });
 }
 
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
+export function hasOwn(object: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
 }

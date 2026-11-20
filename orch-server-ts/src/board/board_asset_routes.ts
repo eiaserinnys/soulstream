@@ -9,6 +9,7 @@ import {
   folderAccessDenied,
   optionalFiniteNumber,
   parseObjectBody,
+  requiredFiniteNumber,
   requiredString,
   validationError,
   type Validation,
@@ -246,17 +247,6 @@ function requiredInteger(
 ): Validation<number> {
   const value = body[key];
   if (typeof value === "number" && Number.isInteger(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
-}
-
-function requiredFiniteNumber(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value === "number" && Number.isFinite(value)) {
     return { ok: true, value };
   }
   return { ok: false, message: `${key} must be a number` };

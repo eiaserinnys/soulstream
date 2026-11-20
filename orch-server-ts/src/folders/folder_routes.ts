@@ -18,7 +18,9 @@ import type { FolderControlPlaneService } from "./folder_control_plane_service.j
 import { registerFolderControlPlaneHostRoute } from "./folder_control_plane_host_route.js";
 import { folderProjectPageVersion, folderStarred, loadProjectPageStates, type ProjectPageState } from "./folder_starred.js";
 import {
+  badRequest,
   folderAccessDenied,
+  hasOwn,
   optionalStringOrNull,
   requiredString,
   type Validation,
@@ -344,10 +346,6 @@ function optionalObjectOrNull(
   return { ok: false, message: `${key} must be an object or null` };
 }
 
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
 function sendProviderError(
   reply: FastifyReply,
   error: unknown,
@@ -362,8 +360,4 @@ function sendProviderError(
 
 function folderParams(request: FastifyRequest): FolderParams {
   return request.params as FolderParams;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

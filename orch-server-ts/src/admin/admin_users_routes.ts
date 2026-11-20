@@ -9,6 +9,8 @@ import {
   type AdminAccessProvider,
 } from "./admin_access.js";
 import {
+  badRequest,
+  hasOwn,
   optionalStringOrNull,
   parseObjectBody,
   type Validation,
@@ -280,10 +282,6 @@ function normalizeFolderIds(values: readonly unknown[]): string[] {
   return result;
 }
 
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
 function sendProviderError(
   reply: FastifyReply,
   error: unknown,
@@ -298,8 +296,4 @@ function sendProviderError(
 
 function adminUsersParams(request: FastifyRequest): AdminUsersParams {
   return request.params as AdminUsersParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

@@ -10,6 +10,7 @@ import {
   type SessionDeleteTarget,
 } from "./session_delete.js";
 import {
+  hasOwn,
   optionalStringOrNull,
   parseObjectBody,
   type Validation,
@@ -477,8 +478,4 @@ function sendProviderError(reply: FastifyReply, error: unknown): FastifyReply {
 
 function sessionParams(request: FastifyRequest): SessionParams {
   return request.params as SessionParams;
-}
-
-function hasOwn(object: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

@@ -9,6 +9,7 @@ import {
 } from "./board_access.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
 import {
+  badRequest,
   folderAccessDenied,
   validationError,
   type Validation,
@@ -148,21 +149,6 @@ function optionalQueryString(
   return typeof value === "string" ? value : undefined;
 }
 
-function requiredFiniteNumber(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
-}
-
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
-}
-
 function boardItemNotFound(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({ detail: "Board item not found" });
 }
@@ -185,8 +171,4 @@ function boardItemParams(request: FastifyRequest): BoardItemParams {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
-}
-
-function hasOwn(object: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }
