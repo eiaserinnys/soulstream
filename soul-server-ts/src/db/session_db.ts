@@ -31,8 +31,8 @@ import {
   type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
-import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
-import type { CatalogFolderRow, CatalogSessionAssignmentRow, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogBoardItemRow, ListFolderItemsParams, ListFolderItemsResult, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
+import type { CatalogFolderRow, CatalogSessionAssignmentRow, FolderRow, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 

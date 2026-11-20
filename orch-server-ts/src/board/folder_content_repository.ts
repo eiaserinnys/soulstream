@@ -9,11 +9,9 @@ import {
   type MarkdownDbRow,
 } from "./folder_content_serialization.js";
 import type {
+  CatalogBoardItemRow,
   ListFolderItemsParams,
   ListFolderItemsResult,
-} from "./folder_content_types.js";
-import type {
-  CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "@soulstream/wire-schema/catalog";
 

@@ -4,15 +4,13 @@ import {
   MarkdownDocumentVersionConflictError,
   type CatalogBoardItemRow,
   type CustomViewRow,
+  type ListFolderItemsParams,
+  type ListFolderItemsResult,
   type MarkdownDocumentRow,
 } from "@soulstream/wire-schema/catalog";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
-import type {
-  ListFolderItemsParams,
-  ListFolderItemsResult,
-} from "../db/session_db.js";
 import type {
   CustomViewProjectionHost,
   CustomViewRecordMutationResult,
