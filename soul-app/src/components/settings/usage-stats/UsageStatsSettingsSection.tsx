@@ -329,22 +329,22 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
               </View>
             ) : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
-              <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <SettingsOptionRow label="보기" pickerMode="picker" selected={view}
+              <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: t.spacing.sm }}>
+                <View testID="usage-stats-view-picker">
+                  <SettingsOptionRow label="보기" pickerMode="picker" stabilizePickerWidth selected={view}
                     options={[{ id: 'model', label: '모델별' }, { id: 'project', label: '프로젝트별' }]}
                     onSelect={value => setView(value as 'model' | 'project')} emptyLabel="보기 없음" />
                 </View>
-                <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
-              </View>
-              <View testID="usage-stats-cache-read-row" style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-                <SettingsSegmentedControl<CacheReadSetting>
-                  id="usage-stats-cache-read"
-                  value={includeCacheRead ? 'include' : 'exclude'}
-                  options={CACHE_READ_OPTIONS}
-                  onChange={value => setIncludeCacheRead(value === 'include')}
-                  wrap
-                />
+                <View testID="usage-stats-view-measure-bundle" style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm, maxWidth: '100%' }}>
+                  <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
+                  <SettingsSegmentedControl<CacheReadSetting>
+                    id="usage-stats-cache-read"
+                    value={includeCacheRead ? 'include' : 'exclude'}
+                    options={CACHE_READ_OPTIONS}
+                    onChange={value => setIncludeCacheRead(value === 'include')}
+                    wrap
+                  />
+                </View>
               </View>
               <UsageStackedBars
                 testID={view === 'model' ? 'usage-stats-model-chart' : 'usage-stats-project-chart'}

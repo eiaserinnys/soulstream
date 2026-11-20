@@ -347,18 +347,22 @@ test('캐시 읽기 선택은 기간·필터·날짜·보기·측정값을 바�
   expectCacheReadIncluded(screen);
 });
 
-test('캐시 읽기 선택은 측정 선택 아래의 같은 오른쪽 선에 둔다', async () => {
+test('보기 피커는 내용 폭이고 측정·캐시 세그먼트는 한 묶음으로 줄을 넘긴다', async () => {
   const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   await ready(screen);
 
+  // 피커를 감싸는 View가 남은 폭을 차지하지 않는다. 줄은 넘칠 때만 묶음을 통째로 다음 줄로 보낸다.
   const viewMeasureRow = screen.getByTestId('usage-stats-view-measure-row');
-  expect(within(viewMeasureRow).getByTestId('settings-segment-usage-stats-measure-tokens')).toBeTruthy();
+  expect(viewMeasureRow.props.style).toMatchObject({
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center',
+  });
   expect(within(viewMeasureRow).getByLabelText(/^보기:/)).toBeTruthy();
-  expect(within(viewMeasureRow).queryByTestId('settings-segment-usage-stats-cache-read-exclude')).toBeNull();
+  expect(screen.getByTestId('usage-stats-view-picker').props.style).toBeUndefined();
 
-  const cacheReadRow = screen.getByTestId('usage-stats-cache-read-row');
-  expect(within(cacheReadRow).getByTestId('settings-segment-usage-stats-cache-read-exclude')).toBeTruthy();
-  expect(cacheReadRow.props.style).toMatchObject({ flexDirection: 'row', justifyContent: 'flex-end' });
+  const bundle = screen.getByTestId('usage-stats-view-measure-bundle');
+  expect(within(bundle).getByTestId('settings-segment-usage-stats-measure-tokens')).toBeTruthy();
+  expect(within(bundle).getByTestId('settings-segment-usage-stats-cache-read-exclude')).toBeTruthy();
+  expect(screen.queryByTestId('usage-stats-cache-read-row')).toBeNull();
 
   const cacheReadLine = screen.getByTestId('usage-stats-cache-read-excluded');
   expect(cacheReadLine.props.numberOfLines).toBe(2);

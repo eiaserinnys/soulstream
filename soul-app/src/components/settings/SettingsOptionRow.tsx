@@ -8,10 +8,12 @@ import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet
 import { cardStyles } from '../planner/Card.styles';
 
 export interface SettingsOption { id: string; label: string; available?: boolean; reason?: string | null }
-export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto' }: {
+export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto', stabilizePickerWidth = false }: {
   selected: string; options: SettingsOption[]; onSelect(value: string): void; emptyLabel: string; label?: string;
   variant?: 'chat'; presentation?: 'default' | 'manuscript';
   pickerMode?: 'auto' | 'picker';
+  /** 피커 폭을 가장 긴 선택지의 내용 폭에 고정한다. 보기를 바꿔도 줄 모양이 흔들리지 않는다. 기본 꺼짐. */
+  stabilizePickerWidth?: boolean;
 }) {
   const t = useTokens();
   const baseStyles = useMemo(() => cardStyles(t), [t]);
@@ -24,11 +26,20 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
   const selectedOption = items.find(option => option.id === selected);
   const description = (option: SettingsOption) => option.reason ?? (option.available === false ? '현재 사용 불가' : null);
   const choose = (id: string) => { onSelect(id); setOpen(false); setQuery(''); };
+  const selectedText = <Text style={styles.body}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text>;
   const large = pickerMode === 'picker' || items.length > 5 || items.some(option => option.label.length > 24);
   if (!items.length) return <Text style={styles.body}>{emptyLabel}</Text>;
   const rows = items.filter(option => `${option.label} ${option.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <View>
-    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}><Text style={styles.body}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text></GlassButton> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
+    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}>
+      {stabilizePickerWidth ? <View style={{ alignItems: 'center' }}>
+        {selectedText}
+        {/* 모든 선택지 라벨을 높이 0으로 겹쳐 두어 첫 레이아웃부터 폭이 가장 긴 라벨을 따른다. 읽히지도 눌리지도 않는다. */}
+        <View testID="settings-option-hidden-labels" aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={{ height: 0, overflow: 'hidden', alignItems: 'center' }}>
+          {items.map(option => <Text key={option.id} numberOfLines={1} style={styles.body}>{option.label}</Text>)}
+        </View>
+      </View> : selectedText}
+    </GlassButton> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
       {items.map(option => variant === 'chat'
         ? <GlassButton key={option.id} variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact"
             accessibilityLabel={`${label}: ${option.label}`} accessibilityState={{ selected: selected === option.id }}
