@@ -5,21 +5,25 @@
 앱 설정 > 세션 통계 화면에서 보기 피커와 측정·캐시 세그먼트 묶음의 배치를 잰다.
 
 단언
-  1) 세 컨트롤의 자연 폭 합(간격 포함)이 줄 폭 이하면 셋이 한 줄이고 세로 가운데 차이 1px 이하,
+  1) 자연 폭 합(간격 포함)이 줄 폭 - 1 이하면 셋이 반드시 한 줄이고 세로 가운데 차이 1px 이하,
      피커 왼쪽 끝과 카드 시작선 차이 1px 이하, 묶음 오른쪽 끝과 카드 끝선 차이 1px 이하
-  2) 넘어가는 폭에서는 넘어간 줄의 첫 컨트롤 왼쪽 끝이 카드 시작선과 1px 이하,
-     세그먼트 묶음은 컨트롤 단위로만 갈라진다(컨트롤 하나가 두 줄이 되지 않는다)
+  2) 자연 폭 합이 줄 폭 + 1을 넘으면 반드시 넘어간 모양이고, 넘어간 줄의 첫 컨트롤 왼쪽 끝이
+     카드 시작선과 1px 이하, 세그먼트 묶음은 컨트롤 단위로만 갈라진다(컨트롤 하나가 두 줄이 되지 않는다).
+     줄 폭과의 차이가 ±1px 안이면 어느 쪽이어도 되지만, 그린 모양의 위치 단언은 그대로 지킨다
   3) 모든 폭에서 컨트롤 라벨 getClientRects().length == 1, 말줄임·잘림 없음, 겹침 없음, 가로 스크롤 없음
   4) 피커 폭이 가장 긴 선택지의 내용 폭과 같고, 같은 뷰포트와 테마에서 「모델별」과 「프로젝트별」의
      피커 폭 차이가 1px 이하다(남은 폭으로 늘어나지 않는다)
-  5) 뷰포트 가운데 적어도 하나에서 1)의 한 줄 경우가, 적어도 하나에서 2)의 넘어간 경우가 나온다
+  5) 뷰포트 가운데 적어도 하나에서 1)의 한 줄 경우가, 적어도 하나에서 2)의 넘어간 경우가 나온다.
+     320(작은 iPhone의 확대 표시 폭)이 넘어간 경우를 보장한다
   6) 같은 뷰포트와 테마에서 두 보기가 둘 다 한 줄이거나 둘 다 넘어간 모양이고,
      차트(usage-stats-*-chart-chart) 위쪽 끝 차이가 1px 이하다
   7) 조작 단언: 한 페이지에서 「모델별」→「프로젝트별」→「모델별」로 바꾸며 차트 위쪽 끝과 묶음 위치를
-     전후로 재어 차이가 1px 이하다(376과 390)
-  8) 376(과 390)에서 첫 진입과 기간 「주간」→「월간」 동안 layout-shift를 걸어, 출처에
+     전후로 재어 차이가 1px 이하다(320, 360, 390)
+  8) 320, 360, 390에서 첫 진입과 기간 「주간」→「월간」 동안 layout-shift를 걸어, 출처에
      usage-stats-view-measure-bundle, 차트(usage-stats-*-chart-chart), 제어 줄이 든 이동이 0건이다.
      피커 폭을 그린 뒤에 재서 첫 그림이 다른 모양으로 한 프레임 그려지는 결함을 잡는다.
+  9) 캐시 include 세그먼트의 보이는 글자는 「포함」, 접근성 이름(aria-label)은 「캐시 포함」이다.
+     exclude는 둘 다 「캐시 제외」이고 측정 「토큰」·「정가」의 접근성 이름은 보이는 글자와 같다.
 
 사용: python3 -P scripts/visual-check/usage_stats_controls.py --output <출력 폴더>
 앞선 번들 내보내기는 scripts/visual-check/usage_stats_controls.sh가 맡는다.
@@ -38,11 +42,18 @@ from playwright.sync_api import Page, sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DIST_ROOT = REPO_ROOT / "unified-dashboard" / "dist"
-VIEWPORTS = ((360, 800), (376, 812), (390, 844), (430, 932), (820, 1180))
+VIEWPORTS = ((320, 700), (360, 800), (376, 812), (390, 844), (430, 932), (820, 1180))
 THEMES = ("light", "dark")
 PICKERS = (("model", "모델별"), ("project", "프로젝트별"))
 TOLERANCE = 1.0
 FIXED_NOW = "2026-10-18T12:00:00+09:00"
+# 9) 세그먼트마다 (보이는 글자, 접근성 이름).
+SEGMENT_EXPECTATIONS = {
+    "measure-tokens": ("토큰", "토큰"),
+    "measure-cost": ("정가", "정가"),
+    "cache-read-exclude": ("캐시 제외", "캐시 제외"),
+    "cache-read-include": ("포함", "캐시 포함"),
+}
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -108,6 +119,14 @@ MEASURE_SCRIPT = """
     };
   };
   const q = id => document.querySelector(`[data-testid="${id}"]`);
+  // 9) 세그먼트 칩의 보이는 글자와 접근성 이름(aria-label)을 함께 잰다.
+  const segment = id => {
+    const button = q(`settings-segment-usage-stats-${id}`);
+    const label = q(`settings-segment-usage-stats-${id}-label`);
+    return button && label
+      ? { text: (label.textContent || '').trim(), ariaLabel: button.getAttribute('aria-label') }
+      : null;
+  };
   const row = q('usage-stats-view-measure-row');
   const card = q('usage-stats-models');
   const button = document.querySelector('[aria-label^="보기:"]');
@@ -145,6 +164,9 @@ MEASURE_SCRIPT = """
       bodyScrollWidth: document.body.scrollWidth,
     },
     pickerText: text,
+    segments: Object.fromEntries(
+      ['measure-tokens', 'measure-cost', 'cache-read-exclude', 'cache-read-include']
+        .map(id => [id, segment(id)])),
   };
 }
 """
@@ -182,24 +204,31 @@ def judge(measurement: dict) -> tuple[list[str], dict]:
     card = measurement["card"]
     gap = measurement["gap"]
     natural = picker["width"] + measure["width"] + cache["width"] + 2 * gap
-    fits = natural <= card["width"] + TOLERANCE
     one_line = same_line(picker, measure) and same_line(measure, cache) and same_line(picker, cache)
+    # 자연 폭 합이 줄 폭과 1px 안쪽 차이면 어느 모양이어도 된다. 그 밖에서는 모양이 정해진다.
+    must_fit = natural <= card["width"] - TOLERANCE
+    must_wrap = natural > card["width"] + TOLERANCE
 
-    # 1) 들어가는 폭: 셋이 한 줄, 세로 가운데와 양 끝선.
-    if fits:
-        if not one_line:
-            failures.append(f"1) 자연 폭 {natural:.1f} <= 줄 폭 {card['width']:.1f}인데 한 줄이 아니다")
-        else:
-            for name, other in (("측정", measure), ("캐시", cache)):
-                if abs(picker["cy"] - other["cy"]) > TOLERANCE:
-                    failures.append(f"1) 피커와 {name} 세로 가운데 차이 {abs(picker['cy'] - other['cy']):.1f}px")
-            if abs(picker["left"] - card["left"]) > TOLERANCE:
-                failures.append(f"1) 피커 왼쪽 {picker['left']:.1f} != 카드 시작선 {card['left']:.1f}")
-            if abs(cache["right"] - card["right"]) > TOLERANCE:
-                failures.append(f"1) 묶음 오른쪽 {cache['right']:.1f} != 카드 끝선 {card['right']:.1f}")
+    # 1) 들어가는 폭: 셋이 한 줄이어야 한다.
+    if must_fit and not one_line:
+        failures.append(f"1) 자연 폭 {natural:.1f} <= 줄 폭 {card['width']:.1f} - 1인데 한 줄이 아니다")
 
-    # 2) 넘어가는 폭: 묶음이 통째로 다음 줄, 카드 시작선에서 시작, 컨트롤 단위로만 갈라짐.
-    if not fits:
+    # 2) 넘어가는 폭: 반드시 넘어간 모양이어야 한다.
+    if must_wrap and one_line:
+        failures.append(f"2) 자연 폭 {natural:.1f} > 줄 폭 {card['width']:.1f} + 1인데 한 줄이다")
+
+    # 그린 모양(한 줄/넘어감)의 위치 단언. 경계 띠 안에서도 고른 모양은 그대로 지킨다.
+    if one_line:
+        # 1) 셋이 한 줄, 세로 가운데와 양 끝선.
+        for name, other in (("측정", measure), ("캐시", cache)):
+            if abs(picker["cy"] - other["cy"]) > TOLERANCE:
+                failures.append(f"1) 피커와 {name} 세로 가운데 차이 {abs(picker['cy'] - other['cy']):.1f}px")
+        if abs(picker["left"] - card["left"]) > TOLERANCE:
+            failures.append(f"1) 피커 왼쪽 {picker['left']:.1f} != 카드 시작선 {card['left']:.1f}")
+        if abs(cache["right"] - card["right"]) > TOLERANCE:
+            failures.append(f"1) 묶음 오른쪽 {cache['right']:.1f} != 카드 끝선 {card['right']:.1f}")
+    else:
+        # 2) 묶음이 통째로 다음 줄, 카드 시작선에서 시작, 컨트롤 단위로만 갈라짐.
         if not same_line(measure, cache):
             failures.append("2) 넘어간 줄에서 측정과 캐시 컨트롤이 서로 다른 줄이다")
         if picker["bottom"] - measure["top"] > TOLERANCE:
@@ -245,7 +274,19 @@ def judge(measurement: dict) -> tuple[list[str], dict]:
         if abs(text_center - button_center) > TOLERANCE:
             failures.append(f"3) 피커 라벨이 가운데에서 {abs(text_center - button_center):.1f}px 벗어난다")
 
-    return failures, {"natural": natural, "cardWidth": card["width"], "fits": fits, "oneLine": one_line}
+    # 9) 캐시 include는 보이는 글자만 줄이고 접근성 이름은 「캐시 포함」을 지킨다.
+    for key, (text, aria) in SEGMENT_EXPECTATIONS.items():
+        segment = measurement.get("segments", {}).get(key)
+        if segment is None:
+            failures.append(f"9) 세그먼트 {key}를 찾지 못했다")
+            continue
+        if segment["text"] != text:
+            failures.append(f"9) 세그먼트 {key}의 보이는 글자 '{segment['text']}' != '{text}'")
+        if segment["ariaLabel"] != aria:
+            failures.append(f"9) 세그먼트 {key}의 접근성 이름 '{segment['ariaLabel']}' != '{aria}'")
+
+    return failures, {"natural": natural, "cardWidth": card["width"],
+                      "mustFit": must_fit, "mustWrap": must_wrap, "oneLine": one_line}
 
 
 def compare_views(measurements: dict[str, dict], failures: list[str]) -> None:
@@ -357,9 +398,10 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
                 continue
             found, summary = judge(measurement)
             failures.extend(f"18) {resize_width}: {item}" for item in found)
-            expected_line = resize_width >= 390
-            if summary["oneLine"] != expected_line:
-                failures.append(f"18) {resize_width}: 배치가 다시 서지 않았다(한 줄 기대 {expected_line})")
+            # 360은 자연 폭 합이 줄 폭과 같은 경계라 어느 모양이어도 된다(단언 1·2의 경계 규칙).
+            # 390은 자연 폭이 줄 폭보다 확실히 작으므로 한 줄이어야 한다.
+            if resize_width >= 390 and not summary["oneLine"]:
+                failures.append(f"18) {resize_width}: 배치가 다시 서지 않았다(한 줄 기대 True)")
         scroll_after = page.evaluate(SCROLL_TOP_SCRIPT)
         store[f"interaction-{width}-scroll"] = {"before": scroll_before, "after": scroll_after}
         if abs(scroll_before - scroll_after) > 1:
@@ -369,8 +411,8 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
 
 
 def run_view_switch(browser, base: str, failures: list[str], store: dict) -> None:
-    """단언 7): 한 페이지에서 보기를 바꿔도 차트 위쪽 끝과 묶음 자리가 그대로다."""
-    for width, height in ((376, 812), (390, 844)):
+    """단언 7): 한 페이지에서 보기를 바꿔도 차트 위쪽 끝과 묶음 자리가 그대로다. 320, 360, 390."""
+    for width, height in ((320, 700), (360, 800), (390, 844)):
         context = browser.new_context(viewport={"width": width, "height": height},
                                       color_scheme="light", reduced_motion="reduce")
         page = context.new_page()
@@ -438,12 +480,12 @@ SHIFT_OBSERVER = """
 
 
 def run_layout_shift(browser, base: str, failures: list[str], store: dict) -> None:
-    """단언 8): 첫 진입과 기간 전환 동안 제어 줄과 차트가 그려진 뒤에 움직이지 않는다.
+    """단언 8): 첫 진입과 기간 전환 동안 제어 줄과 차트가 그려진 뒤에 움직이지 않는다. 320, 360, 390.
 
     브라우저는 입력 직후 500ms의 이동에 hadRecentInput을 달아 누적값에서 빼지만, 이 단언은
     그 표시와 상관없이 모든 이동을 센다. 기간 전환이 곧 입력이기 때문이다.
     """
-    for width, height in ((376, 812), (390, 844)):
+    for width, height in ((320, 700), (360, 800), (390, 844)):
         context = browser.new_context(viewport={"width": width, "height": height},
                                       color_scheme="dark", reduced_motion="reduce")
         context.add_init_script(SHIFT_OBSERVER)
@@ -525,16 +567,16 @@ def main() -> int:
                                 continue
                             found, summary = judge(measurement)
                             failures.extend(f"{name}: {item}" for item in found)
-                            if summary["fits"] and summary["oneLine"]:
+                            if summary["oneLine"]:
                                 one_line_seen = True
-                            if not summary["fits"]:
+                            else:
                                 wrapped_seen = True
                             # 폰/태블릿은 여백 토큰이 달라 같은 무리 안에서만 폭을 견준다.
                             device = "phone" if width < 600 else "tablet"
                             picker_widths.setdefault(f"{device}/{picker_id}", []).append(
                                 measurement["button"]["width"])
                             print(f"{name}: 줄 {summary['cardWidth']:.1f}, 자연 {summary['natural']:.1f}, "
-                                  f"{'한 줄' if summary['fits'] else '묶음 다음 줄'}, 실패 {len(found)}")
+                                  f"{'한 줄' if summary['oneLine'] else '묶음 다음 줄'}, 실패 {len(found)}")
                             context.close()
 
                 compare_views(measurements, failures)

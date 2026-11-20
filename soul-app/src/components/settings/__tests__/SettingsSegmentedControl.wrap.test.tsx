@@ -47,6 +47,19 @@ test('default settings segments retain equal widths and the existing label behav
   expect(screen.UNSAFE_getAllByType(Text)[0].props.numberOfLines).toBeUndefined();
 });
 
+test('an option accessibilityLabel becomes the accessibility name while the visible text stays the label', () => {
+  const labeled = [
+    { value: 'exclude', label: '캐시 제외' },
+    { value: 'include', label: '포함', accessibilityLabel: '캐시 포함' },
+  ];
+  const screen = render(<SettingsSegmentedControl id="named" value="exclude" options={labeled} onChange={jest.fn()} />);
+  const include = screen.getByTestId('settings-segment-named-include');
+  expect(include.props.accessibilityLabel).toBe('캐시 포함');
+  expect(screen.getByLabelText('캐시 포함').props.testID).toBe('settings-segment-named-include');
+  expect(screen.getByTestId('settings-segment-named-include-label').props.children).toBe('포함');
+  expect(screen.getByTestId('settings-segment-named-exclude').props.accessibilityLabel).toBe('캐시 제외');
+});
+
 test('wrap moves whole natural-width buttons and keeps each label on one line', () => {
   const onChange = jest.fn();
   const screen = render(<SettingsSegmentedControl wrap id="wrap" value="7" options={options} onChange={onChange} />);

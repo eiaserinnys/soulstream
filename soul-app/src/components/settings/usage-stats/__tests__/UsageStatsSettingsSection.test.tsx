@@ -347,6 +347,16 @@ test('캐시 읽기 선택은 기간·필터·날짜·보기·측정값을 바�
   expectCacheReadIncluded(screen);
 });
 
+test('캐시 include 세그먼트는 보이는 글자 「포함」과 접근성 이름 「캐시 포함」을 함께 쓴다', async () => {
+  const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
+  await ready(screen);
+
+  expect(screen.getByTestId('settings-segment-usage-stats-cache-read-include-label').props.children).toBe('포함');
+  const include = screen.getByTestId('settings-segment-usage-stats-cache-read-include');
+  expect(include.props.accessibilityLabel).toBe('캐시 포함');
+  expect(screen.getByLabelText('캐시 포함').props.testID).toBe('settings-segment-usage-stats-cache-read-include');
+});
+
 test('보기 피커는 내용 폭이고 측정·캐시 세그먼트는 한 묶음으로 줄을 넘긴다', async () => {
   const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   await ready(screen);
