@@ -124,8 +124,12 @@ function createApi(initial: ClaudeAccountList) {
   };
 }
 
-function renderCentral(harness: ReturnType<typeof createApi>, initial = harness.current()) {
-  return render(<ClaudeAccountPoolSection central initialList={initial} api={harness.api} />);
+function renderCentral(
+  harness: ReturnType<typeof createApi>,
+  initial = harness.current(),
+  onCentralChange?: () => void,
+) {
+  return render(<ClaudeAccountPoolSection central initialList={initial} api={harness.api} onCentralChange={onCentralChange} />);
 }
 
 function renderNode(
@@ -158,12 +162,17 @@ describe('ClaudeAccountPoolSection central target', () => {
 
   test('deletes through the central API and rereads the central list without deferred wording', async () => {
     const harness = createApi(list([account('a', 1), account('b', 2)]));
-    const view = renderCentral(harness);
+    const onCentralChange = jest.fn();
+    const view = renderCentral(harness, harness.current(), onCentralChange);
 
     fireEvent.press(view.getByTestId('claude-account-delete-a'));
+    // 중앙 계정은 중앙 풀에서 지운다고 묻는다.
+    expect(view.getByText('이 계정을 중앙 풀에서 삭제할까요?')).toBeTruthy();
+    expect(view.queryByText('이 계정을 노드에서 삭제할까요?')).toBeNull();
     fireEvent.press(view.getByTestId('claude-account-delete-confirm-a'));
 
     await waitFor(() => expect(harness.api.deleteCentralClaudeAuthAccount).toHaveBeenCalledWith('a'));
+    await waitFor(() => expect(onCentralChange).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(view.getByText('Claude 계정을 삭제했습니다.')).toBeTruthy());
     expect(harness.api.getCentralClaudeAuthAccounts).toHaveBeenCalledTimes(1);
     expect(view.queryByText('현재 세션이 끝난 뒤 삭제합니다.')).toBeNull();
@@ -175,7 +184,8 @@ describe('ClaudeAccountPoolSection central target', () => {
     const initial = list([account('a', 1)]);
     const harness = createApi(initial);
     const refreshed = list([account('a', 1), account('new', 2, { email: 'new@example.invalid' })]);
-    const view = renderCentral(harness);
+    const onCentralChange = jest.fn();
+    const view = renderCentral(harness, harness.current(), onCentralChange);
 
     fireEvent.press(view.getByTestId('claude-account-add'));
     await waitFor(() => expect(harness.api.startCentralClaudeAuthLogin).toHaveBeenCalledWith(undefined));
@@ -194,6 +204,34 @@ describe('ClaudeAccountPoolSection central target', () => {
     await waitFor(() => expect(view.getByTestId('claude-account-row-new')).toBeTruthy());
     expect(harness.api.submitClaudeAuthLoginCode).not.toHaveBeenCalled();
     expect(harness.api.getCentralClaudeAuthAccounts).toHaveBeenCalledTimes(1);
+    expect(onCentralChange).toHaveBeenCalled();
+  });
+
+  test('tells the node screen after a central change and stays quiet on the node target', async () => {
+    const harness = createApi(list([account('a', 1)]));
+    const onCentralChange = jest.fn();
+    const view = renderCentral(harness, harness.current(), onCentralChange);
+
+    fireEvent(view.getByTestId('claude-account-toggle-a'), 'valueChange', false);
+    await waitFor(() => expect(harness.api.patchCentralClaudeAuthAccount).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onCentralChange).toHaveBeenCalledTimes(1));
+
+    const nodeHarness = createApi(list([account('local-a', 1)]));
+    const nodeChange = jest.fn();
+    const nodeView = render(<ClaudeAccountPoolSection nodeId="node-a" initialList={nodeHarness.current()}
+      api={nodeHarness.api} onCentralChange={nodeChange} />);
+    fireEvent(nodeView.getByTestId('claude-account-toggle-local-a'), 'valueChange', false);
+    await waitFor(() => expect(nodeHarness.api.patchClaudeAuthAccount).toHaveBeenCalledTimes(1));
+    expect(nodeChange).not.toHaveBeenCalled();
+  });
+
+  test('keeps the node wording when a node account is deleted', () => {
+    const harness = createApi(list([account('local-a', 1)]));
+    const view = renderNode(harness);
+
+    fireEvent.press(view.getByTestId('claude-account-delete-local-a'));
+    expect(view.getByText('이 계정을 노드에서 삭제할까요?')).toBeTruthy();
+    expect(view.queryByText('이 계정을 중앙 풀에서 삭제할까요?')).toBeNull();
   });
 
   test('draws only local accounts from a node list and keeps the node pool summary as served', () => {
@@ -247,7 +285,7 @@ describe('ClaudeAccountPoolSection central receive row', () => {
     expect(view.getByTestId('claude-central-receive-switch').props.value).toBe(false);
   });
 
-  test('goes back to the saved value and retries the same write after a failure', async () => {
+  test('keeps the switch in place and retries the same write by pressing it again after a failure', async () => {
     const harness = createApi(list([account('local-a', 1)]));
     harness.api.putClaudeCentralReceive.mockRejectedValueOnce(new Error('offline'));
     const view = renderNode(harness, harness.current(), { centralSettingsApi: harness.api });
@@ -257,25 +295,33 @@ describe('ClaudeAccountPoolSection central receive row', () => {
     fireEvent(toggle, 'valueChange', false);
 
     await waitFor(() => expect(view.getByText('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.')).toBeTruthy());
+    // 스위치는 돌아간 값 그대로 제자리에 있고 눌린다. 별도 다시 시도 단추는 없다.
     expect(view.getByTestId('claude-central-receive-switch').props.value).toBe(true);
+    expect(view.getByTestId('claude-central-receive-switch').props.disabled).toBe(false);
+    expect(view.queryByTestId('claude-central-receive-retry')).toBeNull();
 
-    fireEvent.press(view.getByTestId('claude-central-receive-retry'));
+    fireEvent(view.getByTestId('claude-central-receive-switch'), 'valueChange', false);
     await waitFor(() => expect(harness.api.putClaudeCentralReceive).toHaveBeenCalledTimes(2));
     expect(harness.api.putClaudeCentralReceive).toHaveBeenLastCalledWith('node-a', false);
     await waitFor(() => expect(view.getByTestId('claude-central-receive-switch').props.value).toBe(false));
+    // 다음 저장이 시작되면 오류 글은 지운다.
+    expect(view.queryByText('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.')).toBeNull();
   });
 
-  test('replaces the switch with a failure notice and a retry when the settings cannot be read', async () => {
+  test('keeps the receive name, puts the retry in the switch slot and uses the load failure copy', async () => {
     const harness = createApi(list([account('local-a', 1)]));
     harness.api.getClaudeCentralSettings.mockRejectedValueOnce(new Error('offline'));
     const view = renderNode(harness, harness.current(), { centralSettingsApi: harness.api });
 
-    await waitFor(() => expect(view.getByText('계정 목록을 갱신하지 못했습니다.')).toBeTruthy());
+    await waitFor(() => expect(view.getByText('받기 설정을 불러오지 못했습니다.')).toBeTruthy());
+    expect(view.getByText('중앙 풀 받기')).toBeTruthy();
+    expect(view.queryByText('계정 목록을 갱신하지 못했습니다.')).toBeNull();
     expect(view.queryByTestId('claude-central-receive-switch')).toBeNull();
 
     fireEvent.press(view.getByTestId('claude-central-receive-retry'));
     await waitFor(() => expect(view.getByTestId('claude-central-receive-switch')).toBeTruthy());
     expect(view.getByTestId('claude-central-receive-switch').props.value).toBe(true);
+    expect(view.queryByText('받기 설정을 불러오지 못했습니다.')).toBeNull();
   });
 
   test('does not draw the receive row without a settings api or on the central target', () => {

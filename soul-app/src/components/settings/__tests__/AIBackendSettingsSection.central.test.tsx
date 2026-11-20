@@ -108,7 +108,7 @@ describe('AIBackendSettingsSection central pool zone', () => {
 
     await waitFor(() => expect(view.getByTestId('settings-section-central-pool')).toBeTruthy());
     await waitFor(() => expect(view.getByTestId('claude-account-row-central-a')).toBeTruthy());
-    expect(view.getByText('중앙 풀')).toBeTruthy();
+    expect(view.getAllByText('중앙 풀').length).toBeGreaterThan(0);
     expect(view.getByTestId('settings-section-backend-scope')).toBeTruthy();
     expect(api.getCentralClaudeAuthAccounts).toHaveBeenCalledTimes(1);
 
@@ -134,6 +134,9 @@ describe('AIBackendSettingsSection central pool zone', () => {
     const view = renderSection(api, 'orchestrator');
 
     await waitFor(() => expect(view.getByTestId('central-pool-loading')).toBeTruthy());
+    // 목록이 오기 전에도 중앙 구역 머리는 보인다.
+    expect(view.getByTestId('central-pool-title')).toBeTruthy();
+    expect(view.getAllByText('중앙 풀').length).toBeGreaterThan(0);
     expect(view.queryByText('Claude 계정')).toBeNull();
   });
 
@@ -143,9 +146,27 @@ describe('AIBackendSettingsSection central pool zone', () => {
     const view = renderSection(api, 'orchestrator');
 
     await waitFor(() => expect(view.getByText('계정 목록을 갱신하지 못했습니다.')).toBeTruthy());
+    // 실패 상태에서도 중앙 구역 머리는 보인다.
+    expect(view.getByTestId('central-pool-title')).toBeTruthy();
+    expect(view.getAllByText('중앙 풀').length).toBeGreaterThan(0);
     fireEvent.press(view.getByLabelText('다시 시도'));
 
     await waitFor(() => expect(view.getByTestId('claude-account-row-central-a')).toBeTruthy());
     expect(api.getCentralClaudeAuthAccounts).toHaveBeenCalledTimes(2);
+  });
+
+  test('rereads the selected node list and usage summary after the central pool changes', async () => {
+    const api = createApi(centralList([account('central-a', 1)]));
+    const view = renderSection(api, 'orchestrator');
+
+    await waitFor(() => expect(view.getByTestId('claude-account-row-central-a')).toBeTruthy());
+    await waitFor(() => expect(api.getUsageSummary).toHaveBeenCalledTimes(1));
+    const listed = api.getClaudeAuthAccounts.mock.calls.length;
+
+    fireEvent(view.getByTestId('claude-account-toggle-central-a'), 'valueChange', false);
+
+    await waitFor(() => expect(api.patchCentralClaudeAuthAccount).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getUsageSummary).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.getClaudeAuthAccounts.mock.calls.length).toBe(listed + 1));
   });
 });

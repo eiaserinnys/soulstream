@@ -30,9 +30,10 @@ ui-design 0절 14~18번(초점, Tab·Esc, 360 넘침, 오류, 창 크기)도 같
     {출력}/report.json         단언별 판정과 종합 결과
 
 중앙 카드가 없거나 노드 목록 맨 위가 아니거나, 틀·머리 높이·좌우 끝선이 노드 카드와
-1px 넘게 다르거나, 계정 이메일이 잘리거나, 받기 스위치의 값·비활성·되돌림이 기준본과
-다르거나, 로그인 시트 상태가 다르거나, 360/390에서 가로 넘침이 있거나, 초점·Esc·창 크기
-조작 결과가 기대와 다르면 종료 코드 1로 끝난다.
+1px 넘게 다르거나, 머리 끝 ▲▼가 키보드 단추가 아니거나, 계정 이메일이 잘리거나,
+받기 스위치의 값·비활성·되돌림과 실패 뒤 스위치 유지가 기준본과 다르거나, 로그인 시트
+상태가 다르거나, 360/390에서 가로 넘침이 있거나, 초점·Tab·Enter·Esc·창 크기 조작 결과가
+기대와 다르면 종료 코드 1로 끝난다.
 """
 
 from __future__ import annotations
@@ -140,10 +141,15 @@ MEASURE_SCRIPT = """
       right: round(box.right),
     };
   });
+  const toggleOf = (root) => root
+    ? Array.from(root.querySelectorAll('button')).find((item) => ['펼치기', '접기'].includes(item.getAttribute('aria-label') ?? '')) ?? null
+    : null;
   const receiveRow = document.querySelector('[data-testid="claude-central-receive"]');
   const receiveBody = receiveRow?.closest('.c724-pool-account-body');
   const accountList = receiveBody?.querySelector('.c724-account-list');
   const receiveSwitch = receiveRow?.querySelector('[data-testid="claude-central-receive-switch"]');
+  const receiveLine = receiveRow?.querySelector('.c724-account-top');
+  const receiveErrors = receiveRow ? Array.from(receiveRow.querySelectorAll('.c724-pool-error')) : [];
   const sheet = document.querySelector('[data-testid="claude-login-sheet"]');
   const sheetInput = sheet?.querySelector('input[aria-label="Claude 인증 코드"]');
   const pendingRow = card?.querySelector('[data-provider-id="claude"][data-state="pending"]');
@@ -182,10 +188,32 @@ MEASURE_SCRIPT = """
       buttons: header.querySelectorAll('button').length,
       expanded: header.getAttribute('aria-expanded'),
       statusDot: !!header.querySelector('.c724-status-dot'),
+      toggle: (() => {
+        const button = toggleOf(header);
+        return button ? {
+          tag: button.tagName,
+          type: button.getAttribute('type'),
+          ariaLabel: button.getAttribute('aria-label'),
+          ariaExpanded: button.getAttribute('aria-expanded'),
+          text: text(button),
+          tabIndex: button.tabIndex,
+        } : null;
+      })(),
     } : null,
     nodeHeader: nodeHeader ? {
       ...rect(nodeHeader),
       expanded: nodeHeader.getAttribute('aria-expanded'),
+      toggle: (() => {
+        const button = toggleOf(nodeHeader);
+        return button ? {
+          tag: button.tagName,
+          type: button.getAttribute('type'),
+          ariaLabel: button.getAttribute('aria-label'),
+          ariaExpanded: button.getAttribute('aria-expanded'),
+          text: text(button),
+          tabIndex: button.tabIndex,
+        } : null;
+      })(),
     } : null,
     gapCentralToList: card && nodeList
       ? round(nodeList.getBoundingClientRect().top - card.getBoundingClientRect().bottom)
@@ -213,6 +241,9 @@ MEASURE_SCRIPT = """
         .filter((item) => text(item).includes('다시 시도')).length,
       accountRows: receiveBody?.querySelectorAll('.c724-pool-account-item').length ?? 0,
       rect: rect(receiveRow),
+      topLineHeight: receiveLine ? round(receiveLine.getBoundingClientRect().height) : null,
+      errorBelowLine: !!receiveLine && receiveErrors.length > 0 && receiveErrors.every((element) =>
+        element.getBoundingClientRect().top >= receiveLine.getBoundingClientRect().bottom - 0.5),
     } : null,
     listError: errorRow ? {
       text: text(errorRow.querySelector('.c724-pool-error')),
@@ -464,6 +495,41 @@ def run_interactions(page: Page, base: str, out: Path, width: int, theme: str, c
         stops.append(page.evaluate(FOCUS_SCRIPT))
     result["tabStops"] = stops
 
+    # 머리 끝 ▲▼ 단추가 Tab으로 초점을 받고 Enter로 카드를 펼친다.
+    # 이 장면은 중앙 카드가 펼쳐진 채로 시작한다. 키보드로 「펼치는」 것을 재려면 먼저 접는다.
+    goto_scene(page, base, "accounts")
+    if page.locator('[data-testid="claude-central-pool-header"] button[aria-label="접기"]').count():
+        page.get_by_test_id("claude-central-pool-header").get_by_role("button", name="접기").click(force=True)
+        page.wait_for_timeout(200)
+    page.evaluate("() => document.activeElement?.blur?.()")
+    keyboard: dict = {"tabs": None, "focus": None, "after": None, "rowVisible": 0}
+    for index in range(1, 26):
+        page.keyboard.press("Tab")
+        focus = page.evaluate(FOCUS_SCRIPT)
+        if focus and focus.get("ariaLabel") in ("펼치기", "접기") and focus.get("inCard"):
+            keyboard["tabs"] = index
+            keyboard["focus"] = focus
+            break
+    if keyboard["tabs"] is not None:
+        page.evaluate("() => document.fonts.ready")
+        path = out / f"central-pool-header-focus-{width}-{theme}.png"
+        page.screenshot(path=str(path), animations="disabled")
+        print(f"header-focus-{width}-{theme}: {path.as_posix()}", flush=True)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(300)
+        keyboard["after"] = page.evaluate(
+            """() => {
+              const header = document.querySelector('[data-testid="claude-central-pool-header"]');
+              return {
+                expanded: header?.getAttribute('aria-expanded') ?? null,
+                button: !!header?.querySelector('button[aria-label="접기"]'),
+                focusInCard: !!document.activeElement?.closest?.('[data-testid="claude-central-pool-card"]'),
+              };
+            }"""
+        )
+        keyboard["rowVisible"] = page.locator('[data-testid="claude-pool-row"]').count()
+    result["keyboard"] = keyboard
+
     # 18: 입력 중인 글과 배치가 창을 줄여도 유지된다.
     goto_scene(page, base, "login-url-ready")
     open_central(page)
@@ -514,6 +580,15 @@ def collect_captures(
         open_scene(page, base, scene, kind)
         # 고치기 전 코드에는 스위치가 없다. 장면은 찍고 단언이 실패를 보고하게 둔다.
         has_switch = page.locator('[data-testid="claude-central-receive-switch"]').count() > 0
+        receive_line_before = None
+        if label == "receive-failure" and has_switch:
+            # 실패 안내가 줄 아래에 서도 줄 높이는 그대로여야 목록이 밀리지 않는다.
+            receive_line_before = page.evaluate(
+                """() => {
+                  const line = document.querySelector('[data-testid="claude-central-receive"] .c724-account-top');
+                  return line ? Math.round(line.getBoundingClientRect().height * 10) / 10 : null;
+                }"""
+            )
         if label == "receive-pending" and has_switch:
             page.get_by_test_id("claude-central-receive-switch").click(force=True)
             page.wait_for_function(
@@ -528,7 +603,9 @@ def collect_captures(
             page.get_by_test_id("claude-central-receive-switch").click(force=True)
             page.wait_for_selector('[data-testid="claude-central-receive"] .c724-pool-error', state="visible")
             page.wait_for_timeout(200)
-        capture(page, out / f"central-pool-{label}-{width}-{theme}.png", f"{label}-{width}-{theme}", captures)
+        data = capture(page, out / f"central-pool-{label}-{width}-{theme}.png", f"{label}-{width}-{theme}", captures)
+        if receive_line_before is not None:
+            data["receiveLineHeightBefore"] = receive_line_before
 
 
 def run_overflow(page: Page, base: str, out: Path, theme: str, captures: list[dict]) -> dict:
@@ -594,12 +671,65 @@ def compare_frame(capture: dict) -> list[dict]:
                 "check": "header-title-only",
                 "detail": f"머리 글이 {data['header']['text']!r}입니다.",
             })
-        if data["header"]["buttons"] or data["header"]["statusDot"]:
+        if data["header"]["statusDot"]:
             failures.append({
                 "capture": capture["capture"],
-                "check": "header-title-only",
-                "detail": "머리에 단추나 상태 점이 있습니다.",
+                "check": "header-no-status-dot",
+                "detail": "머리에 상태 점이 있습니다.",
             })
+        # 머리 끝 ▲▼는 키보드로 눌리는 단추다. 머리 전체 클릭은 마우스용으로 남는다.
+        toggle = data["header"].get("toggle")
+        expected_label = "접기" if data["header"]["expanded"] == "true" else "펼치기"
+        expected_glyph = "▲" if data["header"]["expanded"] == "true" else "▼"
+        if data["header"]["buttons"] != 1:
+            failures.append({
+                "capture": capture["capture"],
+                "check": "header-button-count",
+                "detail": f"머리 단추 {data['header']['buttons']}개",
+            })
+        if not toggle:
+            failures.append({
+                "capture": capture["capture"],
+                "check": "header-toggle",
+                "detail": "머리 끝의 펼치기 단추를 찾지 못했습니다.",
+            })
+        else:
+            if toggle["tag"] != "BUTTON" or toggle["type"] != "button":
+                failures.append({
+                    "capture": capture["capture"],
+                    "check": "header-toggle-element",
+                    "detail": f"{toggle['tag']} type={toggle['type']}",
+                })
+            if toggle["ariaLabel"] != expected_label:
+                failures.append({
+                    "capture": capture["capture"],
+                    "check": "header-toggle-label",
+                    "detail": f"aria-label {toggle['ariaLabel']!r}",
+                })
+            if toggle["ariaExpanded"] != data["header"]["expanded"]:
+                failures.append({
+                    "capture": capture["capture"],
+                    "check": "header-toggle-expanded",
+                    "detail": f"aria-expanded {toggle['ariaExpanded']!r}",
+                })
+            if toggle["text"] != expected_glyph:
+                failures.append({
+                    "capture": capture["capture"],
+                    "check": "header-toggle-glyph",
+                    "detail": f"글리프 {toggle['text']!r}",
+                })
+            if toggle["tabIndex"] < 0:
+                failures.append({
+                    "capture": capture["capture"],
+                    "check": "header-toggle-tabindex",
+                    "detail": f"tabIndex {toggle['tabIndex']}",
+                })
+    if data["nodeHeader"] is not None and not data["nodeHeader"].get("toggle"):
+        failures.append({
+            "capture": capture["capture"],
+            "check": "node-header-toggle",
+            "detail": "노드 카드 머리에 펼치기 단추가 없습니다.",
+        })
     if data["gapCentralToList"] is None or abs(data["gapCentralToList"] - CARD_GAP_PX) > 0.5:
         failures.append({
             "capture": capture["capture"],
@@ -769,15 +899,25 @@ def scene_checks(label: str, capture: dict) -> list[dict]:
             if receive and receive["disabled"] is not True:
                 fail("pending-disabled", "기다리는 동안 스위치가 눌립니다.")
         elif label == "receive-failure":
-            # 실패하면 저장 전 값으로 되돌아가고, 그 줄이 오류와 다시 시도로 바뀐다(풀 줄과 같은 꼴).
+            # 저장에 실패하면 스위치는 제자리에서 되돌아간 값을 보이며 눌린다. 다시 시도는 그 스위치를 다시 누르는 것이다.
             if receive and receive["dataReceive"] != "on":
                 fail("failure-revert", f"실패 뒤 값 {receive['dataReceive']}")
-            if receive and receive["switchPresent"]:
-                fail("failure-switch", "실패 안내 자리에 스위치가 남아 있습니다.")
+            if not receive or not receive["switchPresent"]:
+                fail("failure-switch-kept", "실패 뒤 스위치가 제자리에 없습니다.")
+            elif receive["checked"] != "true":
+                fail("failure-checked", f"실패 뒤 스위치 {receive['checked']}")
+            elif receive["disabled"] is True:
+                fail("failure-enabled", "실패 뒤 스위치가 눌리지 않습니다.")
             if receive and not receive["error"]:
                 fail("failure-copy", "스위치 실패 안내가 없습니다.")
-            if receive and receive["retryButtons"] < 1:
-                fail("failure-retry", "스위치 다시 시도가 없습니다.")
+            if receive and receive["retryButtons"] > 0:
+                fail("failure-no-retry", f"다시 시도 단추 {receive['retryButtons']}개")
+            if receive and not receive["errorBelowLine"]:
+                fail("failure-error-below", "오류 글이 받기 줄 아래에 있지 않습니다.")
+            before = data.get("receiveLineHeightBefore")
+            if before is not None and receive and receive["topLineHeight"] is not None:
+                if abs(before - receive["topLineHeight"]) > 0.5:
+                    fail("failure-line-height", f"줄 높이 {before}px → {receive['topLineHeight']}px")
 
     if label == "node-card-invariant":
         # 노드 카드만 펼친 모습이 지금과 같아야 한다. 중앙 카드는 접힌 채 남고, 노드 풀 줄을
@@ -826,6 +966,19 @@ def interaction_checks(result: dict) -> list[dict]:
             continue
         if stop["inSheet"]:
             fail("tab-hidden", f"{index}번째 Tab이 닫힌 시트로 들어갔습니다: {stop}")
+
+    keyboard = result.get("keyboard") or {}
+    if keyboard.get("tabs") is None:
+        fail("header-toggle-tab", "Tab으로 머리 펼치기 단추에 닿지 못했습니다.")
+    else:
+        focus = keyboard.get("focus") or {}
+        if focus.get("tag") != "BUTTON" or focus.get("ariaLabel") != "펼치기":
+            fail("header-toggle-focus", f"머리 펼치기 단추가 아닙니다: {focus}")
+        after = keyboard.get("after") or {}
+        if after.get("expanded") != "true" or not after.get("button"):
+            fail("header-toggle-enter", f"Enter로 펼치지 못했습니다: {after}")
+        if not keyboard.get("rowVisible"):
+            fail("header-toggle-row", "Enter로 펼친 뒤 중앙 목록 줄이 없습니다.")
 
     resize = result["resize"]
     if resize["before"]["inputValue"] != "review-code#review-state":

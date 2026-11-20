@@ -376,6 +376,7 @@ export function ClaudePoolRow(props: Props) {
             busy={busyAccountId !== null || loginFlow !== null}
             confirmingDelete={confirmingDeleteId === account.id}
             highlighted={highlightAccountId === account.id}
+            central={isCentral}
             onEnabledChange={(enabled) => void patchAccount(account.id, { enabled })}
             onMove={(direction) => moveAccount(account, index, direction)}
             onRelogin={() => void beginLogin(account.id)}

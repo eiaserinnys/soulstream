@@ -148,9 +148,6 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                         : "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]",
                     )}
                   />
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {isExpanded ? "▲" : "▼"}
-                  </span>
                 </NodeCardHeader>
                 {/* 확장 패널 — 공급자 중립 사용량 아래에 그 노드의 cogito 상태 */}
                 {isExpanded && <NodeCardBody>

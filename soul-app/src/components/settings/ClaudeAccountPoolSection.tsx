@@ -51,10 +51,14 @@ export type ClaudeAccountPoolSectionHandle = {
 type CommonProps = {
   initialList: ClaudeAccountList;
   showHeader?: boolean;
+  /** 머리 제목. 중앙 대상은 「중앙 풀」을 넘긴다. */
+  title?: string;
   onListChange?(list: ClaudeAccountList): void;
   onLoginStartingChange?(starting: boolean): void;
   /** 노드 목록 맨 위에 「중앙 풀 받기」 한 줄을 그릴 때 넘긴다. */
   centralSettingsApi?: ClaudeCentralSettingsApi;
+  /** 중앙 계정을 수정·삭제했거나 로그인을 마쳤을 때 알린다. 노드 화면이 목록과 사용량을 다시 읽는다. */
+  onCentralChange?(): void;
 };
 
 type Props = CommonProps & (
@@ -178,7 +182,10 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
   props,
   ref,
 ) {
-  const { initialList, showHeader = true, onListChange, onLoginStartingChange, centralSettingsApi } = props;
+  const {
+    initialList, showHeader = true, title = 'Claude 계정',
+    onListChange, onLoginStartingChange, centralSettingsApi, onCentralChange,
+  } = props;
   const api = props.api;
   const central = props.central === true;
   const centralApi: ClaudeCentralPoolApi | null = props.central === true ? props.api : null;
@@ -309,6 +316,8 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
       setLoginError(null);
       setNotice('Claude 계정이 연결되었습니다.');
       void refreshAccounts();
+      // 중앙에 계정이 늘면 이 노드가 받는 목록과 사용량도 달라진다.
+      if (centralApi) onCentralChange?.();
     } else if (loginFlow?.state === 'cancelled') {
       updateLoginFlow(null, scopeKey);
       setCode('');
@@ -348,6 +357,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
           ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
           ...(typeof patch.priority === 'number' ? { priority: patch.priority } : {}),
         }));
+        onCentralChange?.();
       } else {
         applyList(await api.patchClaudeAuthAccount(nodeId, account.id, patch));
       }
@@ -372,7 +382,10 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
           ? await centralApi.patchCentralClaudeAuthAccount(item.id, { priority: item.priority })
           : await api.patchClaudeAuthAccount(nodeId, item.id, { priority: item.priority });
       }
-      if (latest) applyList(latest);
+      if (latest) {
+        applyList(latest);
+        if (centralApi) onCentralChange?.();
+      }
     } catch {
       let reconciled = false;
       try {
@@ -417,6 +430,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
         setConfirmingDelete(null);
         setNotice('Claude 계정을 삭제했습니다.');
         await refreshAccounts();
+        onCentralChange?.();
       } else {
         const result = await api.deleteClaudeAuthAccount(nodeId, accountId);
         setAccountList(current => ({ ...current, accounts: result.accounts, pool: result.pool }));
@@ -546,7 +560,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
     {showHeader ? <>
       <View style={styles.poolTopBar}>
         <View style={styles.poolTitleRow}>
-          <Text style={styles.poolTitle}>Claude 계정</Text>
+          <Text style={styles.poolTitle}>{title}</Text>
           {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
         </View>
         <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} busy={loginStarting}>
@@ -564,7 +578,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
         : null}
       {ordered.map((account, index) => <React.Fragment key={account.id}>
         <AccountRow account={account} index={account.enabled ? prioritized.findIndex(item => item.id === account.id) : index} totalCount={prioritized.length}
-          confirmingDelete={confirmingDelete === account.id} busy={busyAccountId !== null}
+          confirmingDelete={confirmingDelete === account.id} busy={busyAccountId !== null} central={central}
           onToggle={() => void patchAccount(account, { enabled: !account.enabled })}
           onMoveUp={() => movePriority(account, prioritized.findIndex(item => item.id === account.id), -1)}
           onMoveDown={() => movePriority(account, prioritized.findIndex(item => item.id === account.id), 1)}
@@ -591,7 +605,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
 });
 
 function AccountRow({
-  account, index, totalCount, confirmingDelete, busy, onToggle, onMoveUp, onMoveDown,
+  account, index, totalCount, confirmingDelete, busy, central, onToggle, onMoveUp, onMoveDown,
   onRelogin, onAskDelete, onCancelDelete, onConfirmDelete,
 }: {
   account: ClaudeAccount;
@@ -599,6 +613,7 @@ function AccountRow({
   totalCount: number;
   confirmingDelete: boolean;
   busy: boolean;
+  central: boolean;
   onToggle(): void;
   onMoveUp(): void;
   onMoveDown(): void;
@@ -660,15 +675,15 @@ function AccountRow({
       <Text style={styles.metaText}>{account.auth_state === 'needs_relogin' ? '인증 만료로 사용량 조회 중단' : '미측정 (실제 호출 시 갱신)'}</Text>
       <Text style={styles.metaText}>{observedAtLabel(account.observed_at)}</Text>
     </View>}
-    {confirmingDelete ? <DeleteConfirmation accountId={account.id} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
+    {confirmingDelete ? <DeleteConfirmation accountId={account.id} central={central} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
   </View>;
 }
 
-function DeleteConfirmation({ accountId, busy, onCancel, onConfirm }: { accountId: string; busy: boolean; onCancel(): void; onConfirm(): void }) {
+function DeleteConfirmation({ accountId, central, busy, onCancel, onConfirm }: { accountId: string; central: boolean; busy: boolean; onCancel(): void; onConfirm(): void }) {
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   return <View testID={`claude-account-delete-confirmation-${accountId}`} style={styles.confirmRow}>
-    <Text style={styles.confirmPrompt}>이 계정을 노드에서 삭제할까요?</Text>
+    <Text style={styles.confirmPrompt}>{central ? '이 계정을 중앙 풀에서 삭제할까요?' : '이 계정을 노드에서 삭제할까요?'}</Text>
     <View style={styles.confirmActions}>
       <GlassButton testID="claude-account-delete-cancel" accessibilityLabel="삭제 취소" onPress={onCancel} busy={busy} style={styles.confirmButton}>
         <Text style={styles.secondaryButtonText}>취소</Text>

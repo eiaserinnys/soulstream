@@ -126,6 +126,28 @@ describe("NodePanel", () => {
     expect(providers()).not.toBeNull();
   });
 
+  it("opens the node from the keyboard toggle at the end of the header", async () => {
+    const request = vi.fn(async () => data(snapshot(summaryNode("2026-11-07T15:50:00+09:00"))));
+
+    await mount(request as unknown as typeof fetch);
+
+    const toggle = head().querySelector<HTMLButtonElement>('button[aria-label="펼치기"]')!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toBe("▼");
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    await act(async () => toggle.click());
+    await settle();
+
+    expect(providers()).not.toBeNull();
+    const close = head().querySelector<HTMLButtonElement>('button[aria-label="접기"]')!;
+    expect(close.getAttribute("aria-expanded")).toBe("true");
+    expect(close.textContent).toBe("▲");
+  });
+
   it("shows the update time of the expanded node next to the node name", async () => {
     const request = vi.fn(async () => data(snapshot(summaryNode("2026-11-07T15:50:00+09:00"))));
 

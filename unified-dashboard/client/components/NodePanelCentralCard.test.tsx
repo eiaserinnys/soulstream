@@ -127,6 +127,29 @@ describe("NodePanelCentralCard", () => {
     expect(host.querySelector('[data-testid="claude-pool-row-header"]')).toBeNull();
   });
 
+  it("opens from the keyboard toggle at the end of the header without double-toggling the row", async () => {
+    const initial = list([account("a", 1)]);
+    const request = vi.fn<typeof fetch>(async () => data(initial));
+    await mount(request as unknown as typeof fetch);
+
+    const toggle = head().querySelector<HTMLButtonElement>('button[aria-label="펼치기"]')!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toBe("▼");
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    await act(async () => toggle.click());
+    await settle();
+
+    expect(head().getAttribute("aria-expanded")).toBe("true");
+    const close = head().querySelector<HTMLButtonElement>('button[aria-label="접기"]')!;
+    expect(close.getAttribute("aria-expanded")).toBe("true");
+    expect(close.textContent).toBe("▲");
+    expect(host.querySelector('[data-testid="claude-pool-row-header"]')).not.toBeNull();
+  });
+
   it("reads the central list when opened and draws the same pool row as a node card", async () => {
     const initial = list([account("a", 1), account("b", 2)]);
     const request = vi.fn<typeof fetch>(async () => data(initial));

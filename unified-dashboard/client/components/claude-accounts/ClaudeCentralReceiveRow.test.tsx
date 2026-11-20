@@ -122,7 +122,7 @@ describe("ClaudeCentralReceiveRow", () => {
     expect(row().dataset.receive).toBe("off");
   });
 
-  it("goes back to the saved value and retries the same write after a failure", async () => {
+  it("keeps the switch in place and retries through it after a failed save", async () => {
     const initial = settings(true);
     const saved = settings(false);
     let puts = 0;
@@ -139,9 +139,18 @@ describe("ClaudeCentralReceiveRow", () => {
     await act(async () => switchEl().click());
     await settle();
     expect(row().dataset.receive).toBe("on");
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe("설정 저장 실패");
+    expect(switchEl().getAttribute("aria-checked")).toBe("true");
+    expect(switchEl().disabled).toBe(false);
+    const alert = host.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe("설정 저장 실패");
+    const line = row().querySelector(".c724-account-top")!;
+    // 오류 글은 받기 줄 아래에 서서 줄 높이를 바꾸지 않는다.
+    expect(line.contains(alert)).toBe(false);
+    expect(line.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Array.from(host.querySelectorAll("button")).some((item) => item.textContent?.trim() === "다시 시도")).toBe(false);
 
-    await act(async () => button("다시 시도").click());
+    // 다시 시도는 스위치를 다시 누르는 것이다.
+    await act(async () => switchEl().click());
     await settle();
     expect(puts).toBe(2);
     expect(request).toHaveBeenLastCalledWith("/api/claude-auth/central/settings", expect.objectContaining({
@@ -149,6 +158,7 @@ describe("ClaudeCentralReceiveRow", () => {
       body: JSON.stringify({ nodes: { "node-a": false } }),
     }));
     expect(row().dataset.receive).toBe("off");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("shows the settings load failure in place and reads again through the retry button", async () => {
@@ -159,6 +169,8 @@ describe("ClaudeCentralReceiveRow", () => {
     });
     await mount(request as unknown as typeof fetch);
 
+    // 이름은 남고 스위치 자리만 다시 시도로 바뀐다.
+    expect(row().textContent).toContain("중앙 풀 받기");
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("설정을 읽지 못했습니다");
     expect(host.querySelector('[data-testid="claude-central-receive-switch"]')).toBeNull();
 

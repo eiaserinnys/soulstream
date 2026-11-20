@@ -36,7 +36,6 @@ export function NodePanelCentralCard({ request }: { request: typeof fetch }) {
       onClick={() => setExpanded((current) => !current)}
     >
       <span className="text-sm font-medium text-foreground truncate flex-auto min-w-0">중앙 풀</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{expanded ? "▲" : "▼"}</span>
     </NodeCardHeader>
     {expanded ? <NodeCardBody>
       {list.isPending

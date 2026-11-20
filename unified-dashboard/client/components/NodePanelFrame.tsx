@@ -25,7 +25,11 @@ export function NodeCardFrame({
   </div>;
 }
 
-/** 카드 머리 한 줄. 누르면 펼친다. */
+/**
+ * 카드 머리 한 줄. 줄을 누르면 마우스로 펼치고, 끝의 ▲▼는 키보드로도 펼치는 단추다.
+ * 머리 div를 role=button으로 만들지 않는다(노드 카드 머리 안의 「사용량 새로 고침」 단추가
+ * 단추 안에 들어가므로). 단추는 전파를 막아 줄 클릭과 겹치지 않는다.
+ */
 export function NodeCardHeader({
   testId,
   expanded,
@@ -44,6 +48,18 @@ export function NodeCardHeader({
     onClick={onClick}
   >
     {children}
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-label={expanded ? "접기" : "펼치기"}
+      className="shrink-0 rounded text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      {expanded ? "▲" : "▼"}
+    </button>
   </div>;
 }
 

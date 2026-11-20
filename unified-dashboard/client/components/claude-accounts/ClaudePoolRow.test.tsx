@@ -503,7 +503,8 @@ describe("ClaudePoolRow", () => {
     expect(second.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
 
     await act(async () => button("계정 삭제", second).click());
-    expect(host.querySelector('[data-testid="delete-confirm-second"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="delete-confirm-second"]')?.textContent)
+      .toContain("이 계정을 노드에서 삭제할까요?");
     await act(async () => button("삭제", host.querySelector('[data-testid="delete-confirm-second"]')!).click());
     await settle();
     expect(host.textContent).toContain("삭제 예약됨 · 활성 세션 종료 후 제거");
@@ -890,6 +891,21 @@ describe("ClaudePoolRow central target", () => {
     expect(host.textContent).toContain("계정 삭제됨");
     expect(host.textContent).not.toContain("삭제 예약됨");
     expect(accountIds()).toEqual(["b"]);
+  });
+
+  it("asks to delete a central account from the central pool, not from a node", async () => {
+    const initial = list([account("a", 1)]);
+    const requestMock = vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.method === "DELETE") return data({ success: true });
+      return data(initial);
+    });
+    await mountCentral(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    await act(async () => button("계정 삭제", host.querySelector('[data-account-id="a"]')!).click());
+    const confirm = host.querySelector('[data-testid="delete-confirm-a"]')!;
+    expect(confirm.textContent).toContain("이 계정을 중앙 풀에서 삭제할까요?");
+    expect(confirm.textContent).not.toContain("노드에서");
   });
 
   it("starts and completes a central login, then invalidates the node account queries", async () => {

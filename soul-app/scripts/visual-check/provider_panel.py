@@ -259,8 +259,24 @@ CENTRAL_METRICS_SCRIPT = r"""
   // RN-web Switch는 testID 상자 안의 input[role=switch]에 값과 disabled를 담는다.
   const toggle = toggleBox?.querySelector('input[role="switch"]') ?? toggleBox;
   const login = document.querySelector('[data-testid="claude-login-flow"]');
+  // 「중앙 풀」 머리는 목록일 때 풀 머리 제목, 로딩·실패일 때 구역이 직접 그린다.
+  const centralTitleLeaf = central
+    ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '중앙 풀')
+    : null;
+  const loadingBox = document.querySelector('[data-testid="central-pool-loading"]');
+  const centralErrorCopy = central
+    ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '계정 목록을 갱신하지 못했습니다.')
+    : null;
+  // 받기 줄의 오류 글은 줄 아래에 선다. 설정 읽기 실패와 저장 실패 두 문구만 받기 줄 안에서 찾는다.
+  const receiveErrors = receive
+    ? Array.from(receive.querySelectorAll('*')).filter((element) => element.children.length === 0
+      && ['받기 설정을 불러오지 못했습니다.', '계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.'].includes(text(element)))
+    : [];
   return {
     central: central ? { text: text(central), rect: rect(central) } : null,
+    centralTitle: centralTitleLeaf ? { text: text(centralTitleLeaf), rect: rect(centralTitleLeaf) } : null,
+    loadingRect: loadingBox ? rect(loadingBox) : null,
+    centralErrorRect: centralErrorCopy ? rect(centralErrorCopy) : null,
     backend: backend ? { rect: rect(backend) } : null,
     pool: pool ? rect(pool) : null,
     receive: receive ? { text: text(receive), rect: rect(receive) } : null,
@@ -285,6 +301,9 @@ CENTRAL_METRICS_SCRIPT = r"""
     addButton: !!document.querySelector('[data-testid="claude-account-add"]'),
     loading: !!document.querySelector('[data-testid="central-pool-loading"]'),
     receiveRetry: !!document.querySelector('[data-testid="claude-central-receive-retry"]'),
+    receiveError: receiveErrors.length ? text(receiveErrors[0]) : null,
+    receiveErrorBelowSwitch: !!(receiveErrors.length && toggle
+      && receiveErrors[0].getBoundingClientRect().top >= toggle.getBoundingClientRect().bottom - 0.5),
     bodyText: document.body.innerText,
     document: { scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth },
   };
@@ -353,8 +372,19 @@ def capture_central_state(
     if central is None:
         failures.append({"check": "central section", "label": label})
     else:
-        # 검수 표본은 SettingsWorkspaceContext를 주므로 SettingsSection이 구역 제목을 그리지 않는다
-        # (기존 공급자 장면과 같은 하네스 동작). 제목 「중앙 풀」은 jest가 본다.
+        # 검수 표본은 SettingsWorkspaceContext를 주므로 SettingsSection이 구역 제목을 그리지 않는다.
+        # 그래서 「중앙 풀」 머리는 풀 머리(목록)나 구역(로딩·실패)이 직접 그린다.
+        title = metrics["centralTitle"]
+        if title is None or title["rect"]["width"] <= 0 or title["rect"]["height"] <= 0:
+            failures.append({"check": "central title", "label": label})
+        elif state_name == "central-loading":
+            if metrics["loadingRect"] and title["rect"]["top"] >= metrics["loadingRect"]["top"]:
+                failures.append({"check": "central title above loading", "label": label,
+                                 "title": title["rect"], "loading": metrics["loadingRect"]})
+        elif state_name == "central-error":
+            if metrics["centralErrorRect"] and title["rect"]["top"] >= metrics["centralErrorRect"]["top"]:
+                failures.append({"check": "central title above error", "label": label,
+                                 "title": title["rect"], "error": metrics["centralErrorRect"]})
         if metrics["backend"] is None:
             failures.append({"check": "backend section", "label": label})
         elif central["rect"]["bottom"] > metrics["backend"]["rect"]["top"] + 1:
@@ -458,7 +488,6 @@ def capture_receive_state(
     elif state_name == "receive-failure":
         page.get_by_test_id("claude-central-receive-switch").click()
         page.get_by_text("계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.").wait_for(state="visible")
-        page.get_by_test_id("claude-central-receive-retry").wait_for(state="visible")
     settle(page)
     metrics = page.evaluate(CENTRAL_METRICS_SCRIPT)
 
@@ -466,8 +495,8 @@ def capture_receive_state(
     if receive is None:
         failures.append({"check": "receive row", "label": label})
     else:
-        # 설정을 못 읽으면 그 줄 자체가 실패 안내로 바뀌므로 이름은 그때만 면제한다.
-        if state_name != "receive-settings-error" and "중앙 풀 받기" not in receive["text"]:
+        # 설정을 못 읽어도 「중앙 풀 받기」 이름은 남는다. 스위치 자리만 다시 시도로 바뀐다.
+        if "중앙 풀 받기" not in receive["text"]:
             failures.append({"check": "receive label", "label": label, "actual": receive["text"][:120]})
         if metrics["rows"] > 0 and not metrics["receiveFirst"]:
             failures.append({"check": "receive first row", "label": label,
@@ -482,8 +511,10 @@ def capture_receive_state(
             failures.append({"check": "settings error hides switch", "label": label})
         if not metrics["receiveRetry"]:
             failures.append({"check": "settings error retry", "label": label})
-        if "계정 목록을 갱신하지 못했습니다." not in metrics["bodyText"]:
+        if "받기 설정을 불러오지 못했습니다." not in metrics["bodyText"]:
             failures.append({"check": "settings error copy", "label": label})
+        if "계정 목록을 갱신하지 못했습니다." in metrics["bodyText"]:
+            failures.append({"check": "settings error borrowed copy", "label": label})
     elif state_name == "receive-on":
         if switch_value(metrics["switch"]) is not True:
             failures.append({"check": "receive on value", "label": label, "switch": metrics["switch"]})
@@ -500,10 +531,20 @@ def capture_receive_state(
         if not (metrics["switch"] or {}).get("disabled") and (metrics["switch"] or {}).get("ariaDisabled") != "true":
             failures.append({"check": "receive pending disabled", "label": label, "switch": metrics["switch"]})
     elif state_name == "receive-failure":
-        if switch_value(metrics["switch"]) is not True:
+        # 저장에 실패해도 스위치는 제자리에서 되돌아간 값을 보이며 눌린다. 다시 시도는 그 스위치를 다시 누르는 것이다.
+        if metrics["switch"] is None:
+            failures.append({"check": "receive failure switch kept", "label": label})
+        elif switch_value(metrics["switch"]) is not True:
             failures.append({"check": "receive failure revert", "label": label, "switch": metrics["switch"]})
-        if not metrics["receiveRetry"]:
-            failures.append({"check": "receive failure retry", "label": label})
+        if metrics["switch"] and ((metrics["switch"].get("disabled") is True)
+                                  or metrics["switch"].get("ariaDisabled") == "true"):
+            failures.append({"check": "receive failure switch enabled", "label": label, "switch": metrics["switch"]})
+        if metrics["receiveError"] != "계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.":
+            failures.append({"check": "receive failure copy", "label": label, "error": metrics["receiveError"]})
+        if metrics["receiveRetry"]:
+            failures.append({"check": "receive failure no retry button", "label": label})
+        if not metrics["receiveErrorBelowSwitch"]:
+            failures.append({"check": "receive failure error below", "label": label})
 
     page.get_by_test_id("claude-account-pool-section").screenshot(
         path=str(output / f"app-receive-{state_name}-{width}-{theme}.png"),
