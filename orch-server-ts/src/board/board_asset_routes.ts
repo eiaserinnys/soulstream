@@ -5,6 +5,14 @@ import {
   normalizeBoardAccess,
   type BoardAccess,
 } from "./board_access.js";
+import {
+  folderAccessDenied,
+  optionalFiniteNumber,
+  parseObjectBody,
+  requiredString,
+  validationError,
+  type Validation,
+} from "../http/route_validation.js";
 
 export type BoardAssetFolderRecord = {
   id: string;
@@ -87,10 +95,6 @@ type FolderAssetParams = {
 type FolderAssetCommitParams = FolderAssetParams & {
   asset_id: string;
 };
-
-type Validation<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; statusCode?: number };
 
 export const boardAssetRouteAuthRequirements = {
   "POST /api/board/:folder_id/assets/init": true,
@@ -236,22 +240,6 @@ async function ensureFolderAccess(
   return undefined;
 }
 
-function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
-  if (body !== null && typeof body === "object" && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, message: "Request body must be a JSON object" };
-}
-
-function requiredString(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<string> {
-  const value = body[key];
-  if (typeof value === "string") return { ok: true, value };
-  return { ok: false, message: `${key} must be a string` };
-}
-
 function requiredInteger(
   body: Record<string, unknown>,
   key: string,
@@ -284,29 +272,6 @@ function optionalInteger(
     return { ok: true, value };
   }
   return { ok: false, message: `${key} must be a number` };
-}
-
-function optionalFiniteNumber(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number | undefined> {
-  const value = body[key];
-  if (value === undefined || value === null) return { ok: true, value: undefined };
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
-}
-
-function validationError<T>(
-  reply: FastifyReply,
-  validation: Extract<Validation<T>, { ok: false }>,
-): FastifyReply {
-  return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
-}
-
-function folderAccessDenied(reply: FastifyReply): FastifyReply {
-  return reply.code(403).send({ detail: "Folder access denied" });
 }
 
 function sendBoardAssetError(reply: FastifyReply, error: unknown): FastifyReply {
