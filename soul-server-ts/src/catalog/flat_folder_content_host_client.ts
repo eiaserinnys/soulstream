@@ -1,20 +1,22 @@
 import type { Logger } from "pino";
-import { MarkdownDocumentVersionConflictError } from "../db/markdown_document_version.js";
+import {
+  CustomViewRevisionConflictError,
+  MarkdownDocumentVersionConflictError,
+  type CatalogBoardItemRow,
+  type CustomViewRow,
+  type MarkdownDocumentRow,
+} from "@soulstream/wire-schema/catalog";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
-  CatalogBoardItemRow,
-  CustomViewRow,
   ListFolderItemsParams,
   ListFolderItemsResult,
-  MarkdownDocumentRow,
 } from "../db/session_db.js";
-import {
-  CustomViewRevisionConflictError,
-  type CustomViewProjectionHost,
-  type CustomViewRecordMutationResult,
-  type CustomViewWithBoardItem,
+import type {
+  CustomViewProjectionHost,
+  CustomViewRecordMutationResult,
+  CustomViewWithBoardItem,
 } from "../custom_view/custom_view_contract.js";
 
 export interface FlatFolderContentHostClientConfig {

@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
+import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
 import type {
-  CatalogBoardItemRow,
   CatalogFolderRow,
   CatalogSessionAssignmentRow,
   FolderRow,

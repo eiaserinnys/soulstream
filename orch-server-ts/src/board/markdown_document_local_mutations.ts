@@ -1,6 +1,6 @@
 import type { FastifyReply } from "fastify";
 import type { MarkdownDocumentService } from "./markdown_document_service.js";
-import { MarkdownDocumentVersionConflictError } from "./markdown_document_version.js";
+import { MarkdownDocumentVersionConflictError } from "@soulstream/wire-schema/catalog";
 import type { MarkdownDocumentRecord } from "./markdown_document_routes.js";
 
 export async function createLocalMarkdownDocument(

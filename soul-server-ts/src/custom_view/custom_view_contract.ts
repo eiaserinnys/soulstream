@@ -1,7 +1,7 @@
 import type {
   CatalogBoardItemRow,
   CustomViewRow,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/catalog";
 
 export interface CustomViewWithBoardItem {
   customView: CustomViewRow;
@@ -11,22 +11,6 @@ export interface CustomViewWithBoardItem {
 export interface CustomViewRecordMutationResult {
   customView: CustomViewRow;
   eventId: number | null;
-}
-
-export class CustomViewRevisionConflictError extends Error {
-  readonly customViewId: string;
-  readonly expectedRevision: number;
-  readonly actualRevision: number;
-
-  constructor(customViewId: string, expectedRevision: number, actualRevision: number) {
-    super(
-      `custom view revision conflict for ${customViewId}: expected ${expectedRevision}, actual ${actualRevision}`,
-    );
-    this.name = "CustomViewRevisionConflictError";
-    this.customViewId = customViewId;
-    this.expectedRevision = expectedRevision;
-    this.actualRevision = actualRevision;
-  }
 }
 
 export interface CustomViewProjectionHost {

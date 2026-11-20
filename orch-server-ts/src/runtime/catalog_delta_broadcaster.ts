@@ -1,4 +1,4 @@
-import type { CatalogBoardItemsDelta } from "../mcp/board_catalog_delta.js";
+import type { CatalogBoardItemsDelta } from "@soulstream/wire-schema/catalog";
 import type { FolderRecord, SessionAssignmentRecord } from "../folders/folder_routes.js";
 import type {
   InMemorySseReplayBroadcaster,

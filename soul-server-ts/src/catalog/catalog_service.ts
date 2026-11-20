@@ -1,24 +1,22 @@
 /** Catalog projection broadcasts and worker board/document mutation facade. */
 
 
-import type {
-  CatalogBoardItemRow,
-  MarkdownDocumentRow,
-  SessionDB,
-} from "../db/session_db.js";
+import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+  sessionAssignmentFromRow,
+  type CatalogBoardItemRow,
+  type CatalogMutationDelta,
+  type CatalogSessionsDelta,
+  type MarkdownDocumentRow,
+} from "@soulstream/wire-schema/catalog";
+import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   CatalogBoardItemService,
   type CatalogBoardItemMoveResult,
   type CatalogFolderContentPort,
 } from "./catalog_board_item_service.js";
-import {
-  boardItemsDelta,
-  serializeCatalogFolders,
-  sessionAssignmentFromRow,
-  type CatalogMutationDelta,
-  type CatalogSessionsDelta,
-} from "./catalog_delta.js";
 
 /** Emits catalog deltas after orch-owned mutations and lifecycle deletion. */
 export class CatalogService {

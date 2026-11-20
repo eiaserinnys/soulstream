@@ -4,6 +4,7 @@ import type {
   BoardItemType,
   CardStatus,
 } from "@soulstream/wire-schema";
+import type { CatalogBoardItemRow, FolderSessionRecord } from "@soulstream/wire-schema/catalog";
 
 export type {
   BoardItemType,
@@ -84,65 +85,7 @@ export interface CatalogFolderRow {
   createdAt?: string;
 }
 
-export interface CatalogBoardItemRow {
-  id: string;
-  folderId: string;
-  membershipKind?: "primary" | "reference";
-  itemType: BoardItemType;
-  itemId: string;
-  x: number;
-  y: number;
-  metadata: Record<string, unknown>;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface MarkdownDocumentRow {
-  id: string;
-  folderId: string | null;
-  title: string;
-  body: string;
-  version: number;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface CustomViewRow {
-  id: string;
-  boardItemId: string;
-  title: string | null;
-  html: string;
-  revision: number;
-  archived: boolean;
-  createdActorKind: "agent" | "user" | "system" | "llm";
-  createdSessionId: string | null;
-  createdEventId: number | null;
-  updatedActorKind: "agent" | "user" | "system" | "llm";
-  updatedSessionId: string | null;
-  updatedEventId: number | null;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export type FolderItemCounts = Record<BoardItemType, number>;
-
-export interface FolderSessionRecord {
-  agentSessionId: string;
-  displayName: string | null;
-  lastUserMessagePreview: string | null;
-  status: string | null;
-  agentId: string | null;
-  sessionType: string | null;
-  createdAt: string;
-  updatedAt: string;
-  eventCount: number;
-  awaySummary: string | null;
-  callerSessionId: string | null;
-  predecessorSessionId: string | null;
-  nodeId: string | null;
-  lastEventId: number | null;
-  lastReadEventId: number | null;
-}
 
 export interface FolderMarkdownRecord {
   id: string;

@@ -13,6 +13,7 @@
     "./conversation-visibility": "./src/conversation_visibility.ts",
     "./assigned-card-context-snapshot": "./src/assigned_card_context_snapshot.ts",
     "./schema": "./src/upstream.schema.json",
+    "./catalog": "./src/catalog.ts",
     "./persistent-jev-candidates": "./src/persistent_jev_candidates.ts",
     "./card-orchestration": "./src/card_orchestration.ts",
     "./card-attachments": "./src/card_attachments.ts",

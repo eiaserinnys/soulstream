@@ -6,7 +6,7 @@ import {
   authenticateDashboardHttpRequest,
   type DashboardHttpAuthConfig,
 } from "../context/dashboard_http_auth.js";
-import { MarkdownDocumentVersionConflictError } from "../db/markdown_document_version.js";
+import { MarkdownDocumentVersionConflictError } from "@soulstream/wire-schema/catalog";
 import type { CatalogService } from "./catalog_service.js";
 
 export interface MarkdownDocumentHttpRouteConfig {

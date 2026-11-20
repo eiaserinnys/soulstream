@@ -1,47 +1,12 @@
 import type { BoardItemType } from "@soulstream/wire-schema";
+import type {
+  CatalogBoardItemRow,
+  CustomViewRow,
+  FolderSessionRecord,
+  MarkdownDocumentRow,
+} from "@soulstream/wire-schema/catalog";
 
 export type { BoardItemType } from "@soulstream/wire-schema";
-
-export interface CatalogBoardItemRow {
-  id: string;
-  folderId: string;
-  membershipKind?: "primary" | "reference";
-  itemType: BoardItemType;
-  itemId: string;
-  x: number;
-  y: number;
-  metadata: Record<string, unknown>;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface MarkdownDocumentRow {
-  id: string;
-  folderId: string | null;
-  title: string;
-  body: string;
-  version: number;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-
-export interface CustomViewRow {
-  id: string;
-  boardItemId: string;
-  title: string | null;
-  html: string;
-  revision: number;
-  archived: boolean;
-  createdActorKind: ProjectionActorKind;
-  createdSessionId: string | null;
-  createdEventId: number | null;
-  updatedActorKind: ProjectionActorKind;
-  updatedSessionId: string | null;
-  updatedEventId: number | null;
-  createdAt?: string;
-  updatedAt?: string;
-}
 
 export interface CustomViewWithBoardItem {
   customView: CustomViewRow;
@@ -74,40 +39,6 @@ export interface PatchCustomViewRecordInput {
 export interface CustomViewRecordMutationResult {
   customView: CustomViewRow;
   eventId: number | null;
-}
-
-export class CustomViewRevisionConflictError extends Error {
-  readonly customViewId: string;
-  readonly expectedRevision: number;
-  readonly actualRevision: number;
-
-  constructor(customViewId: string, expectedRevision: number, actualRevision: number) {
-    super(
-      `custom view revision conflict for ${customViewId}: expected ${expectedRevision}, actual ${actualRevision}`,
-    );
-    this.name = "CustomViewRevisionConflictError";
-    this.customViewId = customViewId;
-    this.expectedRevision = expectedRevision;
-    this.actualRevision = actualRevision;
-  }
-}
-
-export interface FolderSessionRecord {
-  agentSessionId: string;
-  displayName: string | null;
-  lastUserMessagePreview: string | null;
-  status: string | null;
-  agentId: string | null;
-  sessionType: string | null;
-  createdAt: string;
-  updatedAt: string;
-  eventCount: number;
-  awaySummary: string | null;
-  callerSessionId: string | null;
-  predecessorSessionId: string | null;
-  nodeId: string | null;
-  lastEventId: number | null;
-  lastReadEventId: number | null;
 }
 
 export interface FolderMarkdownRecord {

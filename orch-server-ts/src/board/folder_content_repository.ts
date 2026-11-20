@@ -1,14 +1,12 @@
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { FolderContentSqlResolver } from "./folder_content_sql.js";
-import type {
-  BoardItemDbRow,
-  ContainerItemDbRow,
-  MarkdownDbRow,
-} from "./folder_content_serialization.js";
 import {
   toCatalogBoardItemRow,
   toFolderItemRecord,
   toMarkdownDocumentRow,
+  type BoardItemDbRow,
+  type ContainerItemDbRow,
+  type MarkdownDbRow,
 } from "./folder_content_serialization.js";
 import type {
   ListFolderItemsParams,
@@ -17,7 +15,7 @@ import type {
 import type {
   CatalogBoardItemRow,
   MarkdownDocumentRow,
-} from "./folder_content_types.js";
+} from "@soulstream/wire-schema/catalog";
 
 export class FolderContentRepository {
   private readonly sqlResolver: FolderContentSqlResolver;

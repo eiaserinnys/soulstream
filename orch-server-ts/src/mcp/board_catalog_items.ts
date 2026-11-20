@@ -1,4 +1,4 @@
-import type { CatalogBoardItemRow, MarkdownDocumentRow } from "../board/folder_content_types.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
 import type { BoardMcpStore } from "./board_catalog_types.js";
 
 export interface CatalogFolderContentPort {

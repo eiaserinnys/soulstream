@@ -23,7 +23,7 @@ import type { SessionPageBindingRepository } from "../page/session_page_binding_
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { FolderService } from "../folder/folder_service.js";
-import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
+import type { ClaudeRuntimeHostClient, SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import {
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
@@ -31,8 +31,8 @@ import {
   type SessionSearchMetadata,
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
-import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import type { CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
+import type { CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 

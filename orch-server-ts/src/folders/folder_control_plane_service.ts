@@ -1,5 +1,5 @@
 import type { FolderContentSql } from "../board/folder_content_sql.js";
-import type { CatalogBoardItemRow } from "../board/folder_content_types.js";
+import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
 
 interface FolderRow {
   id: string;
