@@ -44,8 +44,9 @@ STATES = [
     ("codex-both", "codex-both", False),
 ]
 VIEWPORTS = [(820, 1180), (390, 844), (360, 780)]
-# 360 폭은 받기 줄 촬영에만 쓴다. 중앙·공급자 장면의 단언은 820·390에서만 잰다.
-MEASURED_WIDTHS = (820, 390)
+# 820·390은 모든 장면을 잰다. 360은 중앙 네 장면의 제목 정렬, 노드 머리, 받기 줄을 잰다.
+PROVIDER_WIDTHS = (820, 390)
+CENTRAL_WIDTHS = (820, 390, 360)
 THEMES = ("light", "dark")
 PROVIDER_ROW_RE = r"^provider-row-(claude|opencode_go|codex|antigravity)$"
 
@@ -170,6 +171,59 @@ METRICS_SCRIPT = r"""
 """
 
 
+NODE_HEAD_JS = r"""
+() => {
+  const rect = (element) => {
+    if (!element) return null;
+    const bounds = element.getBoundingClientRect();
+    return {
+      left: Math.round(bounds.left * 10) / 10, top: Math.round(bounds.top * 10) / 10,
+      right: Math.round(bounds.right * 10) / 10, bottom: Math.round(bounds.bottom * 10) / 10,
+      width: Math.round(bounds.width * 10) / 10, height: Math.round(bounds.height * 10) / 10,
+    };
+  };
+  const lineCount = (element) => {
+    if (!element) return null;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return new Set(Array.from(range.getClientRects()).filter((line) => line.width > 0)
+      .map((line) => Math.round(line.top))).size;
+  };
+  const style = (element) => element ? {
+    minHeight: getComputedStyle(element).minHeight,
+    paddingTop: getComputedStyle(element).paddingTop,
+    alignItems: getComputedStyle(element).alignItems,
+  } : null;
+  // 노드 목록 머리: 공급자 패널의 Claude 머리. 풀 구역은 노드 대상에서 showHeader=false라
+  // 목록 위에 서는 머리는 이 공급자 머리다.
+  const panel = document.querySelector('[data-testid="provider-panel"]');
+  const header = panel ? panel.querySelector('[data-testid="claude-provider-header"]') : null;
+  if (!header) return null;
+  const leaves = Array.from(header.querySelectorAll('*')).filter((element) => element.children.length === 0);
+  const title = leaves.find((element) => (element.textContent || '').trim() === 'Claude') ?? null;
+  const summary = leaves.find((element) => /가용/.test((element.textContent || '').trim())) ?? null;
+  const add = header.querySelector('[data-testid="claude-account-add"]');
+  const toggle = header.querySelector('[data-testid="claude-provider-toggle"]');
+  const content = header.firstElementChild;
+  const divider = header.nextElementSibling;
+  return {
+    row: rect(header.parentElement), header: rect(header), content: rect(content), title: rect(title),
+    add: rect(add), toggle: rect(toggle), divider: rect(divider),
+    summary: summary ? { text: (summary.textContent || '').trim(), rect: rect(summary), lines: lineCount(summary) } : null,
+    headerStyle: style(header), contentStyle: style(content),
+  };
+}
+"""
+
+
+# 08eb747 번들에서 잰 노드 목록 머리 좌표(머리 top 기준 상대값). 새 머리에서도 같아야 한다.
+NODE_HEAD_BASELINE = {
+    820: {"height": 82, "titleTop": 30, "summaryTop": 32, "addTop": 16, "dividerTop": 82},
+    390: {"height": 74, "titleTop": 12, "summaryTop": 14, "addTop": 13, "dividerTop": 74},
+    360: {"height": 74, "titleTop": 12, "summaryTop": 14, "addTop": 13, "dividerTop": 74},
+}
+
+
 def rounded(value: float) -> float:
     return round(value, 2)
 
@@ -274,6 +328,23 @@ CENTRAL_METRICS_SCRIPT = r"""
   const centralTitleLeaf = central
     ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '중앙 풀')
     : null;
+  const centralTitleRow = centralTitleLeaf ? centralTitleLeaf.parentElement : null;
+  const centralTopBar = centralTitleRow ? centralTitleRow.parentElement : null;
+  const centralSummary = centralTitleRow
+    ? Array.from(centralTitleRow.children).find((element) => element !== centralTitleLeaf) ?? null : null;
+  const centralAdd = central ? central.querySelector('[data-testid="claude-account-add"]') : null;
+  const centralDivider = centralTopBar ? centralTopBar.nextElementSibling : null;
+  const styleOf = (element) => element ? {
+    minHeight: getComputedStyle(element).minHeight,
+    paddingTop: getComputedStyle(element).paddingTop,
+    alignItems: getComputedStyle(element).alignItems,
+  } : null;
+  const centralLineCount = centralSummary ? (() => {
+    const range = document.createRange();
+    range.selectNodeContents(centralSummary);
+    return new Set(Array.from(range.getClientRects()).filter((line) => line.width > 0)
+      .map((line) => Math.round(line.top))).size;
+  })() : null;
   const loadingBox = document.querySelector('[data-testid="central-pool-loading"]');
   const centralErrorCopy = central
     ? Array.from(central.querySelectorAll('*')).find((element) => element.children.length === 0 && text(element) === '계정 목록을 갱신하지 못했습니다.')
@@ -350,6 +421,12 @@ CENTRAL_METRICS_SCRIPT = r"""
   return {
     central: central ? { text: text(central), rect: rect(central) } : null,
     centralTitle: centralTitleLeaf ? { text: text(centralTitleLeaf), rect: rect(centralTitleLeaf) } : null,
+    centralHead: centralTitleLeaf ? {
+      bar: rect(centralTopBar), row: rect(centralTitleRow), title: rect(centralTitleLeaf),
+      add: centralAdd ? rect(centralAdd) : null, divider: centralDivider ? rect(centralDivider) : null,
+      summary: centralSummary ? { text: text(centralSummary), rect: rect(centralSummary), lines: centralLineCount } : null,
+      barStyle: styleOf(centralTopBar), rowStyle: styleOf(centralTitleRow),
+    } : null,
     loadingRect: loadingBox ? rect(loadingBox) : null,
     centralErrorRect: centralErrorCopy ? rect(centralErrorCopy) : null,
     backend: backend ? { rect: rect(backend) } : null,
@@ -501,6 +578,44 @@ def capture_central_state(
             failures.append({"check": "central above picker", "label": label,
                              "centralBottom": central["rect"]["bottom"],
                              "backendTop": metrics["backend"]["rect"]["top"]})
+    # 목록 머리의 제목·요약·단추 자리. 360은 요약이 둘째 줄로 가고, 390은 한 줄에 남는다.
+    head = metrics.get("centralHead")
+    if state_name == "central-accounts" and head and head.get("bar") and head.get("title") and head.get("add"):
+        bar = head["bar"]; title = head["title"]; add = head["add"]
+        summary = head.get("summary") or {}; summary_rect = summary.get("rect") or {}
+        title_top = title["top"]; add_top = add["top"]
+        title_center = round((title["top"] + title["bottom"]) / 2, 1)
+        add_center = round((add["top"] + add["bottom"]) / 2, 1)
+        # 검수원 시제품의 절대 좌표. 360은 요약이 둘째 줄로 가 머리가 85로 커진다.
+        expected = {
+            360: {"bar": 85, "titleTop": 26, "addTop": 13, "summaryTop": 56, "dividerTop": 86},
+            390: {"bar": 72, "titleTop": 26, "addTop": 13, "summaryTop": 30, "dividerTop": 73},
+        }.get(width)
+        if expected:
+            actual = {
+                "bar": bar["height"], "titleTop": title_top, "addTop": add_top,
+                "summaryTop": summary_rect.get("top") if summary_rect else None,
+                "dividerTop": head["divider"]["top"] if head.get("divider") else None,
+            }
+            mismatches = {key: {"actual": actual[key], "expected": value}
+                          for key, value in expected.items()
+                          if actual[key] is None or abs(actual[key] - value) > 1}
+            if mismatches:
+                failures.append({"check": "central head layout", "label": label, "mismatches": mismatches})
+            if abs(title_center - add_center) > 1:
+                failures.append({"check": "central head centers", "label": label,
+                                 "titleCenter": title_center, "addCenter": add_center})
+            # 요약이 둘째 줄로 간 360에서만 제목과 같은 왼쪽 선에 서는지 본다.
+            if width == 360 and summary_rect and abs(summary_rect["left"] - title["left"]) > 1:
+                failures.append({"check": "central summary left", "label": label,
+                                 "summaryLeft": summary_rect["left"], "titleLeft": title["left"]})
+            if width == 360 and summary_rect:
+                gap = round(summary_rect["top"] - title["bottom"], 1)
+                if abs(gap - 8) > 1:
+                    failures.append({"check": "central summary gap", "label": label, "gap": gap})
+        elif width == 820 and abs(title_top - 30) > 1:
+            failures.append({"check": "central head layout", "label": label,
+                             "mismatches": {"titleTop": {"actual": title_top, "expected": 30}}})
     if metrics["document"]["scrollWidth"] > metrics["document"]["innerWidth"] + 1:
         failures.append({"check": "horizontal overflow", "label": label, "document": metrics["document"]})
 
@@ -549,6 +664,62 @@ def capture_central_state(
         "screenCapture": f"app-central-{state_name}-{width}-{theme}-screen.png",
         "metrics": metrics,
     }
+
+
+def capture_node_header(
+    page: Page,
+    base: str,
+    width: int,
+    theme: str,
+    output: Path,
+    failures: list[dict],
+) -> dict:
+    """노드 목록 머리(공급자 패널 Claude 머리)의 제목·요약·단추·구분선 자리를 잰다."""
+    label = f"node-head-{width}-{theme}"
+    page.goto(build_url(base, "default", theme), wait_until="networkidle")
+    wait_for_panel(page)
+    page.get_by_test_id("claude-provider-toggle").click()
+    page.get_by_test_id("claude-account-pool-section").wait_for(state="visible")
+    page.wait_for_function(
+        "document.querySelectorAll('[data-testid^=\"claude-account-row-\"]').length === 3",
+    )
+    settle(page)
+    head = page.evaluate(NODE_HEAD_JS)
+    if head is None:
+        failures.append({"check": "node head", "label": label})
+        page.screenshot(path=str(output / f"app-node-head-{width}-{theme}-screen.png"))
+        return {"width": width, "theme": theme, "head": None,
+                "capture": None, "screenCapture": f"app-node-head-{width}-{theme}-screen.png"}
+    baseline = NODE_HEAD_BASELINE.get(width)
+    if baseline:
+        bar = head.get("header")
+        summary_rect = (head.get("summary") or {}).get("rect") or {}
+        def relative(box, key):
+            return round(box[key] - bar["top"], 1) if box and bar else None
+        actual = {
+            "height": bar["height"] if bar else None,
+            "titleTop": relative(head.get("title"), "top"),
+            "summaryTop": relative(summary_rect, "top") if summary_rect else None,
+            "addTop": relative(head.get("add"), "top"),
+            "dividerTop": relative(head.get("divider"), "top") if head.get("divider") else None,
+        }
+        mismatches = {key: {"actual": actual[key], "expected": value}
+                      for key, value in baseline.items()
+                      if actual[key] is None or abs(actual[key] - value) > 1}
+        if mismatches:
+            failures.append({"check": "node head baseline", "label": label,
+                             "mismatches": mismatches})
+    name = f"app-node-head-{width}-{theme}.png"
+    section = page.get_by_test_id("provider-row-claude").first
+    box = section.bounding_box()
+    if box:
+        page.screenshot(path=str(output / name),
+                        clip={"x": box["x"], "y": box["y"], "width": box["width"],
+                              "height": min(160, box["height"])})
+    else:
+        section.screenshot(path=str(output / name))
+    return {"width": width, "theme": theme, "head": head, "capture": name,
+            "screenCapture": None}
 
 
 def capture_receive_state(
@@ -863,6 +1034,7 @@ def main() -> int:
         "loadingFrames": [],
         "centralStates": [],
         "receiveStates": [],
+        "nodeHeads": [],
         "failures": [],
         "pageErrors": [],
         "consoleErrors": [],
@@ -904,15 +1076,17 @@ def main() -> int:
                     ))
                     context.route("**/*", route_request)
                     try:
-                        measured_width = width in MEASURED_WIDTHS
-                        if args.scenes in ("all", "provider") and measured_width:
-                            for state_name, fixture_state, expanded in STATES:
+                        provider_width = width in PROVIDER_WIDTHS
+                        central_width = width in CENTRAL_WIDTHS
+                        if args.scenes in ("all", "provider"):
+                            states = STATES if provider_width else [state for state in STATES if state[0] == "pool-expanded"]
+                            for state_name, fixture_state, expanded in states:
                                 result["states"].append(capture_state(
                                     page, args.base_url, state_name, fixture_state, expanded,
                                     width, theme, output, failures, page_errors,
                                 ))
                         if args.scenes in ("all", "central"):
-                            if measured_width:
+                            if central_width:
                                 for state_name, fixture_state in CENTRAL_STATES:
                                     result["centralStates"].append(capture_central_state(
                                         page, args.base_url, state_name, fixture_state,
@@ -924,9 +1098,12 @@ def main() -> int:
                                     page, args.base_url, state_name, fixture_state,
                                     width, theme, output, failures,
                                 ))
-                            if args.scenes == "central" or not measured_width:
+                            result["nodeHeads"].append(capture_node_header(
+                                page, args.base_url, width, theme, output, failures,
+                            ))
+                            if args.scenes == "central":
                                 continue
-                        if not measured_width:
+                        if not provider_width:
                             continue
                         # One deliberately delayed summary frame: the fixture never
                         # resolves getUsageSummary, so Claude shows its loading
