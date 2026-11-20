@@ -3,6 +3,7 @@ import type {
   SSEEventAssistantError,
   SSEEventAssistantMessage,
   SSEEventAwaySummary,
+  SSEEventClaudeRuntimeHookEvent,
   SSEEventClaudeRuntimeModeState,
   SSEEventClaudeRuntimeNotification,
   SSEEventClaudeRuntimeRemoteTrigger,
@@ -47,6 +48,7 @@ import type {
   SSEEventSessionNotification,
   SSEEventSubagentStart,
   SSEEventSubagentStop,
+  SSEEventSystemMessage,
   SSEEventTextDelta,
   SSEEventTextEnd,
   SSEEventTextSnapshot,
@@ -126,10 +128,7 @@ export type ReportTimelineEvent = SSEEventReportTimeline;
 export type ReportTimelineQuestionClosedEvent = SSEEventReportTimelineQuestionClosed;
 export type TextSnapshotEvent = SSEEventTextSnapshot;
 
-export interface SystemMessageEvent {
-  type: "system_message";
-  text: string;
-}
+export type SystemMessageEvent = SSEEventSystemMessage;
 
 export const RETRYING_ERROR_HISTORY =
   "응답 연결이 끊겨 같은 작업에 자동 재연결이 발생했습니다.";
@@ -147,15 +146,7 @@ export interface InputRequestQuestion {
   multiSelect?: boolean;
 }
 
-export interface ClaudeRuntimeHookEvent {
-  type: "claude_runtime_hook_event";
-  hook_event_name: string;
-  session_id?: string;
-  tool_name?: string;
-  tool_use_id?: string;
-  hook_input?: Record<string, unknown>;
-  timestamp: number;
-}
+export type ClaudeRuntimeHookEvent = SSEEventClaudeRuntimeHookEvent;
 
 export interface SubtreeUpdateSSEEvent {
   type: "subtree_update";
@@ -230,9 +221,3 @@ export type SoulSSEEvent =
   | TurnSummaryEvent
   | PromptSuggestionEvent
   | SubtreeUpdateSSEEvent;
-
-export interface DashboardSSEEvent {
-  eventId: number;
-  agentSessionId: string;
-  event: SoulSSEEvent;
-}

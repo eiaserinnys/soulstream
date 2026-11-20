@@ -416,6 +416,7 @@ export interface SessionEventEnvelope {
     | SSEEventInterventionSent
     | SSEEventSessionNotification
     | SSEEventUserMessage
+    | SSEEventSystemMessage
     | SSEEventAssistantMessage
     | SSEEventTurnSummary
     | SSEEventInputRequest
@@ -603,6 +604,15 @@ export interface SSEEventUserMessage {
     [k: string]: unknown;
   }[];
   client_id?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: 시스템 프롬프트·초기 상태 메시지.
+ */
+export interface SSEEventSystemMessage {
+  type: "system_message";
+  text: string;
   timestamp?: number;
   [k: string]: unknown;
 }
@@ -1417,7 +1427,7 @@ export interface SSEEventClaudeRuntimeHookEvent {
   hook_input?: {
     [k: string]: unknown;
   };
-  timestamp?: number;
+  timestamp: number;
   [k: string]: unknown;
 }
 /**

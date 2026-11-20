@@ -89,7 +89,6 @@ export type {
   RespondResponse,
   SessionListResponse,
   ApiError,
-  DashboardSSEEvent,
   SessionListStreamEvent,
   SessionCreatedStreamEvent,
   SessionUpdatedStreamEvent,
