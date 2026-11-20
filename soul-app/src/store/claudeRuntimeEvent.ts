@@ -11,8 +11,6 @@ export function applyClaudeRuntimePayload(
   if (typeof data !== 'object' || data === null) return current;
   return applyClaudeRuntimeEvent(
     current ?? null,
-    { ...(data as Record<string, unknown>), type } as unknown as Parameters<
-      typeof applyClaudeRuntimeEvent
-    >[1],
+    { ...(data as Record<string, unknown>), type },
   ) ?? undefined;
 }
