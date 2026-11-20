@@ -8,6 +8,7 @@ import {
 } from "../node/pending_commands.js";
 import {
   SessionCommandRouteError,
+  sessionCommandRouteErrorResponse,
   type SessionCommandRouter,
 } from "./session_command_router.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
@@ -307,23 +308,7 @@ function mappedActionErrorResponse(error: unknown): SessionActionResponse | { re
   }
 
   if (error instanceof SessionCommandRouteError) {
-    if (error.code === "SESSION_OWNER_MISSING") {
-      return { status: 404, body: {
-        error: {
-          code: error.code,
-          message: error.message,
-          agentSessionId: error.agentSessionId,
-        },
-      } };
-    }
-    return { status: 503, body: {
-      error: {
-        code: error.code,
-        message: error.message,
-        agentSessionId: error.agentSessionId,
-        nodeId: error.nodeId,
-      },
-    } };
+    return sessionCommandRouteErrorResponse(error);
   }
 
   if (nodeCommandError !== undefined) {
