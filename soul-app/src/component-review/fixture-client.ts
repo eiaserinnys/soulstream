@@ -32,6 +32,7 @@ import { createPersistentFullscreenReviewApi, persistentWeeklyUsageReviewSummary
 import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
 import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
 import { createPersistentReportReviewApi } from './persistent-report-fixtures';
+import { createUsageStatsReviewApi } from './usage-stats-review-api';
 import { createReviewCardApi } from './ReviewPasCardExpand';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
@@ -506,7 +507,11 @@ export function createApiClient(baseUrl = ''): ApiClient {
       }) } as unknown as ApiClient
       : boardApi as unknown as ApiClient;
   }
-  if (section === 'nativeSettings') return { ...usageEndpoints, ...nativeSettingsApi } as unknown as ApiClient;
+  if (section === 'nativeSettings') {
+    // 카드 #1752: 세션 통계 제어 줄 검수는 overview가 있어야 그려진다. 요청한 화면만 공개 픽스처를 쓴다.
+    const usageStatsFixture = new URLSearchParams(window.location.search).get('usageStats') === 'fixture';
+    return { ...usageEndpoints, ...nativeSettingsApi, ...(usageStatsFixture ? createUsageStatsReviewApi() : {}) } as unknown as ApiClient;
+  }
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
     return new URLSearchParams(window.location.search).get('sample') === 'report'
