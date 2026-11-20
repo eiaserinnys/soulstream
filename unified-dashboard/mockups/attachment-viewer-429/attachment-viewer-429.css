@@ -1,7 +1,7 @@
-/* 카드 #429 시안: 지금 이미지 원본 창(.image-viewer-popup, .chat-image-viewer-*)에서 바뀌는 곳만 더한다.
+/* 카드 #429 시안 (보완판): 지금 이미지 원본 창(.image-viewer-popup, .chat-image-viewer-*)에서 바뀌는 곳만 더한다.
    값은 모두 기존 토큰과 원본 창의 변수다. */
 
-/* 머리줄 오른쪽 단추 묶음. 닫기 단추와 같은 자리(end-2, top-2)에서 왼쪽으로 하나를 더한다. */
+/* 머리줄 오른쪽 단추 묶음. 닫기 단추와 같은 자리(end-2, top-2)에서 전환 단추가 있으면 왼쪽에 하나를 더한다. */
 .attachment-viewer-429-actions {
   position: absolute;
   inset-block-start: calc(var(--spacing) * 2);
@@ -10,45 +10,163 @@
   align-items: center;
   gap: var(--v3-space-1);
 }
-.chat-image-viewer-popup:has(.attachment-viewer-429-actions) > .chat-image-viewer-header {
+.chat-image-viewer-popup:has(.attachment-viewer-429-actions > :nth-child(2)) > .chat-image-viewer-header {
   padding-inline-end: calc(2 * var(--v3-action-size) + var(--v3-space-1) + var(--v3-space-2));
 }
 
-/* 긴 캡처 폭 맞춤: 창은 화면 높이를 쓰고, 그림은 창 폭에 맞춰 그림 영역 안에서 세로로 스크롤한다.
-   창 폭은 문서 창과 같은 읽기 폭(max-w-3xl)까지만 넓히고 원본 폭을 넘기지 않는다. */
-.chat-image-viewer-popup[data-slot="dialog-popup"][data-image-fit="width"] {
+/* 받는 중과 실패: 틀은 그림을 받은 뒤 정한다. 그동안은 지금 창 그대로 두되,
+   머리 없는 이미지 창과 같은 최소 높이를 주어 상태를 창 가운데에 둔다. */
+.chat-image-viewer-popup[data-slot="dialog-popup"]:is([data-image-state="waiting"], [data-image-state="loading"], [data-image-state="failed"]) {
+  min-height: min(var(--container-3xs), calc(100dvh - 2 * var(--image-viewer-block-margin)));
+}
+.chat-image-viewer-popup:is([data-image-state="waiting"], [data-image-state="loading"], [data-image-state="failed"]) > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup:is([data-image-state="waiting"], [data-image-state="loading"], [data-image-state="failed"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  flex: 1 1 auto;
+}
+.chat-image-viewer-popup[data-image-state="loading"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* 읽기 크기 틀. 세로로 긴 그림은 폭 상한까지, 가로로 긴 그림은 화면 폭까지 넓히고 원본 폭을 넘기지 않는다.
+   높이는 화면 높이에서 위아래 여유를 뺀 값이다. 전체 보기도 같은 틀을 쓴다. */
+.chat-image-viewer-popup[data-slot="dialog-popup"] {
+  --attachment-viewer-429-cap: var(--container-3xl);
+}
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-cap="md"] {
+  --attachment-viewer-429-cap: var(--container-md);
+}
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-image-frame="column"] {
   width: min(
-    var(--container-3xl),
+    var(--attachment-viewer-429-cap),
     calc(100dvw - 2rem),
     calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
   );
   height: calc(100dvh - 2 * var(--image-viewer-block-margin));
 }
-.chat-image-viewer-popup[data-image-fit="width"] > [data-slot="dialog-panel-scroll"],
-.chat-image-viewer-popup[data-image-fit="width"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-image-frame="full"] {
+  width: min(
+    calc(100dvw - 2rem),
+    calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
+  );
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+}
+.chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
   flex: 1 1 auto;
 }
+
+/* 그림 영역. 폭 맞춤은 세로로, 높이 맞춤은 가로로 스크롤한다. 초점 고리는 ScrollArea 정본 그대로다. */
 .attachment-viewer-429-scroll {
   flex: 1 1 0;
   min-height: 0;
   height: auto;
   border-radius: var(--chat-attachment-radius);
 }
-.attachment-viewer-429-scroll [data-slot="scroll-area-viewport"] {
+.attachment-viewer-429-scroll .chat-image-frame > .chat-image-status {
+  display: none;
+}
+.chat-image-viewer-popup .attachment-viewer-429-scroll img.chat-image-viewer-image {
+  margin: 0;
+  max-width: none;
+  max-height: none;
   border-radius: var(--chat-attachment-radius);
 }
-.chat-image-viewer-popup[data-image-fit="width"] .attachment-viewer-429-scroll img {
+.attachment-viewer-429-scroll[data-fit="read"][data-axis="y"] .chat-image-frame {
+  display: block;
+}
+.chat-image-viewer-popup .attachment-viewer-429-scroll[data-fit="read"][data-axis="y"] img.chat-image-viewer-image {
   width: 100%;
+  height: auto;
+}
+.attachment-viewer-429-scroll[data-fit="read"][data-axis="x"] .chat-image-frame {
+  display: flex;
+  align-items: center;
+  inline-size: max-content;
+  block-size: 100%;
+}
+.chat-image-viewer-popup .attachment-viewer-429-scroll[data-fit="read"][data-axis="x"] img.chat-image-viewer-image {
+  flex: none;
+  width: auto;
+  height: min(100%, var(--attachment-natural-height));
+}
+.attachment-viewer-429-scroll[data-fit="whole"] .chat-image-frame {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  block-size: 100%;
+}
+.chat-image-viewer-popup .attachment-viewer-429-scroll[data-fit="whole"] img.chat-image-viewer-image {
+  width: auto;
+  height: auto;
   max-width: 100%;
-  max-height: none;
-  margin: 0;
-  border-radius: var(--chat-attachment-radius);
+  max-height: 100%;
 }
 
-/* 시안 장면 고르기(창을 닫으면 보인다). */
+/* SVG는 HTML 틀과 같은 밝은 바탕 위에 그린다. 래스터 그림은 지금 창 그대로다. */
+.chat-image-viewer-popup[data-image-format="svg"] img.chat-image-viewer-image {
+  color-scheme: light;
+  background-color: Canvas;
+}
+
+/* 틀을 정하는 데 쓰는 보이지 않는 자. 지금 창의 그림 한계식과 휴대폰 폭 틀(--container-md)의 그림 폭(기준 길이)을 잰다. */
+.attachment-viewer-429-probe {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  visibility: hidden;
+  pointer-events: none;
+  inline-size: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
+  block-size: calc(100dvh - 2 * var(--image-viewer-block-margin) - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
+}
+.attachment-viewer-429-probe-reference {
+  inline-size: calc(min(var(--container-md), 100dvw - 2rem) - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
+}
+
+/* 폭 상한 비교: 두 창을 한 바탕 위에 나란히 둔다. */
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-compare="3xl"] {
+  margin-inline-end: calc(var(--container-md) + var(--v3-space-6));
+}
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-compare="md"] {
+  margin-inline-start: calc(var(--container-3xl) + var(--v3-space-6));
+}
+[data-slot="dialog-viewport"]:has([data-compare]) {
+  pointer-events: none;
+}
+[data-slot="dialog-viewport"] [data-compare] {
+  pointer-events: auto;
+}
+[data-slot="dialog-backdrop"]:has(+ [data-slot="dialog-viewport"] [data-compare="md"]) {
+  display: none;
+}
+
+/* 시안 페이지(창을 닫으면 보인다): 장면 고르기와 메모. */
+.attachment-viewer-429-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  padding: var(--v3-space-6);
+  max-width: var(--container-3xl);
+}
 .attachment-viewer-429-scenes {
   display: flex;
   flex-wrap: wrap;
   gap: var(--v3-space-2);
-  padding: var(--v3-space-6);
+}
+.attachment-viewer-429-notes {
+  font: var(--v3-type-body) var(--v3-font-family);
+  color: var(--v3-text-primary);
+}
+.attachment-viewer-429-notes > summary {
+  cursor: pointer;
+}
+.attachment-viewer-429-notes > ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  margin: var(--v3-space-2) 0 0;
+  padding-inline-start: var(--v3-space-5);
+  list-style: disc;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }

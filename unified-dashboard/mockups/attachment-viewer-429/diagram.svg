@@ -3,7 +3,7 @@
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6e6e78"/></marker><pattern id="g" width="80" height="80" patternUnits="userSpaceOnUse"><path d="M80 0H0V80" fill="none" stroke="#ececf1" stroke-width="2"/></pattern></defs>
 <rect width="2400" height="1600" fill="url(#g)"/>
 <text x="160" y="300" font-family="sans-serif" font-size="88" font-weight="700" fill="#1d1d1f">첨부 미리보기 흐름</text>
-<text x="160" y="390" font-family="sans-serif" font-size="44" fill="#6e6e78">원본은 그대로 두고, 보기 창에는 안전한 미리보기만 보낸다</text>
+<text x="160" y="390" font-family="sans-serif" font-size="44" fill="#6e6e78">원본은 그대로 두고, 보기 창이 형식에 맞게 그린다</text>
 <rect x="160" y="620" width="440" height="300" rx="36" fill="#e8f0fe" stroke="#4c7cf0" stroke-width="5"/>
 <text x="380" y="760" text-anchor="middle" font-family="sans-serif" font-size="56" font-weight="700" fill="#1d1d1f">업로드</text>
 <text x="380" y="830" text-anchor="middle" font-family="sans-serif" font-size="34" fill="#4a4a52">웹 · 앱 · 에이전트</text>
@@ -13,8 +13,8 @@
 <text x="920" y="830" text-anchor="middle" font-family="sans-serif" font-size="34" fill="#4a4a52">원본 그대로 보관</text>
 <line x1="1150" y1="770" x2="1230" y2="770" stroke="#6e6e78" stroke-width="6" marker-end="url(#a)"/>
 <rect x="1240" y="620" width="440" height="300" rx="36" fill="#fef7e0" stroke="#e3a008" stroke-width="5"/>
-<text x="1460" y="760" text-anchor="middle" font-family="sans-serif" font-size="56" font-weight="700" fill="#1d1d1f">미리보기 생성</text>
-<text x="1460" y="830" text-anchor="middle" font-family="sans-serif" font-size="34" fill="#4a4a52">HEIC → JPEG, SVG 검사</text>
+<text x="1460" y="760" text-anchor="middle" font-family="sans-serif" font-size="56" font-weight="700" fill="#1d1d1f">형식 판정</text>
+<text x="1460" y="830" text-anchor="middle" font-family="sans-serif" font-size="34" fill="#4a4a52">SVG는 img, HEIC는 원본</text>
 <line x1="1690" y1="770" x2="1770" y2="770" stroke="#6e6e78" stroke-width="6" marker-end="url(#a)"/>
 <rect x="1780" y="620" width="440" height="300" rx="36" fill="#fce8e6" stroke="#ea4335" stroke-width="5"/>
 <text x="2000" y="760" text-anchor="middle" font-family="sans-serif" font-size="56" font-weight="700" fill="#1d1d1f">보기 창</text>
