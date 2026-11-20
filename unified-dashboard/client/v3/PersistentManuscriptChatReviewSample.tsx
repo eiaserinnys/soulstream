@@ -4,7 +4,7 @@ import type { ChatAttachmentItem, ChatAttachmentLoader } from "@seosoyoung/soul-
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { ClaudeRuntimeSchedulesPanel } from "@seosoyoung/soul-ui/components/ClaudeRuntimeSchedulesPanel";
-import type { ClaudeRuntimeView } from "@seosoyoung/soul-ui/stores/claude-runtime-state";
+import type { ClaudeRuntimeView } from "@seosoyoung/soul-ui/lib/claude-runtime-projection";
 import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
 import { flattenTree, type ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";

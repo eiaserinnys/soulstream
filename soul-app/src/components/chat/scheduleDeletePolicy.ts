@@ -1,4 +1,4 @@
-import type { ClaudeRuntimeScheduleStatus } from '../../api/types';
+import type { ClaudeRuntimeScheduleStatus } from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
 
 const NON_DELETABLE_STATUSES = new Set<ClaudeRuntimeScheduleStatus>([
   'completed',

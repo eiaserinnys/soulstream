@@ -9,9 +9,9 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type {
-  ClaudeRuntimeNotification,
-  ClaudeRuntimeRemoteTrigger,
-} from '../../api/types';
+  ClaudeRuntimeNotificationView,
+  ClaudeRuntimeRemoteTriggerView,
+} from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
 import { useChatStore } from '../../store/chatStore';
 import { DESIGN_ICON_SIZE, useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
@@ -148,7 +148,7 @@ function NotificationRow({
   styles,
   iconColor,
 }: {
-  notification: ClaudeRuntimeNotification;
+  notification: ClaudeRuntimeNotificationView;
   styles: ReturnType<typeof makeStyles>;
   iconColor: string;
 }) {
@@ -179,7 +179,7 @@ function RemoteTriggerRow({
   styles,
   iconColor,
 }: {
-  trigger: ClaudeRuntimeRemoteTrigger;
+  trigger: ClaudeRuntimeRemoteTriggerView;
   styles: ReturnType<typeof makeStyles>;
   iconColor: string;
 }) {

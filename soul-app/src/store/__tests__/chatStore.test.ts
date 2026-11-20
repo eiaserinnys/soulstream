@@ -4,7 +4,7 @@ import {
   pickOptimisticVariant,
   useChatStore,
 } from '../chatStore';
-import { applyClaudeRuntimePayload } from '../claudeRuntimeProjection';
+import { applyClaudeRuntimePayload } from '../claudeRuntimeEvent';
 import type { SessionEvent, SessionEventType } from '../../api/types';
 
 const SID = 'sess-test';
@@ -42,7 +42,7 @@ function getStreamingSlots() {
   return useChatStore.getState().streamingSlotsBySession[SID];
 }
 
-describe('claudeRuntimeProjection', () => {
+describe('claudeRuntimeEvent', () => {
   it('runtime task payload를 store 없이 immutable하게 누적한다', () => {
     const created = applyClaudeRuntimePayload(undefined, 'claude_runtime_task_created', {
       task_id: 'task-1',

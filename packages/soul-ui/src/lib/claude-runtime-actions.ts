@@ -5,7 +5,7 @@ import type {
   ClaudeRuntimeScheduleView,
   ClaudeRuntimeTaskView,
   ClaudeRuntimeTranscriptMirrorView,
-} from "../stores/claude-runtime-state";
+} from "./claude-runtime-projection";
 
 export interface ClaudeRuntimeTasksResponse {
   sessionId: string;

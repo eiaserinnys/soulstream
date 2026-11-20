@@ -20,7 +20,7 @@ import {
   setClaudeRuntimeSignalsFallbackForTest,
   useClaudeRuntimeSignals,
 } from "./claude-runtime-signals";
-import type { ClaudeRuntimeView } from "../stores/claude-runtime-state";
+import type { ClaudeRuntimeView } from "../lib/claude-runtime-projection";
 import { ChatStoreScopeProvider } from "../stores/chat-store-scope";
 import { createChatSessionStore, useDashboardStore } from "../stores/dashboard-store";
 

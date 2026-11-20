@@ -33,7 +33,7 @@ import {
 import {
   processEventsBatch,
 } from "../event-processor";
-import { applyClaudeRuntimeStoreEvent } from "../claude-runtime-state";
+import { applyClaudeRuntimeEvent } from "../../lib/claude-runtime-projection";
 import { flattenTree } from "../../lib/flatten-tree";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { groupMessages } from "../../lib/grouping";
@@ -141,7 +141,7 @@ export function createEventProcessingSlice(
 
     const state = get();
     const nextClaudeRuntime = events.reduce(
-      (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
+      (runtime, item) => applyClaudeRuntimeEvent(runtime, item.event),
       state.claudeRuntime,
     );
     const result = processEventsBatch(
@@ -257,7 +257,7 @@ export function createEventProcessingSlice(
         composerStore.getState().setPendingChatSend(state.activeSessionKey, null);
       }
       const nextClaudeRuntime = events.reduce(
-        (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
+        (runtime, item) => applyClaudeRuntimeEvent(runtime, item.event),
         state.claudeRuntime,
       );
 

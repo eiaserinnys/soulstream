@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type {
-  ClaudeRuntimeMode,
-  ClaudeRuntimeNotification,
-  ClaudeRuntimeRemoteTrigger,
-  ClaudeRuntimeSchedule,
   ClaudeRuntimeSchedulesResponse,
-  ClaudeRuntimeTask,
   ClaudeRuntimeTasksResponse,
-  ClaudeRuntimeTranscriptMirror,
-} from '../../api/types';
+} from '../../../../packages/soul-ui/src/lib/claude-runtime-actions';
+import type {
+  ClaudeRuntimeModeView,
+  ClaudeRuntimeNotificationView,
+  ClaudeRuntimeRemoteTriggerView,
+  ClaudeRuntimeScheduleView,
+  ClaudeRuntimeTaskView,
+  ClaudeRuntimeTranscriptMirrorView,
+} from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
 import {
   captureAuthScope,
   isAuthScopeCurrent,
@@ -51,18 +53,18 @@ interface TasksSnapshot {
   sessionState: ClaudeRuntimeTasksResponse['sessionState'];
   runtimeSessionId: string | null;
   updatedAt: number | null;
-  tasks: Record<string, ClaudeRuntimeTask>;
-  notifications: Record<string, ClaudeRuntimeNotification>;
-  remoteTriggers: Record<string, ClaudeRuntimeRemoteTrigger>;
-  transcriptMirror: ClaudeRuntimeTranscriptMirror | null;
-  planMode: ClaudeRuntimeMode | null;
-  worktreeMode: ClaudeRuntimeMode | null;
+  tasks: Record<string, ClaudeRuntimeTaskView>;
+  notifications: Record<string, ClaudeRuntimeNotificationView>;
+  remoteTriggers: Record<string, ClaudeRuntimeRemoteTriggerView>;
+  transcriptMirror: ClaudeRuntimeTranscriptMirrorView | null;
+  planMode: ClaudeRuntimeModeView | null;
+  worktreeMode: ClaudeRuntimeModeView | null;
 }
 
 interface SchedulesSnapshot {
   revision: number;
   resetRevision: number;
-  schedules: Record<string, ClaudeRuntimeSchedule>;
+  schedules: Record<string, ClaudeRuntimeScheduleView>;
   changes: Record<string, { revision: number; deleted: boolean }>;
 }
 
@@ -352,7 +354,7 @@ function preferChanged<T>(snapshot: T, baseline: T, current: T): T {
   return current !== baseline ? current : snapshot;
 }
 
-function nextScheduleRunAt(schedules: readonly ClaudeRuntimeSchedule[]): string | null {
+function nextScheduleRunAt(schedules: readonly ClaudeRuntimeScheduleView[]): string | null {
   const values = schedules
     .filter((schedule) => schedule.status === 'active' && schedule.nextRunAt)
     .map((schedule) => schedule.nextRunAt as string)

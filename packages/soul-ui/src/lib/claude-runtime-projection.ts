@@ -1,4 +1,4 @@
-import type { SoulSSEEvent } from "@shared/types";
+import type { SoulSSEEvent } from "../shared/sse-events";
 
 export type ClaudeRuntimeTaskStatus =
   | "pending"
@@ -129,7 +129,7 @@ export interface ClaudeRuntimeView {
   nextScheduleRunAt?: string | null;
 }
 
-export function applyClaudeRuntimeStoreEvent(
+export function applyClaudeRuntimeEvent(
   current: ClaudeRuntimeView | null,
   event: SoulSSEEvent,
 ): ClaudeRuntimeView | null {
@@ -368,9 +368,7 @@ function scheduleFromEvent(
   event: SoulSSEEvent,
 ): ClaudeRuntimeScheduleView {
   const payload = event as unknown as Record<string, unknown>;
-  const existing = {};
   const schedule: ClaudeRuntimeScheduleView = {
-    ...existing,
     scheduleId,
     kind: isScheduleKind(payload.schedule_kind)
       ? payload.schedule_kind

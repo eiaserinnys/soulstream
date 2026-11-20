@@ -9,12 +9,12 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
+import type { ClaudeRuntimeTaskOutputResponse } from '../../../../packages/soul-ui/src/lib/claude-runtime-actions';
 import type {
-  ClaudeRuntimeMode,
-  ClaudeRuntimeTask,
-  ClaudeRuntimeTaskOutputResponse,
+  ClaudeRuntimeModeView,
+  ClaudeRuntimeTaskView,
   ClaudeRuntimeTaskStatus,
-} from '../../api/types';
+} from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
 import { useChatStore } from '../../store/chatStore';
 import { DESIGN_ICON_SIZE, useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
@@ -241,7 +241,7 @@ function ModePill({
   );
 }
 
-function worktreeLabel(mode: ClaudeRuntimeMode): string {
+function worktreeLabel(mode: ClaudeRuntimeModeView): string {
   if (!mode.active) {
     return mode.worktreeAction ? `워크트리 모드 꺼짐 (${mode.worktreeAction === 'keep' ? '유지' : mode.worktreeAction === 'remove' ? '제거' : mode.worktreeAction})` : '워크트리 모드 꺼짐';
   }
@@ -256,7 +256,7 @@ function TaskRow({
   onOpenOutput,
   onStop,
 }: {
-  task: ClaudeRuntimeTask;
+  task: ClaudeRuntimeTaskView;
   busy: boolean;
   styles: ReturnType<typeof makeStyles>;
   tokenTextOnAccent: string;
@@ -309,7 +309,7 @@ function TaskRow({
   );
 }
 
-function taskKindLabel(task: ClaudeRuntimeTask): string {
+function taskKindLabel(task: ClaudeRuntimeTaskView): string {
   if (task.taskType === 'bash' && task.isBackgrounded) return '백그라운드 Bash';
   if (task.taskType === 'bash') return 'Bash';
   if (task.isBackgrounded) return '백그라운드 에이전트';
