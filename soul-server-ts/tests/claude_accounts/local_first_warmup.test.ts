@@ -283,6 +283,7 @@ describe("local usage warm-up after a node restart", () => {
     const restarted = createService(fetchImpl);
     await testCase.arrange?.(restarted, restarted.store.profileDir(LOCAL_ID));
     fetchImpl.mockClear();
+    const collectAll = vi.spyOn(restarted.usageCollector, "collectAll");
 
     const selection = await restarted.select({
       ...selectInput("session-no-wait"),
@@ -291,6 +292,8 @@ describe("local usage warm-up after a node restart", () => {
 
     expect(selection).toMatchObject({ account_id: testCase.expected });
     expect(fetchImpl).not.toHaveBeenCalled();
+    // 기다릴 측정 자체를 만들지 않는다.
+    expect(collectAll).not.toHaveBeenCalled();
   });
 
   describe("after composing the account services", () => {
@@ -299,11 +302,11 @@ describe("local usage warm-up after a node restart", () => {
       vi.unstubAllEnvs();
     });
 
-    const compose = () => composeClaudeAccountServices({
+    const compose = (logger = pino({ level: "silent" })) => composeClaudeAccountServices({
       CLAUDE_AUTH_TOKEN_PATH: undefined,
       CLAUDE_ACCOUNT_POOL_ENABLED: true,
       CLAUDE_ACCOUNTS_DIR: accountsDir,
-    }, pino({ level: "silent" }));
+    }, logger);
 
     it("measures local usage once and starts even when that request fails", async () => {
       await prepareNode([]);
@@ -312,11 +315,17 @@ describe("local usage warm-up after a node restart", () => {
         throw new Error("network down");
       });
       vi.stubGlobal("fetch", fetchSpy);
+      const logger = pino({ level: "silent" });
+      const warn = vi.spyOn(logger, "warn");
 
-      const { claudeAccounts } = compose();
+      const { claudeAccounts } = compose(logger);
 
       expect(claudeAccounts).toBeDefined();
       await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(
+        { accountIds: [LOCAL_ID] },
+        expect.stringContaining("Startup Claude account usage measurement failed"),
+      ));
       // 실패한 측정은 일시 실패(stale)로 남고, 서비스는 다시 재지 않고 바로 고른다.
       expect(await claudeAccounts!.select(selectInput("session-after-startup")))
         .toMatchObject({ account_id: LOCAL_ID });

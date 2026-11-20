@@ -121,9 +121,22 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
    * 경고 로그만 남기고 서비스 시작을 막지 않는다.
    */
   startLocalUsageWarmup(): void {
-    void this.getAccountList().catch((err: unknown) => {
-      this.logger?.warn({ err }, "Startup Claude account usage measurement failed");
-    });
+    void this.getAccountList()
+      .then((list) => {
+        // 조회 실패(네트워크, 5xx, 시간 초과)는 예외가 아니라 stale 관측으로 남으므로 따로 알린다.
+        const staleAccountIds = list.accounts
+          .filter((account) => account.source === "local" && account.stale)
+          .map((account) => account.id);
+        if (staleAccountIds.length > 0) {
+          this.logger?.warn(
+            { accountIds: staleAccountIds },
+            "Startup Claude account usage measurement failed for some local accounts",
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        this.logger?.warn({ err }, "Startup Claude account usage measurement failed");
+      });
   }
 
   private loadCentralSnapshot(): void {
