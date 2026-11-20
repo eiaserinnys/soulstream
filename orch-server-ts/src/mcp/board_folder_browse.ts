@@ -1,6 +1,5 @@
-import type { BoardItemType } from "../board/folder_content_types.js";
+import type { BoardItemType, ListFolderItemsParams, ListFolderItemsResult } from "../board/folder_content_types.js";
 import type { CatalogBoardItemRow } from "@soulstream/wire-schema/catalog";
-import type { ListFolderItemsParams, ListFolderItemsResult } from "../board/folder_content_types.js";
 import type { BoardMcpStore, FolderRow } from "./board_catalog_types.js";
 import { FOLDER_SEARCH_SCAN_LIMIT } from "@soulstream/mcp-contract";
 

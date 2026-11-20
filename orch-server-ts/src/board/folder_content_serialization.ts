@@ -1,13 +1,13 @@
-import type { BoardItemType } from "./folder_content_types.js";
+import type {
+  BoardItemType,
+  FolderItemRecord,
+  CustomViewWithBoardItem,
+} from "./folder_content_types.js";
 import type {
   CatalogBoardItemRow,
   CustomViewRow,
   MarkdownDocumentRow,
 } from "@soulstream/wire-schema/catalog";
-import type {
-  FolderItemRecord,
-  CustomViewWithBoardItem,
-} from "./folder_content_types.js";
 
 export interface BoardItemDbRow extends Record<string, unknown> {
   id: string;

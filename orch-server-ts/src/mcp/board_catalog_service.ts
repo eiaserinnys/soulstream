@@ -1,9 +1,15 @@
-// Orchestrator-owned MCP catalog composition; legacy worker service remains for other callers.
 import { randomUUID } from "node:crypto";
-import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
+import {
+  boardItemsDelta,
+  serializeCatalogFolders,
+  sessionAssignmentFromRow,
+  type CatalogBoardItemRow,
+  type CatalogMutationDelta,
+  type CatalogSessionsDelta,
+  type MarkdownDocumentRow,
+} from "@soulstream/wire-schema/catalog";
 import type { BoardMcpStore, BoardMcpFolderMutations } from "./board_catalog_types.js";
 import { CatalogBoardItemService, type CatalogFolderContentPort } from "./board_catalog_items.js";
-import { boardItemsDelta, serializeCatalogFolders, sessionAssignmentFromRow, type CatalogMutationDelta, type CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
 import { FolderBrowseService, type FolderBrowseResult, type FolderBrowseItem, type FolderSessionItem, createFolderBrowseStore } from "./board_folder_browse.js";
 import type { CustomViewBroadcasterPort } from "./board_custom_view_service.js";
 

@@ -1,13 +1,14 @@
 import type { Logger } from "pino";
-import { CustomViewRevisionConflictError, MarkdownDocumentVersionConflictError } from "@soulstream/wire-schema/catalog";
+import {
+  CustomViewRevisionConflictError,
+  MarkdownDocumentVersionConflictError,
+  type CatalogBoardItemRow,
+  type CustomViewRow,
+  type MarkdownDocumentRow,
+} from "@soulstream/wire-schema/catalog";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
-import type {
-  CatalogBoardItemRow,
-  CustomViewRow,
-  MarkdownDocumentRow,
-} from "@soulstream/wire-schema/catalog";
 import type {
   ListFolderItemsParams,
   ListFolderItemsResult,
