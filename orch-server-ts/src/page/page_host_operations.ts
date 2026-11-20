@@ -38,13 +38,13 @@ const mutationFields = {
   expected_version: z.number().int().positive(),
   ...mutationActorFields,
 };
-const placementFields = {
+export const placementFields = {
   parent_id: id.nullable(),
   parent_temp_id: id.nullable().optional(),
   after_block_id: id.nullable(),
   after_temp_id: id.nullable().optional(),
 };
-const contentFields = {
+export const contentFields = {
   block_type: id,
   text: z.string(),
   properties: jsonObject,
@@ -78,7 +78,7 @@ const blockInputSchema = z.object({
   collapsed: z.boolean(),
 });
 
-const batchOperationSchema = z.discriminatedUnion("op", [
+export const batchOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("rename_page"), title: id }),
   z.object({ op: z.literal("set_page_archived"), archived: z.boolean() }),
   z.object({ op: z.literal("create_block"), temp_id: id, ...placementFields, ...contentFields }),
