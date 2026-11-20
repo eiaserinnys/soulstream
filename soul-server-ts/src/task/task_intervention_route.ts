@@ -8,14 +8,13 @@ import type {
   AutoResumeTransition,
 } from "./task_auto_resume_transition.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow, DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import {
   isActiveTaskStatus,
   type CallerInfo,
   type InterventionMessage,
   type Task,
 } from "./task_models.js";
-import type { DeliveryIntent } from "./delivery_contract.js";
 import type {
   RunningInterventionResult,
   RunningInterventionTransition,

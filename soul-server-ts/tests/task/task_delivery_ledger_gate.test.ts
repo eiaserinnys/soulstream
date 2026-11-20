@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";

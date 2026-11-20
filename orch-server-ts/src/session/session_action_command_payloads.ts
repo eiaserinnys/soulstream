@@ -1,6 +1,7 @@
 import type { RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import type { ControlCommandType } from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import { isDeliveryIntent, type DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -16,12 +17,6 @@ export type ExistingSessionActionPayload<TType extends ControlCommandType> =
   RequestResponseNodeCommandPayload<TType> & {
     agentSessionId: string;
   };
-
-export type DeliveryIntent =
-  | "human_live_steer"
-  | "durable_next_turn"
-  | "completion_notification"
-  | "runtime_followup";
 
 export type DeliveryMetadataWireFields = {
   delivery_id?: string;
@@ -212,13 +207,6 @@ function optionalStringField(
   return typeof value === "string"
     ? { ok: true, value }
     : { ok: false, message: `${field} must be a string` };
-}
-
-function isDeliveryIntent(value: string): value is DeliveryIntent {
-  return value === "human_live_steer"
-    || value === "durable_next_turn"
-    || value === "completion_notification"
-    || value === "runtime_followup";
 }
 
 export function toolApprovalPayload(

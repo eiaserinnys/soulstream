@@ -17,7 +17,7 @@ import { TaskCompletionNotifier } from
 import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
-} from "../../src/db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });

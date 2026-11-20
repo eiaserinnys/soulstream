@@ -1,4 +1,5 @@
-import type { SessionDeliveryRow, SqlClient } from "../control_plane_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { SqlClient } from "../control_plane_types.js";
 import type { SessionDeliveryAttemptOutcome } from
   "./session_delivery_attempt_repository.js";
 

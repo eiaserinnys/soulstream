@@ -10,6 +10,8 @@ import type {
   RegisterSessionDeliveryResult,
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { SessionDeliveryNotificationRepository } from "./session_delivery_notification_repository.js";

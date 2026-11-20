@@ -5,7 +5,7 @@ import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import { ExecutionContextBuilder } from "../../src/context/context_builder.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { ClaudeEngineAdapter, ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";

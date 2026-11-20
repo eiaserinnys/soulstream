@@ -1,8 +1,6 @@
 import type { FastifyRequest } from "fastify";
-import type {
-  DeliveryIntent,
-  DeliveryMetadataWireFields,
-} from "../session/session_action_command_payloads.js";
+import { isDeliveryIntent, type DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
+import type { DeliveryMetadataWireFields } from "../session/session_action_command_payloads.js";
 import { parseAttachmentIds } from "../session/session_action_command_payloads.js";
 import {
   MODEL_REASONING_EFFORTS,
@@ -211,13 +209,6 @@ function parseDeliveryMetadata(
     if (parsed.value !== undefined) value[wireKey] = parsed.value;
   }
   return { ok: true, value };
-}
-
-function isDeliveryIntent(value: string): value is DeliveryIntent {
-  return value === "human_live_steer"
-    || value === "durable_next_turn"
-    || value === "completion_notification"
-    || value === "runtime_followup";
 }
 
 type NewExecuteOptionalFields = Omit<

@@ -13,6 +13,8 @@ import { deliveryPayloadsMatchIgnoringCallerAgentNode } from
 
 import type {
   SessionDeliveryRow,
+} from "@soulstream/wire-schema/session-delivery";
+import type {
   SqlClient,
 } from "../src/control_plane/control_plane_types.js";
 import { SessionDeliveryRepository } from

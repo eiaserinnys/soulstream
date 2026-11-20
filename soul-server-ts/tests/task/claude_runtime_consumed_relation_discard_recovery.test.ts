@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { EngineExecuteParams } from "../../src/engine/protocol.js";
 import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from

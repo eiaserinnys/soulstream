@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 
 import type { SessionDeliveryHostClient } from
   "../control_plane/persistence_host_clients.js";
-import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { SessionDeliveryRecoveryHostClient } from
   "../control_plane/persistence_host_clients.js";
 import {

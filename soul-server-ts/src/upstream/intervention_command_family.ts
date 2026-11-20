@@ -2,7 +2,7 @@ import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo } from "../task/task_models.js";
-import type { DeliveryIntent } from "../task/delivery_contract.js";
+import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import { nodeResponseRejection } from "../task/state/node_response_handling.js";
 import {
   CommandDispatchError,

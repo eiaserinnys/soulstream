@@ -26,7 +26,7 @@ import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
   SessionDeliveryRow,
-} from "../db/session_db_types.js";
+} from "@soulstream/wire-schema/session-delivery";
 
 export interface DurableCompletionInput {
   targetSessionId: string;

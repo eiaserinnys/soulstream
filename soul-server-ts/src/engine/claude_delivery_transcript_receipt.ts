@@ -4,7 +4,8 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { SessionDeliveryRow, SessionRow } from "../db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { SessionRow } from "../db/session_db_types.js";
 import { buildDeliveryInputUuid } from "../task/delivery_identity.js";
 import { parseClaudeNativeTaskNotification } from
   "../task/claude_native_task_notification.js";

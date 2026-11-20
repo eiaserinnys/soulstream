@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
+import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import { ClaudeRuntimeStartupRecovery } from
   "../../src/runtime/claude_runtime_startup_recovery.js";
 import { QueuedDeliveryTranscriptRecovery } from

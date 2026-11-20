@@ -1,4 +1,4 @@
-import type { DeliveryIntent } from "../../src/task/delivery_contract.js";
+import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 
 export const EXTERNAL_MESSAGE_CASES = [
   {
