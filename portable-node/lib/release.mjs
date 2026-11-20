@@ -185,7 +185,7 @@ async function listZipEntries(archivePath) {
  * allowInternalLinks가 false인 앱 묶음은 링크 항목 자체를 거부한다.
  * 런타임은 자기 폴더 안을 가리키는 상대 링크만 허용한다(Node의 bin/npm 등).
  */
-async function assertSafeArchive(archivePath, {
+export async function assertSafeArchive(archivePath, {
   archive,
   allowInternalLinks,
   label,
@@ -263,7 +263,7 @@ async function assertLinksInside(rootDir) {
   await walk(rootDir);
 }
 
-async function extractArchive({ archivePath, archive, destination, stateRoot }) {
+export async function extractArchive({ archivePath, archive, destination, stateRoot }) {
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
   if (archive === "tar.gz") {

@@ -17,7 +17,7 @@ export function NodeCardFrame({
   return <div
     data-testid={testId}
     className={cn(
-      "overflow-hidden rounded-[13px] border border-border bg-muted/10",
+      "overflow-hidden rounded-xl border border-border bg-muted/10",
       dimmed && "opacity-60",
     )}
   >

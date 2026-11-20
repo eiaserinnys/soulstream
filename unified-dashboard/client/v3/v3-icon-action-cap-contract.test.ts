@@ -18,7 +18,7 @@ describe("v3 icon action cap contract", () => {
     expect(component).toContain('title={tooltip ?? label}');
     expect(theme).toContain("<DashboardIconCap");
     expect(config).toContain("<DashboardIconCap");
-    expect(css).toMatch(/\.dashboard-icon-cap \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: 22px;/);
+    expect(css).toMatch(/\.dashboard-icon-cap \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: var\(--radius-pill\);/);
     expect(css).toMatch(/\.dashboard-icon-cap--bare\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s);
   });
 

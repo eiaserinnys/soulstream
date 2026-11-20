@@ -70,7 +70,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
       {nodeList.length === 0 ? (
         <div
           data-testid="node-card-list"
-          className="flex min-h-28 flex-col items-center justify-center rounded-[13px] border border-border bg-muted/10 text-sm text-muted-foreground/40"
+          className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-border bg-muted/10 text-sm text-muted-foreground/40"
         >
           No nodes
         </div>

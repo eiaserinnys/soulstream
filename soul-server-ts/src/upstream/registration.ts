@@ -8,6 +8,7 @@ import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resource
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
+import { toWireReleaseManifest } from "../release/wire_release_manifest.js";
 
 export interface RegistrationParams {
   nodeId: string;
@@ -148,7 +149,8 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     }),
     ...(params.releaseActivationState
       ? {
-          release_manifest: params.releaseActivationState.manifest,
+          // 로컬 manifest는 model_catalog_path를 지닐 수 있으나 wire는 12키 정확 일치만 받는다.
+          release_manifest: toWireReleaseManifest(params.releaseActivationState.manifest),
           release_activation: params.releaseActivationState.registration(),
         }
       : {}),

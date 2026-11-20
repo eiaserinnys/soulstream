@@ -132,16 +132,30 @@ function requireRecord(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+const MAX_REPORTED_KEY_CHARS = 64;
+const MAX_REPORTED_KEYS = 10;
+
 function requireExactKeys(
   value: Record<string, unknown>,
   keys: readonly string[],
   field: string,
 ): void {
   const expected = new Set(keys);
-  if (Object.keys(value).length !== keys.length
-    || Object.keys(value).some((key) => !expected.has(key))) {
-    throw new Error(`${field} has invalid fields`);
-  }
+  const unexpected = Object.keys(value).filter((key) => !expected.has(key));
+  const missing = keys.filter((key) => !Object.prototype.hasOwnProperty.call(value, key));
+  if (unexpected.length === 0 && missing.length === 0) return;
+  // 키 이름은 노드가 보낸 값이므로 길이와 개수를 상한한다. 값은 넣지 않는다.
+  throw new Error(
+    `${field} has invalid fields (unexpected: ${describeKeys(unexpected)}; missing: ${describeKeys(missing)})`,
+  );
+}
+
+function describeKeys(keys: readonly string[]): string {
+  if (keys.length === 0) return "none";
+  const shown = keys.slice(0, MAX_REPORTED_KEYS)
+    .map((key) => (key.length > MAX_REPORTED_KEY_CHARS ? key.slice(0, MAX_REPORTED_KEY_CHARS) : key));
+  const hidden = keys.length - shown.length;
+  return hidden > 0 ? `${shown.join(", ")}, +${hidden}` : shown.join(", ");
 }
 
 function nonEmptyString(value: unknown, field: string): string {

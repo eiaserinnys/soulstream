@@ -42,7 +42,7 @@ describe("v3 rounded focus ring contract", () => {
     expect(select).toMatch(/rounded-lg[^\"]*focus-visible:ring-\[3px\]/s);
     expect(select).toMatch(/function SelectTrigger\([\s\S]*?selectTriggerVariants\(\{ size \}\)/);
     expect(runHistory).toMatch(/\.v3-run-open\s*{[^}]*border-radius:\s*inherit/s);
-    expect(workspace).toMatch(/\.v3-task-title-input\s*{[^}]*border-radius:\s*9px;[^}]*box-shadow:/s);
+    expect(workspace).toMatch(/\.v3-task-title-input\s*{[^}]*border-radius:\s*var\(--radius-lg\);[^}]*box-shadow:/s);
   });
 
   it("puts chat focus on the rounded composer instead of its radius-less textarea", () => {
@@ -57,7 +57,7 @@ describe("v3 rounded focus ring contract", () => {
     );
     expect(composer).toMatch(/data-slot="chat-input-composer"/);
     expect(composer).toMatch(
-      /manuscript \? "[^"]*border-b[^"]*focus-within:border-ring" : "[^"]*rounded-\[25px\][^"]*ring-ring\/50[^"]*has-focus-visible:ring-\[3px\]/,
+      /manuscript \? "[^"]*border-b[^"]*focus-within:border-ring" : "[^"]*rounded-3xl[^"]*ring-ring\/50[^"]*has-focus-visible:ring-\[3px\]/,
     );
     expect(planner).toMatch(/\[data-slot="chat-input-composer"\] textarea:focus-visible\s*{[^}]*box-shadow:\s*none/s);
   });

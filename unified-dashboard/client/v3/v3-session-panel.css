@@ -39,7 +39,7 @@
 .v3-session-row {
   min-width: 0;
   max-width: 100%;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 
 

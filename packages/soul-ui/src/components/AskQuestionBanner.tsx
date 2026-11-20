@@ -31,7 +31,7 @@ import { InputRequestOptionContent } from './InputRequestOptionContent';
 type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 
 const PROMPT_BANNER_FRAME_CLASS =
-  "fixed left-1/2 top-6 z-[1000] flex w-[min(720px,calc(100vw-2rem))] max-w-3xl -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3";
+  "fixed left-1/2 top-6 z-[1000] flex w-[min(720px,calc(100vw-2rem))] max-w-3xl -translate-x-1/2 flex-col gap-2 rounded-2xl border border-glass-border glass-shadow-lg px-4 py-3";
 
 // Fixed prompt overlays stay CSS/backdrop based: the shared WebGL glass canvas samples wallpaper only, not content behind overlay z-layers.
 
@@ -169,7 +169,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
       {node.agentName && (
         <div className="text-xs text-muted-foreground">{node.agentName}</div>
       )}
-      <pre className="max-h-32 overflow-auto rounded-[13px] border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
+      <pre className="max-h-32 overflow-auto rounded-xl border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
         {JSON.stringify(node.toolInput, null, 2)}
       </pre>
       <div className="flex justify-end gap-2">

@@ -52,7 +52,7 @@
   display: flex;
   flex-direction: column;
   padding: var(--v3-space-5);
-  border-radius: var(--v3-space-5);
+  border-radius: var(--radius-3xl);
 }
 .v3-card-board-workspace.is-expanded > .v3-card-board { flex: 1; min-height: 0; }
 .v3-card-board-workspace.is-expanded .v3-card-board-column { display: flex; flex-direction: column; min-height: 0; }

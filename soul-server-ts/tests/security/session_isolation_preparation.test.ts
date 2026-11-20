@@ -744,9 +744,9 @@ describe("prepareIsolationPlan", () => {
     ).toBe(true);
   });
 
-  it("masks .env files recursively under read-only re-exposed paths and the workspace bind", async () => {
+  it("masks .env files under read-only re-exposed paths and the workspace bind", async () => {
     const fixture = await makeFixture();
-    const deep = join(fixture.workspace, ".projects", "BlockNote", "playground");
+    const repoDir = join(fixture.workspace, ".projects", "BlockNote");
     const reexposed = join(fixture.sensitive, "logs");
     fixture.input.policy = {
       ...fixture.input.policy,
@@ -756,22 +756,29 @@ describe("prepareIsolationPlan", () => {
       },
     };
 
+    // 뿌리에서 모음 폴더(.projects) 아래 리포 층까지가 훑는 자리다.
     const maskedTargets = [
-      join(deep, ".env"),
-      join(deep, ".env.local"),
-      join(deep, "x.env"),
+      join(repoDir, ".env"),
+      join(repoDir, ".env.local"),
+      join(repoDir, "x.env"),
       join(reexposed, "config", ".env"),
     ];
     for (const path of maskedTargets) {
       touch(fixture.root, path, "SECRET=1", 0o600);
     }
     // 예시·틀 파일은 그대로 둔다.
-    touch(fixture.root, join(deep, ".env.example"), "A=1", 0o600);
-    touch(fixture.root, join(deep, ".env.local.sample"), "A=1", 0o600);
-    touch(fixture.root, join(deep, ".env.template"), "A=1", 0o600);
-    // 탐색하지 않는 가지.
-    touch(fixture.root, join(deep, "node_modules", "pkg", ".env"), "A=1", 0o600);
-    touch(fixture.root, join(deep, ".git", ".env"), "A=1", 0o600);
+    touch(fixture.root, join(repoDir, ".env.example"), "A=1", 0o600);
+    touch(fixture.root, join(repoDir, ".env.local.sample"), "A=1", 0o600);
+    touch(fixture.root, join(repoDir, ".env.template"), "A=1", 0o600);
+    // 탐색하지 않는 가지: 리포 아래 패키지 층과 건너뛰는 이름.
+    const unscanned = [
+      join(repoDir, "playground", ".env"),
+      join(repoDir, "node_modules", "pkg", ".env"),
+      join(repoDir, ".git", ".env"),
+    ];
+    for (const path of unscanned) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
     // 세션이 쓸 수 있게 연 경로.
     const writePaths = [
       join(fixture.worktree, ".env"),
@@ -792,48 +799,92 @@ describe("prepareIsolationPlan", () => {
       expect(masked.has(path), path).toBe(true);
     }
     for (const path of [
-      join(deep, ".env.example"),
-      join(deep, ".env.local.sample"),
-      join(deep, ".env.template"),
-      join(deep, "node_modules", "pkg", ".env"),
-      join(deep, ".git", ".env"),
+      join(repoDir, ".env.example"),
+      join(repoDir, ".env.local.sample"),
+      join(repoDir, ".env.template"),
+      ...unscanned,
       ...writePaths,
     ]) {
       expect(masked.has(path), path).toBe(false);
     }
   });
 
-  it("masks .env files up to depth five from the root and stops before depth six", async () => {
+  it("masks .env files at the root, one level down, and one level under collection directories", async () => {
     clearEnvMaskScanCache();
     const fixture = await makeFixture();
-    const atLimit = touch(
-      fixture.root,
-      join(fixture.workspace, "a", "b", "c", "d", ".env"),
-      "A=1",
-      0o600,
-    );
-    const beyond = touch(
-      fixture.root,
-      join(fixture.workspace, "a", "b", "c", "d", "e", ".env"),
-      "B=2",
-      0o600,
-    );
+    const maskedTargets = [
+      join(fixture.workspace, ".env"),
+      join(fixture.workspace, "a", ".env"),
+      join(fixture.workspace, ".projects", "repo", ".env"),
+      join(fixture.workspace, "agent-workspaces", "x", ".env.local"),
+    ];
+    const unscanned = [
+      join(fixture.workspace, "a", "b", ".env"),
+      join(fixture.workspace, ".projects", "repo", "pkg", ".env"),
+      join(fixture.workspace, "agent-workspaces", "x", "sub", ".env"),
+    ];
+    for (const path of [...maskedTargets, ...unscanned]) {
+      touch(fixture.root, path, "A=1", 0o600);
+    }
 
     const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
     const masked = new Set(prepared.spec.masks.map((mask) => mask.path));
 
-    // 깊이 0~4 디렉터리를 나열하므로 깊이 5의 파일까지 찾는다.
-    expect(masked.has(atLimit)).toBe(true);
-    expect(masked.has(beyond)).toBe(false);
+    for (const path of maskedTargets) {
+      expect(masked.has(path), path).toBe(true);
+    }
+    for (const path of unscanned) {
+      expect(masked.has(path), path).toBe(false);
+    }
   });
 
-  it("skips build output directory names in the recursive .env scan", async () => {
+  it("lists the root, its children, and the folders directly under collection directories", async () => {
+    clearEnvMaskScanCache();
+    const fixture = await makeFixture();
+    const workspaceRoot = await fixture.ports.resolveRealPath(fixture.workspace);
+    mkdirSync(join(fixture.workspace, "a", "b"), { recursive: true, mode: 0o700 });
+    mkdirSync(join(fixture.workspace, ".projects", "repo", "pkg"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    mkdirSync(join(fixture.workspace, "agent-workspaces", "x", "sub"), {
+      recursive: true,
+      mode: 0o700,
+    });
+
+    const listings: string[] = [];
+    const listDirectorySync = fixture.ports.listDirectorySync.bind(fixture.ports);
+    fixture.ports.listDirectorySync = (path) => {
+      listings.push(path);
+      return listDirectorySync(path);
+    };
+
+    await scanEnvMaskRoots([workspaceRoot], fixture.ports, []);
+
+    expect(listings).toContain(workspaceRoot);
+    expect(listings).toContain(join(workspaceRoot, "a"));
+    expect(listings).toContain(join(workspaceRoot, ".projects"));
+    expect(listings).toContain(join(workspaceRoot, ".projects", "repo"));
+    expect(listings).toContain(join(workspaceRoot, "agent-workspaces"));
+    expect(listings).toContain(join(workspaceRoot, "agent-workspaces", "x"));
+    expect(listings).not.toContain(join(workspaceRoot, "a", "b"));
+    expect(listings).not.toContain(join(workspaceRoot, ".projects", "repo", "pkg"));
+    expect(listings).not.toContain(
+      join(workspaceRoot, "agent-workspaces", "x", "sub"),
+    );
+    // 뿌리 자신은 깊이 0으로 한 번만 나열한다.
+    expect(listings.filter((path) => path === workspaceRoot)).toHaveLength(1);
+  });
+
+  it("skips build output directory names in the .env scan", async () => {
     clearEnvMaskScanCache();
     const fixture = await makeFixture();
     const repoDir = join(fixture.workspace, ".projects", "site");
     const skipped = [
       join(fixture.workspace, "public", ".env"),
       join(fixture.workspace, "dist", ".env"),
+      // 모음 폴더 바로 아래의 건너뛰는 이름도 나열하지 않는다.
+      join(fixture.workspace, ".projects", "dist", ".env"),
       join(repoDir, "public", ".env"),
       join(repoDir, "dist", ".env"),
     ];
@@ -842,7 +893,7 @@ describe("prepareIsolationPlan", () => {
     }
     const kept = [
       join(fixture.workspace, "site-src", ".env"),
-      join(repoDir, "src", ".env"),
+      join(repoDir, ".env"),
     ];
     for (const path of kept) {
       touch(fixture.root, path, "B=2", 0o600);
@@ -1064,22 +1115,12 @@ describe("prepareIsolationPlan", () => {
   it("applies session-specific write paths to the cached scan list", async () => {
     clearEnvMaskScanCache();
     const fixture = await makeFixture();
-    const firstSession = join(
-      fixture.workspace,
-      ".projects",
-      ".isolated",
-      "s1",
-      ".env",
-    );
-    const secondSession = join(
-      fixture.workspace,
-      ".projects",
-      ".isolated",
-      "s2",
-      ".env",
-    );
-    touch(fixture.root, firstSession, "A=1", 0o600);
-    touch(fixture.root, secondSession, "B=2", 0o600);
+    const firstWorktree = join(fixture.workspace, ".projects", "soulstream--s1");
+    const secondWorktree = join(fixture.workspace, ".projects", "soulstream--s2");
+    mkdirSync(firstWorktree, { recursive: true, mode: 0o700 });
+    mkdirSync(secondWorktree, { recursive: true, mode: 0o700 });
+    const firstSession = touch(fixture.root, join(firstWorktree, ".env"), "A=1", 0o600);
+    const secondSession = touch(fixture.root, join(secondWorktree, ".env"), "B=2", 0o600);
 
     const scans: IsolationEnvMaskScan[] = [];
     const lastScan = (): IsolationEnvMaskScan => {
@@ -1087,21 +1128,27 @@ describe("prepareIsolationPlan", () => {
       if (!scan) throw new Error("탐색 로그가 없습니다");
       return scan;
     };
-    const prepare = async (sessionId: string) => {
+    const prepare = async (sessionId: string, worktree: string) => {
       fixture.input.decision = { ...fixture.input.decision, sessionId };
+      fixture.input.ownedWorktrees = [{
+        id: `wt-${sessionId}`,
+        canonicalPath: worktree,
+        repoId: "soulstream",
+        commonDir: fixture.commonDir,
+      }];
       return prepareIsolationPlan(fixture.input, fixture.ports, {
         logEnvMaskScan: (scan) => scans.push(scan),
       });
     };
 
-    const asFirst = await prepare("s1");
+    const asFirst = await prepare("s1", firstWorktree);
     const firstMasks = new Set(asFirst.spec.masks.map((mask) => mask.path));
     expect(lastScan()).toMatchObject({ cache: "miss" });
     expect(firstMasks.has(secondSession)).toBe(true);
     expect(firstMasks.has(firstSession)).toBe(false);
 
     // 두 번째 세션은 캐시된 목록에서 첫 세션의 워크트리는 가리되 자기 것은 뺀다.
-    const asSecond = await prepare("s2");
+    const asSecond = await prepare("s2", secondWorktree);
     const secondMasks = new Set(asSecond.spec.masks.map((mask) => mask.path));
     expect(lastScan()).toMatchObject({ cache: "hit" });
     expect(secondMasks.has(firstSession)).toBe(true);
@@ -1148,10 +1195,16 @@ describe("prepareIsolationPlan", () => {
   it("keeps .env file masks under a sensitive root when the workspace RO bind reopens it", async () => {
     clearEnvMaskScanCache();
     const fixture = await makeFixture({ workspaceUnderSensitiveRoot: true });
-    const deepEnv = touch(
+    const repoEnv = touch(
+      fixture.root,
+      join(fixture.workspace, ".projects", "agent-project", ".env"),
+      "SECRET=1",
+      0o600,
+    );
+    const packageEnv = touch(
       fixture.root,
       join(fixture.workspace, ".projects", "agent-project", "config", ".env"),
-      "SECRET=1",
+      "SECRET=2",
       0o600,
     );
     const worktreeEnv = touch(
@@ -1184,7 +1237,9 @@ describe("prepareIsolationPlan", () => {
       writable: false,
     });
     // 다시 열린 워크스페이스 아래 `.env`는 파일 가림으로 남는다.
-    expect(masked.has(deepEnv)).toBe(true);
+    expect(masked.has(repoEnv)).toBe(true);
+    // 리포 아래 패키지 층은 나열하지 않으므로 이 배치에서도 가리지 않는다.
+    expect(masked.has(packageEnv)).toBe(false);
     // 세션 쓰기 경로의 `.env`는 이 배치에서도 가리지 않는다.
     expect(masked.has(worktreeEnv)).toBe(false);
     expect(masked.has(tmpEnv)).toBe(false);

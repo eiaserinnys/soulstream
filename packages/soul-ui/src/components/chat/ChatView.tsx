@@ -19,7 +19,7 @@
 
 import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ArrowDownToLine } from "lucide-react";
 import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dashboard-store";
 import { DashboardIconCap } from "../DashboardIconCap";
 import { FrameLoading } from "../FrameLoading";
@@ -37,7 +37,6 @@ import {
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { projectHiddenInputTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
-import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
@@ -92,8 +91,6 @@ export interface ChatViewProps {
 function isGenerationDivider(item: ChatTimelineItem): boolean {
   return item.type === "single" && item.msg.treeNodeType === "generation_started";
 }
-
-const CHAT_FOLLOW_CONTROL_CLASS = "flex select-none items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium glass-shadow-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 // 초점 대상 행은 Virtuoso 행 key로 찾고, 스크롤 상자의 보이는 영역과 겹치는지로 화면 안을 판정한다.
 function findFocusRowElement(
@@ -1096,43 +1093,41 @@ function ChatViewContent({
 
       {transcriptFallback == null && (presentation === "default" || (showNewMessage && !isFollowing)) && (
         <div className="relative">
-          {/* 배너와 단추를 아래에서 위로 쌓는 겹침 묶음. 흐름 높이가 없어 목록이 그만큼 넓고,
-              묶음의 빈 영역은 pointer-events-none이라 목록의 클릭·선택·휠을 막지 않는다. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 px-[var(--panel-inset)] pb-[var(--panel-inset)]">
+          {/* 배너와 단추를 맨 아래 한 줄에 겹쳐 놓는다. 흐름 높이가 없어 목록이 그만큼 넓고,
+              묶음의 빈 영역은 pointer-events-none이라 목록의 클릭·선택·휠을 막지 않는다.
+              가운데 칸의 배너와 오른쪽 칸의 단추는 items-center로 세로 중심을 맞춘다. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-[var(--panel-inset)] pb-[var(--panel-inset)]">
             {showNewMessage && !isFollowing && (
               presentation === "manuscript" ? (
                 <DashboardIconCap
                   appearance="bare"
                   label="새 메시지로 이동"
                   onClick={scrollToBottom}
-                  className="pointer-events-auto text-muted-foreground v3-pas-floating-cap"
+                  className="pointer-events-auto col-start-2 text-muted-foreground v3-pas-floating-cap"
                 >
                   <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
                 </DashboardIconCap>
               ) : (
                 <button
                   onClick={scrollToBottom}
-                  className="pointer-events-auto rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  className="pointer-events-auto col-start-2 justify-self-center rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {"\u2193"} 새 메시지
                 </button>
               )
             )}
             {presentation === "default" && (
-              <button
-                type="button"
-                onClick={toggleFollow}
+              <DashboardIconCap
+                size="small"
+                data-slot="chat-follow-toggle"
+                label="자동 스크롤"
+                tooltip={isFollowing ? "자동 스크롤 켜짐" : "자동 스크롤 꺼짐"}
                 aria-pressed={isFollowing}
-                className={cn(
-                  "pointer-events-auto self-end",
-                  CHAT_FOLLOW_CONTROL_CLASS,
-                  isFollowing
-                    ? "border-accent-blue/30 glass bg-accent-blue/15 text-accent-blue underline underline-offset-2 hover:bg-accent-blue/25"
-                    : "border-glass-border glass text-muted-foreground hover:text-foreground",
-                )}
+                onClick={toggleFollow}
+                className="pointer-events-auto col-start-3 justify-self-end"
               >
-                {"\u2193"} 자동 스크롤
-              </button>
+                <ArrowDownToLine className="size-4" aria-hidden="true" />
+              </DashboardIconCap>
             )}
           </div>
         </div>
