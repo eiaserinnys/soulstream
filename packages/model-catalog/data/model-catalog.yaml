@@ -50,10 +50,11 @@ presets:
     supported_efforts: [low, medium, high, xhigh, max]
     default_effort: xhigh
     trusted_execution: true
-    # 카드 #1231 위임 구조 8판 시범: 담당 대화 압축 상한 25만, MCP 도구 스키마를 처음부터 싣는다.
+    # 카드 #1231 위임 구조 8판 시범: 담당 대화 압축 상한 25만.
+    # 도구 스키마가 모델 창의 10%(10만) 이하면 처음부터 싣고, 넘으면 도구 검색으로 미룬다. 바닥이 압축 상한을 넘어 압축이 헛도는 것을 막는다(회고 #1767, 첫 호출 32만).
     env:
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000"
-      ENABLE_TOOL_SEARCH: "false"
+      ENABLE_TOOL_SEARCH: "auto:10"
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
   - id: claude-fable
     label: Claude - Fable 5.1
