@@ -36,7 +36,7 @@ describe("session delivery failures", () => {
       sql: harness.sql,
     }).sessionHistoryProvider;
 
-    await expect(provider.readDeliveryFailures("03148db1-session")).resolves.toEqual([
+    await expect(provider.readDeliveryFailures!("03148db1-session")).resolves.toEqual([
       {
         input_id: buildDeliveryInputUuid("298b09db-4c8d-4a63-9e51-9a5f3a4d7f21"),
         reason: "runner_receipt_unknown",

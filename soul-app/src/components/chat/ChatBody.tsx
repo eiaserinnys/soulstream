@@ -227,8 +227,12 @@ export function ChatBody({
   // 복귀·상세 SSE 재연결·전역 session_delivery_failed 신호에서 다시 읽는다.
   useEffect(() => {
     if (!api || !sessionId || !detailedNetworkActive) return;
+    // 예전 시험 대역처럼 이 보조 조회를 정의하지 않은 클라이언트는 건너뛴다.
+    // 실제 createApiClient는 늘 정의하고, 실패해도 대화는 그대로 쓴다.
+    const request = api.getDeliveryFailures?.(sessionId);
+    if (!request) return;
     let cancelled = false;
-    void api.getDeliveryFailures(sessionId)
+    void request
       .then((rows) => {
         if (cancelled) return;
         const failures: Record<string, string> = {};

@@ -30,6 +30,7 @@ describe("session history/read-only route harness", () => {
     for (const url of [
       "/api/sessions/sess-1/events/viewport?y_min=1&y_max=10",
       "/api/sessions/sess-1/messages",
+      "/api/sessions/sess-1/delivery-failures",
       "/api/sessions/sess-1/conversation-context?event_id=2",
       "/api/sessions/sess-1/timeline",
       "/api/sessions/sess-1/timeline/tool%3A1/trace",
@@ -88,6 +89,7 @@ describe("session history/read-only route harness", () => {
       "GET /api/sessions/:session_id/events/viewport": true,
       "GET /api/sessions/:session_id/events/:event_id": true,
       "GET /api/sessions/:session_id/messages": true,
+      "GET /api/sessions/:session_id/delivery-failures": true,
       "GET /api/sessions/:session_id/conversation-context": true,
       "GET /api/sessions/:session_id/timeline": true,
       "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
