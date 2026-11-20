@@ -28,10 +28,15 @@ const CONFIG: TurnSummaryConfig = {
   storyInstruction: "마커를 붙인 narrative와 highlight를 JSON으로 반환하라.",
   storyFoldThreshold: 10,
   storyFoldBatchSize: 5,
+  storyFoldMaxBatchesPerRun: 4,
+  storyCompletedFoldMaxSummaries: 40,
   storyCompletionGraceMs: 1_800_000,
   storyCompletionMinSummaries: 5,
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
+  catchUpIntervalMs: 900_000,
+  catchUpWindowHours: 72,
+  catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-terra",
   storyModel: "gpt-5.6-terra",
@@ -261,6 +266,68 @@ describe("TurnSummaryPipeline", () => {
     expect(repository.loadTurn).not.toHaveBeenCalled();
     expect(summarizer.summarize).not.toHaveBeenCalled();
     expect(repository.appendSummary).not.toHaveBeenCalled();
+  });
+
+  it("reports stored and skipped outcomes through the public queue entry", async () => {
+    const repository = fakeRepository();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: "요약",
+          model: "gpt-5.6-luna",
+          latencyMs: 70,
+          attempts: 1,
+        }),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    await expect(pipeline.enqueue({
+      nodeId: "node-a",
+      sessionId: "session-a",
+      completeEventId: 20,
+    })).resolves.toEqual({ status: "stored" });
+
+    repository.loadTurn.mockResolvedValueOnce(null);
+    await expect(pipeline.enqueue({
+      nodeId: "node-a",
+      sessionId: "session-a",
+      completeEventId: 21,
+    })).resolves.toEqual({
+      status: "skipped",
+      reason: "turn_not_reconstructable",
+    });
+  });
+
+  it("returns a usage-limit failure so the catch-up round can stop", async () => {
+    const repository = fakeRepository();
+    const failure = new Error("turn summary failed after 1 attempts", {
+      cause: Object.assign(
+        new Error("codex exec exited 1: You've hit your usage limit."),
+        { code: "CODEX_USAGE_LIMIT" },
+      ),
+    });
+    const warn = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: { summarize: vi.fn().mockRejectedValue(failure) },
+      eventHub: new RuntimeSessionEventHub(),
+      logger: { info: vi.fn(), warn },
+    });
+
+    await expect(pipeline.enqueue({
+      nodeId: "node-a",
+      sessionId: "session-a",
+      completeEventId: 20,
+    })).resolves.toEqual({ status: "failed", error: failure });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: failure, sessionId: "session-a" }),
+      "Turn summary skipped",
+    );
   });
 
   it("publishes DB gap events before the newly appended summary", async () => {

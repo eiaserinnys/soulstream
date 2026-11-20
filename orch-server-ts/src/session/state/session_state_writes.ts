@@ -210,6 +210,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/external_access/external_input_service.ts", comparisons: 3, lists: 0, sql: 0, note: "대상 세션의 관측 상태를 외부 응답에 싣는다." },
   { file: "src/external_access/public_link_routes.ts", comparisons: 1, lists: 0, sql: 0, note: "외부 요청 상태가 끝나는 값(completed)인지 비교한다. 세션 상태 글자와 이름만 같다." },
   { file: "src/folders/folder_operations.ts", comparisons: 0, lists: 1, sql: 0, note: "폴더 운영 상태." },
+  { file: "src/llm/codex_ephemeral_executor.ts", comparisons: 1, lists: 0, sql: 0, note: "codex JSONL 사건 종류." },
   { file: "src/model/model_preset_availability.ts", comparisons: 1, lists: 0, sql: 0, note: "모델 공급자 상태." },
   { file: "src/node/control_ws_route.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 제어 프레임 상태." },
   { file: "src/node/event_feed_projection_applier.ts", comparisons: 2, lists: 0, sql: 0, note: "사건 피드 표시 제목과 사건 종류." },

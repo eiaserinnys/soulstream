@@ -16,6 +16,31 @@ const liveFactoryMocks = vi.hoisted(() => ({
   pipelineDeps: undefined as unknown,
   generate: vi.fn(),
   summarize: vi.fn(),
+  catchUpStart: vi.fn(),
+  catchUpStop: vi.fn(),
+  catchUpDrain: vi.fn(),
+}));
+
+vi.mock("../src/turn-summary/turn_summary_catch_up_sweep.js", () => ({
+  TurnSummaryCatchUpSweep: class {
+    start(): void {
+      liveFactoryMocks.catchUpStart();
+    }
+    stop(): void {
+      liveFactoryMocks.catchUpStop();
+    }
+    async drain(): Promise<void> {
+      await liveFactoryMocks.catchUpDrain();
+    }
+  },
+}));
+
+vi.mock("../src/turn-summary/session_story_completion_sweep.js", () => ({
+  SessionStoryCompletionSweep: class {
+    start(): void {}
+    stop(): void {}
+    async drain(): Promise<void> {}
+  },
 }));
 
 vi.mock("../src/turn-summary/turn_summary_pipeline.js", () => ({
@@ -102,6 +127,33 @@ describe("persistent instruction command sender", () => {
   });
 });
 
+describe("live turn summary pipeline sweeps", () => {
+  it("starts and drains the turn-summary catch-up sweep", async () => {
+    const pipeline = createLiveTurnSummaryPipeline({
+      config: {
+        codex_cli_path: "codex",
+        typesafe_api_key: undefined,
+      } as never,
+      configPath: "unused-turn-summary.yaml",
+      sqlResolver: {} as never,
+      registry: {} as never,
+      eventHub: { publish: vi.fn() } as never,
+      commands: { router: {} as never, bridge: {} as never, timeoutMs: 100 },
+      sessionBroadcaster: { append: vi.fn() },
+      logger: { warn: vi.fn(), info: vi.fn() },
+      warn: vi.fn(),
+      overrides: { turnSummaryCodexPath: "/codex" },
+    });
+
+    pipeline.start?.();
+    await pipeline.drain();
+
+    expect(liveFactoryMocks.catchUpStart).toHaveBeenCalledTimes(1);
+    expect(liveFactoryMocks.catchUpStop).toHaveBeenCalledTimes(1);
+    expect(liveFactoryMocks.catchUpDrain).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("live persistent instruction extractor wiring", () => {
   it("uses the existing Typesafe key and Codex generator with Sol limits", async () => {
     const fetchImpl = vi.fn(async (
@@ -146,10 +198,15 @@ describe("live persistent instruction extractor wiring", () => {
       storyInstruction: "story config",
       storyFoldThreshold: 10,
       storyFoldBatchSize: 5,
+      storyFoldMaxBatchesPerRun: 4,
+      storyCompletedFoldMaxSummaries: 40,
       storyCompletionGraceMs: 100,
       storyCompletionMinSummaries: 1,
       storyCompletionSweepIntervalMs: 100,
       storyNarrativeMaxChars: 100,
+      catchUpIntervalMs: 900_000,
+      catchUpWindowHours: 72,
+      catchUpMaxJobsPerRound: 100,
       provider: "codex",
       model: "gpt-5.6-luna",
       storyModel: "gpt-5.6-luna",

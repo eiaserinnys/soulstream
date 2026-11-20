@@ -22,7 +22,11 @@ export type CodexEphemeralErrorCode =
   | "CODEX_TIMEOUT"
   | "CODEX_CANCELLED"
   | "CODEX_INVALID_OUTPUT"
+  | "CODEX_USAGE_LIMIT"
   | "CODEX_EXEC_FAILED";
+
+const CODEX_USAGE_LIMIT_PATTERN = /usage limit/i;
+const CODEX_FAILURE_MESSAGE_MAX_CHARS = 500;
 
 export interface CodexEphemeralUsage {
   readonly input_tokens?: number;
@@ -202,6 +206,62 @@ export function parseCodexJsonl(
     : { content: content.trim(), usage };
 }
 
+export function extractCodexFailureMessage(stdout: string): string | null {
+  let message: string | null = null;
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line.trim().length === 0) continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(event)) continue;
+    if (event.type === "error" && typeof event.message === "string") {
+      const text = event.message.trim();
+      if (text.length > 0) message = text;
+    }
+    if (
+      event.type === "turn.failed" &&
+      isRecord(event.error) &&
+      typeof event.error.message === "string"
+    ) {
+      const text = event.error.message.trim();
+      if (text.length > 0) message = text;
+    }
+  }
+  return message === null
+    ? null
+    : Array.from(message).slice(0, CODEX_FAILURE_MESSAGE_MAX_CHARS).join("");
+}
+
+export function isCodexUsageLimitError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (!isRecord(current)) return false;
+    if (current.code === "CODEX_USAGE_LIMIT") return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+function codexExecFailure(
+  code: number | null,
+  stdout: string,
+  stderr: string,
+): CodexAttemptError {
+  const failureMessage = extractCodexFailureMessage(stdout);
+  const body = [failureMessage ?? "", stderr.slice(-500)]
+    .filter((part) => part.length > 0)
+    .join("\n");
+  return new CodexAttemptError(
+    failureMessage !== null && CODEX_USAGE_LIMIT_PATTERN.test(failureMessage)
+      ? "CODEX_USAGE_LIMIT"
+      : "CODEX_EXEC_FAILED",
+    `codex exec exited ${code}: ${body}`,
+  );
+}
+
 export class NodeCodexExecProcess implements CodexExecProcessPort {
   constructor(
     private readonly options: {
@@ -284,6 +344,9 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
+      // Codex may exit before reading the prompt (for example on a usage limit),
+      // and the resulting stdin EPIPE must not become an uncaught exception.
+      child.stdin.on("error", () => {});
       child.stdout.on("data", (chunk: string) => {
         firstStdoutAt ??= performance.now();
         stdout += chunk;
@@ -314,10 +377,7 @@ export class NodeCodexExecProcess implements CodexExecProcessPort {
             `codex exec timed out after ${timeoutMs}ms`,
           ));
         } else if (code !== 0) {
-          reject(new CodexAttemptError(
-            "CODEX_EXEC_FAILED",
-            `codex exec exited ${code}: ${stderr.slice(-500)}`,
-          ));
+          reject(codexExecFailure(code, stdout, stderr));
         } else {
           resolve({ stdout, stderr });
         }
@@ -360,11 +420,13 @@ export class CodexEphemeralExecutor {
     let finishedAt = startedAt;
     let spawnDurationMs = 0;
     let peakConcurrentSpawns = 0;
+    let attemptsMade = 0;
     for (let attempt = 1; attempt <= request.maxAttempts; attempt += 1) {
       if (request.signal?.aborted) {
         lastError = cancelledAttemptError();
         break;
       }
+      attemptsMade = attempt;
       const workspaceDir = await mkdtemp(
         join(tmpdir(), "soulstream-codex-ephemeral-"),
       );
@@ -441,6 +503,7 @@ export class CodexEphemeralExecutor {
             ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
           };
         }
+        if (isCodexUsageLimitError(lastError)) break;
       } catch (error) {
         lastError = error;
       } finally {
@@ -452,7 +515,7 @@ export class CodexEphemeralExecutor {
       failure.code,
       failure.message,
       {
-        attempts: request.maxAttempts,
+        attempts: attemptsMade,
         latencyMs: Math.max(0, finishedAt - startedAt),
         spawnDurationMs,
         peakConcurrentSpawns,

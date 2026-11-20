@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildCodexExecInvocation,
+  CodexEphemeralExecutor,
   NodeCodexExecProcess,
 } from "../src/llm/codex_ephemeral_executor.js";
 
@@ -66,6 +67,103 @@ describe("Codex ephemeral query-only execution", () => {
       "multi_agent",
       'web_search="disabled"',
     ]));
+  });
+
+  it("carries the stdout JSONL error body and classifies a usage limit", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-usage-limit-"));
+    temporaryDirectories.push(directory);
+    const script = join(directory, "fake-codex.sh");
+    await writeFile(
+      script,
+      [
+        "#!/bin/sh",
+        "cat <<'EOF'",
+        '{"type":"thread.started","thread_id":"t"}',
+        '{"type":"error","message":"You\'ve hit your usage limit."}',
+        '{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit."}}',
+        "EOF",
+        "exit 1",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const processPort = new NodeCodexExecProcess();
+    await expect(processPort.execute({
+      command: script,
+      args: [],
+      env: process.env as Record<string, string>,
+      cwd: directory,
+    }, "", 1_000)).rejects.toMatchObject({
+      code: "CODEX_USAGE_LIMIT",
+      message: expect.stringContaining("usage limit"),
+    });
+  });
+
+  it("keeps other failures as exec failures with the JSONL message and stderr tail", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-exec-failure-"));
+    temporaryDirectories.push(directory);
+    const script = join(directory, "fake-codex.sh");
+    await writeFile(
+      script,
+      [
+        "#!/bin/sh",
+        "cat <<'EOF'",
+        '{"type":"turn.failed","error":{"message":"responses websocket failed"}}',
+        "EOF",
+        "printf 'stderr tail line' >&2",
+        "exit 1",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const processPort = new NodeCodexExecProcess();
+    await expect(processPort.execute({
+      command: script,
+      args: [],
+      env: process.env as Record<string, string>,
+      cwd: directory,
+    }, "", 1_000)).rejects.toMatchObject({
+      code: "CODEX_EXEC_FAILED",
+      message: expect.stringMatching(
+        /responses websocket failed[\s\S]*stderr tail line/,
+      ),
+    });
+  });
+
+  it("does not retry an attempt that hit the usage limit", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-no-retry-"));
+    temporaryDirectories.push(directory);
+    const counter = join(directory, "attempts.txt");
+    const script = join(directory, "fake-codex.sh");
+    await writeFile(
+      script,
+      [
+        "#!/bin/sh",
+        `printf 'x\\n' >> ${JSON.stringify(counter)}`,
+        "cat <<'EOF'",
+        '{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit."}}',
+        "EOF",
+        "exit 1",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const executor = new CodexEphemeralExecutor({
+      codexPath: script,
+      processPort: new NodeCodexExecProcess(),
+    });
+
+    await expect(executor.generate({
+      prompt: "hi",
+      model: "test-model",
+      reasoningEffort: "low",
+      timeoutMs: 1_000,
+      maxAttempts: 2,
+      concurrencyLimit: 1,
+    })).rejects.toMatchObject({
+      code: "CODEX_USAGE_LIMIT",
+      metrics: { attempts: 1 },
+    });
+    expect((await readFile(counter, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 
   it("kills and reaps an active child when its signal aborts", async () => {

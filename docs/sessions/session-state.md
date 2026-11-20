@@ -898,6 +898,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/external_access/external_input_service.ts | 3 | 0 | 0 | 대상 세션의 관측 상태를 외부 응답에 싣는다. |
 | src/external_access/public_link_routes.ts | 1 | 0 | 0 | 외부 요청 상태가 끝나는 값(completed)인지 비교한다. 세션 상태 글자와 이름만 같다. |
 | src/folders/folder_operations.ts | 0 | 1 | 0 | 폴더 운영 상태. |
+| src/llm/codex_ephemeral_executor.ts | 1 | 0 | 0 | codex JSONL 사건 종류. |
 | src/model/model_preset_availability.ts | 1 | 0 | 0 | 모델 공급자 상태. |
 | src/node/control_ws_route.ts | 1 | 0 | 0 | 노드 제어 프레임 상태. |
 | src/node/event_feed_projection_applier.ts | 2 | 0 | 0 | 사건 피드 표시 제목과 사건 종류. |
@@ -940,7 +941,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 82개, 비교 83줄, 목록 27줄, SQL 60줄이다.
+파일 83개, 비교 84줄, 목록 27줄, SQL 60줄이다.
 
 ## 다시 만들기
 

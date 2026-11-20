@@ -25,10 +25,15 @@ const CONFIG: TurnSummaryConfig = {
   ].join("\n"),
   storyFoldThreshold: 10,
   storyFoldBatchSize: 5,
+  storyFoldMaxBatchesPerRun: 4,
+  storyCompletedFoldMaxSummaries: 40,
   storyCompletionGraceMs: 1_800_000,
   storyCompletionMinSummaries: 5,
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
+  catchUpIntervalMs: 900_000,
+  catchUpWindowHours: 72,
+  catchUpMaxJobsPerRound: 100,
   provider: "codex",
   model: "gpt-5.6-luna",
   storyModel: "gpt-5.6-terra",
@@ -51,12 +56,12 @@ describe("SessionStoryFoldService", () => {
       narrative: "[T1] 첫 요청을 처리했다. [T2-T5] 구현 방향을 정하고 검증했다.",
       highlight: "요청을 분석했다. 구현 방향을 정했다. 정책을 보존했다. 검증을 마쳤다. 다음 작업의 기반을 남겼다.",
     });
-    const debug = vi.fn();
+    const info = vi.fn();
     const service = new SessionStoryFoldService({
       repository,
       configService: { read: () => CONFIG },
       generator,
-      logger: { debug, info: vi.fn(), warn: vi.fn() },
+      logger: { debug: vi.fn(), info, warn: vi.fn() },
       nowMs: () => 150,
     });
 
@@ -82,11 +87,12 @@ describe("SessionStoryFoldService", () => {
       narrativeThroughEventId: 52,
       expectedVersion: 0,
     });
-    expect(debug).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-a",
         model: "gpt-5.6-terra",
         markerInversionPairs: 0,
+        foldedTurnCount: 5,
         narrativeThroughEventId: 52,
       }),
       "Session story fold stored",
@@ -141,7 +147,7 @@ describe("SessionStoryFoldService", () => {
 
   it("leaves the watermark and digest untouched after two invalid results", async () => {
     const repository = fakeRepository({ count: 10 });
-    const debug = vi.fn();
+    const warn = vi.fn();
     const service = new SessionStoryFoldService({
       repository,
       configService: { read: () => CONFIG },
@@ -156,15 +162,18 @@ describe("SessionStoryFoldService", () => {
           attempts: 1,
         }),
       },
-      logger: { debug, info: vi.fn(), warn: vi.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn },
     });
 
     await service.foldIfNeeded("session-a");
 
     expect(repository.storeDigest).not.toHaveBeenCalled();
-    expect(debug).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: "invalid_structured_output" }),
-      "Session story fold skipped",
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "invalid_structured_output",
+        error: expect.stringContaining("no parseable turn marker"),
+      }),
+      "Session story fold failed",
     );
   });
 
@@ -176,7 +185,7 @@ describe("SessionStoryFoldService", () => {
         release = () => resolve(null);
       })
     );
-    const debug = vi.fn();
+    const info = vi.fn();
     const service = new SessionStoryFoldService({
       repository,
       configService: { read: () => CONFIG },
@@ -184,7 +193,7 @@ describe("SessionStoryFoldService", () => {
         narrative: "[T1] 완료했다.",
         highlight: "하나. 둘. 셋. 넷. 다섯.",
       }),
-      logger: { debug, info: vi.fn(), warn: vi.fn() },
+      logger: { debug: vi.fn(), info, warn: vi.fn() },
     });
 
     const first = service.foldIfNeeded("session-a");
@@ -194,7 +203,7 @@ describe("SessionStoryFoldService", () => {
     await first;
 
     expect(repository.loadDigest).toHaveBeenCalledTimes(1);
-    expect(debug).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "already_in_flight" }),
       "Session story fold skipped",
     );
@@ -297,7 +306,7 @@ describe("SessionStoryFoldService", () => {
       summaries: [practicalSummaryFixture()[4]!],
       storeCompleted: false,
     });
-    const debug = vi.fn();
+    const info = vi.fn();
     const service = new SessionStoryFoldService({
       repository,
       configService: { read: () => CONFIG },
@@ -305,7 +314,7 @@ describe("SessionStoryFoldService", () => {
         narrative: "[T1-T5] 후보 줄거리.",
         highlight: "하나. 둘. 셋. 넷. 다섯.",
       }),
-      logger: { debug, info: vi.fn(), warn: vi.fn() },
+      logger: { debug: vi.fn(), info, warn: vi.fn() },
     });
 
     await service.foldCompletedIfNeeded(
@@ -318,10 +327,126 @@ describe("SessionStoryFoldService", () => {
     );
 
     expect(repository.storeDigest).not.toHaveBeenCalled();
-    expect(debug).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "completion_guard_conflict" }),
       "Session story fold skipped",
     );
+  });
+
+  it("keeps folding batches until it reaches the per-run batch limit", async () => {
+    const firstBatch = practicalSummaryFixture();
+    const secondBatch = practicalSummaryFixture().map((summary) => ({
+      ...summary,
+      eventId: summary.eventId + 100,
+      turnNumber: summary.turnNumber + 5,
+    }));
+    const repository = fakeRepository({
+      count: 10,
+      afterCount: 10,
+      summaries: firstBatch,
+    });
+    repository.loadUnfoldedSummaries
+      .mockResolvedValueOnce(firstBatch)
+      .mockResolvedValueOnce(secondBatch);
+    const generator = fakeGenerator({
+      narrative: "[T1] 첫 요청을 처리했다. [T2-T5] 구현 방향을 정하고 검증했다.",
+      highlight: "요청을 분석했다. 구현 방향을 정했다. 정책을 보존했다. 검증을 마쳤다. 다음 작업의 기반을 남겼다.",
+    });
+    const service = new SessionStoryFoldService({
+      repository,
+      configService: {
+        read: () => ({ ...CONFIG, storyFoldMaxBatchesPerRun: 2 }),
+      },
+      generator,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    });
+
+    await service.foldIfNeeded("session-a");
+
+    expect(repository.loadUnfoldedSummaries).toHaveBeenCalledTimes(2);
+    expect(repository.storeDigest).toHaveBeenCalledTimes(2);
+    expect(generator.generate.mock.calls[1]?.[0]).toContain(
+      "첫 요청을 처리했다",
+    );
+    expect(repository.storeDigest.mock.calls[1]?.[0]).toMatchObject({
+      narrativeThroughEventId: 152,
+      expectedVersion: 1,
+    });
+  });
+
+  it("stops without storing when the story generation keeps failing", async () => {
+    const repository = fakeRepository({ count: 10 });
+    const generate = vi.fn().mockRejectedValue(new Error("codex unavailable"));
+    const warn = vi.fn();
+    const service = new SessionStoryFoldService({
+      repository,
+      configService: { read: () => CONFIG },
+      generator: { generate },
+      logger: { debug: vi.fn(), info: vi.fn(), warn },
+    });
+
+    await service.foldIfNeeded("session-a");
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(repository.storeDigest).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "invalid_structured_output",
+        error: "codex unavailable",
+      }),
+      "Session story fold failed",
+    );
+  });
+
+  it("folds a completed tail above the summary cap in capped batches", async () => {
+    const summaries = bulkSummaries(45);
+    const repository = fakeRepository({
+      count: 45,
+      totalCount: 45,
+      summaries,
+    });
+    repository.loadUnfoldedSummaries
+      .mockResolvedValueOnce(summaries.slice(0, 40))
+      .mockResolvedValueOnce(summaries.slice(40));
+    const generator = fakeGenerator({
+      narrative: "[T1-T45] 최종 줄거리.",
+      highlight: "하나. 둘. 셋. 넷. 다섯.",
+    });
+    const service = new SessionStoryFoldService({
+      repository,
+      configService: { read: () => CONFIG },
+      generator,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    });
+    const completedAt = new Date("2026-07-31T00:30:00.000Z");
+
+    await service.foldCompletedIfNeeded(
+      { sessionId: "session-a", completedAt },
+      new Date("2026-07-31T01:00:00.000Z"),
+      5,
+    );
+
+    expect(repository.loadUnfoldedSummaries).toHaveBeenNthCalledWith(
+      1,
+      "session-a",
+      null,
+      40,
+    );
+    expect(repository.loadUnfoldedSummaries).toHaveBeenNthCalledWith(
+      2,
+      "session-a",
+      summaries[39]?.eventId,
+      5,
+    );
+    expect(repository.storeDigest).toHaveBeenCalledTimes(1);
+    expect(repository.storeCompletedDigest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        narrativeThroughEventId: summaries[44]?.eventId,
+        expectedVersion: 1,
+        completedAt,
+      }),
+    );
+    expect(generator.generate).toHaveBeenCalledTimes(2);
   });
 
   it("observes marker inversions without rewriting the model prose", () => {
@@ -344,6 +469,18 @@ function practicalSummaryFixture(): SessionStoryTurnSummary[] {
   ];
 }
 
+function bulkSummaries(count: number): SessionStoryTurnSummary[] {
+  return Array.from({ length: count }, (_, index) =>
+    summary(
+      (index + 1) * 10,
+      index + 1,
+      `요약 ${index + 1}`,
+      (index + 1) * 10 - 8,
+      (index + 1) * 10 - 2,
+    )
+  );
+}
+
 function summary(
   eventId: number,
   turnNumber: number,
@@ -363,6 +500,7 @@ function summary(
 
 function fakeRepository(options: {
   count: number;
+  afterCount?: number;
   totalCount?: number;
   summaries?: SessionStoryTurnSummary[];
   digest?: SessionStoryDigest | null;
@@ -370,7 +508,9 @@ function fakeRepository(options: {
 }) {
   return {
     loadDigest: vi.fn().mockResolvedValue(options.digest ?? null),
-    countUnfoldedSummaries: vi.fn().mockResolvedValue(options.count),
+    countUnfoldedSummaries: vi.fn()
+      .mockResolvedValueOnce(options.count)
+      .mockResolvedValue(options.afterCount ?? 0),
     countTurnSummaries: vi.fn().mockResolvedValue({
       totalCount: options.totalCount ?? options.count,
       digestedCount: (options.totalCount ?? options.count) - options.count,
