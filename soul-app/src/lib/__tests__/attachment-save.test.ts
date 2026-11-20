@@ -3,7 +3,7 @@ import { Share } from 'react-native';
 import type { AttachmentView } from '../attachment-view';
 import { attachmentLinkView } from '../attachment-link-view';
 import { clearAuthForScope, isAuthScopeCurrent, type AuthScopeSnapshot } from '../auth-scope';
-import { AttachmentSaveError } from '../attachment-save';
+import { AttachmentSaveError } from '../attachment-save-core';
 import { saveAttachmentOriginal } from '../attachment-save.native';
 import { saveAttachmentOriginal as saveAttachmentOriginalWeb } from '../attachment-save.web';
 
