@@ -59,8 +59,19 @@ export function isRequestedTimelineEventType(value: string): value is RequestedT
   return REQUESTED_TIMELINE_EVENT_TYPE_SET.has(value);
 }
 
+/**
+ * 사람이 보낸 메시지가 전달 장부에서 dead_letter로 닫힌 기록. 클라이언트는
+ * input_id를 이벤트의 `data.input_id`와 맞춰 그 말풍선에 실패 표시를 켠다.
+ */
+export type SessionDeliveryFailureRecord = {
+  input_id: string;
+  reason: string | null;
+  failed_at: Date | string | null;
+};
+
 export type SessionHistoryProvider = {
   readConversation?: (sessionId: string, limit?: string) => Promise<import("./session_conversation_projection.js").CardSessionMessages | null>;
+  readDeliveryFailures?: (sessionId: string) => Promise<SessionDeliveryFailureRecord[]>;
   readViewport: (sessionId: string, yMin: number, yMax: number) => Promise<unknown>;
   readMessages: (
     sessionId: string,
@@ -120,6 +131,12 @@ export class SessionHistoryReadService {
 
   readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {
     return this.provider.readViewport(sessionId, yMin, yMax);
+  }
+
+  async readDeliveryFailures(
+    sessionId: string,
+  ): Promise<SessionDeliveryFailureRecord[]> {
+    return await this.provider.readDeliveryFailures?.(sessionId) ?? [];
   }
 
   async readMessagesPage(

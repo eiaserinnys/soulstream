@@ -10,6 +10,7 @@ import { Button } from "../ui/button";
 import { ChatAttachments } from "./ChatAttachments";
 import type { LlmContext } from "./hooks";
 import { UserMessage } from "./UserMessage";
+import type { DeliveryFailureActions } from "./DeliveryFailureBlock";
 import { AssistantMessage } from "./AssistantMessage";
 import { ThinkingMessage } from "./ThinkingMessage";
 import { InterventionMessage } from "./InterventionMessage";
@@ -54,7 +55,17 @@ function filterDisplayedAttachments(msg: ChatMessage, items: ChatAttachmentItem[
 }
 
 /** 메시지 타입에 따라 적절한 컴포넌트로 라우팅 */
-export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default", narration = false }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript"; narration?: boolean }) {
+export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default", narration = false, deliveryFailures, onRetryDelivery, onRestoreDelivery }: {
+  msg: ChatMessage;
+  llmContext?: LlmContext;
+  sessionId?: string;
+  presentation?: "default" | "manuscript";
+  narration?: boolean;
+  /** input_id -> 실패 사유. 사람 발신 dead_letter만 서버가 넣어 준다. */
+  deliveryFailures?: Readonly<Record<string, string>>;
+  onRetryDelivery?: (message: { text: string; attachmentPaths: readonly string[] }) => void;
+  onRestoreDelivery?: (text: string) => void;
+}) {
   const hasAttachmentSignal = msg.role === "user" || msg.role === "intervention" || msg.role === "assistant"
     ? Boolean(msg.attachmentIds?.length || msg.attachmentPaths?.length || msg.attachmentCount || msg.attachmentDisplayIds?.length)
     : false;
@@ -72,6 +83,20 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       attachmentItems,
     ),
   };
+  // 카드 #1524: 전달 장부에서 실패로 닫힌 사람 발신 말풍선만 실패 줄과 단추를 단다.
+  // 첨부가 있는데 그 경로를 이벤트에서 얻지 못하면 다시 보내기는 숨기고 복원만 남긴다.
+  const deliveryFailure: DeliveryFailureActions | undefined = (() => {
+    if (msg.inputId === undefined) return undefined;
+    if (deliveryFailures?.[msg.inputId] === undefined) return undefined;
+    const hasAttachmentsWithoutPaths = hasAttachmentSignal
+      && (msg.attachmentPaths === undefined || msg.attachmentPaths.length === 0);
+    return {
+      onRetry: hasAttachmentsWithoutPaths || !onRetryDelivery
+        ? undefined
+        : () => onRetryDelivery({ text: msg.content, attachmentPaths: msg.attachmentPaths ?? [] }),
+      onRestore: onRestoreDelivery ? () => onRestoreDelivery(msg.content) : undefined,
+    };
+  })();
   const attachmentTone = presentation === "default" && msg.role !== "assistant" ? "onUserBubble" as const : undefined;
   const projectedOutputRow = msg.id.startsWith("output-attachments:");
   const [viewer, setViewer] = useState<{ index: number; trigger: HTMLElement } | null>(null);
@@ -112,10 +137,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
         attachments={attachmentSlot}
         representedAttachments={attachmentItems}
         readContext={sessionId ? { type: "session", id: sessionId } : undefined}
+        {...(deliveryFailure ? { deliveryFailure } : {})}
       />;
       break;
     case "intervention":
-      body = <InterventionMessage msg={msg} presentation={presentation} attachments={attachmentSlot} />;
+      body = <InterventionMessage msg={msg} presentation={presentation} attachments={attachmentSlot} {...(deliveryFailure ? { deliveryFailure } : {})} />;
       break;
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리

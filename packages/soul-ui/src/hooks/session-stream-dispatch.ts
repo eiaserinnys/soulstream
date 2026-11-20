@@ -13,6 +13,7 @@ import type {
   ReplayGapStreamEvent,
   FolderUpdatedStreamEvent,
   CardUpdatedStreamEvent,
+  SessionDeliveryFailedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
@@ -33,6 +34,7 @@ export interface SessionStreamHandlers {
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onCardUpdated?: (event: CardUpdatedStreamEvent) => void;
+  onSessionDeliveryFailed?: (event: SessionDeliveryFailedStreamEvent) => void;
   onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onPageUpdated?: (event: PageUpdatedStreamEvent) => void;
@@ -71,6 +73,9 @@ export function dispatchSessionStreamEvent(
       break;
     case "card_updated":
       handlers.onCardUpdated?.(event);
+      break;
+    case "session_delivery_failed":
+      handlers.onSessionDeliveryFailed?.(event);
       break;
     case "folder_updated":
       handlers.onFolderUpdated?.(event);

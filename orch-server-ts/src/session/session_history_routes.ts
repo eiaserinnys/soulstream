@@ -56,6 +56,7 @@ export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/events/viewport": true,
   "GET /api/sessions/:session_id/events/:event_id": true,
   "GET /api/sessions/:session_id/messages": true,
+  "GET /api/sessions/:session_id/delivery-failures": true,
   "GET /api/sessions/:session_id/conversation-context": true,
   "GET /api/sessions/:session_id/timeline": true,
   "GET /api/sessions/:session_id/timeline/:timeline_id/trace": true,
@@ -154,6 +155,12 @@ export function registerSessionHistoryRoutes(
       optionalStringQuery(request.query, "before"),
       limit.value,
     );
+  });
+
+  app.get("/api/sessions/:session_id/delivery-failures", async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    if (!(await ensureSessionAccess(options, request, reply))) return;
+    return service.readDeliveryFailures(sessionParams(request).session_id);
   });
 
   app.get("/api/sessions/:session_id/timeline", async (request, reply) => {

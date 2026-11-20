@@ -8,6 +8,7 @@ import { ProfileAvatar } from "../ProfileAvatar";
 import { externalSenderDisplay, ExternalSenderCaption, ExternalSenderHeading } from "./externalSender";
 import { MarkdownContent } from "../MarkdownContent";
 import { ContextBlock } from "./ContextBlock";
+import { DeliveryFailureBlock, type DeliveryFailureActions } from "./DeliveryFailureBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
 import type { LlmContext } from "./hooks";
 import {
@@ -15,7 +16,7 @@ import {
   pickMessageAvatarUrl,
 } from "./userAvatarSelectors";
 
-export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, attachments, representedAttachments, readContext, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; attachments?: ReactNode; representedAttachments?: readonly ChatAttachmentItem[]; readContext?: AttachmentReadContext; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
+export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, attachments, representedAttachments, readContext, portraitUrl, bubbleProps, presentation = "default", deliveryFailure }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; attachments?: ReactNode; representedAttachments?: readonly ChatAttachmentItem[]; readContext?: AttachmentReadContext; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript"; deliveryFailure?: DeliveryFailureActions }) {
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
   const callerAvatarUrl = useChatStore((s) =>
@@ -93,6 +94,13 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
         {attachments}
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} variant={manuscript ? "caption" : "default"} />
+        )}
+        {deliveryFailure && (
+          <DeliveryFailureBlock
+            manuscript={manuscript}
+            onRetry={deliveryFailure.onRetry}
+            onRestore={deliveryFailure.onRestore}
+          />
         )}
       </div>
       {!manuscript && <ProfileAvatar

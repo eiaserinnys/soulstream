@@ -391,6 +391,7 @@ export const CATALOG_STREAM_EVENTS = [
   'metadata_updated',
   'folder_updated',
   'card_updated',
+  'session_delivery_failed',
   'custom_view_updated',
   'page_updated',
   'replay_gap',

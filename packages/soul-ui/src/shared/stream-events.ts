@@ -165,6 +165,14 @@ export interface ReplayGapStreamEvent {
 /** 세션 스트림 이벤트 유니온 */
 export interface CardUpdatedStreamEvent { type: "card_updated"; cardId: string; folderId: string; lastEventId?: string }
 
+/** 사람이 보낸 글이 전달 장부에서 실패로 닫힘 — 그 세션의 실패 목록을 다시 읽는다. */
+export interface SessionDeliveryFailedStreamEvent {
+  type: "session_delivery_failed";
+  agent_session_id: string;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
 export type SessionStreamEvent =
   | OrchestratorShutdownStreamEvent
   | SessionListStreamEvent
@@ -174,6 +182,7 @@ export type SessionStreamEvent =
   | CatalogUpdatedStreamEvent
   | MetadataUpdatedStreamEvent
   | CardUpdatedStreamEvent
+  | SessionDeliveryFailedStreamEvent
   | FolderUpdatedStreamEvent
   | CustomViewUpdatedStreamEvent
   | PageUpdatedStreamEvent

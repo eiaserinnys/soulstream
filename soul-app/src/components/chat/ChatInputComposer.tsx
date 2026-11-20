@@ -28,6 +28,10 @@ export type AppendGeneratedTextResult =
 export interface ChatInputComposerHandle {
   retryPending(eventId: string): void;
   restorePending(eventId: string): void;
+  /** 전달 장부에서 실패로 닫힌 말풍선의 글을 같은 세션으로 다시 보낸다. */
+  retryFailedDelivery(message: { text: string; attachmentPaths: readonly string[] }): void;
+  /** 그 말풍선의 글을 입력창으로 옮긴다. */
+  restoreFailedDelivery(text: string): void;
   appendGeneratedText(sessionId: string, text: string, reportReply?: ReportReplyDraft): AppendGeneratedTextResult;
   focusAccessibility(): void;
 }
@@ -266,6 +270,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     handleSend,
     retryPendingOptimistic,
     restorePendingOptimistic,
+    retryFailedDelivery,
   } = useChatSendFlow({
     api,
     sessionId,
@@ -348,6 +353,15 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     })));
   }, [restoreAttachments, restorePendingOptimistic, sessionId, inputDraft.setValue, setReportReply]);
 
+  const handleRestoreFailedDelivery = useCallback((failedText: string) => {
+    if (!failedText) return;
+    const restoredText = inputRef.current.length > 0
+      ? `${failedText}\n\n${inputRef.current}`
+      : failedText;
+    // 일반 입력과 같은 경로를 써서 보고 답장 해제·compose flow 처리를 함께 따른다.
+    handleInputChange(restoredText);
+  }, [handleInputChange]);
+
   const handleInterrupt = async () => {
     if (!api || !sessionId || interrupting) return;
     clearInterruptReleaseTimer();
@@ -381,13 +395,15 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   useImperativeHandle(ref, () => ({
     retryPending: eventId => { void retryPendingOptimistic(eventId); },
     restorePending: handleRestorePending,
+    retryFailedDelivery: message => { void retryFailedDelivery(message); },
+    restoreFailedDelivery: handleRestoreFailedDelivery,
     appendGeneratedText,
     focusAccessibility: () => {
       if (Platform.OS === 'web') { textInputRef.current?.focus(); return; }
       const handle = findNodeHandle(textInputRef.current);
       if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
     },
-  }), [appendGeneratedText, retryPendingOptimistic, handleRestorePending]);
+  }), [appendGeneratedText, retryPendingOptimistic, handleRestorePending, retryFailedDelivery, handleRestoreFailedDelivery]);
   useEffect(() => {
     composeFlowRef.current = null;
     clearAttachments();

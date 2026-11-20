@@ -26,6 +26,7 @@ import type {
   ReplayGapStreamEvent,
   FolderUpdatedStreamEvent,
   CardUpdatedStreamEvent,
+  SessionDeliveryFailedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
@@ -56,6 +57,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "catalog_updated",
   "metadata_updated",
   "card_updated",
+  "session_delivery_failed",
   "folder_updated",
   "custom_view_updated",
   "page_updated",
@@ -83,6 +85,7 @@ export interface UseSessionStreamSSEOptions {
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onCardUpdated?: (event: CardUpdatedStreamEvent) => void;
+  onSessionDeliveryFailed?: (event: SessionDeliveryFailedStreamEvent) => void;
   onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onPageUpdated?: (event: PageUpdatedStreamEvent) => void;

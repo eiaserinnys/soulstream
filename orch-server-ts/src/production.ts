@@ -1821,6 +1821,12 @@ export function buildProductionRouteOptions(
       nodeCredentials,
       nodeConnectedAtMs: (nodeId) =>
         runtime.registry.getConnectedNode(nodeId)?.connectedAtMs,
+      onSessionDeliveryFailed: (sessionId) => {
+        runtime.sessionBroadcaster.append({
+          type: "session_delivery_failed",
+          agent_session_id: sessionId,
+        });
+      },
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,

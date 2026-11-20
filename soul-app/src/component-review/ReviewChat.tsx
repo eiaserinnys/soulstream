@@ -465,6 +465,31 @@ function ReviewPersistentChatColumn({
   );
 }
 
+// 카드 #1524: 전달 장부에서 실패로 닫힌 이벤트 말풍선의 표본. 실제 화면에서는
+// EventRenderer가 input_id 실패 맵을 보고 같은 값을 넘긴다.
+const DELIVERY_FAILURE_LONG_TEXT =
+  '오늘 오후에 진행한 배포 검수 결과를 정리해서 알려주세요. 웹과 앱 양쪽에서 같은 문장이 어떻게 보이는지, 실패 줄과 두 단추가 말풍선 폭 안에서 자연스럽게 이어지는지 함께 확인하는 긴 문장 표본입니다.';
+const DELIVERY_FAILURE_QUESTION_TEXT = '???';
+const DELIVERY_DELIVERED_TEXT = '이 메시지는 전달까지 끝난 표본입니다.';
+
+function DeliveryFailureSamples() {
+  return <View testID="review-delivery-failure-samples">
+    <View testID="review-delivery-failure-long">
+      <UserMessage event={message('user_message', DELIVERY_FAILURE_LONG_TEXT)}
+        pendingStatus="failed" failureReason="전달을 확인하지 못했습니다"
+        onRetry={() => {}} onRestore={() => {}} />
+    </View>
+    <View testID="review-delivery-failure-question">
+      <UserMessage event={message('user_message', DELIVERY_FAILURE_QUESTION_TEXT)}
+        pendingStatus="failed" failureReason="전달을 확인하지 못했습니다"
+        onRetry={() => {}} onRestore={() => {}} />
+    </View>
+    <View testID="review-delivery-delivered">
+      <UserMessage event={message('user_message', DELIVERY_DELIVERED_TEXT)} />
+    </View>
+  </View>;
+}
+
 function ExternalSenderSamples({ presentation }: { presentation: 'default' | 'manuscript' }) {
   const callers = [
     { source: 'browser', display_name: '디렉터' },
@@ -500,6 +525,7 @@ export function ReviewChat() {
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n```ts\nconst answer = "코드 블록 복사";\n```\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   if (sample === 'external-sender') return <ExternalSenderSamples presentation={new URLSearchParams(window.location.search).get('presentation') === 'manuscript' ? 'manuscript' : 'default'} />;
+  if (sample === 'delivery-failure') return <DeliveryFailureSamples />;
   if (sample === 'pas-images') return <MessageAttachmentLoaderProvider loader={reviewAttachmentLoader}><ReviewChatPasImageSample /></MessageAttachmentLoaderProvider>;
   return <MessageAttachmentLoaderProvider loader={reviewAttachmentLoader}>
     <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">

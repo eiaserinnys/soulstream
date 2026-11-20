@@ -29,6 +29,7 @@ import type {
   ReplayGapStreamEvent,
   FolderUpdatedStreamEvent,
   CardUpdatedStreamEvent,
+  SessionDeliveryFailedStreamEvent,
   SessionListStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
@@ -430,6 +431,16 @@ export function useSessionStreamCacheSync(
     [onEventIdAdvance, onFolderUpdatedOption],
   );
 
+  const onSessionDeliveryFailed = useCallback(
+    (event: SessionDeliveryFailedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
+      // 열려 있는 채팅이 스스로 자기 세션 몫만 다시 읽는다. 다른 세션의 신호는
+      // 그 채팅을 열 때 첫 조회가 덮으므로 여기서는 횟수만 올린다.
+      useDashboardStore.getState().requestDeliveryFailureRefresh(event.agent_session_id);
+    },
+    [onEventIdAdvance],
+  );
+
   const onCustomViewUpdated = useCallback(
     (event: CustomViewUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
@@ -520,6 +531,9 @@ export function useSessionStreamCacheSync(
       case "card_updated":
         onCardUpdated(event);
         break;
+      case "session_delivery_failed":
+        onSessionDeliveryFailed(event);
+        break;
       case "folder_updated":
         onFolderUpdated(event);
         break;
@@ -543,6 +557,7 @@ export function useSessionStreamCacheSync(
     onSessionList,
     onSessionUpdated,
     onCardUpdated,
+    onSessionDeliveryFailed,
     onFolderUpdated,
   ]);
 
@@ -738,6 +753,7 @@ export function useSessionStreamCacheSync(
     onCatalogUpdated: routeDataEvent,
     onMetadataUpdated: routeDataEvent,
     onCardUpdated: routeDataEvent,
+    onSessionDeliveryFailed: routeDataEvent,
     onFolderUpdated: routeDataEvent,
     onCustomViewUpdated: routeDataEvent,
     onPageUpdated: routeDataEvent,

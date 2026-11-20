@@ -1,4 +1,6 @@
 import type {
+  DeliveryAggregateState,
+  DeliveryIntent,
   RecordObservedChildCompletionBatchResult,
   RecordObservedChildCompletionParams,
   RecordObservedChildCompletionResult,
@@ -42,6 +44,18 @@ import {
  * 단계의 시한은 이 값으로 따로 잡는다.
  */
 const DEFAULT_DISPATCH_LEASE_MS = 120_000;
+
+/**
+ * 만료 sweep이 닫은 행의 투영. 이 메서드는 반환형이 개수(number)라 결과 행을
+ * 밖으로 낼 수 없어, persistence host 디스패치가 선택적 관찰자로 행을 받는다.
+ */
+export type SessionDeliveryDeadLetterRow = {
+  delivery_id: string;
+  target_session_id: string | null;
+  intent: DeliveryIntent;
+  aggregate_state: DeliveryAggregateState;
+  payload: Record<string, unknown>;
+};
 
 export class SessionDeliveryRepository {
   readonly notifications: SessionDeliveryNotificationRepository;
@@ -276,15 +290,15 @@ export class SessionDeliveryRepository {
     });
   }
 
-  async expireStaleDeliveryAttempts(): Promise<number> {
+  async expireStaleDeliveryAttempts(
+    onDeadLetterRow?: (row: SessionDeliveryDeadLetterRow) => void,
+  ): Promise<number> {
     return await withDeliveryTransaction(this.sql, async (transaction) => {
       // The retry SET clears attempt_token before RETURNING, so read the token the
       // attempt was claimed with before the update (card #1653). The suffix of the
       // token (route:, card-change:, node-ready:, maintenance:) tells who held it.
-      const rows = await transaction<Array<{
-        delivery_id: string;
+      const rows = await transaction<Array<SessionDeliveryDeadLetterRow & {
         attempt_token_snapshot: string | null;
-        aggregate_state: SessionDeliveryRow["aggregate_state"];
       }>>`
         WITH candidate AS MATERIALIZED (
           SELECT delivery_id, attempt_token AS attempt_token_snapshot
@@ -302,7 +316,8 @@ export class SessionDeliveryRepository {
         FROM candidate
         WHERE delivery.delivery_id = candidate.delivery_id
         RETURNING delivery.delivery_id, candidate.attempt_token_snapshot,
-          delivery.aggregate_state
+          delivery.aggregate_state, delivery.target_session_id, delivery.intent,
+          delivery.payload
       `;
       for (const row of rows) {
         await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
@@ -311,15 +326,15 @@ export class SessionDeliveryRepository {
           reason: "delivery attempt expired",
           attemptToken: row.attempt_token_snapshot,
         });
+        // 재시도 예산이 남아 pending으로 돌아간 행은 실패가 아니다.
+        if (row.aggregate_state === "dead_letter") onDeadLetterRow?.(row);
       }
       // 대상 세션이 지워지면 FK ON DELETE SET NULL이 target을 비우고, pending을
       // 집는 쿼리는 모두 세션과 조인해 이 줄을 다시 집지 않는다. 재시도 예산도
       // 호출이 없으면 계산되지 않아 영원히 pending으로 남는다. 24시간 지난 줄만
       // 소진과 같은 쌍(uncertain/dead_letter)으로 닫는다.
-      const orphaned = await transaction<Array<{
-        delivery_id: string;
+      const orphaned = await transaction<Array<SessionDeliveryDeadLetterRow & {
         attempt_token: string | null;
-        aggregate_state: SessionDeliveryRow["aggregate_state"];
       }>>`
         UPDATE session_deliveries
         SET
@@ -336,7 +351,8 @@ export class SessionDeliveryRepository {
           AND state = 'pending'
           AND aggregate_state = 'pending'
           AND updated_at <= NOW() - INTERVAL '24 hours'
-        RETURNING delivery_id, attempt_token, aggregate_state
+        RETURNING delivery_id, attempt_token, aggregate_state,
+          target_session_id, intent, payload
       `;
       for (const row of orphaned) {
         await appendSessionDeliveryAttempt(transaction as unknown as SqlClient, {
@@ -345,6 +361,7 @@ export class SessionDeliveryRepository {
           reason: "target_session_missing",
           attemptToken: row.attempt_token,
         });
+        onDeadLetterRow?.(row);
       }
       await settleTerminalTargetCompletionDeliveries(transaction);
       return rows.length;

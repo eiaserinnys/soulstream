@@ -9,6 +9,11 @@ import { ChatInputRequest } from '../chat/ChatInputRequest';
 import { ChatToolApprovalRequest } from '../chat/ChatToolApprovalRequest';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
+import { useChatStore } from '../../store/chatStore';
+import { extractUserText } from './eventActions';
+import { removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
+import { getMessageAttachmentSignals } from '../../hooks/useMessageAttachments';
+import { extractAttachments } from './UserMessage';
 import { MessageAttachments } from '../MessageAttachments';
 import { useMessageAttachments } from '../../hooks/useMessageAttachments';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
@@ -26,6 +31,8 @@ interface Props {
   onSelectionDone?: () => void;
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
+  onRetryFailedDelivery?: (message: { text: string; attachmentPaths: readonly string[] }) => void;
+  onRestoreFailedDelivery?: (text: string) => void;
   presentation?: 'default' | 'manuscript';
   narration?: boolean;
 }
@@ -44,6 +51,8 @@ function EventMessage({
   onSelectionDone,
   onRetryPending,
   onRestorePending,
+  onRetryFailedDelivery,
+  onRestoreFailedDelivery,
   presentation = 'default',
   narration = false,
 }: Props) {
@@ -54,6 +63,40 @@ function EventMessage({
         onRestore: onRestorePending ? () => onRestorePending(event.id) : undefined,
       }
     : {};
+  // 카드 #1524: 사람이 보낸 글이 전달 장부에서 실패로 닫혔으면 그 말풍선에
+  // 실패 줄과 단추를 단다. 목록은 서버가 사람 발신 실패만 input_id로 내준다.
+  const deliveryFailures = useChatStore((s) => s.deliveryFailuresBySession[sessionId]);
+  const inputId = typeof event.data?.input_id === 'string' ? event.data.input_id : undefined;
+  const failedDelivery = inputId !== undefined && deliveryFailures?.[inputId] !== undefined
+    ? (() => {
+        const signals = getMessageAttachmentSignals(event);
+        const attachmentPaths = extractAttachments(event);
+        const text = removeGeneratedAttachmentPathNotes(
+          extractUserText(event),
+          signals.paths,
+          (event as PendingOptimisticEvent).originalText,
+        );
+        // 첨부가 있는데 경로를 얻지 못하면 다시 보내기를 숨기고 복원만 남긴다.
+        const retryable = !signals.hasSignal || attachmentPaths.length > 0;
+        return {
+          pendingStatus: 'failed' as const,
+          failureReason: '전달을 확인하지 못했습니다',
+          onRetry: retryable && onRetryFailedDelivery && (text.length > 0 || attachmentPaths.length > 0)
+            ? () => onRetryFailedDelivery({ text, attachmentPaths })
+            : undefined,
+          onRestore: onRestoreFailedDelivery && text.length > 0
+            ? () => onRestoreFailedDelivery(text)
+            : undefined,
+        };
+      })()
+    : null;
+  const failureActions = pending.pendingStatus === 'failed'
+    ? pendingActions
+    : failedDelivery
+      ? { onRetry: failedDelivery.onRetry, onRestore: failedDelivery.onRestore }
+      : {};
+  const pendingStatus = pending.pendingStatus ?? failedDelivery?.pendingStatus;
+  const failureReason = pending.failureReason ?? failedDelivery?.failureReason;
   switch (event.type) {
     case 'user_message':
       return (
@@ -63,9 +106,9 @@ function EventMessage({
           readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="normal"
-          pendingStatus={pending.pendingStatus}
-          failureReason={pending.failureReason}
-          {...pendingActions}
+          pendingStatus={pendingStatus}
+          failureReason={failureReason}
+          {...failureActions}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
         />
@@ -81,9 +124,9 @@ function EventMessage({
           readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="intervention"
-          pendingStatus={pending.pendingStatus}
-          failureReason={pending.failureReason}
-          {...pendingActions}
+          pendingStatus={pendingStatus}
+          failureReason={failureReason}
+          {...failureActions}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
         />

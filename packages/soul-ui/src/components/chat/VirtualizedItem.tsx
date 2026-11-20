@@ -29,6 +29,9 @@ export type VirtualizedItemProps = {
   onToolGroupExpandedChange?: (key: string, expanded: boolean) => void;
   onRetryPending?: (pending: PendingChatSend) => void;
   onRestorePending?: (pending: PendingChatSend) => void;
+  deliveryFailures?: Readonly<Record<string, string>>;
+  onRetryDelivery?: (message: { text: string; attachmentPaths: readonly string[] }) => void;
+  onRestoreDelivery?: (text: string) => void;
 };
 
 function VirtualizedItemImpl({
@@ -42,6 +45,9 @@ function VirtualizedItemImpl({
   onToolGroupExpandedChange,
   onRetryPending,
   onRestorePending,
+  deliveryFailures,
+  onRetryDelivery,
+  onRestoreDelivery,
 }: VirtualizedItemProps) {
   if (item.type === "thinking-indicator") {
     return <ChatThinkingIndicator presentation={presentation} />;
@@ -72,6 +78,9 @@ function VirtualizedItemImpl({
           onToolGroupExpandedChange={onToolGroupExpandedChange}
           onRetryPending={onRetryPending}
           onRestorePending={onRestorePending}
+          deliveryFailures={deliveryFailures}
+          onRetryDelivery={onRetryDelivery}
+          onRestoreDelivery={onRestoreDelivery}
         />
         {item.summaries.map((summary) => (
           <ChatMessageItem
@@ -81,6 +90,9 @@ function VirtualizedItemImpl({
             sessionId={sessionId}
             presentation={presentation}
             narration={false}
+            deliveryFailures={deliveryFailures}
+            onRetryDelivery={onRetryDelivery}
+            onRestoreDelivery={onRestoreDelivery}
           />
         ))}
       </>
@@ -112,7 +124,16 @@ function VirtualizedItemImpl({
     );
   }
   return (
-    <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} presentation={presentation} narration={narration} />
+    <ChatMessageItem
+      msg={item.msg}
+      llmContext={llmContext}
+      sessionId={sessionId}
+      presentation={presentation}
+      narration={narration}
+      deliveryFailures={deliveryFailures}
+      onRetryDelivery={onRetryDelivery}
+      onRestoreDelivery={onRestoreDelivery}
+    />
   );
 }
 
@@ -136,6 +157,9 @@ export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemP
   if (prev.onToolGroupExpandedChange !== next.onToolGroupExpandedChange) return false;
   if (prev.onRetryPending !== next.onRetryPending) return false;
   if (prev.onRestorePending !== next.onRestorePending) return false;
+  if (prev.deliveryFailures !== next.deliveryFailures) return false;
+  if (prev.onRetryDelivery !== next.onRetryDelivery) return false;
+  if (prev.onRestoreDelivery !== next.onRestoreDelivery) return false;
   if (prev.item.type !== next.item.type) return false;
   if (
     prev.item.type === "thinking-indicator" &&
