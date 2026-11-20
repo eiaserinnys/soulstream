@@ -1,7 +1,7 @@
 import { callWithReferenceTranslation, errorResultFromError, jsonResult, type CallToolResult } from "@soulstream/mcp-contract";
 import type { AuthorizeFolder, BulkSetCardStatusInput, BulkStatusItem, UpdateUnstartedFields } from "../cards/card_maintenance_service.js";
 import { allowed } from "../cards/card_route_body.js";
-import { isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
+import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -90,11 +90,10 @@ async function lookupReferences(options: Options, refs: string[]) {
   const [service, access, folders] = await Promise.all([
     options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
   ]);
-  const normalized = normalizeAccess(access);
-  return service.resolveReferences(refs, folderId => isFolderAllowed(normalized, folders, folderId));
+  const normalized = normalizeBoardAccess(access);
+  return service.resolveReferences(refs, folderId => isBoardFolderAllowed(normalized, folders, folderId));
 }
 
-/** Bulk translates one input at a time so a single unresolved reference cannot abort the batch. */
 async function resolveBulkReference(options: Options, input: string): Promise<string> {
   const trimmed = input.trim();
   if (!trimmed.startsWith("#")) return trimmed;

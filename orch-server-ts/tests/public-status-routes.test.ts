@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { BoardAccess } from "../src/board/board_access.js";
 import {
   createApp,
   loadContractFixtures,
   parseOrchServerConfig,
   publicStatusRouteAuthRequirements,
-  type PublicStatusFolderAccess,
   type PublicStatusRouteOptions,
 } from "../src/index.js";
 
@@ -149,7 +149,7 @@ describe("public/status/folder-count route harness", () => {
 
 function createHarness(
   overrides: {
-    access?: PublicStatusFolderAccess;
+    access?: BoardAccess;
     folderCounts?: ReadonlyMap<string | null, number> | Record<string, number>;
     folders?: Array<{ id: string; parentFolderId?: string | null }>;
   } = {},

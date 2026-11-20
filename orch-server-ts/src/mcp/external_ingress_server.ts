@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { mcpToolDefinitions, recurringJobTools, LIVE_CARD_RESOURCE, errorResult, callWithReferenceTranslation } from "@soulstream/mcp-contract";
-import { isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
+import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import { widgetHtml } from "../../../plugins/chatgpt-card-renderer/src/widget-html.js";
 import { executeMcpTool } from "./tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
@@ -20,8 +20,8 @@ async function resolveReferencesForExternal(options: McpHostOptions, refs: strin
   const [service, access, folders] = await Promise.all([
     options.cards.cardServiceProvider!(), options.cards.resolveAccess(), options.cards.provider.listFolders(),
   ]);
-  const normalized = normalizeAccess(access);
-  return service.resolveReferences(refs, folderId => isFolderAllowed(normalized, folders, folderId));
+  const normalized = normalizeBoardAccess(access);
+  return service.resolveReferences(refs, folderId => isBoardFolderAllowed(normalized, folders, folderId));
 }
 
 export function buildExternalMcpServer(options: McpHostOptions, context: McpCallContext) {
