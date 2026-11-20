@@ -41,12 +41,12 @@ function historyPage(upper: number, count: number, next_cursor: string | null) {
 }
 const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_models: [], show_generation_separator: true, show_character: false, animate_character: false, show_jev_candidates: true, turn_usage_mode: "collapsed", show_turn_usage: true };
 const persistentSession = { session_id: "run-alpha-2", display_name: "시각 검수 세션", node_id: "eiaserinnys", folder_id: "rb-alpha", agent_id: "roselin_codex", agent_name: "로젤린", persistent: true, settings, runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null } };
-async function sessionRoutes(page: Page) {
-  await page.addInitScript(() => {
+async function sessionRoutes(page: Page, theme: "dark" | "light" = "dark") {
+  await page.addInitScript((themeName) => {
     localStorage.setItem("soulstream-pas-device:qa@example.com", JSON.stringify({ openOnStart: true, lastSessionId: "run-alpha-2" }));
-    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("soul-dashboard-theme", themeName);
     localStorage.setItem("ls.webglGlass", "0");
-  });
+  }, theme);
   await page.route("**/api/auth/config", route => route.fulfill({ json: { authEnabled: true, devModeEnabled: false } }));
   await page.route("**/api/auth/status", route => route.fulfill({ json: { authenticated: true, user: { email: "qa@example.com", name: "QA" } } }));
   await page.route("**/api/persistent-sessions**", route => {
@@ -59,10 +59,10 @@ async function sessionRoutes(page: Page) {
 type HistoryTarget = "mid" | "final";
 const chatRoot = (page: Page) => page.locator('[data-slot="chat-root"]').filter({ visible: true });
 const bannerButton = (root: Locator) => root.getByRole("button", { name: "↓ 새 메시지", exact: true });
-const followButton = (root: Locator) => root.getByRole("button", { name: "↓ 자동 스크롤", exact: true });
+const followButton = (root: Locator) => root.getByRole("button", { name: "자동 스크롤", exact: true });
 
-async function chatPage(browser: Browser, width: number, height: number, deliverLive = false, fixedClock = true) {
-  const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: "dark" });
+async function chatPage(browser: Browser, width: number, height: number, deliverLive = false, fixedClock = true, theme: "dark" | "light" = "dark") {
+  const context = await browser.newContext({ viewport: { width, height }, reducedMotion: "reduce", timezoneId: "Asia/Seoul", colorScheme: theme });
   const page = await context.newPage();
   await page.addInitScript({ content: "window.__name = (f) => f;" });
   if (process.env.CARD1683_TRACE === "1") await page.addInitScript(() => {
@@ -98,7 +98,7 @@ async function chatPage(browser: Browser, width: number, height: number, deliver
   // history timing scenario keeps the browser clock.
   if (fixedClock) await page.clock.setFixedTime(new Date("2026-07-28T12:00:00+09:00"));
   await installV3VisualQaRoutes(page, {});
-  await sessionRoutes(page);
+  await sessionRoutes(page, theme);
   let synced = false;
   let sentLive = false;
   const live = gate();
@@ -252,13 +252,23 @@ async function controlGeometry(root: Locator) {
     }
     return { height: bottom - top, elements };
   }, undefined, { timeout: 5000 });
-  return { follow, input, inputFrame, scroller, followWrapperHeight, gap };
+  // 단추가 작은 원(32px)이고 아이콘 색을 읽을 수 있는지 잰다. 곡률이 %면 폭 기준으로 푼다.
+  const followCap = await followButton(root).evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    const radiusText = getComputedStyle(el).borderTopLeftRadius;
+    const radius = radiusText.endsWith("%")
+      ? (Number.parseFloat(radiusText) / 100) * rect.width
+      : Number.parseFloat(radiusText);
+    const icon = el.querySelector("svg");
+    return { width: rect.width, height: rect.height, radius, color: icon ? getComputedStyle(icon).color : null };
+  }, undefined, { timeout: 5000 });
+  return { follow, input, inputFrame, scroller, followWrapperHeight, gap, followCap };
 }
 
 type ControlGeometry = Awaited<ReturnType<typeof controlGeometry>>;
 
 function checkOverlap(
-  { follow, scroller, followWrapperHeight, gap }: ControlGeometry,
+  { follow, scroller, followWrapperHeight, gap, followCap }: ControlGeometry,
   label: string,
   check: (condition: boolean, label: string) => void,
 ) {
@@ -271,14 +281,18 @@ function checkOverlap(
       && follow.top >= scroller.top && follow.bottom <= scroller.bottom,
     `${label} 자동 스크롤이 목록 스크롤 영역 안`,
   );
+  check(Math.abs(followCap.width - 32) <= 1 && Math.abs(followCap.height - 32) <= 1,
+    `${label} 자동 스크롤 32px 크기 (${followCap.width.toFixed(1)}x${followCap.height.toFixed(1)})`);
+  check(followCap.radius >= followCap.width / 2 - 0.5,
+    `${label} 자동 스크롤 원형 곡률 ${followCap.radius.toFixed(1)}px`);
   check(followWrapperHeight.base !== null && followWrapperHeight.base <= 0.5,
     `${label} 자동 스크롤 흐름 래퍼 높이 0 (${JSON.stringify(followWrapperHeight)})`);
   check(gap !== null && gap.elements.length === 0,
     `${label} 목록과 입력창 사이 높이 있는 요소 없음 (${JSON.stringify(gap)})`);
 }
 
-async function controlScenario(browser: Browser, baseUrl: string, width: number) {
-  const { context, page, live } = await chatPage(browser, width, width === 1440 ? 900 : 844, true);
+async function controlScenario(browser: Browser, baseUrl: string, width: number, theme: "dark" | "light" = "dark") {
+  const { context, page, live } = await chatPage(browser, width, width === 1440 ? 900 : 844, true, true, theme);
   const results: Record<string, unknown> = {};
   const checks: Record<string, boolean> = {};
   const errors: string[] = [];
@@ -304,14 +318,14 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
         `${label} ${name} 목록 영역 안 (잘림 없음) (${JSON.stringify({ rect, scroller })})`);
       check(rect.left >= 0 && rect.right <= width, `${label} ${name} 화면 폭 안 (${rect.left}..${rect.right})`);
     }
-    const stackGap = follow.top - banner.bottom;
-    check(Math.abs(stackGap - 8) <= 1, `${label} 배너 아래 끝과 단추 위 끝 간격 ${stackGap.toFixed(1)}px`);
+    const verticalShift = (banner.top + banner.bottom) / 2 - (follow.top + follow.bottom) / 2;
+    check(Math.abs(verticalShift) <= 1, `${label} 배너와 자동 스크롤 세로 중심 차이 ${verticalShift.toFixed(1)}px`);
     const centerShift = (banner.left + banner.right) / 2 - (scroller.left + scroller.right) / 2;
     check(Math.abs(centerShift) <= 1, `${label} 배너 가로 중심과 목록 중심 차이 ${centerShift.toFixed(1)}px`);
+    const sideGap = follow.left - banner.right;
+    check(sideGap >= 8, `${label} 배너 오른쪽 끝과 자동 스크롤 왼쪽 끝 사이 ${sideGap.toFixed(1)}px`);
     const seatDifference = inputFrame.top - scroller.bottom;
     check(Math.abs(seatDifference) <= 1, `${label} 목록 아래 끝과 입력창 위 끝 차이 ${seatDifference.toFixed(1)}px`);
-    const aboveInput = inputFrame.top - banner.bottom;
-    check(Math.abs(aboveInput - 61) <= 1, `${label} 배너 아래 끝이 입력창 위 끝에서 ${aboveInput.toFixed(1)}px`);
     // 겹침 묶음의 빈 영역이 목록을 막지 않는지: 배너 높이에서 목록 왼쪽 + 40px 지점이 목록 안 요소여야 한다.
     const hit = await target.evaluate((rootEl, point) => {
       const scroller = rootEl.querySelector<HTMLElement>('[data-virtuoso-scroller="true"]');
@@ -325,7 +339,7 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     check(hit.inside, `${label} 배너 높이 목록 왼쪽+40px 지점이 목록 안 요소 (${JSON.stringify(hit)})`);
   }
   const screenshot = (state: string) => page.screenshot({
-    path: path.join(output, `${phase}-controls-${width}-${state}.png`), animations: "disabled",
+    path: path.join(output, `${phase}-controls-${theme}-${width}-${state}.png`), animations: "disabled",
   });
   try {
     await page.route(url => /^\/api\/sessions\/[^/]+\/timeline$/.test(url.pathname),
@@ -343,10 +357,17 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     results.on = on;
     checkOverlapAt(on, "자동 스크롤 켜짐");
     check(await follow.getAttribute("aria-pressed") === "true", "초기 자동 스크롤 aria-pressed");
+    check(on.followCap.color !== null, `자동 스크롤 아이콘 색 읽기 (${on.followCap.color})`);
     await screenshot("on");
     await follow.click();
     check(await follow.getAttribute("aria-pressed") === "false", "자동 스크롤 off aria-pressed");
     check(await focused(follow), "자동 스크롤 off 뒤 초점");
+    const offColor = await follow.evaluate(el => {
+      const icon = el.querySelector("svg");
+      return icon ? getComputedStyle(icon).color : null;
+    }, undefined, { timeout: 5000 });
+    check(offColor !== null && offColor !== on.followCap.color,
+      `자동 스크롤 아이콘 색 켜짐/꺼짐 (${on.followCap.color} vs ${offColor})`);
     await scroller.hover();
     await page.mouse.wheel(0, -1200);
     await page.waitForFunction(() => {
@@ -430,15 +451,22 @@ async function controlScenario(browser: Browser, baseUrl: string, width: number)
     await follow.click();
     await follow.click();
     check(await follow.getAttribute("aria-pressed") === "true" && await focused(follow), "자동 스크롤 on 뒤 상태와 초점");
+    if (width === 390) {
+      // 360폭의 켜짐 화면. 켜면 새 메시지 배너가 닫히므로 배너 검사 뒤 맨 끝에서 찍는다.
+      await page.setViewportSize({ width: 360, height: 844 });
+      await page.waitForTimeout(200);
+      await screenshot("360-on");
+      await page.setViewportSize({ width: 390, height: 844 });
+    }
   } catch (error) {
     errors.push(String(error));
     await screenshot("failure");
   } finally {
-    writeFileSync(path.join(output, `${phase}-controls-${width}.json`), JSON.stringify({ ...results, checks, errors }, null, 2));
+    writeFileSync(path.join(output, `${phase}-controls-${theme}-${width}.json`), JSON.stringify({ ...results, checks, errors }, null, 2));
     live.release();
     await context.close();
   }
-  assert(before || errors.length === 0, `${width} 조작 검사: ${errors.join(", ")}`);
+  assert(before || errors.length === 0, `${theme} ${width} 조작 검사: ${errors.join(", ")}`);
 }
 async function freePort(): Promise<number> { return new Promise((resolve, reject) => { const server = createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = (server.address() as { port: number }).port; server.close(() => resolve(port)); }); }); }
 const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`;
@@ -456,7 +484,9 @@ try {
     for (const width of [1440, 390]) for (const target of ["mid", "final"] as const) {
       await run(`${width}-${target}`, () => historyScenario(browser, baseUrl, width, target));
     }
-    for (const width of [1440, 390]) await run(`controls-${width}`, () => controlScenario(browser, baseUrl, width));
+    for (const theme of ["dark", "light"] as const) {
+      for (const width of [1440, 390]) await run(`controls-${theme}-${width}`, () => controlScenario(browser, baseUrl, width, theme));
+    }
     assert(failures.length === 0, failures.join("\n"));
   });
 } finally {
