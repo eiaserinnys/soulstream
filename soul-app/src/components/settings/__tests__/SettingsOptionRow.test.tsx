@@ -125,3 +125,33 @@ test('기본 설정 선택 modal은 세로 indicator 기본 동작을 유지한�
   fireEvent.press(screen.getByLabelText('선택: 선택 0'));
   expect(screen.UNSAFE_getByType(ScrollView).props.showsVerticalScrollIndicator).toBeUndefined();
 });
+
+test('선택지 폭 고정 prop을 켜면 겹친 라벨을 폭 측정용으로만 두고 접근성 트리에서 숨긴다', () => {
+  const options = [{ id: 'model', label: '모델별' }, { id: 'project', label: '프로젝트별' }];
+  const row = (stabilizePickerWidth?: boolean) => <SettingsOptionRow label="보기" pickerMode="picker" selected="model"
+    options={options} emptyLabel="보기 없음" onSelect={jest.fn()} stabilizePickerWidth={stabilizePickerWidth}/>;
+  // The measuring labels are aria-hidden, so queries must opt into hidden elements.
+  const hidden = { includeHiddenElements: true };
+
+  const screen = render(row());
+  expect(screen.queryByTestId('settings-option-width-probe', hidden)).toBeNull();
+  expect(screen.getByText('모델별')).toBeTruthy();
+
+  screen.rerender(row(true));
+  const probe = screen.getByTestId('settings-option-width-probe', hidden);
+  expect(probe.props['aria-hidden']).toBe(true);
+  expect(probe.props.accessible).toBe(false);
+  expect(probe.props.accessibilityElementsHidden).toBe(true);
+  expect(probe.props.importantForAccessibility).toBe('no-hide-descendants');
+  expect(probe.props.pointerEvents).toBe('none');
+  expect(StyleSheet.flatten(probe.props.style)).toMatchObject({ position: 'absolute', height: 0, overflow: 'hidden' });
+  for (const option of options) {
+    const label = screen.getByTestId(`settings-option-width-probe-${option.id}`, hidden);
+    expect(label.props.numberOfLines).toBe(1);
+    expect(label.props.children).toBe(option.label);
+  }
+  // 겹친 라벨은 읽히지 않고, 선택된 라벨만 남는다.
+  expect(screen.getByText('모델별')).toBeTruthy();
+  expect(screen.queryByText('프로젝트별')).toBeNull();
+  expect(screen.getByLabelText('보기: 모델별')).toBeTruthy();
+});

@@ -331,7 +331,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
               <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: t.spacing.sm }}>
                 <View testID="usage-stats-view-picker">
-                  <SettingsOptionRow label="보기" pickerMode="picker" selected={view}
+                  <SettingsOptionRow label="보기" pickerMode="picker" stabilizePickerWidth selected={view}
                     options={[{ id: 'model', label: '모델별' }, { id: 'project', label: '프로젝트별' }]}
                     onSelect={value => setView(value as 'model' | 'project')} emptyLabel="보기 없음" />
                 </View>

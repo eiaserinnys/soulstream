@@ -10,8 +10,13 @@
   2) 넘어가는 폭에서는 넘어간 줄의 첫 컨트롤 왼쪽 끝이 카드 시작선과 1px 이하,
      세그먼트 묶음은 컨트롤 단위로만 갈라진다(컨트롤 하나가 두 줄이 되지 않는다)
   3) 모든 폭에서 컨트롤 라벨 getClientRects().length == 1, 말줄임·잘림 없음, 겹침 없음, 가로 스크롤 없음
-  4) 피커 폭이 자기 내용 폭과 같다(남은 폭으로 늘어나지 않는다)
-  5) 네 뷰포트 가운데 적어도 하나에서 1)의 한 줄 경우가 실제로 나온다
+  4) 피커 폭이 가장 긴 선택지의 내용 폭과 같고, 같은 뷰포트와 테마에서 「모델별」과 「프로젝트별」의
+     피커 폭 차이가 1px 이하다(남은 폭으로 늘어나지 않는다)
+  5) 뷰포트 가운데 적어도 하나에서 1)의 한 줄 경우가, 적어도 하나에서 2)의 넘어간 경우가 나온다
+  6) 같은 뷰포트와 테마에서 두 보기가 둘 다 한 줄이거나 둘 다 넘어간 모양이고,
+     차트(usage-stats-*-chart-chart) 위쪽 끝 차이가 1px 이하다
+  7) 조작 단언: 한 페이지에서 「모델별」→「프로젝트별」→「모델별」로 바꾸며 차트 위쪽 끝과 묶음 위치를
+     전후로 재어 차이가 1px 이하다(376과 390)
 
 사용: python3 -P scripts/visual-check/usage_stats_controls.py --output <출력 폴더>
 앞선 번들 내보내기는 scripts/visual-check/usage_stats_controls.sh가 맡는다.
@@ -30,8 +35,7 @@ from playwright.sync_api import Page, sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DIST_ROOT = REPO_ROOT / "unified-dashboard" / "dist"
-BUNDLE_PREFIX = "/assets/ios-components/"
-VIEWPORTS = ((360, 800), (390, 844), (430, 932), (820, 1180))
+VIEWPORTS = ((360, 800), (376, 812), (390, 844), (430, 932), (820, 1180))
 THEMES = ("light", "dark")
 PICKERS = (("model", "모델별"), ("project", "프로젝트별"))
 TOLERANCE = 1.0
@@ -85,6 +89,21 @@ MEASURE_SCRIPT = """
   const box = el => { const r = el.getBoundingClientRect(); return {
     left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
     cy: r.top + r.height / 2 }; };
+  // 글자 상자는 요소 상자가 아니라 글리프 실측(Range)으로 잰다. 늘어난 요소 안에서
+  // 가운데 정렬된 글자도 실제 글자 폭과 줄 수를 그대로 얻기 위해서다.
+  const glyph = el => {
+    if (!el) return null;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects()).filter(r => r.width > 0.5 && r.height > 0.5);
+    const r = range.getBoundingClientRect();
+    return {
+      text: (el.textContent || '').trim(),
+      rects: rects.length,
+      width: r.width, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+      clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
+    };
+  };
   const q = id => document.querySelector(`[data-testid="${id}"]`);
   const row = q('usage-stats-view-measure-row');
   const card = q('usage-stats-models');
@@ -92,25 +111,21 @@ MEASURE_SCRIPT = """
   const bundle = q('usage-stats-view-measure-bundle');
   const measure = q('settings-segment-usage-stats-measure-track');
   const cache = q('settings-segment-usage-stats-cache-read-track');
+  const chart = q('usage-stats-model-chart-chart') || q('usage-stats-project-chart-chart');
   if (!row || !card || !button || !measure || !cache) return { missing: true };
   const leaves = Array.from(button.querySelectorAll('*'))
     .filter(el => el.children.length === 0 && (el.textContent || '').trim());
-  const text = leaves[0] ?? null;
+  const text = glyph(leaves[0] ?? null);
   const buttonStyle = getComputedStyle(button);
   const contentWidth = text
-    ? box(text).width + px(buttonStyle.paddingLeft) + px(buttonStyle.paddingRight)
+    ? text.width + px(buttonStyle.paddingLeft) + px(buttonStyle.paddingRight)
       + px(buttonStyle.borderLeftWidth) + px(buttonStyle.borderRightWidth)
     : null;
   const labels = {};
   for (const [group, values] of [['measure', ['tokens', 'cost']], ['cacheRead', ['exclude', 'include']]]) {
     for (const value of values) {
       const el = q(`settings-segment-usage-stats-${group === 'measure' ? 'measure' : 'cache-read'}-${value}-label`);
-      labels[value] = el ? {
-        rects: el.getClientRects().length,
-        clientWidth: el.clientWidth,
-        scrollWidth: el.scrollWidth,
-        text: (el.textContent || '').trim(),
-      } : null;
+      labels[value] = el ? glyph(el) : null;
     }
   }
   const rowStyle = getComputedStyle(row);
@@ -118,21 +133,36 @@ MEASURE_SCRIPT = """
   return {
     row: box(row), card: box(card), picker: box(button), button: box(button),
     bundle: bundle ? box(bundle) : null,
-    measure: box(measure), cache: box(cache), pickerContentWidth: contentWidth,
+    measure: box(measure), cache: box(cache), chart: chart ? box(chart) : null,
+    pickerContentWidth: contentWidth,
     gap: px(rowStyle.columnGap) || px(rowStyle.gap), labels,
     rowScroll: { scrollWidth: row.scrollWidth, clientWidth: row.clientWidth },
     documentScroll: {
       scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth,
       bodyScrollWidth: document.body.scrollWidth,
     },
-    pickerText: text ? {
-      text: (text.textContent || '').trim(),
-      rects: text.getClientRects().length,
-      clientWidth: text.clientWidth,
-      scrollWidth: text.scrollWidth,
-    } : null,
+    pickerText: text,
   };
 }
+"""
+
+SCROLL_TOP_SCRIPT = """
+() => {
+  let el = document.querySelector('[data-testid="usage-stats-view-measure-row"]');
+  while (el && el !== document.body) {
+    if (el.scrollHeight > el.clientHeight + 1) return el.scrollTop;
+    el = el.parentElement;
+  }
+  return window.scrollY;
+}
+"""
+
+FOCUS_SCRIPT = """
+() => ({
+  tag: document.activeElement?.tagName ?? null,
+  label: document.activeElement?.getAttribute('aria-label') ?? null,
+  testID: document.activeElement?.getAttribute('data-testid') ?? null,
+})
 """
 
 
@@ -141,7 +171,7 @@ def same_line(a: dict, b: dict) -> bool:
 
 
 def judge(measurement: dict) -> tuple[list[str], dict]:
-    """잰 값 하나를 단언 1)~4)로 판정한다. (실패 목록, 판정 요약)을 돌려준다."""
+    """잰 값 하나를 단언 1)~3)으로 판정한다. (실패 목록, 판정 요약)을 돌려준다."""
     failures: list[str] = []
     picker = measurement["picker"]
     measure = measurement["measure"]
@@ -197,57 +227,88 @@ def judge(measurement: dict) -> tuple[list[str], dict]:
         if document_scroll[key] - document_scroll["clientWidth"] > TOLERANCE:
             failures.append(f"3) 문서 가로 스크롤 {key} {document_scroll[key]} > {document_scroll['clientWidth']}")
 
-    # 4) 피커는 내용 폭이고, 가장 긴 라벨도 한 줄로 잘리지 않는다.
+    # 피커 글자: 가장 긴 라벨도 한 줄로 잘리지 않고 피커 가운데에 선다.
     picker_text = measurement["pickerText"]
     if picker_text is None:
-        failures.append("4) 피커 글자를 찾지 못했다")
+        failures.append("3) 피커 글자를 찾지 못했다")
     else:
         if picker_text["rects"] != 1:
-            failures.append(f"4) 피커 라벨 '{picker_text['text']}' 줄 수 {picker_text['rects']}")
+            failures.append(f"3) 피커 라벨 '{picker_text['text']}' 줄 수 {picker_text['rects']}")
         if picker_text["scrollWidth"] - picker_text["clientWidth"] > TOLERANCE:
-            failures.append(f"4) 피커 라벨 '{picker_text['text']}' 잘림 "
+            failures.append(f"3) 피커 라벨 '{picker_text['text']}' 잘림 "
                             f"{picker_text['scrollWidth'] - picker_text['clientWidth']}px")
-    if measurement["pickerContentWidth"] is None:
-        failures.append("4) 피커 글자를 찾지 못했다")
-    else:
-        drift = measurement["button"]["width"] - measurement["pickerContentWidth"]
-        if abs(drift) > TOLERANCE:
-            failures.append(f"4) 피커 폭 {measurement['button']['width']:.1f} != 내용 폭 {measurement['pickerContentWidth']:.1f}")
+        text_center = (picker_text["left"] + picker_text["right"]) / 2
+        button_center = (picker["left"] + picker["right"]) / 2
+        if abs(text_center - button_center) > TOLERANCE:
+            failures.append(f"3) 피커 라벨이 가운데에서 {abs(text_center - button_center):.1f}px 벗어난다")
 
     return failures, {"natural": natural, "cardWidth": card["width"], "fits": fits, "oneLine": one_line}
 
 
-SCROLL_TOP_SCRIPT = """
-() => {
-  let el = document.querySelector('[data-testid="usage-stats-view-measure-row"]');
-  while (el && el !== document.body) {
-    if (el.scrollHeight > el.clientHeight + 1) return el.scrollTop;
-    el = el.parentElement;
-  }
-  return window.scrollY;
-}
-"""
+def compare_views(measurements: dict[str, dict], failures: list[str]) -> None:
+    """단언 4)·6): 같은 뷰포트·테마에서 두 보기를 견준다."""
+    for width, _ in VIEWPORTS:
+        for theme in THEMES:
+            names = {view: f"{width}-{theme}-{view}" for view, _ in PICKERS}
+            pair = {view: measurements.get(name) for view, name in names.items()}
+            if any(m is None or m.get("missing") for m in pair.values()):
+                continue
+            model, project = pair["model"], pair["project"]
+            widest = max(model["pickerContentWidth"] or 0, project["pickerContentWidth"] or 0)
+            for view, m in pair.items():
+                drift = m["button"]["width"] - widest
+                if abs(drift) > TOLERANCE:
+                    failures.append(f"{names[view]}: 4) 피커 폭 {m['button']['width']:.1f} != "
+                                    f"가장 긴 선택지 내용 폭 {widest:.1f}")
+            spread = abs(model["button"]["width"] - project["button"]["width"])
+            if spread > TOLERANCE:
+                failures.append(f"{width}-{theme}: 4) 두 보기의 피커 폭 차이 {spread:.1f}px")
 
-FOCUS_SCRIPT = """
-() => ({
-  tag: document.activeElement?.tagName ?? null,
-  label: document.activeElement?.getAttribute('aria-label') ?? null,
-  testID: document.activeElement?.getAttribute('data-testid') ?? null,
-})
-"""
+            model_line = judge(model)[1]["oneLine"]
+            project_line = judge(project)[1]["oneLine"]
+            if model_line != project_line:
+                failures.append(f"{width}-{theme}: 6) 보기에 따라 줄 모양이 다르다"
+                                f"(「모델별」 한 줄={model_line}, 「프로젝트별」 한 줄={project_line})")
+            chart_tops = {view: (m.get("chart") or {}).get("top") for view, m in pair.items()}
+            if chart_tops["model"] is None or chart_tops["project"] is None:
+                failures.append(f"{width}-{theme}: 6) 차트를 찾지 못했다")
+            elif abs(chart_tops["model"] - chart_tops["project"]) > TOLERANCE:
+                failures.append(f"{width}-{theme}: 6) 차트 위쪽 끝 차이 "
+                                f"{abs(chart_tops['model'] - chart_tops['project']):.1f}px")
 
 
-def open_usage_stats(page: Page, base: str) -> None:
-    page.goto(build_url(base, "light"))
+def open_usage_stats(page: Page, base: str, theme: str = "light") -> None:
+    page.goto(build_url(base, theme))
     page.get_by_test_id("native-settings-review").wait_for()
     page.get_by_test_id("settings-category-usage-stats").click()
     page.get_by_test_id("usage-stats-view-measure-row").wait_for()
     page.get_by_test_id("usage-stats-total-tokens").wait_for()
 
 
+def choose_view(page: Page, label: str) -> None:
+    """보기 피커에서 라벨을 고른다. 이미 골라져 있으면 그대로 둔다."""
+    trigger = page.locator('[aria-label^="보기:"]')
+    trigger.wait_for()
+    if trigger.get_attribute("aria-label") == f"보기: {label}":
+        return
+    trigger.click()
+    page.get_by_label(label, exact=True).click()
+    page.get_by_label(f"보기: {label}", exact=True).wait_for()
+
+
+def capture(page: Page, out_dir: Path, name: str, store: dict) -> dict:
+    row = page.get_by_test_id("usage-stats-view-measure-row")
+    row.scroll_into_view_if_needed()
+    page.wait_for_timeout(120)
+    measurement = page.evaluate(MEASURE_SCRIPT)
+    page.screenshot(path=str(out_dir / f"{name}.png"))
+    store[name] = measurement
+    return measurement
+
+
 def run_interactions(browser, base: str, out_dir: Path, failures: list[str], store: dict) -> None:
     """ui-design 0절 14·15·18번: 누른 뒤 초점, Esc와 Tab, 창 크기 바꾸기."""
-    for width, height in ((390, 844), (820, 1180)):
+    for width, height in ((376, 812), (390, 844)):
         context = browser.new_context(viewport={"width": width, "height": height},
                                       color_scheme="light", reduced_motion="reduce")
         page = context.new_page()
@@ -255,17 +316,9 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
         install_routes(page, urllib.parse.urlsplit(base).netloc)
         page.clock.set_fixed_time(FIXED_NOW)
         open_usage_stats(page, base)
+        choose_view(page, "프로젝트별")
 
-        # 14) 고른 뒤 초점이 연 요소(피커)로 돌아온다.
-        page.get_by_label("보기: 모델별", exact=True).click()
-        page.get_by_label("프로젝트별", exact=True).click()
-        page.get_by_label("보기: 프로젝트별", exact=True).wait_for()
-        focus = page.evaluate(FOCUS_SCRIPT)
-        store[f"interaction-{width}-focus-after-select"] = focus
-        if focus["label"] != "보기: 프로젝트별":
-            failures.append(f"14) {width}: 선택 뒤 초점이 피커가 아니라 {focus['label'] or focus['tag']}에 있다")
-
-        # 15) Tab 순서는 피커 다음이 측정 세그먼트다.
+        # 14) Tab 순서는 피커 다음이 측정 세그먼트다.
         page.get_by_label("보기: 프로젝트별", exact=True).focus()
         page.keyboard.press("Tab")
         focus = page.evaluate(FOCUS_SCRIPT)
@@ -288,7 +341,7 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
 
         # 18) 창 폭을 바꿔도 그 폭의 배치로 다시 서고 스크롤 위치가 유지된다.
         scroll_before = page.evaluate(SCROLL_TOP_SCRIPT)
-        for resize_width, resize_height, expect_one_line in ((360, 800, False), (390, 844, True)):
+        for resize_width, resize_height in ((360, 800), (390, 844)):
             page.set_viewport_size({"width": resize_width, "height": resize_height})
             # 폭이 바뀌면 설정 화면이 다시 서고 통계도 다시 받는다. 다 그려진 뒤에 잰다.
             page.get_by_test_id("usage-stats-view-measure-row").wait_for()
@@ -301,8 +354,9 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
                 continue
             found, summary = judge(measurement)
             failures.extend(f"18) {resize_width}: {item}" for item in found)
-            if summary["oneLine"] != expect_one_line:
-                failures.append(f"18) {resize_width}: 배치가 다시 서지 않았다(한 줄 기대 {expect_one_line})")
+            expected_line = resize_width >= 390
+            if summary["oneLine"] != expected_line:
+                failures.append(f"18) {resize_width}: 배치가 다시 서지 않았다(한 줄 기대 {expected_line})")
         scroll_after = page.evaluate(SCROLL_TOP_SCRIPT)
         store[f"interaction-{width}-scroll"] = {"before": scroll_before, "after": scroll_after}
         if abs(scroll_before - scroll_after) > 1:
@@ -311,14 +365,46 @@ def run_interactions(browser, base: str, out_dir: Path, failures: list[str], sto
         context.close()
 
 
-def capture(page: Page, out_dir: Path, name: str, store: dict) -> dict:
-    row = page.get_by_test_id("usage-stats-view-measure-row")
-    row.scroll_into_view_if_needed()
-    page.wait_for_timeout(120)
-    measurement = page.evaluate(MEASURE_SCRIPT)
-    page.screenshot(path=str(out_dir / f"{name}.png"))
-    store[name] = measurement
-    return measurement
+def run_view_switch(browser, base: str, failures: list[str], store: dict) -> None:
+    """단언 7): 한 페이지에서 보기를 바꿔도 차트 위쪽 끝과 묶음 자리가 그대로다."""
+    for width, height in ((376, 812), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height},
+                                      color_scheme="light", reduced_motion="reduce")
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        install_routes(page, urllib.parse.urlsplit(base).netloc)
+        page.clock.set_fixed_time(FIXED_NOW)
+        open_usage_stats(page, base)
+        states: list[dict] = []
+        for label in ("모델별", "프로젝트별", "모델별"):
+            choose_view(page, label)
+            page.get_by_test_id("usage-stats-project-chart-chart" if label == "프로젝트별"
+                                else "usage-stats-model-chart-chart").wait_for()
+            page.wait_for_timeout(200)
+            measurement = page.evaluate(MEASURE_SCRIPT)
+            states.append({
+                "label": label,
+                "chart": measurement.get("chart"),
+                "measure": measurement["measure"],
+                "cache": measurement["cache"],
+            })
+        store[f"interaction-{width}-view-switch"] = states
+        chart_tops = [state["chart"]["top"] if state["chart"] else None for state in states]
+        if any(value is None for value in chart_tops):
+            failures.append(f"7) {width}: 차트를 찾지 못했다")
+        else:
+            spread = max(chart_tops) - min(chart_tops)
+            if spread > TOLERANCE:
+                failures.append(f"7) {width}: 보기를 바꾸면 차트 위쪽 끝이 {spread:.1f}px 움직인다"
+                                + " (" + ", ".join(f"{value:.1f}" for value in chart_tops) + ")")
+        for key in ("measure", "cache"):
+            for field in ("top", "left", "right"):
+                values = [state[key][field] for state in states]
+                spread = max(values) - min(values)
+                if spread > TOLERANCE:
+                    failures.append(f"7) {width}: 보기를 바꾸면 {key}.{field}가 {spread:.1f}px 움직인다"
+                                    + " (" + ", ".join(f"{value:.1f}" for value in values) + ")")
+        context.close()
 
 
 def main() -> int:
@@ -337,6 +423,7 @@ def main() -> int:
     measurements: dict[str, dict] = {}
     picker_widths: dict[str, list[float]] = {}
     one_line_seen = False
+    wrapped_seen = False
     combos = 0
     try:
         with sync_playwright() as playwright:
@@ -362,9 +449,7 @@ def main() -> int:
                             page.get_by_test_id("settings-category-usage-stats").click()
                             page.get_by_test_id("usage-stats-view-measure-row").wait_for()
                             page.get_by_test_id("usage-stats-total-tokens").wait_for()
-                            page.get_by_label("보기: 모델별", exact=True).click()
-                            page.get_by_label(picker_label, exact=True).click()
-                            page.get_by_label(f"보기: {picker_label}", exact=True).wait_for()
+                            choose_view(page, picker_label)
                             page.evaluate("() => document.fonts.ready")
 
                             measurement = capture(page, out_dir, name, measurements)
@@ -376,6 +461,8 @@ def main() -> int:
                             failures.extend(f"{name}: {item}" for item in found)
                             if summary["fits"] and summary["oneLine"]:
                                 one_line_seen = True
+                            if not summary["fits"]:
+                                wrapped_seen = True
                             # 폰/태블릿은 여백 토큰이 달라 같은 무리 안에서만 폭을 견준다.
                             device = "phone" if width < 600 else "tablet"
                             picker_widths.setdefault(f"{device}/{picker_id}", []).append(
@@ -383,22 +470,27 @@ def main() -> int:
                             print(f"{name}: 줄 {summary['cardWidth']:.1f}, 자연 {summary['natural']:.1f}, "
                                   f"{'한 줄' if summary['fits'] else '묶음 다음 줄'}, 실패 {len(found)}")
                             context.close()
-                print("[usage-stats] 조작 항목 14·15·18")
+
+                compare_views(measurements, failures)
+                print("[usage-stats] 조작 항목 7·14·15·18")
+                run_view_switch(browser, base, failures, measurements)
                 run_interactions(browser, base, out_dir, failures, measurements)
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
-    # 4) 피커 폭은 내용 폭이므로 같은 여백 토큰 안에서는 뷰포트가 달라도 같아야 한다.
+    # 피커 폭이 내용 폭이면 같은 여백 토큰 안에서 뷰포트가 달라도 같아야 한다.
     for picker_id, widths in picker_widths.items():
         spread = max(widths) - min(widths)
         if spread > TOLERANCE:
             failures.append(f"4) '{picker_id}' 피커 폭이 뷰포트에 따라 {spread:.1f}px 달라진다: "
                             + ", ".join(f"{value:.1f}" for value in widths))
-    # 5) 적어도 한 뷰포트에서 한 줄 경우가 실제로 나온다.
+    # 5) 한 줄 경우와 넘어간 경우가 각각 한 번은 실제로 나온다.
     if not one_line_seen:
-        failures.append("5) 네 뷰포트 어디에서도 세 컨트롤이 한 줄이 되지 않았다")
+        failures.append("5) 어떤 뷰포트에서도 세 컨트롤이 한 줄이 되지 않았다")
+    if not wrapped_seen:
+        failures.append("5) 어떤 뷰포트에서도 묶음이 다음 줄로 가지 않았다")
 
     (out_dir / "measurements.json").write_text(
         json.dumps(measurements, ensure_ascii=False, indent=1), encoding="utf-8")

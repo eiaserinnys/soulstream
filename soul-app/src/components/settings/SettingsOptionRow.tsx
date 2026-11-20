@@ -7,11 +7,18 @@ import { SettingsInput } from './SettingsFormParts';
 import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet';
 import { cardStyles } from '../planner/Card.styles';
 
+// 선택지 폭 고정용 측정 상자. 높이 0으로 접혀 화면을 차지하지 않고 접근성 트리에서도 숨는다.
+const widthProbeStyles = StyleSheet.create({
+  probe: { position: 'absolute', left: 0, top: 0, height: 0, overflow: 'hidden', alignItems: 'flex-start' },
+});
+
 export interface SettingsOption { id: string; label: string; available?: boolean; reason?: string | null }
-export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto' }: {
+export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto', stabilizePickerWidth = false }: {
   selected: string; options: SettingsOption[]; onSelect(value: string): void; emptyLabel: string; label?: string;
   variant?: 'chat'; presentation?: 'default' | 'manuscript';
   pickerMode?: 'auto' | 'picker';
+  /** 피커 폭을 가장 긴 선택지의 내용 폭에 고정한다. 보기를 바꿔도 줄 모양이 흔들리지 않는다. 기본 꺼짐. */
+  stabilizePickerWidth?: boolean;
 }) {
   const t = useTokens();
   const baseStyles = useMemo(() => cardStyles(t), [t]);
@@ -20,15 +27,22 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
     : baseStyles;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [widestLabelWidth, setWidestLabelWidth] = useState(0);
   const items = selected && !options.some(option => option.id === selected) ? [...options, { id: selected, label: selected, available: false, reason: '저장된 값이 현재 목록에 없습니다.' }] : options;
   const selectedOption = items.find(option => option.id === selected);
   const description = (option: SettingsOption) => option.reason ?? (option.available === false ? '현재 사용 불가' : null);
   const choose = (id: string) => { onSelect(id); setOpen(false); setQuery(''); };
+  const measureOptionWidth = (width: number) => setWidestLabelWidth(current => (width > current ? width : current));
   const large = pickerMode === 'picker' || items.length > 5 || items.some(option => option.label.length > 24);
   if (!items.length) return <Text style={styles.body}>{emptyLabel}</Text>;
   const rows = items.filter(option => `${option.label} ${option.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <View>
-    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}><Text style={styles.body}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text></GlassButton> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
+    {large ? <GlassButton {...(variant === 'chat' ? { variant: presentation === 'manuscript' ? 'paper' as const : 'secondary' as const, size: 'compact' as const } : {})} accessibilityLabel={`${label}: ${selectedOption?.label ?? '선택 안 함'}`} onPress={() => { setQuery(''); setOpen(true); }}>
+      <Text style={[styles.body, stabilizePickerWidth ? { minWidth: widestLabelWidth, textAlign: 'center' as const } : null]}>{selectedOption?.label ?? '선택하세요'}{selectedOption && description(selectedOption) ? ' · ' : ''}{selectedOption && description(selectedOption) ? <Text style={styles.meta}>{description(selectedOption)}</Text> : null}</Text>
+      {stabilizePickerWidth ? <View testID="settings-option-width-probe" aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={widthProbeStyles.probe}>
+        {items.map(option => <Text key={option.id} testID={`settings-option-width-probe-${option.id}`} numberOfLines={1} onLayout={event => measureOptionWidth(event.nativeEvent.layout.width)} style={styles.body}>{option.label}</Text>)}
+      </View> : null}
+    </GlassButton> : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
       {items.map(option => variant === 'chat'
         ? <GlassButton key={option.id} variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact"
             accessibilityLabel={`${label}: ${option.label}`} accessibilityState={{ selected: selected === option.id }}
