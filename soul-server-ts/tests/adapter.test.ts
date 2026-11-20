@@ -634,6 +634,99 @@ describe("UpstreamAdapter", () => {
     }
   });
 
+  it("ACK 뒤 러너 재조정 대기가 끝나지 않아도 연결이 닫히면 다시 node_register를 보낸다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+
+    const reconciliationStarted = deferred<void>();
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        serveDrainTimeoutMs: 50,
+      },
+      silentLogger,
+      makeDeps({
+        reconnectPolicy,
+        waitForRunnerReconciliation: () => {
+          reconciliationStarted.resolve();
+          return new Promise<void>(() => undefined);
+        },
+      }),
+    );
+    const runPromise = adapter.run();
+    const registrationCount = () => orch.receivedMessages.filter(
+      (message) => (message as Record<string, unknown>).type === "node_register",
+    ).length;
+
+    try {
+      await waitFor(() => registrationCount() === 1);
+      await reconciliationStarted.promise;
+      orch.sockets[0]!.close(1011, "test connection loss");
+      await waitFor(() => registrationCount() >= 2, 1000);
+
+      expect(registrationCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await adapter.shutdown();
+      await runPromise;
+    }
+  });
+
+  it("ACK 뒤 초기 러너 상태 조회가 끝나지 않아도 연결이 닫히면 다시 node_register를 보낸다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({
+      acknowledgeRegistration: true,
+      acknowledgementCapabilities: { runner_inventory_v1: true },
+    });
+
+    const inventoryStarted = deferred<void>();
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        serveDrainTimeoutMs: 50,
+      },
+      silentLogger,
+      makeDeps({
+        reconnectPolicy,
+        listLiveRunnerSessionIds: () => {
+          inventoryStarted.resolve();
+          return new Promise<string[]>(() => undefined);
+        },
+      }),
+    );
+    const runPromise = adapter.run();
+    const registrationCount = () => orch.receivedMessages.filter(
+      (message) => (message as Record<string, unknown>).type === "node_register",
+    ).length;
+
+    try {
+      await waitFor(() => registrationCount() === 1);
+      await inventoryStarted.promise;
+      orch.sockets[0]!.close(1011, "test connection loss");
+      await waitFor(() => registrationCount() >= 2, 1000);
+
+      expect(registrationCount()).toBeGreaterThanOrEqual(2);
+    } finally {
+      await adapter.shutdown();
+      await runPromise;
+    }
+  });
+
   it("reconnects without warning when active command handlers drain before the timeout", async () => {
     await stopMockOrch(orch);
     orch = await startMockOrch({ acknowledgeRegistration: true });

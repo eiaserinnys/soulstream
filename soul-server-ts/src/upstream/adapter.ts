@@ -361,18 +361,29 @@ export class UpstreamAdapter {
       ) {
         this.controlChannelService.activate(registrationAck.connection_id);
       }
-      await runnerReconciliation;
-      await sendInitialRunnerState({
-        ws,
-        nodeId: this.config.nodeId,
-        supportsRunnerInventory:
-          registrationAck.capabilities?.runner_inventory_v1 === true,
-        sessionDb: this.deps.sessionDb,
-        listRunningSessionIds: async () => await this.listRunningSessionIds(false),
-        isCurrentConnection: () => this.ws === ws,
-        send: async (data) => await this.sendOnSocket(ws, data),
-        logger: this.logger,
-      });
+      // 등록 마무리(복구 스캔 대기, 초기 러너 상태 전송)가 오래 걸리더라도 연결이
+      // 먼저 닫히면 serve를 끝내고 run() 루프의 재연결로 돌아간다. 버려진 대기는
+      // 끝까지 돌게 두며, 초기 상태 전송은 isOpen 검사로 닫힌 소켓에 쓰지 않는다.
+      const reconciledBeforeClose = await Promise.race([
+        runnerReconciliation.then(() => true),
+        servePromise.then(() => false),
+      ]);
+      if (!reconciledBeforeClose) return;
+      const initialRunnerStateSent = await Promise.race([
+        sendInitialRunnerState({
+          ws,
+          nodeId: this.config.nodeId,
+          supportsRunnerInventory:
+            registrationAck.capabilities?.runner_inventory_v1 === true,
+          sessionDb: this.deps.sessionDb,
+          listRunningSessionIds: async () => await this.listRunningSessionIds(false),
+          isCurrentConnection: () => this.ws === ws,
+          send: async (data) => await this.sendOnSocket(ws, data),
+          logger: this.logger,
+        }).then(() => true),
+        servePromise.then(() => false),
+      ]);
+      if (!initialRunnerStateSent) return;
       const catchUpEstablished = await Promise.race([
         catchUpReady,
         servePromise.then(() => false),
