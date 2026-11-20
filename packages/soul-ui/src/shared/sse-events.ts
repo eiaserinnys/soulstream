@@ -148,15 +148,6 @@ export interface InputRequestQuestion {
 
 export type ClaudeRuntimeHookEvent = SSEEventClaudeRuntimeHookEvent;
 
-export interface SubtreeUpdateSSEEvent {
-  type: "subtree_update";
-  timestamp: number;
-  affected_event_ids: number[];
-  deltas: Record<string, number>;
-  new_total_subtree_height: number;
-  trigger_event_id?: number | null;
-}
-
 export type SoulSSEEvent =
   | ProgressEvent
   | MemoryEvent
@@ -219,5 +210,4 @@ export type SoulSSEEvent =
   | AssistantMessageEvent
   | AwaySummaryEvent
   | TurnSummaryEvent
-  | PromptSuggestionEvent
-  | SubtreeUpdateSSEEvent;
+  | PromptSuggestionEvent;

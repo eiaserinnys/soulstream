@@ -496,7 +496,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 69
+    assert len(sse_event_types) == 68
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -935,7 +935,6 @@ def test_known_sse_event_types_completeness() -> None:
         "reconnect",
         "history_sync",
         "metadata_updated",
-        "subtree_update",
         "assistant_error",
         "turn_summary",
         "away_summary",

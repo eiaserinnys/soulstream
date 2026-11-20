@@ -1,18 +1,3 @@
-/**
- * SSE 이벤트 처리 로직
- *
- * dashboard-store의 processEvent/processEvents에서 사용하는 핵심 처리 함수.
- * 순수 함수로 분리하여 store set() 호출과 이벤트 처리 로직을 분리한다.
- *
- * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening, §11.1 옵션 C):
- *   - subtree_update SSE 처리는 dedup 갱신만 하고 트리 변경 없음 (no-op return).
- *     백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드에서 백엔드 발신 정리).
- *   - treeChangeInfo 분류·SubtreeHeightUpdate 인터페이스는 NodeGraph 제거(Phase 1) 후
- *     소비자 0건이라 폐기. P1 의존성으로 event-processing-slice도 함께 정리한다.
- *   - tree-placer가 root.children에 평면 push하므로 historyMode 분기 / orphan 큐는 사라졌다.
- *   - placeInTree 호출 의미는 그대로 유지(시그니처 무변경).
- */
-
 import type {
   SessionSummary,
   SoulSSEEvent,
@@ -157,9 +142,7 @@ export function processEventSingle(
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
-  // subtree_update / folder_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
-  // 보드 live 갱신은 session stream projection stores가 처리한다.
-  if (event.type === "subtree_update" || event.type === "folder_updated" || event.type === "custom_view_updated") {
+  if (event.type === "folder_updated" || event.type === "custom_view_updated") {
     return {
       root,
       updated: false,
@@ -351,8 +334,7 @@ export function processEventsBatch(
 
     if (!acceptLiveTextEvent(event, eventId, ctx)) continue;
 
-    // subtree_update / folder_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
-    if (event.type === "subtree_update" || event.type === "folder_updated" || event.type === "custom_view_updated") {
+    if (event.type === "folder_updated" || event.type === "custom_view_updated") {
       continue;
     }
 

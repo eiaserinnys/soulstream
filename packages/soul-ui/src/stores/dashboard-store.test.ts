@@ -2058,55 +2058,6 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === Phase 2-A 평탄화: subtree_update는 no-op ===
-
-  describe("subtree_update SSE 이벤트 (Phase 2-A 평탄화 — no-op)", () => {
-    // Phase 2-A (atom 260507.01.fe-tree-flattening §11.3 Phase D 폐기 완료):
-    //   subtree_update 처리는 폐기되었다. event-processor는 dedup만 갱신하고 트리 변경 없이 return한다.
-    //   백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드).
-    //   nodeMap.subtreeHeight 증분, applySubtreeHeightUpdate, totalSubtreeHeight·setTotalSubtreeHeight
-    //   모두 Phase D §11.3 grep으로 컴포넌트·훅 소비자 0건 확인 후 폐기 완료.
-    beforeEach(() => {
-      useDashboardStore.getState().setActiveSession("sess-st");
-      useDashboardStore.getState().processEvent(
-        { type: "history_sync", last_event_id: 0, is_live: true, status: "running" } as any,
-        -1,
-      );
-    });
-
-    it("subtree_update 수신 시 트리·nodeMap 변경 없음 — dedup만 갱신", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      // 조상 노드 생성
-      processEvent(
-        { type: "user_message", user: "u", text: "hello" } as UserMessageEvent,
-        10,
-      );
-      const beforeAncestorHeight = useDashboardStore
-        .getState()
-        .processingCtx.nodeMap.get("10")?.subtreeHeight;
-
-      processEvent(
-        {
-          type: "subtree_update",
-          timestamp: Date.now() / 1000,
-          affected_event_ids: [42],
-          deltas: { "10": 3 },
-          new_total_subtree_height: 7,
-        } as any,
-        42,
-      );
-
-      const stateAfter = useDashboardStore.getState();
-      // applySubtreeHeightUpdate 폐기 — nodeMap.subtreeHeight 변경 없음
-      expect(stateAfter.processingCtx.nodeMap.get("10")?.subtreeHeight).toBe(
-        beforeAncestorHeight,
-      );
-      // dedup만 갱신 — lastEventId 진척
-      expect(stateAfter.lastEventId).toBe(42);
-    });
-  });
-
   describe("processHistoryEvents - 옵션 D 단일 트리 통합", () => {
     it("빈 events 배열 → addedCount 0, store 무영향", () => {
       const before = useDashboardStore.getState();

@@ -1,16 +1,3 @@
-/**
- * createSSESubscribe 재연결 테스트 (Phase 3 viewport API)
- *
- * SSE 연결이 끊긴 후:
- * 1) 지수 백오프로 재연결을 시도하는지
- * 2) 재연결 URL에 `?lastEventId=N`이 포함되는지
- * 3) 재연결 후 수신한 subtree_update 이벤트가 onEvent 콜백으로 전달되는지
- * 를 검증한다.
- *
- * 서버 재시작 시 history_sync + subtree_update 리플레이 파이프라인의
- * 클라이언트 측 전제를 고정한다.
- */
-
 import {
   describe,
   it,
@@ -135,18 +122,17 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     const unsubscribe = createSSESubscribe({ baseUrl, onEvent });
 
     instances[0].emit(
-      "subtree_update",
+      "folder_updated",
       {
-        type: "subtree_update",
-        deltas: [{ event_id: 10, delta: 3 }],
-        new_total_subtree_height: 13,
+        type: "folder_updated",
+        folderId: "folder-1",
       },
       15,
     );
 
     expect(onEvent).toHaveBeenCalledTimes(1);
     expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "subtree_update" }),
+      expect.objectContaining({ type: "folder_updated" }),
       15,
     );
 
@@ -295,37 +281,32 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
       getLastEventId: () => committed,
     });
 
-    // 1. 첫 이벤트로 currentLastEventId = 15
     instances[0].emit(
-      "subtree_update",
-      { type: "subtree_update", deltas: [], new_total_subtree_height: 100 },
+      "folder_updated",
+      { type: "folder_updated", folderId: "folder-1" },
       15,
     );
 
-    // 2. 연결 오류 → 원본 EventSource는 close되고 reconnect가 스케줄된다
     instances[0].emitError();
     expect(instances[0].closed).toBe(true);
     expect(onStatusChange).toHaveBeenCalledWith("error");
 
-    // 3. 재연결 지연(3000ms × 2^0 = 3000ms) 경과 → 새 EventSource 생성
     vi.advanceTimersByTime(3000);
     expect(instances).toHaveLength(2);
     expect(instances[1].url).toBe(`${baseUrl}?lastEventId=15`);
 
-    // 4. 재연결된 스트림에서 subtree_update 수신 → onEvent로 전달
     instances[1].emit(
-      "subtree_update",
+      "folder_updated",
       {
-        type: "subtree_update",
-        deltas: [{ event_id: 20, delta: 5 }],
-        new_total_subtree_height: 18,
+        type: "folder_updated",
+        folderId: "folder-1",
       },
       16,
     );
 
     expect(onEvent).toHaveBeenCalledTimes(2);
     expect(onEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "subtree_update" }),
+      expect.objectContaining({ type: "folder_updated" }),
       16,
     );
 
