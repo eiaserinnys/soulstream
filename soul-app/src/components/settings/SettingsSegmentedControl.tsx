@@ -6,6 +6,8 @@ import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 export interface SettingsSegmentOption<T extends string> {
   value: T;
   label: string;
+  /** 보이는 글자와 다른 접근성 이름을 쓸 때만 준다. 없으면 label을 쓴다. */
+  accessibilityLabel?: string;
   count?: number;
   countBadge?: boolean;
   dot?: boolean;
@@ -67,7 +69,7 @@ export function SettingsSegmentedControl<T extends string>({
             key={option.value}
             testID={`settings-segment-${id}-${option.value}`}
             accessibilityRole="button"
-            accessibilityLabel={option.label}
+            accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityState={{ selected, disabled }}
             disabled={disabled}
             {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}

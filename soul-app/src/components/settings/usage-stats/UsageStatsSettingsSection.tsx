@@ -80,9 +80,10 @@ const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
   { value: 'tokens', label: '토큰' },
   { value: 'cost', label: '정가' },
 ];
-const CACHE_READ_OPTIONS: { value: CacheReadSetting; label: string }[] = [
+const CACHE_READ_OPTIONS: { value: CacheReadSetting; label: string; accessibilityLabel?: string }[] = [
   { value: 'exclude', label: USAGE_STATS_LABELS.cacheReadExclude },
-  { value: 'include', label: USAGE_STATS_LABELS.cacheReadInclude },
+  // 좁은 폭에서 제어 줄이 넘어가지 않도록 보이는 글자만 줄이고, 접근성 이름은 「캐시 포함」을 지킨다.
+  { value: 'include', label: '포함', accessibilityLabel: USAGE_STATS_LABELS.cacheReadInclude },
 ];
 
 export function UsageStatsSettingsSection({ flattened = false }: { flattened?: boolean }) {
