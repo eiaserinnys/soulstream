@@ -64,12 +64,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          corepack pnpm --filter @soulstream/soul-server-ts run pack:portable --out out
+          # pnpm runs the script inside soul-server-ts, so keep the output path
+          # absolute instead of guessing the package-relative one.
+          out="${RUNNER_TEMP}/bundle-out"
+          corepack pnpm --filter @soulstream/soul-server-ts run pack:portable --out "$out"
           sha="$(git rev-parse HEAD)"
-          mv "out/${sha}/node.tar.gz" "out/node-${sha}.tar.gz"
-          rm -f "out/${sha}/node.tar.gz.sha256"
-          hex="$(sha256sum "out/node-${sha}.tar.gz" | cut -d' ' -f1)"
-          printf '%s  node-%s.tar.gz\n' "$hex" "$sha" > "out/node-${sha}.tar.gz.sha256"
+          mv "${out}/${sha}/node.tar.gz" "${out}/node-${sha}.tar.gz"
+          rm -f "${out}/${sha}/node.tar.gz.sha256"
+          hex="$(sha256sum "${out}/node-${sha}.tar.gz" | cut -d' ' -f1)"
+          printf '%s  node-%s.tar.gz\n' "$hex" "$sha" > "${out}/node-${sha}.tar.gz.sha256"
           echo "bundle_sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Upload bundle artifact
@@ -77,8 +80,8 @@ jobs:
         with:
           name: node-bundle
           path: |
-            out/node-*.tar.gz
-            out/node-*.tar.gz.sha256
+            ${{ runner.temp }}/bundle-out/node-*.tar.gz
+            ${{ runner.temp }}/bundle-out/node-*.tar.gz.sha256
           if-no-files-found: error
 
   publish:
