@@ -1,4 +1,4 @@
-import type { DesignTokens } from './tokens';
+import { CAPSULE_RADIUS, concentricRadius, type DesignTokens } from './tokens';
 
 export function createSessionVisualRoles(t: DesignTokens) {
   return {
@@ -11,7 +11,7 @@ export function createSessionVisualRoles(t: DesignTokens) {
         minHeight: 24,
         paddingHorizontal: t.uiSpacing.sm,
         paddingVertical: 0,
-        radius: t.foundation.radius.chip,
+        radius: CAPSULE_RADIUS,
       },
     },
     typography: {
@@ -31,7 +31,7 @@ export function createSessionVisualRoles(t: DesignTokens) {
         phoneAssistantMaxWidth: '100%' as const,
         phoneUserMaxWidth: '88%' as const,
         thumbnailFrameSize: { width: 200, height: 200 },
-        radius: 10,
+        radius: concentricRadius(t.spacing.md),
         filenameGap: 6,
         gridGap: t.uiSpacing.md,
         metadata: t.foundation.typography.meta,

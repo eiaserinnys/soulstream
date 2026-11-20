@@ -39,7 +39,7 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
     ? t.colors.statusCompleted : card.status === 'blocked' ? t.colors.warning : t.colors.statusIdle;
   return <Text style={{ ...t.foundation.typography.meta, color,
     ...(title ? { ...t.foundation.typography.cardTitle, marginRight: t.uiSpacing.sm } : {}),
-    ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.round,
+    ...(detail ? { backgroundColor: withAlphaColor(capsuleColor, 0.12), borderRadius: t.foundation.radius.capsule,
       paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: t.uiSpacing.xs } : {}),
     fontWeight: '700' }} numberOfLines={1}>
     {detail ? <Ionicons name="ellipse" size={STATUS_DOT_SIZE} color={color} /> : null}{detail ? ' ' : null}
@@ -115,9 +115,9 @@ function SummaryCardRow({ card, onOpen, summaryNumberTemplate }: CardRowSharedPr
     </Text>
     {hasAssignee ? uri
       ? <Image testID={`card-${card.id}-avatar`} source={{ uri, ...(jwt && uri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
-        style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
+        style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.capsule, flexShrink: 0 }} />
       : <View testID={`card-${card.id}-avatar`} style={{ width: t.avatarSize.compact, height: t.avatarSize.compact,
-        borderRadius: t.foundation.radius.round, flexShrink: 0, alignItems: 'center', justifyContent: 'center',
+        borderRadius: t.foundation.radius.capsule, flexShrink: 0, alignItems: 'center', justifyContent: 'center',
         borderWidth: StyleSheet.hairlineWidth, borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }}>
         <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{fallback}</Text>
       </View> : null}
@@ -152,7 +152,7 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
   const preview = (card.now?.text || report?.title || comment?.body || card.request).split('\n')[0];
   const { transition, pending } = useCardTransition(api, card.id);
   const time = <Text style={styles.time} numberOfLines={1}>{formatRelativeTime(card.updatedAt)}</Text>;
-  const complete = card.status === 'review' ? <GlassButton iconOnly size={board ? 'compact' : 'card'} borderRadius={t.foundation.radius.round} accessibilityLabel="완료"
+  const complete = card.status === 'review' ? <GlassButton iconOnly size={board ? 'compact' : 'card'} borderRadius={t.foundation.radius.capsule} accessibilityLabel="완료"
     disabled={!api} busy={pending} surfaceTestID={`card-${card.id}-완료-visual`} onPress={() => {
       void transition(card, 'done');
     }}><Ionicons name="checkmark" size={t.iconSize.standard} color={t.colors.textSecondary} /></GlassButton> : null;
@@ -202,7 +202,7 @@ function CardItemSummary({ card, summary }: { card: CardDto; summary: ReturnType
   const t = useTokens();
   return <View testID={`card-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
     {summary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-      style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
+      style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.capsule,
         backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
     {summary.confirmed ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>확인 {summary.confirmed}</Text> : null}
   </View>;

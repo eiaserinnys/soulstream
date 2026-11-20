@@ -15,6 +15,8 @@ import {
 import { CompactTouchTarget } from './CompactTouchTarget';
 import { BlurView, type BlurTint } from 'expo-blur';
 import {
+  CAPSULE_RADIUS,
+  capsuleRadius,
   createPrimitiveRoles,
   createPlannerVisualRoles,
   createSurfaceRoles,
@@ -116,6 +118,8 @@ export interface GlassSurfaceProps {
   isInteractive?: boolean;
   /** Used by foreground card primitives for a token-defined corner radius. */
   cornerRadius?: number;
+  /** native GlassView에만 넘기는 곡률. UIKit 유리에 999 같은 큰 값을 넘기지 않기 위해 쓴다. */
+  nativeCornerRadius?: number;
   /** Forces the glass appearance independently of the app theme (e.g. bright rail capsule in dark mode). */
   colorScheme?: GlassColorScheme;
   testID?: string;
@@ -178,6 +182,7 @@ function GlassSurfaceImpl({
   isInteractive = false,
   testID,
   cornerRadius,
+  nativeCornerRadius,
   colorScheme = 'auto',
   onLayout,
   renderContent,
@@ -263,7 +268,7 @@ function GlassSurfaceImpl({
         colorScheme={resolvedColorScheme}
         tintColor={surface.nativeTintColor}
         isInteractive={isInteractive}
-        borderRadius={resolvedCornerRadius}
+        borderRadius={nativeCornerRadius ?? resolvedCornerRadius}
         style={nativeSurfaceStyle}
         onLayout={onLayout}
       >
@@ -425,7 +430,14 @@ export function GlassButton({
   const paper = variant === 'paper';
   const plain = variant === 'plain';
   const standardMinHeight = Math.max(t.hitTarget.min, buttonPrimitive.minHeight);
-  const resolvedRadius = borderRadius ?? (plain && iconOnly ? t.foundation.radius.round : buttonPrimitive.radius);
+  const resolvedRadius = borderRadius ?? (plain && iconOnly ? t.foundation.radius.capsule : buttonPrimitive.radius);
+  // UIKit 유리에는 999를 넘기지 않는다. 알약은 실제 높이의 절반을 넘긴다.
+  const nativeVisualHeight = iconOnly && size !== 'standard'
+    ? (size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session)
+    : standardMinHeight;
+  const nativeCornerRadius = resolvedRadius >= CAPSULE_RADIUS
+    ? capsuleRadius(nativeVisualHeight)
+    : resolvedRadius;
   const horizontal = iconOnly ? 0 : padding?.horizontal ?? buttonPrimitive.padding.horizontal;
   const vertical = iconOnly ? 0 : padding?.vertical ?? buttonPrimitive.padding.vertical;
   const iconBoundaryStyle: ViewStyle | undefined = iconOnly
@@ -547,7 +559,7 @@ export function GlassButton({
       onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={resolvedAccessibilityState} {...(busy ? { 'aria-busy': true } : {})}>
       {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{resolvedChildren}</View>
-        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{resolvedChildren}</GlassSurfaceImpl>}
+        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} nativeCornerRadius={nativeCornerRadius} style={[style, visualStyle, compactFocusStyle]}>{resolvedChildren}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
   }
 
@@ -567,6 +579,7 @@ export function GlassButton({
       testID={surfaceTestID}
       isInteractive
       cornerRadius={resolvedRadius}
+      nativeCornerRadius={nativeCornerRadius}
       style={[style, iconBoundaryStyle]}
       renderContent={(surfaceKind) => renderButton(surfaceKind === 'native')}
     />

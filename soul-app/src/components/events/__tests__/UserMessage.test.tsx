@@ -24,6 +24,16 @@ test('채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다', () 
     images: screen.UNSAFE_getAllByType(Image).map(({ props }) => ({ source: props.source, style: StyleSheet.flatten(props.style), resizeMode: props.resizeMode, accessibilityLabel: props.accessibilityLabel })) }).toMatchSnapshot();
 });
 
+test('사용자 말풍선 네 모서리는 같은 곡률을 쓴다', () => {
+  const t = renderHook(() => useTokens()).result.current;
+  const screen = render(<UserMessage event={{ id: 'corners', type: 'user_message', data: { text: '네 모서리' } }} />);
+  const style = StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style);
+  expect(style.borderRadius).toBe(t.radius.floor);
+  for (const corner of ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius']) {
+    expect(style).not.toHaveProperty(corner);
+  }
+});
+
 test('user message는 평상시에 selectable=false다', () => {
   const event: SessionEvent = {
     id: 'event-1',
@@ -43,8 +53,8 @@ test('본문만 있는 원고형과 기본 말풍선은 기존 스타일을 유�
       event={{ id: 'text-only-style', type: 'user_message', data: { text: '본문만 있는 메시지' } }} />);
     expect(StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style)).toEqual(
       presentation === 'manuscript' ? { flexShrink: 1, alignSelf: 'flex-end' } : {
-        flexShrink: 1, backgroundColor: t.colors.accent, borderRadius: t.radius.lg,
-        borderBottomRightRadius: 4, paddingHorizontal: roles.chat.bubblePaddingHorizontal,
+        flexShrink: 1, backgroundColor: t.colors.accent, borderRadius: t.radius.floor,
+        paddingHorizontal: roles.chat.bubblePaddingHorizontal,
         paddingVertical: roles.chat.bubblePaddingVertical, maxWidth: roles.chat.bubbleMaxWidth,
       },
     );

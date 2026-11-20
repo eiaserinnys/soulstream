@@ -3,6 +3,7 @@ import { PlatformColor, Text, View, type AccessibilityRole, type ColorValue } fr
 import { PlatformPressable } from '@react-navigation/elements';
 import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface, useAdaptiveNativeGlass } from '../GlassSurface';
 import { useTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
@@ -38,7 +39,7 @@ export function RailCapsule({ children, testID, compact = false, direction = 'co
     alignItems: 'center' }}>
     <RailCapsuleItemContext.Provider value={{ compact, single, direction }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
-  return <GlassSurface role="chrome" testID={testID} colorScheme="adaptive" isInteractive cornerRadius={RAIL_CAPSULE_WIDTH / 2}
+  return <GlassSurface role="chrome" testID={testID} colorScheme="adaptive" isInteractive cornerRadius={capsuleRadius(RAIL_CAPSULE_WIDTH)}
     style={{ width: row ? length : RAIL_CAPSULE_WIDTH, height: row ? RAIL_CAPSULE_WIDTH : length }}>
     {content}
   </GlassSurface>;
@@ -71,9 +72,9 @@ export function RailCapsuleItem({ children, testID, label, onPress, selected, ba
     <View style={{ position: 'relative' }}>
       {typeof children === 'function' ? children(iconColor) : children}
       {count && count > 0 ? <Text testID={`${testID}-badge`} style={{ position: 'absolute', top: -t.spacing.xxs, right: -t.spacing.xxs,
-        ...t.foundation.typography.label, borderRadius: t.foundation.radius.round, backgroundColor: badgeBackgroundColor,
+        ...t.foundation.typography.label, borderRadius: t.foundation.radius.capsule, backgroundColor: badgeBackgroundColor,
         color: badgeTextColor, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' }}>{count}</Text>
-        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: dotColor }} /> : null}
+        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.capsule, backgroundColor: dotColor }} /> : null}
     </View>
   </PlatformPressable>;
 }

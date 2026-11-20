@@ -183,7 +183,7 @@ export function SessionCardView({
         android_ripple={{ color: t.colors.border }}
       >
       {decoration.showShimmer ? <StatusPulseShimmer testID="session-card-shimmer-layer"
-        borderRadius={t.radius.md} color={decoration.shimmerColor} style={decoration.shimmerStyle} /> : null}
+        borderRadius={t.radius.floor} color={decoration.shimmerColor} style={decoration.shimmerStyle} /> : null}
 
       {avatarView}
       <View style={styles.content}>

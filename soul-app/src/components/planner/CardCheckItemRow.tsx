@@ -121,7 +121,7 @@ export function CardCheckItemRow({
           testID={`card-check-item-${item.id}-shimmer`}
           cardWidth={rowWidth}
           color={t.colors.statusRunning}
-          borderRadius={t.foundation.radius.field}
+          borderRadius={t.radius.floor}
         />
       ) : null}
       <View style={styles.mainRow}>
@@ -243,7 +243,7 @@ function makeStyles(t: DesignTokens) {
     row: {
       position: 'relative',
       overflow: 'hidden',
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       marginBottom: t.uiSpacing.xxs,
       paddingVertical: t.uiSpacing.xs,
       paddingLeft: 0,
@@ -271,7 +271,7 @@ function makeStyles(t: DesignTokens) {
     linkContent: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, maxWidth: '100%' },
     imageEvidence: { width: 104, gap: t.uiSpacing.xxs },
     linkFrame: { alignSelf: 'flex-start' },
-    linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.round, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
+    linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.capsule, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
     linkText: { ...planner.typography.meta, color: t.colors.link, fontWeight: '600', flexShrink: 1 },
     footer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.xs },
     caveatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.xxs, flexShrink: 1 },
@@ -279,7 +279,7 @@ function makeStyles(t: DesignTokens) {
     caveat: { ...planner.typography.meta, color: t.colors.warningText, flexShrink: 1 },
     source: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1 },
     fixFrame: { marginLeft: 'auto', flexShrink: 0 },
-    fixSurface: { minHeight: t.hitTarget.min, paddingLeft: t.uiSpacing.sm, borderRadius: t.foundation.radius.chip, justifyContent: 'center' },
+    fixSurface: { minHeight: t.hitTarget.min, paddingLeft: t.uiSpacing.sm, borderRadius: t.radius.capsule, justifyContent: 'center' },
     fixText: { ...planner.typography.meta, color: t.colors.textSecondary, textDecorationLine: 'underline' },
     pending: { position: 'absolute', right: t.uiSpacing.sm, bottom: t.uiSpacing.xxs, ...planner.typography.meta, color: t.colors.textMuted },
   });

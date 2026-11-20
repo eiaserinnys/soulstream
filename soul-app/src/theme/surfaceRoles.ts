@@ -1,5 +1,5 @@
 import { StyleSheet, type ViewStyle } from 'react-native';
-import type { DesignTokens } from './tokens';
+import { concentricRadius, ROOT_RADIUS, type DesignTokens } from './tokens';
 
 export const SURFACE_ROLE_NAMES = [
   'canvas',
@@ -88,7 +88,7 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       nativeTintColor: semanticGlass.glassSoft.translucent,
       blurColor: semanticGlass.glassSoft.translucent,
       fallbackColor: semanticGlass.glassSoft.solid,
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: ROOT_RADIUS,
       blurIntensity: 74,
       blurBorderColor: semanticGlass.stroke,
       solidBorderColor: c.border,
@@ -99,7 +99,7 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       nativeTintColor: semanticGlass.glassCard.translucent,
       blurColor: semanticGlass.glassCard.translucent,
       fallbackColor: semanticGlass.glassCard.solid,
-      borderRadius: t.foundation.radius.card,
+      borderRadius: ROOT_RADIUS,
       blurIntensity: 62,
       blurBorderColor: semanticGlass.stroke,
       solidBorderColor: c.border,
@@ -110,7 +110,8 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       nativeTintColor: semanticGlass.glassDense.translucent,
       blurColor: semanticGlass.glassDense.translucent,
       fallbackColor: semanticGlass.glassDense.solid,
-      borderRadius: t.foundation.radius.field,
+      // 안쪽 표면은 감싸는 틀의 여백만큼 줄어든 동심값을 쓴다.
+      borderRadius: concentricRadius(t.spacing.md),
       blurIntensity: 48,
     }),
     modal: role({
@@ -120,7 +121,7 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       nativeTintColor: semanticGlass.glassSoft.translucent,
       blurColor: semanticGlass.glassSoft.translucent,
       fallbackColor: semanticGlass.glassSoft.solid,
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: ROOT_RADIUS,
       blurIntensity: 84,
       blurBorderColor: semanticGlass.stroke,
       solidBorderColor: c.border,

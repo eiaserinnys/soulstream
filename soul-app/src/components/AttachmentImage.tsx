@@ -99,8 +99,8 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   return <>
     <Pressable ref={defaultTriggerRef} onPress={() => onOpen ? onOpen(closeViewer) : setOpen(true)} accessibilityRole="button" accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => ({ minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, opacity: pressed ? 0.82 : 1 })}>
-      {unavailableMessage ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border,
-        alignItems: 'center', justifyContent: 'center' }}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{unavailableMessage}</Text></View> : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
+      {unavailableMessage ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border,
+        alignItems: 'center', justifyContent: 'center' }}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{unavailableMessage}</Text></View> : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border }}
         resizeMode="cover" accessible={false} />}
     </Pressable>
     {open ? <ImageViewerModal sources={sources} captions={captions} items={items} onSaveOriginal={onSaveOriginal}

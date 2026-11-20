@@ -139,13 +139,13 @@ export const DailyPlannerScreen = forwardRef<DailyPlannerScreenHandle, {
           <AutomaticRefreshSlot active={loading && !!data && !pullRefreshing} testID="daily-refresh-slot" indicatorTestID="daily-auto-progress" />
         </View>
         <View style={styles.dateActions}>
-        <GlassButton iconOnly borderRadius={t.foundation.radius.round}
+        <GlassButton iconOnly borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="이전 날짜"
           onPress={() => setDate(shiftDate(date, -1))}
         >
           <Text style={styles.dateButton}>‹</Text>
         </GlassButton>
-        <GlassButton iconOnly borderRadius={t.foundation.radius.round}
+        <GlassButton iconOnly borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="다음 날짜"
           onPress={() => setDate(shiftDate(date, 1))}
         >

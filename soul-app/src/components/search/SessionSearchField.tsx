@@ -95,7 +95,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     surface: {
       minHeight: t.foundation.minHeight.field,
-      borderRadius: t.radius.lg,
+      borderRadius: t.radius.floor,
       overflow: 'hidden',
     },
     field: {

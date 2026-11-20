@@ -7,6 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { cardImageSource } from '../../lib/card-image-source';
 import { scopedAttachmentUrl } from '../../lib/attachment-link-view';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
@@ -181,13 +182,13 @@ function makeStyles(t: DesignTokens) {
     imageEvidence: { alignItems: 'flex-start' },
     evidenceLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: t.uiSpacing.xs },
     linkFrame: { alignSelf: 'flex-start', maxWidth: '100%' },
-    linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.round,
+    linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.capsule,
       borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
     linkContent: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, maxWidth: '100%' },
     linkText: { ...type.meta, color: t.colors.link, fontWeight: '600', flexShrink: 1 },
     thread: { gap: t.uiSpacing.sm },
     turn: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.sm },
-    avatar: { width: t.avatarSize.message, height: t.avatarSize.message, borderRadius: t.avatarSize.message / 2, backgroundColor: t.colors.border },
+    avatar: { width: t.avatarSize.message, height: t.avatarSize.message, borderRadius: capsuleRadius(t.avatarSize.message), backgroundColor: t.colors.border },
     avatarFallback: { alignItems: 'center', justifyContent: 'center' },
     avatarFallbackText: { ...type.meta, color: t.colors.textMuted, fontWeight: '600' },
     turnText: { ...type.body, flex: 1, minWidth: 0, color: t.colors.textPrimary, paddingTop: (t.avatarSize.message - type.body.lineHeight) / 2 },

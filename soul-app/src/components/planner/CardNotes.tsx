@@ -89,7 +89,7 @@ function makeNoteStyles(t: DesignTokens) {
     recordRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.sm },
     content: { flex: 1, minWidth: 0, gap: t.uiSpacing.xxs },
     header: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm },
-    avatar: { width: t.avatarSize.message, height: t.avatarSize.message, borderRadius: t.foundation.radius.round },
+    avatar: { width: t.avatarSize.message, height: t.avatarSize.message, borderRadius: t.foundation.radius.capsule },
     avatarFallback: { backgroundColor: t.colors.border, alignItems: 'center', justifyContent: 'center' },
     avatarFallbackText: { color: t.colors.textMuted, fontSize: t.fontSize.rowTitle, fontWeight: '600' },
     name: { ...t.foundation.typography.meta, color: t.colors.textSecondary, fontWeight: '700', flexShrink: 1 },
@@ -100,5 +100,5 @@ function makeNoteStyles(t: DesignTokens) {
 
 function cardRecordFrame(t: DesignTokens) {
   return { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border,
-    borderRadius: t.foundation.radius.field, paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.md };
+    borderRadius: t.radius.floor, paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.md };
 }

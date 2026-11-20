@@ -12,7 +12,7 @@ export function ReviewSurfaces() {
   const [count, setCount] = useState(0);
   const label = { ...t.foundation.typography.body, color: t.colors.textPrimary };
   return <>
-    <ReviewSection title="실제 유리 표면 · 웹 대체 표현">
+    <ReviewSection testID="review-surfaces-glass" title="실제 유리 표면 · 웹 대체 표현">
       {(['glassSoft', 'glassDense', 'nativeSheet'] as const).map((role) => <GlassSurface
         key={role} role={role} testID={'review-surface-' + role} style={{ padding: t.cardLayout.padding }}>
         <Text style={label}>{role} 표면의 현재 표현입니다.</Text>

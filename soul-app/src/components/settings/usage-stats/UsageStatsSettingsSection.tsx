@@ -261,9 +261,9 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
       <View testID="usage-stats-controls" style={{ gap: t.spacing.md }}>
         <SettingsSegmentedControl id="usage-stats-period" value={period} options={PERIOD_OPTIONS} onChange={changePeriod} />
         <View testID="usage-stats-date-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-          {period !== 'all' ? <GlassButton iconOnly variant="plain" borderRadius={t.foundation.radius.round} accessibilityLabel="이전 기간" disabled={previousDisabled} onPress={() => movePeriod(-1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>‹</Text></GlassButton> : null}
+          {period !== 'all' ? <GlassButton iconOnly variant="plain" borderRadius={t.foundation.radius.capsule} accessibilityLabel="이전 기간" disabled={previousDisabled} onPress={() => movePeriod(-1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>‹</Text></GlassButton> : null}
           <Text testID="usage-stats-period-label" numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary, textAlign: 'center' }}>{periodLabel}</Text>
-          {period !== 'all' ? <GlassButton iconOnly variant="plain" borderRadius={t.foundation.radius.round} accessibilityLabel="다음 기간" disabled={nextDisabled} onPress={() => movePeriod(1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>›</Text></GlassButton> : null}
+          {period !== 'all' ? <GlassButton iconOnly variant="plain" borderRadius={t.foundation.radius.capsule} accessibilityLabel="다음 기간" disabled={nextDisabled} onPress={() => movePeriod(1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>›</Text></GlassButton> : null}
         </View>
         <SettingsOptionRow
           pickerMode="picker"

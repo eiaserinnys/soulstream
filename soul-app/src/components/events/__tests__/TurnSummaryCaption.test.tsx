@@ -8,6 +8,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   default: () => mockDimensions,
 }));
 
+import { FLOOR_RADIUS } from '../../../theme';
 import { TurnSummaryCaption } from '../TurnSummaryCaption';
 
 test.each([
@@ -35,8 +36,11 @@ test.each([
   );
   expect(bubbleStyle).toMatchObject({
     alignSelf: 'flex-start',
-    borderBottomLeftRadius: 4,
+    borderRadius: FLOOR_RADIUS,
   });
+  for (const corner of ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius']) {
+    expect(bubbleStyle).not.toHaveProperty(corner);
+  }
   expect(bubbleStyle.backgroundColor).toBeTruthy();
   expect(
     StyleSheet.flatten(

@@ -4,6 +4,7 @@ import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import {
   extractMessageCaller,
   pickFallbackChar,
@@ -249,7 +250,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
       avatar: {
         width: AVATAR,
         height: AVATAR,
-        borderRadius: AVATAR / 2,
+        borderRadius: capsuleRadius(AVATAR),
         backgroundColor: c.border,
         marginTop: t.spacing.xxs,
       },
@@ -266,8 +267,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
       bubble: {
         ...bubbleLayout,
         ...roles.glassDense.tokenStyle,
-        borderBottomLeftRadius: 4,
-      },
+              },
       tokenInfo: {
         marginTop: t.spacing.xs,
         color: c.textMuted,

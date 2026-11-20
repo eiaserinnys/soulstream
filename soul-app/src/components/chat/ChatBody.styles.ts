@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 import type { DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
+import { capsuleRadius } from '../../theme/tokens';
 
 export function getChatRowHorizontalInset(
   t: DesignTokens,
@@ -12,6 +13,10 @@ export function getChatRowHorizontalInset(
 }
 
 export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
+
+export function chatComposerRadius(t: DesignTokens, sessionRoles = createSessionVisualRoles(t)): number {
+  return capsuleRadius(sessionRoles.chat.composer.minHeight);
+}
 
 export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript' = 'default') {
   const c = t.colors;
@@ -52,7 +57,7 @@ export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscrip
     },
     composerBox: {
       minHeight: sessionRoles.chat.composer.minHeight,
-      borderRadius: t.radius.lg + 6,
+      borderRadius: chatComposerRadius(t, sessionRoles),
       paddingHorizontal: sessionRoles.chat.composer.edgePaddingHorizontal,
       paddingVertical: sessionRoles.chat.composer.edgePaddingVertical - StyleSheet.hairlineWidth,
       borderWidth: StyleSheet.hairlineWidth,
@@ -130,7 +135,7 @@ export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscrip
     composerSecondaryControl: {
       width: sessionRoles.chat.composer.controlVisualSize,
       height: sessionRoles.chat.composer.controlVisualSize,
-      borderRadius: sessionRoles.chat.composer.controlVisualSize / 2,
+      borderRadius: capsuleRadius(sessionRoles.chat.composer.controlVisualSize),
       backgroundColor: 'transparent',
     },
     composerControlDisabled: {
@@ -139,7 +144,7 @@ export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscrip
     stopBtn: {
       width: sessionRoles.chat.composer.controlVisualSize,
       height: sessionRoles.chat.composer.controlVisualSize,
-      borderRadius: sessionRoles.chat.composer.controlVisualSize / 2,
+      borderRadius: capsuleRadius(sessionRoles.chat.composer.controlVisualSize),
       backgroundColor: c.error,
       justifyContent: 'center',
       alignItems: 'center',
@@ -189,7 +194,7 @@ export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscrip
       height: t.controlHeight.chip,
       gap: t.spacing.xs,
       backgroundColor: c.surfaceMuted,
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.spacing.sm,
       maxWidth: '100%',
     },
@@ -227,7 +232,7 @@ export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscrip
     sendBtn: {
       width: sessionRoles.chat.composer.controlVisualSize,
       height: sessionRoles.chat.composer.controlVisualSize,
-      borderRadius: sessionRoles.chat.composer.controlVisualSize / 2,
+      borderRadius: capsuleRadius(sessionRoles.chat.composer.controlVisualSize),
       backgroundColor: c.accent,
       justifyContent: 'center',
       alignItems: 'center',

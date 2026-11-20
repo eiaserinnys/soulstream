@@ -12,6 +12,7 @@ import { actionFailureMessage } from '../../../../packages/soul-ui/src/lib/actio
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { getChatRowHorizontalInset } from './ChatBody.styles';
 import {
   approvalIdFromPayload,
@@ -147,7 +148,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     icon: {
       width: t.iconSize.action,
       height: t.iconSize.action,
-      borderRadius: t.radius.lg,
+      borderRadius: capsuleRadius(t.iconSize.action),
       textAlign: 'center',
       lineHeight: t.iconSize.action,
       fontSize: t.iconSize.standard,
@@ -176,7 +177,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     actionButton: {
       minWidth: 68,
       minHeight: t.hitTarget.min,
-      borderRadius: 6,
+      borderRadius: t.radius.capsule,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: t.spacing.md,
@@ -209,7 +210,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       marginTop: t.uiSpacing.sm,
       paddingHorizontal: t.uiSpacing.md,
       paddingVertical: t.uiSpacing.sm,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       color: t.colors.errorText,
       backgroundColor: t.colors.errorBg,
     },

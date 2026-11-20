@@ -109,7 +109,7 @@ export function plannerMarkdownStyle(t: DesignTokens, note = false) {
       color: textColor,
       fontFamily: 'Courier',
       padding: t.uiSpacing.sm,
-      borderRadius: t.radius.sm,
+      borderRadius: t.radius.floor,
       borderColor: c.accent,
       borderWidth: 0,
       marginTop: t.uiSpacing.sm,

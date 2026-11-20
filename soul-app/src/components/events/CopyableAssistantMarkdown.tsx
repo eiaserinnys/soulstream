@@ -308,7 +308,7 @@ export function CopyableCodeBlock({
         styles.codeFrame,
         {
           backgroundColor: markdownStyle?.codeBlock?.backgroundColor ?? t.colors.surfaceCode,
-          borderRadius: markdownStyle?.codeBlock?.borderRadius ?? t.radius.sm,
+          borderRadius: markdownStyle?.codeBlock?.borderRadius ?? t.radius.floor,
           marginTop: markdownStyle?.codeBlock?.marginTop,
           marginBottom: markdownStyle?.codeBlock?.marginBottom,
         },

@@ -1,7 +1,7 @@
 import { createPostItRoles } from '../postItRoles';
 import { createSessionVisualRoles } from '../sessionVisualRoles';
 import {
-  DARK_COLORS, DESIGN_RADIUS, DESIGN_SPACING, PHONE_CARD_LAYOUT,
+  DARK_COLORS, RADIUS_SCALE, DESIGN_SPACING, PHONE_CARD_LAYOUT,
   PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION, TABLET_CARD_LAYOUT,
   TABLET_CHAT_TYPOGRAPHY, TABLET_FOUNDATION, type DesignTokens,
 } from '../tokens';
@@ -12,7 +12,7 @@ test.each(['phone', 'tablet'] as const)('%s paper follows feed typography while 
   const tablet = device === 'tablet';
   const foundation = tablet ? TABLET_FOUNDATION : PHONE_FOUNDATION;
   const t = {
-    foundation, colors: DARK_COLORS, uiSpacing: DESIGN_SPACING, radius: DESIGN_RADIUS,
+    foundation, colors: DARK_COLORS, spacing: DESIGN_SPACING, uiSpacing: DESIGN_SPACING, radius: RADIUS_SCALE,
     cardLayout: tablet ? TABLET_CARD_LAYOUT : PHONE_CARD_LAYOUT,
     chatFontSize: tablet ? TABLET_CHAT_TYPOGRAPHY : PHONE_CHAT_TYPOGRAPHY,
     hitTarget: { min: foundation.hitTarget },

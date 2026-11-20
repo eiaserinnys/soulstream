@@ -41,7 +41,7 @@ export function makeSearchScreenStyles(t: DesignTokens) {
     selected: {
       borderWidth: 1,
       borderColor: t.colors.accent,
-      borderRadius: t.radius.lg,
+      borderRadius: t.radius.root,
     },
     navigationRow: {
       minHeight: t.hitTarget.min,

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, AppState, StyleSheet } from 'react-native';
 import { useTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import {
   isForegroundAppState,
   shouldRunStatusDotAnimation,
@@ -85,5 +86,5 @@ export function StatusDot({ status }: Props) {
 }
 
 const styles = StyleSheet.create({
-  dot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: STATUS_DOT_SIZE / 2 },
+  dot: { width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: capsuleRadius(STATUS_DOT_SIZE) },
 });

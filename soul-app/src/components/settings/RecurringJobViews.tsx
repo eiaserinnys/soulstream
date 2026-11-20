@@ -308,7 +308,7 @@ export function RecurringJobEditor({
     if (draft.agentId || draft.modelPreset) confirmSettingsDiscard(change, saveScreen); else change();
   };
   const Container = workspace ? View : ScrollView;
-  const previewStyle = { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted };
+  const previewStyle = { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.radius.floor, backgroundColor: t.colors.surfaceMuted };
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 편집할 수 있습니다." />;
   return <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
   <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { ref: editorScroll, contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>

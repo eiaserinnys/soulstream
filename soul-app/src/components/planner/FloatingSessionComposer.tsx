@@ -29,7 +29,7 @@ export function FloatingSessionComposer({ api, style, composerStyle, triggerStyl
     </View> : null}
     {Platform.OS === 'ios' && !expanded ? <View testID="home-session-composer-trigger-slot" pointerEvents="box-none" style={[{ alignItems: 'flex-end' }, triggerStyle]}>
         <GlassButton testID="home-session-composer-trigger" surfaceTestID="home-session-composer-trigger-surface"
-          accessibilityLabel="새 대화" variant="primary" borderRadius={t.foundation.radius.round}
+          accessibilityLabel="새 대화" variant="primary" borderRadius={t.foundation.radius.capsule}
           contentStyle={{ paddingHorizontal: t.uiSpacing.lg, gap: t.uiSpacing.xs }} onPress={() => { setOpened(true); setExpanded(true); }}>
           {({ contentColor }) => (<>
             <Ionicons name="add" size={t.iconSize.standard} color={contentColor} />

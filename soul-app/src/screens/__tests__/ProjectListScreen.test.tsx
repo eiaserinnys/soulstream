@@ -74,7 +74,7 @@ test('프로젝트 계층은 기본 접힘이고 disclosure로 부모 바로 아
     right: 20,
     left: 20,
     height: 64,
-    borderRadius: 18,
+    borderRadius: 24,
   });
   expect(glassFrame.bottom).toBeUndefined();
   expect(scrollFrame).toMatchObject({
@@ -83,7 +83,7 @@ test('프로젝트 계층은 기본 접힘이고 disclosure로 부모 바로 아
     right: 20,
     left: 20,
     height: 64,
-    borderRadius: 18,
+    borderRadius: 24,
     overflow: 'hidden',
   });
   expect(screen.getByText('🧪')).toBeTruthy();

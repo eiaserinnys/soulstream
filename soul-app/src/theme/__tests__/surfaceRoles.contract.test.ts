@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DesignTokens } from '../tokens';
-import { DARK_COLORS, LIGHT_COLORS } from '../tokens';
+import { DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
   createSurfaceRoles,
@@ -259,7 +259,7 @@ describe('surface role contract', () => {
     expect(screen.indexOf('<AppGlassCard')).toBeLessThan(screen.indexOf('<ScrollView'));
     expect(screen).toContain('onContentSizeChange');
     expect(screen).toContain('planner.pageInset');
-    expect(screen).toContain('t.foundation.radius.card');
+    expect(screen).toContain('t.foundation.radius.root');
     expect(screen).not.toContain('StyleSheet.absoluteFillObject');
     expect(read('components/planner/GroupedGlassSheet.tsx')).toContain(
       "if (surface === 'inherited')",
@@ -404,9 +404,10 @@ function tokens(mode: 'light' | 'dark'): DesignTokens {
   return {
     mode,
     colors: mode === 'light' ? LIGHT_COLORS : DARK_COLORS,
-    radius: { sm: 8, md: 12, lg: 16 },
+    spacing: DESIGN_SPACING,
+    radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
     foundation: {
-      radius: { chip: 8, field: 14, row: 16, card: 18, panel: 24, round: 999 },
+      radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
     },
   } as DesignTokens;
 }

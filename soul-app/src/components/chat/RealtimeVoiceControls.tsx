@@ -14,6 +14,7 @@ import {
   type RealtimeVoiceController,
 } from '../../services/realtimeVoice';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { capsuleRadius } from '../../theme/tokens';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 
 interface Props {
@@ -363,7 +364,7 @@ function makeStyles(t: DesignTokens) {
     iconButton: {
       width: t.foundation.hitTarget,
       height: t.foundation.hitTarget,
-      borderRadius: t.foundation.hitTarget / 2,
+      borderRadius: capsuleRadius(t.foundation.hitTarget),
       backgroundColor: t.colors.surface,
       borderWidth: 1,
       borderColor: t.colors.border,
@@ -376,7 +377,7 @@ function makeStyles(t: DesignTokens) {
     compactIconButton: {
       width: 40,
       height: 40,
-      borderRadius: 20,
+      borderRadius: capsuleRadius(t.foundation.iconFrame.standard),
       backgroundColor: t.colors.surface,
       borderWidth: 1,
       borderColor: t.colors.border,
@@ -386,7 +387,7 @@ function makeStyles(t: DesignTokens) {
     manuscriptCompactIconButton: {
       width: composer.controlVisualSize,
       height: composer.controlVisualSize,
-      borderRadius: composer.controlVisualSize / 2,
+      borderRadius: capsuleRadius(composer.controlVisualSize),
       backgroundColor: 'transparent',
       justifyContent: 'center',
       alignItems: 'center',
@@ -415,7 +416,7 @@ function makeStyles(t: DesignTokens) {
     },
     waveformBar: {
       width: 2,
-      borderRadius: 1,
+      borderRadius: t.radius.capsule,
       backgroundColor: t.colors.accentText,
       opacity: 0.9,
     },

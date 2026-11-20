@@ -26,7 +26,7 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
       height: t.iconSize.action,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: t.foundation.radius.round,
+      borderRadius: t.foundation.radius.capsule,
       backgroundColor: t.colors.accentTint,
     },
     titleIconGlyph: {
@@ -53,7 +53,7 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
     },
     questionPanel: {
       overflow: 'hidden',
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: t.colors.border,
       backgroundColor: t.colors.surfaceMuted,
@@ -126,10 +126,10 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
       borderColor: t.colors.textPlaceholder,
     },
     radioIndicator: {
-      borderRadius: t.foundation.radius.round,
+      borderRadius: t.foundation.radius.capsule,
     },
     checkboxIndicator: {
-      borderRadius: t.foundation.radius.chip,
+      borderRadius: t.radius.mark,
     },
     choiceIndicatorSelected: {
       borderColor: t.colors.accent,
@@ -138,7 +138,7 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
     radioDot: {
       width: t.uiSpacing.sm,
       height: t.uiSpacing.sm,
-      borderRadius: t.foundation.radius.round,
+      borderRadius: t.foundation.radius.capsule,
       backgroundColor: t.colors.accentText,
     },
     checkmark: {
@@ -163,7 +163,7 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
     previewViewport: {
       maxWidth: '100%',
       marginTop: t.uiSpacing.xs,
-      borderRadius: t.foundation.radius.chip,
+      borderRadius: t.radius.floor,
       backgroundColor: t.colors.surfaceCode,
     },
     previewContent: {
@@ -203,7 +203,7 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
       ...typography.meta,
       paddingHorizontal: t.uiSpacing.md,
       paddingVertical: t.uiSpacing.sm,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       color: t.colors.errorText,
       backgroundColor: t.colors.errorBg,
     },

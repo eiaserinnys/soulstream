@@ -114,7 +114,7 @@ exports[`운영 출력 버튼으로 원본 모달을 열고 닫으며 표면 렌
               },
               {
                 "alignItems": "center",
-                "borderRadius": 16,
+                "borderRadius": 999,
                 "height": 28,
                 "justifyContent": "center",
                 "width": 28,

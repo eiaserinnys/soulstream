@@ -284,7 +284,7 @@ describe('GlassButton interaction contract', () => {
       const buttonElement = (disabled = false) => (
         <GlassButton variant={variant} size={size} iconOnly disabled={disabled}
           testID="button" surfaceTestID="surface" onPress={onPress}
-          borderRadius={tokens.foundation.radius.round}
+          borderRadius={tokens.foundation.radius.capsule}
           frameStyle={{ opacity: 0.2, outlineStyle: 'dashed', outlineWidth: 3 }}
           style={{ opacity: 0.8 }}>
           <Text>닫기</Text>
@@ -306,7 +306,7 @@ describe('GlassButton interaction contract', () => {
         outlineStyle: 'solid', outlineWidth: 0,
       });
       expect(normalSurface).toMatchObject({
-        width: visualSize, height: visualSize, borderRadius: tokens.foundation.radius.round,
+        width: visualSize, height: visualSize, borderRadius: tokens.foundation.radius.capsule,
         alignItems: 'center', justifyContent: 'center', opacity: 0.8,
       });
       fireEvent(screen.getByTestId('button'), 'focus');
@@ -410,7 +410,7 @@ describe('GlassButton interaction contract', () => {
     expect(visual).toMatchObject({
       width: tokens.foundation.iconFrame.compact,
       height: tokens.foundation.iconFrame.compact,
-      borderRadius: tokens.foundation.radius.round,
+      borderRadius: tokens.foundation.radius.capsule,
       backgroundColor: 'transparent',
     });
     expect(visual.borderWidth).toBeUndefined();

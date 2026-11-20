@@ -218,7 +218,7 @@ function PoolClaudeRow({
                 <Text style={styles.accentButtonText}>계정 추가</Text>
               </>}
           </GlassButton> : null}
-          <GlassButton testID="claude-provider-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.round}
+          <GlassButton testID="claude-provider-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
             accessibilityLabel={expanded ? '계정 접기' : '계정 펼치기'} onPress={onToggle}>
             <DisclosureIcon expanded={expanded} />
           </GlassButton>
@@ -378,7 +378,7 @@ function LegacyClaudeRow({
           testID="claude-login-action"
           iconOnly
           size="compact"
-          borderRadius={t.foundation.radius.round}
+          borderRadius={t.foundation.radius.capsule}
           accessibilityLabel={authStatus?.has_token ? '재로그인' : '로그인'}
           onPress={handleRelogin}
           busy={loginLoading}
@@ -390,7 +390,7 @@ function LegacyClaudeRow({
           testID="claude-delete-action"
           iconOnly
           size="compact"
-          borderRadius={t.foundation.radius.round}
+          borderRadius={t.foundation.radius.capsule}
           accessibilityLabel="토큰 삭제"
           onPress={confirmDeleteToken}
         >
@@ -446,7 +446,7 @@ function makeStyles(t: DesignTokens) {
       ...t.foundation.typography.label,
       color: t.colors.link,
       backgroundColor: t.colors.accentTint,
-      borderRadius: t.foundation.radius.chip,
+      borderRadius: t.radius.capsule,
       paddingHorizontal: t.spacing.xs,
       paddingVertical: t.spacing.xxs,
       overflow: 'hidden',
@@ -461,7 +461,7 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.foundation.minHeight.field,
       backgroundColor: t.colors.surfaceCode,
       color: t.colors.textPrimary,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       borderWidth: 1,
       borderColor: t.colors.border,
       paddingHorizontal: t.spacing.md,

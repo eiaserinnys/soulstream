@@ -62,6 +62,7 @@ test.each([
   const tokens = {
     foundation: device === 'phone' ? PHONE_FOUNDATION : TABLET_FOUNDATION,
     chatFontSize: device === 'phone' ? PHONE_CHAT_TYPOGRAPHY : TABLET_CHAT_TYPOGRAPHY,
+    spacing: DESIGN_SPACING,
     uiSpacing: DESIGN_SPACING,
     colors: DARK_COLORS,
   } as DesignTokens;
@@ -75,7 +76,7 @@ test.each([
       minHeight: 24,
       paddingHorizontal: 8,
       paddingVertical: 0,
-      radius: 8,
+      radius: 999,
     },
   });
   expect(roles.typography.title).toMatchObject({ fontSize: 16, lineHeight: 22 });
@@ -93,7 +94,7 @@ test.each([
       phoneAssistantMaxWidth: '100%',
       phoneUserMaxWidth: '88%',
       thumbnailFrameSize: { width: 200, height: 200 },
-      radius: 10,
+      radius: 12,
       filenameGap: 6,
       gridGap: 12,
       metadata: { fontSize: 13, lineHeight: 18 },

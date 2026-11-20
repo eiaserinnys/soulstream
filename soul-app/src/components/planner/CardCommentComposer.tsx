@@ -131,7 +131,7 @@ function makeComposerStyles(t: ReturnType<typeof useTokens>) {
   target: {
     minHeight: t.hitTarget.min,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: t.foundation.radius.field,
+    borderRadius: t.radius.floor,
     paddingLeft: t.uiSpacing.sm,
     paddingRight: t.uiSpacing.xxs,
     flexDirection: 'row',

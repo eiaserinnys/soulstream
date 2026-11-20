@@ -1,4 +1,4 @@
-import type { DesignTokens } from './tokens';
+import { concentricRadius, type DesignTokens } from './tokens';
 import { LIGHT_COLORS } from './colors';
 import { CARD_COLORS, type CardColor } from '../../../packages/wire-schema/src/card_colors';
 
@@ -23,6 +23,8 @@ export function createPostItRoles(t: DesignTokens, variant: PostItVariant = 'ful
     title: { ...t.foundation.typography.cardTitle, color: POST_IT_COLORS.textPrimary },
     body: { ...t.foundation.typography.body, color: POST_IT_COLORS.textPrimary },
     label: { ...t.foundation.typography.meta, color: POST_IT_COLORS.textSecondary },
-    colors: POST_IT_COLORS, paper: CARD_COLORS[color].hex, radius: t.radius.sm,
+    colors: POST_IT_COLORS, paper: CARD_COLORS[color].hex,
+    // 보드 안쪽 여백만큼 줄어든 동심값(웹 --postit-scale과 같은 방향).
+    radius: concentricRadius(t.cardLayout.padding),
   };
 }

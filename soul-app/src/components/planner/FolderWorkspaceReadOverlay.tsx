@@ -245,7 +245,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
       testID="folder-workspace-step-back"
       iconOnly
       size="compact"
-      borderRadius={t.foundation.radius.round}
+      borderRadius={t.foundation.radius.capsule}
       accessibilityLabel="상세로 돌아가기"
       onPress={returnToDetail}
     >
@@ -490,7 +490,7 @@ function makeStyles(t: DesignTokens) {
       right: 0,
       top: 0,
       bottom: 0,
-      borderRadius: t.foundation.radius.panel,
+      borderRadius: t.foundation.radius.root,
       shadowColor: '#000',
       shadowOpacity: 0.28,
       shadowRadius: 18,

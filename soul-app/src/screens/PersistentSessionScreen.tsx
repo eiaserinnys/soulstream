@@ -490,7 +490,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         right: phone ? 0 : rightColumnOffset,
         width: phone ? '100%' : widths.tasks,
         backgroundColor: t.persistentSession.paper,
-        borderRadius: phone ? 0 : t.foundation.radius.card,
+        borderRadius: phone ? 0 : t.foundation.radius.root,
         borderWidth: 0, borderColor: t.persistentSession.line,
         paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
         paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone || duoTopBand ? 0 : bottomSafeAreaInset }}>

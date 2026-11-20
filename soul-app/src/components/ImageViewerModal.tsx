@@ -45,7 +45,7 @@ function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, ite
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: MODAL_BACKDROP_COLOR }}>
         <View style={{ alignItems: 'flex-end', padding: t.spacing.md }}>
-          <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round} accessibilityLabel="이미지 닫기" onPress={onClose}>
+          <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.capsule} accessibilityLabel="이미지 닫기" onPress={onClose}>
             <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>×</Text>
           </GlassButton>
         </View>

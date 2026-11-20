@@ -88,7 +88,7 @@ function ChatRefinedImageViewerContent({
               }}>{filename}</Text> : null}
               {size ? <Text style={{ ...attachment.metadata, color: attachment.textMuted }}>{size}</Text> : null}
             </View>
-            <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
+            <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.capsule}
               accessibilityLabel="첨부 미리보기 닫기" testID="chat-image-viewer-close" onPress={onClose}>
               <Ionicons name="close" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
             </GlassButton>

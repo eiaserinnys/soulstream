@@ -364,5 +364,6 @@ test.each(['phone', 'tabletPortrait'] as const)('%s 오늘 행은 세션 카드 
   expect(StyleSheet.flatten(screen.getByTestId('card-card-1-avatar').props.style).width).toBe(44);
   expect(StyleSheet.flatten(screen.getByText('카드 review').props.style).fontSize).toBe(makeSessionCardStyles(renderHook(() => useTokens()).result.current, true).name.fontSize);
   expect(StyleSheet.flatten(screen.getByTestId('card-card-1-완료-visual').props.style)).toMatchObject({ width: 44, height: 44, borderRadius: 999 });
-  expect(StyleSheet.flatten(screen.getByTestId('card-composer').props.style).borderRadius).toBe(16);
+  expect(StyleSheet.flatten(screen.getByTestId('card-composer').props.style).borderRadius)
+    .toBe(renderHook(() => useTokens()).result.current.radius.root);
 });

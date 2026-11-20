@@ -145,7 +145,7 @@ function makeStyles(t: DesignTokens) {
       minHeight: 24,
       justifyContent: 'center',
       paddingHorizontal: t.spacing.sm,
-      borderRadius: t.radius.lg,
+      borderRadius: t.radius.capsule,
       backgroundColor: t.colors.border,
     },
     badgeText: {

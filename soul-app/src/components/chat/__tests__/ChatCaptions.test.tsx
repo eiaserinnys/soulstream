@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
-import { DESIGN_AVATAR_SIZE, DESIGN_SPACING, FOUNDATION_RADIUS, TABLET_CHAT_TYPOGRAPHY, TABLET_SPACING } from '../../../theme';
+import { CAPSULE_RADIUS, DESIGN_AVATAR_SIZE, DESIGN_SPACING, TABLET_CHAT_TYPOGRAPHY, TABLET_SPACING } from '../../../theme';
 import { LIGHT_COLORS } from '../../../theme/colors';
 import { CollapsibleCaption, CollapsibleCaptionLine } from '../CollapsibleCaption';
 import { LabeledDivider } from '../LabeledDivider';
@@ -62,7 +62,7 @@ describe('CollapsibleCaption', () => {
     const button = screen.getByRole('button', { name: title });
     expect(button.props.accessibilityState).toEqual({ expanded: true });
     const titleRow = screen.UNSAFE_getAllByType(View).find((view) =>
-      StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
+      StyleSheet.flatten(view.props.style).borderRadius === CAPSULE_RADIUS);
     expect(titleRow).toBeTruthy();
     expect(StyleSheet.flatten(titleRow?.props.style)).toMatchObject({
       alignSelf: 'flex-start',
@@ -75,9 +75,9 @@ describe('CollapsibleCaption', () => {
     });
     fireEvent(button, 'pressIn');
     const pressedTitleRow = screen.UNSAFE_getAllByType(View).find((view) =>
-      StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
+      StyleSheet.flatten(view.props.style).borderRadius === CAPSULE_RADIUS);
     expect(StyleSheet.flatten(pressedTitleRow?.props.style)).toMatchObject({
-      borderRadius: FOUNDATION_RADIUS.chip,
+      borderRadius: CAPSULE_RADIUS,
       backgroundColor: LIGHT_COLORS.surfaceMuted,
     });
     expect(StyleSheet.flatten(titleText.props.style)).toMatchObject({
@@ -126,7 +126,7 @@ describe('CollapsibleCaption', () => {
     );
     const button = screen.getByRole('button', { name: 'Jev 후보 1' });
     const titleRow = screen.UNSAFE_getAllByType(View).find((view) =>
-      StyleSheet.flatten(view.props.style).borderRadius === FOUNDATION_RADIUS.chip);
+      StyleSheet.flatten(view.props.style).borderRadius === CAPSULE_RADIUS);
     const contentLine = screen.getByText('아주 긴 한 줄 후보 요약');
     expect(button.props.accessibilityState).toEqual({ expanded: true });
     expect(StyleSheet.flatten(titleRow?.props.style)).toMatchObject({

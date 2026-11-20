@@ -3,7 +3,8 @@ import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardNow, CardNowHistoryEntry } from '../../api/cardTypes';
 import { formatCardTime } from '../../lib/card-check-item-summary';
-import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { createPlannerVisualRoles, useTokens, type DesignTokens, concentricRadius,
+} from '../../theme';
 import { AppGlassCard } from '../AppGlassCard';
 import { GlassButton } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
@@ -76,7 +77,7 @@ export function CardNowPanel({
         testID="card-now-panel"
         onLayout={onLayout}
         role={surfaceRole}
-        cornerRadius={t.foundation.radius.row}
+        cornerRadius={concentricRadius(t.uiSpacing.lg)}
         style={[styles.panel, !isLatest && styles.pastPanel, pinnedHeight === null ? undefined : { height: pinnedHeight }]}
       >
         <View style={styles.headerRow}>
@@ -93,7 +94,7 @@ export function CardNowPanel({
             <>
               {completePrompt || entry.turn !== 'user' || !entry.ask ? <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text> : null}
               <Text numberOfLines={3} style={styles.turnText}>{bandText}</Text>
-              {completePrompt ? <GlassButton testID="card-now-complete" size="compact" variant="primary" borderRadius={t.foundation.radius.round} disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
+              {completePrompt ? <GlassButton testID="card-now-complete" size="compact" variant="primary" borderRadius={t.foundation.radius.capsule} disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
                 {({ contentColor }) => (<Text style={[styles.completeText, { color: contentColor }]}>완료</Text>)}
               </GlassButton> : null}
             </>
@@ -115,7 +116,7 @@ export function CardNowPanel({
           <View pointerEvents="box-none" style={styles.arrows}>
             <GlassButton
               testID="card-now-previous-arrow"
-              iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
               accessibilityLabel="이전 상황" accessibilityState={{ disabled: index === 0 }}
               disabled={index === 0} frameStyle={styles.arrowFrameLeft}
               onPress={() => moveTo(Math.max(0, index - 1))}
@@ -124,7 +125,7 @@ export function CardNowPanel({
             </GlassButton>
             <GlassButton
               testID="card-now-next-arrow"
-              iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              iconOnly size="compact" borderRadius={t.foundation.radius.capsule}
               accessibilityLabel={isLatest ? '최신 상황' : '다음 상황'}
               accessibilityState={{ disabled: isLatest }} disabled={isLatest}
               frameStyle={styles.arrowFrameRight}
@@ -169,7 +170,7 @@ function makeStyles(t: DesignTokens) {
       top: -(t.hitTarget.min - planner.typography.meta.lineHeight) / 2 },
     dimText: { color: t.colors.textMuted },
     nowText: { ...planner.typography.cardTitle, color: t.colors.textPrimary },
-    turnBand: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, borderRadius: t.foundation.radius.field },
+    turnBand: { minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, borderRadius: t.radius.floor },
     agentTurn: { backgroundColor: withAlphaColor(t.colors.statusRunning, 0.12) },
     userTurn: { backgroundColor: withAlphaColor(t.colors.warning, 0.12) },
     outsideTurn: { backgroundColor: withAlphaColor(t.colors.statusIdle, 0.12) },

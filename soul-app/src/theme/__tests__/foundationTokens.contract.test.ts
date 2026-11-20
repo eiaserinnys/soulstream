@@ -7,9 +7,13 @@ import {
   PHONE_UI_TYPOGRAPHY,
   TABLET_UI_TYPOGRAPHY,
   TABLET_SHELL_LAYOUT,
-  DESIGN_RADIUS,
-  CONCENTRIC_RADIUS_INSET,
-  FOUNDATION_RADIUS,
+  ROOT_RADIUS,
+  FLOOR_RADIUS,
+  MARK_RADIUS,
+  CAPSULE_RADIUS,
+  RADIUS_SCALE,
+  concentricRadius,
+  capsuleRadius,
   FOUNDATION_TYPOGRAPHY,
 } from '../tokens';
 
@@ -76,25 +80,22 @@ describe('iOS UI v0.1 foundation token contract', () => {
     });
     expect(PHONE_FOUNDATION.typography).toBe(FOUNDATION_TYPOGRAPHY);
     expect(TABLET_FOUNDATION.typography).toBe(FOUNDATION_TYPOGRAPHY);
-    expect(FOUNDATION_RADIUS).toEqual({
-      chip: 8,
-      field: 14,
-      row: 16,
-      card: 18,
-      panel: 24,
-      round: 999,
-    });
-    expect(PHONE_FOUNDATION.radius).toBe(FOUNDATION_RADIUS);
-    expect(TABLET_FOUNDATION.radius).toBe(FOUNDATION_RADIUS);
-    expect(DESIGN_RADIUS).toEqual({ sm: 8, md: 12, lg: 16 });
+    expect(RADIUS_SCALE).toEqual({ root: 24, floor: 12, mark: 4, capsule: 999 });
+    expect(PHONE_FOUNDATION.radius).toBe(RADIUS_SCALE);
+    expect(TABLET_FOUNDATION.radius).toBe(RADIUS_SCALE);
   });
 
-  test('nested surface radii are derived from concentric inset steps', () => {
-    expect(FOUNDATION_RADIUS.panel - CONCENTRIC_RADIUS_INSET.panelToCard)
-      .toBe(FOUNDATION_RADIUS.card);
-    expect(FOUNDATION_RADIUS.card - CONCENTRIC_RADIUS_INSET.cardToField)
-      .toBe(FOUNDATION_RADIUS.field);
-    expect(FOUNDATION_RADIUS.row - CONCENTRIC_RADIUS_INSET.rowToChip)
-      .toBe(FOUNDATION_RADIUS.chip);
+  test('radii derive from the single root; nested surfaces stay concentric', () => {
+    expect(ROOT_RADIUS).toBe(24);
+    expect(FLOOR_RADIUS).toBe(ROOT_RADIUS / 2);
+    expect(MARK_RADIUS).toBe(ROOT_RADIUS / 6);
+    expect(CAPSULE_RADIUS).toBeGreaterThanOrEqual(999);
+    expect(concentricRadius(0)).toBe(ROOT_RADIUS);
+    expect(concentricRadius(4)).toBe(20);
+    expect(concentricRadius(8)).toBe(16);
+    expect(concentricRadius(12)).toBe(FLOOR_RADIUS);
+    expect(concentricRadius(24)).toBe(FLOOR_RADIUS);
+    expect(capsuleRadius(56)).toBe(28);
+    expect(capsuleRadius(20)).toBe(10);
   });
 });

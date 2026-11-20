@@ -231,7 +231,7 @@ function makeStyles(t: DesignTokens) {
     failureText: { color: t.colors.textSecondary, ...t.foundation.typography.meta },
     primaryButton: {
       minHeight: t.foundation.minHeight.field,
-      borderRadius: t.foundation.radius.field,
+      borderRadius: t.radius.floor,
       backgroundColor: t.colors.accent,
       alignItems: 'center',
       justifyContent: 'center',

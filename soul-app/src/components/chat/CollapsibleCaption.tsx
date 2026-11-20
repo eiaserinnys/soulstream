@@ -247,7 +247,7 @@ function makeStyles(
       paddingRight: alignTrailingEdge ? 0 : t.uiSpacing.sm,
       marginLeft: endAligned ? 0 : -t.uiSpacing.sm,
       marginRight: endAligned && !alignTrailingEdge ? -t.uiSpacing.sm : 0,
-      borderRadius: t.foundation.radius.chip,
+      borderRadius: t.radius.capsule,
     },
     titlePressed: {
       backgroundColor: t.colors.surfaceMuted,

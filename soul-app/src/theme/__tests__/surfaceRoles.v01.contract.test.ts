@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DesignTokens } from '../tokens';
-import { DARK_COLORS, LIGHT_COLORS } from '../tokens';
+import { DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
   createSurfaceRoles,
@@ -96,9 +96,10 @@ function tokens(mode: 'light' | 'dark'): DesignTokens {
   return {
     mode,
     colors: mode === 'light' ? LIGHT_COLORS : DARK_COLORS,
-    radius: { sm: 8, md: 12, lg: 16 },
+    spacing: DESIGN_SPACING,
+    radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
     foundation: {
-      radius: { chip: 8, field: 14, row: 16, card: 18, panel: 24, round: 999 },
+      radius: { root: 24, floor: 12, mark: 4, capsule: 999 },
     },
   } as DesignTokens;
 }

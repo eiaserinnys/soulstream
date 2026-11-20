@@ -136,7 +136,7 @@ export function UsageStackedBars({
           const selected = selectedBucket === bucket.id;
           const label = (
             <>
-              <View style={{ width: '80%', height: chartHeight, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: t.radius.sm, backgroundColor: t.colors.surfaceMuted }}>
+              <View style={{ width: '80%', height: chartHeight, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: t.radius.capsule, backgroundColor: t.colors.surfaceMuted }}>
                 {hasBar ? bucket.segments.map(segment => typeof segment.value === 'number' && segment.value > 0
                   ? <View key={segment.id} accessibilityElementsHidden importantForAccessibility="no" style={{ height: `${(segment.value / maximum) * 100}%`, backgroundColor: segment.color }} />
                   : null) : null}

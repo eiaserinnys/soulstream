@@ -39,7 +39,7 @@ export const FolderCards = forwardRef<FolderCardsHandle, {
       <View style={{ flexGrow: 1 }}><PlannerSectionHeader testID="planner-section-header-cards" title="카드"/></View>
       {!duo ? <><CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted}
         completedCount={data?.cards.filter((card) => card.status === 'done').length ?? 0} onChange={cardDisplay.onChange} />
-      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton></> : null}
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.capsule} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton></> : null}
     </View>
     {adding ? <CardComposer key={folderId} api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
     {loading && !data ? <FrameLoading testID="folder-cards-loading" inline /> : <FolderCardList api={api} cards={data?.cards ?? []} includeCompleted={false} onOpen={setSelected}/>}

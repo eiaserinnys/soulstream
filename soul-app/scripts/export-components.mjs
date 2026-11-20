@@ -13,6 +13,8 @@ const cli = path.join(appRoot, 'node_modules/expo/bin/cli');
 execFileSync(process.execPath, [cli, 'export', '--platform', 'web',
   '--output-dir', output, '--max-workers', '2'], {
   cwd: reviewRoot, stdio: 'inherit',
+  // 격리 세션에서는 홈이 읽기 전용이라 Expo 텔레메트리가 state.json을 쓰다 실패한다.
+  env: { ...process.env, EXPO_NO_TELEMETRY: '1' },
 });
 if (!existsSync(path.join(output, 'index.html'))) throw new Error('검수 번들 index.html이 없습니다.');
 console.log('앱 컴포넌트 export:', output);

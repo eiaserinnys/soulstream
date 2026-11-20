@@ -67,7 +67,7 @@ function makeStyles(t: DesignTokens) {
     },
     surface: {
       overflow: 'hidden',
-      borderRadius: t.foundation.radius.card,
+      borderRadius: t.foundation.radius.root,
     },
     flattenedSurface: {
       backgroundColor: t.colors.surfaceMuted,
