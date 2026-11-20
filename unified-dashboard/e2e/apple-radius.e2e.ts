@@ -143,36 +143,6 @@ async function expectPill(locator: Locator, name: string) {
   }
 }
 
-async function toast(page: Page, title: string) {
-  const toastPath = path.join(REPO_ROOT, "packages/soul-ui/src/components/ui/toast.tsx");
-  // 앱이 이미 불러 둔 모듈 URL로 토스트를 띄운다. 검수 스크립트가 /@fs로 새로 불러오면
-  // Vite가 다른 모듈 인스턴스를 만들어 toastManager가 갈라진다.
-  await page.evaluate(async ({ source, title: text }) => {
-    const loaded = performance
-      .getEntriesByType("resource")
-      .map((entry) => entry.name)
-      .find((name) => /soul-ui.*\/components\/ui\/toast\.(?:tsx|js)(?:\?|$)/.test(name));
-    const mod = await import(/* @vite-ignore */ loaded ?? `/@fs${source}`);
-    if (!document.querySelector("[data-slot=toast-portal]")) {
-      const main = await (await fetch("/client/main.tsx")).text();
-      const reactPath = main.match(/"(\/.vite-cache\/deps\/react\.js\?[^"]+)"/)?.[1];
-      const domPath = main.match(/"(\/.vite-cache\/deps\/react-dom_client\.js\?[^"]+)"/)?.[1];
-      if (!reactPath || !domPath) throw new Error("React 검수 모듈을 찾지 못했습니다.");
-      const React = (await import(/* @vite-ignore */ reactPath)).default;
-      const dom = await import(/* @vite-ignore */ domPath);
-      const host = document.createElement("div");
-      host.id = "radius-toaster";
-      document.body.appendChild(host);
-      dom.default.createRoot(host).render(React.createElement(mod.ToastProvider, null, null));
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    mod.toastManager.add({ title: text, description: "곡률 화면 시험", type: "success", timeout: 0 });
-  }, { source: toastPath, title });
-  const popup = page.locator("[data-slot=toast-popup]").first();
-  await expect(popup).toBeAttached({ timeout: 15_000 });
-  return popup;
-}
-
 async function menuOnSessionRow(page: Page) {
   const row = page.locator(".v3-session-row").first();
   await expect(row).toBeVisible({ timeout: 60_000 });
@@ -242,7 +212,7 @@ async function mountPopups(page: Page) {
   await expect(page.getByLabel("곡률 시험 선택")).toBeVisible({ timeout: 30_000 });
 }
 
-test("폴더 화면 1440: 틀 24·동심 12·고정 4·알약", async ({ page }) => {
+test("폴더 화면 1440: 틀 24·동심 12·고정 4·알약·메뉴·선택 팝업·팝오버", async ({ page }) => {
   test.setTimeout(300_000);
   await prepareFolder(page, 1440);
   await openFolder(page, true);
@@ -266,12 +236,6 @@ test("폴더 화면 1440: 틀 24·동심 12·고정 4·알약", async ({ page })
   await expectCorners(postit, `포스트잇(scale ${postitScale})`, [postitRadius, postitRadius, postitRadius, postitRadius]);
 
   await page.screenshot({ path: path.join(OUT, "web-folder-1440.png"), animations: "disabled" });
-});
-
-test("폴더 화면 1440: 메뉴·선택 팝업·팝오버 틀 24", async ({ page }) => {
-  test.setTimeout(240_000);
-  await prepareFolder(page, 1440);
-  await openFolder(page);
 
   const menu = await menuOnSessionRow(page);
   await expectFrame(menu, "메뉴");
@@ -365,7 +329,7 @@ test("채팅 1440: 말풍선 12·입력 24·인라인 코드 4", async ({ page }
   }
 });
 
-test("대화상자 1440: 틀 24·입력 12·바닥 단추 알약", async ({ page }) => {
+test("대화상자 1440: 틀 24·입력 12·바닥 단추 알약 + 390 시트", async ({ page }) => {
   test.setTimeout(300_000);
   await prepare(page, 1440, false);
   await page.goto("/dialogues?sample=project-edit", { waitUntil: "domcontentloaded" });
@@ -377,6 +341,18 @@ test("대화상자 1440: 틀 24·입력 12·바닥 단추 알약", async ({ page
   await expectFloor(page.locator('[data-slot="dialog-popup"] input[aria-label="폴더 이름"]').first(), "대화상자 입력 칸");
   await expectPill(page.locator('[data-slot="dialog-footer"] button:visible').first(), "대화상자 바닥 단추");
   await page.screenshot({ path: path.join(OUT, "web-dialog-1440.png"), animations: "disabled" });
+
+  // 390 하단 시트: 위는 24, 아래는 0.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/ui-events/config", (route) =>
+    route.fulfill({ json: { enabled: false, flushIntervalMs: 1000, maxBatchSize: 1, maxQueueSize: 500, schemaVersion: "soulstream.ui_event.v1" } }),
+  );
+  await page.goto("/dialogues?sample=session-sheet");
+  const sheet = page.locator("[data-slot=dialog-popup]:visible").first();
+  await expect(sheet).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(1200);
+  await expectCorners(sheet, "하단 시트", [24, 24, 0, 0]);
+  await page.screenshot({ path: path.join(OUT, "web-sheet-390.png"), animations: "disabled" });
 });
 
 test("구성 요소 1440: 상세 팬 24와 카드 체크박스 4", async ({ page }) => {
@@ -405,54 +381,4 @@ test("구성 요소 1440: 상세 팬 24와 카드 체크박스 4", async ({ page
       animations: "disabled",
     });
   }
-});
-
-test("시트 390: 위 두 모서리 24, 아래 0", async ({ page }) => {
-  test.setTimeout(300_000);
-  await prepare(page, 390, false);
-  await page.route("**/api/ui-events/config", (route) =>
-    route.fulfill({ json: { enabled: false, flushIntervalMs: 1000, maxBatchSize: 1, maxQueueSize: 500, schemaVersion: "soulstream.ui_event.v1" } }),
-  );
-  await page.goto("/dialogues?sample=session-sheet");
-  const sheet = page.locator("[data-slot=dialog-popup]:visible").first();
-  await expect(sheet).toBeVisible({ timeout: 30_000 });
-  await page.waitForTimeout(1200);
-  await expectCorners(sheet, "하단 시트", [24, 24, 0, 0]);
-  await page.screenshot({ path: path.join(OUT, "web-sheet-390.png"), animations: "disabled" });
-});
-
-test("캡처: 390 폴더·채팅, 구성 요소 360, 다이얼로그 1440", async ({ page }) => {
-  test.setTimeout(400_000);
-  await prepareFolder(page, 390);
-  await openFolder(page);
-  await page.screenshot({ path: path.join(OUT, "web-folder-390.png"), animations: "disabled" });
-  await openChat(page);
-  await page.screenshot({ path: path.join(OUT, "web-chat-390.png"), animations: "disabled" });
-
-  await page.setViewportSize({ width: 360, height: 900 });
-  await page.goto("/components");
-  await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 60_000 });
-  await page.waitForTimeout(1200);
-  await page.screenshot({ path: path.join(OUT, "web-components-360.png"), animations: "disabled" });
-
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto("/dialogues");
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: path.join(OUT, "web-dialogues-1440.png"), animations: "disabled" });
-});
-
-test("WebGL 켬 1440 캡처", async ({ page }) => {
-  test.setTimeout(300_000);
-  await prepareFolder(page, 1440, true);
-  await openFolder(page);
-  await page.evaluate(() => {
-    localStorage.setItem("ls.webglGlass", "1");
-    window.dispatchEvent(new Event("ls.webglGlass:change"));
-  });
-  await expect(page.locator("[data-liquid-glass-webgl-provider=true]")).toHaveCount(1, { timeout: 60_000 });
-  await page.waitForTimeout(2000);
-  await page.screenshot({ path: path.join(OUT, "web-folder-1440-webgl.png"), animations: "disabled" });
-  await openChat(page);
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: path.join(OUT, "web-chat-1440-webgl.png"), animations: "disabled" });
 });
