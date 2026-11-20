@@ -74,6 +74,11 @@ describe("selectBestCandidate local-first ordering under the 98% cap", () => {
   it("treats a candidate without a source field as local", () => {
     const { source: _omitted, ...withoutSource } = local("legacy-local");
     expect(pick([central("central-a"), withoutSource])).toBe("legacy-local");
+    // 중앙 affinity 예외에서도 칸 없는 ok 후보를 로컬로 센다.
+    expect(pick(
+      [central("central-a"), withoutSource],
+      { boundAccountId: "central-a", boundTurnId: "turn-1", turnId: "turn-2" },
+    )).toBe("legacy-local");
   });
 
   it("keeps ok before idle: an unmeasured local idle account loses to a central ok account", () => {
