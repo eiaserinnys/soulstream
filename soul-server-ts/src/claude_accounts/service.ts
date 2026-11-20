@@ -392,6 +392,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
           stale: obs.stale,
           usage: obs.usage,
           blocks: blocks[acc.id],
+          source: "local",
         };
       });
 
@@ -412,6 +413,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         stale: centralAccount.usage_raw === null,
         usage: centralAccountUsage(centralAccount),
         blocks: blocks[centralAccount.id],
+        source: "central",
       });
     }
 

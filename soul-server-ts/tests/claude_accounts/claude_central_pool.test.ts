@@ -195,6 +195,28 @@ describe("Claude central account pool snapshot", () => {
     expect(restoredLocal).not.toHaveProperty("source");
   });
 
+  it("selects a measured local account ahead of several central accounts", async () => {
+    const svc = createService();
+    await registerLocal(svc, LOCAL_ID, "local-token");
+    svc.applyCentralPoolSync(syncPayload(1, [
+      centralAccount({ id: CENTRAL_ID, priority: 0 }),
+      centralAccount({ id: OTHER_CENTRAL_ID, priority: 0, access_token: "central-token-2" }),
+    ]));
+    // 로컬 계정의 사용량을 한 번 재어 ok로 만든다. 로컬 priority는 null로 남는다.
+    await svc.getAccountList({ forceRefresh: true });
+
+    const selection = await svc.select(selectInput("session-local-first"));
+    expect(selection).toMatchObject({ account_id: LOCAL_ID });
+    expect(selection).not.toHaveProperty("source");
+
+    // 턴 도중 한도로 로컬을 뺀 같은 턴 다시 고르기는 중앙으로 넘어간다.
+    const fallback = await svc.select({
+      ...selectInput("session-local-first"),
+      exclude_ids: [LOCAL_ID],
+    });
+    expect(fallback).toMatchObject({ account_id: CENTRAL_ID, source: "central" });
+  });
+
   it("excludes a failed central token for ten minutes or until a newer token arrives", async () => {
     const svc = createService();
     svc.applyCentralPoolSync(syncPayload(1, [centralAccount()]));
