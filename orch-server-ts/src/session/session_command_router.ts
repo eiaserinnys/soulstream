@@ -122,6 +122,28 @@ export class SessionRouteNodeUnavailableError extends SessionCommandRouteError {
   }
 }
 
+export function sessionCommandRouteErrorResponse(
+  error: SessionCommandRouteError,
+): { status: number; body: Record<string, unknown> } {
+  if (error.code === "SESSION_OWNER_MISSING") {
+    return { status: 404, body: {
+      error: {
+        code: error.code,
+        message: error.message,
+        agentSessionId: error.agentSessionId,
+      },
+    } };
+  }
+  return { status: 503, body: {
+    error: {
+      code: error.code,
+      message: error.message,
+      agentSessionId: error.agentSessionId,
+      nodeId: error.nodeId,
+    },
+  } };
+}
+
 export class SessionCommandRouter {
   private readonly registry: InMemoryNodeRegistry;
   private readonly findSessionOwnerNodeId: SessionOwnerNodeIdLookup | undefined;

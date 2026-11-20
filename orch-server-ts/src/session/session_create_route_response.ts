@@ -1,6 +1,6 @@
 import { mapNodeCommandError } from "../http/api_errors.js";
 import { ModelPresetAvailabilityError } from "../model/model_preset_availability.js";
-import { SessionCommandRouteError } from "./session_command_router.js";
+import { SessionCommandRouteError, sessionCommandRouteErrorResponse } from "./session_command_router.js";
 import { SessionCreateLifecycleError } from "./session_create_lifecycle.js";
 import { SessionCreateNodeSelectionError } from "./session_create_node_selector.js";
 import { CREATE_ACK_ERROR_HTTP_STATUS } from "./session_command_routes.js";
@@ -53,23 +53,7 @@ export function sendMappedError(error: unknown): SessionCreateRouteResponse {
     } };
   }
   if (error instanceof SessionCommandRouteError) {
-    if (error.code === "SESSION_OWNER_MISSING") {
-      return { status: 404, body: {
-        error: {
-          code: error.code,
-          message: error.message,
-          agentSessionId: error.agentSessionId,
-        },
-      } };
-    }
-    return { status: 503, body: {
-      error: {
-        code: error.code,
-        message: error.message,
-        agentSessionId: error.agentSessionId,
-        nodeId: error.nodeId,
-      },
-    } };
+    return sessionCommandRouteErrorResponse(error);
   }
 
   const nodeCommandError = mapNodeCommandError(error);

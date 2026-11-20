@@ -6,6 +6,7 @@ import {
 } from "../node/pending_commands.js";
 import {
   SessionCommandRouteError,
+  sessionCommandRouteErrorResponse,
   type SessionCommandRouter,
 } from "./session_command_router.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
@@ -93,23 +94,8 @@ function sendMappedBackgroundScheduleError(
   }
 
   if (error instanceof SessionCommandRouteError) {
-    if (error.code === "SESSION_OWNER_MISSING") {
-      return reply.code(404).send({
-        error: {
-          code: error.code,
-          message: error.message,
-          agentSessionId: error.agentSessionId,
-        },
-      });
-    }
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        agentSessionId: error.agentSessionId,
-        nodeId: error.nodeId,
-      },
-    });
+    const response = sessionCommandRouteErrorResponse(error);
+    return reply.code(response.status).send(response.body);
   }
 
   if (nodeCommandError !== undefined) {

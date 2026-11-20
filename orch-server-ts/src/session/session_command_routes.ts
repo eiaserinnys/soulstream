@@ -25,6 +25,7 @@ import {
 import {
   SessionCommandRouteError,
   SessionCommandRouter,
+  sessionCommandRouteErrorResponse,
   type SessionOwnerNodeIdLookup,
 } from "./session_command_router.js";
 import {
@@ -692,23 +693,8 @@ function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
     });
   }
   if (error instanceof SessionCommandRouteError) {
-    if (error.code === "SESSION_OWNER_MISSING") {
-      return reply.code(404).send({
-        error: {
-          code: error.code,
-          message: error.message,
-          agentSessionId: error.agentSessionId,
-        },
-      });
-    }
-    return reply.code(503).send({
-      error: {
-        code: error.code,
-        message: error.message,
-        agentSessionId: error.agentSessionId,
-        nodeId: error.nodeId,
-      },
-    });
+    const response = sessionCommandRouteErrorResponse(error);
+    return reply.code(response.status).send(response.body);
   }
 
   const nodeCommandError = mapNodeCommandError(error);

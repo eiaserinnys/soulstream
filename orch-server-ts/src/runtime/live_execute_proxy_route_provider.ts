@@ -28,6 +28,7 @@ import {
 import { apiErrorBody, mapNodeCommandError } from "../http/api_errors.js";
 import {
   SessionCommandRouteError,
+  sessionCommandRouteErrorResponse,
   type SessionCommandRouter,
 } from "../session/session_command_router.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
@@ -607,17 +608,8 @@ function mapCommandError(error: unknown, ackErrorStatus: number): ExecuteProxyRo
     return new ExecuteProxyRouteError(error.statusCode, error.message);
   }
   if (error instanceof SessionCommandRouteError) {
-    return new ExecuteProxyRouteError(
-      error.code === "SESSION_OWNER_MISSING" ? 404 : 503,
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          agentSessionId: error.agentSessionId,
-          nodeId: error.nodeId,
-        },
-      },
-    );
+    const response = sessionCommandRouteErrorResponse(error);
+    return new ExecuteProxyRouteError(response.status, response.body);
   }
   const nodeCommandError = mapNodeCommandError(error);
   if (nodeCommandError?.kind === "rejected") {
