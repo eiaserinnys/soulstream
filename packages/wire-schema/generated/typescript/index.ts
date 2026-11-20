@@ -2515,6 +2515,8 @@ export interface Intervene {
    * Opaque attempt token fencing one delivery attempt.
    */
   delivery_attempt_token?: string;
+  rate_limit_type?: string;
+  resets_at?: string;
   [k: string]: unknown;
 }
 export interface EnsureSessionRunning {

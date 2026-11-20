@@ -1,3 +1,5 @@
+import type { Intervene } from "../generated/typescript/index.js";
+
 export const DELIVERY_INTENTS = [
   "human_live_steer",
   "durable_next_turn",
@@ -6,6 +8,22 @@ export const DELIVERY_INTENTS = [
 ] as const;
 
 export type DeliveryIntent = (typeof DELIVERY_INTENTS)[number];
+
+export type DeliveryMetadataWireFields = Pick<
+  Intervene,
+  | "delivery_id"
+  | "delivery_intent"
+  | "source"
+  | "completion_id"
+  | "relation_key"
+  | "producer_terminal_revision"
+  | "parent_delivery_id"
+  | "caller_turn_id"
+  | "created_at"
+  | "delivery_attempt_token"
+  | "rate_limit_type"
+  | "resets_at"
+>;
 
 export const DELIVERY_STATES = [
   "pending",

@@ -1,6 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import { isDeliveryIntent, type DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
-import type { DeliveryMetadataWireFields } from "../session/session_action_command_payloads.js";
+import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
 import { parseAttachmentIds } from "../session/session_action_command_payloads.js";
 import {
   MODEL_REASONING_EFFORTS,
