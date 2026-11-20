@@ -592,7 +592,7 @@ export interface SSEEventUserMessage {
   attachment_count?: number;
   user?: string;
   text?: string;
-  purpose?: "cache_keepalive";
+  purpose?: "cache_keepalive" | "card_orchestration";
   input_id?: string;
   caller_info?: CallerInfo;
   attachments?: string[];

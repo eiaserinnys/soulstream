@@ -3034,7 +3034,7 @@
         "attachment_count": { "type": "integer", "minimum": 0 },
         "user": { "type": "string" },
         "text": { "type": "string" },
-        "purpose": { "const": "cache_keepalive" },
+        "purpose": { "enum": ["cache_keepalive", "card_orchestration"] },
         "input_id": { "type": "string" },
         "caller_info": { "$ref": "#/$defs/CallerInfo" },
         "attachments": { "type": "array", "items": { "type": "string" } },
