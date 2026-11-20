@@ -374,6 +374,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   private async onOwnershipDeadline(task: Task, generationKey: string): Promise<void> {
     if (!this.nativeOwnershipByGenerationKey.has(generationKey)) return;
+    // 120초 시한이면 CLI가 transcript를 확실히 썼다. 소유를 놓기 전에 전사
+    // 증거를 재확인해, 소비되면 followup을 직접 보내지 않는다(#930 중복 방지).
+    await this.reconcileTranscriptAppend(task);
+    if (!this.nativeOwnershipByGenerationKey.has(generationKey)) return;
     this.nativeOwnershipByGenerationKey.delete(generationKey);
     try {
       await this.flushPending(task);
@@ -596,6 +600,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       return;
     }
     if (payload.type !== "result") return;
+    // 사본 append가 맡던 「CLI가 전사 기록을 디스크에 썼다」 신호(#930)를 result
+    // 시점의 재확인으로 대신한다. 이 세션의 awaiting-transcript 후보만 대상이라
+    // 후보가 없으면 로컬 파일을 읽지 않는다.
     const receipt = readClaudeResultReceiptMetadata(event);
     if (!receipt) {
       for (const item of this.nativeOwnershipByGenerationKey.values()) {
@@ -606,6 +613,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         item.phase = "awaiting-assistant";
         item.assistantUuid = undefined;
       }
+      await this.reconcileTranscriptAppend(task);
       return;
     }
     const sessionCandidates = [...this.nativeOwnershipByGenerationKey.values()].filter((item) =>
@@ -626,6 +634,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         item.inputUuid === receipt.inputUuid && item.phase === "awaiting-assistant"
       );
       for (const item of assistantless) item.phase = "native-visible-unsettled";
+      await this.reconcileTranscriptAppend(task);
       return;
     }
     const candidate = candidates[0]!;
@@ -635,6 +644,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       await this.consumeNativeAssistant(task, candidate, snapshot.assistantUuid!);
       return !this.nativeOwnershipByGenerationKey.has(candidate.generationKey);
     });
+    await this.reconcileTranscriptAppend(task);
   }
 
   private async consumeNativeAssistant(
