@@ -1105,6 +1105,8 @@ def test_attachment_identity_fields_are_optional_on_commands_and_events() -> Non
             "agentSessionId": "session-a",
             "event": {
                 "type": event_type,
+                "user": "User",
+                "text": "hi",
                 "attachment_ids": ["asset-1"],
                 "attachment_count": 1,
             },

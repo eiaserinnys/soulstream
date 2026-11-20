@@ -60,9 +60,9 @@ import type {
   SSEEventType as GeneratedSSEEventType,
   SSEEventUsageObservation,
   SSEEventUserMessage,
-} from "@soulstream/wire-schema";
+} from "../../../wire-schema";
 
-export type { CallerInfo, ContextItem, EventTruncation } from "@soulstream/wire-schema";
+export type { CallerInfo, ContextItem, EventTruncation } from "../../../wire-schema";
 
 export type SSEEventType = GeneratedSSEEventType;
 
