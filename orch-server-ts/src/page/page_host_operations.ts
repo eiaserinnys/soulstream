@@ -78,7 +78,7 @@ const blockInputSchema = z.object({
   collapsed: z.boolean(),
 });
 
-const batchOperationSchema = z.discriminatedUnion("op", [
+export const batchOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("rename_page"), title: id }),
   z.object({ op: z.literal("set_page_archived"), archived: z.boolean() }),
   z.object({ op: z.literal("create_block"), temp_id: id, ...placementFields, ...contentFields }),
