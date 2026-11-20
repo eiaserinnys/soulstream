@@ -366,8 +366,8 @@ export function weeklyUsedPercent(remaining: number | null): number | null {
 }
 
 export function formatWeeklyUsedPercent(value: number): string {
-  const rounded = value < 0 ? Math.ceil(value - 0.5) : Math.floor(value + 0.5);
-  return `${rounded}%`;
+  const wholePercent = value < 0 ? Math.ceil(value - 0.5) : Math.floor(value + 0.5);
+  return `${wholePercent}%`;
 }
 
 export function formatUsageResetCountdown(

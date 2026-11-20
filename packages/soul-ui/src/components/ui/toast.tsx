@@ -76,7 +76,7 @@ function Toasts({ position = "bottom-right" }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "absolute z-[calc(9999-var(--toast-index))] h-(--toast-calc-height) w-full select-none rounded-lg border border-glass-border glass-strong glass-shadow-lg text-popover-foreground [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
+                "absolute z-[calc(9999-var(--toast-index))] h-(--toast-calc-height) w-full select-none rounded-root border border-glass-border glass-strong glass-shadow-lg text-popover-foreground [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
                 // Base positioning using data-position
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
@@ -208,8 +208,8 @@ function AnchoredToasts() {
                 className={cn(
                   "relative text-balance border border-glass-border glass-strong text-popover-foreground text-xs transition-[scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
                   tooltipStyle
-                    ? "rounded-md glass-shadow-md"
-                    : "rounded-lg glass-shadow-lg",
+                    ? "rounded-root glass-shadow-md"
+                    : "rounded-root glass-shadow-lg",
                 )}
                 data-slot="toast-popup"
                 toast={toast}

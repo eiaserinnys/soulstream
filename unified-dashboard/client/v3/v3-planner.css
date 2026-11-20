@@ -48,7 +48,7 @@
   flex-direction: column;
   overflow: hidden;
   margin: 76px 0 var(--v3-main-columns-outer-margin) var(--v3-main-columns-outer-margin);
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-root);
   padding: 16px;
 }
 
@@ -120,7 +120,7 @@
   height: 30px;
   place-items: center;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   background: var(--accent);
 }
 
@@ -146,7 +146,7 @@
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 7px 8px;
   color: color-mix(in srgb, var(--foreground) 67%, transparent);
   background: transparent;
@@ -197,7 +197,7 @@
   display: inline-block;
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-mark);
   padding: 0 6px;
   color: var(--muted-foreground);
   background: var(--muted);
@@ -222,7 +222,7 @@
   flex-direction: column;
   overflow: hidden;
   margin: 76px 0 var(--v3-main-columns-outer-margin);
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-root);
   padding: 20px 0 0;
 }
 
@@ -233,7 +233,7 @@
   width: var(--v3-session-panel-width, 300px);
   margin: 76px var(--v3-main-columns-outer-margin) var(--v3-main-columns-outer-margin) 0;
   overflow: hidden;
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-root);
 }
 
 .v3-planner-scroll {
@@ -257,7 +257,7 @@
 
 .v3-button {
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
   padding: 7px 12px;
   font-size: var(--font-size-sm);
   line-height: var(--font-size-sm--line-height);
@@ -473,7 +473,7 @@
     min-height: 0;
     height: calc(100dvh - 146px);
     margin: 72px auto 12px;
-    border-radius: var(--radius-3xl);
+    border-radius: var(--radius-root);
     padding: 12px 0 0;
   }
 }

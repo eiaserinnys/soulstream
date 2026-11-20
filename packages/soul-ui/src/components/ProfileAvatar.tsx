@@ -30,14 +30,14 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
   if (external) {
     const Icon = external.icon === "webhook" ? Webhook : Link;
     return <span role="img" aria-label={`외부 연동 ${external.title}`} title={external.title}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--lg-line)] bg-[var(--control-surface)] text-muted-foreground">
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--lg-line)] bg-[var(--control-surface)] text-muted-foreground">
       <Icon size={16} aria-hidden="true" />
     </span>;
   }
   const showPortrait = !!portraitUrl;
   if (!showPortrait || imgError) {
     return (
-      <span className="w-8 h-8 flex items-center justify-center text-sm shrink-0">
+      <span className={`w-8 h-8 flex items-center justify-center text-sm shrink-0 ${shape === 'circle' ? 'rounded-full' : 'rounded-floor'}`}>
         {fallbackEmoji}
       </span>
     );
@@ -49,7 +49,7 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl, e
     <img
       src={src}
       alt={role === "user" ? "사용자" : "어시스턴트"}
-      className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-lg'} shrink-0 object-cover`}
+      className={`w-8 h-8 ${shape === 'circle' ? 'rounded-full' : 'rounded-floor'} shrink-0 object-cover`}
       onError={() => setImgError(true)}
       onLoad={(e) => {
         // 204 No Content 또는 이미지 디코딩 실패 시 naturalWidth === 0

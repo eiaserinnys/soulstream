@@ -77,7 +77,7 @@ function ImagePreview({ file, initialOpen = false }: ImagePreviewProps) {
       role="button" tabIndex={0} onClick={()=>setOpen(true)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setOpen(true);}}}
       src={objectUrl}
       alt={file.name}
-      className="w-full h-full object-cover rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="w-full h-full object-cover rounded-floor outline-none focus-visible:ring-2 focus-visible:ring-ring"
     /><Dialog open={open} onOpenChange={setOpen}><DialogPopup className="image-viewer-popup"><DialogTitle className="sr-only">{file.name}</DialogTitle><img src={objectUrl} alt={file.name} className="max-w-full object-contain"/></DialogPopup></Dialog></>
   );
 }
@@ -126,7 +126,7 @@ export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
 
   return (
     <div
-      className="relative shrink-0 w-20 h-20 rounded border border-border bg-muted overflow-hidden"
+      className="relative shrink-0 w-20 h-20 rounded-floor border border-border bg-muted overflow-hidden"
       title={file.name}
     >
       {/* Content */}
@@ -143,7 +143,7 @@ export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
 
       {/* Uploading overlay */}
       {status === "uploading" && (
-        <div className="absolute inset-0 bg-background/70 flex items-center justify-center rounded">
+        <div className="absolute inset-0 bg-background/70 flex items-center justify-center rounded-floor">
           {/* Spinner */}
           <svg
             className="w-5 h-5 animate-spin text-foreground/60"
@@ -170,7 +170,7 @@ export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
 
       {/* Error overlay */}
       {status === "error" && (
-        <div className="absolute inset-0 bg-accent-red/30 flex items-center justify-center rounded">
+        <div className="absolute inset-0 bg-accent-red/30 flex items-center justify-center rounded-floor">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="20"
@@ -234,7 +234,7 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
   }, [file, isImage]);
 
   return (
-    <div className="chat-attachment-chip flex shrink-0 max-w-full min-w-0 items-center gap-2 rounded border border-border bg-muted p-2" data-chat-attachment-chip>
+    <div className="chat-attachment-chip flex shrink-0 max-w-full min-w-0 items-center gap-2 rounded-floor border border-border bg-muted p-2" data-chat-attachment-chip>
       <button
         type="button"
         data-chat-attachment-chip-view
@@ -243,7 +243,7 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
         aria-label={generatedImageName ? "첨부 이미지 보기" : file.name}
         className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {isImage && <img src={objectUrl} alt="" className="size-8 shrink-0 rounded object-cover" />}
+        {isImage && <img src={objectUrl} alt="" className="size-8 shrink-0 rounded-floor object-cover" />}
         {!generatedImageName && <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={file.name}>{file.name}</span>}
         <span className="chat-image-metadata shrink-0">{metadata}</span>
       </button>

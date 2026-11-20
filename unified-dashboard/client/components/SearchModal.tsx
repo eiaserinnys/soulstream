@@ -92,7 +92,7 @@ function toSearchFilters(state: FilterState): SearchFilters {
 // === Search Result Item ===
 
 const SEARCH_RESULT_KIND_BADGE_CLASS =
-  "inline-flex w-20 shrink-0 items-center justify-center rounded bg-input px-1.5 py-0.5 text-xs text-muted-foreground";
+  "inline-flex w-20 shrink-0 items-center justify-center rounded-full bg-input px-1.5 py-0.5 text-xs text-muted-foreground";
 
 const SEARCH_MATCH_SOURCE_LABELS: Record<
   Exclude<SearchMatchSource, "message">,
@@ -125,7 +125,7 @@ function SearchResultRow({
       onContextMenu={event=>openMenu(result.session_id,event)}
       data-match-source={result.match_source}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-lg border transition-colors",
+        "w-full text-left px-3 py-2.5 rounded-floor border transition-colors",
         "focus:outline-none focus:bg-muted/60",
         isDerivedMatch
           ? "border-border/50 bg-muted/25 hover:bg-muted/60"
@@ -179,7 +179,7 @@ function SearchSessionResultRow({
       data-testid="session-search-result"
       data-session-id={result.session_id}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-lg border border-transparent",
+        "w-full text-left px-3 py-2.5 rounded-floor border border-transparent",
         "hover:bg-muted/60 hover:border-border transition-colors",
         "focus:outline-none focus:bg-muted/60",
       )}
@@ -249,7 +249,7 @@ function NavigationResultRow({
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-lg border border-transparent",
+        "w-full text-left px-3 py-2.5 rounded-floor border border-transparent",
         "hover:bg-muted/60 hover:border-border transition-colors",
         "focus:outline-none focus:bg-muted/60",
       )}
@@ -470,7 +470,7 @@ export function SearchModal({
                 setQuery(e.target.value);
               }}
               className={cn(
-                "w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-base",
+                "w-full rounded-floor border border-border bg-background pl-9 pr-3 py-2 text-base",
                 "focus:outline-none focus:ring-1 focus:ring-ring",
                 "placeholder:text-muted-foreground",
               )}
@@ -491,7 +491,7 @@ export function SearchModal({
                     invalidate();
                     setFilters((prev) => ({ ...prev, [key]: e.target.checked }));
                   }}
-                  className="w-3.5 h-3.5 rounded accent-primary"
+                  className="w-3.5 h-3.5 rounded-mark accent-primary"
                 />
                 <span className="text-xs text-muted-foreground">{label}</span>
               </label>
@@ -500,7 +500,7 @@ export function SearchModal({
 
           {/* 파생 텍스트 포함 범위 */}
           <div
-            className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-muted/30 px-2.5 py-2"
+            className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-floor bg-muted/30 px-2.5 py-2"
             aria-label="검색 포함 범위"
           >
             <span className="text-xs font-medium text-muted-foreground">
@@ -518,7 +518,7 @@ export function SearchModal({
                     invalidate();
                     setFilters((prev) => ({ ...prev, [key]: e.target.checked }));
                   }}
-                  className="w-3.5 h-3.5 rounded accent-primary"
+                  className="w-3.5 h-3.5 rounded-mark accent-primary"
                 />
                 <span className="text-xs text-muted-foreground">{label}</span>
               </label>
@@ -526,7 +526,7 @@ export function SearchModal({
           </div>
 
           {showPartialSearchBanner && (
-            <div role="status" className="mb-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-v3-selectable-content="true">
+            <div role="status" className="mb-2 rounded-floor bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-v3-selectable-content="true">
               {partialSearchMessage}
             </div>
           )}

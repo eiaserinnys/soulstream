@@ -50,8 +50,8 @@ export const ChatToolApproval = memo(function ChatToolApproval({
       <div
         ref={cardRef}
         className={presentation === "manuscript"
-          ? "flex flex-col gap-2 rounded-2xl border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-4 py-3"
-          : "flex flex-col gap-2 rounded-2xl border border-glass-border glass-strong glass-shadow-md px-4 py-3"}
+          ? "flex flex-col gap-2 rounded-floor border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-4 py-3"
+          : "flex flex-col gap-2 rounded-floor border border-glass-border glass-strong glass-shadow-md px-4 py-3"}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -62,7 +62,7 @@ export const ChatToolApproval = memo(function ChatToolApproval({
           <div data-slot="chat-tool-body" className="text-xs text-muted-foreground">{msg.toolResult}</div>
         )}
         {msg.toolInput && (
-          <pre data-slot="chat-tool-body" className="max-h-32 overflow-auto rounded-xl border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
+          <pre data-slot="chat-tool-body" className="max-h-32 overflow-auto rounded-floor border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
             {JSON.stringify(msg.toolInput, null, 2)}
           </pre>
         )}

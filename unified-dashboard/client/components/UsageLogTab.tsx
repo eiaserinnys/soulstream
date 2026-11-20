@@ -116,7 +116,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
             type="date"
             value={date}
             onChange={(event) => setDate(event.target.value)}
-            className="rounded border border-border bg-transparent px-2 py-1 text-sm"
+            className="rounded-floor border border-border bg-transparent px-2 py-1 text-sm"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -124,7 +124,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
           <select
             value={installId}
             onChange={(event) => setInstallId(event.target.value)}
-            className="rounded border border-border bg-transparent px-2 py-1 text-sm"
+            className="rounded-floor border border-border bg-transparent px-2 py-1 text-sm"
           >
             <option value="">전체</option>
             {installs.map((install) => (
@@ -150,7 +150,7 @@ export function UsageLogTab({ request = fetch }: { request?: typeof fetch } = {}
       )}
 
       {events.length > 0 && (
-        <div className="max-h-[420px] overflow-y-auto rounded border border-border">
+        <div className="max-h-[420px] overflow-y-auto rounded-floor border border-border">
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-background">
               <tr className="text-muted-foreground">

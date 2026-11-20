@@ -170,13 +170,13 @@ export function ClaudeRuntimeTasksPanel({
         return (
           <div
             key={task.taskId}
-            className="rounded-md border border-border bg-muted/20 p-2"
+            className="rounded-floor border border-border bg-muted/20 p-2"
           >
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={statusClassName(task.status, tone)}>{task.status}</span>
-                  <span className="break-keep rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="break-keep rounded-full bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {taskKindLabel(task)}
                   </span>
                   <span className="truncate font-mono text-xs text-muted-foreground">
@@ -209,7 +209,7 @@ export function ClaudeRuntimeTasksPanel({
               </div>
             </div>
             {output ? (
-              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
+              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-floor bg-background p-2 text-xs text-foreground">
                 {output.output || output.message || "출력이 없습니다"}
               </pre>
             ) : null}
@@ -259,11 +259,11 @@ export function ClaudeRuntimeTasksPanel({
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bot className="size-4 text-muted-foreground" />
           <span className="break-keep">백그라운드 작업</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {tasks.length}
           </span>
           {runningCount > 0 ? (
-            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm"
                 ? "chat-tone-warning"
                 : "bg-amber-500/12 text-amber-700 dark:text-amber-300"
@@ -272,7 +272,7 @@ export function ClaudeRuntimeTasksPanel({
             </span>
           ) : null}
           {errorCount > 0 ? (
-            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
               오류 {errorCount}
@@ -300,7 +300,7 @@ function ModeBadge({
 }) {
   return (
     <span
-      className={`inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+      className={`inline-flex min-w-0 max-w-full items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
         active
           ? tone === "calm"
             ? "chat-tone-warning"
@@ -331,7 +331,7 @@ function taskKindLabel(task: ClaudeRuntimeTaskView): string {
 }
 
 function statusClassName(status: ClaudeRuntimeTaskStatus, tone: "default" | "calm"): string {
-  const base = "rounded px-1.5 py-0.5 text-[11px] font-medium";
+  const base = "rounded-full px-1.5 py-0.5 text-[11px] font-medium";
   if (status === "running" || status === "pending") {
     if (tone === "calm") return `${base} chat-tone-success`;
     return `${base} bg-emerald-500/12 text-emerald-700 dark:text-emerald-300`;

@@ -23,7 +23,7 @@ export type ReportQuestionView = { body: React.ReactNode; actions: React.ReactNo
 export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(option: string): Promise<boolean>; hold(option: string): void; confirm(): void; release(): void; answer?: string; pending: boolean };
 type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
-const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
+const LINK_FOCUS = 'rounded-floor outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 /** 계약 판 8, 3절 2번: 답한 장은 펼치지 않은 채 이만큼 지나면 놓는다. */
 export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
 

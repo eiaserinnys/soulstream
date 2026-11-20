@@ -20,7 +20,7 @@ export function ContextContentRenderer({ content }: ContextContentRendererProps)
 
   if (typeof content === "string") {
     return (
-      <pre className="text-xs whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto bg-input px-2 py-1 rounded flex-1">
+      <pre className="text-xs whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1">
         {content}
       </pre>
     );
@@ -107,7 +107,7 @@ export function ContextContentRenderer({ content }: ContextContentRendererProps)
 
   // fallback
   return (
-    <pre className="text-xs whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto bg-input px-2 py-1 rounded flex-1">
+    <pre className="text-xs whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1">
       {JSON.stringify(content, null, 2)}
     </pre>
   );

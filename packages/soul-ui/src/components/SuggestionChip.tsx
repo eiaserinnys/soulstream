@@ -61,7 +61,7 @@ export function SuggestionChip({
     <button
       type="button"
       data-testid="suggestion-chip"
-      className="relative w-full text-left items-start whitespace-normal break-words rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground hover:bg-muted/70 transition-colors overflow-hidden mb-2"
+      className="relative w-full text-left items-start whitespace-normal break-words rounded-full border border-border bg-muted/40 px-3 py-2 text-sm text-foreground hover:bg-muted/70 transition-colors overflow-hidden mb-2"
       onClick={handleClick}
       {...longPressHandlers}
     >

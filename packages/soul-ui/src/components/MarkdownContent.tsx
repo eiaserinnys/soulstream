@@ -139,7 +139,7 @@ const components: Components = {
 
   // 코드 — 기존 CollapsibleContent/ToolCallItem의 <pre> 스타일과 통일
   pre: ({ children }) => (
-    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded-floor px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
       {children}
     </pre>
   ),
@@ -158,7 +158,7 @@ const components: Components = {
     // 인라인 코드
     return (
       <code
-        className="text-xs bg-input rounded px-1 py-0.5 font-mono"
+        className="text-xs bg-input rounded-mark px-1 py-0.5 font-mono"
         {...props}
       >
         {children}
@@ -196,7 +196,7 @@ const components: Components = {
   // 다크모드 가독성: 컨테이너 bg-card(거의 검정) + 보더, 헤더 bg-input(8% white)로 강조,
   // td/th에 text-foreground 명시하여 부모 컨텍스트 무관하게 다크/라이트 모두 또렷.
   table: ({ children }) => (
-    <div {...markdownBlock} className={cn("overflow-auto my-2 rounded border border-border bg-card", tableScrollFocusClass)}>
+    <div {...markdownBlock} className={cn("overflow-auto my-2 rounded-floor border border-border bg-card", tableScrollFocusClass)}>
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
@@ -223,7 +223,7 @@ const compactComponents: Components = {
   ol: ({ children }) => <ol {...markdownBlock} className="mb-1 last:mb-0 ml-3 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="mb-0">{children}</li>,
   pre: ({ children }) => (
-    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
+    <pre {...markdownBlock} className="text-xs text-muted-foreground bg-input rounded-floor px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
       {children}
     </pre>
   ),
@@ -235,7 +235,7 @@ const compactComponents: Components = {
       return <code className={className} {...props}>{children}</code>;
     }
     return (
-      <code className="text-xs bg-input rounded px-0.5 py-0 font-mono" {...props}>
+      <code className="text-xs bg-input rounded-mark px-0.5 py-0 font-mono" {...props}>
         {children}
       </code>
     );
@@ -256,7 +256,7 @@ const compactComponents: Components = {
   // 테이블 (compact): 다크모드 토큰을 fullsize와 동일하게 적용 + 패딩만 컴팩트.
   // 누락 시 ReactMarkdown 기본 HTML 렌더 → 다크모드에서 흰 배경 노출.
   table: ({ children }) => (
-    <div {...markdownBlock} className={cn("overflow-auto my-1 rounded border border-border bg-card", tableScrollFocusClass)}>
+    <div {...markdownBlock} className={cn("overflow-auto my-1 rounded-floor border border-border bg-card", tableScrollFocusClass)}>
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
@@ -343,13 +343,13 @@ function CopyableCodeBlock({
       <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
         <div
           data-markdown-code-scroll="horizontal"
-          className="my-1.5 overflow-x-auto overflow-y-hidden rounded"
+          className="my-1.5 overflow-x-auto overflow-y-hidden rounded-floor"
         >
           <pre
             ref={contentRef}
             data-slot="codeblock-copy-content"
             data-markdown-code-layout="document"
-            className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 whitespace-pre-wrap break-words font-mono"
+            className="m-0 text-xs text-muted-foreground bg-input rounded-floor px-2 py-2.5 pr-9 min-h-9 whitespace-pre-wrap break-words font-mono"
           >
             {children}
           </pre>
@@ -362,7 +362,7 @@ function CopyableCodeBlock({
   if (compact) {
     return (
       <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
-        <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 pr-9 min-h-9 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">{children}</pre>
+        <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded-floor px-1.5 py-1 pr-9 min-h-9 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">{children}</pre>
         {copyButton}
       </div>
     );
@@ -370,7 +370,7 @@ function CopyableCodeBlock({
 
   return (
     <div {...markdownBlock} data-slot="codeblock-copy-frame" className="group/codeblock relative">
-      <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
+      <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded-floor px-2 py-2.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
       {copyButton}
     </div>
   );
@@ -453,7 +453,7 @@ function CopyableBlockquote({
           aria-label="인용문 복사"
           data-copy-state={copyState}
           onClick={() => void copyQuote()}
-          className="absolute right-1 top-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="absolute right-1 top-1 inline-flex size-7 items-center justify-center rounded-full text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {copyState === "success"
             ? <Check className="size-4" aria-hidden="true" />

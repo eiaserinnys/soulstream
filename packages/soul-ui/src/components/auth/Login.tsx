@@ -83,7 +83,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
         {/* 에러 메시지 */}
         {error && (
           <div
-            className="text-xs text-accent-red py-2 px-3 rounded-md bg-accent-red/8"
+            className="text-xs text-accent-red py-2 px-3 rounded-floor bg-accent-red/8"
             role="alert"
           >
             {error}
@@ -95,7 +95,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
           type="button"
           onClick={handleGoogleLogin}
           data-testid="google-login-button"
-          className="flex items-center justify-center gap-3 w-full px-4 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-150 font-medium text-sm"
+          className="flex items-center justify-center gap-3 w-full px-4 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors duration-150 font-medium text-sm"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -150,7 +150,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
                     placeholder="developer@example.com"
                     required
                     data-testid="dev-email-input"
-                    className="bg-input border border-border rounded-md py-1.5 px-3 text-sm text-foreground outline-none transition-colors duration-150 focus:border-accent-blue/40"
+                    className="bg-input border border-border rounded-floor py-1.5 px-3 text-sm text-foreground outline-none transition-colors duration-150 focus:border-accent-blue/40"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -164,14 +164,14 @@ export function Login({ title = "Dashboard" }: LoginProps) {
                     onChange={(e) => setDevName(e.target.value)}
                     placeholder="Developer"
                     data-testid="dev-name-input"
-                    className="bg-input border border-border rounded-md py-1.5 px-3 text-sm text-foreground outline-none transition-colors duration-150 focus:border-accent-blue/40"
+                    className="bg-input border border-border rounded-floor py-1.5 px-3 text-sm text-foreground outline-none transition-colors duration-150 focus:border-accent-blue/40"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   data-testid="dev-login-button"
-                  className="w-full py-2 bg-accent-blue border-accent-blue text-white rounded-lg text-sm font-medium hover:bg-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                  className="w-full py-2 bg-accent-blue border-accent-blue text-white rounded-full text-sm font-medium hover:bg-accent-blue/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
                 >
                   {isSubmitting ? "로그인 중..." : "로그인 (Dev)"}
                 </button>

@@ -52,7 +52,7 @@ export default function Setup({ onConnect, onSettings }: SetupProps) {
               서버 URL
             </label>
             <div className="flex">
-              <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] text-sm">
+              <span className="inline-flex items-center px-3 rounded-l-floor border border-r-0 border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] text-sm">
                 https://
               </span>
               <input
@@ -61,7 +61,7 @@ export default function Setup({ onConnect, onSettings }: SetupProps) {
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
                 placeholder="your-server.example.com"
-                className="flex-1 px-3 py-2 rounded-r-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                className="flex-1 px-3 py-2 rounded-r-floor border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                 disabled={connecting}
                 autoFocus
               />
@@ -75,7 +75,7 @@ export default function Setup({ onConnect, onSettings }: SetupProps) {
           <button
             type="submit"
             disabled={connecting || !urlInput.trim()}
-            className="w-full py-2.5 px-4 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2.5 px-4 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {connecting ? "연결 중..." : "연결"}
           </button>

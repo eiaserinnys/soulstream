@@ -26,7 +26,7 @@ export function ConfigButton({
       data-testid="config-button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium",
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}

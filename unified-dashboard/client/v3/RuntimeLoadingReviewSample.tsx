@@ -35,15 +35,15 @@ export function RuntimeLoadingReviewSample() {
       ClaudeRuntimeSchedulesPanel · 첫 로딩(빈 띠) · 응답 뒤 접힌 머리줄 · 데이터 있는 새로고침(단추만 회전)
     </p>
     <div className="grid w-full max-w-[calc(var(--v3-space-8)*16)] gap-3">
-      <div data-testid="runtime-sample-first-loading" className="flex min-h-12 flex-col rounded border border-dashed border-border/60 p-2">
+      <div data-testid="runtime-sample-first-loading" className="flex min-h-12 flex-col rounded-floor border border-dashed border-border/60 p-2">
         <span className="v3-components-label">첫 로딩 — 띠를 그리지 않는다</span>
         <ClaudeRuntimeSchedulesPanel sessionId="review-runtime-loading" runtime={null} tone="calm" variant="caption" />
       </div>
-      <div className="rounded border border-border/60 p-2">
+      <div className="rounded-floor border border-border/60 p-2">
         <span className="v3-components-label">응답 뒤 — 보일 항목이 있을 때만 접힌 머리줄</span>
         <ClaudeRuntimeSchedulesPanel sessionId="review-runtime-loaded" runtime={runtimeWithSchedule} tone="calm" variant="caption" />
       </div>
-      <div ref={refreshHostRef} data-testid="runtime-sample-refresh" className="rounded border border-border/60 p-2">
+      <div ref={refreshHostRef} data-testid="runtime-sample-refresh" className="rounded-floor border border-border/60 p-2">
         <span className="v3-components-label">데이터 있는 새로고침 — 머리 단추만 회전</span>
         <ClaudeRuntimeSchedulesPanel sessionId="review-runtime-refresh" runtime={runtimeWithSchedule} tone="calm" variant="caption" />
       </div>

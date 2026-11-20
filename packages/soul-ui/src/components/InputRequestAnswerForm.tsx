@@ -28,7 +28,7 @@ export function InputRequestAnswerForm({
         disabled={inputDisabled}
         placeholder="직접 입력"
         className={cn(
-          "min-w-0 flex-1 rounded-xl border border-[var(--lg-line)] bg-muted/40 px-3 py-2 outline-none transition-colors focus:border-accent-blue/55",
+          "min-w-0 flex-1 rounded-floor border border-[var(--lg-line)] bg-muted/40 px-3 py-2 outline-none transition-colors focus:border-accent-blue/55",
           inputTextClassName,
         )}
       />
@@ -36,7 +36,7 @@ export function InputRequestAnswerForm({
         type="submit"
         size="xs"
         disabled={submitDisabled}
-        className="h-auto self-stretch rounded-xl px-3 text-xs font-semibold sm:h-auto"
+        className="h-auto self-stretch rounded-full px-3 text-xs font-semibold sm:h-auto"
       >
         전송
       </Button>

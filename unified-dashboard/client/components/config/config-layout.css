@@ -21,7 +21,7 @@
 .config-dialog .config-category-nav { padding:var(--v3-space-6) var(--v3-space-3); background:var(--control-surface); border-right:1px solid var(--border); }
 .config-dialog .config-category-nav section + section { margin-top:var(--v3-space-6); }
 .config-dialog .config-category-nav h3 { font:var(--v3-type-meta) var(--v3-font-family); color:var(--muted-foreground); margin:0 var(--v3-space-3) var(--v3-space-2); }
-.config-dialog .config-category-item { display:flex; align-items:center; gap:var(--v3-space-2); width:100%; min-height:var(--v3-action-size); padding:var(--v3-space-2) var(--v3-space-3); border:1px solid transparent; border-radius:var(--radius-lg); text-align:left; font:var(--v3-type-body) var(--v3-font-family); color:var(--muted-foreground); }
+.config-dialog .config-category-item { display:flex; align-items:center; gap:var(--v3-space-2); width:100%; min-height:var(--v3-action-size); padding:var(--v3-space-2) var(--v3-space-3); border:1px solid transparent; border-radius: var(--radius-floor); text-align:left; font:var(--v3-type-body) var(--v3-font-family); color:var(--muted-foreground); }
 .config-dialog .config-category-item span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .config-dialog .config-category-item svg { flex-shrink:0; }
 .config-dialog .config-category-item:hover { background:var(--muted); color:var(--foreground); }
@@ -39,9 +39,9 @@
 .config-dialog .config-appearance { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }
 .config-dialog .config-wallpaper-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--v3-space-2); margin-top:var(--v3-space-4); }
-.config-dialog .config-wallpaper-options button { padding:var(--v3-space-2) var(--v3-space-2) var(--v3-space-2); border-radius:var(--radius-lg); background:transparent; color:var(--muted-foreground); border:1px solid transparent; font:var(--v3-type-body) var(--v3-font-family); display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .config-wallpaper-options button { padding:var(--v3-space-2) var(--v3-space-2) var(--v3-space-2); border-radius: var(--radius-floor); background:transparent; color:var(--muted-foreground); border:1px solid transparent; font:var(--v3-type-body) var(--v3-font-family); display:flex; flex-direction:column; gap:var(--v3-space-2); }
 .config-dialog .config-wallpaper-options button[aria-pressed="true"] { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 6%,transparent); color:var(--foreground); }
-.config-dialog .wallpaper-swatch { height:var(--v3-control-height); width:100%; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--muted); }
+.config-dialog .wallpaper-swatch { height:var(--v3-control-height); width:100%; border-radius: var(--radius-floor); border:1px solid var(--border); background:var(--muted); }
 .config-dialog [data-wallpaper="bokeh"] .wallpaper-swatch { background:radial-gradient(ellipse at 25% 20%,#e4b9b9 0%,transparent 70%),radial-gradient(ellipse at 75% 70%,#95a8cd 0%,#d7d2dc 80%); }
 .config-dialog [data-wallpaper="metal"] .wallpaper-swatch { background:linear-gradient(120deg,#e5e7ed,#aab2bd 38%,#f3f4f8 55%,#c2c8d2); }
 .config-dialog [data-wallpaper="photo"] .wallpaper-swatch { background:linear-gradient(155deg,#c9d8e2 50%,#b6c1ac 51%,#859984); }
@@ -61,7 +61,7 @@
 .config-dialog .config-detail .config-pas-open-on-start { padding:0 0 var(--v3-space-6); }
 .config-dialog .persistent-settings-read-only-value { min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
-.approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
+.approved-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius: var(--radius-floor); }
 
 .config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { overflow:hidden; }
 .config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { flex:1 1 auto; min-height:0; min-width:0; }

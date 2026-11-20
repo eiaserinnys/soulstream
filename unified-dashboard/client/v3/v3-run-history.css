@@ -30,7 +30,7 @@
   align-items: center;
   gap: 0;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
 }
 
 .v3-run-row:hover { border-color: var(--glass-border); }
@@ -84,7 +84,7 @@
   height: 100%;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
   background: var(--muted);
 }
 .v3-run-avatar > * { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -257,7 +257,7 @@
   animation: v3-run-skeleton 1.25s ease-in-out infinite;
 }
 
-.v3-run-skeleton--avatar { width: 32px; height: 32px; flex: none; border-radius: var(--radius-lg); }
+.v3-run-skeleton--avatar { width: 32px; height: 32px; flex: none; border-radius: var(--radius-pill); }
 .v3-run-skeleton--title { width: min(240px, 70%); height: 11px; }
 .v3-run-skeleton--preview { width: min(320px, 88%); height: 8px; }
 .v3-run-skeleton--badge { width: 54px; height: 18px; flex: none; }

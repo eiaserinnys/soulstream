@@ -22,7 +22,7 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   font-size: 19px;
 }
@@ -96,7 +96,7 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 22px;
   background: color-mix(in srgb, var(--card) 76%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);

@@ -68,7 +68,7 @@ describe("LiquidGlassCard", () => {
           LiquidGlassCard,
           {
             className: "custom-card",
-            cornerRadius: "2xl",
+            cornerRadius: "root",
             "data-testid": "glass-card",
           },
           "Card body",
@@ -98,7 +98,7 @@ describe("LiquidGlassCard", () => {
       root!.render(
         createElement(
           LiquidGlassCard,
-          { className: "rounded-3xl", cornerRadius: "3xl", "data-testid": "glass-card" },
+          { className: "rounded-root", cornerRadius: "root", "data-testid": "glass-card" },
           "Card body",
         ),
       );
@@ -109,7 +109,7 @@ describe("LiquidGlassCard", () => {
     const rims = [...card!.querySelectorAll<HTMLElement>(".liquid-glass-card__layer > span")];
 
     // cornerRadius는 틀의 곡률 변수만 정하고, 안쪽 요소는 인라인 곡률을 직접 쓰지 않는다.
-    expect(card!.style.getPropertyValue("--liquid-glass-radius")).toBe("var(--radius-3xl)");
+    expect(card!.style.getPropertyValue("--liquid-glass-radius")).toBe("var(--radius-root)");
     expect(glass).not.toBeNull();
     expect(glass!.style.borderRadius).toBe("");
     expect(rims).toHaveLength(2);

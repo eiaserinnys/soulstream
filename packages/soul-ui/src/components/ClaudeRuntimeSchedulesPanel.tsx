@@ -149,7 +149,7 @@ export function ClaudeRuntimeSchedulesPanel({
         return (
           <div
             key={schedule.scheduleId}
-            className="rounded-md border border-border bg-muted/20 p-2"
+            className="rounded-floor border border-border bg-muted/20 p-2"
           >
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
@@ -227,7 +227,7 @@ export function ClaudeRuntimeSchedulesPanel({
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <CalendarClock className="size-4 text-muted-foreground" />
           <span className="break-keep">예약</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {schedules.length}
           </span>
           {nextRunAt ? (
@@ -236,7 +236,7 @@ export function ClaudeRuntimeSchedulesPanel({
             </span>
           ) : null}
           {errorCount > 0 ? (
-            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
               오류 {errorCount}
@@ -283,7 +283,7 @@ function formatCaptionDateTime(value: string): string {
 }
 
 function statusClassName(status: ClaudeRuntimeScheduleStatus, tone: "default" | "calm"): string {
-  const base = "rounded px-1.5 py-0.5 text-[11px] font-medium";
+  const base = "rounded-full px-1.5 py-0.5 text-[11px] font-medium";
   if (status === "active") {
     if (tone === "calm") return `${base} chat-tone-success`;
     return `${base} bg-emerald-500/12 text-emerald-700 dark:text-emerald-300`;

@@ -39,10 +39,10 @@ describe("v3 rounded focus ring contract", () => {
     expect(succession).not.toMatch(/<select\b/);
     expect(succession).toMatch(/<CatalogSelectionField[^>]*label="추론 강도"[^>]*ariaLabel="추론 강도 선택"/s);
     expect(succession).toMatch(/<CatalogSelectionField[^>]*label="이전 세션"[^>]*ariaLabel="이어받을 이전 세션"/s);
-    expect(select).toMatch(/rounded-lg[^\"]*focus-visible:ring-\[3px\]/s);
+    expect(select).toMatch(/rounded-floor[^\"]*focus-visible:ring-\[3px\]/s);
     expect(select).toMatch(/function SelectTrigger\([\s\S]*?selectTriggerVariants\(\{ size \}\)/);
     expect(runHistory).toMatch(/\.v3-run-open\s*{[^}]*border-radius:\s*inherit/s);
-    expect(workspace).toMatch(/\.v3-task-title-input\s*{[^}]*border-radius:\s*var\(--radius-lg\);[^}]*box-shadow:/s);
+    expect(workspace).toMatch(/\.v3-task-title-input\s*{[^}]*border-radius:\s*var\(--radius-floor\);[^}]*box-shadow:/s);
   });
 
   it("puts chat focus on the rounded composer instead of its radius-less textarea", () => {
@@ -57,7 +57,7 @@ describe("v3 rounded focus ring contract", () => {
     );
     expect(composer).toMatch(/data-slot="chat-input-composer"/);
     expect(composer).toMatch(
-      /manuscript \? "[^"]*border-b[^"]*focus-within:border-ring" : "[^"]*rounded-3xl[^"]*ring-ring\/50[^"]*has-focus-visible:ring-\[3px\]/,
+      /manuscript \? "[^"]*border-b[^"]*focus-within:border-ring" : "[^"]*rounded-root[^"]*ring-ring\/50[^"]*has-focus-visible:ring-\[3px\]/,
     );
     expect(planner).toMatch(/\[data-slot="chat-input-composer"\] textarea:focus-visible\s*{[^}]*box-shadow:\s*none/s);
   });

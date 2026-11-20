@@ -75,7 +75,7 @@ function DialogPopup({
   closeProps?: DialogPrimitive.Close.Props;
 }) {
   const enhanced = supportsLiquidGlassEnhancement();
-  const popupStyle = liquidGlassStyle("3xl", style as CSSProperties | undefined);
+  const popupStyle = liquidGlassStyle("root", style as CSSProperties | undefined);
 
   return (
     <DialogPortal>
@@ -89,7 +89,7 @@ function DialogPopup({
       >
         <DialogPrimitive.Popup
           className={cn(
-            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative flex max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col overflow-hidden rounded-3xl border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative flex max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col overflow-hidden rounded-root border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
             bottomStickOnMobile &&
               "max-sm:max-w-none max-sm:rounded-b-none max-sm:border-x-0 max-sm:border-t max-sm:border-b-0 max-sm:opacity-[calc(1-min(var(--nested-dialogs),1))] max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4",
             className,
@@ -160,7 +160,7 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-3xl",
+        "flex shrink-0 flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end",
         variant === "default" && "border-t border-[var(--lg-line)] bg-transparent py-4",
         variant === "bare" &&
           "in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pt-3 pt-4 pb-6",

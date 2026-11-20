@@ -8,8 +8,8 @@ function Checkbox({ className, variant = "default", ...props }: CheckboxPrimitiv
   return (
     <CheckboxPrimitive.Root
       className={cn(
-        "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-sm border border-input bg-background not-dark:bg-clip-padding shadow-xs/5 outline-none ring-ring transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-sm not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_1px_--theme(--color-black/4%)] focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:ring-destructive/48 data-disabled:opacity-64 sm:size-4 dark:not-data-checked:bg-input/32 dark:aria-invalid:ring-destructive/24 dark:not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_-1px_--theme(--color-white/6%)] [[data-disabled],[data-checked],[aria-invalid]]:shadow-none",
-        variant === "card-item" && "size-11 rounded-none border-0 bg-transparent p-0 shadow-none before:inset-auto before:size-5 before:rounded-md before:border before:border-input before:bg-background before:content-[''] before:shadow-none focus-visible:ring-0 sm:size-11",
+        "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-mark border border-input bg-background not-dark:bg-clip-padding shadow-xs/5 outline-none ring-ring transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-mark not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_1px_--theme(--color-black/4%)] focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:ring-destructive/48 data-disabled:opacity-64 sm:size-4 dark:not-data-checked:bg-input/32 dark:aria-invalid:ring-destructive/24 dark:not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_-1px_--theme(--color-white/6%)] [[data-disabled],[data-checked],[aria-invalid]]:shadow-none",
+        variant === "card-item" && "size-11 rounded-none border-0 bg-transparent p-0 shadow-none before:inset-auto before:size-5 before:rounded-mark before:border before:border-input before:bg-background before:content-[''] before:shadow-none focus-visible:ring-0 sm:size-11",
         className,
       )}
       data-slot="checkbox"
@@ -17,8 +17,8 @@ function Checkbox({ className, variant = "default", ...props }: CheckboxPrimitiv
       {...props}
     >
       <CheckboxPrimitive.Indicator
-        className={cn("-inset-px absolute flex items-center justify-center rounded-sm text-primary-foreground data-unchecked:hidden data-checked:bg-primary data-indeterminate:text-foreground",
-          variant === "card-item" && "inset-auto left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-md")}
+        className={cn("-inset-px absolute flex items-center justify-center rounded-mark text-primary-foreground data-unchecked:hidden data-checked:bg-primary data-indeterminate:text-foreground",
+          variant === "card-item" && "inset-auto left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-mark")}
         data-slot="checkbox-indicator"
         render={(props, state) => (
           <span {...props}>

@@ -13,7 +13,7 @@ export function SettingsListDetailFrame({ testId, list, children }: {
 }) {
   return (
     <section data-testid={testId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
-      <aside className="min-h-0 rounded border border-border bg-muted/20 p-3">{list}</aside>
+      <aside className="min-h-0 rounded-floor border border-border bg-muted/20 p-3">{list}</aside>
       <div className="min-h-0 space-y-4 lg:-mr-1 lg:overflow-y-auto lg:pr-1">{children}</div>
     </section>
   );
@@ -61,7 +61,7 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
   return (
     <button
       type="button"
-      className={`block w-full rounded px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
+      className={`block w-full rounded-floor px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
       onClick={onSelect}
     >
       {portrait ? <span className="flex items-center gap-2">{portrait}<span className="min-w-0"><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></span></span> : <><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></>}
@@ -88,7 +88,7 @@ export function SettingsDetailHeader({ title, subtitle, actions, selectableTitle
 
 export function SettingsGroupBox({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <div className="rounded border border-border p-3">
+    <div className="rounded-floor border border-border p-3">
       {title ? <p className="mb-2 text-sm font-medium">{title}</p> : null}
       {children}
     </div>
@@ -102,7 +102,7 @@ export function SettingsAlert({ children, scrollIntoView = false }: { children: 
     if (scrollIntoView) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [scrollIntoView]);
   return (
-    <div ref={ref} role="alert" className="rounded border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
+    <div ref={ref} role="alert" className="rounded-floor border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" style={{ scrollMarginBottom: 'var(--v3-space-6)', wordBreak: 'keep-all', overflowWrap: 'anywhere' }}>
       {children}
     </div>
   );

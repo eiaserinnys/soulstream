@@ -134,7 +134,7 @@ export function FolderSettingsDialog({
               <label className="text-sm text-[--color-text-secondary]">
                 상속(읽기 전용 미리보기)
               </label>
-              <div className="max-h-36 overflow-y-auto rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-2 text-xs">
+              <div className="max-h-36 overflow-y-auto rounded-floor border border-[--color-border] bg-[--color-surface-1] px-2 py-2 text-xs">
                 {inheritedPrompts.length > 0 ? (
                   <div className="flex flex-col gap-2">
                     {inheritedPrompts.map((item) => (
@@ -161,7 +161,7 @@ export function FolderSettingsDialog({
                 {...register("folderPrompt")}
                 placeholder="이 폴더에서만 추가할 지시사항을 입력하세요"
                 rows={4}
-                className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
+                className="w-full rounded-floor border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
               />
             </div>
             {atomEnabled && (
@@ -203,7 +203,7 @@ export function FolderSettingsDialog({
                   <select
                     id="folder-atom-render-mode"
                     {...register("atomMode")}
-                    className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm"
+                    className="w-full rounded-floor border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm"
                   >
                     <option value="">기존 방식</option>
                     <option value="full">전체 본문</option>

@@ -82,12 +82,12 @@ export function formatTurnUsageCaptionTitle(input: {
 }
 
 function formatPrice(value: number): string {
-  const rounded = value.toFixed(2);
-  if (value > 0 && rounded === "0.00") return "<$0.01";
+  const fixed = value.toFixed(2);
+  if (value > 0 && fixed === "0.00") return "<$0.01";
 
-  const decimalIndex = rounded.indexOf(".");
-  const whole = rounded.slice(0, decimalIndex);
-  const fraction = rounded.slice(decimalIndex + 1);
+  const decimalIndex = fixed.indexOf(".");
+  const whole = fixed.slice(0, decimalIndex);
+  const fraction = fixed.slice(decimalIndex + 1);
   return `$${Number(whole).toLocaleString("en-US")}.${fraction}`;
 }
 

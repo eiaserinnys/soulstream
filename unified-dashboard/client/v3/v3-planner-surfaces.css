@@ -108,7 +108,7 @@
   grid-template-columns: minmax(0, 1fr) 190px auto auto;
   gap: 8px;
   margin-bottom: 16px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 12px;
 }
 
@@ -144,7 +144,7 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 10px 12px;
   color: var(--foreground);
   background: var(--background);
@@ -161,7 +161,7 @@
 
 .v3-new-task-dialog .v3-new-task-error {
   border: 1px solid color-mix(in srgb, var(--destructive) 42%, var(--border));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 10px 12px;
   color: var(--destructive-foreground);
   background: color-mix(in srgb, var(--destructive) 12%, var(--card));
@@ -171,7 +171,7 @@
 .v3-new-task select {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 9px 11px;
   color: var(--foreground);
   background: var(--background);
@@ -198,7 +198,7 @@
   display: grid;
   gap: 10px;
   margin: 18px 0 22px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 14px 16px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--muted) 62%, transparent);
@@ -265,7 +265,7 @@
 .v3-empty,
 .v3-load-error {
   border: 1px dashed var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 28px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 70%, transparent);
@@ -334,7 +334,7 @@
   gap: 6px;
   margin-top: 28px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 16px;
   background: var(--muted);
 }

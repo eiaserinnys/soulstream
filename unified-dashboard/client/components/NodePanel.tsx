@@ -70,7 +70,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
       {nodeList.length === 0 ? (
         <div
           data-testid="node-card-list"
-          className="flex min-h-28 flex-col items-center justify-center rounded-xl border border-border bg-muted/10 text-sm text-muted-foreground/40"
+          className="flex min-h-28 flex-col items-center justify-center rounded-floor border border-border bg-muted/10 text-sm text-muted-foreground/40"
         >
           No nodes
         </div>
@@ -96,7 +96,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                   }
                 >
                   <div
-                    className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold font-mono shrink-0"
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold font-mono shrink-0"
                     style={{
                       background: `hsl(${hue}, 12%, ${isDark ? "28%" : "88%"})`,
                       color: `hsl(${hue}, ${isDark ? "18%, 72%" : "30%, 35%"})`,

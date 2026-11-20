@@ -47,7 +47,7 @@ export function FolderContextMenu({
             {!isSystemFolder && (
               <>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-full"
                   onClick={() => { onRename(folder); onClose(); }}
                 >
                   이름 변경
@@ -56,7 +56,7 @@ export function FolderContextMenu({
               </>
             )}
             <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-full"
               onClick={() => { onOpenSettings(folder); onClose(); }}
             >
               설정
@@ -65,7 +65,7 @@ export function FolderContextMenu({
               <>
                 <div className="border-t border-border my-1" />
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-full text-destructive"
                   onClick={() => { onDelete(folder); onClose(); }}
                 >
                   삭제
@@ -82,7 +82,7 @@ export function FolderContextMenu({
 
   return createPortal(
     <div
-      className="fixed z-50 min-w-[140px] rounded-md border border-glass-border glass-strong glass-shadow-md py-1 text-foreground"
+      className="fixed z-50 min-w-[140px] rounded-root border border-glass-border glass-strong glass-shadow-md py-1 text-foreground"
       style={{ top: target.y, left: target.x }}
       onMouseLeave={onClose}
     >

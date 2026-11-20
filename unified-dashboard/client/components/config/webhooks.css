@@ -6,7 +6,7 @@
 
 /* 행 전체가 상세를 여는 단추다. 음수 바깥 여백만큼 양쪽으로 늘어나 올림 바탕과
    초점 고리만 글 상자 밖으로 나간다. width:100% 를 더하면 왼쪽으로만 밀린다. */
-.webhooks-row { display:flex; align-items:center; justify-content:space-between; gap:var(--v3-space-2); min-width:0; text-align:left; border-radius:var(--radius-md); margin:calc(-1 * var(--v3-space-1)) calc(-1 * var(--v3-space-2)); padding:var(--v3-space-1) var(--v3-space-2); }
+.webhooks-row { display:flex; align-items:center; justify-content:space-between; gap:var(--v3-space-2); min-width:0; text-align:left; border-radius: var(--radius-floor); margin:calc(-1 * var(--v3-space-1)) calc(-1 * var(--v3-space-2)); padding:var(--v3-space-1) var(--v3-space-2); }
 .webhooks-row:hover { background:var(--muted); }
 .webhooks-row:focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); }
 .webhooks-row-copy { display:flex; flex-direction:column; flex:1; min-width:0; }
