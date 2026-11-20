@@ -42,6 +42,7 @@
 !/packages/soul-ui/src/lib/markdown-document-heading.ts
 !/packages/soul-ui/src/lib/recurring-schedule.ts
 !/packages/soul-ui/src/lib/rate-limit-notice.ts
+!/packages/soul-ui/src/lib/claude-runtime-projection.ts
 !/packages/wire-schema
 /packages/wire-schema/*
 !/packages/wire-schema/src

@@ -5,6 +5,8 @@ import type {
   ClaudeRuntimeDeleteScheduleResponse,
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeStopTaskResponse,
+} from '../../../packages/soul-ui/src/lib/claude-runtime-actions';
+import type {
   InterveneResponse,
   MessageContextItem,
 } from './types';

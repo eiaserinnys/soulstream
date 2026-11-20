@@ -13,7 +13,7 @@ import type {
   ClaudeRuntimeTaskStatus,
   ClaudeRuntimeTaskView,
   ClaudeRuntimeView,
-} from "../stores/claude-runtime-state";
+} from "../lib/claude-runtime-projection";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";

@@ -11,9 +11,9 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type {
-  ClaudeRuntimeSchedule,
+  ClaudeRuntimeScheduleView,
   ClaudeRuntimeScheduleStatus,
-} from '../../api/types';
+} from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
 import { useChatStore } from '../../store/chatStore';
 import { DESIGN_ICON_SIZE, useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
@@ -135,7 +135,7 @@ function ScheduleRow({
   tokenTextOnAccent,
   onDelete,
 }: {
-  schedule: ClaudeRuntimeSchedule;
+  schedule: ClaudeRuntimeScheduleView;
   busy: boolean;
   styles: ReturnType<typeof makeStyles>;
   tokenTextOnAccent: string;
@@ -178,8 +178,8 @@ function ScheduleRow({
 }
 
 function compareSchedules(
-  left: ClaudeRuntimeSchedule,
-  right: ClaudeRuntimeSchedule,
+  left: ClaudeRuntimeScheduleView,
+  right: ClaudeRuntimeScheduleView,
 ): number {
   return (left.nextRunAt ?? '9999').localeCompare(right.nextRunAt ?? '9999');
 }

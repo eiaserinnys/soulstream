@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudeRuntimeSchedulesPanel } from "./ClaudeRuntimeSchedulesPanel";
 import { ClaudeRuntimeTasksPanel } from "./ClaudeRuntimeTasksPanel";
-import type { ClaudeRuntimeView } from "../stores/claude-runtime-state";
+import type { ClaudeRuntimeView } from "../lib/claude-runtime-projection";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;

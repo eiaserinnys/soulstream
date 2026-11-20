@@ -1,6 +1,7 @@
 import type { ApiClient } from '../api/client';
 import type { PlannerFolder, PlannerSessionSummary } from '../api/plannerTypes';
-import type { Session, ClaudeRuntimeTaskOutputResponse } from '../api/types';
+import type { Session } from '../api/types';
+import type { ClaudeRuntimeTaskOutputResponse } from '../../../packages/soul-ui/src/lib/claude-runtime-actions';
 import type { CardDto } from '../api/cardTypes';
 import { Asset } from 'expo-asset';
 import { createPlannerMutationPort } from '../api/plannerMutationPort';

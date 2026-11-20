@@ -1,5 +1,3 @@
-import type { SoulSSEEvent } from "@shared/types";
-
 export type ClaudeRuntimeTaskStatus =
   | "pending"
   | "running"
@@ -129,14 +127,15 @@ export interface ClaudeRuntimeView {
   nextScheduleRunAt?: string | null;
 }
 
-export function applyClaudeRuntimeStoreEvent(
+export function applyClaudeRuntimeEvent<E extends { type: string }>(
   current: ClaudeRuntimeView | null,
-  event: SoulSSEEvent,
+  event: E,
 ): ClaudeRuntimeView | null {
   if (!event.type.startsWith("claude_runtime_")) return current;
   if (event.type === "claude_runtime_hook_event") return current;
 
-  const updatedAt = timestampToMs((event as { timestamp?: number }).timestamp);
+  const payload = event as unknown as Record<string, unknown>;
+  const updatedAt = timestampToMs(payload.timestamp);
   const next: ClaudeRuntimeView = {
     ...(current ?? { tasks: {}, schedules: {}, notifications: {}, remoteTriggers: {}, updatedAt }),
     tasks: { ...(current?.tasks ?? {}) },
@@ -147,22 +146,22 @@ export function applyClaudeRuntimeStoreEvent(
   };
 
   if (event.type === "claude_runtime_session_state") {
-    next.sessionState = event.state;
-    if (event.session_id) next.runtimeSessionId = event.session_id;
+    next.sessionState = payload.state as ClaudeRuntimeView["sessionState"];
+    if (payload.session_id) next.runtimeSessionId = payload.session_id as string;
     return next;
   }
 
   if (event.type === "claude_runtime_schedule_updated") {
-    const scheduleId = (event as { schedule_id?: string }).schedule_id;
+    const scheduleId = payload.schedule_id as string | undefined;
     if (!scheduleId) return next;
-    const schedule = scheduleFromEvent(scheduleId, event);
+    const schedule = scheduleFromEvent(scheduleId, payload);
     next.schedules[scheduleId] = schedule;
     next.nextScheduleRunAt = computeNextScheduleRunAt(next.schedules);
     return next;
   }
 
   if (event.type === "claude_runtime_schedule_deleted") {
-    const scheduleId = (event as { schedule_id?: string }).schedule_id;
+    const scheduleId = payload.schedule_id as string | undefined;
     if (!scheduleId) return next;
     delete next.schedules[scheduleId];
     next.nextScheduleRunAt = computeNextScheduleRunAt(next.schedules);
@@ -170,7 +169,6 @@ export function applyClaudeRuntimeStoreEvent(
   }
 
   if (event.type === "claude_runtime_mode_state") {
-    const payload = event as unknown as Record<string, unknown>;
     const mode = payload.mode;
     if (mode !== "plan" && mode !== "worktree") return next;
     const modeState: ClaudeRuntimeModeView = {
@@ -180,11 +178,11 @@ export function applyClaudeRuntimeStoreEvent(
     if (payload.source === "hook" || payload.source === "tool_use") {
       modeState.source = payload.source;
     }
-    copyString(event, "tool_use_id", modeState, "toolUseId");
-    copyString(event, "tool_name", modeState, "toolName");
-    copyString(event, "worktree_name", modeState, "worktreeName");
-    copyString(event, "worktree_path", modeState, "worktreePath");
-    copyString(event, "worktree_action", modeState, "worktreeAction");
+    copyString(payload, "tool_use_id", modeState, "toolUseId");
+    copyString(payload, "tool_name", modeState, "toolName");
+    copyString(payload, "worktree_name", modeState, "worktreeName");
+    copyString(payload, "worktree_path", modeState, "worktreePath");
+    copyString(payload, "worktree_action", modeState, "worktreeAction");
     if (mode === "plan") {
       next.planMode = modeState;
     } else {
@@ -194,46 +192,46 @@ export function applyClaudeRuntimeStoreEvent(
   }
 
   if (event.type === "claude_runtime_notification") {
-    const notificationId = event.notification_id;
+    const notificationId = payload.notification_id as string;
     const notification: ClaudeRuntimeNotificationView = {
       ...(next.notifications[notificationId] ?? {}),
       notificationId,
-      source: event.source,
-      message: event.message,
+      source: payload.source as ClaudeRuntimeNotificationView["source"],
+      message: payload.message as string,
       updatedAt,
     };
-    copyString(event, "title", notification);
-    copyString(event, "notification_type", notification, "notificationType");
-    copyString(event, "key", notification);
-    copyString(event, "priority", notification);
-    copyString(event, "session_id", notification, "sessionId");
-    copyString(event, "tool_use_id", notification, "toolUseId");
-    if (event.session_id) next.runtimeSessionId = event.session_id;
+    copyString(payload, "title", notification);
+    copyString(payload, "notification_type", notification, "notificationType");
+    copyString(payload, "key", notification);
+    copyString(payload, "priority", notification);
+    copyString(payload, "session_id", notification, "sessionId");
+    copyString(payload, "tool_use_id", notification, "toolUseId");
+    if (payload.session_id) next.runtimeSessionId = payload.session_id as string;
     next.notifications[notificationId] = notification;
     return next;
   }
 
   if (event.type === "claude_runtime_remote_trigger") {
-    const triggerId = event.trigger_id;
+    const triggerId = payload.trigger_id as string;
     const trigger: ClaudeRuntimeRemoteTriggerView = {
       ...(next.remoteTriggers[triggerId] ?? {}),
       triggerId,
-      source: event.source,
+      source: payload.source as ClaudeRuntimeRemoteTriggerView["source"],
       updatedAt,
     };
-    copyString(event, "session_id", trigger, "sessionId");
-    copyString(event, "tool_use_id", trigger, "toolUseId");
-    copyString(event, "origin_kind", trigger, "originKind");
-    copyString(event, "origin_from", trigger, "originFrom");
-    copyString(event, "origin_name", trigger, "originName");
-    copyString(event, "origin_server", trigger, "originServer");
-    copyString(event, "priority", trigger);
-    copyString(event, "prompt", trigger);
-    copyString(event, "trigger_type", trigger, "triggerType");
-    if (event.payload && typeof event.payload === "object") {
-      trigger.payload = event.payload;
+    copyString(payload, "session_id", trigger, "sessionId");
+    copyString(payload, "tool_use_id", trigger, "toolUseId");
+    copyString(payload, "origin_kind", trigger, "originKind");
+    copyString(payload, "origin_from", trigger, "originFrom");
+    copyString(payload, "origin_name", trigger, "originName");
+    copyString(payload, "origin_server", trigger, "originServer");
+    copyString(payload, "priority", trigger);
+    copyString(payload, "prompt", trigger);
+    copyString(payload, "trigger_type", trigger, "triggerType");
+    if (payload.payload && typeof payload.payload === "object") {
+      trigger.payload = payload.payload as Record<string, unknown>;
     }
-    if (event.session_id) next.runtimeSessionId = event.session_id;
+    if (payload.session_id) next.runtimeSessionId = payload.session_id as string;
     next.remoteTriggers[triggerId] = trigger;
     return next;
   }
@@ -243,18 +241,18 @@ export function applyClaudeRuntimeStoreEvent(
       ...(next.transcriptMirror ?? { errorCount: 0 }),
       updatedAt,
       errorCount: (next.transcriptMirror?.errorCount ?? 0) + 1,
-      mirrorId: event.mirror_id,
-      sessionId: event.session_id,
-      projectKey: event.project_key,
-      transcriptSessionId: event.transcript_session_id,
-      subpath: event.subpath,
-      lastError: event.error,
+      mirrorId: payload.mirror_id as string,
+      sessionId: payload.session_id as string,
+      projectKey: payload.project_key as string,
+      transcriptSessionId: payload.transcript_session_id as string,
+      subpath: payload.subpath as string,
+      lastError: payload.error as string,
     };
-    if (event.session_id) next.runtimeSessionId = event.session_id;
+    if (payload.session_id) next.runtimeSessionId = payload.session_id as string;
     return next;
   }
 
-  const taskId = (event as { task_id?: string }).task_id;
+  const taskId = payload.task_id as string | undefined;
   if (!taskId) return next;
   const existing = next.tasks[taskId];
   const runtimeTask: ClaudeRuntimeTaskView = {
@@ -263,34 +261,34 @@ export function applyClaudeRuntimeStoreEvent(
     updatedAt,
   };
 
-  if ("session_id" in event && typeof event.session_id === "string" && event.session_id) {
-    next.runtimeSessionId = event.session_id;
-    runtimeTask.sessionId = event.session_id;
+  if (typeof payload.session_id === "string" && payload.session_id) {
+    next.runtimeSessionId = payload.session_id;
+    runtimeTask.sessionId = payload.session_id;
   }
-  if ("tool_use_id" in event && typeof event.tool_use_id === "string" && event.tool_use_id) {
-    runtimeTask.toolUseId = event.tool_use_id;
+  if (typeof payload.tool_use_id === "string" && payload.tool_use_id) {
+    runtimeTask.toolUseId = payload.tool_use_id;
   }
 
   switch (event.type) {
     case "claude_runtime_task_started":
       runtimeTask.status = "running";
-      copyString(event, "description", runtimeTask);
-      copyString(event, "task_type", runtimeTask, "taskType");
-      copyString(event, "workflow_name", runtimeTask, "workflowName");
-      copyString(event, "prompt", runtimeTask);
-      if (typeof event.skip_transcript === "boolean") {
-        runtimeTask.skipTranscript = event.skip_transcript;
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "task_type", runtimeTask, "taskType");
+      copyString(payload, "workflow_name", runtimeTask, "workflowName");
+      copyString(payload, "prompt", runtimeTask);
+      if (typeof payload.skip_transcript === "boolean") {
+        runtimeTask.skipTranscript = payload.skip_transcript;
       }
       break;
     case "claude_runtime_task_created":
       runtimeTask.status = "pending";
-      copyString(event, "subject", runtimeTask);
-      copyString(event, "description", runtimeTask);
-      copyString(event, "teammate_name", runtimeTask, "teammateName");
-      copyString(event, "team_name", runtimeTask, "teamName");
+      copyString(payload, "subject", runtimeTask);
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "teammate_name", runtimeTask, "teammateName");
+      copyString(payload, "team_name", runtimeTask, "teamName");
       break;
     case "claude_runtime_task_updated": {
-      const patch = event.patch ?? {};
+      const patch = (payload.patch ?? {}) as Record<string, unknown>;
       if (isTaskStatus(patch.status)) runtimeTask.status = patch.status;
       copyString(patch, "tool_use_id", runtimeTask, "toolUseId");
       copyString(patch, "description", runtimeTask);
@@ -310,29 +308,29 @@ export function applyClaudeRuntimeStoreEvent(
     }
     case "claude_runtime_task_progress":
       runtimeTask.status = "running";
-      copyString(event, "description", runtimeTask);
-      copyString(event, "last_tool_name", runtimeTask, "lastToolName");
-      copyString(event, "summary", runtimeTask);
-      if (event.usage && typeof event.usage === "object") {
-        runtimeTask.usage = event.usage;
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "last_tool_name", runtimeTask, "lastToolName");
+      copyString(payload, "summary", runtimeTask);
+      if (payload.usage && typeof payload.usage === "object") {
+        runtimeTask.usage = payload.usage as Record<string, unknown>;
       }
       break;
     case "claude_runtime_task_completed":
       runtimeTask.status = "completed";
-      copyString(event, "subject", runtimeTask);
-      copyString(event, "description", runtimeTask);
-      copyString(event, "teammate_name", runtimeTask, "teammateName");
-      copyString(event, "team_name", runtimeTask, "teamName");
+      copyString(payload, "subject", runtimeTask);
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "teammate_name", runtimeTask, "teammateName");
+      copyString(payload, "team_name", runtimeTask, "teamName");
       break;
     case "claude_runtime_task_notification":
-      runtimeTask.status = event.status;
-      copyString(event, "output_file", runtimeTask, "outputFile");
-      copyString(event, "summary", runtimeTask);
-      if (typeof event.skip_transcript === "boolean") {
-        runtimeTask.skipTranscript = event.skip_transcript;
+      runtimeTask.status = payload.status as ClaudeRuntimeTaskStatus;
+      copyString(payload, "output_file", runtimeTask, "outputFile");
+      copyString(payload, "summary", runtimeTask);
+      if (typeof payload.skip_transcript === "boolean") {
+        runtimeTask.skipTranscript = payload.skip_transcript;
       }
-      if (event.usage && typeof event.usage === "object") {
-        runtimeTask.usage = event.usage;
+      if (payload.usage && typeof payload.usage === "object") {
+        runtimeTask.usage = payload.usage as Record<string, unknown>;
       }
       break;
   }
@@ -347,7 +345,7 @@ export function schedulesFromList(
   return Object.fromEntries(schedules.map((schedule) => [schedule.scheduleId, schedule]));
 }
 
-function timestampToMs(value: number | undefined): number {
+function timestampToMs(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Date.now();
   return value > 1_000_000_000_000 ? value : value * 1000;
 }
@@ -365,12 +363,9 @@ function isTaskStatus(value: unknown): value is ClaudeRuntimeTaskStatus {
 
 function scheduleFromEvent(
   scheduleId: string,
-  event: SoulSSEEvent,
+  payload: Record<string, unknown>,
 ): ClaudeRuntimeScheduleView {
-  const payload = event as unknown as Record<string, unknown>;
-  const existing = {};
   const schedule: ClaudeRuntimeScheduleView = {
-    ...existing,
     scheduleId,
     kind: isScheduleKind(payload.schedule_kind)
       ? payload.schedule_kind
@@ -379,20 +374,20 @@ function scheduleFromEvent(
       ? payload.status
       : "active",
   };
-  copyString(event, "session_id", schedule, "sessionId");
-  copyString(event, "prompt", schedule);
-  copyString(event, "source_tool", schedule, "sourceTool");
-  copyNullableString(event, "tool_use_id", schedule, "toolUseId");
-  copyNullableString(event, "cron_expression", schedule, "cronExpression");
-  copyNullableString(event, "run_once_at", schedule, "runOnceAt");
-  copyString(event, "timezone", schedule);
+  copyString(payload, "session_id", schedule, "sessionId");
+  copyString(payload, "prompt", schedule);
+  copyString(payload, "source_tool", schedule, "sourceTool");
+  copyNullableString(payload, "tool_use_id", schedule, "toolUseId");
+  copyNullableString(payload, "cron_expression", schedule, "cronExpression");
+  copyNullableString(payload, "run_once_at", schedule, "runOnceAt");
+  copyString(payload, "timezone", schedule);
   if (typeof payload.recurring === "boolean") schedule.recurring = payload.recurring;
-  copyNullableString(event, "next_run_at", schedule, "nextRunAt");
-  copyNullableString(event, "last_fired_at", schedule, "lastFiredAt");
+  copyNullableString(payload, "next_run_at", schedule, "nextRunAt");
+  copyNullableString(payload, "last_fired_at", schedule, "lastFiredAt");
   if (typeof payload.fired_count === "number") schedule.firedCount = payload.fired_count;
-  copyNullableString(event, "last_error", schedule, "lastError");
-  copyString(event, "created_at", schedule, "createdAt");
-  copyString(event, "updated_at", schedule, "updatedAt");
+  copyNullableString(payload, "last_error", schedule, "lastError");
+  copyString(payload, "created_at", schedule, "createdAt");
+  copyString(payload, "updated_at", schedule, "updatedAt");
   return schedule;
 }
 

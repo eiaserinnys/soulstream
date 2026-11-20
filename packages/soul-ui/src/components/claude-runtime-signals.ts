@@ -7,7 +7,7 @@ import type {
   ClaudeRuntimeRemoteTriggerView,
   ClaudeRuntimeTranscriptMirrorView,
   ClaudeRuntimeView,
-} from "../stores/claude-runtime-state";
+} from "../lib/claude-runtime-projection";
 
 export interface ClaudeRuntimeSignalsView {
   notifications: ClaudeRuntimeNotificationView[];

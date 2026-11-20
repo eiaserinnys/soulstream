@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { applyClaudeRuntimeStoreEvent } from "./claude-runtime-state";
+import { applyClaudeRuntimeEvent } from "./claude-runtime-projection";
 import type { SoulSSEEvent } from "@shared/types";
 
-describe("applyClaudeRuntimeStoreEvent", () => {
+describe("applyClaudeRuntimeEvent", () => {
   it("accumulates P0-A Claude runtime wire into background task state", () => {
-    let state = applyClaudeRuntimeStoreEvent(null, {
+    let state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_session_state",
       state: "running",
       session_id: "claude-sess-1",
       timestamp: 10,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_task_started",
       task_id: "bg-1",
       tool_use_id: "toolu-bash",
@@ -21,7 +21,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 11,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_task_updated",
       task_id: "bg-1",
       patch: {
@@ -34,7 +34,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 12,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_task_created",
       task_id: "sdk-task-1",
       subject: "Investigate queue",
@@ -44,7 +44,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 13,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_task_completed",
       task_id: "sdk-task-1",
       subject: "Investigate queue",
@@ -81,7 +81,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
   });
 
   it("ignores non-string task session metadata from an external event", () => {
-    const state = applyClaudeRuntimeStoreEvent(null, {
+    const state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_task_started",
       task_id: "bg-invalid-metadata",
       session_id: {},
@@ -103,7 +103,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
   });
 
   it("keeps empty task session metadata absent", () => {
-    const state = applyClaudeRuntimeStoreEvent(null, {
+    const state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_task_started",
       task_id: "bg-empty-metadata",
       session_id: "",
@@ -117,7 +117,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
   });
 
   it("tracks plan and worktree mode state without creating task rows", () => {
-    let state = applyClaudeRuntimeStoreEvent(null, {
+    let state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_mode_state",
       mode: "plan",
       active: true,
@@ -127,7 +127,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 20,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_mode_state",
       mode: "worktree",
       active: true,
@@ -136,7 +136,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 21,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_hook_event",
       hook_event_name: "PermissionRequest",
       tool_name: "Bash",
@@ -160,7 +160,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
   });
 
   it("tracks durable schedule update/delete wire and derives the next active run", () => {
-    let state = applyClaudeRuntimeStoreEvent(null, {
+    let state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_schedule_updated",
       schedule_id: "sched-late",
       session_id: "sess-1",
@@ -172,7 +172,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 10,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_schedule_updated",
       schedule_id: "sched-soon",
       session_id: "sess-1",
@@ -192,7 +192,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       },
     });
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_schedule_deleted",
       schedule_id: "sched-soon",
       session_id: "sess-1",
@@ -205,7 +205,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
   });
 
   it("tracks runtime notifications, remote triggers, and transcript mirror errors", () => {
-    let state = applyClaudeRuntimeStoreEvent(null, {
+    let state = applyClaudeRuntimeEvent(null, {
       type: "claude_runtime_notification",
       notification_id: "notif-1",
       source: "tool_use",
@@ -216,7 +216,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 20,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_remote_trigger",
       trigger_id: "remote-1",
       source: "message_origin",
@@ -227,7 +227,7 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 21,
     } as unknown as SoulSSEEvent);
 
-    state = applyClaudeRuntimeStoreEvent(state, {
+    state = applyClaudeRuntimeEvent(state, {
       type: "claude_runtime_transcript_mirror_error",
       mirror_id: "mirror-1",
       session_id: "claude-sess-1",

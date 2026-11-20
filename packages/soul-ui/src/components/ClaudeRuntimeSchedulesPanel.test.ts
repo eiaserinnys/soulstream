@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { canDeleteClaudeRuntimeSchedule, ClaudeRuntimeSchedulesPanel } from "./ClaudeRuntimeSchedulesPanel";
-import type { ClaudeRuntimeView } from "../stores/claude-runtime-state";
+import type { ClaudeRuntimeView } from "../lib/claude-runtime-projection";
 
 const nextRunAt = "2026-10-21T05:08:48.000Z";
 const runtime: ClaudeRuntimeView = {

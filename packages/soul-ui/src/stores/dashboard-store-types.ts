@@ -20,7 +20,7 @@ import type {
   CatalogFolderReorderItem,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
-import type { ClaudeRuntimeView } from "./claude-runtime-state";
+import type { ClaudeRuntimeView } from "../lib/claude-runtime-projection";
 import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings";
 import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";

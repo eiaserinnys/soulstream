@@ -5,7 +5,7 @@ import type { ApiClient } from '../../../api/client';
 import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeTasksResponse,
-} from '../../../api/types';
+} from '../../../../../packages/soul-ui/src/lib/claude-runtime-actions';
 import { useAuthStore } from '../../../store/authStore';
 import { useChatStore } from '../../../store/chatStore';
 import { useClaudeRuntimeListLifecycleStore } from '../../../store/claudeRuntimeListLifecycleStore';

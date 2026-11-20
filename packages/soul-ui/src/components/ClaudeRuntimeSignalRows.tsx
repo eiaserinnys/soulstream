@@ -3,7 +3,7 @@ import { Bell, DatabaseZap, Radio } from "lucide-react";
 import type {
   ClaudeRuntimeNotificationView,
   ClaudeRuntimeRemoteTriggerView,
-} from "../stores/claude-runtime-state";
+} from "../lib/claude-runtime-projection";
 import type { ClaudeRuntimeSignalsView } from "./claude-runtime-signals";
 
 export function ClaudeRuntimeSignalRows({

@@ -9,7 +9,7 @@ import type {
   ClaudeRuntimeScheduleStatus,
   ClaudeRuntimeScheduleView,
   ClaudeRuntimeView,
-} from "../stores/claude-runtime-state";
+} from "../lib/claude-runtime-projection";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";

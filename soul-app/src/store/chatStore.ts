@@ -1,30 +1,25 @@
 // Size exception: one Zustand store keeps its atomic state/action transitions together.
-// The independent Claude runtime payload projection lives in claudeRuntimeProjection;
 // splitting the remaining single-use transitions would create shallow pass-through modules.
 import { create } from 'zustand';
 import type { ReportSendContext } from '../lib/persistent-report';
+import type { SessionEvent } from '../api/types';
 import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeTasksResponse,
-  SessionEvent,
-} from '../api/types';
+} from '../../../packages/soul-ui/src/lib/claude-runtime-actions';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 import {
   isAssistantUiPublication,
   mergeAppendOnlyStreamingDelta,
 } from '../lib/streamingDeltaEvent';
 import { subscribeAuthScope } from '../lib/auth-scope';
-import {
-  applyClaudeRuntimePayload,
-  type ClaudeRuntimeView,
-} from './claudeRuntimeProjection';
+import type { ClaudeRuntimeView } from '../../../packages/soul-ui/src/lib/claude-runtime-projection';
+import { applyClaudeRuntimePayload } from './claudeRuntimeEvent';
 import {
   invalidateClaudeRuntimeLists,
   noteClaudeRuntimeListEvent,
 } from './claudeRuntimeListLifecycleStore';
 import { matchesAttachmentPending } from '../lib/attachment-message-match';
-
-export type { ClaudeRuntimeView } from './claudeRuntimeProjection';
 
 // optimistic 사용자 메시지의 id prefix. 진짜 서버 이벤트 id는 숫자(또는 SSE의 fallback
 // `{type}-{ts}` — sseGate.ts L51 참조)이므로 충돌 없다.
