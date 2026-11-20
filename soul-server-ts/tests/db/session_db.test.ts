@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
-import { ClaudeTranscriptRepository } from "../../../orch-server-ts/src/control_plane/repositories/claude_transcript_repository.js";
 import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 interface MockCall {
@@ -58,111 +57,6 @@ function createFolderHostedDb(sql: SqlClient): SessionDB {
   db.configureFolderHost(new FolderControlPlaneService(sql as never, () => reads.getBoardItems()) as never);
   return db;
 }
-
-describe("SessionDB Claude transcript mirror", () => {
-  it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
-    const { sql, calls } = createMockSql(() => [{ claude_transcript_append: 2 }]);
-    const db = new ClaudeTranscriptRepository(sql);
-
-    const written = await db.appendClaudeTranscriptEntries(
-      { projectKey: "project-a", sessionId: "claude-sess-1" },
-      [
-        { type: "user", uuid: "u1", message: { content: "hi" } },
-        { type: "assistant", uuid: "a1", message: { content: "hello" } },
-      ],
-    );
-
-    expect(written).toBe(2);
-    expect(calls).toHaveLength(1);
-    const [call] = calls;
-    expect(call.fragments.join("?")).toContain("claude_transcript_append");
-    expect(call.values[0]).toBe("project-a");
-    expect(call.values[1]).toBe("claude-sess-1");
-    expect(call.values[2]).toBeNull();
-    expect(JSON.parse(call.values[3] as string)).toEqual([
-      { type: "user", uuid: "u1", message: { content: "hi" } },
-      { type: "assistant", uuid: "a1", message: { content: "hello" } },
-    ]);
-    expect(call.values[4]).toBeInstanceOf(Date);
-  });
-
-  it("appendClaudeTranscriptEntries no-ops for empty batches", async () => {
-    const { sql, calls } = createMockSql();
-    const db = new ClaudeTranscriptRepository(sql);
-
-    const written = await db.appendClaudeTranscriptEntries(
-      { projectKey: "project-a", sessionId: "claude-sess-1" },
-      [],
-    );
-
-    expect(written).toBe(0);
-    expect(calls).toHaveLength(0);
-  });
-
-  it("loadClaudeTranscriptEntries returns null when the store has no rows", async () => {
-    const { sql, calls } = createMockSql(() => []);
-    const db = new ClaudeTranscriptRepository(sql);
-
-    const entries = await db.loadClaudeTranscriptEntries({
-      projectKey: "project-a",
-      sessionId: "missing",
-      subpath: "subagents/agent-a",
-    });
-
-    expect(entries).toBeNull();
-    expect(calls[0].fragments.join("?")).toContain("claude_transcript_load");
-    expect(calls[0].values).toEqual(["project-a", "missing", "subagents/agent-a"]);
-  });
-
-  it("loadClaudeTranscriptEntries parses entry JSON rows in storage order", async () => {
-    const { sql } = createMockSql(() => [
-      { entry: { type: "user", uuid: "u1" } },
-      { entry: { type: "assistant", uuid: "a1" } },
-    ]);
-    const db = new ClaudeTranscriptRepository(sql);
-
-    await expect(
-      db.loadClaudeTranscriptEntries({ projectKey: "project-a", sessionId: "claude-sess-1" }),
-    ).resolves.toEqual([
-      { type: "user", uuid: "u1" },
-      { type: "assistant", uuid: "a1" },
-    ]);
-  });
-
-  it("list/delete transcript helpers preserve project/session/subpath keys", async () => {
-    const { sql, calls } = createMockSql((call) => {
-      const query = call.fragments.join("?");
-      if (query.includes("claude_transcript_list_sessions")) {
-        return [{ session_id: "claude-sess-1", mtime: "1770000000000" }];
-      }
-      if (query.includes("claude_transcript_list_subkeys")) {
-        return [{ subpath: "subagents/agent-a" }];
-      }
-      return [];
-    });
-    const db = new ClaudeTranscriptRepository(sql);
-
-    await expect(db.listClaudeTranscriptSessions("project-a")).resolves.toEqual([
-      { sessionId: "claude-sess-1", mtime: 1770000000000 },
-    ]);
-    await expect(
-      db.listClaudeTranscriptSubkeys({ projectKey: "project-a", sessionId: "claude-sess-1" }),
-    ).resolves.toEqual(["subagents/agent-a"]);
-    await db.deleteClaudeTranscript({
-      projectKey: "project-a",
-      sessionId: "claude-sess-1",
-      subpath: "subagents/agent-a",
-    });
-
-    expect(calls[0].fragments.join("?")).toContain("claude_transcript_list_sessions");
-    expect(calls[0].values).toEqual(["project-a"]);
-    expect(calls[1].fragments.join("?")).toContain("claude_transcript_list_subkeys");
-    expect(calls[1].values).toEqual(["project-a", "claude-sess-1"]);
-    expect(calls[2].fragments.join("?")).toContain("claude_transcript_delete");
-    expect(calls[2].values).toEqual(["project-a", "claude-sess-1", "subagents/agent-a"]);
-  });
-});
-
 
 describe("SessionDB folder ops (B-5)", () => {
   it("assignSessionToFolder → session_assign_folder(sessionId, folderId)", async () => {

@@ -1,10 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type {
-  SessionKey,
-  SessionStoreEntry,
-} from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
@@ -28,7 +24,6 @@ import {
 } from "./runner_claude_runtime_observation.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
-import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type {
@@ -107,7 +102,6 @@ export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
-  sessionStore: IdempotentClaudeSessionStore;
   claudeAccounts?: HostClaudeAccountService;
   producedAttachments?: Pick<
     ReturnType<typeof createProducedAttachmentRegistration>,
@@ -518,20 +512,19 @@ export async function applyRunnerHostCall(
         throw new Error(`unsupported Claude account host operation: ${call.operation}`);
     }
   }
+  // PR-B(카드 #1075)에서 지운다: 옛 릴리스 러너 자식 호환.
   if (call.service === "session_store") {
-    const result = await callSessionStore(
-      options.sessionStore,
-      call.operation,
-      call.args,
-      call.correlationId,
-      expectedSessionId,
-    );
-    if (call.operation === "append" && options.reconcileClaudeTranscriptAppend) {
-      registerPostResponse(async () => {
-        await options.reconcileClaudeTranscriptAppend!(task);
-      });
+    if (call.operation === "append") {
+      if (options.reconcileClaudeTranscriptAppend) {
+        registerPostResponse(async () => {
+          await options.reconcileClaudeTranscriptAppend!(task);
+        });
+      }
+      return null;
     }
-    return result;
+    if (call.operation === "load" || call.operation === "delete") return null;
+    if (call.operation === "listSessions" || call.operation === "listSubkeys") return [];
+    throw new Error(`unsupported SessionStore operation: ${call.operation}`);
   }
   if (call.service === "event_archive") {
     if (call.operation !== "register") {
@@ -602,42 +595,6 @@ export async function applyRunnerHostCall(
     return null;
   }
   throw new Error(`unsupported runner host call: ${call.service}.${call.operation}`);
-}
-
-async function callSessionStore(
-  store: IdempotentClaudeSessionStore,
-  operation: string,
-  args: unknown[],
-  idempotencyKey: string,
-  ownerSessionId: string,
-): Promise<unknown> {
-  switch (operation) {
-    case "append":
-      await store.appendIdempotent(
-        args[0] as SessionKey,
-        args[1] as SessionStoreEntry[],
-        idempotencyKey,
-        ownerSessionId,
-      );
-      return null;
-    case "load":
-      return await store.load(args[0] as SessionKey);
-    case "listSessions":
-      if (!store.listSessions) throw new Error("SessionStore.listSessions unavailable");
-      return await store.listSessions(asString(args[0], "project key"));
-    case "delete":
-      await store.deleteIdempotent(
-        args[0] as SessionKey,
-        idempotencyKey,
-        ownerSessionId,
-      );
-      return null;
-    case "listSubkeys":
-      if (!store.listSubkeys) throw new Error("SessionStore.listSubkeys unavailable");
-      return await store.listSubkeys(args[0] as { projectKey: string; sessionId: string });
-    default:
-      throw new Error(`unsupported SessionStore operation: ${operation}`);
-  }
 }
 
 function required(value: string | undefined, key: string): string {

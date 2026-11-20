@@ -1,8 +1,3 @@
-import type {
-  SessionKey,
-  SessionStore,
-  SessionStoreEntry,
-} from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type {
   ClaudeAccountAuthFailureInput,
@@ -153,7 +148,6 @@ function createRunnerChildEnginePort(
   if (config.backend !== "claude") {
     throw new Error(`Unsupported backend "${config.backend}" in runner child`);
   }
-  const sessionStore = new HostSessionStore(host);
   const accountPoolEnabled = config.claudeAccountPool?.enabled === true;
   const claudeAccountTurnPort = accountPoolEnabled
     ? new HostClaudeAccountTurnPort(host, {
@@ -219,9 +213,6 @@ function createRunnerChildEnginePort(
     agentId: config.agent.id,
     sessionDirectory: config.paths.sessionDirectory,
     processEnv: process.env,
-    sessionStore,
-    sessionStoreFlush: config.claudeRuntimeV2Enabled || accountPoolEnabled ? "eager" : "batched",
-    loadTimeoutMs: 60_000,
     trackChildExit: accountPoolEnabled,
     claudeAccountPoolEnabled: accountPoolEnabled,
     ...(accountPoolEnabled
@@ -315,36 +306,6 @@ class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {
 
   async release(input: ClaudeAccountReleaseInput): Promise<void> {
     await this.host.call("claude_accounts", "release", [input.session_id, input], hostOptions());
-  }
-}
-
-class HostSessionStore implements SessionStore {
-  constructor(private readonly host: RunnerHostRequestClient) {}
-
-  async append(key: SessionKey, entries: SessionStoreEntry[]): Promise<void> {
-    await this.host.call("session_store", "append", [key, entries], hostOptions());
-  }
-
-  async load(key: SessionKey): Promise<SessionStoreEntry[] | null> {
-    return await this.host.call("session_store", "load", [key], hostOptions()) as
-      SessionStoreEntry[] | null;
-  }
-
-  async listSessions(projectKey: string): Promise<Array<{ sessionId: string; mtime: number }>> {
-    return await this.host.call(
-      "session_store",
-      "listSessions",
-      [projectKey],
-      hostOptions(),
-    ) as Array<{ sessionId: string; mtime: number }>;
-  }
-
-  async delete(key: SessionKey): Promise<void> {
-    await this.host.call("session_store", "delete", [key], hostOptions());
-  }
-
-  async listSubkeys(key: { projectKey: string; sessionId: string }): Promise<string[]> {
-    return await this.host.call("session_store", "listSubkeys", [key], hostOptions()) as string[];
   }
 }
 

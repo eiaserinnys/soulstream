@@ -16,8 +16,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import pino from "pino";
 
-import { ClaudeTranscriptRepository } from
-  "../../../orch-server-ts/src/control_plane/repositories/claude_transcript_repository.js";
 import { SessionMutationRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_mutation_repository.js";
 import { SessionDeliveryRepository } from
@@ -51,7 +49,6 @@ import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import { parseEnv } from "../../src/config.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import { SessionDB } from "../../src/db/session_db.js";
-import { DbClaudeSessionStore } from "../../src/engine/claude_session_store.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { readRunnerRegistrationIdentity } from
@@ -257,9 +254,6 @@ export class P0R2FullSliceHarness {
     configureTestSessionDataHost(db, sql);
     const deliveryRepository = new SessionDeliveryRepository(sql as never);
     db.configureSessionDeliveryHost(deliveryRepository as never);
-    db.configureClaudeTranscriptHost(
-      new ClaudeTranscriptRepository(sql as never) as never,
-    );
     const outbox = await EventOutbox.open(outboxDirectory);
     const pumpErrors: string[] = [];
     const pump = new EventOutboxPump(outbox, (error) => {
@@ -355,12 +349,10 @@ export class P0R2FullSliceHarness {
       registryPath,
       profilesPath,
     });
-    const sessionStore = new DbClaudeSessionStore(db);
     const composition = await composeRunnerProcessRuntime(true, {
       env,
       logger,
       pumpMux: mux,
-      sessionStore,
       mcpConfigService,
       buildChildProcessEnv: () => ({
         ...process.env,

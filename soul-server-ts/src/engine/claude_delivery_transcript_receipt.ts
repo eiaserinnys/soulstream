@@ -1,7 +1,6 @@
 import {
   getSessionMessages,
   type SessionMessage,
-  type SessionStore,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../agent_registry.js";
@@ -38,14 +37,13 @@ export interface ClaudeNativeTaskNotificationTranscriptProof {
   assistantMessageUuid: string;
 }
 
-type ClaudeTranscriptTarget =
+type ClaudeReceiptTarget =
   | { kind: "ready"; session: SessionRow; profile: AgentProfile; workspaceDir: string }
   | { kind: "absent" }
   | { kind: "unavailable"; reason: string };
 
 export interface ClaudeDeliveryTranscriptReceiptDeps {
   sourceNode: string;
-  sessionStore: SessionStore;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
   getModelPresetBackend?(
@@ -59,9 +57,8 @@ export interface ClaudeDeliveryTranscriptReceiptDeps {
  * Reads the Claude receiver's durable transcript before a queued SDK input is
  * replayed after a worker crash.
  *
- * The shared SessionStore is checked first. A same-node restart may also read
- * the CLI JSONL because the Claude subprocess can finish writing after the
- * parent worker dies, before its final mirror batch reaches PostgreSQL.
+ * The same node's CLI JSONL is the single transcript source. A remote node's
+ * transcript is unavailable because it is not mirrored.
  */
 export class ClaudeDeliveryTranscriptReceiptReader {
   private readonly loadMessages: typeof getSessionMessages;
@@ -74,7 +71,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     delivery: SessionDeliveryRow,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
     const inputUuid = buildDeliveryInputUuid(delivery.delivery_id);
-    return await this.inspectTarget(delivery.target_session_id, inputUuid, false);
+    return await this.inspectTarget(delivery.target_session_id, inputUuid);
   }
 
   async inspectInput(
@@ -85,7 +82,6 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     return await this.inspectTarget(
       targetSessionId,
       inputUuid,
-      true,
       expectedAssistantUuid,
     );
   }
@@ -96,12 +92,6 @@ export class ClaudeDeliveryTranscriptReceiptReader {
   ): Promise<ClaudeNativeTaskNotificationTranscriptProof | null> {
     const target = await this.resolveTarget(targetSessionId);
     if (target.kind !== "ready") return null;
-    const shared = await this.loadMessages(target.session.claude_session_id!, {
-      dir: target.workspaceDir,
-      sessionStore: this.deps.sessionStore,
-    });
-    const sharedProof = findNativeTaskNotificationProof(shared, query);
-    if (sharedProof) return sharedProof;
     if (target.session.node_id !== this.deps.sourceNode) return null;
     const local = await this.loadMessages(target.session.claude_session_id!, {
       dir: target.workspaceDir,
@@ -112,7 +102,6 @@ export class ClaudeDeliveryTranscriptReceiptReader {
   private async inspectTarget(
     targetSessionId: string | null,
     inputUuid: string,
-    preferSameNodeLocal: boolean,
     expectedAssistantUuid?: string,
   ): Promise<ClaudeDeliveryTranscriptReceipt> {
     const target = await this.resolveTarget(targetSessionId);
@@ -127,45 +116,27 @@ export class ClaudeDeliveryTranscriptReceiptReader {
       };
     }
     const { session, workspaceDir } = target;
+    if (session.node_id !== this.deps.sourceNode) {
+      return {
+        kind: "unavailable",
+        inputUuid,
+        reason: "remote_transcript_not_mirrored",
+      };
+    }
 
-    const shared = await this.loadMessages(session.claude_session_id!, {
+    const local = await this.loadMessages(session.claude_session_id!, {
       dir: workspaceDir,
-      sessionStore: this.deps.sessionStore,
     });
-    const sharedReceipt = findClaudeDeliveryTranscriptReceipt(
-      shared,
+    return findClaudeDeliveryTranscriptReceipt(
+      local,
       inputUuid,
       expectedAssistantUuid,
     );
-    if (
-      sharedReceipt.kind === "completed" ||
-      (!preferSameNodeLocal && sharedReceipt.kind !== "absent")
-    ) return sharedReceipt;
-
-    if (session.node_id === this.deps.sourceNode) {
-      const local = await this.loadMessages(session.claude_session_id!, {
-        dir: workspaceDir,
-      });
-      const localReceipt = findClaudeDeliveryTranscriptReceipt(
-        local,
-        inputUuid,
-        expectedAssistantUuid,
-      );
-      return localReceipt.kind === "absent" && sharedReceipt.kind !== "absent"
-        ? sharedReceipt
-        : localReceipt;
-    }
-    if (sharedReceipt.kind !== "absent") return sharedReceipt;
-    return {
-      kind: "unavailable",
-      inputUuid,
-      reason: "remote_transcript_not_mirrored",
-    };
   }
 
   private async resolveTarget(
     targetSessionId: string | null,
-  ): Promise<ClaudeTranscriptTarget> {
+  ): Promise<ClaudeReceiptTarget> {
     if (!targetSessionId) return { kind: "absent" };
     const session = await this.deps.getSession(targetSessionId);
     if (!session) return { kind: "absent" };

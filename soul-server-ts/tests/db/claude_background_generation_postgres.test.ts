@@ -554,7 +554,6 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
         deliveryRepository.recordRelationConsumed(input),
       sourceNode: "node-test",
       logger: { error: () => undefined },
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -671,7 +670,6 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
           rowErrors.push(args);
         },
       },
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",

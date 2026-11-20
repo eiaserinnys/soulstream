@@ -146,7 +146,7 @@ describe("Claude delivery transcript receipt", () => {
       message("assistant", "published-assistant"),
     ]);
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
-      sourceNode: "node-a", sessionStore: {} as never,
+      sourceNode: "node-a",
       getSession: async () => ({
         session_id: "target", node_id: "node-a", agent_id: "claude-agent",
         claude_session_id: "claude-session",
@@ -186,7 +186,7 @@ describe("Claude delivery transcript receipt", () => {
       message("assistant", "published-assistant"),
     ]);
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
-      sourceNode: "node-a", sessionStore: {} as never,
+      sourceNode: "node-a",
       getSession: async () => ({
         session_id: "target", node_id: "node-a", agent_id: "claude-agent",
         claude_session_id: "claude-session",
@@ -205,19 +205,16 @@ describe("Claude delivery transcript receipt", () => {
     })).resolves.toBeNull();
   });
 
-  it("falls back to same-node JSONL when the shared transcript mirror ended at the crash", async () => {
+  it("reads the same-node JSONL as the single transcript source", async () => {
     const deliveryId = "delivery-stable";
     const inputUuid = buildDeliveryInputUuid(deliveryId);
-    const loadMessages = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        message("user", inputUuid),
-        message("assistant", "assistant-after-parent-crash"),
-      ]);
+    const loadMessages = vi.fn().mockResolvedValue([
+      message("user", inputUuid),
+      message("assistant", "assistant-after-parent-crash"),
+    ]);
     const resolveWorktreeWorkspace = vi.fn(async () => "/workspace/worktree");
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "target",
         node_id: "node-a",
@@ -243,21 +240,52 @@ describe("Claude delivery transcript receipt", () => {
       inputUuid,
       assistantMessageUuid: "assistant-after-parent-crash",
     });
-    expect(loadMessages).toHaveBeenCalledTimes(2);
-    expect(loadMessages.mock.calls[0]?.[1]).toMatchObject({
+    expect(loadMessages).toHaveBeenCalledTimes(1);
+    expect(loadMessages).toHaveBeenCalledWith("claude-session", {
       dir: "/workspace/worktree",
-      sessionStore: expect.anything(),
     });
-    expect(loadMessages.mock.calls[1]?.[1]).toMatchObject({ dir: "/workspace/worktree" });
-    expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
     expect(resolveWorktreeWorkspace).toHaveBeenCalledWith("worktree-1");
+  });
+
+  it("keeps a remote node unavailable because its transcript is not mirrored", async () => {
+    const loadMessages = vi.fn();
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      getSession: async () => ({
+        session_id: "target",
+        node_id: "node-b",
+        agent_id: "claude-agent",
+        claude_session_id: "claude-session",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "claude-agent",
+        name: "Claude",
+        backend: "claude",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: "delivery-remote",
+      target_session_id: "target",
+    } as SessionDeliveryRow)).resolves.toEqual({
+      kind: "unavailable",
+      inputUuid: buildDeliveryInputUuid("delivery-remote"),
+      reason: "remote_transcript_not_mirrored",
+    });
+    await expect(reader.inspectNativeTaskNotification("target", {
+      taskId: "task-native",
+      initiatingToolUseId: "toolu-native",
+      expectedAssistantUuid: "published-assistant",
+    })).resolves.toBeNull();
+    expect(loadMessages).not.toHaveBeenCalled();
   });
 
   it("does not fall back to the profile cwd when a bound worktree is unavailable", async () => {
     const loadMessages = vi.fn();
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "target",
         node_id: "node-a",
@@ -285,18 +313,13 @@ describe("Claude delivery transcript receipt", () => {
     expect(loadMessages).not.toHaveBeenCalled();
   });
 
-  it("reads the same-node native assistant when the live shared mirror has only its input", async () => {
-    const loadMessages = vi.fn()
-      .mockResolvedValueOnce([
-        message("user", "native-input"),
-        message("assistant", "thinking-only"),
-      ])
-      .mockResolvedValueOnce([
-        ...nativeTurnPrefix(),
-        message("assistant", "native-assistant"),
-      ]);
+  it("reads the same-node native assistant from the only transcript source", async () => {
+    const loadMessages = vi.fn().mockResolvedValue([
+      ...nativeTurnPrefix(),
+      message("assistant", "native-assistant"),
+    ]);
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
-      sourceNode: "node-a", sessionStore: {} as never,
+      sourceNode: "node-a",
       getSession: async () => ({
         session_id: "target", node_id: "node-a", agent_id: "claude-agent",
         claude_session_id: "claude-session",
@@ -316,9 +339,10 @@ describe("Claude delivery transcript receipt", () => {
       kind: "completed", inputUuid: "native-input",
       assistantMessageUuid: "native-assistant",
     });
-    expect(loadMessages).toHaveBeenCalledTimes(2);
-    expect(loadMessages.mock.calls[0]?.[1]).toHaveProperty("sessionStore");
-    expect(loadMessages.mock.calls[1]?.[1]).not.toHaveProperty("sessionStore");
+    expect(loadMessages).toHaveBeenCalledTimes(1);
+    expect(loadMessages).toHaveBeenCalledWith("claude-session", {
+      dir: "/workspace",
+    });
   });
 
   it("uses the persisted preset backend instead of the profile fallback", async () => {
@@ -330,7 +354,6 @@ describe("Claude delivery transcript receipt", () => {
     ]);
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "target",
         node_id: "node-a",
@@ -363,7 +386,6 @@ describe("Claude delivery transcript receipt", () => {
     const loadMessages = vi.fn();
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "target",
         node_id: "node-a",
@@ -396,7 +418,6 @@ describe("Claude delivery transcript receipt", () => {
     const loadMessages = vi.fn();
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => ({
         session_id: "target",
         node_id: "node-a",
@@ -425,7 +446,6 @@ describe("Claude delivery transcript receipt", () => {
     const loadMessages = vi.fn();
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
-      sessionStore: {} as never,
       getSession: async () => null,
       getAgent: () => undefined,
       loadMessages,

@@ -32,7 +32,7 @@ import {
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
 import type { CatalogBoardItemRow, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
-import type { CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogFolderRow, CatalogSessionAssignmentRow, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -48,7 +48,6 @@ export class SessionDB {
   private claudeBackgroundTaskHost?: ClaudeRuntimeHostClient;
   private sessionDataHost?: SessionDataHost;
   private folderHost?: FolderHostClient;
-  private claudeTranscriptHost?: ClaudeRuntimeHostClient;
 
   configureFolderReader(reader: Pick<FolderService, "getFolder" | "getCard">): void {
     this.folderReader = reader;
@@ -76,7 +75,6 @@ export class SessionDB {
   }): void {
     this.configureSessionDeliveryHost(hosts.deliveries);
     this.configureClaudeBackgroundTaskHost(hosts.claudeRuntime);
-    this.configureClaudeTranscriptHost(hosts.claudeRuntime);
     this.configureSessionPageBindingHost(hosts.sessionPageBindings);
     this.configureSessionDataHost(hosts.sessionData);
   }
@@ -87,10 +85,6 @@ export class SessionDB {
 
   configureClaudeBackgroundTaskHost(host: ClaudeRuntimeHostClient): void {
     this.claudeBackgroundTaskHost = host;
-  }
-
-  configureClaudeTranscriptHost(host: ClaudeRuntimeHostClient): void {
-    this.claudeTranscriptHost = host;
   }
 
   configureSessionPageBindingHost(host: SessionPageBindingRepository): void {
@@ -414,57 +408,6 @@ export class SessionDB {
 
   async listExistingSessionIds(sessionIds: string[]): Promise<string[]> {
     return await this.requireSessionDataHost().listExistingSessionIds(sessionIds);
-  }
-
-  async appendClaudeTranscriptEntries(
-    key: ClaudeTranscriptKey,
-    entries: ClaudeTranscriptEntry[],
-  ): Promise<number> {
-    return await this.claudeTranscripts().appendClaudeTranscriptEntries(key, entries);
-  }
-
-  async appendClaudeTranscriptEntriesIdempotent(input: {
-    idempotencyKey: string;
-    sessionId: string;
-    key: ClaudeTranscriptKey;
-    entries: ClaudeTranscriptEntry[];
-  }): Promise<number> {
-    return await this.claudeTranscripts().appendClaudeTranscriptEntriesIdempotent(input);
-  }
-
-  async loadClaudeTranscriptEntries(
-    key: ClaudeTranscriptKey,
-  ): Promise<ClaudeTranscriptEntry[] | null> {
-    return await this.claudeTranscripts().loadClaudeTranscriptEntries(key);
-  }
-
-  async listClaudeTranscriptSessions(
-    projectKey: string,
-  ): Promise<ClaudeTranscriptSessionSummary[]> {
-    return await this.claudeTranscripts().listClaudeTranscriptSessions(projectKey);
-  }
-
-  async listClaudeTranscriptSubkeys(
-    key: Pick<ClaudeTranscriptKey, "projectKey" | "sessionId">,
-  ): Promise<string[]> {
-    return await this.claudeTranscripts().listClaudeTranscriptSubkeys(key);
-  }
-
-  async deleteClaudeTranscript(key: ClaudeTranscriptKey): Promise<void> {
-    await this.claudeTranscripts().deleteClaudeTranscript(key);
-  }
-
-  async deleteClaudeTranscriptIdempotent(input: {
-    idempotencyKey: string;
-    sessionId: string;
-    key: ClaudeTranscriptKey;
-  }): Promise<void> {
-    await this.claudeTranscripts().deleteClaudeTranscriptIdempotent(input);
-  }
-
-  private claudeTranscripts(): ClaudeRuntimeHostClient {
-    if (!this.claudeTranscriptHost) throw new Error("Claude runtime host is not configured");
-    return this.claudeTranscriptHost;
   }
 
   private requireSessionDataHost(): SessionDataHost {

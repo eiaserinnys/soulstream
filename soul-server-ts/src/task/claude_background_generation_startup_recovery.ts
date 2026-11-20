@@ -1,7 +1,4 @@
-import type {
-  SessionMessage,
-  SessionStore,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
@@ -46,7 +43,6 @@ interface ClaudeBackgroundGenerationStartupRecoveryDeps {
     consumedTurnId: string;
   }): Promise<unknown>;
   sourceNode: string;
-  sessionStore: SessionStore;
   getSession(sessionId: string): Promise<SessionRow | null>;
   getAgent(agentId: string): AgentProfile | undefined;
   logger: Pick<Logger, "error" | "info">;
@@ -56,7 +52,6 @@ interface ClaudeBackgroundGenerationStartupRecoveryDeps {
     sessionId: string,
     options: {
       dir: string;
-      sessionStore: SessionStore;
       includeSystemMessages: boolean;
     },
   ): Promise<SessionMessage[]>;
@@ -171,7 +166,6 @@ export class ClaudeBackgroundGenerationStartupRecovery {
     }
     const messages = await this.loadMessages(sdkSessionId, {
       dir: workspaceDir,
-      sessionStore: this.deps.sessionStore,
       includeSystemMessages: true,
     });
     const candidates = uniqueNativeNotifications(messages)

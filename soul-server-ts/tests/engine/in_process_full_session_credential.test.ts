@@ -4,7 +4,6 @@
  * 러너 경로와 같은 변환 함수를 써서 엔진에 넘기는 env와 soulstream 내부 대상
  * MCP 헤더를 그 세션의 ssf1로 바꾸고, 호스트 서비스 토큰 값을 남기지 않는다.
  */
-import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,12 +45,6 @@ const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
   "utf-8",
 ));
 const getModelCatalog = () => MODEL_CATALOG;
-const sessionStore: SessionStore = {
-  async append() {},
-  async load() {
-    return null;
-  },
-};
 const factoryEnv = {
   CODEX_ADAPTER_MODE: "sdk" as const,
   CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 30_000,
@@ -113,7 +106,6 @@ describe("in-process full session credential", () => {
         AUTH_BEARER_TOKEN: HOST_TOKEN,
         PORTABLE_LOCAL_MCP_AUTHORIZATION: HOST_TOKEN,
       }),
-      claudeSessionStore: sessionStore,
       hostAuthBearerToken: HOST_TOKEN,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
@@ -167,7 +159,6 @@ describe("in-process full session credential", () => {
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({ AUTH_BEARER_TOKEN: HOST_TOKEN }),
-      claudeSessionStore: sessionStore,
       hostAuthBearerToken: HOST_TOKEN,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),
@@ -200,7 +191,6 @@ describe("in-process full session credential", () => {
       },
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
-      claudeSessionStore: sessionStore,
       hostAuthBearerToken: HOST_TOKEN,
       mcpConfigService: new McpConfigService({
         agentsConfigPath: join(workspaceDir, "agents.yaml"),

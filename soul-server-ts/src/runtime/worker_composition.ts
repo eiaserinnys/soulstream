@@ -16,7 +16,6 @@ import { SessionMutationHostClient } from "../control_plane/persistence_host_cli
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
 import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
-import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
@@ -107,7 +106,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   });
   const eventOutboxPumpMux = new EventOutboxPumpMux(eventOutboxPump);
   const db = new SessionDB();
-  const claudeSessionStore = new DbClaudeSessionStore(db);
   const broadcaster = new SessionBroadcaster(createBroadcasterSend(() => upstreamAdapter, logger), agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(
     db,
@@ -198,7 +196,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   });
   const queuedRecoveryParams = {
     db, agentRegistry, modelCatalog,
-    sessionStore: claudeSessionStore,
     sourceNode: env.SOULSTREAM_NODE_ID, logger,
     resolveWorktreeWorkspace: (worktreeId: string) => resolveWorktreeWorkspace(worktreeService, worktreeId),
     redeliverContent: (row: SessionDeliveryRow) => redeliverStoredDeliveryContent(row, taskManager, taskRuntime.onResume),
@@ -261,7 +258,6 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     antigravityProcessEnv: process.env,
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env), hostAuthBearerToken: process.env.AUTH_BEARER_TOKEN,
-    claudeSessionStore,
     ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
     mcpConfigService,
     getModelCatalog: () => modelCatalog.snapshot(),
@@ -270,7 +266,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
     env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
-    pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
+    pumpMux: eventOutboxPumpMux,
     claudeAccounts,
     producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,

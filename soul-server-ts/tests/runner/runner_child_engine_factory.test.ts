@@ -356,17 +356,14 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
     const internals = engine as unknown as {
       claudeAccountPoolEnabled: boolean;
       trackChildExit: boolean;
-      sessionStoreFlush: string;
       persistentSessionRegistry?: unknown;
       claudeAccountTurnPort?: unknown;
       claudeAccountTurnState?: unknown;
-      sessionStore: { append(key: object, entries: unknown[]): Promise<void> };
     };
 
     try {
       expect(internals.claudeAccountPoolEnabled).toBe(false);
       expect(internals.trackChildExit).toBe(false);
-      expect(internals.sessionStoreFlush).toBe("batched");
       expect(internals.persistentSessionRegistry).toBeUndefined();
       expect(internals.claudeAccountTurnPort).toBeUndefined();
       expect(internals.claudeAccountTurnState).toBeUndefined();
@@ -379,12 +376,6 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
       } finally {
         db.close();
       }
-
-      await internals.sessionStore.append(
-        { projectKey: "project", sessionId: "session-legacy" },
-        [{ type: "assistant", uuid: "legacy-entry" }],
-      );
-      expect(hostCall.mock.calls.map(([service]) => service)).toEqual(["session_store"]);
     } finally {
       await engine.close?.();
     }

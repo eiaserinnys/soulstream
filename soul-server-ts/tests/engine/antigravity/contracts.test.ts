@@ -45,7 +45,7 @@ it("creates Antigravity through both factories without checking or spawning an i
   const stateDirectory=join(workspaceDir,"state");
   const agent={ id:"test",name:"시험",backend:"claude" as const,workspace_dir:workspaceDir };
   const logger=pino({level:"silent"});
-  const factory=createEngineFactory({env:{CODEX_ADAPTER_MODE:"sdk",CODEX_APP_SERVER_REQUEST_TIMEOUT_MS:30000,CODEX_APP_SERVER_STARTUP_TIMEOUT_MS:120000,CODEX_DETACHED_RESULT_RETENTION_MS:1800000,CLAUDE_SESSION_RUNTIME_V2_ENABLED:false,CLAUDE_ACCOUNT_POOL_ENABLED:false,CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS:60000,CLAUDE_SESSION_RUNTIME_MAX_ENTRIES:1,MCP_INTERNAL_PORT:4206,MCP_PATH:"/mcp",SOUL_RUNNER_STATE_DIR:stateDirectory},logger,codexProcessEnv:{},antigravityProcessEnv:{},buildClaudeProcessEnv:()=>({}),claudeSessionStore:{async append(){},async load(){return null;}},mcpConfigService:new McpConfigService({agentsConfigPath:join(workspaceDir,"agents.yaml")}),
+  const factory=createEngineFactory({env:{CODEX_ADAPTER_MODE:"sdk",CODEX_APP_SERVER_REQUEST_TIMEOUT_MS:30000,CODEX_APP_SERVER_STARTUP_TIMEOUT_MS:120000,CODEX_DETACHED_RESULT_RETENTION_MS:1800000,CLAUDE_SESSION_RUNTIME_V2_ENABLED:false,CLAUDE_ACCOUNT_POOL_ENABLED:false,CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS:60000,CLAUDE_SESSION_RUNTIME_MAX_ENTRIES:1,MCP_INTERNAL_PORT:4206,MCP_PATH:"/mcp",SOUL_RUNNER_STATE_DIR:stateDirectory},logger,codexProcessEnv:{},antigravityProcessEnv:{},buildClaudeProcessEnv:()=>({}),mcpConfigService:new McpConfigService({agentsConfigPath:join(workspaceDir,"agents.yaml")}),
     getModelCatalog:()=>MODEL_CATALOG,
   });
   expect(factory(agent,"antigravity").backendId).toBe("antigravity");
@@ -79,7 +79,6 @@ it("creates OpenCode through host and child factories and preserves its CLI path
     codexProcessEnv: {},
     antigravityProcessEnv: {},
     buildClaudeProcessEnv: () => ({}),
-    claudeSessionStore: { async append() {}, async load() { return null; } },
     mcpConfigService: new McpConfigService({ agentsConfigPath: join(workspaceDir, "agents.yaml") }),
     getModelCatalog: () => MODEL_CATALOG,
   });

@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type {
-  SessionStore,
-  SessionStoreFlush,
   EffortLevel,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -60,7 +58,6 @@ import {
 import {
   assertClaudeAccountPoolOverrides,
   buildClaudeAccountPoolEnvironment,
-  useLocalClaudeAccountPoolResume,
   type ClaudeAccountTurnPort,
   type ClaudeAccountTurnStatePort,
 } from "./claude_account_pool.js";
@@ -153,9 +150,6 @@ export interface ClaudeRunOptions {
   runnerRequest?: (
     frame: Extract<RunnerEventFrame, { kind: "request" }>,
   ) => Promise<RunnerControlFrame>;
-  sessionStore?: SessionStore;
-  sessionStoreFlush?: SessionStoreFlush;
-  loadTimeoutMs?: number;
   /** Install the SDK spawn hook on every platform and retain actual child close. */
   trackChildExit?: boolean;
   /** Marks that this account is now attached to a persistent SDK Query. */
@@ -245,9 +239,6 @@ export interface ClaudeAdapterConfig {
   agentId?: string;
   client?: ClaudeClient;
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
-  sessionStore?: SessionStore;
-  sessionStoreFlush?: SessionStoreFlush;
-  loadTimeoutMs?: number;
   trackChildExit?: boolean;
   claudeAccountPoolEnabled?: boolean;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
@@ -287,9 +278,6 @@ export class ClaudeEngineAdapter
   private readonly logger: Logger;
   private readonly agentId?: string;
   private readonly processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
-  private readonly sessionStore?: SessionStore;
-  private readonly sessionStoreFlush?: SessionStoreFlush;
-  private readonly loadTimeoutMs?: number;
   private readonly trackChildExit: boolean;
   private readonly claudeAccountPoolEnabled: boolean;
   private readonly claudeAccountTurnPort?: ClaudeAccountTurnPort;
@@ -324,9 +312,6 @@ export class ClaudeEngineAdapter
       logger,
     );
     this.processEnv = config.processEnv;
-    this.sessionStore = config.sessionStore;
-    this.sessionStoreFlush = config.sessionStoreFlush;
-    this.loadTimeoutMs = config.loadTimeoutMs;
     this.trackChildExit = config.trackChildExit ?? false;
     this.claudeAccountPoolEnabled = config.claudeAccountPoolEnabled ?? false;
     this.claudeAccountTurnPort = config.claudeAccountTurnPort;
@@ -509,14 +494,6 @@ export class ClaudeEngineAdapter
             ...baseOptions,
             ...overrides,
             env: buildClaudeAccountPoolEnvironment(baseOptions.env, account),
-            ...(baseOptions.sessionStore
-              ? {
-                  sessionStore: useLocalClaudeAccountPoolResume(
-                    baseOptions.sessionStore,
-                    account.config_dir,
-                  ),
-                }
-              : {}),
           };
           attemptOptions.onAccountQueryStarted = () => {
             accountQueryStarted = true;
@@ -1064,14 +1041,6 @@ export class ClaudeEngineAdapter
       options: {
         ...options,
         env: buildClaudeAccountPoolEnvironment(options.env, account),
-        ...(options.sessionStore
-          ? {
-              sessionStore: useLocalClaudeAccountPoolResume(
-                options.sessionStore,
-                account.config_dir,
-              ),
-            }
-          : {}),
       },
       release,
     };
@@ -1224,9 +1193,6 @@ export class ClaudeEngineAdapter
               }),
           }
         : {}),
-      ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
-      ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
-      ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
       ...(this.trackChildExit ? { trackChildExit: true } : {}),
       ...(this.isolation ? { isolation: this.isolation } : {}),
       ...(mcpConfigDirectory !== undefined ? { mcpConfigDirectory } : {}),

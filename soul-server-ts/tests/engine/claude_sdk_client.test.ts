@@ -1670,45 +1670,6 @@ describe("ClaudeSdkClient", () => {
     expect(captured[1]?.options).not.toHaveProperty("allowDangerouslySkipPermissions");
   });
 
-  it("forwards the DB-backed SessionStore mirror options to the Claude SDK", async () => {
-    const captured: ClaudeSdkQueryParams[] = [];
-    const sessionStore = {
-      append: vi.fn(async () => undefined),
-      load: vi.fn(async () => null),
-      listSubkeys: vi.fn(async () => []),
-    };
-    const client = new ClaudeSdkClient(
-      {
-        query: (params) => {
-          captured.push(params);
-          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-store", "done")]));
-        },
-        postResultDrainMs: 10,
-      },
-      silentLogger,
-    );
-
-    await collect(
-      client.run(
-        {
-          prompt: "hi",
-          workspaceDir: "/tmp/claude-work",
-          env: {},
-          sessionStore,
-          sessionStoreFlush: "batched",
-          loadTimeoutMs: 60000,
-        },
-        new AbortController().signal,
-      ),
-    );
-
-    expect(captured[0]?.options).toMatchObject({
-      sessionStore,
-      sessionStoreFlush: "batched",
-      loadTimeoutMs: 60000,
-    });
-  });
-
   it("captures PushNotification and RemoteTrigger tools as Soulstream runtime events without invoking external push infra", async () => {
     const permissionResults: PermissionResult[] = [];
     const client = new ClaudeSdkClient(

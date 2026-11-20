@@ -169,7 +169,7 @@ function makeRecoveredRunner(engine: EnginePort, restricted: boolean): TaskRunne
   const factory = createRunnerProcessRuntimeFactory({
     env: { SOUL_RUNNER_STATE_DIR: "/runner", CLAUDE_ACCOUNT_POOL_ENABLED: false,
       SOUL_RUNNER_LEASE_TIMEOUT_MS: 90000 } as never,
-    logger: silentLogger, pumpMux: {} as never, sessionStore: {} as never,
+    logger: silentLogger, pumpMux: {} as never,
     mcpConfigService: {} as never,
     releasePool: {
       resolveCurrentRelease: vi.fn(), ensureRelease: vi.fn(),

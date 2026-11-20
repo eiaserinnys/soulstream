@@ -1,4 +1,3 @@
-import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
@@ -48,7 +47,6 @@ export interface CreateEngineFactoryParams {
    * 내부 MCP 자격을 그 세션의 ssf1로 바꿀 때 쓴다. 비면 변환하지 않는다.
    */
   hostAuthBearerToken?: string;
-  claudeSessionStore: SessionStore;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
   mcpConfigService: McpConfigService;
@@ -65,7 +63,6 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     antigravityProcessEnv,
     codexProcessEnv,
     buildClaudeProcessEnv,
-    claudeSessionStore,
     claudeSessionClientRegistry,
     claudeAccountTurnPort,
     mcpConfigService,
@@ -190,12 +187,6 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           workspaceDir: agent.workspace_dir,
           agentId: agent.id,
           processEnv: input.processEnv,
-          sessionStore: claudeSessionStore,
-          // V2 uses the shared transcript as its cross-node receiver receipt.
-          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED || env.CLAUDE_ACCOUNT_POOL_ENABLED
-            ? "eager"
-            : "batched",
-          loadTimeoutMs: 60_000,
           trackChildExit: env.CLAUDE_ACCOUNT_POOL_ENABLED,
           claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
           ...(claudeAccountTurnPort ? { claudeAccountTurnPort } : {}),
