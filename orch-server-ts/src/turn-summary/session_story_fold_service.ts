@@ -1,12 +1,12 @@
 import type {
   CodexExecGenerateOptions,
 } from "./codex_exec_turn_summarizer.js";
+import type { SessionStoryTurnSummary } from "@soulstream/mcp-contract";
 import type {
   CompletedSessionFoldCandidate,
   SessionStoryDigest,
   SessionStoryRepositoryPort,
   StoreSessionStoryDigestInput,
-  UnfoldedTurnSummary,
 } from "./session_story_repository.js";
 import type {
   TurnSummaryConfig,
@@ -175,7 +175,7 @@ export class SessionStoryFoldService {
     readonly sessionId: string;
     readonly config: TurnSummaryConfig;
     readonly digest: SessionStoryDigest | null;
-    readonly summaries: readonly UnfoldedTurnSummary[];
+    readonly summaries: readonly SessionStoryTurnSummary[];
     readonly startedAt: number;
     readonly conflictReason: string;
     readonly store: (value: StoreSessionStoryDigestInput) => Promise<boolean>;
@@ -309,7 +309,7 @@ export function markerOrderStats(narrative: string): {
 function buildSessionStoryPrompt(
   instruction: string,
   existingNarrative: string | null,
-  summaries: readonly UnfoldedTurnSummary[],
+  summaries: readonly SessionStoryTurnSummary[],
 ): string {
   const narrative = existingNarrative?.trim() || "(아직 접힌 줄거리 없음)";
   const turns = summaries

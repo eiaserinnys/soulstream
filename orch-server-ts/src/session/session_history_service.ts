@@ -1,4 +1,4 @@
-import type { SessionStoryResponse } from "./session_story_read_service.js";
+import type { SessionStoryViewResponse } from "@soulstream/mcp-contract";
 import type {
   SessionConversationContextQuery,
   SessionConversationContextResponse,
@@ -90,7 +90,7 @@ export type SessionHistoryProvider = {
     debugKinds?: readonly RequestedTimelineDebugKind[],
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
-  readStory: (sessionId: string) => Promise<SessionStoryResponse>;
+  readStory: (sessionId: string) => Promise<SessionStoryViewResponse>;
   readTurnSummaries: (
     sessionId: string,
     query: SessionTurnSummaryQuery,
@@ -174,7 +174,7 @@ export class SessionHistoryReadService {
     return this.provider.readTimelineTrace(sessionId, timelineId);
   }
 
-  readStory(sessionId: string): Promise<SessionStoryResponse> {
+  readStory(sessionId: string): Promise<SessionStoryViewResponse> {
     return this.provider.readStory(sessionId);
   }
 

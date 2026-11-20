@@ -5,10 +5,10 @@ import {
   SessionStoryFoldService,
   type SessionStoryGenerator,
 } from "../src/turn-summary/session_story_fold_service.js";
+import type { SessionStoryTurnSummary } from "@soulstream/mcp-contract";
 import type {
   SessionStoryDigest,
   SessionStoryRepositoryPort,
-  UnfoldedTurnSummary,
 } from "../src/turn-summary/session_story_repository.js";
 import type { TurnSummaryConfig } from
   "../src/turn-summary/turn_summary_config.js";
@@ -334,7 +334,7 @@ describe("SessionStoryFoldService", () => {
   });
 });
 
-function practicalSummaryFixture(): UnfoldedTurnSummary[] {
+function practicalSummaryFixture(): SessionStoryTurnSummary[] {
   return [
     summary(12, 1, "첫 요청", 2, 10),
     summary(24, 2, "고아 발화 뒤 재개", 13, 22),
@@ -350,7 +350,7 @@ function summary(
   content: string,
   turnStartEventId: number,
   finalResponseEventId: number,
-): UnfoldedTurnSummary {
+): SessionStoryTurnSummary {
   return {
     eventId,
     turnNumber,
@@ -364,7 +364,7 @@ function summary(
 function fakeRepository(options: {
   count: number;
   totalCount?: number;
-  summaries?: UnfoldedTurnSummary[];
+  summaries?: SessionStoryTurnSummary[];
   digest?: SessionStoryDigest | null;
   storeCompleted?: boolean;
 }) {
