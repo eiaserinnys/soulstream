@@ -3,6 +3,7 @@ import type { CardControlPlaneService } from "../cards/card_control_plane_servic
 import { registerFolderWorkspaceRoutes, folderWorkspaceRouteAuthRequirements, dashboardFolderActor, folderOperationError } from "./folder_workspace_routes.js";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 
 import type { PageMutationActor } from "../page/page_mutation_core.js";
 import { isBoardFolderAllowed, normalizeBoardAccess, type BoardAccess } from "../board/board_access.js";
@@ -11,7 +12,6 @@ import {
   filterFolders,
   filterSessionAssignments,
   type FolderRecord,
-  type SessionAssignmentRecord,
 } from "./folder_route_access.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
@@ -26,7 +26,7 @@ import {
   type Validation,
 } from "../http/route_validation.js";
 
-export type { FolderRecord, SessionAssignmentRecord } from "./folder_route_access.js";
+export type { FolderRecord } from "./folder_route_access.js";
 
 export type FolderCreateOptions = {
   parentFolderId: string | null;
@@ -48,8 +48,8 @@ export type FolderReorderInput = {
 export type FolderRouteProvider = {
   listFolders: () => Promise<readonly FolderRecord[]> | readonly FolderRecord[];
   listSessionAssignments: (includeSessions?: boolean) =>
-    | Promise<Record<string, SessionAssignmentRecord>>
-    | Record<string, SessionAssignmentRecord>;
+    | Promise<Record<string, CatalogSessionAssignment>>
+    | Record<string, CatalogSessionAssignment>;
   listProjectPageStates?: (
     pageIds: readonly string[],
   ) => Promise<readonly ProjectPageState[]> | readonly ProjectPageState[];
