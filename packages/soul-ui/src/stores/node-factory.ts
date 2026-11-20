@@ -123,7 +123,7 @@ export function createNodeFromEvent(
       const content = e.text ?? extractLastUserContent(e.messages);
 
       const ci = e.caller_info;
-      const agentInfoFromCi = ci && ci.source === "agent" ? {
+      const agentInfo = ci && ci.source === "agent" ? {
         source: "agent" as const,
         agent_node: ci.agent_node ?? "",
         agent_id: ci.agent_id ?? null,
@@ -135,7 +135,7 @@ export function createNodeFromEvent(
         user: e.user ?? e.client_id ?? "llm-proxy",
         ...mapAttachmentEventSignals(e),
         context: e.context,
-        agentInfo: agentInfoFromCi,
+        agentInfo,
         callerInfo: ci,
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),

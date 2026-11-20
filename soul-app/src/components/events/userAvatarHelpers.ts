@@ -24,18 +24,7 @@
 import type { GoogleProfile } from '../../auth/jwt-payload';
 import type { SessionEvent } from '../../api/types';
 
-/**
- * 메시지 단위 발신자 신원 — 통합 caller_info 스키마 v1.
- *
- * 현재 wire format(`soul-server/service/task_executor.py:148-160`)은
- * `event.data.caller_info` nested sub-dict로 보낸다.
- */
 export interface MessageCaller {
-  /**
-   * F-11 (2026-05-09): 'system' 추가 — soulstream 서버 lifecycle 인터벤션 발신자
-   * (graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내). soul-ui CallerInfo
-   * union과 정합 (atom ed3a216d).
-   */
   source?: 'slack' | 'browser' | 'soul-app' | 'agent' | 'api' | 'system' | 'external';
   transport?: string;
   display_name?: string;
@@ -49,14 +38,6 @@ export interface MessageCaller {
   slack?: { channel_id?: string; user_id?: string; thread_ts?: string };
 }
 
-/**
- * SessionEvent에서 메시지 발신자 신원을 추출한다.
- *
- * - `event.data.caller_info` (wire format — nested dict)
- * - 어느 필드도 차 있지 않으면 null (= 진짜 본인 발신으로 간주)
- *
- * `null` vs `{}`을 구분하기 위해 어느 한 필드라도 채워졌을 때만 객체를 반환.
- */
 export function extractMessageCaller(
   event: SessionEvent | undefined,
 ): MessageCaller | null {

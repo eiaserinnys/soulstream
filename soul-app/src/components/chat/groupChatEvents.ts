@@ -114,11 +114,8 @@ function shouldHideManuscriptEvent(event: SessionEvent): boolean {
     || (event.type === 'realtime_transcript' && data?.role === 'user');
 
   if (!userUtterance) return false;
-  if (callerInfo !== null && callerInfo !== undefined) {
-    return typeof callerInfo === 'object'
-      && (callerInfo as Record<string, unknown>).source === 'agent';
-  }
-  return false;
+  return callerInfo !== null && typeof callerInfo === 'object'
+    && (callerInfo as Record<string, unknown>).source === 'agent';
 }
 
 const SILENT_MANUSCRIPT_TOKEN = '[SILENT]';
