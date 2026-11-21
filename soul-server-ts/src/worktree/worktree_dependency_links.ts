@@ -53,7 +53,7 @@ export function dependencyLinksIntoWorktree(
     .map(link => ({ path: link.path, target: link.resolvedTarget }));
 }
 
-function containsPath(parent: string, child: string): boolean {
+export function containsPath(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }

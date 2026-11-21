@@ -1,27 +1,7 @@
-/**
- * Prompt Assembler — Python 두 정본을 *각자 분리하여* 이식 (code-reviewer P1-1·2·3 정합).
- *
- *   - `formatContextItems` ↔ Python `service/context_builder.py:72-85 format_context_items`
- *     · 키 정규화: `re.sub(r'[^a-zA-Z0-9_]', '_', key) or "item"` — *치환* (skip 아님)
- *     · string content: 이스케이프 *없음* (Python L83 `str(content)`)
- *     · dict/list content: `json.dumps(content, ensure_ascii=False, indent=2)`
- *
- *   - `assemblePrompt` ↔ Python `service/prompt_assembler.py:23-71 assemble_prompt`
- *     · key 검증: `TAG_NAME_RE`(`^[a-zA-Z_][a-zA-Z0-9_\\-]*$`) 통과만 — invalid는 *skip*
- *     · string content: 이스케이프 *적용* (`_escape_closing_tag`)
- *     · dict/list content: `json.dumps(content, ensure_ascii=False)` — *indent 없음*
- *
- * 두 정본의 *직렬화 정책 차이*는 의도된 것이다 (Python에 그대로 존재). TS는 두 함수를
- * *분리 유지*하여 정본 둘을 동시에 보존한다. 호출자는 의도에 맞게 선택:
- *   - context_items → XML 블록 prepend: `formatContextItems`
- *   - 클라이언트 StructuredContext → prompt prepend: `assemblePrompt`
- *
- * codex SDK가 turn-level systemPrompt를 지원하지 않으므로 (분석 캐시
- * `20260517-2338-codex-ts-context-builder-B-6.md` §B) `composeFirstTurnPrompt`가 둘을
- * 합쳐 단일 prompt 문자열로 만든다.
- */
-
-import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import type {
+  ContextItem as WireContextItem,
+  InputMaterialPartV1,
+} from "@soulstream/wire-schema";
 import {
   createInputMaterialFramingPart,
   createInputMaterialPart,
@@ -31,16 +11,8 @@ import {
 const TAG_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_\-]*$/;
 const FORMAT_KEY_INVALID_CHARS = /[^a-zA-Z0-9_]/g;
 
-export interface ContextItem {
-  key: string;
-  label?: string;
-  content: unknown;
-}
+export type ContextItem = Pick<WireContextItem, "key" | "content"> & { label?: string };
 
-/**
- * 문자열 content 내부 닫힘 태그 패턴 이스케이프 (Python `_escape_closing_tag` 정본).
- * `assemblePrompt`에서만 사용 — `formatContextItems`는 Python 정합으로 이스케이프 *없음*.
- */
 function escapeClosingTag(text: string): string {
   return text.replace(/<\//g, "<\\/");
 }

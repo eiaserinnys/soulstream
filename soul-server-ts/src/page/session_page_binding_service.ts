@@ -13,9 +13,9 @@ import {
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {
-  SessionPageBindingRepository,
+  SessionPageBindingHostClient,
   type SessionPageBindingRow,
-} from "./session_page_binding_repository.js";
+} from "../control_plane/persistence_host_clients.js";
 
 interface PageBindingPort {
   getPage: PageYjsHostClient["getPage"];
@@ -29,7 +29,7 @@ interface LegacyProjectionPort {
 
 export interface SessionPageBindingServiceDeps {
   nodeId: string;
-  repository: SessionPageBindingRepository;
+  repository: SessionPageBindingHostClient;
   pageHost: PageBindingPort;
   legacyProjection: LegacyProjectionPort;
   logger: Pick<Logger, "warn" | "info">;

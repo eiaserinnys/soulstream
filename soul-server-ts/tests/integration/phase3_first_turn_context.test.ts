@@ -8,9 +8,9 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import { SessionPageBindingService } from "../../src/page/session_page_binding_service.js";
 import type {
   EnqueueSessionPageBinding,
-  SessionPageBindingRepository,
+  SessionPageBindingHostClient,
   SessionPageBindingRow,
-} from "../../src/page/session_page_binding_repository.js";
+} from "../../src/control_plane/persistence_host_clients.js";
 import { TaskCreation } from "../../src/task/task_creation.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -50,7 +50,7 @@ describe("Phase 3 first-turn page context integration", () => {
       markLegacyCompleted: vi.fn(async () => {
         row = { ...row!, legacy_state: "completed" };
       }),
-    } as unknown as SessionPageBindingRepository;
+    } as unknown as SessionPageBindingHostClient;
 
     const blocks = [
       {

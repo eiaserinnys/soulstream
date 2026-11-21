@@ -364,7 +364,7 @@ function setAgentMcpProfile(
   mcpProfile: string | null | undefined,
 ): AgentsConfig {
   let found = false;
-  const nextValue = normalizeMcpProfileValue(mcpProfile);
+  const nextValue = normalizeOptionalString(mcpProfile);
   const nextAgents = current.agents.map((profile) => {
     if (profile.id !== agentId) return profile;
     found = true;
@@ -449,7 +449,7 @@ function mcpProfileSemanticChanges(
     throw new Error(`agent not found: ${agentId}`);
   }
   const before = existing.mcp_profile ?? null;
-  const after = normalizeMcpProfileValue(mcpProfile) ?? null;
+  const after = normalizeOptionalString(mcpProfile) ?? null;
   if (before === after) {
     return [{
       op: "no_change",
@@ -466,7 +466,7 @@ function mcpProfileSemanticChanges(
   }];
 }
 
-function normalizeMcpProfileValue(value: string | null | undefined): string | undefined {
+export function normalizeOptionalString(value: string | null | undefined): string | undefined {
   if (value === null || value === undefined) return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;

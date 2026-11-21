@@ -1,29 +1,18 @@
 import { randomUUID } from "node:crypto";
 
+import type {
+  ReleaseActivationReceipt as WireReleaseActivationReceipt,
+  ReleaseActivationRegistration as WireReleaseActivationRegistration,
+  ReleaseVerificationResult as WireReleaseVerificationResult,
+} from "@soulstream/wire-schema";
+
 import type { ReleaseManifestV1 } from "./release_manifest.js";
 
-export type ReleaseVerificationResult = {
-  host: "verified";
-  runner: "verified";
-  env: "verified";
-  executable: "verified";
-};
+export type ReleaseVerificationResult = WireReleaseVerificationResult;
 
-export interface ReleaseActivationRegistration {
-  manifest_id: string;
-  release_cohort_id: string;
-  source_commit: string;
-  prewarmed_at: string;
-  verification: ReleaseVerificationResult;
-  registration_idempotency_key: string;
-}
+export type ReleaseActivationRegistration = WireReleaseActivationRegistration;
 
-export interface ReleaseActivationReceipt {
-  manifest_id: string;
-  activation_generation: number;
-  activated_at: string;
-  registration_idempotency_key: string;
-}
+export type ReleaseActivationReceipt = WireReleaseActivationReceipt;
 
 export class ReleaseActivationState {
   private readonly now: () => Date;

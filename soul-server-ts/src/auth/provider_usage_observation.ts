@@ -1,4 +1,5 @@
-import type { ProviderUsageName, ProviderLimits } from "./provider_usage.js";
+import type { ProviderUsageName } from "./provider_usage.js";
+import type { ProviderLimits } from "./provider_limits.js";
 
 export type DecisionProvider = Extract<ProviderUsageName, "claude" | "codex" | "antigravity">;
 

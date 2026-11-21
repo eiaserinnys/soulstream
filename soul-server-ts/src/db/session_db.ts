@@ -19,11 +19,10 @@ import type {
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
 import type { CardReferenceLookupResult, GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
-import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { FolderService } from "../folder/folder_service.js";
-import type { ClaudeRuntimeHostClient, SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
+import type { ClaudeRuntimeHostClient, SessionPageBindingHostClient, SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import {
   type SessionDigestSearchMatch,
   type SessionStoryTurnSummary,
@@ -42,7 +41,7 @@ export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 export class SessionDB {
   private folderReader?: Pick<FolderService, "getFolder" | "getCard">;
   private scheduleHost?: ScheduleHostClient;
-  private sessionPageBindingRepository?: SessionPageBindingRepository;
+  private sessionPageBindingHost?: SessionPageBindingHostClient;
   private folderContentHost?: FlatFolderContentHostClient;
   private sessionDeliveryHost?: SessionDeliveryHostClient;
   private claudeBackgroundTaskHost?: ClaudeRuntimeHostClient;
@@ -70,7 +69,7 @@ export class SessionDB {
   configurePersistenceHosts(hosts: {
     deliveries: SessionDeliveryHostClient;
     claudeRuntime: ClaudeRuntimeHostClient;
-    sessionPageBindings: SessionPageBindingRepository;
+    sessionPageBindings: SessionPageBindingHostClient;
     sessionData: SessionDataHost;
   }): void {
     this.configureSessionDeliveryHost(hosts.deliveries);
@@ -87,8 +86,8 @@ export class SessionDB {
     this.claudeBackgroundTaskHost = host;
   }
 
-  configureSessionPageBindingHost(host: SessionPageBindingRepository): void {
-    this.sessionPageBindingRepository = host;
+  configureSessionPageBindingHost(host: SessionPageBindingHostClient): void {
+    this.sessionPageBindingHost = host;
   }
 
   configureSessionDataHost(host: SessionDataHost): void {
@@ -104,9 +103,9 @@ export class SessionDB {
     return this.scheduleHost;
   }
 
-  sessionPageBindings(): SessionPageBindingRepository {
-    if (!this.sessionPageBindingRepository) throw new Error("session page binding host is not configured");
-    return this.sessionPageBindingRepository;
+  sessionPageBindings(): SessionPageBindingHostClient {
+    if (!this.sessionPageBindingHost) throw new Error("session page binding host is not configured");
+    return this.sessionPageBindingHost;
   }
 
 

@@ -7,9 +7,9 @@ import {
   kstDate,
 } from "../../src/page/session_page_binding_service.js";
 import type {
-  SessionPageBindingRepository,
+  SessionPageBindingHostClient,
   SessionPageBindingRow,
-} from "../../src/page/session_page_binding_repository.js";
+} from "../../src/control_plane/persistence_host_clients.js";
 
 const logger = pino({ level: "silent" });
 
@@ -54,7 +54,7 @@ function harness(initial = binding()) {
         last_error: error,
       };
     }),
-  } as unknown as SessionPageBindingRepository;
+  } as unknown as SessionPageBindingHostClient;
   const pageHost = {
     getDailyPage: vi.fn(async () => ({
       page: { id: "daily-1", title: "2026-07-13", version: 3 },
@@ -257,7 +257,7 @@ describe("SessionPageBindingService", () => {
         });
       }),
       listDue: vi.fn(async () => []),
-    } as unknown as SessionPageBindingRepository;
+    } as unknown as SessionPageBindingHostClient;
     let pageVersion = 3;
     let dailyReads = 0;
     let releaseDaily!: () => void;

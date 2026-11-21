@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import { normalizeOptionalString } from "../agent_config_service.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type {
   ClaudePermissionMode,
@@ -448,10 +449,4 @@ export function buildInterveneAck(params: {
   }
   const exhaustive: never = result;
   throw new Error(`Unknown intervention result: ${JSON.stringify(exhaustive)}`);
-}
-
-function normalizeOptionalString(value: string | null | undefined): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }

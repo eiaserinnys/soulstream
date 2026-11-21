@@ -1,9 +1,6 @@
-// This file intentionally exceeds 500 lines: it owns the worktree lifecycle boundary where
-// ownership records and repository lock transitions must stay coordinated. Shared setup checks
-// live in worktree_setup.ts.
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, WorktreeGitError, type WorktreeListEntry } from "./worktree_git.js";
@@ -16,6 +13,7 @@ import { RepositoryLock } from "./worktree_repository_lock.js";
 import { logRemoval, newRemovalTimings, removeWorktreeLocked, type RemovalTimings } from "./worktree_removal.js";
 import { sweepWorktrees } from "./worktree_sweep.js";
 import { defaultWorktreeSetupMode, setupSharedDependencies } from "./worktree_setup.js";
+import { containsPath } from "./worktree_dependency_links.js";
 import type {
   WorktreeHost,
   WorktreeRecord,
@@ -754,12 +752,6 @@ function throwIfRequiredSetupFailed(record: WorktreeRecord, warnings: string[]):
 
 function overlaps(left: string, right: string): boolean {
   return containsPath(left, right) || containsPath(right, left);
-}
-
-function containsPath(parent: string, child: string): boolean {
-  const path = relative(parent, child);
-  return path === ""
-    || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }
 
 function discoveryKindFor(kind: WorktreeListEntry["kind"]): string {
