@@ -676,8 +676,7 @@ test('removing the focused sheet focuses the accessible replacement title, not i
   act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB]));
   const response = deferred<any>();
   const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
-  // Spy on the module used by named imports, not Babel's namespace copy.
-  const find = jest.spyOn(require('react-native') as typeof ReactNative, 'findNodeHandle').mockImplementation(node => {
+  const find = jest.spyOn(require('react-native') as typeof import('react-native'), 'findNodeHandle').mockImplementation((node: unknown) => {
     const props = (node as { props?: { children?: string } } | null)?.props;
     return props?.children === seeB.title ? 22 : 11;
   });
