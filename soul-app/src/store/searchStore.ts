@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import * as SecureStore from 'expo-secure-store';
 import { subscribeAuthScope } from '../lib/auth-scope';
 import { withDiagnosticStateStorage } from './diagnosticStateStorage';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export type SearchScope = 'all' | 'sessions' | 'messages';
 export type SearchPeriod = 'today' | '7d' | '30d' | 'all';
@@ -201,8 +202,4 @@ function normalizeHumanSearchEventCategories(
   return uniqueCategories.length > 0
     ? uniqueCategories
     : [...DEFAULT_SEARCH_FILTERS.eventCategories];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

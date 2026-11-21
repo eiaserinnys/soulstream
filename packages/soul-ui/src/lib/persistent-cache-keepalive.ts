@@ -1,12 +1,8 @@
 import type { ChatMessage } from "./flatten-tree";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export const CACHE_KEEPALIVE_PURPOSE = "cache_keepalive";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Reads both the producer's flat event field and a persisted payload wrapper. */
 export function isCacheKeepaliveInput(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const payload = isRecord(value.payload) ? value.payload : undefined;

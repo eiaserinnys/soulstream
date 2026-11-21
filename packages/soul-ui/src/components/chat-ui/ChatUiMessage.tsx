@@ -1,5 +1,6 @@
 import { useMemo, type ComponentPropsWithoutRef } from 'react';
 import { renderText, validateChatUiDocument } from '@soulstream/chat-ui';
+import { isRecord } from '@soulstream/wire-schema/json-record';
 import { MarkdownContent } from '../MarkdownContent';
 import { SourceLink } from '../SourceLink';
 import { ChatUiErrorBoundary } from './ChatUiErrorBoundary';
@@ -8,9 +9,6 @@ import { useChatUiController } from './ChatUiControllerProvider';
 import './chat-ui.css';
 
 type Presentation = 'default' | 'manuscript';
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function readEnvelope(ui: unknown) {
   const raw = isRecord(ui) ? ui : {};
   const validation = validateChatUiDocument(raw.document);

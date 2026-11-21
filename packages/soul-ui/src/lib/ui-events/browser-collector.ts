@@ -1,4 +1,5 @@
 import { UI_EVENT_SCHEMA_VERSION } from "@soulstream/wire-schema/ui-events";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   UI_EVENT_CLIENT_CONFIG_OFF,
   createUiEventCollector,
@@ -262,8 +263,4 @@ function randomId(): string {
 
 function integer(value: unknown, fallback: number): number {
   return Number.isSafeInteger(value) ? (value as number) : fallback;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

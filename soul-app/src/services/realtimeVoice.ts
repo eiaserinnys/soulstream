@@ -5,6 +5,7 @@ import type {
   ToolApprovalPayload,
   ToolApprovalResolvedPayload,
 } from '../api/types';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export type VoiceApprovalDecision = 'approved' | 'rejected';
 export type AudioLevelListener = (level: number) => void;
@@ -301,10 +302,6 @@ function parseDataChannelMessage(data: unknown): Record<string, unknown> | null 
 function sendJson(channel: { readyState?: string; send?: (data: string) => void }, event: Record<string, unknown>) {
   if (channel.readyState && channel.readyState !== 'open') return;
   channel.send?.(JSON.stringify(event));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function loadReactNativeWebRTC(): Promise<{

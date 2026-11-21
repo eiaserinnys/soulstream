@@ -1,3 +1,5 @@
+import { isRecord } from "../../../packages/wire-schema/src/json_record";
+
 export type CogitoAggregateStatus = "ok" | "partial" | "empty" | "error";
 export type CogitoNodeStatus = "ok" | "timeout" | "unavailable" | "error";
 
@@ -289,8 +291,4 @@ function numberField(
 ): number | undefined {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -13,6 +13,7 @@ import {
   type ModalDiagnosticSource,
   type PendingDiagnosticReport,
 } from './session-diagnostics-core';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export const SESSION_DIAGNOSTICS_JOURNAL_KEY = '@soul-app/session-diagnostics-journal-v1';
 export const SESSION_DIAGNOSTICS_OUTBOX_KEY = '@soul-app/session-diagnostics-outbox-v1';
@@ -997,10 +998,6 @@ function nonNegativeInteger(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.trunc(value))
     : 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isUuid(value: string): boolean {
