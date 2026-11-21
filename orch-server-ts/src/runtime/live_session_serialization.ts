@@ -1,5 +1,7 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+import type { CallerInfo } from "@soulstream/wire-schema";
+import { extractCallerInfo, hasCallerIdentity } from "@soulstream/wire-schema/caller-info";
 import {
   findNodeAgentProfile,
   findRegisteredAgentProfile,
@@ -90,16 +92,6 @@ function registeredAgentIds(
   return ids;
 }
 
-const IDENTITY_BEARING_SOURCES = new Set([
-  "agent",
-  "system",
-  "slack",
-  "soul-app",
-  "channel_observer",
-  "llm",
-  "external",
-]);
-
 export function serializeSessionRow(
   row: Record<string, unknown>,
   options: SessionSerializationOptions = {},
@@ -171,7 +163,7 @@ export function serializeSessionRow(
   enrichAgent(payload, options.registry, options.agentProfiles ?? []);
   enrichModelPreset(payload, options.registry);
   const callerInfo = extractCallerInfo(row.metadata);
-  if (callerInfo !== null) {
+  if (callerInfo !== undefined) {
     const displayName = callerInfo.display_name;
     const avatarUrl = callerInfo.avatar_url;
     if (typeof displayName === "string" && displayName.length > 0) {
@@ -270,43 +262,12 @@ function enrichAgent(
   }
 }
 
-function extractCallerInfo(metadata: unknown): Record<string, unknown> | null {
-  if (Array.isArray(metadata)) {
-    let lastAny: Record<string, unknown> | null = null;
-    let lastWithIdentity: Record<string, unknown> | null = null;
-    for (const entry of metadata) {
-      const record = asRecord(entry);
-      if (record?.type !== "caller_info") continue;
-      const value = asRecord(record.value);
-      if (value === null) continue;
-      lastAny = value;
-      if (hasCallerIdentity(value)) lastWithIdentity = value;
-    }
-    return lastWithIdentity ?? lastAny;
-  }
-  const record = asRecord(metadata);
-  if (record === null) return null;
-  return asRecord(record.caller_info) ?? asRecord(record.callerInfo);
-}
-
-function hasCallerIdentity(callerInfo: Record<string, unknown>): boolean {
-  const source = callerInfo.source;
-  const displayName = callerInfo.display_name;
-  const avatarUrl = callerInfo.avatar_url;
-  return (
-    (typeof source === "string" && IDENTITY_BEARING_SOURCES.has(source)) ||
-    (typeof displayName === "string" && displayName.length > 0) ||
-    (typeof avatarUrl === "string" && avatarUrl.length > 0)
-  );
-}
-
 function applyUserProfileFallback(
   payload: Record<string, unknown>,
-  callerInfo: Record<string, unknown> | null,
+  callerInfo: CallerInfo | undefined,
   registry: InMemoryNodeRegistry | undefined,
 ): void {
-  const source = callerInfo?.source;
-  if (typeof source === "string" && IDENTITY_BEARING_SOURCES.has(source)) return;
+  if (callerInfo !== undefined && hasCallerIdentity(callerInfo)) return;
   if (payload.userName || payload.userPortraitUrl) return;
   const nodeId = payload.nodeId;
   if (typeof nodeId !== "string" || nodeId.length === 0 || registry === undefined) {

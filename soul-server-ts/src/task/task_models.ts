@@ -15,7 +15,7 @@
 import type { OrchestrationPurpose } from "./task_orchestration_purpose.js";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { SessionLifecycleStatus } from "@soulstream/wire-schema";
+import type { CallerInfo as WireCallerInfo, SessionLifecycleStatus } from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
@@ -309,23 +309,8 @@ export interface ActiveDeliveryTurnReceipt {
   register(intervention: InterventionMessage): Promise<void>;
 }
 
-/**
- * 발신자 정보. atom card `ed3a216d-2811-4792-bfbe-f15043c7faba` (caller_info 통합 스키마 v1) 정본.
- *
- * snake_case keys = wire 전달 시 그대로 운반 (orch broadcast wire 정합).
- */
-export interface CallerInfo {
-  source?: string | null;
-  display_name?: string | null;
-  avatar_url?: string | null;
-  user_id?: string | null;
-  agent_node?: string | null;
-  agent_id?: string | null;
-  agent_name?: string | null;
-  [k: string]: unknown;
-}
+export type CallerInfo = ({ [K in keyof WireCallerInfo as K extends "source" ? never : K]: WireCallerInfo[K] }) & { source?: string | null };
 
-/** session_broadcaster.emit_session_message_updated의 last_message dict 정본. */
 export interface LastMessage {
   type: "user_message" | "assistant_message";
   preview: string;

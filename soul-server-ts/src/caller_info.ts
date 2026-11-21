@@ -1,36 +1,8 @@
-/**
- * Agent caller_info v1 빌더 (atom card `ed3a216d-2811-4792-bfbe-f15043c7faba` 정본).
- *
- * MCP 위임 진입점(create_agent_session, send_message_to_session, create_remote_agent_session)이
- * 공유하는 단일 표면. 기존 caller_info wire 키와 호환한다.
- *
- * 정본 단일성 (design-principles §3):
- * - `AgentCallerInfo`는 `CallerInfo`의 narrowed sub-type. `TaskManager.createTask`의
- *   `callerInfo?: CallerInfo` 자리에 as 캐스트 없이 전달 가능.
- * - `task_models.ts`의 `CallerInfo` 인터페이스(L40-49)는 *건드리지 않는다*.
- */
 import type { CallerInfo } from "./task/task_models.js";
 
-/**
- * Agent origin caller_info — v1 promote 키가 명시 nullable이고 source가 narrow.
- *
- * Python build_agent_caller_info의 반환 dict와 1:1 키 호환:
- * source / agent_node / agent_id / agent_name / display_name / user_id / avatar_url / email.
- *
- * `[k: string]: unknown` index signature는 `CallerInfo`로부터 상속 — 향후 v1 추가 필드
- * 대비 graceful 표면 유지.
- */
 export interface AgentCallerInfo extends CallerInfo {
   source: "agent";
   agent_node: string;
-  /**
-   * v1 정본 필드 — Python `build_agent_caller_info` 호환. Python은 None을 박지만 TS는
-   * 값이 없으면 키를 생략하여 `CallerInfo`(L40-49 `string?` optional)와 type 호환
-   * (design-principles §3 정본 하나 — CallerInfo 인터페이스는 *건드리지 않는다*).
-   *
-   * JSON.stringify에서 undefined 키는 omit — atom card ed3a216d "기존 데이터(신규 필드 없음)는
-   * graceful" 정합. 클라이언트(buildCallerInfoLines, CallerAvatar)는 키 누락을 if-가드로 처리.
-   */
   agent_id?: string;
   agent_name?: string;
   display_name?: string;

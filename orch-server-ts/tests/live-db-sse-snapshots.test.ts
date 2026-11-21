@@ -126,13 +126,16 @@ describe("live DB SSE replay snapshots", () => {
             session_type: "codex",
             last_message: { text: "last" },
             client_id: "client-1",
-            metadata: {
-              caller_info: {
-                source: "slack",
-                display_name: "서소영",
-                avatar_url: "/avatar.png",
+            metadata: [
+              {
+                type: "caller_info",
+                value: {
+                  source: "slack",
+                  display_name: "서소영",
+                  avatar_url: "/avatar.png",
+                },
               },
-            },
+            ],
             display_name: "Display",
             node_id: "node-a",
             folder_id: "folder-1",
