@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   NodeCredentialConflictError,
   type NodeCredentialCreation,
@@ -311,8 +312,4 @@ function formatUserCode(code: string): string {
 
 function notFound(): NodePairingError {
   return new NodePairingError("not_found", "node pairing request not found");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

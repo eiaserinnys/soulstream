@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { McpRuntime } from "../runtime.js";
 
 import { REFLECTION_SCHEMA_VERSION, SELF_IDENTITY, SELF_SERVICE_NAME } from "./identity.js";
@@ -308,10 +309,6 @@ function combineStatuses(statuses: ReflectionStatus[]): ReflectionStatus {
 
 function recordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isReflectionLevel(value: unknown): value is ReflectionLevel {

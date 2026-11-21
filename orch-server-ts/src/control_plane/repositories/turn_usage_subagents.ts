@@ -16,6 +16,7 @@ import {
 } from "@soulstream/model-catalog";
 import { modelCatalogPathForRepository } from "@soulstream/model-catalog/file-loader";
 import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export interface TurnSubagentModelUsage {
   model: string;
@@ -285,10 +286,10 @@ export function normalizeModelName(model: string): string {
 }
 
 function parseModelUsage(value: unknown): ModelUsageSnapshot | undefined {
-  if (!isPlainObject(value)) return undefined;
+  if (!isRecord(value)) return undefined;
   const snapshot: ModelUsageSnapshot = new Map();
   for (const [rawKey, rawEntry] of Object.entries(value)) {
-    const entry = isPlainObject(rawEntry) ? rawEntry : {};
+    const entry = isRecord(rawEntry) ? rawEntry : {};
     const canonical = typeof entry.canonicalModel === "string"
       ? entry.canonicalModel
       : typeof entry.canonical_model === "string"
@@ -347,10 +348,6 @@ function finiteNonNegative(value: unknown): number | undefined {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function clampToken(value: number): number {

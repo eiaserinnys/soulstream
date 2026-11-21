@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyRequest } from "fastify";
 
@@ -6,7 +7,7 @@ import type {
   BoardItemRecord,
   BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
-import { isJsonObject, type JsonObject } from "../http/route_validation.js";
+import { type JsonObject } from "../http/route_validation.js";
 import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessProvider,
@@ -134,7 +135,7 @@ function optionalObject(
 ): JsonObject | null | undefined {
   const value = object[key];
   if (value === undefined || value === null) return value;
-  if (isJsonObject(value)) return value;
+  if (isRecord(value)) return value;
   throw new SessionCreateLifecycleError(
     "INVALID_REQUEST",
     `${key} must be a JSON object or null`,

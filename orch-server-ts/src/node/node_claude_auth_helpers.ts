@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   NodeCommandResponse,
   RequestResponseNodeCommandPayload,
@@ -122,8 +123,4 @@ export function ackErrorDetail(response: NodeCommandResponse): string {
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

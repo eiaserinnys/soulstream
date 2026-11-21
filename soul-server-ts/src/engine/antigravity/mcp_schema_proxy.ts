@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { JSONRPCMessage, RequestId } from "@modelcontextprotocol/sdk/types.js";
 import type { Readable, Writable } from "node:stream";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { sanitizeAntigravityInputSchema } from "./mcp_schema_sanitizer.js";
 import { ANTIGRAVITY_MCP_PROXY_CONFIG_ENV } from "./mcp_schema_proxy_launch.js";
 
@@ -33,7 +34,7 @@ export function parseAntigravityMcpProxyConfig(raw: string | undefined): Antigra
 }
 
 export function parseAntigravityMcpUpstream(parsed: unknown): AntigravityMcpProxyConfig {
-  if (!isObject(parsed)) throw new Error("Invalid Antigravity MCP proxy configuration");
+  if (!isRecord(parsed)) throw new Error("Invalid Antigravity MCP proxy configuration");
   if (parsed.type === "streamable_http" && typeof parsed.url === "string" && parsed.url.length > 0) {
     const headers = optionalStringRecord(parsed, "headers");
     return { type: "streamable_http", url: parsed.url, ...(headers !== undefined ? { headers } : {}) };
@@ -104,7 +105,7 @@ export async function runAntigravityMcpSchemaProxy(config: AntigravityMcpProxyCo
       const kind = pendingRequests.get(message.id);
       if (kind) {
         pendingRequests.delete(message.id);
-        if (kind === "initialize" && "result" in message && isObject(message.result)
+        if (kind === "initialize" && "result" in message && isRecord(message.result)
           && typeof message.result.protocolVersion === "string") {
           if (config.type === "streamable_http") {
             (upstream as StreamableHTTPClientTransport).setProtocolVersion?.(message.result.protocolVersion);
@@ -153,9 +154,9 @@ export function createUpstreamTransport(config: AntigravityMcpProxyConfig, inher
 }
 
 function sanitizeToolsListResponse(message: JSONRPCMessage): JSONRPCMessage {
-  if (!("result" in message) || !isObject(message.result) || !Array.isArray(message.result.tools)) return message;
+  if (!("result" in message) || !isRecord(message.result) || !Array.isArray(message.result.tools)) return message;
   const tools = message.result.tools.map((tool) => {
-    if (!isObject(tool) || !Object.hasOwn(tool, "inputSchema")) return tool;
+    if (!isRecord(tool) || !Object.hasOwn(tool, "inputSchema")) return tool;
     return { ...tool, inputSchema: sanitizeAntigravityInputSchema(tool.inputSchema) };
   });
   return { ...message, result: { ...message.result, tools } } as JSONRPCMessage;
@@ -180,14 +181,10 @@ function optionalStringArray(record: Record<string, unknown>, key: string): stri
 function optionalStringRecord(record: Record<string, unknown>, key: string): Record<string, string> | undefined {
   if (!Object.hasOwn(record, key)) return undefined;
   const value = record[key];
-  if (!isObject(value) || !Object.values(value).every((item) => typeof item === "string")) {
+  if (!isRecord(value) || !Object.values(value).every((item) => typeof item === "string")) {
     throw new Error("Invalid Antigravity MCP proxy configuration");
   }
   return value as Record<string, string>;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function asError(error: unknown): Error {

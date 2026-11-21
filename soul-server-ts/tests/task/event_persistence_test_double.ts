@@ -1,10 +1,10 @@
 import { vi } from "vitest";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
-import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
-import type { EventOutboxSessionEffect } from "../../src/upstream/event_outbox.js";
+import type { EventOutboxRecord, EventOutboxSessionEffect } from "../../src/upstream/event_outbox.js";
 
 export type EventPersistenceTestDoubleCapabilityProfile =
   | "legacy_transition_only"
@@ -347,8 +347,4 @@ function eventIdFromResult(result: unknown, fallback: number | undefined): numbe
   if (isRecord(result) && typeof result.source_seq === "number") return result.source_seq;
   if (fallback !== undefined) return fallback;
   throw new Error("event persistence test double received no event ID");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -23,6 +23,7 @@
 
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "./protocol.js";
 
 /** 매퍼 호출 시점의 Unix epoch sec. Python wire 정본은 number (float). */
@@ -32,10 +33,6 @@ function nowEpochSec(): number {
 
 type RawCodexEvent = Record<string, unknown>;
 type RawCodexItem = Record<string, unknown>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function typeOf(value: unknown): string | undefined {
   return isRecord(value) && typeof value.type === "string" ? value.type : undefined;

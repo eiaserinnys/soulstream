@@ -1,11 +1,12 @@
 import type { FastifyRequest } from "fastify";
 import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
-import { isJsonObject, type JsonObject } from "../http/route_validation.js";
+import { type JsonObject } from "../http/route_validation.js";
 import { parseAttachmentIds } from "../session/session_action_command_payloads.js";
 import {
   MODEL_REASONING_EFFORTS,
   type ReasoningEffort,
 } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 /**
  * Accept-set, mirroring packages/wire-schema CreateSession.reasoningEffort and
@@ -283,7 +284,7 @@ function buildExecuteProxyCallerInfo(request: FastifyRequest): ExecuteProxyCalle
 function parseExecuteObjectBody(
   body: unknown,
 ): { ok: true; value: JsonObject } | { ok: false; statusCode: number; detail: string } {
-  if (isJsonObject(body)) return { ok: true, value: body };
+  if (isRecord(body)) return { ok: true, value: body };
   return { ok: false, statusCode: 422, detail: "Request body must be a JSON object" };
 }
 
@@ -368,7 +369,7 @@ function optionalObjectArray(
 ): { ok: true; value?: ExecuteProxyContextItem[] } | { ok: false; statusCode: number; detail: string } {
   const value = object[key];
   if (value === undefined || value === null) return { ok: true };
-  if (Array.isArray(value) && value.every(isJsonObject)) {
+  if (Array.isArray(value) && value.every(isRecord)) {
     return { ok: true, value };
   }
   return { ok: false, statusCode: 422, detail: `${key} must be an object array` };
@@ -380,7 +381,7 @@ function optionalObject(
 ): { ok: true; value?: ExecuteProxyCallerInfo } | { ok: false; statusCode: number; detail: string } {
   const value = object[key];
   if (value === undefined || value === null) return { ok: true };
-  if (isJsonObject(value)) return { ok: true, value };
+  if (isRecord(value)) return { ok: true, value };
   return { ok: false, statusCode: 422, detail: `${key} must be an object` };
 }
 

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { ClaudeCentralLoginError, type ClaudeCentralLoginSnapshot } from "./login_service.js";
 import { ClaudeCentralNotFoundError } from "./service.js";
 import type {
@@ -232,8 +233,4 @@ function parseSettingsUpdate(
 
 function isAccountId(value: unknown): value is string {
   return typeof value === "string" && ACCOUNT_ID.test(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

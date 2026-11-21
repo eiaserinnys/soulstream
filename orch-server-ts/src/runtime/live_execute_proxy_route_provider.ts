@@ -49,6 +49,7 @@ import {
   readPersistentEnabled,
   readStoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
@@ -714,10 +715,6 @@ class SessionEventQueue {
       pending("closed");
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

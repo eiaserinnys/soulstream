@@ -1,8 +1,5 @@
 import { readFileSync } from "node:fs";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 /**
  * Recovers per-assistant usage from the CLI transcript when the SDK stream

@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-
-import { isJsonObject } from "../http/route_validation.js";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type PushJwtUser = {
   email?: string | null;
@@ -80,7 +79,7 @@ async function requireJwtUser(
 function parseRegisterPayload(
   body: unknown,
 ): { ok: true; value: RegisterPayload } | { ok: false; detail: string } {
-  if (!isJsonObject(body)) {
+  if (!isRecord(body)) {
     return { ok: false, detail: "Request body must be a JSON object" };
   }
   if (typeof body.token !== "string") {

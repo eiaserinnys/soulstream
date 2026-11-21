@@ -1,4 +1,5 @@
 import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   EVENT_SESSION_REJECTION_REASONS,
   type EventIngressEnvelope,
@@ -289,8 +290,4 @@ function isReviewState(
   return value === "not_required"
     || value === "needs_review"
     || value === "acknowledged";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

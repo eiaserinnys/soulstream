@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const ALLOWED_APPEARANCES = new Set(["system", "light", "dark"]);
@@ -108,7 +109,7 @@ export function registerUserPreferencesRoutes(
     const email = await requestUserPreferencesEmail(options, request);
     if (!email.ok) return userPreferencesError(reply, email.error);
 
-    const payload = isPlainObject(request.body) ? request.body : {};
+    const payload = isRecord(request.body) ? request.body : {};
     const existing = await options.repository.get(email.value);
     const prefs = preferencesFromPayload(payload, existing?.prefs);
     try {
@@ -177,7 +178,7 @@ export function normalizeUserPreferences(value: unknown): NormalizedUserPreferen
     ? String(rawAppearance) as NormalizedUserPreferences["appearance"]
     : "system";
 
-  const wallpaperSource = isPlainObject(source.wallpaper) ? source.wallpaper : {};
+  const wallpaperSource = isRecord(source.wallpaper) ? source.wallpaper : {};
   const rawMode = wallpaperSource.mode;
   const mode = ALLOWED_WALLPAPER_MODES.has(String(rawMode))
     ? String(rawMode) as NormalizedUserPreferences["wallpaper"]["mode"]
@@ -204,7 +205,7 @@ export function preferencesFromPayload(
 ): NormalizedUserPreferences {
   const existing = normalizeUserPreferences(existingValue);
   const patch: Record<string, unknown> = {};
-  if (isPlainObject(payload.prefs)) {
+  if (isRecord(payload.prefs)) {
     Object.assign(patch, payload.prefs);
   }
   for (const key of ["appearance", "chatFontSize", "wallpaper", "glass"] as const) {
@@ -227,7 +228,7 @@ function normalizeChatFontSize(value: unknown): NormalizedUserPreferences["chatF
 }
 
 function normalizeGlassSettings(value: unknown): NormalizedUserPreferences["glass"] {
-  const source = isPlainObject(value) ? value : {};
+  const source = isRecord(value) ? value : {};
   const normalized: NormalizedUserPreferences["glass"] = { ...DEFAULT_GLASS_SETTINGS };
   if (typeof source.enabled === "boolean") {
     normalized.enabled = source.enabled;
@@ -321,16 +322,12 @@ function errorName(error: unknown): string {
 }
 
 function userPreferencesSource(value: unknown): Record<string, unknown> {
-  if (isPlainObject(value)) return value;
+  if (isRecord(value)) return value;
   if (typeof value !== "string") return {};
   try {
     const decoded = JSON.parse(value);
-    return isPlainObject(decoded) ? decoded : {};
+    return isRecord(decoded) ? decoded : {};
   } catch {
     return {};
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

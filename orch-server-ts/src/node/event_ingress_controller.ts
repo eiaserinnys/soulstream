@@ -2,6 +2,7 @@ import type {
   EventIngressRejectionCode,
   EventCanonicalSessionProjection,
 } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { NodeRegistryEvent } from "./registry.js";
 import { shouldPublishSessionEventSemantically } from
   "../session/session_event_semantic_publication.js";
@@ -347,8 +348,4 @@ function canonicalSessionUpdate(
     updated_at: session.updated_at,
     last_event_id: session.last_event_id,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

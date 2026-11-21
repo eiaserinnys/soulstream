@@ -47,6 +47,7 @@ import { registerSessionHistoryRoutes } from
   "../../../orch-server-ts/src/session/session_history_routes.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { parseEnv } from "../../src/config.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import { SessionDB } from "../../src/db/session_db.js";
@@ -982,8 +983,4 @@ function countSuccessorReplies(frames: readonly SessionSseFrame[]): number {
     && isRecord(frame.data)
     && frame.data.content === "successor reply"
   ).length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

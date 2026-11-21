@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   AppServerRequestId,
   AppServerResponseError,
@@ -260,8 +261,4 @@ function isJsonRpcError(error: unknown): error is {
 } {
   if (!isRecord(error)) return false;
   return typeof error.code === "number" && typeof error.message === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

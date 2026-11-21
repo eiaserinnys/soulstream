@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   AttachmentRouteError,
   AttachmentTransportConnectionError,
@@ -130,7 +131,7 @@ export function createLiveAttachmentSourceReader(
 }
 
 function projectSourceReadResponse(result: unknown): AttachmentSourceReadFile {
-  const object = isPlainObject(result) ? result : {};
+  const object = isRecord(result) ? result : {};
   const contentB64 = object.content_b64;
   const filename = object.filename;
   const size = object.size;
@@ -167,10 +168,6 @@ function malformedSourceResponse(): AttachmentRouteError {
     "Node returned malformed attachment source response",
     502,
   );
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function uploadAttachment(

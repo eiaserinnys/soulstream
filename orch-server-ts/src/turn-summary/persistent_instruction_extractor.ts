@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   classifyPersistentInstruction,
 } from "../relevance/typesafe_client.js";
@@ -174,8 +175,4 @@ function hasUnknownKeys(
   allowedKeys: readonly string[],
 ): boolean {
   return Object.keys(record).some((key) => !allowedKeys.includes(key));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

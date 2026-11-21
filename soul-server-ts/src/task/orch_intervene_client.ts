@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import {
   fetchOrchResponse,
@@ -110,10 +111,6 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return "";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringOrNull(value: unknown): string | null {

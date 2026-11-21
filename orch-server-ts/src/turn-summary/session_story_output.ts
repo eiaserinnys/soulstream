@@ -1,4 +1,5 @@
 import type { SessionStoryTurnSummary } from "@soulstream/mcp-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { TurnSummaryConfig, TurnSummaryLogger } from "./turn_summary_config.js";
 
 const MARKER_PATTERN = /\[T(\d+)(?:-T(\d+))?\]/g;
@@ -92,10 +93,6 @@ function countSentences(value: string): number {
     .split(/(?<=[.!?。！？])\s*/)
     .filter((sentence) => sentence.trim().length > 0)
     .length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string | null {

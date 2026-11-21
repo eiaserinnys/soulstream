@@ -3,10 +3,7 @@ import {
   type ModelCatalogConfig,
 } from "@soulstream/model-catalog";
 import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;

@@ -5,6 +5,7 @@ import type {
   EnginePort,
 } from "../engine/protocol.js";
 import type { SSEEventInputMaterialManifest } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { stampSessionCost, type SessionCostBase } from "../engine/session_cost.js";
 import { engineEventMetadata } from "../engine/engine_event_metadata.js";
 import {
@@ -516,10 +517,6 @@ function readCommandId(frame: unknown): string {
     return frame.commandId;
   }
   return "invalid-command";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

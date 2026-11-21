@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES,
   buildBatch,
@@ -147,8 +148,4 @@ function parseJson(value: string, field: string): unknown {
   } catch (error) {
     throw new Error(`runner event outbox ${field} JSON is invalid`, { cause: error });
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

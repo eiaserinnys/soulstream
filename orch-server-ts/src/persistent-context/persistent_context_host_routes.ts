@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { PersistentContextNullReason, PersistentContextService } from "./persistent_context_service.js";
@@ -100,8 +101,4 @@ function readInput(value: unknown): {
     request,
     budget_ms: budgetMs,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

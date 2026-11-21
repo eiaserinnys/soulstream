@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "../protocol.js";
 
 export interface UsageLimitStopInfo {
@@ -93,8 +94,4 @@ export function buildUsageLimitStopEvents(
       ...rateFields,
     } as SSEEventPayload,
   ];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

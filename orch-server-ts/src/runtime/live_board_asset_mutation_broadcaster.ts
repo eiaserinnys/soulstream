@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type {
   InMemorySseReplayBroadcaster,
@@ -35,8 +36,4 @@ function requireCommittedBoardItem(result: unknown): Record<string, unknown> & {
     throw new Error("committed board asset result has no board item id");
   }
   return { ...result.boardItem, id };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

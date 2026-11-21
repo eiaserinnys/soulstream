@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   InMemoryNodeRegistry,
   NodeRegistryEvent,
@@ -215,8 +216,4 @@ function sessionIdFromPayload(payload: Record<string, unknown>): string | undefi
     if (typeof value === "string" && value.length > 0) return value;
   }
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

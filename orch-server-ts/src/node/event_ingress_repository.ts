@@ -1,4 +1,5 @@
 import type { EventCanonicalExecutionOwnershipProjection, EventSessionEffectApplication } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { LiveDbSqlResolver, LivePostgresSql } from "../runtime/live_db_sql.js";
 import type {
   EventAppendBatch,
@@ -803,10 +804,6 @@ function isCanonicalSession(
       || Number.isSafeInteger(value.termination_event_id))
     && typeof value.updated_at === "string"
     && (value.last_event_id === null || Number.isSafeInteger(value.last_event_id));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function assertReceiptMatches(receipt: ReceiptRow, envelope: EventIngressEnvelope): void {

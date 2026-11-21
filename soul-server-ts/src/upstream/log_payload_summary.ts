@@ -1,3 +1,5 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
+
 const COUNTABLE_FIELDS = [
   "sessions",
   "folders",
@@ -40,8 +42,4 @@ export function summarizePayloadForLog(payload: unknown): LogPayloadSummary {
     break;
   }
   return summary;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

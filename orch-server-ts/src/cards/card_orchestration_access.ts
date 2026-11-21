@@ -1,4 +1,5 @@
 import { ORCHESTRATION_DECISION_PURPOSE } from "@soulstream/wire-schema/card-orchestration";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import type { FolderRecord } from "../folders/folder_route_access.js";
 import type { DashboardUserRepository } from "../runtime/live_dashboard_access_provider.js";
@@ -70,7 +71,4 @@ export function createCardOrchestrationAccess(
       return isBoardFolderAllowed(access, folders, id);
     },
   };
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }

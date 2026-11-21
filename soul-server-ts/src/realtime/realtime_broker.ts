@@ -9,6 +9,7 @@ import type {
   ModelCatalog,
 } from "../model_catalog.js";
 import { UnknownModelPresetError } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { Task, TaskStatus } from "../task/task_models.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -455,8 +456,4 @@ function asSse(event: Record<string, unknown>): SSEEventPayload {
 function stringField(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   return typeof value === "string" ? value : "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

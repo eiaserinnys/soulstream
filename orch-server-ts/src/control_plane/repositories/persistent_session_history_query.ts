@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { SqlClient } from "../control_plane_types.js";
 
 export interface PersistentSessionHistoryQuery {
@@ -116,8 +117,4 @@ export async function readPersistentSessionHistory(
     rows,
     nextCursor: hasMore ? rows[rows.length - 1]?.id ?? null : null,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

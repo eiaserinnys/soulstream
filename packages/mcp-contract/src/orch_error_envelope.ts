@@ -1,3 +1,5 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
+
 export interface OrchErrorEnvelope {
   message: string;
   code: string | null;
@@ -26,8 +28,4 @@ export function readOrchErrorEnvelopeText(status: { status: number; statusText: 
   } catch {
     return { message: fallback, code: null, details: {} };
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

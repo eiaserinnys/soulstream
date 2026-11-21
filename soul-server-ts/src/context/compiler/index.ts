@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { AgentBackendSchema } from "@soulstream/model-catalog";
 import { estimateInputTokens } from "@soulstream/model-catalog/input-token-estimate";
 import { CALLER_INFO_SOURCES } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   fetchAtomMarkdownResult,
   formatAtomMarkdown,
@@ -428,10 +429,6 @@ function toManifestUsage(value: unknown): ContextManifestUsage | undefined {
     return undefined;
   }
   return { limit: value.limit, used: value.used, omitted: value.omitted };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function compileContextSources(
