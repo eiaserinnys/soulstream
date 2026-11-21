@@ -26,17 +26,13 @@ export function isSystemFolderId(folderId: string | null | undefined): folderId 
   return typeof folderId === "string" && SYSTEM_FOLDER_ID_SET.has(folderId);
 }
 
-// init/reconnected는 provider가 직접 처리한다. 세 이벤트는 현재 UI handler가 없어
-// 구독 목록에서 제외하고, 추가 시에는 handler와 함께 이 목록을 갱신한다.
 type _SSEExcludedTypes =
   | "init"
-  | "reconnected"
   | "realtime_status"
   | "realtime_transcript"
   | "session_ended";
 const SSE_EXCLUDED_TYPES: ReadonlySet<_SSEExcludedTypes> = new Set([
   "init",
-  "reconnected",
   "realtime_status",
   "realtime_transcript",
   "session_ended",

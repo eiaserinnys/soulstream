@@ -34,7 +34,6 @@ describe("dashboard SSE subscription contract", () => {
   it("uses every generated event except the explicitly unhandled events", () => {
     const excluded = new Set([
       "init",
-      "reconnected",
       "realtime_status",
       "realtime_transcript",
       "session_ended",

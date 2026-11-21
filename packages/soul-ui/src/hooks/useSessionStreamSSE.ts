@@ -21,7 +21,6 @@ import {notifyOrchestratorShutdown,requestOrchestratorCheck} from "../lib/orches
 import type {
   CatalogUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
-  MetadataUpdatedStreamEvent,
   PageUpdatedStreamEvent,
   ReplayGapStreamEvent,
   FolderUpdatedStreamEvent,
@@ -55,7 +54,6 @@ const SESSION_STREAM_EVENT_TYPES = [
   "session_updated",
   "session_deleted",
   "catalog_updated",
-  "metadata_updated",
   "card_updated",
   "session_delivery_failed",
   "folder_updated",
@@ -83,7 +81,6 @@ export interface UseSessionStreamSSEOptions {
   onSessionUpdated?: (event: SessionUpdatedStreamEvent) => void;
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
-  onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onCardUpdated?: (event: CardUpdatedStreamEvent) => void;
   onSessionDeliveryFailed?: (event: SessionDeliveryFailedStreamEvent) => void;
   onFolderUpdated?: (event: FolderUpdatedStreamEvent) => void;

@@ -27,7 +27,6 @@ export type { ChatFocusTarget, SearchChatFocus } from "./search-focus";
 export type {
   SSEEventType,
   ProgressEvent,
-  MemoryEvent,
   SessionEvent,
   InterventionSentEvent,
   ContextItem,
@@ -48,7 +47,6 @@ export type {
   ResultEvent,
   SubagentStartEvent,
   SubagentStopEvent,
-  ReconnectEvent,
   HistorySyncEvent,
   InputRequestQuestion,
   InputRequestEvent,
@@ -107,7 +105,6 @@ export type {
   CatalogState,
   CatalogUpdatedStreamEvent,
   MetadataEntry,
-  MetadataUpdatedStreamEvent,
   AgentInfo,
   AgentProfile,
 } from "./types";

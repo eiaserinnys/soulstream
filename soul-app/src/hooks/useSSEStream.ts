@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { utf8ByteLength } from '../lib/session-diagnostics-core';
+import { utf8ByteLength, type DiagnosticSource } from '../lib/session-diagnostics-core';
 import {
   beginDiagnosticOperation,
   endDiagnosticOperation,
   recordSseConnection,
   recordSseMessageBytes,
 } from '../lib/session-diagnostics-api';
-import type { DiagnosticSource } from '../lib/session-diagnostics-core';
 import EventSource, {
   type EventSourceEvent,
   type EventSourceOptions,
@@ -388,7 +387,6 @@ export const CATALOG_STREAM_EVENTS = [
   'session_updated',
   'session_deleted',
   'catalog_updated',
-  'metadata_updated',
   'folder_updated',
   'card_updated',
   'session_delivery_failed',

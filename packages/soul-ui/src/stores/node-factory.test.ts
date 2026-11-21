@@ -1,13 +1,6 @@
-/**
- * node-factory 테스트
- *
- * createNodeFromEvent (생성형/업데이트형 분류) 및 applyUpdate를 검증합니다.
- */
-
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createNodeFromEvent, applyFinalAssistantMessageToLiveText, applyUpdate } from "./node-factory";
-import { createProcessingContext, makeNode, registerNode } from "./processing-context";
-import type { ProcessingContext } from "./processing-context";
+import { createProcessingContext, makeNode, registerNode, type ProcessingContext } from "./processing-context";
 import type {
   AssistantMessageEvent,
   AssistantMessageNode,
@@ -27,7 +20,6 @@ import type {
   ToolResultEvent,
   SubagentStopEvent,
   ProgressEvent,
-  MemoryEvent,
   ToolNode,
   UserMessageNode,
   InterventionNode,
@@ -941,16 +933,6 @@ describe("createNodeFromEvent", () => {
     it("should return null for progress", () => {
       const event: ProgressEvent = { type: "progress", text: "loading" };
       expect(createNodeFromEvent(event, 7)).toBeNull();
-    });
-
-    it("should return null for memory", () => {
-      const event: MemoryEvent = {
-        type: "memory",
-        used_gb: 1,
-        total_gb: 8,
-        percent: 12.5,
-      };
-      expect(createNodeFromEvent(event, 8)).toBeNull();
     });
   });
 });

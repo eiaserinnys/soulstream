@@ -36,10 +36,8 @@ import type {
   SSEEventInputRequestExpired,
   SSEEventInputRequestResponded,
   SSEEventInterventionSent,
-  SSEEventMemory,
   SSEEventProgress,
   SSEEventPromptSuggestion,
-  SSEEventReconnect,
   SSEEventReportTimeline,
   SSEEventReportTimelineQuestionClosed,
   SSEEventResult,
@@ -69,7 +67,6 @@ export type { CallerInfo, ContextItem, EventTruncation } from "../../../wire-sch
 export type SSEEventType = GeneratedSSEEventType;
 
 export type ProgressEvent = SSEEventProgress;
-export type MemoryEvent = SSEEventMemory;
 export type SessionEvent = SSEEventSession;
 export type InterventionSentEvent = SSEEventInterventionSent;
 export type SessionNotificationEvent = SSEEventSessionNotification;
@@ -115,7 +112,6 @@ export type ClaudeRuntimeScheduleUpdatedEvent = SSEEventClaudeRuntimeScheduleUpd
 export type ClaudeRuntimeScheduleDeletedEvent = SSEEventClaudeRuntimeScheduleDeleted;
 export type FolderUpdatedEvent = SSEEventFolderUpdated;
 export type CustomViewUpdatedEvent = SSEEventCustomViewUpdated;
-export type ReconnectEvent = SSEEventReconnect;
 export type HistorySyncEvent = SSEEventHistorySync;
 export type InputRequestEvent = SSEEventInputRequest;
 export type InputRequestExpiredEvent = SSEEventInputRequestExpired;
@@ -150,7 +146,6 @@ export type ClaudeRuntimeHookEvent = SSEEventClaudeRuntimeHookEvent;
 
 export type SoulSSEEvent =
   | ProgressEvent
-  | MemoryEvent
   | SessionEvent
   | InterventionSentEvent
   | SessionNotificationEvent
@@ -201,7 +196,6 @@ export type SoulSSEEvent =
   | ClaudeRuntimeScheduleDeletedEvent
   | FolderUpdatedEvent
   | CustomViewUpdatedEvent
-  | ReconnectEvent
   | InputRequestEvent
   | InputRequestExpiredEvent
   | InputRequestRespondedEvent

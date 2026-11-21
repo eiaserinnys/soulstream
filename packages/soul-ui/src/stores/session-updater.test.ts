@@ -23,10 +23,7 @@ import type {
   SubagentStopEvent,
   ResultEvent,
   ProgressEvent,
-  MemoryEvent,
 } from "../shared/types";
-
-// === shouldNotify ===
 
 describe("shouldNotify", () => {
   describe("events that should trigger notification", () => {
@@ -177,16 +174,6 @@ describe("shouldNotify", () => {
 
     it("should return false for progress", () => {
       const event: ProgressEvent = { type: "progress", text: "loading" };
-      expect(shouldNotify(event)).toBe(false);
-    });
-
-    it("should return false for memory", () => {
-      const event: MemoryEvent = {
-        type: "memory",
-        used_gb: 2,
-        total_gb: 8,
-        percent: 25,
-      };
       expect(shouldNotify(event)).toBe(false);
     });
   });

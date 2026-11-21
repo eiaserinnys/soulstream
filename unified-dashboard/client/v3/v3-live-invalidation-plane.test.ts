@@ -4,7 +4,6 @@ import {
   acceptV3SessionStreamEvent,
   getV3PageInvalidationKey,
   getV3InvalidationSnapshot,
-  invalidateV3,
   resetV3InvalidationForTest,
   selectV3InvalidationKey,
   selectV3PlannerInvalidationKeys,
@@ -74,12 +73,6 @@ describe("v3 live invalidation plane", () => {
       agent_session_id: "session-a",
       status: "running",
       updated_at: "2026-07-15T00:00:00Z",
-    });
-    acceptV3SessionStreamEvent({
-      type: "metadata_updated",
-      session_id: "session-a",
-      entry: { type: "display", value: "same" },
-      metadata: [],
     });
     acceptV3SessionStreamEvent({
       type: "catalog_updated",
