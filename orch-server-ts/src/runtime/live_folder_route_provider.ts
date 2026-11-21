@@ -1,15 +1,10 @@
-import { randomUUID } from "node:crypto";
-
 import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 import {
-  FolderRouteError,
   type FolderRecord,
-  type FolderReorderInput,
   type FolderRouteProvider,
-  type FolderUpdateInput,
 } from "../folders/folder_routes.js";
 import type { PublicStatusFolderCountsProvider } from "../public/public_status_routes.js";
-import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
+import type { LiveDbSqlResolver } from "./live_db_sql.js";
 
 export type LiveFolderProvider = FolderRouteProvider &
   Pick<PublicStatusFolderCountsProvider, "getFolderCounts" | "listFolders"> & {
@@ -163,8 +158,4 @@ function objectValue(value: unknown): Record<string, unknown> {
 function timestampString(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString();
   return typeof value === "string" ? value : undefined;
-}
-
-function hasOwn(object: object, key: PropertyKey): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

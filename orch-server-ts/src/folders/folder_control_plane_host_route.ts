@@ -3,7 +3,7 @@ import type { CardControlPlaneService } from "../cards/card_control_plane_servic
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
 import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 import { executeFolderOperation, folderOperationSchemas, readFolderSnapshot, type FolderOperation } from "./folder_operations.js";
-import { serializeCardRow, serializeFolder } from "./folder_contracts.js";
+import { serializeCardRow } from "./folder_contracts.js";
 import { folderOperationError } from "./folder_workspace_routes.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
@@ -88,8 +88,8 @@ async function dispatch(
 ): Promise<unknown> {
   switch (operation) {
     case "assign_session":
-      return await service.assignSessionToFolder(requiredString(body, "session_id"), nullableString(body, "folder_id"));
-    case "get_default": return await service.getDefaultFolder(requiredString(body, "name"));
+      return await service.assignSessionToFolder(requiredControlPlaneString(body, "session_id"), nullableString(body, "folder_id"));
+    case "get_default": return await service.getDefaultFolder(requiredControlPlaneString(body, "name"));
     case "get_all": return await service.getAllFolders();
     case "get_catalog": return await service.getCatalog();
     case "get_session_assignments":
@@ -101,9 +101,9 @@ async function dispatch(
 async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, operation: string, body: Record<string, unknown>) {
   if (!options.cardServiceProvider) throw new Error("Card service is not configured");
   const service = await options.cardServiceProvider();
-  if (operation === "get_assigned_card_context") return service.getAssignedCardContext(requiredString(body,"session_id"));
+  if (operation === "get_assigned_card_context") return service.getAssignedCardContext(requiredControlPlaneString(body,"session_id"));
   if (operation === "get_supervised_card_context") return service.getSupervisedCardContext({
-    sessionId: requiredString(body, "session_id"),
+    sessionId: requiredControlPlaneString(body, "session_id"),
     folderIds: body.folder_ids === null ? null : stringArray(body, "folder_ids"),
     cardLimit: z.number().int().nonnegative().parse(body.card_limit),
     questionLimit: z.number().int().nonnegative().parse(body.question_limit),
@@ -111,7 +111,7 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
   if (operation === "resolve_card_references") return service.resolveReferences(stringArray(body, "refs"));
   if (operation === "get_folder") return await readFolderSnapshot(
     service,
-    requiredString(body, "folder_id"),
+    requiredControlPlaneString(body, "folder_id"),
     body.card_id as string | undefined,
     body.view as string | undefined,
     true,
@@ -120,14 +120,14 @@ async function dispatchWorkspace(options: FolderControlPlaneHostRouteOptions, op
   if (operation === "list_child_folders" || operation === "list_folder_operations") {
     const limit = z.number().int().min(1).max(200).parse(body.limit ?? 50);
     const offset = z.coerce.number().int().nonnegative().parse(body.cursor ?? 0);
-    const folderId = operation === "list_child_folders" ? nullableString(body, "folder_id") : requiredString(body, "folder_id");
+    const folderId = operation === "list_child_folders" ? nullableString(body, "folder_id") : requiredControlPlaneString(body, "folder_id");
     const rows = operation === "list_child_folders"
       ? await service.listFolders({ folderId, includeArchived: body.include_archived === true, limit: limit + 1, offset })
       : await service.listOperations(folderId!, limit + 1, offset);
     return { items: rows.slice(0, limit).map(serializeCardRow), nextCursor: rows.length > limit ? String(offset + limit) : null };
   }
   if (!options.identity) throw new Error("Folder identity is not configured");
-  const kind = requiredString(body, "actor_kind");
+  const kind = requiredControlPlaneString(body, "actor_kind");
   if (!["agent", "user", "system", "llm"].includes(kind)) throw statusError(422, "Invalid actor_kind");
   const actor: FolderActorParams = {
     actorKind: kind as FolderActorParams["actorKind"],
@@ -157,7 +157,7 @@ function record(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown>
     : null;
 }
-function requiredString(body: Record<string, unknown>, key: string): string {
+function requiredControlPlaneString(body: Record<string, unknown>, key: string): string {
   const value = body[key];
   if (typeof value !== "string" || value.length === 0) throw statusError(422, `${key} is required`);
   return value;
@@ -165,7 +165,7 @@ function requiredString(body: Record<string, unknown>, key: string): string {
 function nullableString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
   if (value === null) return null;
-  return requiredString(body, key);
+  return requiredControlPlaneString(body, key);
 }
 function stringArray(body: Record<string, unknown>, key: string): string[] {
   const value = body[key];

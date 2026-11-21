@@ -83,32 +83,32 @@ async function dispatch(
     case "list":
       return { jobs: (await service.list(actor, body.includeArchived === true || body.include_archived === true)).map(serializeJob) };
     case "get":
-      return { job: serializeJob(await service.get(actor, requiredString(body, "jobId", "job_id"), body.includeArchived === true || body.include_archived === true)) };
+      return { job: serializeJob(await service.get(actor, requiredRecurringJobString(body, "jobId", "job_id"), body.includeArchived === true || body.include_archived === true)) };
     case "preview":
       return service.preview({
-        timezone: requiredString(body, "timezone"),
+        timezone: requiredRecurringJobString(body, "timezone"),
         scheduleExpressions: requiredStrings(body, "scheduleExpressions", "schedule_expressions"),
       });
     case "create":
       return { job: serializeJob(await service.create(actor, createInput(body))) };
     case "update":
-      return { job: serializeJob(await service.update(actor, requiredString(body, "jobId", "job_id"), updateInput(body))) };
+      return { job: serializeJob(await service.update(actor, requiredRecurringJobString(body, "jobId", "job_id"), updateInput(body))) };
     case "run":
       return { run: serializeRun(await service.runManual(
         actor,
-        requiredString(body, "jobId", "job_id"),
-        requiredString(body, "idempotencyKey", "idempotency_key"),
+        requiredRecurringJobString(body, "jobId", "job_id"),
+        requiredRecurringJobString(body, "idempotencyKey", "idempotency_key"),
       )) };
     case "archive":
       return { job: serializeJob(await service.archive(
         actor,
-        requiredString(body, "jobId", "job_id"),
-        requiredInteger(body, "expectedVersion", "expected_version"),
+        requiredRecurringJobString(body, "jobId", "job_id"),
+        requiredRecurringJobInteger(body, "expectedVersion", "expected_version"),
       )) };
     case "list_runs":
       return { runs: (await service.listRuns(
         actor,
-        requiredString(body, "jobId", "job_id"),
+        requiredRecurringJobString(body, "jobId", "job_id"),
         optionalInteger(body, "limit") ?? 50,
       )).map(serializeRun) };
     default:
@@ -140,7 +140,7 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown>
     : null;
 }
-function requiredString(body: Record<string, unknown>, camel: string, snake: string = camel): string {
+function requiredRecurringJobString(body: Record<string, unknown>, camel: string, snake: string = camel): string {
   const value = body[camel] ?? body[snake];
   if (typeof value !== "string") throw new RecurringJobError("VALIDATION", `${snake} is required`, 422);
   return value;
@@ -156,7 +156,7 @@ function optionalInteger(body: Record<string, unknown>, key: string): number | u
   const value = body[key];
   return Number.isSafeInteger(value) ? value as number : undefined;
 }
-function requiredInteger(body: Record<string, unknown>, camel: string, snake: string): number {
+function requiredRecurringJobInteger(body: Record<string, unknown>, camel: string, snake: string): number {
   const value = body[camel] ?? body[snake];
   if (!Number.isSafeInteger(value)) throw new RecurringJobError("VALIDATION", `${snake} must be an integer`, 422);
   return value as number;

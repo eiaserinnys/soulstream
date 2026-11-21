@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { createSseStream } from "../sse/sse_stream.js";
+import { createSseStream, setSseHeaders } from "../sse/sse_stream.js";
 import type { NodeRegistryEvent } from "./registry.js";
 import type { NodeSnapshotRecord, NodeSnapshotService } from "./node_snapshot_service.js";
 
@@ -149,13 +149,6 @@ async function sendNodeStream(
   stream.on("close", cleanup);
 
   return reply.send(stream);
-}
-
-function setSseHeaders(reply: FastifyReply): void {
-  reply
-    .header("content-type", "text/event-stream; charset=utf-8")
-    .header("cache-control", "no-cache")
-    .header("connection", "keep-alive");
 }
 
 export type { NodeSnapshotRecord };

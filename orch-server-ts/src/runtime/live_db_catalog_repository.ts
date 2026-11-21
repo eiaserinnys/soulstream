@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import { hasOwn } from "../http/route_validation.js";
 import {
   projectSessionBindingWarnings,
   type SessionBindingWarning,
@@ -713,8 +714,4 @@ function folderExcludesNotifications(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasOwn(object: object, key: PropertyKey): boolean {
-  return Object.prototype.hasOwnProperty.call(object, key);
 }

@@ -7,7 +7,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { ContextBundleRecord, ContextBundleRepository } from "./context_bundle_routes.js";
-import { parseAtomContexts, type AgentAtomContext, type ParseResult } from "./atom_contexts.js";
+import { parseAtomContexts, type AgentAtomContext, type AtomContextsParse } from "./atom_contexts.js";
 
 export type { AgentAtomContext } from "./atom_contexts.js";
 
@@ -269,8 +269,7 @@ export function unknownContextBundles(
   return contextBundles.filter((bundleId) => !bundlesById.has(bundleId));
 }
 
-/** PUT 본문과 MCP 갱신 도구가 함께 쓰는 입력 해석. 빠진 칸은 담지 않는다. */
-export function parseAgentProfilePatch(body: unknown): ParseResult<AgentProfilePatch> {
+export function parseAgentProfilePatch(body: unknown): AtomContextsParse<AgentProfilePatch> {
   if (!isObject(body)) return invalid("Request body must be an object");
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length === 0)) {
     return invalid("name is required");
@@ -303,7 +302,7 @@ export function resolveAgentProfileWrite(
   agentId: string,
   patch: AgentProfilePatch,
   current: AgentProfileRecord | null,
-): ParseResult<AgentProfileWrite> {
+): AtomContextsParse<AgentProfileWrite> {
   const name = patch.name ?? current?.name;
   if (name === undefined) return invalid("name is required");
   return { ok: true, value: {
@@ -317,7 +316,7 @@ export function resolveAgentProfileWrite(
   } };
 }
 
-function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<AgentProfileWrite> {
+function parseProfileWrite(agentIdValue: string, body: unknown): AtomContextsParse<AgentProfileWrite> {
   const patch = parseAgentProfilePatch(body);
   if (!patch.ok) return patch;
   if (patch.value.name === undefined) return invalid("name is required");
@@ -327,7 +326,7 @@ function parseProfileWrite(agentIdValue: string, body: unknown): ParseResult<Age
   return resolveAgentProfileWrite(agentIdValue, patch.value, null);
 }
 
-function parsePortraitWrite(agentIdValue: string, body: unknown): ParseResult<AgentPortraitWrite> {
+function parsePortraitWrite(agentIdValue: string, body: unknown): AtomContextsParse<AgentPortraitWrite> {
   if (!isObject(body)) return invalid("Request body must be an object");
   if (typeof body.data_base64 !== "string" || body.data_base64.length === 0) return invalid("data_base64 is required");
   if (!supportedPortraitMimes.includes(body.mime as SupportedPortraitMime)) return invalid("mime is not supported");
@@ -347,7 +346,7 @@ function parsePortraitWrite(agentIdValue: string, body: unknown): ParseResult<Ag
   return { ok: true, value: { agentId: agentIdValue, body: decoded, mime, sha256, expectedVersion: version.value } };
 }
 
-function parseContextBundleIds(value: unknown): ParseResult<string[]> {
+function parseContextBundleIds(value: unknown): AtomContextsParse<string[]> {
   if (value === undefined) return { ok: true, value: [] };
   if (!Array.isArray(value)) return invalid("context_bundles must be an array of unique bundle ids");
   const ids: string[] = [];
@@ -362,20 +361,20 @@ function parseContextBundleIds(value: unknown): ParseResult<string[]> {
   return { ok: true, value: ids };
 }
 
-function expectedVersion(body: unknown): ParseResult<number> {
+export function expectedVersion(body: unknown): AtomContextsParse<number> {
   return isObject(body) ? positiveInteger(body.expected_version, "expected_version") : invalid("expected_version is required");
 }
 
-function nullableExpectedVersion(value: unknown): ParseResult<number | null> {
+function nullableExpectedVersion(value: unknown): AtomContextsParse<number | null> {
   if (value === null) return { ok: true, value: null };
   return positiveInteger(value, "expected_version");
 }
 
-function positiveInteger(value: unknown, name: string): ParseResult<number> {
+export function positiveInteger(value: unknown, name: string): AtomContextsParse<number> {
   return Number.isInteger(value) && (value as number) > 0 ? { ok: true, value: value as number } : invalid(`${name} must be a positive integer`);
 }
 
-function parseAliases(value: unknown): ParseResult<AgentAlias[]> {
+function parseAliases(value: unknown): AtomContextsParse<AgentAlias[]> {
   if (!Array.isArray(value)) return invalid("aliases must be an array");
   const aliases: AgentAlias[] = [];
   const ids = new Set<string>();
@@ -405,7 +404,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function invalid<T>(error: string): ParseResult<T> {
+function invalid<T>(error: string): AtomContextsParse<T> {
   return { ok: false, error };
 }
 

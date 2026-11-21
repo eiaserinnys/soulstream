@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { queryInteger, queryValue, rawQueryValue } from "../http/route_validation.js";
+
 import {
   SESSION_SNAPSHOT_MAX_TARGET_IDS,
   resolveSessionSnapshotIds,
@@ -59,8 +61,8 @@ function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
     updated_after: stringQuery(query, "updated_after"),
     feed_only: booleanQuery(query, "feed_only"),
     feed_display: booleanQuery(query, "feed_display"),
-    offset: numberQuery(query, "offset"),
-    limit: numberQuery(query, "limit"),
+    offset: queryInteger(query, "offset"),
+    limit: queryInteger(query, "limit"),
     cursor: stringQuery(query, "cursor"),
   };
 }
@@ -89,13 +91,6 @@ function trimmedStringQuery(query: unknown, key: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function numberQuery(query: unknown, key: string): number | undefined {
-  const value = queryValue(query, key);
-  if (typeof value !== "string" || value.length === 0) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function booleanQuery(query: unknown, key: string): boolean | undefined {
   const value = queryValue(query, key);
   if (typeof value !== "string") return undefined;
@@ -107,19 +102,4 @@ function hasInvalidTimestamp(query: unknown, key: string): boolean {
   if (raw === undefined) return false;
   const value = Array.isArray(raw) ? raw[0] : raw;
   return typeof value !== "string" || value.length === 0 || !Number.isFinite(Date.parse(value));
-}
-
-function queryValue(query: unknown, key: string): unknown {
-  if (typeof query !== "object" || query === null || !(key in query)) {
-    return undefined;
-  }
-  const value = (query as Record<string, unknown>)[key];
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function rawQueryValue(query: unknown, key: string): unknown {
-  if (typeof query !== "object" || query === null || !(key in query)) {
-    return undefined;
-  }
-  return (query as Record<string, unknown>)[key];
 }

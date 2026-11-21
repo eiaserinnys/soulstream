@@ -15,7 +15,6 @@ import { inlineUploadId } from "../attachments/upload_identity.js";
 import {
   invalidRequest,
   sendActionCommand,
-  sendGenericStatusError,
   executeInterveneCommand,
   type SessionActionResponse,
   sendInterruptAckError,

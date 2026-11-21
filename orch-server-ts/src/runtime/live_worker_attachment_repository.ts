@@ -28,7 +28,7 @@ export function createLiveWorkerAttachmentRepository(
       if (rows.length === 0) return null;
       const first = rows[0]!;
       return {
-        nodeId: requiredString(first.node_id),
+        nodeId: requiredRowString(first.node_id),
         cardId: nullableString(first.card_id),
         assigneeCardIds: rows.flatMap((row) => {
           const cardId = nullableString(row.assignee_card_id);
@@ -61,7 +61,7 @@ function attachmentIdsFromPayload(value: unknown): readonly string[] {
     : [];
 }
 
-function requiredString(value: unknown): string {
+function requiredRowString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Invalid worker attachment database row");
   return value;
 }

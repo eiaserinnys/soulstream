@@ -1,7 +1,5 @@
-// This route inventory shares existing validation/portrait helpers; splitting it is deferred to preserve the parallel extraction boundary.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type {
-  ModelPresetAvailability,
   ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
 import { hasOwn, parseObjectBody, type Validation } from "../http/route_validation.js";
@@ -164,9 +162,9 @@ export function registerNodeAgentProfileRoutes(
     "/api/nodes/:node_id/agents/context-preview",
     async (request, reply) => {
       const body = parseObjectBody(request.body, { allowEmpty: true });
-      if (!body.ok) return validationError(reply, body);
+      if (!body.ok) return nodeAgentProfileValidationError(reply, body);
       const input = contextPreviewInput(body.value);
-      if (!input.ok) return validationError(reply, input);
+      if (!input.ok) return nodeAgentProfileValidationError(reply, input);
       try {
         return reply.send(await options.provider.previewAgentContext(
           nodeParams(request).node_id,
@@ -482,7 +480,7 @@ function optionalStringAlias(
   return { ok: false, message: `${snakeKey} must be a string or null` };
 }
 
-function validationError<T>(
+function nodeAgentProfileValidationError<T>(
   reply: FastifyReply,
   validation: Extract<Validation<T>, { ok: false }>,
 ): FastifyReply {

@@ -64,9 +64,9 @@ export function registerClaudeCentralRoutes(
   app.patch<{ Params: AccountParams; Body: unknown }>(
     "/api/claude-auth/central/accounts/:id",
     async (request, reply) => {
-      if (!isAccountId(request.params.id)) return invalidRequest(reply, "올바르지 않은 Claude 계정 ID입니다.");
+      if (!isAccountId(request.params.id)) return invalidRequestReply(reply, "올바르지 않은 Claude 계정 ID입니다.");
       const patch = parseAccountPatch(request.body);
-      if (patch === null) return invalidRequest(reply, "올바르지 않은 Claude 계정 수정 요청입니다.");
+      if (patch === null) return invalidRequestReply(reply, "올바르지 않은 Claude 계정 수정 요청입니다.");
       try {
         return reply.send(await options.service.patchAccount(request.params.id, patch));
       } catch (error) {
@@ -78,7 +78,7 @@ export function registerClaudeCentralRoutes(
   app.delete<{ Params: AccountParams }>(
     "/api/claude-auth/central/accounts/:id",
     async (request, reply) => {
-      if (!isAccountId(request.params.id)) return invalidRequest(reply, "올바르지 않은 Claude 계정 ID입니다.");
+      if (!isAccountId(request.params.id)) return invalidRequestReply(reply, "올바르지 않은 Claude 계정 ID입니다.");
       try {
         const deleted = await options.service.deleteAccount(request.params.id);
         if (!deleted) throw new ClaudeCentralNotFoundError();
@@ -93,7 +93,7 @@ export function registerClaudeCentralRoutes(
     "/api/claude-auth/central/logins",
     async (request, reply) => {
       const accountId = parseLoginStartBody(request.body);
-      if (accountId === undefined) return invalidRequest(reply, "올바르지 않은 Claude 로그인 요청입니다.");
+      if (accountId === undefined) return invalidRequestReply(reply, "올바르지 않은 Claude 로그인 요청입니다.");
       try {
         return reply.code(202).send(await options.service.startLogin(
           accountId === null ? {} : { account_id: accountId },
@@ -119,7 +119,7 @@ export function registerClaudeCentralRoutes(
     "/api/claude-auth/central/logins/:login_id/code",
     async (request, reply) => {
       const code = parseLoginCode(request.body);
-      if (code === null) return invalidRequest(reply, "올바르지 않은 Claude 인증 코드입니다.");
+      if (code === null) return invalidRequestReply(reply, "올바르지 않은 Claude 인증 코드입니다.");
       try {
         return reply.send(await options.service.submitLoginCode(request.params.login_id, code));
       } catch (error) {
@@ -154,7 +154,7 @@ export function registerClaudeCentralRoutes(
     "/api/claude-auth/central/settings",
     async (request, reply) => {
       const input = parseSettingsUpdate(request.body);
-      if (input === null) return invalidRequest(reply, "올바르지 않은 중앙 풀 설정 요청입니다.");
+      if (input === null) return invalidRequestReply(reply, "올바르지 않은 중앙 풀 설정 요청입니다.");
       try {
         return reply.send(await options.service.updateSettings(input));
       } catch (error) {
@@ -174,7 +174,7 @@ function sendServiceError(reply: FastifyReply, error: unknown): FastifyReply {
   });
 }
 
-function invalidRequest(reply: FastifyReply, message: string): FastifyReply {
+function invalidRequestReply(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(400).send({ code: "invalid_request", message });
 }
 

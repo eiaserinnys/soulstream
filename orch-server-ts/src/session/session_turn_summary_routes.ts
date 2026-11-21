@@ -40,11 +40,11 @@ export function registerSessionTurnSummaryRoute(
   });
 }
 
-type ParseResult =
+type TurnSummaryQueryParse =
   | { ok: true; value: SessionTurnSummaryQuery }
   | { ok: false; field: string; message: string };
 
-function parseQuery(query: unknown): ParseResult {
+function parseQuery(query: unknown): TurnSummaryQueryParse {
   const mode = queryString(query, "mode");
   if (mode !== "count" && mode !== "index" && mode !== "range") {
     return invalid("mode", "mode must be count, index, or range");
@@ -103,6 +103,6 @@ function positiveInteger(query: unknown, key: string): number | null {
   return Number.isSafeInteger(value) ? value : null;
 }
 
-function invalid(field: string, message: string): ParseResult {
+function invalid(field: string, message: string): TurnSummaryQueryParse {
   return { ok: false, field, message };
 }
