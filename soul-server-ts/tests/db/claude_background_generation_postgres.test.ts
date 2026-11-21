@@ -3,10 +3,8 @@ import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import {
-  ClaudeBackgroundTaskRepository,
-  type ObserveClaudeBackgroundTaskGenerationParams,
-} from "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
+import { ClaudeBackgroundTaskRepository } from "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
+import type { ObserveClaudeBackgroundTaskGenerationParams } from "@soulstream/mcp-contract";
 import {
   EventIngressRepository,
   type EventIngressSql,

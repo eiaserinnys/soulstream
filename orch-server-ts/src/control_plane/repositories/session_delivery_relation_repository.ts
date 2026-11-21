@@ -9,6 +9,7 @@ import type {
   SessionDeliveryRelationConsumptionRow,
   SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
+import type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
 import type {
   SqlClient,
 } from "../control_plane_types.js";
@@ -28,10 +29,6 @@ import {
   insertSessionDeliveryRow,
   markDeliveryIdentityConflict,
 } from "./session_delivery_repository.js";
-
-export type RegisterSessionDeliveryRequest = RegisterSessionDeliveryParams & {
-  reviveDeadLetter?: boolean;
-};
 
 export { compareRuntimeFollowupCandidates } from
   "./session_delivery_runtime_followup_repository.js";

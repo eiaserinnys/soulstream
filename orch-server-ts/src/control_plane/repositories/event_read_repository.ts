@@ -1,5 +1,10 @@
 import type { SqlClient } from "../control_plane_types.js";
-import type { SessionReadPeriod } from "@soulstream/mcp-contract";
+import type {
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionReadPeriod,
+} from "@soulstream/mcp-contract";
 import { projectInputAttachments } from "../../session/attachment_history_projection.js";
 import {
   isPostgresStatementTimeout,
@@ -27,20 +32,6 @@ import {
   type TurnUsageSummaryQuery,
 } from "./turn_usage_repository.js";
 
-export interface HostEventRow {
-  id: number;
-  session_id: string;
-  event_type: string;
-  payload: Record<string, unknown>;
-  searchable_text: string;
-  created_at: Date;
-}
-
-export interface HostEventSearchRow extends HostEventRow {
-  score: number;
-}
-
-/** sources를 생략한 list_user_messages가 제외하는 발신 경로. SQL과 응답의 excluded_sources가 이 상수 하나를 쓴다. */
 export const DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES = [
   "agent",
   "api",
@@ -133,20 +124,13 @@ export class EventReadRepository {
     metadataTypes?: string[],
     order?: "asc" | "desc",
     signal?: AbortSignal,
-  ): Promise<HostEventRow[]> {
+  ): Promise<SessionEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
     if (metadata !== null && order === "desc") {
-      // 색인 (session_id, event_type, id)를 거꾸로 타도록 event_type은 리터럴로 둔다.
-      // metadata_type 조건은 CASE boolean으로 감싼다. `payload->>'metadata_type' = ANY(...)`만
-      // 쓰면 플래너가 JSON 추출 비교에 기본 선택도 0.005를 적용해 예상 행수를 LIMIT(50)보다 작게
-      // 잡고, 역방향 스캔이 LIMIT에서 멈출 수 있다고 보지 않아 Bitmap Index Scan + Bitmap Heap
-      // Scan(힙 블록 전수 읽기) + Sort를 고른다(운영에서 12,374블록, 부하 시 5~14초).
-      // CASE boolean은 선택도 0.5로 추정되어 예상 행수가 LIMIT 이상이 되고, 플래너가
-      // idx_events_session_type_id 역방향 스캔(Index Scan Backward)을 골라 최신 50건에서 멈춘다.
       const rows = period
         ? await this.runPoolQuery(signal, () =>
-            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
               SELECT id, session_id, event_type, payload, searchable_text, created_at
               FROM events
               WHERE session_id = ${sessionId}
@@ -159,7 +143,7 @@ export class EventReadRepository {
               LIMIT ${limit}
             `)
         : await this.runPoolQuery(signal, () =>
-            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
               SELECT id, session_id, event_type, payload, searchable_text, created_at
               FROM events
               WHERE session_id = ${sessionId}
@@ -174,7 +158,7 @@ export class EventReadRepository {
     if (metadata !== null) {
       const rows = period
         ? await this.runPoolQuery(signal, () =>
-            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
               SELECT id, session_id, event_type, payload, searchable_text, created_at
               FROM events
               WHERE session_id = ${sessionId}
@@ -190,7 +174,7 @@ export class EventReadRepository {
               LIMIT ${limit}
             `)
         : await this.runPoolQuery(signal, () =>
-            this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
               SELECT id, session_id, event_type, payload, searchable_text, created_at
               FROM events
               WHERE session_id = ${sessionId}
@@ -207,7 +191,7 @@ export class EventReadRepository {
     }
     const rows = period
       ? await this.runPoolQuery(signal, () =>
-          this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
             SELECT id, session_id, event_type, payload, searchable_text, created_at
             FROM events
             WHERE session_id = ${sessionId}
@@ -222,7 +206,7 @@ export class EventReadRepository {
             LIMIT ${limit}
           `)
       : await this.runPoolQuery(signal, () =>
-          this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
             SELECT * FROM event_read(
               ${sessionId},
               ${afterId},
@@ -337,10 +321,10 @@ export class EventReadRepository {
     sessionId: string,
     limit: number,
     eventTypes?: string[],
-  ): Promise<HostEventRow[]> {
+  ): Promise<SessionEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = types === null
-      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      ? await this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           SELECT id, session_id, event_type, payload, searchable_text, created_at
           FROM events
           WHERE session_id = ${sessionId}
@@ -351,7 +335,7 @@ export class EventReadRepository {
           ORDER BY id DESC
           LIMIT ${limit}
         `
-      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      : await this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           WITH picked AS (
             SELECT recent.id
             FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
@@ -379,10 +363,10 @@ export class EventReadRepository {
     beforeId: number,
     limit: number,
     eventTypes?: string[],
-  ): Promise<HostEventRow[]> {
+  ): Promise<SessionEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = types === null
-      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      ? await this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           SELECT id, session_id, event_type, payload, searchable_text, created_at
           FROM events
           WHERE session_id = ${sessionId}
@@ -394,7 +378,7 @@ export class EventReadRepository {
           ORDER BY id DESC
           LIMIT ${limit}
         `
-      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      : await this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           WITH picked AS (
             SELECT recent.id
             FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
@@ -423,10 +407,10 @@ export class EventReadRepository {
     afterId: number,
     limit: number,
     eventTypes?: string[],
-  ): Promise<{ events: HostEventRow[]; total: number }> {
+  ): Promise<{ events: SessionEventRow[]; total: number }> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const readRows = types === null
-      ? this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      ? this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           SELECT id, session_id, event_type, payload, searchable_text, created_at
           FROM events
           WHERE session_id = ${sessionId}
@@ -438,7 +422,7 @@ export class EventReadRepository {
           ORDER BY id DESC
           LIMIT ${limit}
         `
-      : this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+      : this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
           WITH picked AS (
             SELECT recent.id
             FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
@@ -484,8 +468,8 @@ export class EventReadRepository {
     afterId: number,
     beforeId: number,
     eventTypes: string[],
-  ): Promise<HostEventRow[]> {
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+  ): Promise<SessionEventRow[]> {
+    const rows = await this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`
       SELECT id, session_id, event_type, payload, searchable_text, created_at
       FROM events
       WHERE session_id = ${sessionId}
@@ -500,8 +484,8 @@ export class EventReadRepository {
   async readOneEvent(
     sessionId: string,
     eventId: number,
-  ): Promise<(HostEventRow & { parent_event_id: number | null }) | null> {
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & {
+  ): Promise<SessionEventDetailRow | null> {
+    const rows = await this.sql<Array<Omit<SessionEventRow, "payload"> & {
       parent_event_id: number | null;
       payload: unknown;
     }>>`
@@ -526,7 +510,7 @@ export class EventReadRepository {
     limit: number,
     eventTypes?: string[] | null,
     signal?: AbortSignal,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await this.runSearch(signal, (searchSql) =>
@@ -540,7 +524,7 @@ export class EventReadRepository {
     limit: number,
     eventTypes: string[] | null,
     runQuery: LiveSearchQueryRunner,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await runQuery((searchSql) =>
@@ -553,7 +537,7 @@ export class EventReadRepository {
     eventTypes: string[] | null,
     limit: number,
     signal?: AbortSignal,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await this.runSearch(signal, (searchSql) =>
       this.createSessionIdSearchQuery(searchSql, query, types, limit));
@@ -565,7 +549,7 @@ export class EventReadRepository {
     eventTypes: string[] | null,
     limit: number,
     runQuery: LiveSearchQueryRunner,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await runQuery((searchSql) =>
       this.createSessionIdSearchQuery(searchSql, query, types, limit));

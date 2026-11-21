@@ -6,10 +6,8 @@ import {
   SessionPageBindingService,
   kstDate,
 } from "../../src/page/session_page_binding_service.js";
-import type {
-  SessionPageBindingHostClient,
-  SessionPageBindingRow,
-} from "../../src/control_plane/persistence_host_clients.js";
+import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
+import type { SessionPageBindingHostClient } from "../../src/control_plane/persistence_host_clients.js";
 
 const logger = pino({ level: "silent" });
 

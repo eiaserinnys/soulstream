@@ -4,7 +4,6 @@ import type {
   RecordObservedChildCompletionResult,
   RecordSessionDeliveryRelationConsumptionParams,
   RecordSessionDeliveryRelationConsumptionResult,
-  RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
   SessionDeliveryNotificationOutboxRow,
   SessionDeliveryRelationConsumptionRow,
@@ -24,23 +23,27 @@ import {
 } from "./persistence_host_transport.js";
 import { ClaudeBackgroundGenerationHostClient } from
   "./claude_background_generation_host_client.js";
-import type { ClaudeBackgroundTaskGenerationRow, ObserveClaudeBackgroundTaskGenerationParams, ResolveClaudeBackgroundTaskGenerationResult, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
-import type { ClaudeBackgroundTaskRow, ObserveClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
+import type {
+  ClaudeBackgroundTaskGenerationRow,
+  ClaudeBackgroundTaskKey,
+  ClaudeBackgroundTaskRow,
+  EnqueueSessionPageBinding,
+  ObserveClaudeBackgroundTaskGenerationParams,
+  ObserveClaudeBackgroundTaskParams,
+  RegisterSessionDeliveryRequest,
+  ResolveClaudeBackgroundTaskGenerationResult,
+  SessionPageBindingRow,
+  TerminalizeClaudeBackgroundTaskGenerationParams,
+  TerminalizeClaudeBackgroundTaskGenerationResult,
+  TerminalizeClaudeBackgroundTaskParams,
+  TerminalizeClaudeBackgroundTaskResult,
+} from "@soulstream/mcp-contract";
 
 export {
   PersistenceHostRequestError,
   PersistenceHostTransport,
   type HostClientConfig,
 } from "./persistence_host_transport.js";
-export type { ClaudeBackgroundTaskGenerationRow, ObserveClaudeBackgroundTaskGenerationParams, ResolveClaudeBackgroundTaskGenerationResult, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
-export type { ClaudeBackgroundTaskRow, ClaudeBackgroundTaskStatus, ClaudeBackgroundTerminalStatus, ObserveClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
-
-/** Primary-key pair of one node-owned background task row. */
-export interface ClaudeBackgroundTaskKey {
-  sessionId: string;
-  taskId: string;
-}
-
 export type SessionTransitionFields = Pick<
   SessionUpdateFields,
   | "status"
@@ -349,11 +352,6 @@ export class SessionDeliveryRecoveryHostClient {
   }
 }
 
-/** 등록 요청. `reviveDeadLetter`는 죽은 행을 같은 신원으로 되살리라는 보낸 쪽의 요청이다. */
-export type RegisterSessionDeliveryRequest = RegisterSessionDeliveryParams & {
-  reviveDeadLetter?: boolean;
-};
-
 export class SessionDeliveryHostClient {
   readonly notifications: SessionDeliveryNotificationHostClient;
   readonly recovery: SessionDeliveryRecoveryHostClient;
@@ -523,21 +521,6 @@ export class ClaudeRuntimeHostClient {
   ): Promise<ResolveClaudeBackgroundTaskGenerationResult> {
     return this.generations.resolve(sourceNode, sessionId, sdkSessionId, taskId);
   }
-}
-
-export type BindingStepState = "pending" | "bound" | "completed" | "manual_repair";
-export interface SessionPageBindingRow {
-  session_id: string; node_id: string; target_page_id: string | null; target_block_id: string | null;
-  target_expected_version: number | null; daily_date: string; session_type: string;
-  legacy_folder_id: string | null;
-  page_state: "pending" | "bound" | "manual_repair";
-  legacy_state: "pending" | "completed" | "manual_repair";
-  attempts: number; last_error: string | null; next_retry_at: Date;
-}
-export interface EnqueueSessionPageBinding {
-  sessionId: string; nodeId: string; targetPageId: string | null; targetBlockId: string | null;
-  targetExpectedVersion: number | null; initialPageState: "pending" | "bound";
-  dailyDate: string; sessionType: string; legacyFolderId: string | null;
 }
 
 export class SessionPageBindingHostClient {

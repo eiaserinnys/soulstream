@@ -1,13 +1,12 @@
-import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
-import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, type SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
+import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 import type {
-  ClaudeRuntimeHostClient,
   ClaudeBackgroundTaskKey,
   ClaudeBackgroundTaskRow,
-} from "../control_plane/persistence_host_clients.js";
+} from "@soulstream/mcp-contract";
 import type { SessionRow } from "../db/session_db_types.js";
 import { attachClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";

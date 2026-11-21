@@ -1,10 +1,10 @@
 import { executeFolderHostOperation, type FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
 import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
-import type { searchSessionEvents } from "@soulstream/search-contract";
-import type { SessionStoryView } from "@soulstream/mcp-contract";
+import type {
+  SessionHistorySearchResult,
+  SessionStoryView,
+} from "@soulstream/mcp-contract";
 import type { PersistenceHostRepositories } from "../control_plane/persistence_host_runtime.js";
-
-type SessionHistorySearchResult = Awaited<ReturnType<Parameters<typeof searchSessionEvents>[0]["searchSessionHistory"]>>;
 
 export interface McpSessionRow {
   session_id: string;

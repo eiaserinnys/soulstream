@@ -25,7 +25,16 @@ import {
   type RestartWindowRetryEvent,
   type RestartWindowRetryPolicy,
 } from "./persistence_host_transport.js";
-import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
+import type {
+  GenerationCheckpointMaterial,
+  GenerationCheckpointReadLimits,
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionHistorySearchParams,
+  SessionHistorySearchResult,
+  SessionReadPeriod,
+} from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
   "get",
@@ -52,41 +61,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "existing_session_ids",
 ] as const;
 
-/** event_read_page의 id 정렬 방향. 생략하면 지금까지처럼 오름차순이다. */
 export type SessionReadOrder = "asc" | "desc";
-
-export interface SessionEventRow {
-  id: number;
-  session_id: string;
-  event_type: string;
-  payload: Record<string, unknown>;
-  searchable_text: string;
-  created_at: Date;
-}
-
-export interface SessionEventDetailRow extends SessionEventRow {
-  parent_event_id: number | null;
-}
-
-export interface SessionEventSearchRow extends SessionEventRow {
-  score: number;
-}
-
-export interface SessionHistorySearchParams {
-  query: string;
-  sessionIds: string[] | null;
-  limit: number;
-  eventTypes: string[] | null;
-  searchSessionId: boolean;
-  includeHighlight: boolean;
-  includeStory: boolean;
-}
-
-export interface SessionHistorySearchResult {
-  events: SessionEventSearchRow[];
-  sessionIdEvents: SessionEventSearchRow[];
-  digests: SessionDigestSearchMatch[];
-}
 
 export interface SessionTurnExcerptItem {
   event_id: number;

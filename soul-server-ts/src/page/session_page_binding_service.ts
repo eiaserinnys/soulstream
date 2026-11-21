@@ -12,10 +12,8 @@ import {
 } from "../task/task_creation_hook.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
-import {
-  SessionPageBindingHostClient,
-  type SessionPageBindingRow,
-} from "../control_plane/persistence_host_clients.js";
+import { SessionPageBindingHostClient } from "../control_plane/persistence_host_clients.js";
+import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
 
 interface PageBindingPort {
   getPage: PageYjsHostClient["getPage"];
