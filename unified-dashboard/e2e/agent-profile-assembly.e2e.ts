@@ -198,7 +198,7 @@ for (const width of [1440, 360]) {
     await page.evaluate(() => { const url = new URL(location.href); url.searchParams.set("assemblyState", "normal"); history.replaceState(null, "", url); });
     await page.getByRole("button", { name: "다시 시도" }).click();
     await expect(row(page, "스킬 목록")).toBeVisible();
-    await capture(page, width, "retry");
+    await capture(page, width, "request-retry");
   });
 
   test(`loading ${width}`, async ({ page }) => {

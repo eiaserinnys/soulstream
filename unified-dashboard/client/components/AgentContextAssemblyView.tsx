@@ -100,7 +100,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
       }
     })();
     return () => controller.abort();
-  }, [body, nodeId, request]);
+  }, [body, nodeId, request, attempt]);
 
   const data = state.status === "ready" ? state.data : null;
   const rows = useMemo(() => buildRows(specs, data), [specs, data]);

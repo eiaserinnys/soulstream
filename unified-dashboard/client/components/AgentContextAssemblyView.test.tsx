@@ -6,6 +6,41 @@ import { expect, it, vi } from "vitest";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../v3/agent-profile-assembly-fixture";
 
+it("retries a failed assembly and refreshes only on demand", async () => {
+  let calls = 0;
+  const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (++calls === 1) return Response.json({ detail: "연결 실패" }, { status: 503 });
+    return Response.json(assemblyPreview(JSON.parse(String(init?.body))));
+  });
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  const context = assemblyContexts[0]!;
+  const render = (nodeId: string) => flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+    target: { kind: "central", agentId: "agent", specs: [{ context: { ...context, node_id: nodeId }, source: "프로필" }] },
+    nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+  })));
+  try {
+    render(context.node_id);
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain("연결 실패"));
+    expect(request).toHaveBeenCalledTimes(1);
+    const retry = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "다시 시도")!;
+    flushSync(() => retry.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("프로필 지침"));
+    expect(request).toHaveBeenCalledTimes(2);
+    const refresh = () => flushSync(() => container.querySelector<HTMLButtonElement>('button[aria-label="다시 조립"]')!.click());
+    refresh();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3));
+    render("30000000-0000-4000-8000-000000000001");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(request).toHaveBeenCalledTimes(3);
+    refresh();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4));
+    expect(JSON.parse(String(request.mock.calls[3]![1]?.body)).atom_contexts[0].node_id).toBe("30000000-0000-4000-8000-000000000001");
+  } finally {
+    flushSync(() => root.unmount()); container.remove();
+  }
+});
+
 it("assembles a node-only profile with its agent context and labels the origin", async () => {
   const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({
     manifest: { sources: [{ node_id: "source-id", status: "ok", chars: 4, token_estimate: 1 }] },
