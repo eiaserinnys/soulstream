@@ -52,8 +52,6 @@ describe("projectPersistentSessionHistoryEntry", () => {
         agent_node: "node-1",
         email: "private@example.com",
       },
-      source: "agent",
-      agent_id: "legacy-agent",
       attachment_ids: ["attachment-1", "attachment-2", "attachment-1", "", 17],
       attachments: ["/legacy/path-a", "/legacy/path-a", "/legacy/path-b", { path: "/hidden/object-path" }, "", " "],
       node_id: "source-worker",
@@ -76,21 +74,6 @@ describe("projectPersistentSessionHistoryEntry", () => {
     expect(JSON.stringify(entry)).not.toContain("private@example.com");
     expect(JSON.stringify(entry)).not.toContain("/hidden/object-path");
     expect(JSON.stringify(entry)).not.toContain("private context");
-  });
-
-  it("keeps legacy top-level sender fields when caller_info is absent", () => {
-    const entry = projectPersistentSessionHistoryEntry(row("intervention_sent", {
-      text: "legacy",
-      source: "agent",
-      agent_id: "legacy-agent",
-      agent_name: "Legacy Agent",
-      agent_node: "legacy-node",
-      user_id: "legacy-user",
-    }), 2000);
-    expect(entry).toMatchObject({
-      kind: "agent", source: "agent",
-      sender: { user_id: "legacy-user", agent_id: "legacy-agent", agent_name: "Legacy Agent", agent_node: "legacy-node" },
-    });
   });
 
   it("keeps legacy-only attachment paths and rejects history objects", () => {

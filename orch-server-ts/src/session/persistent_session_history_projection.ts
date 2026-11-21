@@ -25,7 +25,7 @@ export function projectPersistentSessionHistoryEntry(
   switch (row.event_type) {
     case "user_message":
     case "intervention_sent": {
-      const source = preferString(callerInfo, payload, "source");
+      const source = stringValue(callerInfo.source);
       const attachments = projectInputAttachments(payload);
       const nodeId = stringValue(payload.node_id);
       return {
@@ -35,7 +35,7 @@ export function projectPersistentSessionHistoryEntry(
         ...projectText(payload.text, maxTextChars),
         input_id: stringValue(payload.input_id),
         source,
-        sender: projectSender(callerInfo, payload),
+        sender: projectSender(callerInfo),
         purpose: stringValue(payload.purpose),
         ...attachments,
         ...(nodeId === null ? {} : { node_id: nodeId }),
@@ -103,16 +103,13 @@ function projectText(value: unknown, maxTextChars: number): { text: string; text
   };
 }
 
-function projectSender(
-  callerInfo: Record<string, unknown>,
-  payload: Record<string, unknown>,
-): PersistentSessionHistorySender {
+function projectSender(callerInfo: Record<string, unknown>): PersistentSessionHistorySender {
   return {
-    display_name: preferString(callerInfo, payload, "display_name"),
-    user_id: preferString(callerInfo, payload, "user_id"),
-    agent_id: preferString(callerInfo, payload, "agent_id"),
-    agent_name: preferString(callerInfo, payload, "agent_name"),
-    agent_node: preferString(callerInfo, payload, "agent_node"),
+    display_name: stringValue(callerInfo.display_name),
+    user_id: stringValue(callerInfo.user_id),
+    agent_id: stringValue(callerInfo.agent_id),
+    agent_name: stringValue(callerInfo.agent_name),
+    agent_node: stringValue(callerInfo.agent_node),
   };
 }
 
@@ -133,10 +130,6 @@ function projectModelInfo(value: unknown): PersistentSessionHistoryModelInfo | n
     backend: stringValue(model.backend),
     model: stringValue(model.model),
   };
-}
-
-function preferString(preferred: Record<string, unknown>, fallback: Record<string, unknown>, key: string): string | null {
-  return stringValue(preferred[key]) ?? stringValue(fallback[key]);
 }
 
 function stringValue(value: unknown): string | null {
