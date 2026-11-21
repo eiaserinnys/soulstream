@@ -6,7 +6,7 @@ import {
   isSystemFolderId,
   readFolderTreeExpandedState,
   reorderStarredFolderIds,
-  StarredFolderSortableContext,
+  FolderSortableContext,
   pointerFirstCollisionDetection,
   useStarredFolderDragSurface,
   useGlassSurface,
@@ -245,7 +245,7 @@ export function V3Navigation({
         }}
       >
         <div className="v3-nav-list" data-testid="v3-starred-tasks">
-          <StarredFolderSortableContext ids={starredFolderIds}>
+          <FolderSortableContext ids={starredFolderIds}>
             {starredFolders.map((task) => {
               const page = starredFolderPage(task);
               return (
@@ -263,7 +263,7 @@ export function V3Navigation({
                 />
               );
             })}
-          </StarredFolderSortableContext>
+          </FolderSortableContext>
           {starredFolders.length === 0 ? (starredFoldersLoading ? <FrameLoading inline label="폴더를 불러오는 중…" /> : <p>별표 폴더가 없습니다.</p>) : null}
           {starredFoldersHasMore ? (
             <DashboardIconCap

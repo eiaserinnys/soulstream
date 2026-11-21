@@ -117,7 +117,6 @@ export {
   Popover,
   PopoverTrigger,
   PopoverPopup,
-  PopoverPopup as PopoverContent,
   PopoverTitle,
   PopoverDescription,
   PopoverClose,

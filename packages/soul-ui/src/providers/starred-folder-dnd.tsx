@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { arrayMove, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 export interface StarredFolderDragData {
@@ -16,20 +15,6 @@ export function reorderStarredFolderIds(
   const overIndex = pageIds.indexOf(overPageId);
   if (fromIndex < 0 || overIndex < 0 || fromIndex === overIndex) return null;
   return arrayMove([...pageIds], fromIndex, overIndex);
-}
-
-export function StarredFolderSortableContext({
-  ids,
-  children,
-}: {
-  ids: string[];
-  children: ReactNode;
-}) {
-  return (
-    <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-      {children}
-    </SortableContext>
-  );
 }
 
 export function useStarredFolderDragSurface({

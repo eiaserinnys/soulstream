@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { useTheme } from "../hooks/useTheme";
-import { isChromiumLensRuntime } from "../lib/liquid-lens";
+import { getReducedTransparencyMatcher, isChromiumLensRuntime } from "../lib/liquid-lens";
 import {
   createGlassSurfaceBuffer,
   createGlassSurfaceScalarBuffer,
@@ -31,7 +31,6 @@ import {
 } from "../lib/webgl-glass-wallpaper";
 import { useDashboardStore } from "../stores/dashboard-store";
 
-const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
 const TOGGLE_POLL_MS = 700;
 const GLASS_TINT_CSS_VAR = "--liquid-glass-tint-strength";
 
@@ -261,15 +260,6 @@ export function useGlassSurface(
   }, [context, ref, shouldRegister]);
 
   return shouldRegister;
-}
-
-function getReducedTransparencyMatcher(): MediaQueryList | null {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
-  try {
-    return window.matchMedia(REDUCED_TRANSPARENCY_QUERY);
-  } catch {
-    return null;
-  }
 }
 
 function isReducedTransparencyPreferred(media: MediaQueryList | null): boolean {

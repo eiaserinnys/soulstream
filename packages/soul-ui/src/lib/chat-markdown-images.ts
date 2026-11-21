@@ -1,6 +1,6 @@
 import { parseStandaloneImageLine } from "./standalone-image-line";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
-import type { ChatAttachmentItem } from "./chat-attachment-model";
+import { contextParams, type ChatAttachmentItem } from "./chat-attachment-model";
 
 export type ChatImageRole = "assistant" | "user";
 
@@ -110,12 +110,6 @@ function isImageAttachmentPath(path: string): boolean {
   return /\.(?:png|jpe?g|gif|webp|avif)$/i.test(cleanPath);
 }
 
-function attachmentReadContextParams(context: AttachmentReadContext): string[] {
-  return context.type === "owner"
-    ? ["context_type=owner"]
-    : [`context_type=${encodeURIComponent(context.type)}`, `context_id=${encodeURIComponent(context.id)}`];
-}
-
 function sameOriginUrl(src: string): URL | null {
   const origin = typeof window === "undefined" ? "https://soulstream.invalid" : window.location.origin;
   try {
@@ -171,7 +165,7 @@ export function contextualizeChatMarkdownImageSrc(
   const url = sameOriginUrl(src);
   if (!url || (url.pathname !== "/api/attachments/files" && !/^\/api\/attachments\/[^/]+\/content$/.test(url.pathname))) return src;
   if (url.searchParams.has("context_type") || url.searchParams.has("context_id")) return src;
-  for (const parameter of attachmentReadContextParams(readContext)) {
+  for (const parameter of contextParams(readContext)) {
     const separator = parameter.indexOf("=");
     const key = parameter.slice(0, separator);
     const value = parameter.slice(separator + 1);
@@ -193,7 +187,7 @@ export function buildStructuredChatImageItems(
     const query = [
       `nodeId=${encodeURIComponent(nodeId)}`,
       `path=${encodeURIComponent(path)}`,
-      ...(readContext ? attachmentReadContextParams(readContext) : []),
+      ...(readContext ? contextParams(readContext) : []),
     ];
     return [{
       id: `attachment:${index}:${path}`,

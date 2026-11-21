@@ -203,7 +203,7 @@ function projectItem(view: SessionEventAttachmentView): ChatAttachmentItem {
   }
 }
 
-function contextParams(context: AttachmentReadContext): string[] {
+export function contextParams(context: AttachmentReadContext): string[] {
   return context.type === "owner"
     ? ["context_type=owner"]
     : [`context_type=${encodeURIComponent(context.type)}`, `context_id=${encodeURIComponent(context.id)}`];
