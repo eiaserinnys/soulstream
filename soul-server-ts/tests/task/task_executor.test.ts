@@ -1,5 +1,5 @@
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
@@ -27,6 +27,10 @@ import { RunnerOrphanedSpawnError } from
 import type { RunnerRegistration } from
   "../../src/runner/runner_process_registry.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import type { RunnerCommandDispatcher } from
+  "../../src/runner/runner_command_dispatcher.js";
+import type { RunnerProcessDispatcher } from
+  "../../src/runner/runner_process_dispatcher.js";
 import {
   TaskExecutor,
   isTerminalStatus,
@@ -3315,7 +3319,7 @@ describe("TaskExecutor runner process boundary", () => {
           ? {}
           : { expectedTerminalEventId }),
       }));
-      expect(dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]!).toBeLessThan(
+      expect(dispatcher.prepareExecutionIdentity!.mock.invocationCallOrder[0]!).toBeLessThan(
         acquire.mock.invocationCallOrder[0]!,
       );
       expect(acquire.mock.invocationCallOrder[0]!).toBeLessThan(
@@ -3767,7 +3771,7 @@ describe("TaskExecutor runner process boundary", () => {
         executionCommandId: "execute-new",
       };
       dispatcher.prepareExecutionIdentity = failurePoint === "identity"
-        ? vi.fn(async () => undefined)
+        ? undefined
         : vi.fn(async () => proof);
       dispatcher.rollbackExecutionIdentity = vi.fn(async () => {});
       const processFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
@@ -4285,22 +4289,22 @@ describe("TaskExecutor runner process boundary", () => {
 });
 
 type RunnerDispatcherDouble = {
-  dispatch: ReturnType<typeof vi.fn>;
-  executeFrames: ReturnType<typeof vi.fn>;
-  recoverFrames: ReturnType<typeof vi.fn>;
-  registrationId: ReturnType<typeof vi.fn>;
-  prepareExecutionIdentity: ReturnType<typeof vi.fn>;
-  rollbackExecutionIdentity: ReturnType<typeof vi.fn>;
-  prepareSession: ReturnType<typeof vi.fn>;
-  interrupt: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
-  detachHost: ReturnType<typeof vi.fn>;
-  releaseEventStreamRegistration: ReturnType<typeof vi.fn>;
-  releaseUnadoptedRecovery: ReturnType<typeof vi.fn>;
-  sendControlFrame: ReturnType<typeof vi.fn>;
-  requestContext: ReturnType<typeof vi.fn>;
-  waitForSessionAck: ReturnType<typeof vi.fn>;
-  invoke: ReturnType<typeof vi.fn>;
+  dispatch: Mock<RunnerCommandDispatcher["dispatch"]>;
+  executeFrames: Mock<RunnerCommandDispatcher["executeFrames"]>;
+  recoverFrames: Mock<NonNullable<RunnerCommandDispatcher["recoverFrames"]>>;
+  registrationId: Mock<RunnerCommandDispatcher["registrationId"]>;
+  prepareExecutionIdentity?: Mock<NonNullable<RunnerCommandDispatcher["prepareExecutionIdentity"]>>;
+  rollbackExecutionIdentity: Mock<NonNullable<RunnerCommandDispatcher["rollbackExecutionIdentity"]>>;
+  prepareSession: Mock<RunnerCommandDispatcher["prepareSession"]>;
+  interrupt: Mock<RunnerCommandDispatcher["interrupt"]>;
+  close: Mock<RunnerCommandDispatcher["close"]>;
+  detachHost: Mock<RunnerCommandDispatcher["detachHost"]>;
+  releaseEventStreamRegistration: Mock<NonNullable<RunnerCommandDispatcher["releaseEventStreamRegistration"]>>;
+  releaseUnadoptedRecovery: Mock<NonNullable<RunnerCommandDispatcher["releaseUnadoptedRecovery"]>>;
+  sendControlFrame: Mock<RunnerCommandDispatcher["sendControlFrame"]>;
+  requestContext: Mock<RunnerCommandDispatcher["requestContext"]>;
+  waitForSessionAck: Mock<RunnerCommandDispatcher["waitForSessionAck"]>;
+  invoke: Mock<RunnerProcessDispatcher["invoke"]>;
 };
 
 function makeRunnerProcessRuntime(events: SSEEventPayload[]): {

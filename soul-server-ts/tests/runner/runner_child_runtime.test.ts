@@ -330,7 +330,7 @@ describe("RunnerChildRuntime startup", () => {
       commandId: "close-a",
     } as RunnerCommandFrame;
 
-    const handled = Reflect.get(runtime, "handleCommand").call(runtime, closeCommand);
+    const handled = runtime["handleCommand"](closeCommand);
     if (sendFails) await expect(handled).rejects.toThrow("host disconnected");
     else await handled;
     await new Promise<void>((resolve) => setImmediate(resolve));

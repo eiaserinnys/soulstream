@@ -123,7 +123,7 @@ describe("R36 delete_session lifecycle lab", () => {
       hydrateRunnerRecoveryTask: vi.fn(async (sessionId: string) =>
         centralSessions.has(sessionId) ? tasks.get(sessionId) ?? task(sessionId) : null),
       listExistingSessionIds: vi.fn(async (ids: string[]) => ids.filter((id) => centralSessions.has(id))),
-      markRunnerFailureAndResume: vi.fn(async () => {}),
+      markRunnerFailure: vi.fn(async () => {}),
       projectClosedRunner: vi.fn(async () => true),
     } as unknown as TaskManager;
     const catalogService = {
@@ -332,7 +332,7 @@ describe("R36 delete_session lifecycle lab", () => {
       await coordinator.stop();
       await rm(fixture.root, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 
   it("keeps a missing session with a non-terminal historical lifecycle pid", async () => {
     const fixture = await durableMissingSessionFixture("running", () => STARTED_AT);
@@ -447,7 +447,7 @@ function missingSessionTaskManager(): TaskManager {
   return {
     hydrateRunnerRecoveryTask: vi.fn(async () => null),
     listExistingSessionIds: vi.fn(async () => []),
-    markRunnerFailureAndResume: vi.fn(async () => {}),
+    markRunnerFailure: vi.fn(async () => {}),
     projectClosedRunner: vi.fn(async () => true),
   } as unknown as TaskManager;
 }

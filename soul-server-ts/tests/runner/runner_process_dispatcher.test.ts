@@ -181,7 +181,7 @@ describe("RunnerProcessDispatcher", () => {
                 }
                 throw new Error("initial socket failure");
               }
-              Reflect.set(dispatcher, "closed", true);
+              dispatcher["closed"] = true;
               throw new Error("unexpected reconnect");
             },
           },
@@ -201,7 +201,7 @@ describe("RunnerProcessDispatcher", () => {
       }).runReconnectLoop(paths.socketPath, 0);
 
       expect(connectCalls).toBe(1);
-      expect(Reflect.get(dispatcher, "closed")).toBe(true);
+      expect(dispatcher.isClosed()).toBe(true);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ expectedRegistrationId: identity.registrationId }),
         expect.stringContaining("Runner registration lost"),
@@ -244,7 +244,7 @@ describe("RunnerProcessDispatcher", () => {
         }),
         connectSocket: async () => {
           connectCalls += 1;
-          if (connectCalls === 2) Reflect.set(dispatcher, "closed", true);
+          if (connectCalls === 2) dispatcher["closed"] = true;
           throw new Error("socket failure");
         },
       },
@@ -478,7 +478,7 @@ describe("RunnerProcessDispatcher", () => {
 
     const closing = dispatcher.close();
     await closeSeen;
-    await Reflect.get(dispatcher, "trackFrameHandler").call(dispatcher,
+    await dispatcher["trackFrameHandler"](
       runnerRequestFrame("release-during-close", {
         kind: "host_call",
         service: "claude_accounts",
@@ -503,7 +503,7 @@ describe("RunnerProcessDispatcher", () => {
       pid: fixture.spawned.pid,
       startIdentity: "start-7101",
     });
-    await Reflect.get(dispatcher, "trackFrameHandler").call(dispatcher,
+    await dispatcher["trackFrameHandler"](
       runnerRequestFrame("after-close", {
         kind: "host_call",
         service: "claude_accounts",
@@ -819,7 +819,7 @@ describe("RunnerProcessDispatcher", () => {
     });
 
     await dispatcher.releaseEventStreamRegistration();
-    await Reflect.get(dispatcher, "ensurePump").call(dispatcher);
+    await dispatcher["ensurePump"]();
 
     expect(registerPump).not.toHaveBeenCalled();
   });
@@ -859,7 +859,7 @@ describe("RunnerProcessDispatcher", () => {
     });
 
     const continuation: (() => Promise<void>) | undefined =
-      await Reflect.get(dispatcher, "handleHostRequest").call(dispatcher,
+      await dispatcher["handleHostRequest"](
         runnerRequestFrame("host:a2", {
       kind: "host_call",
       service: "detached_event",

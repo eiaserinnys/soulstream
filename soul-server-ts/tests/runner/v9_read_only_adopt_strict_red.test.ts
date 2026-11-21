@@ -448,7 +448,7 @@ function makeCoordinator(
     },
     taskManager: {
       hydrateRunnerRecoveryTask: async () => task,
-      markRunnerFailureAndResume: async () => {}, projectClosedRunner: async () => true,
+      projectClosedRunner: async () => true,
     },
   } as unknown as RunnerRecoveryCoordinatorOptions;
   return new RunnerRecoveryCoordinator(options);
