@@ -7,8 +7,7 @@ import {
   SessionDataHostError,
   type SessionResumeContext,
 } from "../control_plane/session_data_host_client.js";
-import { serializeSessionStoryView } from
-  "../db/session_story_types.js";
+import { serializeSessionStoryView } from "@soulstream/mcp-contract";
 
 const LEGACY_TURN_SUMMARY_LIMIT = 30;
 

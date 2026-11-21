@@ -22,7 +22,7 @@ import { findClaudeDeliveryTranscriptReceipt } from
   "../../src/engine/claude_delivery_transcript_receipt.js";
 import { readClaudeResultReceiptMetadata } from
   "../../src/engine/claude_result_receipt_metadata.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import {
   abortSignal,
   collect,

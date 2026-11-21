@@ -4,7 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
+import { AgentRegistry } from "../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { AgentConfigService } from "../src/agent_config_service.js";
 import { FileAttachmentStore, type AttachmentStore } from "../src/attachments/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";

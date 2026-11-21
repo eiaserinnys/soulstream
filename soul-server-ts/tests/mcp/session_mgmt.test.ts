@@ -9,7 +9,7 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime, OrchProxyConfig } from "../../src/mcp/runtime.js";
-import { UnknownModelPresetError } from "../../src/model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import {
   buildInternalMcpServer,
   buildServer,
@@ -27,7 +27,7 @@ import type {
   StartExecutionCallback,
   TaskManager,
 } from "../../src/task/task_manager.js";
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];

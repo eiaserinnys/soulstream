@@ -5,7 +5,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
-import type { ModelCatalogConfig } from "../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { runnerProcessPaths } from "../runner/runner_process_paths.js";
 import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
@@ -31,7 +31,6 @@ import type {
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
   CompactedContextUsage,
-  ReasoningEffort,
   TurnOrigin,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,

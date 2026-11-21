@@ -14,8 +14,7 @@
  * 분석 캐시: `roselin/.local/artifacts/analysis/20260520-2107-ts-claude-python-parity-system-map.md` §G Phase C
  */
 
-import pino from "pino";
-import type { Logger } from "pino";
+import pino, { type Logger } from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type Query as ClaudeSdkQuery,
@@ -23,16 +22,18 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
-import { ClaudeEngineAdapter } from "../../src/engine/claude_adapter.js";
-import type { ClaudeClient, ClaudeRunOptions } from "../../src/engine/claude_adapter.js";
+import {
+  ClaudeEngineAdapter,
+  type ClaudeClient,
+  type ClaudeRunOptions,
+} from "../../src/engine/claude_adapter.js";
 import {
   ClaudeSdkClient,
   type ClaudeSdkQueryFn,
 } from "../../src/engine/claude_sdk_client.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
-import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";

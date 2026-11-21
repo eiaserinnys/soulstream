@@ -8,7 +8,7 @@
 import type { Logger } from "pino";
 import { createHash } from "node:crypto";
 
-import { AgentBackendSchema } from "../../agent_registry.js";
+import { AgentBackendSchema } from "@soulstream/model-catalog";
 import { estimateInputTokens } from "@soulstream/model-catalog/input-token-estimate";
 import { CALLER_INFO_SOURCES } from "@soulstream/wire-schema";
 import {

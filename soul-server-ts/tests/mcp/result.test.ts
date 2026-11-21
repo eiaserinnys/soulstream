@@ -5,7 +5,7 @@ import {
   errorResultFromError,
   jsonResult,
   paginatedArrayResult,
-} from "../../src/mcp/result.js";
+} from "@soulstream/mcp-contract";
 
 describe("jsonResult", () => {
   it("text content와 structuredContent를 함께 노출", () => {

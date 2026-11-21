@@ -5,7 +5,7 @@ import { join } from "node:path";
 import pino from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { composeSessionIsolation } from
   "../../src/runtime/session_isolation_composition.js";
 import type { Env } from "../../src/config.js";
@@ -15,11 +15,11 @@ import {
 } from "../../src/runner/runner_process_runtime_factory.js";
 import type { PreparedRunnerIsolation, RunnerIsolationHost } from
   "../../src/runner/runner_process_isolation.js";
-import type {
-  RunnerChildConfig,
-  SpawnRunnerProcessInput,
+import {
+  type RunnerChildConfig,
+  type SpawnRunnerProcessInput,
+  parseRunnerChildConfig,
 } from "../../src/runner/runner_process_spawn.js";
-import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { verifyFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { SessionIsolationSpec } from
   "../../src/security/session_isolation_contract.js";

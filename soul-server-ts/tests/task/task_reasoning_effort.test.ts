@@ -8,11 +8,11 @@ import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 
 import {
   ModelCatalog,
-  UnknownModelPresetError,
   assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
   type ModelCatalogOptions,
 } from "../../src/model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import {
   UnsupportedReasoningEffortError,
   resolveEffortPreset,

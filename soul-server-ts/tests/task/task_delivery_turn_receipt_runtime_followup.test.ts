@@ -6,7 +6,7 @@ import { attachClaudeResultReceiptMetadata } from
 import { attachClaudeToolResultReceiptMetadata } from
   "../../src/engine/claude_tool_result_receipt_metadata.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskDeliveryConsumption } from
   "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from

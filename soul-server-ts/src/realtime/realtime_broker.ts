@@ -1,13 +1,14 @@
 import type { Logger } from "pino";
 
-import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { AgentRegistry } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB, SessionRow } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import {
-  UnknownModelPresetError,
-  type ModelCatalog,
+import type {
+  ModelCatalog,
 } from "../model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import type { Task, TaskStatus } from "../task/task_models.js";
 import { resolveModelPresetSelection } from "../task/task_model_preset.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";

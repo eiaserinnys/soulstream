@@ -7,11 +7,10 @@ import { z } from "zod";
 import { writeFileAtomically } from "@soulstream/atomic-file-rename";
 import {
   AgentRegistry,
-  AgentAtomContextSchema,
   AgentsConfigSchema,
   readAgentsConfig,
-  type AgentProfile,
 } from "./agent_registry.js";
+import { AgentAtomContextSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
 
 const RemoteAtomContextSchema = z.object({
   node_id: z.string(),

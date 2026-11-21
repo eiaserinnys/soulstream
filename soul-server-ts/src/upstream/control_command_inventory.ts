@@ -1,5 +1,4 @@
 import {
-  CONTROL_COMMAND_TYPES,
   type ControlCommandType,
 } from "@soulstream/wire-schema";
 
@@ -82,8 +81,6 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("list_agents_config_snapshots", "agent-config", "bounded_result"),
   entry("rollback_agents_config", "agent-config", "durable_mutation"),
 ] as const satisfies readonly ControlCommandInventoryEntry[];
-
-export { CONTROL_COMMAND_TYPES };
 
 const INVENTORY_BY_TYPE = new Map<string, ControlCommandInventoryEntry>(
   CONTROL_COMMAND_INVENTORY.map((item) => [item.type, item]),

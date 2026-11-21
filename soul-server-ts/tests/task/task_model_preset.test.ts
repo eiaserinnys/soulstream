@@ -2,12 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AgentRegistry,
-  type AgentProfile,
 } from "../../src/agent_registry.js";
-import {
-  UnknownModelPresetError,
-  type ModelPreset,
-} from "../../src/model_catalog.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { UnknownModelPresetError, type ModelPreset } from "@soulstream/model-catalog";
 import {
   resolveExecutionSecurityDecision,
   type ExecutionSecurityPolicyPorts,

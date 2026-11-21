@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import {
   createFullSchemaPostgresHarness,
   type FullSchemaPostgresHarness,

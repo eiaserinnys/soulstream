@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
 
-import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { AgentRegistry } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ModelCatalog } from "../model_catalog.js";
 import { normalizeOptionalString } from "../agent_config_service.js";
 import type {

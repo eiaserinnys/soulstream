@@ -23,7 +23,7 @@ import { PersistenceHostRequestError } from
   "../control_plane/persistence_host_transport.js";
 import type { ExecutionRegistration } from "./execution_registration.js";
 
-import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import {
   buildClaudeBackgroundGenerationIdentity,
   buildClaudeBackgroundResumeId,

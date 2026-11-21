@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 
 import { ProviderNotConfiguredError, type LlmExecutor } from "./executor.js";
 import { parseLlmCompletionRequest } from "./types.js";
-import { constantTimeStringEqual } from "../security/constant_time_string_equal.js";
+import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 
 export interface LlmRouteConfig {
   executor: LlmExecutor;

@@ -10,7 +10,7 @@ import type {
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { ClaudeEngineAdapter, ClaudeSdkClient } from "../../src/engine/claude_adapter.js";

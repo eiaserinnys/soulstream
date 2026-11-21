@@ -1,6 +1,7 @@
 import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import type { CardMutationChange } from "./card_control_plane_service.js";
-import type { CardMutationResult, CardStatus } from "./control_plane/card_types.js";
+import type { CardMutationResult } from "./control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardItemState } from "./card_item_rules.js";
 
 export type CardChangeDelivery = { deliveryId:string; actorKind:string; actorSessionId:string | null };

@@ -1,7 +1,7 @@
 import pino from "pino";
 import { vi, type MockInstance } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { attachClaudeResultReceiptMetadata } from
   "../../src/engine/claude_result_receipt_metadata.js";
@@ -11,8 +11,7 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
-import type { AddInterventionParams } from "../../src/task/task_intervention_route.js";
-import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import { type AddInterventionParams, TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from

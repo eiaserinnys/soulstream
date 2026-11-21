@@ -2,7 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import {
   ClaudeEngineAdapter,

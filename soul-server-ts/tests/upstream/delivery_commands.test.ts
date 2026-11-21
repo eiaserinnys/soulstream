@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
 import type { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";

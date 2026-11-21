@@ -5,7 +5,7 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import type { FlatFolderContentHostClient } from "../../src/catalog/flat_folder_content_host_client.js";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import { UnknownModelPresetError } from "../../src/model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import type {
   EnginePort,
   SupportsToolApproval,

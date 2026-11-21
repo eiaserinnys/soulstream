@@ -13,7 +13,7 @@ import type {
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";

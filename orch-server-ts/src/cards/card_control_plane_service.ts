@@ -23,12 +23,13 @@ import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type Ca
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
-import { readSupervisedCardContext, type SupervisedCardSnapshot } from "./supervised_card_context.js";
+import { readSupervisedCardContext } from "./supervised_card_context.js";
 import {
   parseCardReference,
   cardQuestionInputIssues,
   type CardReferenceLookupResult,
   type FolderStatus,
+  type SupervisedCardSnapshot,
 } from "@soulstream/mcp-contract";
 import { cardQuestionOptionLabels, type CardQuestionAttachmentInput, type CardQuestionKind, type CardQuestionOption } from "@soulstream/wire-schema/card-questions";
 import { resolveCardQuestionAnswer, type CardQuestionAnswerInput } from "./card_question_rules.js";
@@ -40,7 +41,17 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMaintenanceService, type BulkSetCardStatusInput, type CardMaintenanceChange, type MergeCardsInput, type MergeCardsResult, type UpdateUnstartedFields, type UpdateUnstartedResult, type AuthorizeFolder } from "./card_maintenance_service.js";
-import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort } from "./control_plane/card_types.js";
+import type {
+  CardRow,
+  CardMutationResult,
+  FolderOperationRow,
+  SqlClient,
+  RepositorySql,
+  FolderActorParams,
+  FolderDbPort,
+  FolderBroadcasterPort,
+} from "./control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import {

@@ -19,7 +19,7 @@
 import type { Logger } from "pino";
 import { randomUUID } from "node:crypto";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import type {
@@ -105,7 +105,6 @@ import {
   type NodeResponseVerdict,
 } from "./state/node_response_handling.js";
 import {
-  RunnerAdoptionRejectedError,
   type RunnerAdoptionApplication,
 } from "./runner_adoption_rejected_error.js";
 import {

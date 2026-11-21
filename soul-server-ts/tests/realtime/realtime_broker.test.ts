@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";

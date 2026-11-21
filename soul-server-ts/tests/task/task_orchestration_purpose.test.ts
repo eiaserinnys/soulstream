@@ -7,8 +7,7 @@ import { TaskManager } from "../../src/task/task_manager.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { hydrateEvictedTaskFromSessionRow } from "../../src/task/task_evicted_hydration.js";
 import { makeTaskCreationHarness } from "./task_creation_harness.js";
-// These guards do not resolve any model preset. Avoid pulling unrelated catalog parsing into the unit boundary.
-vi.mock("../../src/model_catalog.js", () => ({ UnknownModelPresetError: class extends Error {} }));
+
 const purpose = { runId: "run-1", leaseToken: "execution-fence-1", instructionsRevision: "sha256:revision" };
 const logger = pino({ level: "silent" });
 function task(fields: Partial<Task> = {}): Task {

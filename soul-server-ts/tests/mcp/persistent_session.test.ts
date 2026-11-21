@@ -5,7 +5,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agent_registry.js";
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { buildPersistentCheckpoint } from "../../src/context/persistent_checkpoint.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";

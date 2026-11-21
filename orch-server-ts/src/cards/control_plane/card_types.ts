@@ -13,8 +13,6 @@ import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { CardItem, CardNow } from "../card_item_rules.js";
 
-export type { CardStatus } from "@soulstream/wire-schema";
-
 /** PAS 판에 장을 남기지 않는 상태. 보류는 끝나지 않았지만 사용자가 내린 카드다. */
 export function isCardOffBoard(status: CardStatus): boolean {
   return status === "done" || status === "cancelled" || status === "on_hold";

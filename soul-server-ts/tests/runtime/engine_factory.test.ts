@@ -1,5 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,7 +6,7 @@ import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { McpConfigService } from "../../src/mcp_config_service.js";
 import { createEngineFactory } from "../../src/runtime/engine_factory.js";
 

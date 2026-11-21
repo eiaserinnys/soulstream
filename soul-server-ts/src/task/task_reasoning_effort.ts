@@ -1,8 +1,7 @@
-import {
-  UnknownModelPresetError,
-  type ModelCatalog,
-  type ModelPreset,
+import type {
+  ModelCatalog,
 } from "../model_catalog.js";
+import { UnknownModelPresetError, type ModelPreset } from "@soulstream/model-catalog";
 import type { ReasoningEffort } from "../engine/protocol.js";
 
 export type ReasoningEffortPresetResolver = Pick<ModelCatalog, "resolve">;

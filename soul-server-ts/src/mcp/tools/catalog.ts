@@ -1,12 +1,9 @@
 /** Catalog browse/mutation tools. Session deletion is TaskLifecycleRoute-owned. */
-import { sessionTools } from "@soulstream/mcp-contract";
-import { forwardOrchestratorTool } from "../orchestrator_tools.js";
+import { sessionTools, errorResult, jsonResult, boardTools } from "@soulstream/mcp-contract";
+import { forwardOrchestratorTool, registerOrchestratorTools } from "../orchestrator_tools.js";
 import { TaskOwnedByAnotherNodeError } from "../../task/task_hydration_errors.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { boardTools } from "@soulstream/mcp-contract";
-import { registerOrchestratorTools } from "../orchestrator_tools.js";
 
-import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { registerFolderSearchTools } from "./folder_browse.js";
 

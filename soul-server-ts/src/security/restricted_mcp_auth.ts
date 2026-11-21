@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { constantTimeStringEqual } from "./constant_time_string_equal.js";
+import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 
 /**
  * 내부 MCP 세션 자격 증명.

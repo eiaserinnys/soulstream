@@ -1,11 +1,11 @@
 import type { Logger } from "pino";
 import { readModelPresetFallbackPolicy } from "@soulstream/wire-schema/model-preset-fallbacks";
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { PersistentCheckpointStats } from "../context/persistent_checkpoint.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
-import { UnknownModelPresetError } from "../model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import { resolveReasoningEffortForCreate } from "./task_reasoning_effort.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isRuntimeFollowup, sortInterventionsByPriority } from "./task_intervention_queue.js";

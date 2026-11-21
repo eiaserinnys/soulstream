@@ -2,7 +2,8 @@ import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import { ExecutionContextBuilder, type ExecutionContextBuilder as ExecutionContextBuilderPort, type PreparedContext } from "../../src/context/context_builder.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -17,7 +18,7 @@ import {
   TurnInputPreparationError,
 } from "../../src/task/task_turn_input_builder.js";
 import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
 import { createInputMaterialPart } from "../../src/context/input_material_parts.js";

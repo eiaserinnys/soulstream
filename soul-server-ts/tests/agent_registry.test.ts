@@ -1,15 +1,14 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import {
-  AgentProfileSchema,
   AgentRegistry,
   loadAgentRegistry,
 } from "../src/agent_registry.js";
+import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
 
 import { makeTempDirSync } from "./helpers/temp_dir.js";
 

@@ -24,8 +24,8 @@ import {
   ModelCatalog,
   assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
-  parseModelCatalogGroups,
 } from "../../src/model_catalog.js";
+import { parseModelCatalogGroups } from "@soulstream/model-catalog";
 import { ReleaseActivationState } from "../../src/release/release_activation_state.js";
 import { buildReleaseManifest } from "../../src/release/release_manifest.js";
 import { hashArtifactSet } from "../../src/runner/runner_release_materializer.js";
@@ -35,7 +35,7 @@ import { readRunnerRegistrationIdentity } from
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
 import { startWorkerRuntime } from "../../src/runtime/worker_startup.js";
 import { startServer } from "../../src/server.js";
-import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import type { FullSchemaPostgresHarness } from
   "../db/full_schema_postgres_harness.js";
 import type {

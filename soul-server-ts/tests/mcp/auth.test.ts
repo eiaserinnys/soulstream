@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkMcpAuth, extractHost } from "../../src/mcp/auth.js";
+import { checkMcpAuth, extractHost } from "@soulstream/mcp-contract";
 
 describe("extractHost", () => {
   it("hostname:port → hostname", () => {

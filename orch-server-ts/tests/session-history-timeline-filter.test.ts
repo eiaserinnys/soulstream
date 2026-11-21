@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  SESSION_TIMELINE_EVENT_TYPES,
   createApp,
   parseOrchServerConfig,
   type SessionHistoryProvider,
 } from "../src/index.js";
+import { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 import { parseTimelineDebugKindsQuery } from "../src/session/session_history_query.js";
 import { isRequestedTimelineEventType } from "../src/session/session_history_service.js";
 

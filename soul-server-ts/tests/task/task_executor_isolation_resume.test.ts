@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { Env } from "../../src/config.js";
 import { SessionDataHostError } from
   "../../src/control_plane/session_data_host_client.js";
@@ -20,7 +20,6 @@ import { prepareRecoveredTask } from "../../src/runner/runner_recovery_task.js";
 import {
   createInProcessTaskRunnerRuntime,
   createTaskRunnerRuntime,
-  type TaskRunnerRuntime,
 } from "../../src/runner/task_runner_runtime.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { IsolationPreparationPolicyError } from
@@ -31,8 +30,7 @@ import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
-import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
-import { TaskExecutor } from "../../src/task/task_executor.js";
+import { type RunnerProcessRuntimeFactory, TaskExecutor } from "../../src/task/task_executor.js";
 import {
   createExecutionActivation,
   type InterventionMessage,

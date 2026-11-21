@@ -12,7 +12,8 @@ import { registerRecurringJobHostRoutes } from "../../../orch-server-ts/src/recu
 import { RecurringJobService } from "../../../orch-server-ts/src/recurring-jobs/service.js";
 import type { RecurringJob, RecurringJobRun, RecurringJobRepository } from "../../../orch-server-ts/src/recurring-jobs/types.js";
 import { registerCardOrchestrationRoutes } from "../../../orch-server-ts/src/cards/card_orchestration_routes.js";
-import { CardOrchestrationSettingsError, type OrchestrationSettings } from "../../../orch-server-ts/src/cards/card_orchestration_settings.js";
+import { CardOrchestrationSettingsError } from "../../../orch-server-ts/src/cards/card_orchestration_settings.js";
+import type { OrchestrationSettings } from "@soulstream/wire-schema/card-orchestration";
 import { createSessionCreateLifecycle } from "../../../orch-server-ts/src/session/session_create_lifecycle.js";
 import { createSessionResourceAccessProvider } from "../../../orch-server-ts/src/session/session_resource_access.js";
 import { createLiveDashboardAccessProvider } from "../../../orch-server-ts/src/runtime/live_dashboard_access_provider.js";

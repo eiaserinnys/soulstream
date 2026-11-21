@@ -14,7 +14,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AgentProfile } from "../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { ClaudeAccountService } from "../src/claude_accounts/service.js";
 import type { ClaudeProfileCredentialRenewer } from "../src/claude_accounts/credential_renewal.js";
 import { readProfileCredentialsReadOnly } from "../src/claude_accounts/usage.js";

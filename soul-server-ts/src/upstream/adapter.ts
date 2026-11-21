@@ -347,7 +347,7 @@ export class UpstreamAdapter {
       if (!registrationAck) return;
       if (this.config.releaseActivationState) {
         const activationReceipt = (registrationAck as NodeRegisterAck & {
-          release_activation_receipt?: import("../release/release_activation_state.js").ReleaseActivationReceipt;
+          release_activation_receipt?: import("@soulstream/wire-schema").ReleaseActivationReceipt;
         }).release_activation_receipt;
         if (!activationReceipt) {
           throw new Error("node registration ACK missing release activation receipt");

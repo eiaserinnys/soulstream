@@ -4,7 +4,7 @@ import nodeProcess from "node:process";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
-import type { ModelCatalogConfig } from "../../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { runnerProcessPaths } from "../../runner/runner_process_paths.js";
 import { engineEventFrame, type RunnerEventFrame } from "../../runner/frame_protocol.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";

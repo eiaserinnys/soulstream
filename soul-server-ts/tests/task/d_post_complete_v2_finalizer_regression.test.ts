@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";

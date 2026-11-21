@@ -1,4 +1,4 @@
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import {
   composeFirstTurnPromptWithMaterial,
@@ -16,7 +16,7 @@ import {
   truncateClaudeTextToEstimatedTokens,
   type ClaudeBackendRolloverReason,
 } from "./claude_context_recovery.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";

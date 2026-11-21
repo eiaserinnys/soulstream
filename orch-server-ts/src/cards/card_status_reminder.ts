@@ -1,7 +1,7 @@
 import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import { formatSeoulWakeTime } from "./card_verification_wait.js";
 import type { CardChangeDelivery } from "./card_change_notification.js";
-import type { CardStatus } from "./control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 
 // Failure ceilings, not a delay on the normal completion path.
 export const PENDING_DELIVERY_FAILURE_CEILING_MS = 30 * 60 * 1000;

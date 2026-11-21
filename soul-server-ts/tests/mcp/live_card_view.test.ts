@@ -3,7 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
-import { registerLiveCardView, LIVE_CARD_RESOURCE, liveCardOutputSchema } from "../../src/mcp/tools/live_card_view.js";
+import { registerLiveCardView } from "../../src/mcp/tools/live_card_view.js";
+import { LIVE_CARD_RESOURCE, liveCardOutputSchema } from "@soulstream/mcp-contract";
 
 it("live UI cache key advances to the bounded-scroll resource", () =>
   expect(LIVE_CARD_RESOURCE).toBe("ui://soulstream/live-cards-v4.html"));

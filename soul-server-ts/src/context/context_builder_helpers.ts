@@ -4,7 +4,8 @@ import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
-import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
+import type { AgentRegistry } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../db/session_db.js";
 import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 

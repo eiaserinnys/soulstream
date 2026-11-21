@@ -17,7 +17,6 @@ import { SessionDeliveryRepository } from
 import type {
   RegisterSessionDeliveryParams,
 } from "@soulstream/wire-schema/session-delivery";
-import type { SqlClient } from "../../src/db/session_db.js";
 import type { ClaudeRuntimeHostClient } from
   "../../src/control_plane/persistence_host_clients.js";
 import { buildClaudeBackgroundGenerationIdentity } from
@@ -28,8 +27,7 @@ import { ClaudeBackgroundGenerationStartupRecovery } from
   "../../src/task/claude_background_generation_startup_recovery.js";
 import { ClaudeRuntimeStartupRecovery } from
   "../../src/runtime/claude_runtime_startup_recovery.js";
-import { buildDeterministicDeliveryIdentity } from
-  "../../src/task/delivery_identity.js";
+import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,

@@ -10,7 +10,7 @@ import {
   type AgentsSdkHostedTool,
   type AgentsSdkMcpServer,
   type AgentProfile,
-} from "./agent_registry.js";
+} from "@soulstream/agent-profile-contract";
 
 export const DEFAULT_MCP_REGISTRY_BASENAME = "mcp-registry.yaml";
 export const DEFAULT_MCP_PROFILES_BASENAME = "mcp-profiles.yaml";

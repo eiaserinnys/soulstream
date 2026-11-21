@@ -22,7 +22,8 @@ import {
   claudeLimitsFromAccountPool,
   type ClaudeAccountService,
 } from "../claude_accounts/index.js";
-import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
+import type { ModelPreset } from "@soulstream/model-catalog";
 import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
 import {
   PROVIDER_USAGE_REQUEST_TIMEOUT_MS,

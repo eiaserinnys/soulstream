@@ -3,13 +3,11 @@ import {
   DEFAULT_SEARCH_CATEGORIES,
   eventTypesForSearchCategories,
   parseSearchEventCategories,
+  searchSessionEvents,
+  SessionHistorySearchDeadlineError,
 } from "@soulstream/search-contract";
 
 import type { McpRuntime } from "../mcp/runtime.js";
-import {
-  searchSessionEvents,
-  SessionHistorySearchDeadlineError,
-} from "../search/session_search.js";
 
 export interface CogitoSearchRouteConfig {
   runtime: McpRuntime;

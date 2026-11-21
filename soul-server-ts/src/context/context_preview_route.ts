@@ -4,7 +4,8 @@ import { type as getOsType } from "node:os";
 import type { FastifyInstance } from "fastify";
 import type { Logger } from "pino";
 
-import { AgentAtomContextSchema, type AgentProfile, type AgentRegistry } from "../agent_registry.js";
+import type { AgentRegistry } from "../agent_registry.js";
+import { AgentAtomContextSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import {
   authenticateDashboardHttpRequest,

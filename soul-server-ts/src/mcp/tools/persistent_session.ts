@@ -1,9 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
+import { MODEL_REASONING_EFFORTS, UnknownModelPresetError } from "@soulstream/model-catalog";
 import { z } from "zod";
 
-import { UnknownModelPresetError } from "../../model_catalog.js";
-import { errorResult, errorResultFromError, jsonResult } from "../result.js";
+import { errorResult, errorResultFromError, jsonResult } from "@soulstream/mcp-contract";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
 import type { McpRuntime } from "../runtime.js";
 

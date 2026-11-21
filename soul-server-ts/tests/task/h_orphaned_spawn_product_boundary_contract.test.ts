@@ -5,7 +5,7 @@ import { join } from "node:path";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EventSessionTransitionApplication } from
   "../../src/db/event_transition_publisher.js";

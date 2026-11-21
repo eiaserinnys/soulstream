@@ -1,4 +1,4 @@
-import { clusterTools } from "@soulstream/mcp-contract";
+import { clusterTools, errorResult } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
 import { createCallerInfoPreprocessor } from "./cluster_caller_info.js";
 export function registerMultiNodeTools(server: McpServer, runtime: McpRuntime): void {
@@ -10,7 +10,6 @@ export function registerMultiNodeTools(server: McpServer, runtime: McpRuntime): 
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { errorResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";

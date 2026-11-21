@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
-import type { ModelCatalogConfig } from "../../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
@@ -35,24 +35,25 @@ import {
   createStdioAppServerTransport,
   type AppServerTransportLogger,
 } from "./stdio_transport.js";
-import type {
-  AppServerNotification,
-  AppServerRequestId,
-  AppServerResponseError,
-  AppServerServerRequest,
-  GetAccountRateLimitsResponse,
-  InitializeParams,
-  InitializeResponse,
-  ThreadResumeParams,
-  ThreadResumeResponse,
-  ThreadStartParams,
-  ThreadStartResponse,
-  TurnInterruptParams,
-  TurnInterruptResponse,
-  TurnStartParams,
-  TurnStartResponse,
-  TurnSteerParams,
-  TurnSteerResponse,
+import {
+  type AppServerNotification,
+  type AppServerRequestId,
+  type AppServerResponseError,
+  type AppServerServerRequest,
+  type GetAccountRateLimitsResponse,
+  type InitializeParams,
+  type InitializeResponse,
+  type ThreadResumeParams,
+  type ThreadResumeResponse,
+  type ThreadStartParams,
+  type ThreadStartResponse,
+  type TurnInterruptParams,
+  type TurnInterruptResponse,
+  type TurnStartParams,
+  type TurnStartResponse,
+  type TurnSteerParams,
+  type TurnSteerResponse,
+  toCodexUserInput,
 } from "./protocol.js";
 import {
   buildThreadResumeParams,
@@ -60,7 +61,6 @@ import {
   buildTurnStartParams,
   selectCodexMcpServers,
 } from "./params.js";
-import { toCodexUserInput } from "./protocol.js";
 import { AsyncPayloadQueue } from "./async_payload_queue.js";
 import { CODEX_USAGE_LIMIT_ERROR_CODE } from "../usage_limit_stop.js";
 import {

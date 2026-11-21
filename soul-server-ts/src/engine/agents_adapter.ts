@@ -24,7 +24,7 @@ import {
 } from "@openai/agents";
 import type { Logger } from "pino";
 
-import type { AgentProfile, AgentsSdkConfig } from "../agent_registry.js";
+import type { AgentProfile, AgentsSdkConfig } from "@soulstream/agent-profile-contract";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import {

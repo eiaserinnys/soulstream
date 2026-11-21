@@ -18,7 +18,7 @@ import { findClaudeDeliveryTranscriptReceipt } from
   "../../src/engine/claude_delivery_transcript_receipt.js";
 import { ClaudeSessionClientRegistry } from
   "../../src/engine/claude_session_client_registry.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 
 const logger = pino({ level: "silent" });
 const cliPath = execFileSync("which", ["claude"], { encoding: "utf8" }).trim();

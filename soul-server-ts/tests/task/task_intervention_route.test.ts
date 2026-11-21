@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
-import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import {
   TaskInterventionRoute,
   type TaskInterventionRouteDeps,

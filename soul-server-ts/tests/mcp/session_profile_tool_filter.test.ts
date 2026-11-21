@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import {

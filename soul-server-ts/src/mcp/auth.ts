@@ -1,7 +1,6 @@
 import {
   checkMcpAuth,
   extractHost,
-  type AuthCheckResult,
   type McpAuthConfig,
 } from "@soulstream/mcp-contract";
 
@@ -17,8 +16,6 @@ import type {
   IsolationPolicy,
   McpPrincipal,
 } from "../security/session_isolation_contract.js";
-
-export { checkMcpAuth, extractHost, type McpAuthConfig, type AuthCheckResult };
 
 /** restricted 자격 증명의 DB 존재 확인과 정책 공급. transport가 주입한다. */
 export interface McpRestrictedAuthConfig {

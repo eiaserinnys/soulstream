@@ -1,16 +1,15 @@
-import {
-  AgentProfilePatchSchema,
-  type AgentProfile,
-  type AgentRegistry,
-  type AgentsConfig,
-} from "../agent_registry.js";
 import type {
-  AgentConfigApplyResult,
-  AgentConfigPlan,
-  AgentConfigService,
-  AgentConfigSnapshotInfo,
+  AgentRegistry,
+  AgentsConfig,
+} from "../agent_registry.js";
+import { AgentProfilePatchSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
+import {
+  type AgentConfigApplyResult,
+  type AgentConfigPlan,
+  type AgentConfigService,
+  type AgentConfigSnapshotInfo,
+  toAgentConfigSemanticChangeWire,
 } from "../agent_config_service.js";
-import { toAgentConfigSemanticChangeWire } from "../agent_config_service.js";
 
 export type AgentConfigCommandHandler = Pick<
   AgentConfigService,

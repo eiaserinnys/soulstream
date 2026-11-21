@@ -1,5 +1,6 @@
 import type { FolderOperationActorKind } from "@soulstream/mcp-contract";
-import type { CardRow, CardStatus } from "./control_plane/card_types.js";
+import type { CardRow } from "./control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardOwnerSession } from "./card_session_target.js";
 import { cardItemStateLabels } from "./card_change_notification.js";
 import { CARD_NOTICE_TAGS, CARD_NOTICE_LEAD } from "../../../packages/wire-schema/src/conversation_visibility.js";

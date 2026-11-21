@@ -11,8 +11,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { SessionDeliveryNotificationHostClient } from "../control_plane/persistence_host_clients.js";
 import {
   resolveMcpPrincipal,
-  type McpAuthConfig,
 } from "../mcp/auth.js";
+import type { McpAuthConfig } from "@soulstream/mcp-contract";
 import {
   extractBearerToken,
   isRestrictedMcpToken,

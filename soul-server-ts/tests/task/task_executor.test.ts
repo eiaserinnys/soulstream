@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi, type Mock } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
@@ -12,7 +12,7 @@ import type {
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
-import { UnknownModelPresetError } from "../../src/model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import {
   claudePreemptiveCompactThresholdTokens,
   estimateClaudeTurnInputTokens,
@@ -22,15 +22,18 @@ import {
   RUNNER_FRAME_PROTOCOL_VERSION,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
-import { RunnerOrphanedSpawnError } from
-  "../../src/runner/runner_process_dispatcher.js";
+import {
+  RunnerOrphanedSpawnError,
+  type RunnerProcessDispatcher,
+} from "../../src/runner/runner_process_dispatcher.js";
 import type { RunnerRegistration } from
   "../../src/runner/runner_process_registry.js";
-import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import {
+  type TaskRunnerRuntime,
+  createInProcessTaskRunnerRuntime,
+} from "../../src/runner/task_runner_runtime.js";
 import type { RunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
-import type { RunnerProcessDispatcher } from
-  "../../src/runner/runner_process_dispatcher.js";
 import {
   TaskExecutor,
   isTerminalStatus,
@@ -38,7 +41,6 @@ import {
 } from "../../src/task/task_executor.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import { hydrateEvictedTaskFromSessionRow } from "../../src/task/task_evicted_hydration.js";
-import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
 import { TaskDeliveryLedgerGate } from

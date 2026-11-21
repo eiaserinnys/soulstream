@@ -1,7 +1,7 @@
 import { getSessionMessages, type SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 import type {
   ClaudeBackgroundTaskKey,

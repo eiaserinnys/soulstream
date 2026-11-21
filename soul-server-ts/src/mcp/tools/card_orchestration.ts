@@ -1,4 +1,4 @@
-import { cardOrchestrationTools } from "@soulstream/mcp-contract";
+import { cardOrchestrationTools, errorResult } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
 export function registerCardOrchestrationTools(server: McpServer, runtime: McpRuntime): void {
   registerOrchestratorTools(server, runtime, Object.values(cardOrchestrationTools), Object.fromEntries(Object.keys(cardOrchestrationTools).map(name => [name,
@@ -13,7 +13,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   getCurrentMcpCallerSessionId,
 } from "../request_context.js";
-import { errorResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 function resolveSettingsCaller(runtime: McpRuntime, explicitSessionId: string | undefined): { error?: string; callerSessionId?: string } {

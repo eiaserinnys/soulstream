@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   parseOrchestrationPolicy,
   ORCHESTRATION_DECISION_PURPOSE,
+  type OrchestrationSettings,
 } from "@soulstream/wire-schema/card-orchestration";
 import {
   requireAdmin,
@@ -11,7 +12,6 @@ import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   CardOrchestrationSettingsError,
-  type OrchestrationSettings,
 } from "./card_orchestration_settings.js";
 export type CardOrchestrationRouteOptions = AdminAccessProvider & {
   get(): Promise<OrchestrationSettings>;

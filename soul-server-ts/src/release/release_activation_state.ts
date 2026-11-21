@@ -1,18 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-  ReleaseActivationReceipt as WireReleaseActivationReceipt,
-  ReleaseActivationRegistration as WireReleaseActivationRegistration,
-  ReleaseVerificationResult as WireReleaseVerificationResult,
+  ReleaseActivationReceipt,
+  ReleaseActivationRegistration,
+  ReleaseVerificationResult,
 } from "@soulstream/wire-schema";
 
 import type { ReleaseManifestV1 } from "./release_manifest.js";
-
-export type ReleaseVerificationResult = WireReleaseVerificationResult;
-
-export type ReleaseActivationRegistration = WireReleaseActivationRegistration;
-
-export type ReleaseActivationReceipt = WireReleaseActivationReceipt;
 
 export class ReleaseActivationState {
   private readonly now: () => Date;

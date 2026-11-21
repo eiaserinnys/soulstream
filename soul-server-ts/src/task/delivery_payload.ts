@@ -1,8 +1,3 @@
-export {
-  buildCanonicalDeliveryPayload,
-  type CanonicalDeliveryPayload,
-  type CanonicalDeliveryPayloadInput,
-} from "@soulstream/wire-schema/delivery";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { ContextItem } from "@soulstream/wire-schema";
 import type { CallerInfo } from "./task_models.js";

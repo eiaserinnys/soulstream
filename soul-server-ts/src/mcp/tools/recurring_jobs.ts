@@ -1,4 +1,4 @@
-import { recurringJobTools } from "@soulstream/mcp-contract";
+import { recurringJobTools, errorResult } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
 import { createCallerInfoPreprocessor } from "./cluster_caller_info.js";
 export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime): void {
@@ -16,7 +16,6 @@ export function registerRecurringJobTools(server: McpServer, runtime: McpRuntime
 }
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { errorResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 

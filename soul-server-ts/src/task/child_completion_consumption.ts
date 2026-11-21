@@ -5,7 +5,7 @@ import type {
   RecordObservedChildCompletionParams,
 } from "@soulstream/wire-schema/session-delivery";
 
-import { buildDeterministicDeliveryIdentity } from "./delivery_identity.js";
+import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 
 export interface ChildCompletionObservation {
   childSessionId: string;

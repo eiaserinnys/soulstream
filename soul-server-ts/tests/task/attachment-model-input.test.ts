@@ -6,14 +6,17 @@ import { join } from "node:path";
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import { createAttachmentMaterializer } from "../../src/attachments/attachment_materializer.js";
 import { makeUserMessage } from "../../src/engine/claude_sdk_user_message.js";
 import type { EngineExecuteParams, EnginePort, EngineUserInput } from "../../src/engine/protocol.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
-import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import {
+  createInProcessTaskRunnerRuntime,
+  type TaskRunnerRuntime,
+} from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import { createAttachmentInputPreparer } from "../../src/task/prepare_attachment_input.js";
@@ -21,7 +24,6 @@ import { RunningInterventionTransition } from "../../src/task/task_running_inter
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { ExecutionContextBuilder } from "../../src/context/context_builder.js";
-import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 const CACHE_ROOT = join(tmpdir(), "soulstream-attachment-model-input-boundary-245");

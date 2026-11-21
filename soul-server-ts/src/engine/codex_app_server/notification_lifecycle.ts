@@ -1,6 +1,6 @@
 import { asRecord } from "../claude_sdk_helpers.js";
 import type { SSEEventPayload } from "../protocol.js";
-import type { ModelCatalogConfig } from "../../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { mapAppServerNotification } from "./event_mapper.js";
 import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
 import type {

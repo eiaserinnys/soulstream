@@ -1,7 +1,7 @@
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { attachClaudeBackgroundDeliveryMetadata } from
   "../../src/engine/claude_background_delivery_metadata.js";
 import { readClaudeBackgroundProvenance } from
@@ -12,10 +12,10 @@ import {
   RunnerNotAliveError,
 } from
   "../../src/runner/runner_process_runtime_factory.js";
-import type { RunnerChildConfig } from
-  "../../src/runner/runner_process_spawn.js";
-import { parseRunnerChildConfig } from
-  "../../src/runner/runner_process_spawn.js";
+import {
+  type RunnerChildConfig,
+  parseRunnerChildConfig,
+} from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from
   "../../src/runner/runner_process_registry.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";

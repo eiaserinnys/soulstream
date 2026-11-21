@@ -23,10 +23,9 @@ import { z } from "zod";
 
 import type { ObservationOptions } from "../../security/session_isolation_contract.js";
 import { projectNodeServices, projectStatus, selectService } from "./node_services_observation_projection.js";
-import { errorResult, jsonResult } from "../result.js";
+import { errorResult, jsonResult } from "@soulstream/mcp-contract";
 import type {
   McpRuntime,
-  NodeServicesObservationConfig,
   NodeServicesObservationEndpointConfig,
 } from "../runtime.js";
 

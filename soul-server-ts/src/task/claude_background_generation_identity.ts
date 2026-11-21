@@ -1,6 +1,4 @@
-import {
-  buildDeterministicDeliveryIdentity,
-} from "./delivery_identity.js";
+import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 
 export interface ClaudeBackgroundGenerationInput {
   sourceNode: string;

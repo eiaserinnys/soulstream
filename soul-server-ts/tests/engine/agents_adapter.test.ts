@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 
-import { AgentProfileSchema, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentProfileSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
 import { AgentsEngineAdapter } from "../../src/engine/agents_adapter.js";
 
 const silentLogger = pino({ level: "silent" });

@@ -151,7 +151,7 @@ export function createRunnerProcessRuntimeFactory(
 
   const createRuntime = (
     task: Task,
-    agent: import("../agent_registry.js").AgentProfile,
+    agent: import("@soulstream/agent-profile-contract").AgentProfile,
     backend: import("../engine/protocol.js").BackendId,
     snapshots: RunnerSnapshotPersistence,
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
@@ -405,7 +405,7 @@ type RunnerRuntimeMcpConfig = Pick<
 
 function resolveRuntimeMcpConfig(
   options: Pick<RunnerProcessRuntimeFactoryOptions, "env" | "mcpConfigService">,
-  agent: import("../agent_registry.js").AgentProfile,
+  agent: import("@soulstream/agent-profile-contract").AgentProfile,
 ): RunnerRuntimeMcpConfig {
   const resolvedMcpServers = options.mcpConfigService
     .resolveMcpProfile(agent)?.mcp_servers;

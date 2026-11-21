@@ -18,9 +18,9 @@ import {
 import { loadIsolationPolicyFile } from "../../src/security/session_isolation_policy.js";
 import {
   resolveMcpPrincipal,
-  type McpAuthConfig,
   type McpRestrictedAuthConfig,
 } from "../../src/mcp/auth.js";
+import type { McpAuthConfig } from "@soulstream/mcp-contract";
 import { buildServer } from "../../src/server.js";
 import { makeLlmHarness, silentLogger } from "../llm/llm_test_helpers.js";
 

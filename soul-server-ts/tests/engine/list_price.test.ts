@@ -7,13 +7,13 @@ import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import {
   priceInferenceUsage,
   priceInferenceUsageComponents,
+  normalizePricedModelId,
 } from "@soulstream/model-catalog/inference-pricing";
 
 import {
   antigravityTurnCostUsd,
   claudeTurnCostUsd,
   codexTurnCostUsd,
-  normalizePricedModelId,
 } from "../../src/engine/list_price.js";
 
 const catalog = parseModelCatalogYaml(fs.readFileSync(

@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
-import {
-  UnknownModelPresetError,
-  type ModelCatalog,
-  type ModelPreset,
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import type {
+  ModelCatalog,
 } from "../../src/model_catalog.js";
+import { UnknownModelPresetError, type ModelPreset } from "@soulstream/model-catalog";
 import { resolveGenerationState } from "../../src/task/persistent_generation_state.js";
 import {
   beginGenerationRolloverIfPending,

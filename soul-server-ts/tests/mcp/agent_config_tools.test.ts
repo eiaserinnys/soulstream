@@ -7,7 +7,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
 
 import { AgentConfigService } from "../../src/agent_config_service.js";
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { registerAgentConfigTools } from "../../src/mcp/tools/agent_config.js";
 import { makeTempDirSync } from "../helpers/temp_dir.js";

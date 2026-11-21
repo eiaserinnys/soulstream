@@ -2,14 +2,16 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import {
   AgentsConfigSchema,
-  AgentProfileSchema,
-  type AgentAtomContext,
-  type AgentProfile,
-  type AgentProfilePatch,
   type AgentsConfig,
   readAgentsConfig,
   type AgentRegistry,
 } from "./agent_registry.js";
+import {
+  AgentProfileSchema,
+  type AgentAtomContext,
+  type AgentProfile,
+  type AgentProfilePatch,
+} from "@soulstream/agent-profile-contract";
 import type { NewSessionAgentProfileSource } from "./agent_profile_source.js";
 import {
   ConfigStore,

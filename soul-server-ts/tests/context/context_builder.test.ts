@@ -3,11 +3,11 @@
  */
 
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
-import pino from "pino";
-import type { Logger } from "pino";
+import pino, { type Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import {
   SessionDataHostError,

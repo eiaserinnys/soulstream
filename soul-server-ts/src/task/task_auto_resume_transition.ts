@@ -12,8 +12,6 @@ import {
   type ExecutionActivation,
   type InterventionMessage,
   type Task,
-  type TaskStatus,
-  type TerminationReason,
 } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import {
@@ -43,8 +41,8 @@ import {
 } from "./task_user_message_events.js";
 import {
   buildDeliveryInputDedupeKey,
-  buildDeliveryInputUuid,
 } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 
 const persistedResumeInputs = new WeakMap<Task, Set<string>>();
 

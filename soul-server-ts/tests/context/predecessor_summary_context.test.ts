@@ -5,10 +5,7 @@ import { buildPredecessorSummaryContextItem } from
   "../../src/context/predecessor_summary_context.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
-import type {
-  SessionStoryTurnSummary,
-  SessionStoryView,
-} from "../../src/db/session_story_types.js";
+import type { SessionStoryTurnSummary, SessionStoryView } from "@soulstream/mcp-contract";
 
 const CURRENT_SESSION_ID = "sess-current";
 const PREDECESSOR_SESSION_ID = "sess-previous";

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { jsonResult } from "../result.js";
+import { jsonResult } from "@soulstream/mcp-contract";
 import { getCurrentMcpPrincipal } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireMcpMutationActor } from "./caller_session.js";

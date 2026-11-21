@@ -3,7 +3,8 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
-import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { PersistentResumeObserver } from "../context/persistent_jev_observer.js";

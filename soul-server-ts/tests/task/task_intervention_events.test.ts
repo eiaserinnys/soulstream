@@ -4,12 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
-import { publishInterventionSent } from "../../src/task/task_intervention_events.js";
-import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
+import {
+  publishInterventionSent,
+  buildInterventionSentEvent,
+} from "../../src/task/task_intervention_events.js";
 import {
   buildDeliveryInputDedupeKey,
-  buildDeliveryInputUuid,
 } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 

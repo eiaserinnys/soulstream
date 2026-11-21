@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Logger } from 'pino';
-import type { AgentProfile } from '../agent_registry.js';
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { fetchAtomMarkdownResult, formatAtomMarkdown, type AtomFetchConfig, type AtomContextSpec } from '../context/atom_context.js';
 
 export interface CompiledDecisionInstructions { text: string; revision: string }

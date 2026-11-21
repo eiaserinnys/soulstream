@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildPersistentCheckpoint,
   PERSISTENT_CHECKPOINT_BUDGET,
-  type GenerationCheckpointMaterial,
-  type SupervisedCardSnapshot,
 } from "../../src/context/persistent_checkpoint.js";
+import type { GenerationCheckpointMaterial, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery.js";
 
 const ownSessionId = "4f795856-a9bf-4ae2-8adb-2e8ea15f9951";

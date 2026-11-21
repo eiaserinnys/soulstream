@@ -25,10 +25,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   resolveMcpPrincipal,
-  type McpAuthConfig,
   type McpRestrictedAuthConfig,
   type McpPrincipalResolution,
 } from "./auth.js";
+import type { McpAuthConfig } from "@soulstream/mcp-contract";
 import {
   requestContextForPrincipal,
   SOULSTREAM_AGENT_SESSION_HEADER,

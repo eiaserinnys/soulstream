@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import {
   type BackendRolloverContext,
   composeFirstTurnPromptWithMaterial,
@@ -24,7 +24,7 @@ import {
   truncateClaudeTextToEstimatedTokens,
   type ClaudeBackendRolloverReason,
 } from "./claude_context_recovery.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";

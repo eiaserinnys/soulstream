@@ -17,7 +17,14 @@ import {
 import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardVersionConflict, assigneeToFields } from "./control_plane/card_models.js";
-import type { CardRow, CardStatus, FolderActorParams, FolderOperationRow, RepositorySql, SqlClient } from "./control_plane/card_types.js";
+import type {
+  CardRow,
+  FolderActorParams,
+  FolderOperationRow,
+  RepositorySql,
+  SqlClient,
+} from "./control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 
 export type AuthorizeFolder = (folderId: string) => Promise<void>;
 

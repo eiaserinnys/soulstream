@@ -8,7 +8,7 @@ import type { SessionDeliveryHostClient } from
   "../control_plane/persistence_host_clients.js";
 
 import type { AddInterventionParams } from "./task_intervention_route.js";
-import { buildCanonicalDeliveryPayload } from "./delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 
 type ControlledRegistrationParams = AddInterventionParams & {
   deliveryId: string;

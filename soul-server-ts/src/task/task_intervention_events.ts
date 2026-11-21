@@ -7,8 +7,8 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import {
   buildDeliveryInputDedupeKey,
-  buildDeliveryInputUuid,
 } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { dedupeAttachmentIds, inputAttachmentCount } from "./task_user_message_events.js";
 import { stripManagedAttachmentPathNotes } from "./prepare_attachment_input.js";
 

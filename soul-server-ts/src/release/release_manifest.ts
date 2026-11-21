@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type {
-  ReleaseExecutableIdentity as WireReleaseExecutableIdentity,
+  ReleaseExecutableIdentity,
   ReleaseManifestV1 as WireReleaseManifestV1,
 } from "@soulstream/wire-schema";
 
@@ -16,8 +16,6 @@ export type CanonicalJsonValue =
   | string
   | readonly CanonicalJsonValue[]
   | { readonly [key: string]: CanonicalJsonValue };
-
-export type ReleaseExecutableIdentity = WireReleaseExecutableIdentity;
 
 export interface ReleaseManifestBuildInput {
   sourceCommit: string;
