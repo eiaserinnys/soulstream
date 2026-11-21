@@ -77,14 +77,12 @@ describe("makeNode", () => {
       toolName: "Bash",
       toolInput: { command: "ls" },
       toolUseId: "toolu_abc",
-      parentEventId: "toolu_parent",
       timestamp: 1700000000,
     });
 
     expect((node as ToolNode).toolName).toBe("Bash");
     expect((node as ToolNode).toolInput).toEqual({ command: "ls" });
     expect((node as ToolNode).toolUseId).toBe("toolu_abc");
-    expect(node.parentEventId).toBe("toolu_parent");
     expect(node.timestamp).toBe(1700000000);
   });
 

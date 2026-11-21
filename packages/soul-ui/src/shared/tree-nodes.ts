@@ -21,7 +21,6 @@ interface BaseNode {
   children: EventTreeNode[];
   content: string;
   completed: boolean;
-  parentEventId?: string;
   timestamp?: number;
 }
 
