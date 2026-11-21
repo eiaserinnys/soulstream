@@ -10,7 +10,7 @@ import type {
  EventIngressEnvelope,
  EventIngressResult,
  EventSessionEffect,
- EventSessionEffectApplication,
+ EventSessionEffectResult,
 } from '../src/node/event_ingress_types.js';
 import {
  SESSION_REJECTION_REASON_WIRE,
@@ -205,7 +205,7 @@ function batch(envelope:EventIngressEnvelope):EventAppendBatch{
 
 function committedApplication(
  result:EventIngressResult|undefined,
-):EventSessionEffectApplication{
+):EventSessionEffectResult{
  if(result?.outcome!=='committed'||!result.sessionEffectApplication){
   throw new Error('expected a committed event with a session effect application');
  }

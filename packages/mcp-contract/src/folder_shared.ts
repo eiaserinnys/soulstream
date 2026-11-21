@@ -10,6 +10,11 @@ export const assigneeValueSchema = z.object({
   session_id: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
 }).nullable();
+export type FolderStatus = z.infer<typeof folderStatusSchema>;
+export type CardAssigneeKind = NonNullable<z.infer<typeof assigneeValueSchema>>["kind"];
+export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
+export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
+
 export const assigneeSchema = assigneeValueSchema.optional();
 export const idempotencyKeySchema = z.string().min(1);
 export const optionalReasonSchema = z.string().nullable().optional();

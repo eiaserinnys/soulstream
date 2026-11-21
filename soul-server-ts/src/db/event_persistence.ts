@@ -27,7 +27,6 @@ import type {
   EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
 import type {
-  EventCanonicalSessionProjection,
   EventOutboxPump,
 } from "../upstream/event_outbox_pump.js";
 

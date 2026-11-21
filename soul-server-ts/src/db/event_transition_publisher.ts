@@ -1,11 +1,11 @@
+import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
 import type {
   EventOutboxRecord,
   EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
-import type { EventCanonicalSessionProjection } from
-  "../upstream/event_outbox_pump.js";
+
 
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 

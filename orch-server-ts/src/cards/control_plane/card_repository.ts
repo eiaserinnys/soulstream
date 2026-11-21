@@ -1,27 +1,16 @@
+import type { FolderStatus, FolderOperationActorKind } from "@soulstream/mcp-contract";
 import { appendFolderOperation } from "../../folders/folder_operation_store.js";
 import type {
-  CardAssigneeFields,
-  CardRow,
-  CardStatus,
-  FolderListRow,
   FolderOperationRow,
   FolderOperationTargetKind,
   FolderRow,
-  FolderSnapshot,
-  FolderStatus,
-  SqlClient,
 } from "./card_types.js";
-import {
-  asPostgresJsonValue,
-  recordFromDb,
-  type RepositorySql,
-} from "./repository_helpers.js";
-import type { FolderOperationActorKind } from "./card_types.js";
+import type { RepositorySql } from "./repository_helpers.js";
+
 import { CardRepositoryRead } from "./card_repository_read.js";
 import {
   type AppendFolderOperationTxParams,
   cleanPatch,
-  normalizeOperation,
   requireOne,
   CardVersionConflict,
 } from "./card_models.js";

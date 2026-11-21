@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { estimateInputTokens } from "@soulstream/model-catalog/input-token-estimate";
 import type {
@@ -9,7 +10,6 @@ import {
   addIssue,
   blankFact,
   compareText,
-  isRecord,
   knownInteger,
   parseIdentity,
   stringOrNull,

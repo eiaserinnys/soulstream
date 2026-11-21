@@ -22,7 +22,6 @@ export {
   type EventAppendAck,
   type EventAppendAcknowledgement,
   type EventAppendDeadLetterAcknowledgement,
-  type EventCanonicalSessionProjection,
   type EventIngressRejection,
   type EventOutboxPumpOptions,
   type EventOutboxPumpStore,

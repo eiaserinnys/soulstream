@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   CanonicalUsageSelection,
   FactDraft,
@@ -6,7 +7,7 @@ import type {
 } from "./session_statistics_fact_types.js";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 
-import { compareText, isRecord } from "./session_statistics_normalization_helpers.js";
+import { compareText } from "./session_statistics_normalization_helpers.js";
 import { priceNormalizedUsage } from "./session_statistics_usage_candidates.js";
 
 export const CANONICAL_USAGE_PRIORITY = {

@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 
-import { boardItemsDelta, type CatalogBoardItemRow, type CustomViewRow } from "@soulstream/wire-schema/catalog";
-import type { BoardProjectionHost, CustomViewWithBoardItem } from "../board/folder_content_types.js";
+import {
+  boardItemsDelta,
+  type CatalogBoardItemRow,
+  type CustomViewRow,
+  type CustomViewWithBoardItem,
+} from "@soulstream/wire-schema/catalog";
+import type { BoardProjectionHost } from "../board/folder_content_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
 import type { CatalogDelta } from "../runtime/catalog_delta_broadcaster.js";
 export interface CustomViewDbPort {

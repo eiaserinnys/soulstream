@@ -16,7 +16,7 @@ import { applyEventSessionEffect } from
 import type {
   EventAppendBatch,
   EventIngressResult,
-  EventSessionEffectApplication,
+  EventSessionEffectResult,
 } from "../../../orch-server-ts/src/node/event_ingress_types.js";
 import {
   buildEventOutboxAppendInput,
@@ -151,7 +151,7 @@ export class OwnerlessIngressHarness {
     registrationId: string,
     executionCommandId: string,
     now: Date,
-  ): Promise<EventSessionEffectApplication> {
+  ): Promise<EventSessionEffectResult> {
     this.directSourceSeq += 1;
     const effect = {
       kind: "execution_registration",

@@ -1,10 +1,4 @@
-/**
- * 세션 생성 시 선언한 모델 preset 대체 순서(metadata `model_preset_fallbacks`).
- *
- * 값은 만들 때의 1차 preset과 대체 목록을 그대로 보존한다. 실행 중 한도 전환은
- * 이 순서를 읽어 남은 후보를 계산한다. 생성 시점 선택은 이 순서의 앞에서부터
- * 사용 가능한 preset을 고른다.
- */
+import { isRecord } from "./json_record.js";
 
 export const MODEL_PRESET_FALLBACKS_METADATA_TYPE = "model_preset_fallbacks";
 
@@ -97,8 +91,4 @@ function nonBlankString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

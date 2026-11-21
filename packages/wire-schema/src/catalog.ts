@@ -40,6 +40,16 @@ export interface CustomViewRow {
   updatedAt?: string;
 }
 
+export interface CustomViewWithBoardItem {
+  customView: CustomViewRow;
+  boardItem: CatalogBoardItemRow;
+}
+
+export interface CustomViewRecordMutationResult {
+  customView: CustomViewRow;
+  eventId: number | null;
+}
+
 export interface FolderSessionRecord {
   agentSessionId: string;
   displayName: string | null;

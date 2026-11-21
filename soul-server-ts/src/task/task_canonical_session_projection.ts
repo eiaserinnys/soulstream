@@ -1,14 +1,12 @@
-import type { EventCanonicalSessionProjection } from
-  "../upstream/event_outbox_pump.js";
+import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 
-import type {
-  ReviewState,
-  Task,
-} from "./task_models.js";
+
 import {
   isTaskStatus,
   isTerminationReason,
   isTerminalTaskStatus,
+  type ReviewState,
+  type Task,
 } from "./task_models.js";
 
 const REVIEW_STATES = new Set<ReviewState>([

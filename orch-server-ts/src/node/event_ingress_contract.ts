@@ -1,10 +1,10 @@
 import type {
   EventAppendAck as WireEventAppendAck,
   EventAppendBatch as WireEventAppendBatch,
-  EventCanonicalExecutionOwnershipProjection as WireEventCanonicalExecutionOwnershipProjection,
-  EventCanonicalExecutionRegistrationProjection as WireEventCanonicalExecutionRegistrationProjection,
-  EventCanonicalSessionProjection as WireEventCanonicalSessionProjection,
-  EventSessionEffectApplication as WireEventSessionEffectApplication,
+  EventSessionEffectApplication,
+  EventCanonicalSessionProjection,
+  EventCanonicalExecutionOwnershipProjection,
+  EventCanonicalExecutionRegistrationProjection,
 } from "@soulstream/wire-schema";
 
 export type EventSessionEffect = NonNullable<WireEventAppendBatch["events"][number]["session_effect"]>;
@@ -45,13 +45,10 @@ export type EventIngressEnvelope = {
   payload_hash: string;
 };
 
-export type EventAppendBatch = {
-  type: "event_append_batch";
-  protocol_version: 1;
-  stream_id: string;
-  first_seq: number;
-  events: EventIngressEnvelope[];
-};
+export type EventAppendBatch = Pick<
+  WireEventAppendBatch,
+  "type" | "protocol_version" | "stream_id" | "first_seq"
+> & { events: EventIngressEnvelope[] };
 
 export type EventAppendAck = Pick<
   WireEventAppendAck,
@@ -59,17 +56,6 @@ export type EventAppendAck = Pick<
 > & { events: EventAppendAcknowledgement[] };
 
 export type EventAppendAcknowledgement = WireEventAppendAck["events"][number];
-
-type WireShape<T> = { [K in keyof T]: T[K] };
-
-export type EventCanonicalSessionProjection =
-  WireShape<WireEventCanonicalSessionProjection>;
-
-export type EventCanonicalExecutionOwnershipProjection =
-  WireShape<WireEventCanonicalExecutionOwnershipProjection>;
-
-export type EventCanonicalExecutionRegistrationProjection =
-  WireShape<WireEventCanonicalExecutionRegistrationProjection>;
 
 export const EVENT_SESSION_REJECTION_REASONS = [
   "already_terminal",
@@ -79,12 +65,11 @@ export const EVENT_SESSION_REJECTION_REASONS = [
   "worktree_not_ready",
 ] as const satisfies readonly EventSessionRejectionReason[];
 export type EventSessionRejectionReason =
-  NonNullable<WireEventSessionEffectApplication["rejection_reason"]>;
+  NonNullable<EventSessionEffectApplication["rejection_reason"]>;
 
-export type EventSessionEffectApplication = {
+export type EventSessionEffectResult = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
-  /** Internal public-feed materialization; never added to the worker ACK v1. */
   canonicalLastMessage?: import("../session/session_feed_contract.js").LastChatMessage | null;
   canonicalExecutionRegistration?: EventCanonicalExecutionRegistrationProjection | null;
   /** One-release response compatibility for a legacy execution_acquire. */
@@ -93,19 +78,6 @@ export type EventSessionEffectApplication = {
   rejectionReason?: EventSessionRejectionReason;
 };
 
-export type EventSessionEffectApplicationWire = {
-  applied: boolean;
-  canonical_session: EventCanonicalSessionProjection;
-  canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
-  /** One-release response compatibility for a legacy execution_acquire. */
-  canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
-  rejection_reason?: EventSessionRejectionReason;
-};
-
-/**
- * 사건의 등록 번호와 세션의 지금 execution_registration_id가 달랐던 수신의
- * 진단 정보. 기록 여부와 무관하게 운영 로그가 사건과 세션의 번호를 함께 남길 때 쓴다.
- */
 export type EventIngressRegistrationMismatch = {
   eventRegistrationId: string | null;
   sessionExecutionRegistrationId: string | null;
@@ -116,11 +88,9 @@ export type CommittedIngressEvent = {
   envelope: EventIngressEnvelope;
   eventId: number;
   duplicateReceipt: boolean;
-  /** 낡은 등록 번호로 들어왔지만 기록한 사건의 진단 정보. */
   registrationMismatch?: EventIngressRegistrationMismatch;
-  sessionEffectApplication?: EventSessionEffectApplication;
+  sessionEffectApplication?: EventSessionEffectResult;
   feedProjectionApplication?: import("./event_feed_projection_applier.js").EventFeedProjectionApplication;
-  /** Durable raw-coordinate watermark for actual public-feed changes only. */
   feedLastEventId?: number;
 };
 

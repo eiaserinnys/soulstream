@@ -1,10 +1,9 @@
 import type {
   EventAppendAck as WireEventAppendAck,
-  EventCanonicalExecutionOwnershipProjection as WireEventCanonicalExecutionOwnershipProjection,
-  EventCanonicalExecutionRegistrationProjection as WireEventCanonicalExecutionRegistrationProjection,
-  EventCanonicalSessionProjection as WireEventCanonicalSessionProjection,
+  EventCanonicalExecutionOwnershipProjection,
+  EventCanonicalExecutionRegistrationProjection,
 } from "@soulstream/wire-schema";
-import type { EventOutboxBatch, EventOutboxRecord } from "./event_outbox.js";
+import type { EventOutboxBatch } from "./event_outbox.js";
 import type {
   EventOutboxQuarantineInput,
   EventOutboxQuarantineResult,
@@ -39,17 +38,6 @@ export type EventAppendAck = Pick<
 
 export type EventAppendDeadLetterAcknowledgement =
   Extract<EventAppendAckEvent, { dead_letter: unknown }>;
-
-type WireShape<T> = { [K in keyof T]: T[K] };
-
-export type EventCanonicalSessionProjection =
-  WireShape<WireEventCanonicalSessionProjection>;
-
-export type EventCanonicalExecutionRegistrationProjection =
-  WireShape<WireEventCanonicalExecutionRegistrationProjection>;
-
-export type EventCanonicalExecutionOwnershipProjection =
-  WireShape<WireEventCanonicalExecutionOwnershipProjection>;
 
 export type EventAppendAcknowledgement =
   Extract<EventAppendAckEvent, { event_id: number }>;

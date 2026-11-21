@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 const SESSION_CACHE_PAYLOAD_KEYS = [
   "session_id",
   "agent_session_id",
@@ -113,9 +114,6 @@ export function lastEventIdFromEventRelay(
   return lastEventIdFromPayload(payload);
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function nestedSession(
   payload: Record<string, unknown>,

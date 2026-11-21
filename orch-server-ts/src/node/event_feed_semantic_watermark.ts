@@ -2,12 +2,12 @@ import type { EventFeedProjectionApplication } from "./event_feed_projection_app
 import type { EventIngressQuerySql } from "./event_ingress_repository.js";
 import type {
   EventSessionEffect,
-  EventSessionEffectApplication,
+  EventSessionEffectResult,
 } from "./event_ingress_types.js";
 
 export type FeedSemanticIngressInput = {
   readonly effect: EventSessionEffect | null;
-  readonly sessionEffectApplication?: EventSessionEffectApplication;
+  readonly sessionEffectApplication?: EventSessionEffectResult;
   readonly feedProjectionApplication?: EventFeedProjectionApplication | null;
 };
 

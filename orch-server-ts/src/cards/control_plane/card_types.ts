@@ -1,3 +1,4 @@
+import type { CardAssigneeKind, FolderStatus, FolderOperationActorKind, FolderCompletionKind } from "@soulstream/mcp-contract";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type {
   FolderContentQuerySql,
@@ -19,11 +20,7 @@ export function isCardOffBoard(status: CardStatus): boolean {
   return status === "done" || status === "cancelled" || status === "on_hold";
 }
 
-export type CardAssigneeKind = "agent" | "human" | "session";
-export type FolderStatus = "open" | "completed";
 export type FolderOperationTargetKind = "folder" | "section" | "card";
-export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
-export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
 export interface CardAssigneeFields extends Record<string, unknown> {
   assignee_kind: CardAssigneeKind | null;

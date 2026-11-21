@@ -1,4 +1,4 @@
-/** PAS report storage, message-context, and timeline event contracts. */
+import { isRecord } from "./json_record.js";
 import type {
   CardQuestionAttachment,
   CardQuestionKind,
@@ -202,7 +202,7 @@ const INPUT_KEYS = new Set(["key", "kind", "title", "card_numbers", "context", "
 export function parsePersistentReportEntry(input: unknown):
   { ok: true; value: Omit<PersistentReportEntry, "updated_at"> } | { ok: false; errors: PersistentReportIssue[] } {
   const errors: PersistentReportIssue[] = [];
-  if (!record(input)) return { ok: false, errors: [{ path: "entry", reason: "장 객체가 필요합니다" }] };
+  if (!isRecord(input)) return { ok: false, errors: [{ path: "entry", reason: "장 객체가 필요합니다" }] };
   for (const key of Object.keys(input)) if (!INPUT_KEYS.has(key)) errors.push({ path: key, reason: "지원하지 않는 칸입니다" });
   if (typeof input.key !== "string" || !PERSISTENT_REPORT_KEY.test(input.key)) errors.push({ path: "key", reason: "소문자·숫자로 시작하는 소문자·숫자·_- 1~48자가 필요합니다" });
   if (input.kind !== "ask" && input.kind !== "see") errors.push({ path: "kind", reason: "ask 또는 see가 필요합니다" });
@@ -264,7 +264,7 @@ export function readPersistentReport(metadata: unknown): PersistentReportEntry[]
   if (!Array.isArray(metadata)) return [];
   for (let i = metadata.length - 1; i >= 0; i--) {
     const entry = metadata[i];
-    if (record(entry) && entry.type === PERSISTENT_REPORT_METADATA_TYPE && record(entry.value)) {
+    if (isRecord(entry) && entry.type === PERSISTENT_REPORT_METADATA_TYPE && isRecord(entry.value)) {
       return Array.isArray(entry.value.entries) ? entry.value.entries as PersistentReportEntry[] : [];
     }
   }
@@ -282,7 +282,7 @@ export type ParsedPersistentReportReply = PersistentReportReplyInput | { key: st
 export function parsePersistentReportReply(context: unknown): ParsedPersistentReportReply | null {
   if (!Array.isArray(context)) return null;
   for (const item of context) {
-    if (!record(item) || item.key !== "persistent_report_reply" || !record(item.content)) continue;
+    if (!isRecord(item) || item.key !== "persistent_report_reply" || !isRecord(item.content)) continue;
     const { key, mode, option, text } = item.content;
     if (typeof key !== "string" || !PERSISTENT_REPORT_KEY.test(key)) continue;
     const cardQuestion = key.startsWith(CARD_QUESTION_KEY_PREFIX);
@@ -302,10 +302,8 @@ export function parsePersistentReportReply(context: unknown): ParsedPersistentRe
   return null;
 }
 
-/** 예약된 카드 질문 key로 온 답인지. 처리 예외를 일반 intervention으로 흘리지 않는 입구 판정에 쓴다. */
 export function isCardQuestionReplyContext(context: unknown): boolean {
   if (!Array.isArray(context)) return false;
-  return context.some(item => record(item) && item.key === "persistent_report_reply" && record(item.content)
+  return context.some(item => isRecord(item) && item.key === "persistent_report_reply" && isRecord(item.content)
     && typeof item.content.key === "string" && item.content.key.startsWith(CARD_QUESTION_KEY_PREFIX));
 }
-function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }

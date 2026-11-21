@@ -1,3 +1,4 @@
+import { isRecord } from "./json_record.js";
 import type {
   PersistentJevObservation,
   SSEEventDebug,
@@ -128,9 +129,6 @@ function isBoundedText(value: unknown, maxLength: number): value is string {
   return isNonEmptyText(value) && value.length <= maxLength;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function hasRequiredKeys(
   value: unknown,

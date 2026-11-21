@@ -1,3 +1,4 @@
+import type { CardAssigneeKind, FolderStatus, FolderOperationActorKind, FolderCompletionKind } from "@soulstream/mcp-contract";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { CardStatus } from "@soulstream/wire-schema";
@@ -243,11 +244,7 @@ export interface AppendEventParams {
   dedupeKey?: string | null;
 }
 
-export type CardAssigneeKind = "agent" | "human" | "session";
-export type FolderStatus = "open" | "completed";
 export type FolderOperationTargetKind = "folder" | "card";
-export type FolderOperationActorKind = "agent" | "user" | "system" | "llm";
-export type FolderCompletionKind = Exclude<FolderOperationActorKind, "system">;
 
 export interface CardAssigneeFields {
   assignee_kind: CardAssigneeKind | null;

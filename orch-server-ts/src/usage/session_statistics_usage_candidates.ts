@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
 import type {
@@ -10,7 +11,6 @@ import type {
 import {
   addIssue,
   compareText,
-  isRecord,
   knownInteger,
   numericFields,
   blankFact,

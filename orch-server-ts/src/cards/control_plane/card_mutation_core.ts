@@ -1,27 +1,21 @@
+import type { FolderStatus, FolderOperationActorKind } from "@soulstream/mcp-contract";
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 
-import { generateKeyBetween } from "@soulstream/fractional-position";
-
-import type { RepositorySql } from "./card_types.js";
 import type {
-  CardStatus,
+  RepositorySql,
   FolderOperationRow,
-  FolderOperationActorKind,
   FolderOperationTargetKind,
   FolderSnapshot,
-  FolderStatus,
-} from "./card_types.js";
-
-import { CardVersionConflict } from "./card_models.js";
-
-import type { CardRepository } from "./card_repository.js";
-import type {
   FolderActorParams,
   FolderBroadcasterPort,
   FolderDbPort,
   CardMutationResult,
 } from "./card_types.js";
+
+import { CardVersionConflict } from "./card_models.js";
+
+import type { CardRepository } from "./card_repository.js";
 
 export interface FolderMutateParams {
   folderId: string;
