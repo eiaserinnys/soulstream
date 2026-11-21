@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { ContextItem } from "@soulstream/wire-schema";
 
-import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
+import { formatContextItems } from "../context/prompt_assembler.js";
 import type { Logger } from "pino";
 
 import type { EventPersistence } from "../db/event_persistence.js";

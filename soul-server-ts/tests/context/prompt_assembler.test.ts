@@ -4,12 +4,12 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import {
   assemblePrompt,
   formatContextItems,
   formatContextItemsWithMaterial,
-  type ContextItem,
 } from "../../src/context/prompt_assembler.js";
 import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 

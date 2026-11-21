@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import { withoutSessionContextSourceMarkers } from "../context/session_context_sources.js";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";

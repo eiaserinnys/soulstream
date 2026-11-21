@@ -1,9 +1,9 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { FolderRow, SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { SoulstreamFolderContext } from "./soulstream_item.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export type SessionCardRole = "assignee" | "member";
 

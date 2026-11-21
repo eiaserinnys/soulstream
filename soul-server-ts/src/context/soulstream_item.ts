@@ -6,12 +6,10 @@
  * 정본 — PR #56이 hydration 시점에 task.callerInfo를 복원하고 본 helper가 *prompt에 forward*.
  */
 
-import os from "node:os";
-import { hostname } from "node:os";
+import os, { hostname } from "node:os";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { CallerInfo } from "../task/task_models.js";
-
-import type { ContextItem } from "./prompt_assembler.js";
 
 export interface SoulstreamFolderContext {
   id: string;

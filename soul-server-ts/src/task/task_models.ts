@@ -14,11 +14,11 @@
 
 import type { OrchestrationPurpose } from "./task_orchestration_purpose.js";
 
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type {
   CallerInfo as WireCallerInfo,
   ClaudeRuntimeTaskStatus,
   SessionLifecycleStatus,
+  ContextItem,
 } from "@soulstream/wire-schema";
 import type { ReviewState } from "@soulstream/wire-schema/session-review";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";

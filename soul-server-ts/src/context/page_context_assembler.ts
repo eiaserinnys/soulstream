@@ -1,6 +1,6 @@
 import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
+import type { ContextItem } from "@soulstream/wire-schema";
 
-import type { ContextItem } from "./prompt_assembler.js";
 import type { PageContextAnchor } from "./page_context_repository.js";
 import { formatAtomContext } from "./atom_context.js";
 import { allocateContextBudget } from "./compiler/budget.js";

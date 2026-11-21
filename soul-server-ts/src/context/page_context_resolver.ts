@@ -4,19 +4,19 @@ import {
   comparePositionKeys,
 } from "@soulstream/fractional-position";
 import type { BlockDto } from "@soulstream/page-model";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { Task } from "../task/task_models.js";
-import type { ContextItem } from "./prompt_assembler.js";
 import type { AtomFetchConfig } from "./atom_context.js";
 import type { ContextManifest } from "./compiler/index.js";
-import type {
-  AtomRefPageContextCandidate,
-  PageContextAssembler,
-  PageContextCandidate,
-  PageContextTraversalFailure,
+import {
+  selectNearestPageContextCandidates,
+  type AtomRefPageContextCandidate,
+  type PageContextAssembler,
+  type PageContextCandidate,
+  type PageContextTraversalFailure,
 } from "./page_context_assembler.js";
-import { selectNearestPageContextCandidates } from "./page_context_assembler.js";
 import { compilePageAtomCandidates } from "./page_context_atom_compiler.js";
 import type {
   PageContextAnchor,

@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type {
   AutoResumeCallback,
   AutoResumeTransition,
 } from "./task_auto_resume_transition.js";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDeliveryRow, DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
 import {
   isActiveTaskStatus,

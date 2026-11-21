@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
-
-import type { ContextItem } from "./prompt_assembler.js";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 export interface CogitoContextConfig {
   baseUrl: string;

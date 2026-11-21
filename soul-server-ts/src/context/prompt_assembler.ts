@@ -1,5 +1,5 @@
 import type {
-  ContextItem as WireContextItem,
+  ContextItem,
   InputMaterialPartV1,
 } from "@soulstream/wire-schema";
 import {
@@ -10,8 +10,6 @@ import {
 
 const TAG_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_\-]*$/;
 const FORMAT_KEY_INVALID_CHARS = /[^a-zA-Z0-9_]/g;
-
-export type ContextItem = Pick<WireContextItem, "key" | "content"> & { label?: string };
 
 function escapeClosingTag(text: string): string {
   return text.replace(/<\//g, "<\\/");

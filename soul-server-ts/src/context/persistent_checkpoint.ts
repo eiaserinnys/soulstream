@@ -4,8 +4,8 @@ import {
   type GenerationCheckpointReadLimits,
   type SupervisedCardSnapshot,
 } from "@soulstream/mcp-contract";
+import type { ContextItem } from "@soulstream/wire-schema";
 import { estimateClaudeTextTokens, truncateClaudeTextToEstimatedTokens } from "../task/claude_context_recovery.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SupervisedCardSnapshot };
 

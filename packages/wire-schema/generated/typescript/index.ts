@@ -542,7 +542,7 @@ export interface CallerInfo {
 }
 export interface ContextItem {
   key: string;
-  label: string;
+  label?: string;
   content: unknown;
   [k: string]: unknown;
 }

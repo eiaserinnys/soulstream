@@ -1,12 +1,11 @@
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
-import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
-import { parseNodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
+import { parseNodeResourceSnapshot, type NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
 import type { Task } from "../task/task_models.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export interface NodeResourcesContextConfig {
   baseUrl: string;

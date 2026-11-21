@@ -6,7 +6,7 @@ import type { CallerInfo, Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
-import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 
 import {
   atomContextSpecKey,
@@ -20,15 +20,14 @@ import {
   type ContextFilterParameters,
 } from "./compiler/index.js";
 import type { PreparedContext } from "./context_builder.js";
-import { formatContextItemsWithMaterial, type ContextItem } from "./prompt_assembler.js";
+import { formatContextItemsWithMaterial } from "./prompt_assembler.js";
 import {
   createInputMaterialPart,
   inputMaterialPartsMatchText,
   joinInputMaterialSegments,
   type InputMaterialTextSegment,
 } from "./input_material_parts.js";
-import type { PrimarySessionFolderContext } from "./session_folder_context.js";
-import { resolvePrimarySessionFolderContext } from "./session_folder_context.js";
+import { resolvePrimarySessionFolderContext, type PrimarySessionFolderContext } from "./session_folder_context.js";
 
 export interface FolderChainEntry {
   id: string;

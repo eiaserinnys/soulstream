@@ -7,8 +7,8 @@
  */
 
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
-import type { ContextItem } from "./prompt_assembler.js";
 import { formatContextItems } from "./prompt_assembler.js";
 
 interface OriginalRequestSource {

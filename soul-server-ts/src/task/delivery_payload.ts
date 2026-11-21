@@ -3,8 +3,8 @@ export {
   type CanonicalDeliveryPayload,
   type CanonicalDeliveryPayloadInput,
 } from "@soulstream/wire-schema/delivery";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { ContextItem } from "@soulstream/wire-schema";
 import type { CallerInfo } from "./task_models.js";
 
 export interface CanonicalDeliveryMessage {

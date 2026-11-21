@@ -1,6 +1,6 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
-import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 import { buildPersistentReportContext } from "./persistent_report_context.js";
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
@@ -12,7 +12,6 @@ import { type AtomContextSpec } from "./atom_context.js";
 import { extractPageContextTruncation, mergeContextManifests } from "./compiler/index.js";
 import { fetchCogitoContextItem, type CogitoContextConfig } from "./cogito_context.js";
 import { resolvePasNodeResourcesContextItem, type NodeResourcesContextConfig } from "./node_resources_context.js";
-import type { ContextItem } from "./prompt_assembler.js";
 import {
   buildCallerInfoUpdateContextItem,
   buildClaudeSessionIdUpdateContextItem,

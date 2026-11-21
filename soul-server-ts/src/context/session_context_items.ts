@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { SessionDB } from "../db/session_db.js";
 import type { RunningSessionSummaryRow } from "../db/session_db_types.js";
@@ -12,7 +13,6 @@ import {
   buildBoardWorkspaceContextItem,
   type BoardWorkspaceSessionSummary,
 } from "./board_workspace_item.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export async function fetchBoardWorkspaceContextItem(
   db: SessionDB,

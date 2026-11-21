@@ -1,9 +1,9 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import { normalizeOptionalString } from "../agent_config_service.js";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type {
   ClaudePermissionMode,
   EngineInterventionFailureReason,
