@@ -37,8 +37,14 @@
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) { display:flex; flex-direction:column; }
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) > .config-detail-heading { flex:none; }
 @media (min-width:40rem) {
- .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) { display:flex; flex-direction:column; }
+ .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) { display:flex; flex-direction:column; padding-bottom:var(--v3-space-3); }
  .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) > .config-detail-heading { flex:none; }
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] { min-height:min-content; }
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] > :last-child { min-height:calc(var(--container-sm) - var(--v3-space-6)); contain:size; }
+}
+/* 기존 xl 구간에서는 넓은 목록의 네 행이 보이도록 최소 높이를 키운다. */
+@media (min-width:80rem) {
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] > :last-child { min-height:calc(var(--container-sm) + var(--v3-space-4)); }
 }
 .config-dialog .config-appearance { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }

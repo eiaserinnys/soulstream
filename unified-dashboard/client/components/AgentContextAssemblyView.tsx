@@ -93,6 +93,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
           method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body, signal: controller.signal,
         });
         const json = await response.json().catch(() => ({}));
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error(typeof json.detail === "string" ? json.detail : "조립하지 못했습니다.");
         lastData.current = json as PreviewResponse;
         setState({ status: "ready", data: json as PreviewResponse });

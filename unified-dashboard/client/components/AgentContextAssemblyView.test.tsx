@@ -6,6 +6,37 @@ import { expect, it, vi } from "vitest";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../v3/agent-profile-assembly-fixture";
 
+it("keeps the newer assembly when an aborted response finishes reading later", async () => {
+  const context = assemblyContexts[0]!;
+  const older = assemblyPreview({ atom_contexts: [context] });
+  older.sections[0]!.title = "이전 결과";
+  const newer = assemblyPreview({ atom_contexts: [context] });
+  newer.sections[0]!.title = "새 결과";
+  let finishOld!: (value: typeof older) => void;
+  const oldBody = new Promise<typeof older>(resolve => { finishOld = resolve; });
+  const readOld = vi.fn(() => oldBody);
+  const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    request.mock.calls.length === 1 ? { ok: true, json: readOld } as Response : Response.json(newer));
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    })));
+    await vi.waitFor(() => expect(readOld).toHaveBeenCalledOnce());
+    flushSync(() => host.querySelector<HTMLButtonElement>('button[aria-label="다시 조립"]')!.click());
+    await vi.waitFor(() => expect(host.textContent).toContain("새 결과"));
+    expect(request.mock.calls[0]![1]!.signal!.aborted).toBe(true);
+    finishOld(older);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(host.textContent).toContain("새 결과");
+    expect(host.textContent).not.toContain("이전 결과");
+  } finally {
+    flushSync(() => root.unmount()); host.remove();
+  }
+});
+
 it("keeps the source detail and condition focus while reassembling", async () => {
   let resolveReload!: (response: Response) => void;
   let count = 0;

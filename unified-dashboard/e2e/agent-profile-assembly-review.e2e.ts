@@ -40,6 +40,92 @@ test.afterEach(async ({ page }, info) => {
   if (info.status !== info.expectedStatus) await shot(page, `failed-${info.title.replace(/[^a-z0-9-]+/gi, "-")}`).catch(() => {});
 });
 
+for (const [width, height] of [[1366, 657], [1280, 632]]) {
+  test(`s8 low window assembly ${width}x${height}`, async ({ page }) => {
+    await open(page, width, height);
+    await expect(row(page, "스킬 목록")).toBeVisible();
+    const detail = page.locator(".config-detail");
+    const frame = page.getByTestId("agent-profile-editor").locator("..");
+    const guidance = page.getByText("프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.");
+    await shot(page, `low-list-${width}x${height}`);
+    await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    const list = await page.evaluate(() => {
+      const d = document.querySelector<HTMLElement>(".config-detail")!;
+      const f = document.querySelector<HTMLElement>('[data-testid="agent-profile-editor"]')!.parentElement!;
+      const scroller = document.querySelector<HTMLElement>('[data-testid="agent-context-assembly"] .overflow-y-auto')!;
+      const db = d.getBoundingClientRect(), fb = f.getBoundingClientRect(), sb = scroller.getBoundingClientRect();
+      const buttons = Array.from(scroller.querySelectorAll<HTMLButtonElement>("button")).filter(button =>
+        button.hasAttribute("data-status") || button.textContent?.trim().startsWith("전체"));
+      return { scroll: d.scrollTop, frameTop: fb.top, frameBottom: fb.bottom, frameHeight: fb.height,
+        detailTop: db.top, detailBottom: db.bottom,
+        rows: buttons.filter(button => { const b = button.getBoundingClientRect(); return b.top >= sb.top - 1 && b.bottom <= sb.bottom + 1; }).length };
+    });
+    console.log(`low list ${width}x${height}: ${JSON.stringify(list)}`);
+    expect(list.scroll).toBeGreaterThan(0);
+    expect(list.frameTop).toBeGreaterThanOrEqual(list.detailTop - 1);
+    expect(list.detailBottom - list.frameBottom).toBeCloseTo(12, 0);
+    expect(list.rows).toBeGreaterThanOrEqual(4);
+    const guide = await guidance.boundingBox();
+    expect(guide!.y + guide!.height).toBeLessThanOrEqual(list.detailBottom);
+    await shot(page, `low-list-end-${width}x${height}`);
+
+    await row(page, "공통 지침과 아주 긴 제목").click();
+    const body = page.locator('[data-slot="context-content-fill"]');
+    await expect(body).toBeVisible();
+    expect((await body.textContent())!.length).toBeGreaterThan(50_000);
+    const bodyHeight = (await body.boundingBox())!.height;
+    console.log(`low body height ${width}x${height}: ${bodyHeight}`);
+    expect(bodyHeight).toBeGreaterThanOrEqual(150);
+    await detail.evaluate(element => { element.scrollTop = 0; });
+    await shot(page, `low-body-${width}x${height}`);
+    await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await shot(page, `low-body-end-${width}x${height}`);
+    await body.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    const outer = await detail.evaluate(element => {
+      const max = element.scrollHeight - element.clientHeight;
+      element.scrollTop = max / 2;
+      return { before: element.scrollTop, max };
+    });
+    expect(outer.before).toBeGreaterThan(0);
+    expect(outer.before).toBeLessThan(outer.max);
+    const bodyBox = (await body.boundingBox())!, detailBox = (await detail.boundingBox())!;
+    const visibleTop = Math.max(bodyBox.y, detailBox.y), visibleBottom = Math.min(bodyBox.y + bodyBox.height, detailBox.y + detailBox.height);
+    await page.mouse.move(bodyBox.x + bodyBox.width / 2, (visibleTop + visibleBottom) / 2);
+    await page.mouse.wheel(0, 700); await page.waitForTimeout(200);
+    expect(await detail.evaluate(element => element.scrollTop)).toBe(outer.before);
+
+    await page.getByLabel("소스 목록으로").click();
+    await row(page, "스킬 목록").click();
+    await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
+    const skill = page.getByTestId("agent-context-skill-original").locator('[data-slot="context-content-fill"]');
+    await expect(skill).toBeVisible();
+    const skillHeight = (await skill.boundingBox())!.height;
+    console.log(`low skill height ${width}x${height}: ${skillHeight}`);
+    expect(skillHeight).toBeGreaterThanOrEqual(150);
+    await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await shot(page, `low-skill-end-${width}x${height}`);
+    expect((await frame.boundingBox())!.height).toBeCloseTo(list.frameHeight, 0);
+  });
+
+  test(`s8 low window bundle ${width}x${height}`, async ({ page }) => {
+    await open(page, width, height);
+    await page.getByRole("button", { name: "컨텍스트 번들 편집" }).click();
+    await page.getByRole("button", { name: "공통 지침과 긴 이름을 가진 검수용 번들" }).click();
+    const detail = page.locator(".config-detail"), editor = page.getByTestId("context-bundle-editor");
+    const frame = editor.locator("..");
+    await shot(page, `low-bundle-${width}x${height}`);
+    await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    const box = await frame.boundingBox(), outer = await detail.boundingBox();
+    const scroll = await detail.evaluate(element => element.scrollTop);
+    console.log(`low bundle ${width}x${height}: ${JSON.stringify({ box, outer, scroll })}`);
+    expect(scroll).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThanOrEqual(400);
+    expect(box!.y).toBeGreaterThanOrEqual(outer!.y - 1);
+    expect(outer!.y + outer!.height - box!.y - box!.height).toBeCloseTo(12, 0);
+    await shot(page, `low-bundle-end-${width}x${height}`);
+  });
+}
+
 for (const width of [1440, 360]) {
   test(`s6 detail reload ${width}`, async ({ page }) => {
     await open(page, width, width === 360 ? 780 : 900, "loading");
@@ -113,6 +199,7 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
     await expect(row(page, "스킬 목록")).toBeVisible();
     const frame = page.getByTestId("agent-profile-editor").locator("..");
     const detail = page.locator(".config-detail");
+    if (width !== 360) expect(await detail.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     if (width === 360) await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
     const measure = async () => {
       const boxes = await page.evaluate(() => {
@@ -204,6 +291,7 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
     await page.getByRole("button", { name: "컨텍스트 번들 편집" }).click();
     await page.getByRole("button", { name: "공통 지침과 긴 이름을 가진 검수용 번들" }).click();
     const detail = page.locator(".config-detail"), editor = page.getByTestId("context-bundle-editor");
+    if (width !== 360) expect(await detail.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     if (width === 360) await detail.evaluate(element => { element.scrollTop = element.scrollHeight; });
     const bounds = await editor.locator("..").boundingBox(), outer = await detail.boundingBox();
     expect(bounds!.y).toBeGreaterThanOrEqual(outer!.y - 1);
