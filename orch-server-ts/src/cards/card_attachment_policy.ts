@@ -1,6 +1,7 @@
 import type { AttachmentAssetRow } from "../attachments/attachment_read_service.js";
 import { attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
 import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
+import { assetFromRow } from "../runtime/live_attachment_read_repository.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
 
 export type TrustedAttachmentProducer = { sessionId: string; nodeId: string; outputCommandId: string };
@@ -128,47 +129,17 @@ export async function requireCardAttachmentTx(
     throw attachmentError(403, "ATTACHMENT_CARD_SCOPE_DENIED", "다른 범위에 등록된 첨부입니다.");
   }
 
-  const assetId = requiredString(row.id);
-  const mimeType = requiredString(row.mime_type);
-  if (type === "image" && previewInfo(normalizedMimeType(mimeType)).kind !== "image") {
+  const asset = assetFromRow(row);
+  if (type === "image" && previewInfo(normalizedMimeType(asset.mimeType)).kind !== "image") {
     throw attachmentError(422, "ATTACHMENT_IMAGE_REQUIRED", "이미지 첨부가 아닙니다.");
   }
-
-  return {
-    id: assetId,
-    storageKey: requiredString(row.storage_key),
-    storagePurpose: requiredString(row.storage_purpose),
-    storageEndpoint: nullableString(row.storage_endpoint),
-    storageBucket: nullableString(row.storage_bucket),
-    ownerKind,
-    ownerKey,
-    registrationScope: row.registration_scope,
-    sourceSessionId,
-    originalName: requiredString(row.original_name),
-    mimeType,
-    byteSize: Number(row.byte_size),
-    width: nullableNumber(row.width),
-    height: nullableNumber(row.height),
-    checksumSha256: nullableString(row.checksum_sha256),
-    uploadStatus: "committed",
-  };
+  return asset;
 }
 
 function attachmentError(statusCode: number, code: string, message: string): Error {
   return Object.assign(new Error(message), { statusCode, code });
 }
 
-function requiredString(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Invalid attachment database row");
-  return value;
-}
-
 function nullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
-}
-
-function nullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const number = Number(value);
-  return Number.isSafeInteger(number) ? number : null;
 }
