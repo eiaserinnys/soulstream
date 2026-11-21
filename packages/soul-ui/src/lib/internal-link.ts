@@ -1,4 +1,7 @@
-import { isImagePreviewMimeType, mimeTypeForFileName } from "@soulstream/wire-schema/attachments";
+// The React Native app typechecks this file through a relative import and its
+// resolver does not read package subpath exports, so reach the canonical module
+// by path as the app itself does for wire-schema sources.
+import { isImagePreviewMimeType, mimeTypeForFileName } from "../../../wire-schema/src/attachments";
 
 export type AttachmentLinkContext =
   | { type: "owner" }

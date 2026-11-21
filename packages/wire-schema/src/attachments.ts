@@ -126,8 +126,8 @@ export const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
 
 /** Looks up the extension of a name or path. `null` for unknown or missing extensions. */
 export function mimeTypeForFileName(name: string | null | undefined): string | null {
-  const match = /\.([^./\\]+)$/.exec(name ?? "");
-  return match === null ? null : MIME_BY_EXTENSION[match[1].toLowerCase()] ?? null;
+  const extension = /\.([^./\\]+)$/.exec(name ?? "")?.[1]?.toLowerCase();
+  return extension === undefined ? null : MIME_BY_EXTENSION[extension] ?? null;
 }
 
 /** Normalizes parameters and case before comparing against {@link IMAGE_PREVIEW_MIME_TYPES}. */

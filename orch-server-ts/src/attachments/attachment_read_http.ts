@@ -2,6 +2,7 @@ import path from "node:path";
 
 import {
   IMAGE_PREVIEW_MIME_TYPES,
+  SAFE_RASTER_PREVIEW_MIME_TYPES,
   SAFE_TEXT_PREVIEW_MIME_TYPES,
   type AttachmentDescriptor,
 } from "@soulstream/wire-schema/attachments";
@@ -76,6 +77,11 @@ export function parseSingleRange(value: string, size: number): ParsedAttachmentR
 
 export function normalizedMimeType(value: string): string {
   return value.trim().toLowerCase().split(";", 1)[0] ?? "";
+}
+
+/** Card item evidence keeps the stricter rule: only the safe raster list counts as an image. */
+export function isRasterPreviewMimeType(mimeType: string): boolean {
+  return SAFE_RASTER_PREVIEW_MIME_TYPES.has(normalizedMimeType(mimeType));
 }
 
 export function previewInfo(

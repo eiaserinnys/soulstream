@@ -1,6 +1,6 @@
 import type { AttachmentAssetRow } from "../attachments/attachment_read_service.js";
 import { attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
-import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
+import { isRasterPreviewMimeType } from "../attachments/attachment_read_http.js";
 import { assetFromRow } from "../runtime/live_attachment_read_repository.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
 
@@ -130,7 +130,7 @@ export async function requireCardAttachmentTx(
   }
 
   const asset = assetFromRow(row);
-  if (type === "image" && previewInfo(normalizedMimeType(asset.mimeType)).kind !== "image") {
+  if (type === "image" && !isRasterPreviewMimeType(asset.mimeType)) {
     throw attachmentError(422, "ATTACHMENT_IMAGE_REQUIRED", "이미지 첨부가 아닙니다.");
   }
   return asset;
