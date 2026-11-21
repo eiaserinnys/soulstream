@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
-import type { SessionNodeConnectivity } from "./session-node-connectivity";
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 
 export function useSessionNodeConnectivity(): {
   nodes: ReturnType<typeof useOrchestratorStore.getState>["nodes"];

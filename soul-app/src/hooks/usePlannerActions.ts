@@ -19,12 +19,9 @@ import {
   capturePlannerProjection,
   completeFolderProjection,
   deleteFolderSessionProjection,
-  insertFolderProjection,
-  moveFolderParentProjection,
   moveFolderSessionProjection,
   patchProjectPageProjection,
   patchFolderBlocksProjection,
-  removeFolderProjection,
   renameFolderSessionProjection,
   replaceFolderProjection,
   setFolderDailyMembership,
@@ -408,7 +405,5 @@ function captureSessionSnapshot() {
     catalog: state.catalog,
     catalogReady: state.catalogReady,
     feedSessionIds: state.feedSessionIds,
-    sessionChangeSerial: state.sessionChangeSerial,
-    lastChangedSessionId: state.lastChangedSessionId,
   };
 }

@@ -1,6 +1,5 @@
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardRow } from "./CardRow";
-import type { ReactNode } from "react";
 import {
   forwardRef,
   memo,
@@ -10,6 +9,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 import {
   useSessionMenu,
@@ -26,7 +26,7 @@ import {
   sessionPanelTitle,
 } from "./v3-session-panel-model";
 import { RichSessionRow } from "./RichSessionRow";
-import type { SessionNodeConnectivity } from "./session-node-connectivity";
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import { reviewErrorMessage } from "./V3SessionReviewBanner";
 
 interface V3SessionPanelProps {

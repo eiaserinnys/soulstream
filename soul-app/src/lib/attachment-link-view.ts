@@ -125,7 +125,7 @@ function filenameFromPath(path: string): string {
   try { return decodeURIComponent(filename); } catch { return filename; }
 }
 
-function filenameFromContentDisposition(value: string | null): string | null {
+export function filenameFromContentDisposition(value: string | null): string | null {
   if (!value) return null;
   const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
   if (encoded) {

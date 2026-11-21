@@ -1,3 +1,4 @@
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import { useState, type MouseEvent } from "react";
 import { type SessionSummary } from "@seosoyoung/soul-ui";
 import { RunRowFrame } from "./RunRowFrame";
@@ -17,7 +18,6 @@ import {
 import { useFolderStar } from "./use-folder-star";
 import {
   sessionPresentationStatus,
-  type SessionNodeConnectivity,
 } from "./session-node-connectivity";
 import "./v3-content-boundary.css";
 

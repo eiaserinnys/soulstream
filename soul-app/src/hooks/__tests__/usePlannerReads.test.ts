@@ -1,3 +1,4 @@
+import { usePlannerStarred } from '../usePlannerStarred';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../api/client';
 import type { PlannerFolderDetail, PlannerFolder, PlannerToday } from '../../api/plannerTypes';
@@ -6,7 +7,6 @@ import {
   usePlannerDaily,
   usePlannerPageDetail,
   usePlannerFolderDetail,
-  usePlannerStarred,
 } from '../usePlannerReads';
 import { usePlannerStore } from '../../store/plannerStore';
 import { useAuthStore } from '../../store/authStore';

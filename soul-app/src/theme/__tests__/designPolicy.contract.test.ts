@@ -9,10 +9,8 @@ import {
 const SRC_ROOT = path.resolve(__dirname, '../..');
 const VISUAL_ROOTS = ['screens', 'components', 'navigation'] as const;
 const DISCLOSURE_CONSUMERS = [
-  'components/settings/BackendNodeCard.tsx',
   'components/chat/ClaudeRuntimeTasksStrip.tsx',
   'components/chat/ClaudeRuntimeSchedulesStrip.tsx',
-  'components/chat/ClaudeRuntimeSignalsStrip.tsx',
   'components/chat/CollapsibleCaption.tsx',
 ] as const;
 
@@ -211,7 +209,6 @@ describe('v3 design policy contract', () => {
     expect(read('screens/SettingsScreen.styles.ts')).not.toMatch(/\bheight:\s*t\.controlHeight\.button/);
     for (const file of [
       'components/chat/ClaudeRuntimeTasksStrip.tsx',
-      'components/chat/ClaudeRuntimeSignalsStrip.tsx',
     ]) expect(read(file)).not.toMatch(/(?:status|kind|modePill):\s*\{[^}]*minHeight:/s);
     expect(read('components/chat/AttachmentChips.tsx')).toContain('<CompactTouchTarget');
     expect(read('components/chat/ChatBody.styles.ts')).toMatch(
@@ -238,9 +235,6 @@ describe('v3 design policy contract', () => {
     expect(read('components/planner/ProjectContextEditorView.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.tsx')).toContain('<PlannerSectionHeader');
     expect(read('components/planner/FolderWorkspace.styles.ts')).toContain('...planner.typography.navigation');
-    expect(read('components/chat/ClaudeRuntimeSignalsStrip.tsx')).toMatch(
-      /rowTitle:\s*\{[^}]*fontSize:\s*t\.fontSize\.body/s,
-    );
     expect(read('components/DisclosureIcon.tsx')).toContain('size?: number');
     expect(read('components/DisclosureIcon.tsx')).toContain('useTokens');
     expect(read('components/chat/ChatInputRequest.styles.ts')).toContain('fontSize: t.iconSize.prominent');

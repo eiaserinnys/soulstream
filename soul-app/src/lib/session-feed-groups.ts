@@ -1,7 +1,7 @@
+import type { SessionNodeConnectivity } from '../../../packages/soul-ui/src/lib/session-node-connectivity';
 import type { Session } from '../api/types';
 import {
   projectVisibleSessions,
-  type SessionNodeConnectivity,
 } from './session-node-projection';
 import { sessionNeedsReview } from './session-review';
 

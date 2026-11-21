@@ -4,6 +4,8 @@ const mockMoveStarredFolderOrder = jest.fn();
 const mockStarredFolderListProps = jest.fn();
 jest.mock('../../../hooks/usePlannerReads', () => ({
   usePlannerDailyHistory: () => ({ dates: [], loading: false, error: null }),
+}));
+jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({
     data: { items: [], nextCursor: null },
     loading: false,
@@ -30,7 +32,6 @@ jest.mock('../../planner/StarredFolderList', () => ({
 jest.mock('../../settings/SettingsModal', () => ({ SettingsModal: () => null }));
 jest.mock('../../../lib/planner-folder-workspace', () => ({ openStarredPageWorkspace: jest.fn() }));
 
-import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
 import { act, render } from '@testing-library/react-native';
 import { SafeAreaProvider, type Metrics } from 'react-native-safe-area-context';

@@ -111,7 +111,7 @@ function stringify(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')

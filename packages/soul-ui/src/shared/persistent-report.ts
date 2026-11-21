@@ -5,7 +5,6 @@ export type ReportContextItem = { key: string; content: Record<string, unknown> 
 export type ReportSendOperation = { key: string; updatedAt: string; kind: 'reply' | 'cancel' | 'close'; acknowledged?: boolean };
 export type ReportSendContext = { contextItems?: ReportContextItem[]; persistentReportSource?: PersistentReportEntry; persistentReportOperation?: ReportSendOperation };
 export type ReportReplyReceipt = { key: string; option: string; line: string };
-export const EMPTY_REPORT: PersistentReportEntry[] = [];
 export function matchesReportReply(text: string, line: string): boolean {
   return text.trim() === line;
 }

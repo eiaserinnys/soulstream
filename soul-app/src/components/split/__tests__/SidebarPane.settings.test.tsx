@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
@@ -11,6 +10,8 @@ jest.mock('../../settings/SettingsModal', () => ({
 }));
 jest.mock('../../../hooks/usePlannerReads', () => ({
   usePlannerDailyHistory: () => ({ dates: [], loading: false, error: null }),
+}));
+jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({ data: { items: [], nextCursor: null }, loading: false, error: null }),
 }));
 jest.mock('../../../hooks/usePlannerActions', () => ({

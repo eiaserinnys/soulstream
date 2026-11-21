@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { ApiClient } from '../api/client';
 import type { PageReadResult } from '../api/pageEndpoints';
 import type { PlannerFolderDetail } from '../api/plannerTypes';
@@ -10,8 +9,6 @@ import {
 } from '../lib/planner-mutation-projection';
 import {
   selectDaily,
-  selectProject,
-  selectFolderChildren,
   selectFolderSessions,
   usePlannerStore,
   selectPlannerFolder,
@@ -20,8 +17,6 @@ import {
 } from '../store/plannerStore';
 import { replaceEqualDeep } from '../lib/structural-sharing';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
-
-export { usePlannerStarred } from './usePlannerStarred';
 
 export function usePlannerPageDetail(
   api: ApiClient | null,
@@ -367,7 +362,7 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function isCurrentRequest(
+export function isCurrentRequest(
   requestGeneration: MutableRefObject<number>,
   generation: number,
   scopeGeneration: string,

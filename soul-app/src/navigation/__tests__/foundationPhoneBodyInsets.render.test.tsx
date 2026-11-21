@@ -33,7 +33,6 @@ jest.mock('../../components/SessionCardById', () => ({
     require('react').createElement(require('react-native').Text, null, sessionId),
 }));
 
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { useTokens } from '../../theme/tokens';
@@ -56,8 +55,6 @@ beforeEach(() => {
     catalogLoadState: 'loading',
     catalogReady: false,
     feedSessionIds: [],
-    sessionChangeSerial: 0,
-    lastChangedSessionId: null,
   });
   useSettingsStore.setState({ serverUrl: '', appearance: 'system' });
   useNodeConnectivityStore.getState().reset();

@@ -57,7 +57,7 @@ jest.mock('react-native-gesture-handler', () => {
 });
 
 jest.mock('../../api/client', () => ({ createApiClient: jest.fn(() => ({})) }));
-jest.mock('../../hooks/usePlannerReads', () => ({
+jest.mock('../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: (...args: unknown[]) => mockUsePlannerStarred(...args),
 }));
 jest.mock('../../hooks/usePlannerContextMenus', () => ({

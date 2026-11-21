@@ -1,3 +1,4 @@
+import { filenameFromContentDisposition } from '../lib/attachment-link-view';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AttachmentDescriptor,
@@ -346,14 +347,4 @@ function stringValues(value: unknown): string[] {
 function filenameFromPath(path: string): string {
   const filename = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
   try { return decodeURIComponent(filename); } catch { return filename; }
-}
-
-function filenameFromContentDisposition(value: string | null): string | null {
-  if (!value) return null;
-  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
-  if (encoded) {
-    try { return decodeURIComponent(encoded.replace(/^"|"$/g, '')); } catch { return null; }
-  }
-  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
-  return (plain?.[1] ?? plain?.[2])?.trim() || null;
 }

@@ -43,20 +43,7 @@ interface SessionStore {
   catalogLoadState: 'loading' | 'ready' | 'error';
   /** 사용자의 명시 재시도마다 증가하며 REST snapshot·SSE의 새 연결 단위가 된다. */
   catalogRetryRequest: number;
-  /**
-   * 피드 FlatList의 정렬·필터 정본이자 그룹 projection 재계산 신호.
-   * 화면은 이 id 배열만 구독한다. 유효 lastMessage.timestamp와
-   * status/reviewState/nodeId처럼 목록 배치에 영향을 주는 값만 배열 참조를 바꾸고,
-   * profile/preview 변경은 해당 카드만 갱신한다.
-   */
   feedSessionIds: string[];
-  /**
-   * useFolderPagination이 React 렌더 구독 없이 store.subscribe로 변경분만 읽기 위한 메타.
-   * null은 setSessions/mergeSessions/reconcile처럼 다건 변경이라 필요 시 fallback scan한다는 뜻.
-   */
-  sessionChangeSerial: number;
-  lastChangedSessionId: string | null;
-  /** Snapshot baseline + identity별 live revision/tombstone. UI는 sessions만 구독한다. */
   pendingAttentionVersionsBySession: Record<string, PendingAttentionVersionState>;
   setSessions: (sessions: Session[]) => void;
   upsertSession: (session: Session, options?: { feedEvent?: true }) => void;
@@ -211,8 +198,6 @@ function initialSessionState(scopeGeneration = captureAuthScope().generation) {
     catalogLoadState: 'loading' as const,
     catalogRetryRequest: 0,
     feedSessionIds: [],
-    sessionChangeSerial: 0,
-    lastChangedSessionId: null,
     pendingAttentionVersionsBySession: {},
   };
 }
@@ -240,8 +225,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           state.catalogReady,
           feedMembership,
         ),
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: null,
       };
     }),
   upsertSession: (session, options) =>
@@ -284,8 +267,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               feedMembership,
             )
           : state.feedSessionIds,
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: session.agentSessionId,
       };
     }),
   mergeSessions: (list) =>
@@ -327,8 +308,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               state.feedMembership,
             )
           : state.feedSessionIds,
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: null,
       };
     }),
   updateSession: (agentSessionId, partial) =>
@@ -352,8 +331,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               state.feedMembership,
             )
           : state.feedSessionIds,
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: agentSessionId,
       };
     }),
   applyPendingAttentionsDelta: (agentSessionId, delta, attentionRevision) =>
@@ -399,8 +376,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               state.feedMembership,
             )
           : state.feedSessionIds,
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: agentSessionId,
       };
     }),
   reconcileSessionEnded: (agentSessionId, ended) =>
@@ -428,8 +403,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               state.feedMembership,
             )
           : state.feedSessionIds,
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: agentSessionId,
       };
     }),
   deleteSession: (agentSessionId) =>
@@ -453,8 +426,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           state.catalogReady,
           feedMembership,
         ),
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: agentSessionId,
       };
     }),
   reconcileSessions: (validIds) =>
@@ -484,8 +455,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           state.catalogReady,
           feedMembership,
         ),
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: null,
       };
     }),
   applyFeedSnapshot: (snapshot) =>
@@ -529,8 +498,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         catalogReady: true,
         catalogLoadState: 'ready' as const,
         feedSessionIds: computeFeedSessionIds(sessions, catalog, true, feedMembership),
-        sessionChangeSerial: state.sessionChangeSerial + 1,
-        lastChangedSessionId: null,
       };
     }),
   beginFeedPage: (fromStatus) => {
@@ -547,7 +514,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       let pendingAttentionVersionsBySession = state.pendingAttentionVersionsBySession;
       const feedMembership = { ...state.feedMembership };
       const catalogSessions = { ...state.catalog.sessions };
-      let changed = false;
       for (const row of page.sessions) {
         const sessionId = row.agentSessionId;
         if (!sessionId) continue;
@@ -559,7 +525,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         );
         const nextSession = preserveNewestLastMessage(existing, attention.session);
         if (!shallowEqualSession(existing, nextSession)) {
-          changed = true;
           sessions[sessionId] = nextSession;
         }
         if (attention.versionState) {
@@ -582,10 +547,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         feedMembership,
         feedPage: { hasMore: page.hasMore, nextCursor: page.nextCursor, status: 'idle' as const },
         feedSessionIds: computeFeedSessionIds(sessions, catalog, state.catalogReady, feedMembership),
-        ...(changed ? {
-          sessionChangeSerial: state.sessionChangeSerial + 1,
-          lastChangedSessionId: null,
-        } : {}),
       };
     }),
   failFeedPage: (expectedPage) =>

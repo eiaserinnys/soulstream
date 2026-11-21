@@ -1,5 +1,5 @@
+import { isCurrentRequest } from './usePlannerReads';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
 import type { ApiClient } from '../api/client';
 import { selectPlannerInvalidationKeys } from '../lib/planner-invalidation';
 import {
@@ -205,13 +205,4 @@ function sameStarredFolderOrder(
 ): boolean {
   return left.length === right.length
     && left.every((folder, index) => folder.page.id === right[index]?.page.id);
-}
-
-function isCurrentRequest(
-  requestGeneration: MutableRefObject<number>,
-  generation: number,
-  scopeGeneration: string,
-): boolean {
-  return generation === requestGeneration.current
-    && isPlannerStoreScopeCurrent(scopeGeneration);
 }

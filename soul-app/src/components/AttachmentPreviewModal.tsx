@@ -20,7 +20,7 @@ import {
 } from '../lib/attachment-view';
 import { attachmentPdfViewerUri } from '../lib/attachment-pdf';
 import { captureAuthScope } from '../lib/auth-scope';
-import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
+import { buildCustomViewBindings, escapeHtml, renderDocumentHtml } from '../lib/custom-view-renderer';
 import { LIGHT_COLORS } from '../theme/colors';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
@@ -403,20 +403,12 @@ function buildMediaPreviewHtml(
   name: string,
 ): string {
   const tag = mediaKind === 'video' ? 'video' : 'audio';
-  const source = escapeHtmlAttribute(uri);
-  const label = escapeHtmlAttribute(name);
-  const mediaType = escapeHtmlAttribute(mimeType ?? '');
+  const source = escapeHtml(uri);
+  const label = escapeHtml(name);
+  const mediaType = escapeHtml(mimeType ?? '');
   const inlinePlayback = mediaKind === 'video' ? ' playsinline' : '';
   const sizeStyle = mediaKind === 'video'
     ? 'width:100%;height:100%;max-width:100%;object-fit:contain;'
     : 'width:100%;max-width:420px;max-height:100%;';
   return `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}body{display:flex;align-items:center;justify-content:center}${tag}{${sizeStyle}}</style></head><body><${tag} controls${inlinePlayback} preload="metadata" src="${source}" aria-label="${label}" data-mime-type="${mediaType}"></${tag}></body></html>`;
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/'/g, '&#39;');
 }

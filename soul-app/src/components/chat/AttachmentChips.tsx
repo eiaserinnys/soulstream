@@ -3,11 +3,9 @@ import { File } from 'expo-file-system';
 import { Platform, ScrollView, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
-import type { ChatBodyStyles } from './ChatBody.styles';
-import { DESIGN_ICON_SIZE } from '../../theme';
+import { DESIGN_ICON_SIZE, useTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
-import { useTokens } from '../../theme';
-import { getChatRowHorizontalInset } from './ChatBody.styles';
+import { getChatRowHorizontalInset, type ChatBodyStyles } from './ChatBody.styles';
 import { createApiRequestContext } from '../../api/clientCore';
 import { createAttachmentEndpoints } from '../../api/attachmentEndpoints';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
@@ -18,6 +16,7 @@ import {
   isLegacyAttachmentImage,
   type AttachmentView,
 } from '../../lib/attachment-view';
+import { filenameFromContentDisposition } from '../../lib/attachment-link-view';
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { AttachmentPreviewModal, type AttachmentTextContent } from '../AttachmentPreviewModal';
 
@@ -294,16 +293,6 @@ function previewKindFor(mimeType: string | null, name: string, idBacked: boolean
 
 function safeFileSize(size: number | null): number | null {
   return Number.isSafeInteger(size) && (size ?? -1) >= 0 ? size : null;
-}
-
-function filenameFromContentDisposition(value: string | null): string | null {
-  if (!value) return null;
-  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
-  if (encoded) {
-    try { return decodeURIComponent(encoded.replace(/^"|"$/g, '')); } catch { return null; }
-  }
-  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
-  return (plain?.[1] ?? plain?.[2])?.trim() || null;
 }
 
 async function saveLocalAttachmentOriginal(view: AttachmentView, anchor?: number): Promise<'shared' | 'cancelled'> {

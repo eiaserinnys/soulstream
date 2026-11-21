@@ -19,7 +19,6 @@ jest.mock('../../components/SessionCard', () => {
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
-import React from 'react';
 import { act, fireEvent, render, waitFor, type RenderAPI } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
 import { SessionCard } from '../../components/SessionCard';
@@ -133,8 +132,6 @@ beforeEach(() => {
     catalogLoadState: 'loading',
     catalogRetryRequest: 0,
     feedSessionIds: [],
-    sessionChangeSerial: 0,
-    lastChangedSessionId: null,
   });
   useSettingsStore.setState({ serverUrl: '' });
   useNodeConnectivityStore.getState().reset();

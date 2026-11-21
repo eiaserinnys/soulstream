@@ -1,3 +1,4 @@
+import { CARD_COMPLETION_UNDO_MS } from '../../../../packages/wire-schema/src/persistent_report';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
@@ -5,8 +6,6 @@ import type { PersistentReportEntry } from '../../api/types';
 import { cardOperationId } from '../../hooks/useCardActions';
 import { performCardTransition } from '../../lib/card-transition';
 import { isReviewCardEntry, persistentReportStatusCard } from '../../lib/persistent-report-card';
-
-export const CARD_COMPLETION_UNDO_MS = 5000;
 
 export interface CardCompletionRecent {
   cardId: string;

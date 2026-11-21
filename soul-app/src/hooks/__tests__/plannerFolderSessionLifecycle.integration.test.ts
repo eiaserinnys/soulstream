@@ -75,8 +75,6 @@ beforeEach(() => {
     catalog: { folders: [], sessions: {} },
     catalogReady: false,
     feedSessionIds: [],
-    sessionChangeSerial: 0,
-    lastChangedSessionId: null,
   });
 });
 

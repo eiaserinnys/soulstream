@@ -25,8 +25,6 @@ function reset() {
     feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
     catalogReady: false,
     feedSessionIds: [],
-    sessionChangeSerial: 0,
-    lastChangedSessionId: null,
     pendingAttentionVersionsBySession: {},
   });
 }

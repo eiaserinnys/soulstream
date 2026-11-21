@@ -2,14 +2,14 @@ import React, { useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { PersistentReportEntry } from '../../api/types';
-import { reportActionParts } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, reportActionParts } from '../../../../packages/wire-schema/src/persistent_report';
 import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { PersistentReportReading } from './PersistentReportReading';
 import type { reportStyles } from './persistentReportStyles';
 import { UndoCountdownRing } from './UndoCountdownRing';
-import { CARD_COMPLETION_UNDO_MS, type CardCompletionRecent } from './usePersistentCardCompletion';
+import type { CardCompletionRecent } from './usePersistentCardCompletion';
 
 export const reportWebProps = (props: Record<string, unknown>) => Platform.OS === 'web' ? props : {};
 export function reportTag(entry: PersistentReportEntry) {

@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usageStatsFilterKey } from "@seosoyoung/soul-ui";
-import type {
-  UsageStatsDayDetail,
-  UsageStatsOverview,
-  UsageStatsPeriod,
-  UsageStatsProvider,
+import {
+  usageStatsFilterKey,
+  type UsageStatsDayDetail,
+  type UsageStatsOverview,
+  type UsageStatsPeriod,
+  type UsageStatsProvider,
+  type UsageStatsLoadState,
 } from "@seosoyoung/soul-ui";
 
 export type UsageStatsFilter =
   | { kind: "all"; id: string; label: string; provider: null; model: null }
   | { kind: "provider"; id: string; label: string; provider: UsageStatsProvider; model: null }
   | { kind: "model"; id: string; label: string; provider: UsageStatsProvider; model: string };
-
-export type UsageStatsLoadState = "loading" | "ready" | "error" | "forbidden";
 
 export const ALL_USAGE_STATS_FILTER: UsageStatsFilter = {
   kind: "all",

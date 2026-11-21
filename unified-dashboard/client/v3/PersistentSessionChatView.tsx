@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ChatView, ReportTimelineRowProvider, useDashboardStore, type ChatSessionStoreScope, type PersistentReportEntry } from "@seosoyoung/soul-ui";
+import { ChatView, ReportTimelineRowProvider, useDashboardStore, type ChatSessionStoreScope, type PersistentReportEntry, type ReportTimelineAlignmentInset, type ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
-import { EMPTY_REPORT } from '@seosoyoung/soul-ui/shared/persistent-report';
+import { EMPTY_REPORT } from '../../../packages/wire-schema/src/persistent_report';
 import type { ChatUiComposerHandle, ChatUiOperationsHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
@@ -9,7 +9,6 @@ import { usePersistentCardCompletion } from './usePersistentCardCompletion';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PasCardExpansion, PasCardExpansionStatus, pasCardQuestion } from './PasCardExpansion';
 import { ReportTimelineRow } from './ReportTimelineRow';
-import type { ReportTimelineAlignmentInset, ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 
 type PersistentSessionChatViewProps = {
   sessionId: string;
