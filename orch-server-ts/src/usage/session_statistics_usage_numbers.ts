@@ -1,9 +1,9 @@
 import type { NormalizedUsage } from "./session_statistics_fact_types.js";
 import {
   addIssue,
-  hasOwn,
   readNumeric,
 } from "./session_statistics_normalization_helpers.js";
+import { hasOwn } from "../http/route_validation.js";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 
 const BASE_INPUT_KEYS = ["input_tokens", "inputTokens"];

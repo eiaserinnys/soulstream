@@ -9,12 +9,12 @@ import {
   addIssue,
   blankFact,
   compareText,
-  hasOwn,
   isRecord,
   knownInteger,
   parseIdentity,
   stringOrNull,
 } from "./session_statistics_normalization_helpers.js";
+import { hasOwn } from "../http/route_validation.js";
 import { normalizeUsageEvent } from "./session_statistics_usage_candidates.js";
 
 export { CANONICAL_USAGE_PRIORITY, selectCanonicalInputMaterialFacts, selectCanonicalUsageCandidates } from "./session_statistics_canonical.js";

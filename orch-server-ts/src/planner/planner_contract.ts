@@ -1,13 +1,4 @@
-export interface PlannerPageDto {
-  id: string;
-  title: string;
-  daily_date: string | null;
-  version: number;
-  archived: boolean;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
+import type { PageDto } from "@soulstream/page-model";
 
 export interface PlannerBlockDto {
   id: string;
@@ -22,7 +13,7 @@ export interface PlannerBlockDto {
 
 export interface PlannerFolderDto {
   folder: Record<string, unknown>;
-  page: PlannerPageDto;
+  page: PageDto;
   itemCounts: Record<string, number>;
   itemTotal: number;
   completedItemCount: number;
@@ -44,7 +35,7 @@ export interface PlannerTodayDto {
   attention: Record<string, unknown>[];
   running: Record<string, unknown>[];
   queued: Record<string, unknown>[];
-  daily: { page: PlannerPageDto; blocks: PlannerBlockDto[]; state_vector: string };
+  daily: { page: PageDto; blocks: PlannerBlockDto[]; state_vector: string };
   folders: PlannerFolderDto[];
   memoBlocks: PlannerBlockDto[];
   reviewSessionIds: string[];
@@ -52,7 +43,7 @@ export interface PlannerTodayDto {
 
 export interface PlannerFolderDetailDto {
   folder: Record<string, unknown>;
-  page: PlannerPageDto;
+  page: PageDto;
   blocks: PlannerBlockDto[];
   cards: Record<string, unknown>[];
   subfolders: PlannerPageSlice<Record<string, unknown>>;

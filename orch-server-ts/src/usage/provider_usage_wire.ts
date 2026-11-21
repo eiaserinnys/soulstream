@@ -1,4 +1,7 @@
-import type { UsageSummaryProviderName } from "./usage_summary_service.js";
+import type {
+  UsageSummaryProviderName,
+  UsageSummaryQuota,
+} from "./usage_summary_service.js";
 
 export type UsageSummaryClaudeAccount = {
   readonly id: string;
@@ -27,17 +30,6 @@ export type UsageSummaryClaudeAccountPool = {
   readonly earliest_available_at: string | null;
 };
 
-export type ProviderQuota = {
-  readonly id: string;
-  readonly label: string;
-  readonly window: string | null;
-  readonly model: string | null;
-  readonly remainingPercent: number | null;
-  readonly resetAt: number | null;
-  readonly source?: string | null;
-  readonly purpose?: "execution" | "code_review" | "other";
-};
-
 export type ProviderLimits = {
   readonly status: "auto" | "not_configured" | "error";
   readonly source?: string | null;
@@ -47,7 +39,7 @@ export type ProviderLimits = {
   readonly weeklyResetAt: number | null;
   readonly shortUsedPercent: number | null;
   readonly shortResetAt: number | null;
-  readonly quotas: readonly ProviderQuota[];
+  readonly quotas: readonly UsageSummaryQuota[];
   readonly mode?: "legacy" | "pool";
   readonly accounts?: readonly UsageSummaryClaudeAccount[];
   readonly pool?: UsageSummaryClaudeAccountPool | null;
@@ -161,14 +153,14 @@ function parseAccountPool(
   };
 }
 
-function parseQuota(value: unknown, provider: string, index: number): ProviderQuota {
+function parseQuota(value: unknown, provider: string, index: number): UsageSummaryQuota {
   const record = requiredRecord(value, `${provider}.quotas[${index}]`);
   return {
     source: typeof record.source === "string" ? record.source : null,
     purpose: record.purpose === "execution" || record.purpose === "code_review"
       ? record.purpose : "other",
-    id: requiredString(record.id, `${provider}.quotas[${index}].id`),
-    label: requiredString(record.label, `${provider}.quotas[${index}].label`),
+    id: requiredWireString(record.id, `${provider}.quotas[${index}].id`),
+    label: requiredWireString(record.label, `${provider}.quotas[${index}].label`),
     window: nullableString(record.window, `${provider}.quotas[${index}].window`),
     model: nullableString(record.model, `${provider}.quotas[${index}].model`),
     remainingPercent: nullableNumber(
@@ -186,7 +178,7 @@ function requiredRecord(value: unknown, label: string): Record<string, unknown> 
   return value as Record<string, unknown>;
 }
 
-function requiredString(value: unknown, label: string): string {
+function requiredWireString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) throw new Error(`${label} must be a string`);
   return value;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FastifyRequest } from "fastify";
 import { createLiveMultipartAttachmentOptions } from "../src/runtime/live_multipart_attachment_provider.js";
-import type { LiveAttachmentCommandRegistry } from "../src/runtime/live_attachment_route_provider.js";
+import type { NodeCommandRegistryPort } from "../src/node/registry_types.js";
 
 describe("large attachment session/folder access boundary", () => {
   function harness(existing: boolean) {
@@ -13,7 +13,7 @@ describe("large attachment session/folder access boundary", () => {
       repository: { getSessionAccessRecord: async () => existing ? { sessionId: "existing", folderId: "folder" } : null,
         listFoldersForAccess: async () => [] },
       access: { requireSessionAccess, requireFolderAccess, resolveAccess: async () => ({ restricted: true, allowedFolderIds: ["folder"] }) },
-      registry: { getConnectedNode: () => undefined } as unknown as LiveAttachmentCommandRegistry,
+      registry: { getConnectedNode: () => undefined } as unknown as NodeCommandRegistryPort,
       bridge: { sendPendingCommand: vi.fn() },
     });
     return { options, requireSessionAccess, requireFolderAccess };

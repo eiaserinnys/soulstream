@@ -6,6 +6,7 @@ import type {
 } from "./session_statistics_fact_types.js";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import { findModelProvider, type ModelCatalogConfig } from "@soulstream/model-catalog";
+import { hasOwn } from "../http/route_validation.js";
 
 const PROVIDERS = new Set<UsageStatsProvider>([
   "claude", "codex", "antigravity", "deepseek", "kimi", "unknown",
@@ -13,10 +14,6 @@ const PROVIDERS = new Set<UsageStatsProvider>([
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 export function stringOrNull(value: unknown): string | null {

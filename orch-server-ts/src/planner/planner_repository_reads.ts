@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
-import type { PlannerPageDto, PlannerBlockDto, PlannerPageSlice } from "./planner_contract.js";
+import type { PageDto } from "@soulstream/page-model";
+import type { PlannerBlockDto, PlannerPageSlice } from "./planner_contract.js";
 
 export class PlannerCursorError extends Error {
   readonly code = "PLANNER_CURSOR_INVALID";
@@ -19,7 +20,7 @@ export function sliceRows<T, R>(
   return { items: visible.map(map), nextCursor: rows.length > limit && last
     ? encodeCursor(scope, ...key(last)) : null };
 }
-export function pageDto(row: Record<string, unknown>): PlannerPageDto {
+export function pageDto(row: Record<string, unknown>): PageDto {
   return { id: String(row.id), title: String(row.title), daily_date: row.daily_date == null ? null : String(row.daily_date).slice(0, 10),
     version: Number(row.version), archived: Boolean(row.archived), metadata: row.metadata as Record<string, unknown>,
     created_at: timestamp(row.created_at), updated_at: timestamp(row.updated_at) };

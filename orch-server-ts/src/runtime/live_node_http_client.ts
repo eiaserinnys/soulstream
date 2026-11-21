@@ -1,4 +1,4 @@
-import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import type { NodeCommandRegistryPort } from "../node/registry_types.js";
 import type {
   LiveNodeHttpClientBoundary,
   LiveNodeHttpRequest,
@@ -11,9 +11,7 @@ export type LiveNodeHttpFetch = (
   init: RequestInit,
 ) => Promise<Response>;
 
-export type LiveNodeHttpRegistry = {
-  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
-};
+export type LiveNodeHttpRegistry = Pick<NodeCommandRegistryPort, "getConnectedNode">;
 
 export type CreateLiveNodeHttpClientBoundaryOptions = {
   readonly registry: LiveNodeHttpRegistry;
