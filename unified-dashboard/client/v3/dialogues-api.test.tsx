@@ -36,3 +36,19 @@ it("preserves the empty usage node and adds a separate three-provider usage node
   expect(Object.keys(usage.providers)).toEqual(["claude", "codex", "antigravity"]);
   expect(usage.providers.antigravity.quotas.map((quota: { label: string; window: string }) => [quota.label, quota.window])).toEqual([["5시간", "5h"], ["7일", "7d"]]);
 });
+it("returns the assembly contract for central and node-only profiles", async () => {
+  const api = createDialoguesApi();
+  const profiles = await (await api.request("/api/agent-profiles")).json();
+  const bundles = await (await api.request("/api/context-bundles")).json();
+  const specs = [...bundles.bundles.flatMap((bundle: { atom_contexts: unknown[] }) => bundle.atom_contexts), ...profiles.profiles[0].atom_contexts];
+  const preview = async (body: unknown) => (await api.request("/api/nodes/sample-node/agents/context-preview", { method: "POST", body: JSON.stringify(body) })).json();
+  const result = await preview({ atom_contexts: specs, session: { backend: "claude" } });
+  expect(result.sections).toHaveLength(specs.length);
+  expect(result.manifest.sources.map((source: {status: string}) => source.status)).toEqual(["ok", "ok", "filtered", "error", "ok"]);
+  expect(result.sections[0].markdown.length).toBeGreaterThan(50000);
+  expect(result.assembled).toContain(result.sections[0].markdown);
+  const included = await preview({ agent_id: "node-sample", session: { backend: "codex", card_role: "assignee" } });
+  expect(included.manifest.sources[2].status).toBe("ok");
+  const agents = await (await api.request("/api/nodes/sample-node/agents")).json();
+  expect(agents.agents).toContainEqual(expect.objectContaining({ id: "node-sample", source: "yaml" }));
+});

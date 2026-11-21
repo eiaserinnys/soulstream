@@ -1,4 +1,3 @@
-// 시안(카드 #1764): 에이전트 프로필의 「조립 보기」. 디렉터 동의 전이라 운영 화면에 연결하지 않는다.
 // 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보이고 고른 소스의 본문을 같은 자리에서 연다.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, RotateCw } from "lucide-react";
@@ -79,7 +78,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const specs = target.kind === "central" ? target.specs : null;
   const body = useMemo(() => JSON.stringify(target.kind === "central"
     ? { atom_contexts: target.specs.map(({ context }) => context), session: { source: callerSource, backend, ...(cardRole ? { card_role: cardRole } : {}), agent: target.agentId } }
-    : { agent_id: target.agentId, session: { source: callerSource, backend, ...(cardRole ? { card_role: cardRole } : {}) } }),
+    : { agent_id: target.agentId, session: { source: callerSource, backend, ...(cardRole ? { card_role: cardRole } : {}), agent: target.agentId } }),
   // 중앙 프로필의 편집 중인 값은 「다시 조립」으로만 반영한다.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [target.kind, target.agentId, nodeId, callerSource, backend, cardRole, attempt]);
@@ -149,15 +148,16 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   if (view.kind !== "list" && data) {
     const row = view.kind === "all" ? null : rows.find((candidate) => candidate.key === view.key) ?? null;
     if (view.kind === "skill" && row) {
-      return <SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={data.atom_base_url} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(row)} onBack={() => setView({ kind: "source", key: row.key })} />;
+      return <div className="flex min-h-0 flex-1 flex-col gap-3">{conditions}<SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={data.atom_base_url} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(row)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: row.key }); }} /></div>;
     }
-    return <SourceDetail
+    return <div className="flex min-h-0 flex-1 flex-col gap-3">{conditions}<SourceDetail
       row={row}
       data={data}
+      focusSkill={returnFocus.current === "skill"}
       onBack={() => back(view.kind === "all" ? "all" : row?.key ?? null)}
       onOpenSkill={(skill) => row && open({ kind: "skill", key: row.key, nodeId: skill.nodeId, name: skill.name })}
       onRetry={() => { setAttempt((value) => value + 1); }}
-    />;
+    /></div>;
   }
 
   return (
@@ -197,8 +197,8 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
               />
             )}
             {rows.map((row) => (
+              <div key={row.key} className="flex min-w-0 items-center gap-2">
               <AssemblyRow
-                key={row.key}
                 rowKey={row.key}
                 refs={rowRefs}
                 title={data ? rowTitle(row) : state.status === "error" ? rowTitle(row) : null}
@@ -209,6 +209,8 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
                 inactive={state.status === "error"}
                 onClick={() => open({ kind: "source", key: row.key })}
               />
+              {data?.atom_base_url && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${data.atom_base_url}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
+              </div>
             ))}
             <p className="pt-1 text-xs text-muted-foreground">프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.</p>
           </div>
@@ -235,7 +237,7 @@ function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading
     <button
       type="button"
       ref={(element) => { if (element) refs.current.set(rowKey, element); else refs.current.delete(rowKey); }}
-      className="flex w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm enabled:hover:bg-muted disabled:cursor-default"
+      className="flex min-w-0 w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm enabled:hover:bg-muted disabled:cursor-default"
       data-status={status ?? undefined}
       disabled={loading || inactive}
       onClick={onClick}
@@ -243,7 +245,7 @@ function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading
       <span className={`min-w-0 flex-1 ${left ? "opacity-60" : ""}`}>
         <span className="flex min-w-0 items-center gap-2">
           {loading && !title ? <span className="flex h-5 flex-1 items-center"><span className="v3-run-skeleton v3-run-skeleton--title" /></span> : <span className={`min-w-0 truncate ${strong ? "font-semibold" : "font-medium"}`}>{title}</span>}
-          {!loading && status && status !== "ok" && <StatusBadge status={status} />}
+          {!loading && status && <StatusBadge status={status} />}
         </span>
         {meta && <span className="block truncate text-xs text-muted-foreground">{meta}</span>}
       </span>
@@ -254,6 +256,7 @@ function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading
 }
 
 function StatusBadge({ status }: { status: RowStatus }) {
+  if (status === "ok") return <Badge variant="secondary">들어감</Badge>;
   if (status === "error") return <Badge variant="error">실패</Badge>;
   if (status === "filtered") return <Badge variant="secondary">빠짐</Badge>;
   if (status === "empty") return <Badge variant="outline">비어 있음</Badge>;
@@ -290,23 +293,25 @@ function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atom
   );
 }
 
-function SourceDetail({ row, data, onBack, onOpenSkill, onRetry }: {
-  row: Row | null; data: PreviewResponse; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
+function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
+  row: Row | null; data: PreviewResponse; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
 }) {
   const all = row === null;
+  const skillSelectRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => { if (focusSkill) skillSelectRef.current?.focus(); }, [focusSkill]);
   const text = all ? data.assembled : row.markdown;
   const skills = all ? [] : extractSkills(row.markdown);
   const atomUrl = !all && data.atom_base_url ? `${data.atom_base_url}/#${row.nodeId}` : null;
   const meta = all
     ? `${formatChars(data.manifest.total_chars ?? 0)} · 예상 ${(data.manifest.total_token_estimate ?? 0).toLocaleString()} 토큰`
-    : [row.origin, contextShape(row.context), row.chars ? `${formatChars(row.chars)} · 예상 ${(row.tokens ?? 0).toLocaleString()} 토큰` : null].filter(Boolean).join(" · ");
+    : [row.origin, contextShape(row.context), row.chars !== null ? `${formatChars(row.chars)} · 예상 ${(row.tokens ?? 0).toLocaleString()} 토큰` : null].filter(Boolean).join(" · ");
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-assembly-detail">
       <DetailHeader title={all ? "전체" : rowTitle(row)} meta={meta} copyText={text ?? null} copyLabel={all ? "전체 복사" : "본문 복사"} atomUrl={atomUrl} onBack={onBack} backLabel="소스 목록으로" />
       {skills.length > 0 && (
         <label className="text-xs font-medium">
           스킬 정의 원문
-          <select aria-label="스킬 정의 원문" className={inputClassName} value="" onChange={(event) => {
+          <select ref={skillSelectRef} aria-label="스킬 정의 원문" className={inputClassName} value="" onChange={(event) => {
             const skill = skills.find((item) => item.nodeId === event.target.value);
             if (skill) onOpenSkill(skill);
           }}>
@@ -409,7 +414,7 @@ function buildRows(specs: Array<{ context: AgentAtomContext; source: string }> |
       key: `${section.spec_index}`,
       nodeId: manifest.node_id,
       context: { node_id: manifest.node_id, depth: manifest.depth, mode: manifest.mode as AgentAtomContext["mode"], applies_when: manifest.applies_when },
-      origin: null,
+      origin: "노드 설정",
       title: section.title,
       status: manifest.status,
       tokens: manifest.token_estimate,
@@ -428,7 +433,7 @@ function rowMeta(row: Row): string {
 }
 
 function contextShape(context: AgentAtomContext): string {
-  const mode = context.mode === "index" ? "색인 · " : context.mode === "titles" ? "제목만 · " : "";
+  const mode = context.mode === "index" ? "색인 · " : context.mode === "titles" ? "제목만 · " : "전체 · ";
   return `${mode}깊이 ${context.depth ?? 3}`;
 }
 

@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
-export type AppliesWhenField = "source" | "node_id" | "container_kind" | "agent" | "backend" | "os" | "card_role";
+export type AppliesWhenField = "source" | "node_id" | "folder_id" | "agent" | "backend" | "os" | "card_role";
 export type AtomContextMode = "full" | "index" | "titles";
 
 export interface AgentAtomContext {
@@ -16,7 +16,7 @@ export interface AgentAtomContext {
 const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }> = [
   { field: "source", label: "호출 소스" },
   { field: "node_id", label: "세션 노드" },
-  { field: "container_kind", label: "컨테이너 종류" },
+  { field: "folder_id", label: "폴더 ID" },
   { field: "agent", label: "에이전트" },
   { field: "backend", label: "백엔드" },
   { field: "os", label: "OS" },

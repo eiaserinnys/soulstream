@@ -324,46 +324,40 @@ describe("AgentProfileEditorTab", () => {
     expect(afterSave.context_bundles).toEqual(["common-rules", "coding", "human-facing"]);
   });
 
-  it("updates effective order and preview immediately when references change", async () => {
-    const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+  it("updates assembly order and request when bundle references change", async () => {
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      const method = init?.method ?? "GET";
-      requests.push({
-        url,
-        method,
-        ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
-      });
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      requests.push({ url, body });
       if (url === "/api/context-bundles") return jsonResponse({ bundles });
-      if (url.includes("context-preview")) return jsonResponse({ manifest: { sources: [] } });
-      if (method === "PUT") return jsonResponse({ ...bundledProfile, version: 4 });
+      if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "seosoyoung", backend: "claude", source: "db" }] });
+      if (url.includes("context-preview")) return jsonResponse(previewFor(body.atom_contexts));
+      if (init?.method === "PUT") return jsonResponse({ ...bundledProfile, version: 4 });
       return jsonResponse({ profiles: [bundledProfile] });
     }));
     await renderEditor();
-
-    expect(effectiveRows()).toEqual([
-      "common-rules", "coding", "human-facing", "프로필",
-    ]);
     clickButtonByLabel("common-rules 아래로");
     clickButtonByLabel("human-facing 제거");
     setSelect("추가할 번들", "windows-host");
     clickButton("번들 추가");
-    expect(effectiveRows()).toEqual(["coding", "common-rules", "windows-host", "프로필"]);
-    expect(document.body.querySelector('[data-testid="effective-atom-contexts"]')?.textContent)
-      .toContain("os: windows");
-
-    clickButton("dry-run 실행");
+    clickButton("조립");
     await settle();
-    expect(requests.find((request) => request.url.includes("context-preview"))?.body?.atom_contexts)
-      .toEqual([
-        bundles[1].atom_contexts[0],
-        bundles[0].atom_contexts[0],
-        bundles[3].atom_contexts[0],
-        profile.atom_contexts[0],
-      ]);
+    const assembly = document.body.querySelector('[data-testid="agent-context-assembly"]')!;
+    const rows = Array.from(assembly.querySelectorAll("button")).filter(button => button.textContent?.includes("깊이"));
+    expect(rows.map(row => row.textContent)).toEqual([
+      expect.stringContaining("coding"), expect.stringContaining("common-rules"),
+      expect.stringContaining("windows-host"), expect.stringContaining("프로필"),
+    ]);
+    expect(assembly.textContent).toContain("os: windows");
+    clickButtonByLabel("다시 조립");
+    await settle();
+    expect(requests.filter(request => request.url.includes("context-preview")).at(-1)?.body?.atom_contexts)
+      .toEqual([bundles[1].atom_contexts[0], bundles[0].atom_contexts[0], bundles[3].atom_contexts[0], profile.atom_contexts[0]]);
+    clickButton("편집");
     clickButton("프로필 저장");
     await settle();
-    expect(requests.find((request) => request.method === "PUT")?.body?.context_bundles)
+    expect(requests.find(request => request.url === "/api/agent-profiles/seosoyoung")?.body?.context_bundles)
       .toEqual(["coding", "common-rules", "windows-host"]);
   });
 
@@ -407,6 +401,7 @@ describe("AgentProfileEditorTab", () => {
     setInput("조건 · OS", "linux, windows");
     setInput("조건 · 백엔드", "codex");
     setInput("조건 · 카드 역할", "assignee");
+    setInput("조건 · 폴더 ID", "folder-a");
     clickButton("번들 저장");
     await settle();
 
@@ -418,7 +413,7 @@ describe("AgentProfileEditorTab", () => {
         expected_version: null,
         atom_contexts: [{
           node_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-          applies_when: { os: ["linux", "windows"], backend: ["codex"], card_role: ["assignee"] },
+          applies_when: { os: ["linux", "windows"], backend: ["codex"], card_role: ["assignee"], folder_id: ["folder-a"] },
         }],
       },
     });
@@ -506,63 +501,44 @@ describe("AgentProfileEditorTab", () => {
       .toBe("충돌할 초안");
   });
 
-  it("dry-runs the editing spec and shows per-source character and token estimates", async () => {
+  it("assembles the current spec and shows title, status and estimates", async () => {
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      requests.push({
-        url,
-        ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
-      });
-      if (url.includes("context-preview")) {
-        return jsonResponse({
-          manifest: {
-            sources: [{
-              id: "profile:0",
-              label: "운영 지침",
-              status: "filtered",
-              chars: 345,
-              token_estimate: 87,
-            }],
-          },
-        });
-      }
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      requests.push({ url, body });
+      if (url.endsWith("/agents")) return jsonResponse({ agents: [{ id: "seosoyoung", backend: "claude", source: "db" }] });
+      if (url.includes("context-preview")) return jsonResponse(previewFor(body.atom_contexts));
       return jsonResponse({ profiles: [profile] });
     }));
-    await renderEditor();
-
-    const sourceOptions = Array.from(
-      document.body.querySelectorAll<HTMLOptionElement>('select[aria-label="미리보기 호출 소스"] option'),
-      (option) => option.value,
-    );
-    expect(sourceOptions).toEqual(expect.arrayContaining(["channel_observer", "trello_watcher"]));
-
-    clickButton("dry-run 실행");
-    await settle();
-
-    const previewRequest = requests.find((request) => request.url.includes("context-preview"));
-    expect(previewRequest).toMatchObject({
-      url: "/api/nodes/node-a/agents/context-preview",
-      body: {
-        atom_contexts: profile.atom_contexts,
-        session: { source: "browser", agent: "seosoyoung" },
-      },
-    });
-    const results = document.body.querySelector('[data-testid="context-preview-results"]');
-    expect(results?.textContent).toContain("운영 지침");
-    expect(results?.textContent).toContain("filtered");
-    expect(results?.textContent).toContain("345");
-    expect(results?.textContent).toContain("87");
+    await renderEditor(false);
+    await vi.waitFor(() => expect(requests.filter(request => request.url.includes("context-preview"))).toHaveLength(1));
+    const preview = requests.filter(request => request.url.includes("context-preview"));
+    expect(preview).toHaveLength(1);
+    expect(preview[0]).toMatchObject({ url: "/api/nodes/node-a/agents/context-preview", body: {
+      atom_contexts: profile.atom_contexts, session: { source: "browser", backend: "claude", agent: "seosoyoung" },
+    } });
+    expect(document.body.textContent).toContain("운영 지침");
+    expect(document.body.textContent).toContain("87");
+    const row = Array.from(document.body.querySelectorAll("button")).find(button => button.textContent?.includes("운영 지침"));
+    expect(row).toBeDefined();
+    flushSync(() => row!.click());
+    expect(document.body.textContent).toContain("345자");
   });
 
-  async function renderEditor() {
+  async function renderEditor(edit = true) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     flushSync(() => root?.render(createElement(AgentProfileEditorTab)));
     await settle();
+    if (edit && document.body.querySelector('[role="tab"]')) { clickButton("편집"); await settle(); }
   }
 });
+
+function previewFor(specs: Array<{node_id: string}>) {
+  return { manifest: { sources: specs.map(spec => ({ ...spec, status: "ok", chars: 345, token_estimate: 87 })) }, sections: specs.map((_, spec_index) => ({ spec_index, title: "운영 지침", markdown: "본문" })), assembled: "본문", atom_base_url: null };
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

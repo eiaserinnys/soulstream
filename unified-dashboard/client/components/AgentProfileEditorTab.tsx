@@ -68,6 +68,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   const [removePortrait, setRemovePortrait] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [nodeAgents, setNodeAgents] = useState<NodeAgent[]>([]);
+  const [loadedNodeId, setLoadedNodeId] = useState("");
   // 노드 설정에만 있는 프로필을 고르면 draft 대신 이 ID가 선택이다(읽기 전용).
   const [nodeProfileId, setNodeProfileId] = useState<string | null>(null);
   const [pane, setPane] = useState<"edit" | "assembly">("assembly");
@@ -106,27 +107,28 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   }, [connectedNodeIds, selectedNodeId]);
 
   useEffect(() => {
-    if (!selectedNodeId) { setNodeAgents([]); return; }
+    if (!selectedNodeId) { setNodeAgents([]); setLoadedNodeId(""); return; }
+    setLoadedNodeId("");
     let alive = true;
     void (async () => {
       try {
         const response = await request(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`, { credentials: "same-origin" });
         const body = await responseJson(response);
-        if (alive) setNodeAgents(response.ok && Array.isArray(body.agents) ? body.agents as NodeAgent[] : []);
+        if (alive) { setNodeAgents(response.ok && Array.isArray(body.agents) ? body.agents as NodeAgent[] : []); setLoadedNodeId(selectedNodeId); }
       } catch {
-        if (alive) setNodeAgents([]);
+        if (alive) { setNodeAgents([]); setLoadedNodeId(selectedNodeId); }
       }
     })();
     return () => { alive = false; };
   }, [request, selectedNodeId]);
 
   const nodeOnlyProfiles = useMemo(
-    () => nodeAgents.filter((agent) => agent.source === "yaml"),
-    [nodeAgents],
+    () => loadedNodeId === selectedNodeId ? nodeAgents.filter((agent) => agent.source === "yaml") : [],
+    [nodeAgents, loadedNodeId, selectedNodeId],
   );
   useEffect(() => {
-    if (nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId)) setNodeProfileId(null);
-  }, [nodeOnlyProfiles, nodeProfileId]);
+    if (loadedNodeId === selectedNodeId && nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId)) setNodeProfileId(null);
+  }, [nodeOnlyProfiles, nodeProfileId, loadedNodeId, selectedNodeId]);
   const selectedNodeProfile = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId) ?? null;
   const assemblyAgentId = selectedNodeProfile?.id ?? draft?.agent_id ?? "";
   const nodeAgent = nodeAgents.find((agent) => agent.id === assemblyAgentId) ?? null;
@@ -380,13 +382,17 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             onChange={setPane}
           />
           <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
-          {pane === "assembly" ? (
+          {pane === "assembly" ? !selectedNodeId ? (
+            <FrameNotice>연결된 노드가 없습니다.</FrameNotice>
+          ) : loadedNodeId !== selectedNodeId ? (
+            <FrameLoading label="노드 에이전트를 불러오는 중..." />
+          ) : (
             <AgentContextAssemblyView
               key={`central:${draft.agent_id}`}
               target={{ kind: "central", agentId: draft.agent_id, specs: effectiveContexts }}
               nodeId={selectedNodeId}
               initialBackend={nodeAgent?.backend ?? "claude"}
-              presentOnNode={Boolean(nodeAgent) || nodeAgents.length === 0}
+              presentOnNode={Boolean(nodeAgent)}
               request={request}
             />
           ) : (

@@ -3,6 +3,8 @@ import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
 import { accessLinkSessions, createAccessLinksFixture } from "./access-links-fixture";
 import { createWebhooksFixture } from "./webhooks-fixture";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
+import { useOrchestratorStore } from "../store/orchestrator-store";
+import { assemblyAgents, assemblyBundles, assemblyContexts, assemblyPreview } from "./agent-profile-assembly-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { ClaudeAccount, ClaudeAccountList } from "../../../packages/wire-schema/generated/typescript/index";
 import type { SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
@@ -265,10 +267,10 @@ export function createDialoguesApi() {
   ];
   let profile = {
     agent_id: "roselin",
-    name: "로젤린",
-    context_bundles: [],
-    atom_contexts: [],
-    effective_atom_contexts: [],
+    name: "검수 프로필",
+    context_bundles: assemblyBundles.map((bundle) => bundle.bundle_id),
+    atom_contexts: assemblyContexts,
+    effective_atom_contexts: [...assemblyBundles.flatMap((bundle) => bundle.atom_contexts), ...assemblyContexts],
     default_preset: "sample-sol",
     aliases: [],
     has_portrait: false,
@@ -277,7 +279,7 @@ export function createDialoguesApi() {
     created_at: now,
     updated_at: now,
   };
-  let bundles: Record<string, unknown>[] = [];
+  let bundles: Record<string, unknown>[] = structuredClone(assemblyBundles);
   let document = {
     id: "sample-document",
     title: "검수 문서",
@@ -403,6 +405,8 @@ export function createDialoguesApi() {
   });
   const persistentStoryState = new URLSearchParams(window.location.search).get("persistentStoryState") ?? "full";
   const cogitoState = new URLSearchParams(window.location.search).get("cogitoState") ?? "normal";
+  const assemblyState = new URLSearchParams(window.location.search).get("assemblyState") ?? "normal";
+  let assemblyRequestCount = 0;
   let persistentStoryRequestCount = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -549,7 +553,7 @@ export function createDialoguesApi() {
           settings: { ...orchestration.settings, policy: body.policy, version: orchestration.settings.version + 1 },
         };
       value = orchestration;
-    } else if (path === "/api/agent-profiles") value = { profiles: [profile] };
+    } else if (path === "/api/agent-profiles") value = { profiles: [profile, { ...profile, agent_id: "empty-sample", name: "소스 없는 프로필", context_bundles: [], atom_contexts: [], effective_atom_contexts: [] }] };
     else if (path.startsWith("/api/agent-profiles/")) {
       if (method !== "GET") profile = { ...profile, ...body, version: profile.version + 1 };
       value = profile;
@@ -569,11 +573,17 @@ export function createDialoguesApi() {
         bundles = [...bundles.filter((b) => b.bundle_id !== id), next];
         value = next;
       } else value = existing ?? {};
-    } else if (path.includes("/agents/context-preview"))
-      value = {
-        manifest: { sources: [{ id: "sample", label: "샘플 컨텍스트", status: "ok", chars: 100, token_estimate: 25 }] },
-      };
-    else if (path.endsWith("/agents")) value = { agents: dialoguesAssignment.agents };
+    } else if (path.includes("/agents/context-preview")) {
+      assemblyRequestCount += 1;
+      if (assemblyState === "loading") {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      if (assemblyState === "failure" || (assemblyState === "retry" && assemblyRequestCount === 1)) {
+        return Response.json({ detail: "노드에 연결하지 못했습니다." }, { status: 503 });
+      }
+      value = assemblyPreview(body);
+    }
+    else if (path.endsWith("/agents")) value = { agents: path.includes("sample-usage-node") ? [assemblyAgents[1]] : assemblyAgents };
     else if (path === "/api/usage/summary" || path === "/api/usage/refresh")
       value = usageSummaryFixture(path === "/api/usage/refresh");
     else if (path.includes("/claude-auth/")) {
@@ -687,5 +697,8 @@ export function createDialoguesApi() {
     },
     assignment: dialoguesAssignment,
   };
+  if (sample === "settings") {
+    useOrchestratorStore.setState({ nodes: assemblyState === "no-nodes" ? new Map() : config.nodes });
+  }
   return { request, config, record, requests, mutations, local };
 }
