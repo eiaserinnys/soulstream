@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usageStatsFilterKey } from "@seosoyoung/soul-ui";
-import type { UsageStatsAggregate, UsageStatsDayDetail, UsageStatsMetrics, UsageStatsOverview } from "@seosoyoung/soul-ui";
+import type { UsageStatsAggregate, UsageStatsDayDetail, UsageStatsMetrics, UsageStatsOverview } from "../../../../packages/wire-schema/src/session_statistics";
 import { UsageStatsTab } from "./UsageStatsTab";
 import { ALL_USAGE_STATS_FILTER, useUsageStats, type UsageStatsFilter } from "./useUsageStats";
 

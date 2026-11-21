@@ -1,4 +1,5 @@
-import type { PageApiClient, PageDto, PageReadResponse } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
 
 import { loadAllMountBacklinks } from "./page-backlinks";
 

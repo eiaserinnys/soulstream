@@ -1,7 +1,8 @@
 import type { ApiRequestContext } from './clientCore';
 import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
 import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
-import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAssignment, CardExecutionResult } from './cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardComment, CardAssignment, CardExecutionResult } from './cardTypes';
 
 export type CardQuestionAnswerInput =
   | { mode: 'choice'; option: string; idempotencyKey: string }

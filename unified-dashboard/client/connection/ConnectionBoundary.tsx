@@ -4,10 +4,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import {
-  createConnectionMonitor,
-  resynchronizeDashboard,
-} from "./connection-monitor";
+import { resynchronizeDashboard } from "@seosoyoung/soul-ui/lib/orchestrator-connection";
+import { createConnectionMonitor } from "./connection-monitor";
 import { ConnectionDialog } from "./ConnectionDialog";
 import { dashboardReloadCoordinator } from "../pwa/dashboard-reload";
 

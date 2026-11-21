@@ -1,9 +1,10 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { findNodeHandle, Image, Platform, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
-import type { CardDto, CardStatus } from '../../api/cardTypes';
+import type { CardStatus } from '../../../../packages/wire-schema/generated/typescript/index';
+import type { CardDto } from '../../api/cardTypes';
 import { useTokens } from '../../theme';
 import { createPostItRoles, type PostItVariant } from '../../theme/postItRoles';
 import { postItActivityText } from '../../lib/postit-activity';

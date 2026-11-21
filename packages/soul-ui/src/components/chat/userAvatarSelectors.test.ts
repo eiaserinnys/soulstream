@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CallerInfo, MetadataEntry } from "../../shared/types";
+import type { CallerInfo } from "@soulstream/wire-schema";
+import type { MetadataEntry } from "../../shared/types";
 import {
   extractCallerAvatarUrl,
   pickMessageAvatarUrl,

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { Button, DashboardIconCap } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { createPortal } from 'react-dom';
 import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
-import { CARD_COMPLETION_UNDO_MS, CARD_QUESTION_ANSWERED_HOLD_MS, reportActionParts } from '../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, CARD_QUESTION_ANSWERED_HOLD_MS, reportActionParts, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
 import { usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';

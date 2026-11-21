@@ -3,7 +3,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { Pressable, StyleSheet } from 'react-native';
-import type { CardStatus } from '../../../api/cardTypes';
+import type { CardStatus } from '../../../../../packages/wire-schema/generated/typescript/index';
 import { cardFixture } from '../../../test-support/cards';
 import { useAuthStore } from '../../../store/authStore';
 import { useCardStore } from '../../../store/cardStore';

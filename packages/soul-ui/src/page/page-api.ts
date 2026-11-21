@@ -10,24 +10,6 @@ import type {
 import type { PageStructureOperation } from "./page-structure-operation";
 
 export type PageApiErrorKind = "authentication" | "conflict" | "request" | "server" | "network";
-export type {
-  BlockDto,
-  BrowserBacklinkDto,
-  BrowserBacklinkPageDto,
-  BrowserPageSearchDto,
-  BrowserPageSearchItemDto,
-  InitialFolderContext,
-  InitialFolderAtomReference,
-  InitialFolderContextWire,
-  PageDto,
-  PageLinkKind,
-  PageListDto,
-} from "@soulstream/page-model";
-
-export {
-  parseInitialFolderContextWire,
-  serializeInitialFolderContext,
-} from "@soulstream/page-model";
 
 export class PageApiError extends Error {
   readonly name = "PageApiError";

@@ -23,12 +23,9 @@ export type { ChatFocusTarget, SearchChatFocus } from "./search-focus";
 
 // === Types (types.ts is itself a barrel) ===
 export type {
-  SSEEventType,
   ProgressEvent,
   SessionEvent,
   InterventionSentEvent,
-  ContextItem,
-  CallerInfo,
   UserMessageEvent,
   DebugEvent,
   CompleteEvent,
@@ -53,10 +50,8 @@ export type {
   AssistantMessageEvent,
   SoulSSEEvent,
   EventRecord,
-  SessionStatus,
   LlmUsage,
   SessionSummary,
-  PersistentReportEntry,
   SessionDetail,
   EventTreeNodeType,
   SessionNode,
@@ -76,7 +71,6 @@ export type {
   CreateSessionRequest,
   CreateSessionResponse,
   SessionCreationWarning,
-  ReasoningEffort,
   SendMessageRequest,
   InterveneResponse,
   SendRespondRequest,
@@ -119,6 +113,3 @@ export type {
   NormalizedLastMessage,
   ReadableMessageType,
 } from "./session-activity";
-
-// === Position keys ===
-export { generateKeyBetween } from "./fractional-position";

@@ -1,6 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerFolder } from "./planner-data";
 import { movePlannerSession, removePlannerSessions } from "./planner-mutation-projection";

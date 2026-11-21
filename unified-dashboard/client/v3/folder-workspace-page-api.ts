@@ -1,7 +1,5 @@
-import type {
-  PageApiClient,
-  PageDto,
-} from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
 import {

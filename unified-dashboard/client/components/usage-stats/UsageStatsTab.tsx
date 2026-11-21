@@ -10,7 +10,6 @@ import {
   formatUsageStatsModelLabel,
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
-  formatUsageStatsUsd,
   formatUsageStatsValue,
   formatUsageStatsApproximateTokens,
   groupUsageStatsInputMaterial,
@@ -24,16 +23,7 @@ import {
   usageStatsSeriesKey,
   shiftUsageStatsAnchor,
 } from "@seosoyoung/soul-ui";
-import type {
-  UsageStatsAggregate,
-  UsageStatsDayDetail,
-  UsageStatsOptions,
-  UsageStatsOverview,
-  UsageStatsPeriod,
-  UsageStatsProjectRow,
-  UsageStatsProvider,
-  UsageStatsProviderRow,
-} from "@seosoyoung/soul-ui";
+import type { UsageStatsAggregate, UsageStatsDayDetail, UsageStatsOptions, UsageStatsPeriod, UsageStatsProjectRow, UsageStatsProvider, UsageStatsProviderRow } from "../../../../packages/wire-schema/src/session_statistics";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { CatalogSelectionField } from "../CatalogSelectionField";
 import { SettingsAlert, SettingsGroupBox } from "../config/SettingsListDetail";

@@ -6,11 +6,10 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { submitIntervention } from "./submitIntervention";
-import { SubmitInterventionHttpError } from "./submitIntervention";
+import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
 import { reportMessageContext } from "../../shared/persistent-report";
-import type { PersistentReportEntry } from "../../shared/session-types";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import {
   useChatInputSend,

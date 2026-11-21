@@ -1,5 +1,5 @@
 import type { CardComment, CardQuestion } from '../../../api/cardTypes';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import { cardQuestionViewFromDetail, cardQuestionViewFromEntry } from '../card-question-viewmodel';
 
 function question(overrides: Partial<CardQuestion> = {}): CardQuestion {

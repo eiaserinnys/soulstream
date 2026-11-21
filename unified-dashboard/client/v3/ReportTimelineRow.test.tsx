@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InternalLinkProvider } from "@seosoyoung/soul-ui/components/InternalLinkProvider";
-import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineRowLine } from "@seosoyoung/soul-ui";
+import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineRowLine } from "../../../packages/wire-schema/src/persistent_report";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { ReportTimelineRow } from "./ReportTimelineRow";

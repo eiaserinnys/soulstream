@@ -1,5 +1,5 @@
+import type { BlockDto } from "../../../packages/page-model/src/types";
 import type {
-  BlockDto,
   PageApiClient,
   PageMutationResponse,
 } from "@seosoyoung/soul-ui/page";

@@ -2,7 +2,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import type {
   CreateSessionRequest,
   CreateSessionResponse,
-  ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "./http-response-error";

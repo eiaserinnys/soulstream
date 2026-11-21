@@ -8,7 +8,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import type { ToolTraceResponse } from '../../api/client';
-import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import type { ChatBodyStyles } from './ChatBody.styles';
 import type { ReportTimelineRowLine } from '../../../../packages/wire-schema/src/persistent_report';
 import type { ChatRenderItem } from './groupChatEvents';

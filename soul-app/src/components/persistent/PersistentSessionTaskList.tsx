@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
-import type { CardStatus } from '../../api/cardTypes';
+import type { CardStatus } from '../../../../packages/wire-schema/generated/typescript/index';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { useCardList } from '../../hooks/useCardList';
 import { FrameLoading } from '../FrameLoading';

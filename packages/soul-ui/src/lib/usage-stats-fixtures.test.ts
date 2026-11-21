@@ -3,12 +3,12 @@ import { RAW_USAGE_RECORDS, RAW_INPUT_MATERIAL, type RawInputMaterialRecord } fr
 import { aggregate, zeroCoverage, zeroMetrics } from "./usage-stats-fixture-aggregate";
 import { formatUsageStatsValue, isUsageStatsTokenPartial, isUsageStatsCostPartial } from "./usage-stats-format";
 
+import { USAGE_STATS_PROVIDERS } from "@soulstream/wire-schema/session-statistics";
 import {
   buildEmptyUsageStatsOverview,
   buildUsageStatsDayDetail,
   buildUsageStatsOverview,
   USAGE_STATS_FIXTURE_ANCHOR,
-  USAGE_STATS_PROVIDERS,
 } from "./usage-stats-fixtures";
 
 function sumKnownTokens(rows: Array<{ metrics: { total_tokens: number | null } }>): number {

@@ -1,5 +1,5 @@
 import type { CardComment, CardQuestion } from '../../api/cardTypes';
-import type { PersistentReportEntry } from '../../api/types';
+import type { PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../../packages/wire-schema/src/card_questions';
 
 export type CardQuestionViewOption = { label: string; description: string | null; recommended: boolean };

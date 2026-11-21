@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import type { CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
 import { reviewCard, reviewCardItems, reviewNow, reviewDetail } from './components-review-fixtures';
 import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';

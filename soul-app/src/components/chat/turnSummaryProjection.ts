@@ -1,5 +1,5 @@
 import type { SessionEvent } from '../../api/types';
-import type { CardStatus } from '../../api/cardTypes';
+import type { CardStatus } from '../../../../packages/wire-schema/generated/typescript/index';
 import type {
   ChatRenderItem,
   TurnSummaryRenderItem,

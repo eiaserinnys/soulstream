@@ -1,10 +1,10 @@
 import type { StateCreator } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
-import type { SessionNotice, EventTreeNode, SoulSSEEvent } from "@shared/types";
+import type { SessionNotice } from "@soulstream/wire-schema/session-feed-contract";
+import type { EventTreeNode, SoulSSEEvent } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import { pendingChatSendMatchesEvent } from "../pending-chat-send-match";
 import {
-  type ProcessingContext,
   createProcessingContext,
 } from "../processing-context";
 import {

@@ -1,4 +1,4 @@
-import type { BlockDto, PageDto } from "@seosoyoung/soul-ui/page";
+import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 
 export interface ProjectAtomReference {
   blockId: string;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from "vitest";
-import { cardActivityPreview } from "./card-activity-preview";
+import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
 
 it("preserves markdown source and makes HTML a text-only preview without scripts or styles", () => {
   const markdown = "원문입니다.\n\n**요약하지 않습니다.**";

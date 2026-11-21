@@ -16,11 +16,11 @@ import {
 import { actionFailureMessage } from '../lib/action-failure';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
+import type { PendingAttention } from '@soulstream/wire-schema/session-feed-contract';
 import type {
   EventTreeNode,
   InputRequestNodeDef,
   InputRequestQuestion,
-  PendingAttention,
   ToolApprovalNodeDef,
 } from '@shared/types';
 import { LiquidGlassCard } from './LiquidGlassCard';

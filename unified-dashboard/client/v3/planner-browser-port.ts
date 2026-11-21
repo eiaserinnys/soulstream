@@ -1,4 +1,5 @@
-import type { BlockDto, PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
+import type { BlockDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
 import { operationId } from "./folder-star-actions";
 
 export class BrowserPlannerMutationPort {

@@ -1,9 +1,7 @@
-// 카드 #1197: 질문 장 「결정 한 장」의 본문과 동작 줄. PAS 판 장과 카드 상세 커멘트 탭이
-// 같은 부품을 쓴다(ui-design §6). 화면 계약 1.4의 보기 모델만 받고, 실제 필드 이름은
-// cardQuestionDetailView와 cardQuestionSheetView가 만든다.
 import { useState, type ReactNode } from "react";
 import { ThinkingOrb } from "@seosoyoung/soul-ui/components/chat/WorkingOrb";
-import { Badge, Button, MarkdownContent, useInternalLinkClick, type PersistentReportEntry } from "@seosoyoung/soul-ui";
+import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
+import { Badge, Button, MarkdownContent, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import { isPlainLeftClick } from "@seosoyoung/soul-ui/components/InternalLinkProvider";
 import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";

@@ -1,10 +1,9 @@
 import {orchestratorFetch} from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
-  BlockDto,
   PageApiClient,
-  PageDto,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 import { type CatalogFolder, type PlannerFolderStatus, type SessionSummary } from "@seosoyoung/soul-ui";

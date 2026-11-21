@@ -144,8 +144,3 @@ export function createConnectionMonitor(options: {
     },
   };
 }
-
-export {
-  registerConnectionRecovery,
-  resynchronizeDashboard,
-} from "@seosoyoung/soul-ui/lib/orchestrator-connection";

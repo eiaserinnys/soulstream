@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import type { ApiClient } from '../api/client';
-import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail, CardStatus } from '../api/cardTypes';
-import type { MessageContextItem, PersistentReportEntry } from '../api/types';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail } from '../api/cardTypes';
+import type { MessageContextItem } from '../api/types';
 import { cardFixture } from '../test-support/cards';
 import { useDeviceType, useTokens } from '../theme';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';

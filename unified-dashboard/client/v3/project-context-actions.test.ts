@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PageApiClient, PageDto, PageMutationResponse } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient, PageMutationResponse } from "@seosoyoung/soul-ui/page";
 
 import {
   deleteProjectContextBlock,

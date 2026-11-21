@@ -1,8 +1,5 @@
 import {
-  IMAGE_PREVIEW_MIME_TYPES,
-  MIME_BY_EXTENSION,
   isImagePreviewMimeType,
-  mimeTypeForFileName,
   SAFE_RASTER_PREVIEW_MIME_TYPES,
   SAFE_TEXT_PREVIEW_MIME_TYPES,
   type AttachmentReadContext,
@@ -10,13 +7,6 @@ import {
   type SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
 import { orchestratorFetch } from "./orchestrator-connection";
-
-export {
-  IMAGE_PREVIEW_MIME_TYPES,
-  MIME_BY_EXTENSION,
-  isImagePreviewMimeType,
-  mimeTypeForFileName,
-};
 
 export type ChatAttachmentSource =
   | { kind: "asset"; attachmentId: string; context: AttachmentReadContext }

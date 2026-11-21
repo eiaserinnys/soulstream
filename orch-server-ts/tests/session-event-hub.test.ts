@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { AntigravityEventMapper } from "../../soul-server-ts/src/engine/antigravity/events.js";
 
+import { LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES } from "@soulstream/wire-schema/session-feed-contract";
 import {
   LIVE_TEXT_SNAPSHOT_MAX_SESSIONS,
-  LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES,
   LIVE_TEXT_SNAPSHOT_MAX_STREAMS,
   RuntimeSessionEventHub,
   type RuntimeSessionEvent,

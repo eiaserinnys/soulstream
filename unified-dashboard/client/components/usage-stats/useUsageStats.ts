@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { UsageStatsDayDetail, UsageStatsOverview, UsageStatsPeriod, UsageStatsProvider } from "../../../../packages/wire-schema/src/session_statistics";
 import {
   usageStatsFilterKey,
-  type UsageStatsDayDetail,
-  type UsageStatsOverview,
-  type UsageStatsPeriod,
-  type UsageStatsProvider,
   type UsageStatsLoadState,
 } from "@seosoyoung/soul-ui";
 

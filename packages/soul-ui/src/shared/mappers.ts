@@ -1,4 +1,5 @@
-import type { SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";
+import type { SessionStatus } from "@soulstream/wire-schema";
+import type { SessionSummary, LlmUsage, MetadataEntry } from "./types";
 import type { ReviewState } from "@soulstream/wire-schema/session-review";
 import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 import { normalizeSessionStatus } from "./session-status";

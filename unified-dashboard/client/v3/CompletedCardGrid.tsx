@@ -5,7 +5,6 @@ import { completedPeriods } from "@seosoyoung/soul-ui/cards/completed-cards";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CompletedBrowser } from "./use-completed-cards";
 import { V3ErrorNotice } from "./V3ErrorNotice";
-export type { CompletedGridSnapshot };
 
 export function CompletedCardBrowserControls({browser}:{browser:CompletedBrowser}) {
   return <div className="v3-completed-controls">

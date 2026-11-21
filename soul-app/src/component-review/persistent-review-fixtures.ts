@@ -1,5 +1,6 @@
 import type { ApiClient } from '../api/client';
-import type { CardCheckItem, CardDetail, CardDto, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardCheckItem, CardDetail, CardDto } from '../api/cardTypes';
 import { makeCard, createReviewApi } from './fixtures';
 
 const reviewTime = '2026-10-05T00:00:00Z';

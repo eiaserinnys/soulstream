@@ -4,7 +4,7 @@ import {
   type PendingAttention,
   type SessionFeedState,
   type SessionNotice,
-} from "./session_feed_contract.js";
+} from "@soulstream/wire-schema/session-feed-contract";
 
 export const SESSION_FEED_RECENT_NOTICE_LIMIT = 8;
 

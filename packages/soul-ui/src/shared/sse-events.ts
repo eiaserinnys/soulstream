@@ -57,14 +57,9 @@ import type {
   SSEEventToolResult,
   SSEEventToolStart,
   SSEEventTurnSummary,
-  SSEEventType as GeneratedSSEEventType,
   SSEEventUsageObservation,
   SSEEventUserMessage,
 } from "../../../wire-schema";
-
-export type { CallerInfo, ContextItem, EventTruncation } from "../../../wire-schema";
-
-export type SSEEventType = GeneratedSSEEventType;
 
 export type ProgressEvent = SSEEventProgress;
 export type SessionEvent = SSEEventSession;

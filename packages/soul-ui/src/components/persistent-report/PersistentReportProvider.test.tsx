@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { PersistentReportProvider, usePersistentReport } from './PersistentReportProvider';
 import { useDashboardStore } from '../../stores/dashboard-store';
 import { reportMessageContext, selectReportKey } from '../../shared/persistent-report';
-import type { PersistentReportEntry } from '../../shared/session-types';
+import type { PersistentReportEntry } from '@soulstream/wire-schema/persistent-report';
 import type { PendingChatSend } from '../../stores/dashboard-store-types';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

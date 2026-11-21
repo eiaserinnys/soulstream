@@ -11,22 +11,15 @@ import type {
   CatalogState,
 } from "./catalog-types";
 import type { CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
+import type { SessionStatus } from "@soulstream/wire-schema";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type {
   LastMessage,
-  SessionStatus,
   SessionSummary,
-  PersistentReportEntry,
 } from "./session-types";
 import type { ReviewState } from "@soulstream/wire-schema/session-review";
-import type { SessionFeedDelta } from "../../../../orch-server-ts/src/session/session_feed_contract";
+import type { SessionFeedDelta } from "@soulstream/wire-schema/session-feed-contract";
 
-/**
- * 세션 스트림 SSE 이벤트 - /sessions/stream에서 전송
- *
- * 세션 목록의 실시간 변경사항을 클라이언트에 푸시합니다.
- */
-
-/** 세션 목록 초기화 (구독 시 최초 전송) */
 export interface SessionListStreamEvent {
   type: "session_list";
   sessions: SessionSummary[];

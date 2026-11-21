@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { EventTruncation } from "../../shared/sse-events";
+import type { EventTruncation } from "@soulstream/wire-schema";
 import { projectChatAttachmentItems } from "../../lib/chat-attachment-model";
 import { formatFileSize } from "../../lib/format-file-size";
 import { AttachmentViewer } from "../AttachmentViewer";

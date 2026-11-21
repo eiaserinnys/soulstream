@@ -1,9 +1,7 @@
-import React from 'react';
-import { AccessibilityInfo, Text } from 'react-native';
-import * as ReactNative from 'react-native';
+import { AccessibilityInfo, Text, type View, type ViewProps } from 'react-native';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { usePersistentReport } from '../usePersistentReport';
 import { usePersistentReportSend } from '../usePersistentReportSend';
@@ -19,7 +17,7 @@ jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'hold-expiry-operati
 // measurement boundary rather than the preset's inert class method.
 jest.mock('react-native/Libraries/Components/View/View', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
-  return { __esModule: true, default: ReactModule.forwardRef<ReactNative.View, ReactNative.ViewProps>(
+  return { __esModule: true, default: ReactModule.forwardRef<View, ViewProps>(
     (props, ref) => ReactModule.createElement('View', { ...props, ref })) };
 });
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => 'phone' }));

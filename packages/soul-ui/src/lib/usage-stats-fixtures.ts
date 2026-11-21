@@ -1,4 +1,5 @@
-import { formatDate, formatUsageStatsModelLabel, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
+import { formatDate, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
+import { USAGE_STATS_PROVIDERS, type UsageStatsDayDetail, type UsageStatsInputMaterial, type UsageStatsInputPart, type UsageStatsOverview, type UsageStatsOptions, type UsageStatsPeriod, type UsageStatsProvider, type UsageStatsProviderRow, type UsageStatsProjectRow, type UsageStatsQuery, type UsageStatsRange, type UsageStatsSeriesPoint } from "../../../wire-schema/src/session_statistics";
 import {
   FIXTURE_MODEL_LABELS,
   MISSING_TURNS,
@@ -8,26 +9,11 @@ import {
   RAW_TOOL_CALLS,
   RAW_USAGE_RECORDS,
   USAGE_STATS_FIXTURE_AS_OF,
-  USAGE_STATS_PROVIDERS,
-} from "./usage-stats-fixture-data";
-import type {
-  MissingTurnRecord,
-  PendingTurnRecord,
-  ProjectGroup,
-  RawInputMaterialRecord,
-  RawUsageRecord,
-  UsageStatsDayDetail,
-  UsageStatsInputMaterial,
-  UsageStatsInputPart,
-  UsageStatsOverview,
-  UsageStatsOptions,
-  UsageStatsPeriod,
-  UsageStatsProvider,
-  UsageStatsProviderRow,
-  UsageStatsProjectRow,
-  UsageStatsQuery,
-  UsageStatsRange,
-  UsageStatsSeriesPoint,
+  type MissingTurnRecord,
+  type PendingTurnRecord,
+  type ProjectGroup,
+  type RawInputMaterialRecord,
+  type RawUsageRecord,
 } from "./usage-stats-fixture-data";
 import {
   aggregateFixtureUsage,
@@ -36,7 +22,7 @@ import {
   zeroMetrics,
 } from "./usage-stats-fixture-aggregate";
 
-export { USAGE_STATS_FIXTURE_ANCHOR, USAGE_STATS_PROVIDERS } from "./usage-stats-fixture-data";
+export { USAGE_STATS_FIXTURE_ANCHOR } from "./usage-stats-fixture-data";
 
 export function buildUsageStatsOverview(query: UsageStatsQuery): UsageStatsOverview {
   const range = buildRange(query.period, query.anchor);

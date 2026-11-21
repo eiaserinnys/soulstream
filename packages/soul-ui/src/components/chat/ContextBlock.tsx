@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, useState } from "react";
 import { Paperclip } from "lucide-react";
-import type { ContextItem } from "@shared/types";
+import type { ContextItem } from "@soulstream/wire-schema";
 import {
   buildContextPromptTokenMetrics,
   formatPromptTokenCount,

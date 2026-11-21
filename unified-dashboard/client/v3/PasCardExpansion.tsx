@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, FrameLoading, useAuth, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import { Button, FrameLoading, useAuth, useDashboardStore, useInternalLinkClick } from '@seosoyoung/soul-ui';
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';

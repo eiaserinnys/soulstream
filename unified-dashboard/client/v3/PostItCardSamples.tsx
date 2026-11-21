@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { CardQueue } from "@seosoyoung/soul-ui/cards/CardQueue";
-import {CARD_COLOR_KEYS, type CardColor, type CardRow, type CardStatus} from "@seosoyoung/soul-ui/cards/card-types";
+import { CARD_COLOR_KEYS, type CardColor } from "../../../packages/wire-schema/src/card_colors";
+import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
+import { type CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { PostItCardView, PostItGrid } from "./PostItCard";
 import { reviewCard, reviewSession, reviewTitle } from "./components-review-fixtures";
 

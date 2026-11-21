@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { settingsStorage } from './settingsStorage';
-import type { CardAssignment, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardAssignment } from '../api/cardTypes';
 import {
   DEFAULT_USER_PREFERENCES,
   normalizeUserPreferences,

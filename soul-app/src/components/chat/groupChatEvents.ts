@@ -1,6 +1,6 @@
 import type { SessionEvent, SessionEventType } from '../../api/types';
 import type { HistoricalMessage } from '../../api/client';
-import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import {
   getOptimisticAfterEventId,
   type StreamingSlotKind,

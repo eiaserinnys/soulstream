@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import type { BrowserBacklinkDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
-  BrowserBacklinkDto,
   PageApiClient,
-  PageDto,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 

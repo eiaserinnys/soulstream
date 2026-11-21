@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
 import type { PlannerFolder } from "./planner-data";
 import { runOptimisticFolderMove } from "./folder-parent-move";
 

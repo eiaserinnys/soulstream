@@ -1,12 +1,5 @@
-/**
- * flatten-tree - 이벤트 트리를 flat한 채팅 메시지 리스트로 변환
- *
- * DFS 순회하여 각 트리 노드를 ChatMessage로 매핑합니다.
- * session 루트 노드는 skip하고, 서브에이전트 children도 구분 없이 flat하게 포함합니다.
- */
-
+import type { CallerInfo, ContextItem, EventTruncation } from "@soulstream/wire-schema";
 import type {
-  CallerInfo,
   EventTreeNode,
   SessionNode,
   ThinkingNode,
@@ -22,7 +15,6 @@ import type {
   InputRequestNodeDef,
   InputRequestQuestion,
   ToolApprovalNodeDef,
-  ContextItem,
   TokenUsage,
   TurnSummaryNode,
   AssignedCardContextNode,
@@ -31,7 +23,6 @@ import type {
   PersistentInstructionRecordedNode,
   PersistentInstructionRecordedData,
   AttachmentEventSignalFields,
-  EventTruncation,
   ReportTimelineNode,
   ReportTimelineQuestionClosedNode,
 } from "@shared/types";

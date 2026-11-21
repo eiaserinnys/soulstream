@@ -4,7 +4,8 @@ import { createApiRequestContext } from '../api/clientCore';
 import { createUsageEndpoints } from '../api/usageEndpoints';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
-import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch } from '../api/cardTypes';
 import { buildAttachmentReviewApi } from './attachment-review-api';
 import { Asset } from 'expo-asset';
 import {

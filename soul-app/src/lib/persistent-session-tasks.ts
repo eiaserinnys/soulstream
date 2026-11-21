@@ -1,4 +1,5 @@
-import type { CardDto, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardDto } from '../api/cardTypes';
 import { CARD_STATUS_LABELS } from '../../../packages/wire-schema/src/card_status_labels';
 import { BOARD_COLUMNS } from './card-board-layout';
 

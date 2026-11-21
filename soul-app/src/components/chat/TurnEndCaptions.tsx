@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { CompactTouchTarget } from '../CompactTouchTarget';
-import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import { useTokens, type DesignTokens } from '../../theme';
 import type {
   PersistentInstructionRecordedCaption,

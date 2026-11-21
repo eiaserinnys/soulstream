@@ -4,12 +4,11 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const mockOpenCardLink = jest.fn();
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenCardLink }));
 
-import React from 'react';
 import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { CardCheckItem, CardComment, CardDetail } from '../../../api/cardTypes';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import { useAuthStore } from '../../../store/authStore';
 import { useCardStore } from '../../../store/cardStore';
 import { useDraftStore } from '../../../store/draftStore';

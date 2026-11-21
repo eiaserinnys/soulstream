@@ -1,8 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { PersistentReportEntry } from '../../api/types';
-import { CARD_COMPLETION_UNDO_MS, reportActionParts } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, reportActionParts, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';

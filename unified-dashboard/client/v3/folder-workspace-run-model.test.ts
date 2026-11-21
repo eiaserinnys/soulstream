@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { BlockDto, PageDto } from "@seosoyoung/soul-ui/page";
+import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {

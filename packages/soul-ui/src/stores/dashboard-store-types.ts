@@ -1,17 +1,9 @@
-/**
- * Soul Dashboard Store - 타입 정의
- *
- * DashboardState, DashboardActions와 관련 export 타입.
- * dashboard-store.ts가 re-export하므로 외부 consumer는 여전히
- * `import { ... } from "stores/dashboard-store"` 형태로 사용한다.
- */
-
 import type { QueryClient } from "@tanstack/react-query";
+import type { SessionNotice } from "@soulstream/wire-schema/session-feed-contract";
 import type {
   SessionSummary,
   SessionDetail,
   SoulSSEEvent,
-  SessionNotice,
   EventTreeNode,
   CatalogState,
   CatalogFolder,
@@ -26,7 +18,7 @@ import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";
 import type { ChatFocusTarget } from "../shared/search-focus";
 import type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
-import type { PersistentReportEntry } from '../shared/session-types';
+import type { PersistentReportEntry } from '@soulstream/wire-schema/persistent-report';
 import type { ReportSendContext } from '../shared/persistent-report';
 
 export interface NewSessionDefaults {

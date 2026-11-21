@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { InternalLinkProvider } from '@seosoyoung/soul-ui/components/InternalLinkProvider';
 import { PersistentReportDeck } from './PersistentReportDeck';
-import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import { useDashboardStore } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 

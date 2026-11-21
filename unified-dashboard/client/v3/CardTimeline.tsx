@@ -6,7 +6,8 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRenderer";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
-import { attachmentContentUrl, contextualLegacyUrl, isImagePreviewMimeType, mimeTypeForFileName, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { isImagePreviewMimeType, mimeTypeForFileName } from "../../../packages/wire-schema/src/attachments";
+import { attachmentContentUrl, contextualLegacyUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { CardDetail, CardQuestion, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
 import { CardQuestionActions, CardQuestionBody, cardQuestionDetailView } from "./CardQuestionBlock";

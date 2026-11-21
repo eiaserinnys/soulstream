@@ -6,7 +6,8 @@ import { Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimension
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
-import type { CardCheckItem, CardStatus } from '../../api/cardTypes';
+import type { CardStatus } from '../../../../packages/wire-schema/generated/typescript/index';
+import type { CardCheckItem } from '../../api/cardTypes';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { useCardComments } from '../../hooks/useCardComments';
@@ -36,7 +37,6 @@ import { FrameLoading } from '../FrameLoading';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
 import { CardNotes } from './CardNotes';
-import { CardRequestView } from './CardRequestView';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveChatComposerBottomGap, resolveChatPaneMinimumBottomPadding } from '../split/tabletShellInsets';
 import { ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';

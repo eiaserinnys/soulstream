@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { retainEqualSet, retainEqualValue } from "@seosoyoung/soul-ui";
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import {

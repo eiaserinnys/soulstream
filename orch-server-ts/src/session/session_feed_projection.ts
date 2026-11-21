@@ -2,7 +2,7 @@ import type {
   LastChatMessage,
   LastChatMessageType,
   SessionFeedState,
-} from "./session_feed_contract.js";
+} from "@soulstream/wire-schema/session-feed-contract";
 
 export const SESSION_FEED_PROMPT_LIMIT = 200;
 

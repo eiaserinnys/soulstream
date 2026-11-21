@@ -1,7 +1,4 @@
-import { fetchNodeModelPresets } from "@seosoyoung/soul-ui";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
-
-export { fetchNodeModelPresets };
 
 export const MODEL_PRESET_FETCH_ERROR = "모델 목록을 불러오지 못했습니다";
 

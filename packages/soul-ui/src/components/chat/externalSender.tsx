@@ -1,5 +1,5 @@
 import { Link, Webhook } from 'lucide-react';
-import type { CallerInfo } from '../../shared/types';
+import type { CallerInfo } from '@soulstream/wire-schema';
 
 export function externalSenderDisplay(caller: CallerInfo | undefined) {
   if (caller?.source !== 'external') return null;

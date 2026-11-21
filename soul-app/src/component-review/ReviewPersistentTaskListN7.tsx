@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../api/client';
-import type { CardDto, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardDto } from '../api/cardTypes';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { useTokens } from '../theme';
 import { createPersistentReviewApi, persistentReviewCards } from './persistent-review-fixtures';

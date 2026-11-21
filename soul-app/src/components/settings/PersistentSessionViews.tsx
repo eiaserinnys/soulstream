@@ -9,7 +9,8 @@ import {
 } from '../../api/client';
 import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
-import type { PersistentSessionSettingsPatch, PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
+import type { PersistentSessionSettingsPatch } from '../../api/persistentSessionEndpoints';
 import { useSessionStore } from '../../store/sessionStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens } from '../../theme';

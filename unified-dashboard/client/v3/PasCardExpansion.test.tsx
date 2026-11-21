@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { InternalLinkProvider } from '@seosoyoung/soul-ui/components/InternalLinkProvider';
 import type { CardComment, CardDetail, CardRow } from '@seosoyoung/soul-ui/cards/card-types';

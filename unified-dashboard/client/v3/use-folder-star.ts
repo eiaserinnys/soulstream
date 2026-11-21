@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { setFolderStarred } from "./folder-star-actions";
 import {

@@ -13,7 +13,8 @@ import { Badge } from "./ui/badge";
 import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
 import { LiquidGlassCard } from "./LiquidGlassCard";
-import type { SessionSummary, SessionStatus } from "../shared/types";
+import type { SessionStatus } from "@soulstream/wire-schema";
+import type { SessionSummary } from "../shared/types";
 import { getSessionActivityTimestamp } from "../shared/session-activity";
 
 // === Status Config ===

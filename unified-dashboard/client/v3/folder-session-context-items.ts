@@ -1,4 +1,4 @@
-import type { BlockDto } from "@seosoyoung/soul-ui/page";
+import type { BlockDto } from "../../../packages/page-model/src/types";
 import type { ProjectContextInheritance } from "./project-context-inheritance";
 import { singleLinePreview } from "./session-preview";
 

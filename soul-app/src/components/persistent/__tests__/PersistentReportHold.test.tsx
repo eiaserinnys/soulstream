@@ -1,8 +1,7 @@
-import React from 'react';
 import { Text, View } from 'react-native';
 import { act, render, renderHook } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import { usePersistentReport } from '../usePersistentReport';
 import { usePersistentReportSend } from '../usePersistentReportSend';
 import { CARD_QUESTION_ANSWERED_REASON } from '../../chat/useChatSendFlow';

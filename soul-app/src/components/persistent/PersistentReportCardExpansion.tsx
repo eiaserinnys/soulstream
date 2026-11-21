@@ -1,8 +1,8 @@
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardCheckItem } from '../../api/cardTypes';
-import type { PersistentReportEntry } from '../../api/types';
+import type { PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { useCardActions } from '../../hooks/useCardActions';
 import { FrameLoading } from '../FrameLoading';
 import { useCardComments } from '../../hooks/useCardComments';

@@ -1,9 +1,10 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { FrameLoading } from '../FrameLoading';
 import type { ApiClient } from '../../api/client';
-import type { CardDetail, CardDto, CardStatus } from '../../api/cardTypes';
+import type { CardStatus } from '../../../../packages/wire-schema/generated/typescript/index';
+import type { CardDetail, CardDto } from '../../api/cardTypes';
 import { captureAuthScope } from '../../lib/auth-scope';
 import { MANUAL_STATUS_COLUMNS } from '../../lib/card-board-layout';
 import { cardTransitionProblem } from '../../lib/card-transition';

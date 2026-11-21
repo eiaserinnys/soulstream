@@ -1,5 +1,6 @@
 import type { ApiClient } from '../api/client';
-import type { CardCheckItem, CardDto, CardPatch, CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardCheckItem, CardDto, CardPatch } from '../api/cardTypes';
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { reviewSessionEventsUrl } from './chat-fixtures';

@@ -1,9 +1,8 @@
-import { CARD_QUESTION_ANSWERED_HOLD_MS } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_QUESTION_ANSWERED_HOLD_MS, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
-import type { PersistentReportEntry } from '../../api/types';
 import type { CardQuestionView } from '../planner/card-question-viewmodel';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { isPersistentReportCardExpandable, isReviewCardEntry, isServerCardAcknowledgement } from '../../lib/persistent-report-card';

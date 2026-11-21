@@ -1,4 +1,5 @@
-import type { BrowserBacklinkDto, PageApiClient } from "@seosoyoung/soul-ui/page";
+import type { BrowserBacklinkDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 export async function loadAllMountBacklinks(
   api: PageApiClient,
