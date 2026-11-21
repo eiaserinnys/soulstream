@@ -204,6 +204,268 @@ test('설치된 도구를 직접 부르는 생성 스크립트는 0으로 끝난
   );
 });
 
+test('한 줄 run의 시험 경로에 붙은 세미콜론을 떼고 본다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs;',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('앞 명령의 -C가 뒤 명령의 시험 경로 기준이 되지 않는다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '', 'other/.keep': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: git -C other status && node --test tests/live.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('한 줄 run의 두 번째 시험 명령도 따로 본다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs && node --test tests/gone.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('.github/workflows/probe.yml:9 tests/gone.test.mjs'), result.stdout);
+    },
+  );
+});
+
+test('한 줄 run의 꼬리 주석은 명령으로 읽지 않는다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs # tests/gone.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('블록 run의 주석 줄은 명령으로 읽지 않는다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: |',
+      '          node --test tests/live.test.mjs',
+      '          # node --test tests/gone.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('job defaults의 working-directory 아래 시험 경로를 본다', () => {
+  withRepository(
+    { 'pkg/tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    defaults:',
+      '      run:',
+      '        working-directory: pkg',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('job defaults 아래에 없는 시험 경로를 알린다', () => {
+  withRepository(
+    { 'pkg/tests/other.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    defaults:',
+      '      run:',
+      '        working-directory: pkg',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/gone.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('.github/workflows/probe.yml:12 tests/gone.test.mjs'), result.stdout);
+    },
+  );
+});
+
+test('step working-directory가 job defaults보다 앞선다', () => {
+  withRepository(
+    { 'pkg2/tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    defaults:',
+      '      run:',
+      '        working-directory: pkg',
+      '    steps:',
+      '      - name: Run tests',
+      '        working-directory: pkg2',
+      '        run: node --test tests/live.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('워크플로 defaults의 working-directory 아래 시험 경로를 본다', () => {
+  withRepository(
+    { 'pkg/tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'defaults:',
+      '  run:',
+      '    working-directory: pkg',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('job 블록 안의 YAML 주석이 defaults 판독을 흔들지 않는다', () => {
+  withRepository(
+    { 'pkg/tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '      # 들여쓰기가 다른 주석',
+      '    runs-on: ubuntu-latest',
+      '    defaults:',
+      '      run:',
+      '        working-directory: pkg',
+      '# 최상위 열 주석',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: node --test tests/live.test.mjs',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
+test('YAML로 따옴표 친 한 줄 run의 시험 경로를 본다', () => {
+  withRepository(
+    { 'tests/live.test.mjs': '' },
+    [
+      'name: Probe',
+      'on:',
+      '  push:',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Run tests',
+      '        run: "node --test tests/live.test.mjs"',
+    ].join('\n'),
+    (root) => {
+      const result = runChecker(root);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.ok(result.stdout.includes('시험 경로 1개'), result.stdout);
+    },
+  );
+});
+
 test('따옴표 세 꼴과 목록 사이 주석을 읽는다', () => {
   const filters = parsePathFilters(
     [
