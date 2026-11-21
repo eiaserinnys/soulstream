@@ -108,7 +108,7 @@ async function persistSnapshot(
       appearance: snapshot.appearance,
       glass: snapshot.glass,
       chatFontSize: snapshot.chatFontSize,
-      wallpaper: uploaded.wallpaper,
+      wallpaper: uploaded.preferences.wallpaper,
     });
   }
 

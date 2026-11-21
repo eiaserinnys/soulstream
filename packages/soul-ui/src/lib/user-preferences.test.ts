@@ -6,12 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchUserPreferences,
-  normalizeUserPreferencesResponse,
+  normalizeUserPreferences,
   readCachedUserPreferences,
   saveUserPreferences,
   uploadUserBackground,
   writeCachedUserPreferences,
 } from "./user-preferences";
+import { normalizeUserPreferencesResponse } from "./user-preferences-envelope";
 
 afterEach(() => {
   window.localStorage.clear();
@@ -22,22 +23,24 @@ describe("user-preferences", () => {
   it("normalizes server responses and preserves background URLs", () => {
     const result = normalizeUserPreferencesResponse({
       email: "user@example.com",
-      appearance: "dark",
-      chatFontSize: 18,
-      wallpaper: { mode: "photo", customImage: "/api/user/background?v=1" },
-      glass: { enabled: false, refraction: 63, blur: 4, chromatic: 1.2, specular: 0.5, tint: 0.3 },
+      preferences: {
+        appearance: "dark",
+        chatFontSize: 18,
+        wallpaper: { mode: "photo", customImage: "/api/user/background?v=1" },
+        glass: { enabled: false, refraction: 63, blur: 4, chromatic: 1.2, specular: 0.5, tint: 0.3 },
+      },
       hasBackground: true,
       backgroundUrl: "/api/user/background?v=1",
       updatedAt: "2026-06-14T00:00:00Z",
-    });
+    }, normalizeUserPreferences);
 
-    expect(result.appearance).toBe("dark");
-    expect(result.chatFontSize).toBe(18);
-    expect(result.wallpaper).toEqual({
+    expect(result.preferences.appearance).toBe("dark");
+    expect(result.preferences.chatFontSize).toBe(18);
+    expect(result.preferences.wallpaper).toEqual({
       mode: "photo",
       customImage: "/api/user/background?v=1",
     });
-    expect(result.glass).toEqual({
+    expect(result.preferences.glass).toEqual({
       enabled: false,
       refraction: 63,
       blur: 4,
@@ -61,9 +64,9 @@ describe("user-preferences", () => {
           tint: 2,
         },
       },
-    });
+    }, normalizeUserPreferences);
 
-    expect(result.glass).toEqual({
+    expect(result.preferences.glass).toEqual({
       enabled: true,
       refraction: 90,
       blur: 0,
@@ -92,9 +95,11 @@ describe("user-preferences", () => {
   it("GETs preferences with same-origin credentials", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       email: "user@example.com",
-      appearance: "system",
-      wallpaper: { mode: "bokeh" },
-      glass: { enabled: true, refraction: 75, blur: 5, chromatic: 0.8, specular: 0.25, tint: 0.62 },
+      preferences: {
+        appearance: "system",
+        wallpaper: { mode: "bokeh" },
+        glass: { enabled: true, refraction: 75, blur: 5, chromatic: 0.8, specular: 0.25, tint: 0.62 },
+      },
       hasBackground: false,
       backgroundUrl: null,
       updatedAt: null,
@@ -112,9 +117,11 @@ describe("user-preferences", () => {
   it("PUTs preferences with clearBackground", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       email: "user@example.com",
-      appearance: "dark",
-      wallpaper: { mode: "plain" },
-      glass: { enabled: false, refraction: 50, blur: 2, chromatic: 0.5, specular: 0.3, tint: 0.7 },
+      preferences: {
+        appearance: "dark",
+        wallpaper: { mode: "plain" },
+        glass: { enabled: false, refraction: 50, blur: 2, chromatic: 0.5, specular: 0.3, tint: 0.7 },
+      },
       hasBackground: false,
       backgroundUrl: null,
       updatedAt: "2026-06-14T00:00:00Z",
@@ -150,9 +157,11 @@ describe("user-preferences", () => {
   it("POSTs background uploads as multipart form data", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       email: "user@example.com",
-      appearance: "system",
-      wallpaper: { mode: "photo", customImage: "/api/user/background?v=2" },
-      glass: { enabled: true, refraction: 75, blur: 5, chromatic: 0.8, specular: 0.25, tint: 0.62 },
+      preferences: {
+        appearance: "system",
+        wallpaper: { mode: "photo", customImage: "/api/user/background?v=2" },
+        glass: { enabled: true, refraction: 75, blur: 5, chromatic: 0.8, specular: 0.25, tint: 0.62 },
+      },
       hasBackground: true,
       backgroundUrl: "/api/user/background?v=2",
       updatedAt: "2026-06-14T00:00:00Z",

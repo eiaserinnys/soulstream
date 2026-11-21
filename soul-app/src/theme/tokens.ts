@@ -9,7 +9,8 @@ import {
   type TextStyle,
 } from 'react-native';
 import { useDeviceType, deviceTypeToBaseKey } from './useDeviceType';
-import { useSettingsStore, type Appearance as UserAppearance } from '../store/settingsStore';
+import { useSettingsStore } from '../store/settingsStore';
+import type { Appearance } from '../../../packages/soul-ui/src/lib/user-preferences-envelope';
 import {
   DARK_COLORS,
   LIGHT_COLORS,
@@ -438,7 +439,7 @@ function isBackgroundAppState(state: AppStateStatus): boolean {
 }
 
 export function resolveMode(
-  appearance: UserAppearance,
+  appearance: Appearance,
   systemScheme: ColorSchemeName | null | undefined
 ): 'light' | 'dark' {
   if (appearance === 'light') return 'light';

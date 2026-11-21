@@ -187,13 +187,15 @@ describe("user background route harness", () => {
     ]);
     expect(response.json()).toMatchObject({
       email: "user@example.com",
-      appearance: "dark",
+      preferences: {
+        appearance: "dark",
+        wallpaper: {
+          mode: "photo",
+          customImage: "/api/user/background?v=1783566306",
+        },
+      },
       hasBackground: true,
       backgroundUrl: "/api/user/background?v=1783566306",
-      wallpaper: {
-        mode: "photo",
-        customImage: "/api/user/background?v=1783566306",
-      },
     });
 
     await app.close();
@@ -323,8 +325,10 @@ describe("user background route harness", () => {
       ],
     ]);
     expect(response.json()).toMatchObject({
-      appearance: "light",
-      wallpaper: { mode: "bokeh" },
+      preferences: {
+        appearance: "light",
+        wallpaper: { mode: "bokeh" },
+      },
       hasBackground: false,
     });
 

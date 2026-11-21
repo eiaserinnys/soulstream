@@ -9,12 +9,9 @@ import {
   View,
   type ImageSourcePropType,
 } from 'react-native';
-import {
-  useSettingsStore,
-  type Appearance,
-  type WallpaperMode,
-  type WallpaperSettings,
-} from '../../store/settingsStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import type { Appearance } from '../../../../packages/soul-ui/src/lib/user-preferences-envelope';
+import type { WallpaperMode, WallpaperSettings } from '../../../../packages/soul-ui/src/lib/wallpaper-settings';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { useAuthStore } from '../../store/authStore';
 import { useDeviceType, useTokens, type DesignTokens } from '../../theme';

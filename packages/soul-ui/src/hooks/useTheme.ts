@@ -1,19 +1,9 @@
-/**
- * useTheme - 다크/라이트 테마 상태 관리 훅
- *
- * <html> 요소의 .dark 클래스를 정본으로 사용하며,
- * useSyncExternalStore로 React 컴포넌트에 반응성을 제공합니다.
- *
- * 이 훅을 통해 테마에 의존하는 모든 컴포넌트가 동기화됩니다.
- */
-
 import { useSyncExternalStore } from "react";
+import type { Appearance } from "../lib/user-preferences-envelope";
 
 const STORAGE_KEY = "soul-dashboard-theme";
 export type Theme = "dark" | "light";
-export type Appearance = "system" | Theme;
 
-/** 변경 리스너 세트 — setTheme() 호출 시 모든 구독자에게 통지 */
 const listeners = new Set<() => void>();
 let currentAppearance: Appearance = "system";
 let mediaListenerInstalled = false;

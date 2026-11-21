@@ -6,9 +6,9 @@ import {
   DEFAULT_USER_PREFERENCES,
   normalizeUserPreferences,
   normalizeWallpaperSettings,
-  type Appearance,
   type UserPreferencesSnapshot,
 } from '../api/preferencesEndpoints';
+import type { Appearance } from '../../../packages/soul-ui/src/lib/user-preferences-envelope';
 import type { WallpaperMode, WallpaperSettings } from '../../../packages/soul-ui/src/lib/wallpaper-settings';
 
 export type ServerType = 'soul-server' | 'orchestrator';
@@ -27,13 +27,6 @@ export interface PersistentSessionWeeklyUsageNodeSelection {
 }
 
 export type PersistentSessionDevicePrefs = Record<string, PersistentSessionDevicePreference>;
-
-export type {
-  Appearance,
-  UserPreferencesSnapshot,
-  WallpaperMode,
-  WallpaperSettings,
-};
 
 interface SettingsState {
   cardIncludeCompleted: Record<string, boolean>;

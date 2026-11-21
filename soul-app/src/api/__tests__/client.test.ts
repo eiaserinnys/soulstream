@@ -482,8 +482,10 @@ describe('client user preferences endpoints', () => {
   it('GETs and normalizes /api/user/preferences with auth', async () => {
     const fetchMock = makeFetchMock({
       email: 'user@example.com',
-      appearance: 'dark',
-      wallpaper: { mode: 'photo', customImage: '/api/user/background?v=1' },
+      preferences: {
+        appearance: 'dark',
+        wallpaper: { mode: 'photo', customImage: '/api/user/background?v=1' },
+      },
       hasBackground: true,
       backgroundUrl: '/api/user/background?v=1',
       updatedAt: '2026-06-14T00:00:00Z',
@@ -492,8 +494,8 @@ describe('client user preferences endpoints', () => {
 
     const preferences = await api.getUserPreferences();
 
-    expect(preferences.appearance).toBe('dark');
-    expect(preferences.wallpaper).toEqual({
+    expect(preferences.preferences.appearance).toBe('dark');
+    expect(preferences.preferences.wallpaper).toEqual({
       mode: 'photo',
       customImage: '/api/user/background?v=1',
     });
@@ -508,8 +510,10 @@ describe('client user preferences endpoints', () => {
   it('PUTs appearance and wallpaper with clearBackground', async () => {
     const fetchMock = makeFetchMock({
       email: 'user@example.com',
-      appearance: 'light',
-      wallpaper: { mode: 'plain' },
+      preferences: {
+        appearance: 'light',
+        wallpaper: { mode: 'plain' },
+      },
       hasBackground: false,
       backgroundUrl: null,
       updatedAt: '2026-06-14T00:00:00Z',
@@ -534,8 +538,10 @@ describe('client user preferences endpoints', () => {
   it('POSTs background multipart to /api/user/background', async () => {
     const fetchMock = makeFetchMock({
       email: 'user@example.com',
-      appearance: 'system',
-      wallpaper: { mode: 'photo', customImage: '/api/user/background?v=2' },
+      preferences: {
+        appearance: 'system',
+        wallpaper: { mode: 'photo', customImage: '/api/user/background?v=2' },
+      },
       hasBackground: true,
       backgroundUrl: '/api/user/background?v=2',
       updatedAt: '2026-06-14T00:00:00Z',

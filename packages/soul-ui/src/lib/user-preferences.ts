@@ -8,7 +8,12 @@ import {
   normalizeLiquidGlassSettings,
   type LiquidGlassSettings,
 } from "./glass-settings";
-import type { Appearance } from "../hooks/useTheme";
+import {
+  normalizeAppearance,
+  normalizeUserPreferencesResponse,
+  type Appearance,
+  type UserPreferencesResponse,
+} from "./user-preferences-envelope";
 import {
   DEFAULT_CHAT_FONT_SIZE,
   normalizeChatFontSize,
@@ -22,14 +27,6 @@ export interface UserPreferencesSnapshot {
   chatFontSize: ChatFontSize;
 }
 
-export interface UserPreferencesResponse extends UserPreferencesSnapshot {
-  email: string;
-  preferences: UserPreferencesSnapshot;
-  hasBackground: boolean;
-  backgroundUrl: string | null;
-  updatedAt: string | null;
-}
-
 export const DEFAULT_USER_PREFERENCES: UserPreferencesSnapshot = {
   appearance: "system",
   wallpaper: DEFAULT_WALLPAPER_SETTINGS,
@@ -38,32 +35,15 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesSnapshot = {
 };
 
 const CACHE_PREFIX = "soul-user-preferences:";
-const APPEARANCES = new Set<Appearance>(["system", "light", "dark"]);
 
 export function normalizeUserPreferences(value: unknown): UserPreferencesSnapshot {
   if (!value || typeof value !== "object") return DEFAULT_USER_PREFERENCES;
   const source = value as Partial<UserPreferencesSnapshot>;
   return {
-    appearance: APPEARANCES.has(source.appearance as Appearance) ? source.appearance as Appearance : "system",
+    appearance: normalizeAppearance(source.appearance),
     wallpaper: normalizeWallpaperSettings(source.wallpaper),
     glass: normalizeLiquidGlassSettings(source.glass),
     chatFontSize: normalizeChatFontSize(source.chatFontSize),
-  };
-}
-
-export function normalizeUserPreferencesResponse(value: unknown): UserPreferencesResponse {
-  const source = value && typeof value === "object" ? value as Partial<UserPreferencesResponse> : {};
-  const preferences = normalizeUserPreferences(source.preferences ?? source);
-  return {
-    email: typeof source.email === "string" ? source.email : "",
-    preferences,
-    appearance: preferences.appearance,
-    wallpaper: preferences.wallpaper,
-    glass: preferences.glass,
-    chatFontSize: preferences.chatFontSize,
-    hasBackground: Boolean(source.hasBackground),
-    backgroundUrl: typeof source.backgroundUrl === "string" ? source.backgroundUrl : null,
-    updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,
   };
 }
 
@@ -88,16 +68,16 @@ export function writeCachedUserPreferences(email: string, preferences: UserPrefe
   }
 }
 
-export async function fetchUserPreferences(): Promise<UserPreferencesResponse> {
+export async function fetchUserPreferences(): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> {
   const response = await fetch("/api/user/preferences", { credentials: "same-origin" });
   if (!response.ok) throw new Error(`User preferences fetch failed: ${response.status}`);
-  return normalizeUserPreferencesResponse(await response.json());
+  return normalizeUserPreferencesResponse(await response.json(), normalizeUserPreferences);
 }
 
 export async function saveUserPreferences(
   preferences: UserPreferencesSnapshot,
   options: { clearBackground?: boolean } = {},
-): Promise<UserPreferencesResponse> {
+): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> {
   const response = await fetch("/api/user/preferences", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -108,10 +88,10 @@ export async function saveUserPreferences(
     }),
   });
   if (!response.ok) throw new Error(`User preferences save failed: ${response.status}`);
-  return normalizeUserPreferencesResponse(await response.json());
+  return normalizeUserPreferencesResponse(await response.json(), normalizeUserPreferences);
 }
 
-export async function uploadUserBackground(file: Blob): Promise<UserPreferencesResponse> {
+export async function uploadUserBackground(file: Blob): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> {
   const formData = new FormData();
   formData.append("file", file, file instanceof File ? file.name : "wallpaper.jpg");
   const response = await fetch("/api/user/background", {
@@ -120,16 +100,16 @@ export async function uploadUserBackground(file: Blob): Promise<UserPreferencesR
     body: formData,
   });
   if (!response.ok) throw new Error(`User background upload failed: ${response.status}`);
-  return normalizeUserPreferencesResponse(await response.json());
+  return normalizeUserPreferencesResponse(await response.json(), normalizeUserPreferences);
 }
 
-export async function deleteUserBackground(): Promise<UserPreferencesResponse> {
+export async function deleteUserBackground(): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> {
   const response = await fetch("/api/user/background", {
     method: "DELETE",
     credentials: "same-origin",
   });
   if (!response.ok) throw new Error(`User background delete failed: ${response.status}`);
-  return normalizeUserPreferencesResponse(await response.json());
+  return normalizeUserPreferencesResponse(await response.json(), normalizeUserPreferences);
 }
 
 export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createApiClient } from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
-import { useSettingsStore, type Appearance, type WallpaperSettings } from '../../store/settingsStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import type { Appearance } from '../../../../packages/soul-ui/src/lib/user-preferences-envelope';
+import type { WallpaperSettings } from '../../../../packages/soul-ui/src/lib/wallpaper-settings';
 
-/** 화면 설정과 PAS 밝기 버튼이 같은 저장·응답 유효성 경로를 사용한다. */
 export function useDisplayPreferenceActions() {
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const wallpaper = useSettingsStore(state => state.wallpaper);

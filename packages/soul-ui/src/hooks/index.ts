@@ -1,13 +1,7 @@
-/**
- * @seosoyoung/soul-ui - Hooks Barrel
- */
-
-// === Theme ===
 export { useTheme, useAppearancePreference, initTheme, setTheme, setAppearancePreference } from "./useTheme";
-export type { Appearance, Theme } from "./useTheme";
+export type { Theme } from "./useTheme";
 export { useUserPreferencesSync } from "./useUserPreferencesSync";
 
-// === Chat attachments ===
 export { ChatAttachmentLoaderProvider, useChatAttachmentLoader } from "./ChatAttachmentLoader";
 export type { ChatAttachmentLoader, ChatAttachmentLoaderInput } from "./ChatAttachmentLoader";
 export type { ChatAttachmentItem } from "../lib/chat-attachment-model";
