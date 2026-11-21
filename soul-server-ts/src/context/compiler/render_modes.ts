@@ -34,6 +34,18 @@ export function isContextRenderMode(value: string | undefined): value is Context
   return value === "full" || value === "index" || value === "titles";
 }
 
+export async function fetchAtomNodeTitle(
+  config: AtomFetchConfig,
+  nodeId: string,
+  logger: ContextCompilerLogger,
+): Promise<string | null> {
+  const result = await fetchAtomMarkdownResult(config, {
+    nodeId, depth: 0, titlesOnly: true, includeIds: true,
+  }, logger);
+  if (!result.markdown) return null;
+  return parseAtomTreeNodes(result.markdown).find((node) => node.nodeId === nodeId && node.depth === 0)?.title ?? null;
+}
+
 export async function renderExplicitAtomSource(
   config: AtomFetchConfig,
   spec: AtomContextSpec,

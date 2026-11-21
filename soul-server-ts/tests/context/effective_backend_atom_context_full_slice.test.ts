@@ -32,6 +32,11 @@ function markerCount(markdown: string | null): number {
   return (markdown?.split(BACKGROUND_MARKER).length ?? 1) - 1;
 }
 
+function bodyCompileCalls(): number {
+  return vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
+    new URL(String(url)).searchParams.get("titles_only") !== "true").length;
+}
+
 function expectedHostOsConditionValue(osType: string): string {
   return ({ Windows_NT: "windows", Linux: "linux", Darwin: "darwin" } as Record<string, string>)[osType]
     ?? osType.toLowerCase();
@@ -89,7 +94,7 @@ describe("effective-backend prompt containment full slice", () => {
           sources: [expect.objectContaining({ status: "filtered", chars: 0 })],
         },
       });
-      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(bodyCompileCalls()).toBe(0);
     } finally {
       await app.close();
     }
@@ -128,7 +133,7 @@ describe("effective-backend prompt containment full slice", () => {
           sources: [expect.objectContaining({ status: "ok" })],
         },
       });
-      expect(globalThis.fetch).toHaveBeenCalledOnce();
+      expect(bodyCompileCalls()).toBe(1);
       expect(logger.warn).not.toHaveBeenCalled();
     } finally {
       await app.close();

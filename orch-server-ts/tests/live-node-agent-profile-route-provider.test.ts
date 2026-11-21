@@ -237,6 +237,22 @@ describe("live node agent profile route provider", () => {
     });
   });
 
+  it("forwards agent preview requests and preserves a node 404", async () => {
+    const { provider, requestNode } = createFixture({
+      requestNode: vi.fn(async () => ({
+        statusCode: 404, headers: { "content-type": "application/json" },
+        body: { detail: "Unknown agent" },
+      })),
+    });
+    const input = { agent_id: "missing", session: { backend: "codex" } };
+    await expect(provider.previewAgentContext("node-a", input)).rejects.toMatchObject({
+      statusCode: 404, message: "Unknown agent",
+    });
+    expect(requestNode).toHaveBeenCalledWith(expect.objectContaining({
+      nodeId: "node-a", path: "/api/context/preview", body: input,
+    }));
+  });
+
   it("sends config commands through registry createCommand and websocket bridge", async () => {
     const { provider, sentMessages } = createFixture();
 

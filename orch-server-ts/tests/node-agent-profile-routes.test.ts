@@ -482,11 +482,21 @@ describe("node agent/profile route harness", () => {
     expect(response.json()).toEqual({ manifest: { sources: [] } });
     expect(calls).toEqual([["preview", "node-a", input]]);
 
+    const agentInput = { agent_id: "agent-a", session: { backend: "codex" } };
     expect((await app.inject({
-      method: "POST",
-      url: "/api/nodes/node-a/agents/context-preview",
-      payload: { atom_contexts: "invalid" },
-    })).statusCode).toBe(422);
+      method: "POST", url: "/api/nodes/node-a/agents/context-preview", payload: agentInput,
+    })).statusCode).toBe(200);
+    expect(calls).toEqual([["preview", "node-a", input], ["preview", "node-a", agentInput]]);
+
+    for (const payload of [
+      { atom_contexts: "invalid" }, {}, { agent_id: "" },
+      { atom_contexts: [], agent_id: "agent-a" },
+    ]) {
+      expect((await app.inject({
+        method: "POST", url: "/api/nodes/node-a/agents/context-preview", payload,
+      })).statusCode).toBe(422);
+    }
+    expect(calls).toHaveLength(2);
     await app.close();
   });
 
