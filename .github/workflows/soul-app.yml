@@ -5,12 +5,18 @@ on:
     branches: [main]
     paths:
       - 'soul-app/**'
+      - 'packages/soul-ui/**'
+      - 'packages/chat-ui/**'
+      - 'packages/search-contract/**'
       - 'packages/wire-schema/**'
       - '.easignore'
       - '.github/workflows/soul-app.yml'
   pull_request:
     paths:
       - 'soul-app/**'
+      - 'packages/soul-ui/**'
+      - 'packages/chat-ui/**'
+      - 'packages/search-contract/**'
       - 'packages/wire-schema/**'
       - '.easignore'
       - '.github/workflows/soul-app.yml'
