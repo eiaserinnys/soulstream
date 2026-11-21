@@ -9,6 +9,7 @@ import type WebSocket from "ws";
 import * as Y from "yjs";
 import type {
   BacklinkDto,
+  PageDto,
   PageLinkKind,
   PageListDto,
 } from "@soulstream/page-model";
@@ -37,6 +38,7 @@ import {
   type PageYjsPersistenceRepository,
 } from "./page_yjs_persistence.js";
 import type { PageBacklinkPage } from "./page_repository_reads.js";
+import type { PlannerBlockDto } from "../planner/planner_contract.js";
 import {
   closePageYjsRuntime,
   getPageYjsServiceDiagnostics,
@@ -101,31 +103,9 @@ export interface PageYjsServiceConfig {
   ) => Promise<PageServiceMutationResult | null>;
 }
 
-export interface PageServicePageDto {
-  id: string;
-  title: string;
-  daily_date: string | null;
-  version: number;
-  archived: boolean;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PageServiceBlockDto {
-  id: string;
-  page_id: string;
-  parent_id: string | null;
-  position_key: string;
-  block_type: string;
-  text: string;
-  properties: Record<string, unknown>;
-  collapsed: boolean;
-}
-
 export interface PageServiceReadResult {
-  page: PageServicePageDto;
-  blocks: PageServiceBlockDto[];
+  page: PageDto;
+  blocks: PlannerBlockDto[];
 }
 
 export interface PageServiceBrowserReadResult extends PageServiceReadResult {
@@ -139,7 +119,7 @@ export interface PageServiceMutationResult extends PageServiceReadResult {
 }
 
 export interface PageServiceDailyResult {
-  page: PageServicePageDto;
+  page: PageDto;
   created: boolean;
   operation?: PageOperationRecord;
 }
@@ -322,7 +302,7 @@ export class PageYjsService {
     return await this.config.repository.listPages(input);
   }
 
-  async findPage(title: string): Promise<PageServicePageDto | null> {
+  async findPage(title: string): Promise<PageDto | null> {
     const pageId = await this.config.repository.findPageIdByTitle(title);
     return pageId ? (await this.getPage(pageId)).page : null;
   }

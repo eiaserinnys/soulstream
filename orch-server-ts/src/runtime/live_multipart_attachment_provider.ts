@@ -1,7 +1,8 @@
 import type { MultipartAttachmentOptions } from "../attachments/multipart_attachment_routes.js";
 import type { SessionResourceAccessProvider, SessionResourceAccessRepository } from "../session/session_resource_access.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
-import { sendAttachmentCommand, type LiveAttachmentCommandRegistry, type LiveAttachmentCommandBridge } from "./live_attachment_route_provider.js";
+import type { NodeCommandRegistryPort } from "../node/registry_types.js";
+import { sendAttachmentCommand, type LiveAttachmentCommandBridge } from "./live_attachment_route_provider.js";
 
 export function createLiveMultipartAttachmentOptions(input: {
   resolveStorage: MultipartAttachmentOptions["resolveStorage"];
@@ -9,7 +10,7 @@ export function createLiveMultipartAttachmentOptions(input: {
   configProvider: LiveConfigProviderBoundary;
   repository: SessionResourceAccessRepository;
   access: SessionResourceAccessProvider;
-  registry: LiveAttachmentCommandRegistry;
+  registry: NodeCommandRegistryPort;
   bridge: LiveAttachmentCommandBridge;
 }): MultipartAttachmentOptions {
   function node(nodeId: string) {

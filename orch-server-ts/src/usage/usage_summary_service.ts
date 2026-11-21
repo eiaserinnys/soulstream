@@ -1,9 +1,11 @@
 import type {
   NodeCommandResponse,
-  PendingNodeCommand,
   RequestResponseNodeCommandPayload,
 } from "../node/pending_commands.js";
-import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import type {
+  NodeCommandRegistryPort,
+  NodeConnectionSnapshot,
+} from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
@@ -82,17 +84,8 @@ export type UsageSummarySnapshot = {
   readonly nodes: readonly UsageSummaryNode[];
 };
 
-export type UsageSummaryRegistry = {
+export type UsageSummaryRegistry = NodeCommandRegistryPort & {
   readonly listConnectedNodes: () => readonly NodeConnectionSnapshot[];
-  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
-  readonly createCommand: <
-    TPayload extends RequestResponseNodeCommandPayload,
-    TResponse extends NodeCommandResponse = NodeCommandResponse,
-  >(
-    nodeId: string,
-    payload: TPayload,
-    options?: { timeoutMs?: number },
-  ) => PendingNodeCommand<TPayload, TResponse>;
 };
 
 export type UsageSummaryBridge = Pick<SessionCommandTransportBridge, "sendPendingCommand">;

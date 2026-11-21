@@ -12,10 +12,12 @@ import {
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
-  type PendingNodeCommand,
   type RequestResponseNodeCommandPayload,
 } from "../node/pending_commands.js";
-import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import type {
+  NodeCommandRegistryPort,
+  NodeConnectionSnapshot,
+} from "../node/registry_types.js";
 import {
   NodeCommandTransportError,
   type SessionCommandTransportBridge,
@@ -23,18 +25,6 @@ import {
 
 export type LiveCogitoNodeRegistry = {
   readonly listConnectedNodes: () => readonly NodeConnectionSnapshot[];
-};
-
-export type LiveCogitoBriefRegistry = {
-  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
-  readonly createCommand: <
-    TPayload extends RequestResponseNodeCommandPayload,
-    TResponse extends NodeCommandResponse = NodeCommandResponse,
-  >(
-    nodeId: string,
-    payload: TPayload,
-    options?: { timeoutMs?: number },
-  ) => PendingNodeCommand<TPayload, TResponse>;
 };
 
 export type CreateLiveCogitoRouteProviderOptions = {
@@ -47,7 +37,7 @@ export type LiveCogitoCommandBridge = Pick<
 >;
 
 export type CreateLiveCogitoBriefCollectorOptions = {
-  readonly registry: LiveCogitoBriefRegistry;
+  readonly registry: NodeCommandRegistryPort;
   readonly bridge: LiveCogitoCommandBridge;
 };
 

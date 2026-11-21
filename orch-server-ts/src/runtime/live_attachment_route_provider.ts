@@ -18,10 +18,12 @@ import {
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
   type NodeCommandResponse,
-  type PendingNodeCommand,
   type RequestResponseNodeCommandPayload,
 } from "../node/pending_commands.js";
-import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import type {
+  NodeCommandRegistryPort,
+  NodeConnectionSnapshot,
+} from "../node/registry_types.js";
 import type { SessionResourceAccessProvider } from "../session/session_resource_access.js";
 import {
   NodeCommandTransportError,
@@ -34,25 +36,13 @@ export type LiveAttachmentRouteProviderBundle = Pick<
   "provider" | "accessProvider" | "transport"
 >;
 
-export type LiveAttachmentCommandRegistry = {
-  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
-  readonly createCommand: <
-    TPayload extends RequestResponseNodeCommandPayload,
-    TResponse extends NodeCommandResponse = NodeCommandResponse,
-  >(
-    nodeId: string,
-    payload: TPayload,
-    options?: { timeoutMs?: number },
-  ) => PendingNodeCommand<TPayload, TResponse>;
-};
-
 export type LiveAttachmentCommandBridge = Pick<
   SessionCommandTransportBridge,
   "sendPendingCommand"
 >;
 
 export type CreateLiveAttachmentRouteProvidersOptions = {
-  readonly registry: LiveAttachmentCommandRegistry;
+  readonly registry: NodeCommandRegistryPort;
   readonly bridge: LiveAttachmentCommandBridge;
   readonly uploadIdGenerator?: () => string;
   readonly dashboardAccessProvider: Pick<
@@ -277,7 +267,7 @@ export async function sendAttachmentCommand<
 }
 
 function requireCurrentConnection(
-  registry: LiveAttachmentCommandRegistry,
+  registry: NodeCommandRegistryPort,
   node: AttachmentNode,
 ): NodeConnectionSnapshot {
   const nodeId = typeof node.nodeId === "string" ? node.nodeId : node.id;
@@ -309,11 +299,11 @@ function mapAttachmentCommandError(error: unknown): unknown {
     return error;
   }
   if (error instanceof PendingNodeCommandRejectedError) {
-    const invalidRequest = /^INVALID_REQUEST:\s*(.*)$/s.exec(error.message);
-    if (invalidRequest) {
+    const invalidRequestMatch = /^INVALID_REQUEST:\s*(.*)$/s.exec(error.message);
+    if (invalidRequestMatch) {
       return new AttachmentRouteError(
         "INVALID_ATTACHMENT_REQUEST",
-        invalidRequest[1] ?? error.message,
+        invalidRequestMatch[1] ?? error.message,
         400,
       );
     }

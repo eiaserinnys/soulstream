@@ -3,6 +3,8 @@ import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resource
 
 import type {
   NodeCommandRequestIdGenerator,
+  NodeCommandResponse,
+  PendingNodeCommand,
   PendingNodeCommands,
   RequestResponseNodeCommandPayload,
 } from "./pending_commands.js";
@@ -79,6 +81,18 @@ export type NodeConnectionSnapshot = {
   controlAckMetrics: Record<string, ControlAckLatencyMetric>;
   pendingCommandCount: number;
   resources?: NodeResourceSnapshot;
+};
+
+export type NodeCommandRegistryPort = {
+  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
+  readonly createCommand: <
+    TPayload extends RequestResponseNodeCommandPayload,
+    TResponse extends NodeCommandResponse = NodeCommandResponse,
+  >(
+    nodeId: string,
+    payload: TPayload,
+    options?: { timeoutMs?: number },
+  ) => PendingNodeCommand<TPayload, TResponse>;
 };
 
 export type NodeRegisteredEvent = {

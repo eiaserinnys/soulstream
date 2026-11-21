@@ -1,10 +1,11 @@
 import type { EventReadRepository } from "./event_read_repository.js";
 import type { SessionReadRepository } from "./session_read_repository.js";
+import type { SessionStoryReadRepository } from "./session_story_read_repository.js";
 import type {
-  HostSessionStoryView,
-  SessionStoryReadRepository,
-} from "./session_story_read_repository.js";
-import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits } from "@soulstream/mcp-contract";
+  GenerationCheckpointMaterial,
+  GenerationCheckpointReadLimits,
+  SessionStoryView,
+} from "@soulstream/mcp-contract";
 
 const TURN_EXCERPT_EVENT_TYPES = [
   "user_message",
@@ -157,7 +158,7 @@ export class SessionReadCompositeRepository {
   }
 }
 
-function hasStoryContent(story: HostSessionStoryView): boolean {
+function hasStoryContent(story: SessionStoryView): boolean {
   return story.narrative !== null || story.unfoldedTurnSummaries.length > 0;
 }
 

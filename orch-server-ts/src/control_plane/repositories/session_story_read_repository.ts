@@ -9,6 +9,7 @@ import type {
 import type {
   SessionReadPeriod,
   SessionStoryTurnSummary,
+  SessionStoryView,
 } from "@soulstream/mcp-contract";
 import { readTurnSummaryCounts } from "../../turn-summary/turn_summary_count_query.js";
 import { LINKED_CARD_LATERAL_SQL } from "../../runtime/live_session_link_sql.js";
@@ -23,15 +24,6 @@ export interface HostSessionTurnTranscriptEvent {
 export interface HostSessionTurnTranscript {
   readonly turnNumber: number;
   readonly events: HostSessionTurnTranscriptEvent[];
-}
-
-export interface HostSessionStoryView {
-  readonly highlight: string | null;
-  readonly narrative: string | null;
-  readonly unfoldedTurnSummaries: SessionStoryTurnSummary[];
-  readonly narrativeThroughEventId: number | null;
-  readonly foldCount: number;
-  readonly updatedAt: Date | null;
 }
 
 export interface HostSessionTurnSummaryCounts {
@@ -333,7 +325,7 @@ ${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
     return rows.map(normalizeDigestSearchMatch);
   }
 
-  async getSessionStory(sessionId: string): Promise<HostSessionStoryView> {
+  async getSessionStory(sessionId: string): Promise<SessionStoryView> {
     const digestRows = await this.sql<Array<{
       highlight: string;
       narrative: string;

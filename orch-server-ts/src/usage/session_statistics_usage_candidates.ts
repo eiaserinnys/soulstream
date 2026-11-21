@@ -10,12 +10,12 @@ import type {
 import {
   addIssue,
   compareText,
-  hasOwn,
   isRecord,
   knownInteger,
   numericFields,
   blankFact,
 } from "./session_statistics_normalization_helpers.js";
+import { hasOwn } from "../http/route_validation.js";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import { normalizeUsageNumbers } from "./session_statistics_usage_numbers.js";
 

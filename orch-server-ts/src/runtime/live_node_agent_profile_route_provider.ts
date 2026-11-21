@@ -12,10 +12,12 @@ import type {
 import { NodeAgentProfileRouteError } from "../node/node_agent_profile_routes.js";
 import type {
   NodeCommandResponse,
-  PendingNodeCommand,
   RequestResponseNodeCommandPayload,
 } from "../node/pending_commands.js";
-import type { NodeConnectionSnapshot } from "../node/registry_types.js";
+import type {
+  NodeCommandRegistryPort,
+  NodeConnectionSnapshot,
+} from "../node/registry_types.js";
 import { mapNodeCommandError } from "../http/api_errors.js";
 import type { RoutedPendingSessionCommand } from "../session/session_command_router.js";
 import type {
@@ -35,18 +37,6 @@ type AgentSnapshot = {
   readonly portrait_b64?: unknown;
 };
 
-type LiveNodeAgentProfileRegistry = {
-  readonly getConnectedNode: (nodeId: string) => NodeConnectionSnapshot | undefined;
-  readonly createCommand: <
-    TPayload extends RequestResponseNodeCommandPayload,
-    TResponse extends NodeCommandResponse = NodeCommandResponse,
-  >(
-    nodeId: string,
-    payload: TPayload,
-    options?: { timeoutMs?: number },
-  ) => PendingNodeCommand<TPayload, TResponse>;
-};
-
 type LiveNodeAgentProfileBridge = {
   readonly sendPendingCommand: <
     TPayload extends RequestResponseNodeCommandPayload,
@@ -62,7 +52,7 @@ type LiveNodeAgentProfileHttpClient = Pick<
 >;
 
 export type CreateLiveNodeAgentProfileRouteProviderOptions = {
-  readonly registry: LiveNodeAgentProfileRegistry;
+  readonly registry: NodeCommandRegistryPort;
   readonly bridge: LiveNodeAgentProfileBridge;
   readonly nodeHttpClient: LiveNodeAgentProfileHttpClient;
   readonly agentProfileRepository: Pick<AgentProfileRepository, "list" | "getPortrait">;
@@ -364,7 +354,7 @@ async function sendConfigCommand<TPayload extends AgentConfigCommandPayload>(
 }
 
 function requireConnectedNode(
-  registry: LiveNodeAgentProfileRegistry,
+  registry: NodeCommandRegistryPort,
   nodeId: string,
 ): NodeConnectionSnapshot {
   const node = registry.getConnectedNode(nodeId);
