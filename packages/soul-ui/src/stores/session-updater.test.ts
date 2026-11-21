@@ -25,7 +25,6 @@ import type {
   ProgressEvent,
 } from "../shared/types";
 
-
 describe("shouldNotify", () => {
   describe("events that should trigger notification", () => {
     it("should return true for complete", () => {

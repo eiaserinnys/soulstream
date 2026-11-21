@@ -84,10 +84,15 @@ interface StreamRecovery {
 export interface UseSessionStreamCacheSyncOptions {
   /** 구독 활성화 여부. false면 연결하지 않는다. */
   enabled: boolean;
+  /**
+   * 매 connect 시 호출되어 SSE URL을 반환한다 (Last-Event-ID/instance_id 동적 부착용).
+   * 이 옵션은 useSessionStreamSSE에 그대로 패스스루된다.
+   */
   urlBuilder: () => string;
   queryKey: QueryKey;
   onEventIdAdvance?: (lastEventId: string) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => boolean | void;
+  /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
   onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
   /** folder_updated 수신 시 호출 (폴더 snapshot projection 갱신용). */
   onCardUpdated?: (event: CardUpdatedStreamEvent) => void;
