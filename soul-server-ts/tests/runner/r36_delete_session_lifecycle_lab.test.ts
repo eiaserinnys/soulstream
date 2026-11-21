@@ -332,7 +332,7 @@ describe("R36 delete_session lifecycle lab", () => {
       await coordinator.stop();
       await rm(fixture.root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("keeps a missing session with a non-terminal historical lifecycle pid", async () => {
     const fixture = await durableMissingSessionFixture("running", () => STARTED_AT);

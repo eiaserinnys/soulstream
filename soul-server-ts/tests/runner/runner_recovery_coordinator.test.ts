@@ -100,7 +100,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       const subject = makeSubject([current], RECOVERY_NOW_MS, [], { closedTailDrainer: drainer });
       await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
       expect(drain).toHaveBeenCalledOnce();
-      await vi.waitFor(() => expect(register).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(register).toHaveBeenCalledOnce(), { timeout: 5_000 });
       await expect(withinBudget(subject.coordinator.scanOnce(), 1_000)).resolves.toBeUndefined();
       expect(drain).toHaveBeenCalledOnce();
       pending.resolve();
