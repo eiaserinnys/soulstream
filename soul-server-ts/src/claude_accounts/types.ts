@@ -1,47 +1,22 @@
-export type ClaudeAccountAuthState = "ok" | "idle" | "logging_in" | "needs_relogin";
+import type {
+  ClaudeAccount,
+  ClaudeAccountBlocked,
+  ClaudeAccountDeleteResult as WireClaudeAccountDeleteResult,
+  ClaudeAccountList as WireClaudeAccountList,
+  ClaudeAccountPool,
+  ClaudeCentralPoolSync,
+} from "@soulstream/wire-schema";
 
-export type ClaudeAccountScope = "all" | "fable";
+export type ClaudeAccountAuthState = ClaudeAccount["auth_state"];
 
-/** 이 노드가 계정을 어디서 얻었는지. 중앙 풀 스냅샷은 central, 노드 로컬 파일은 local. */
-export type ClaudeAccountSource = "central" | "local";
+export type ClaudeAccountScope = ClaudeAccountBlocked["scope"];
 
-/** 오케스트레이터가 내려주는 중앙 풀 계정 한 건(노드 통신 계약). */
-export interface ClaudeCentralPoolAccount {
-  id: string;
-  email: string;
-  plan: string | null;
-  enabled: boolean;
-  priority: number;
-  auth_state: "ok" | "needs_relogin";
-  relogin_reason: string | null;
-  access_token: string | null;
-  expires_at: string | null;
-  usage_raw: Record<string, unknown> | null;
-  usage_fetched_at: string | null;
-}
+export type ClaudeAccountSource = ClaudeAccount["source"];
 
-/** `claude_central_pool_sync` 명령의 payload. */
-export interface ClaudeCentralPoolSyncPayload {
-  revision: number;
-  receive: boolean;
-  accounts: ClaudeCentralPoolAccount[];
-}
-
-export interface ClaudeUsageWindow {
-  used_percent: number;
-  resets_at: string | null;
-}
-
-export interface ClaudeAccountUsage {
-  five_hour: ClaudeUsageWindow | null;
-  seven_day: ClaudeUsageWindow | null;
-  fable_weekly: ClaudeUsageWindow | null;
-}
-
-export interface ClaudeAccountBlockView {
-  until: string | null;
-  scope: ClaudeAccountScope;
-}
+export type ClaudeCentralPoolSyncPayload = Pick<
+  ClaudeCentralPoolSync,
+  "revision" | "receive" | "accounts"
+>;
 
 export interface ClaudeAccountRecord {
   id: string;
@@ -52,38 +27,15 @@ export interface ClaudeAccountRecord {
   created_at: string;
 }
 
-export interface ClaudeAccountView {
-  id: string;
-  email: string;
-  plan: string | null;
-  enabled: boolean;
-  priority: number | null;
-  auth_state: ClaudeAccountAuthState;
-  /** 이 노드가 계정을 얻은 곳. provider_usage_get의 accounts[]에 그대로 실린다. */
-  source: ClaudeAccountSource;
-  /** 로그인 중인 계정에만 있는 진행 중 흐름의 만료 시각(ISO 8601). */
+export type ClaudeAccountView = Omit<ClaudeAccount, "login_expires_at"> & {
   login_expires_at: string | null;
-  active_sessions: number;
-  blocked: ClaudeAccountBlockView | null;
   stale: boolean;
-  observed_at: string | null;
-  usage: ClaudeAccountUsage;
-}
+};
 
-export interface ClaudeAccountPoolSummary {
-  total_count: number;
-  available_count: number;
-  best_weekly_remaining_percent: number | null;
-  best_weekly_resets_at: string | null;
-  earliest_available_at: string | null;
-}
-
-export interface ClaudeAccountList {
-  mode: "pool" | "legacy";
+export type ClaudeAccountList = Omit<WireClaudeAccountList, "accounts" | "pool"> & {
   accounts: ClaudeAccountView[];
-  pool: ClaudeAccountPoolSummary;
-  fable_pool: ClaudeAccountPoolSummary | null;
-}
+  pool: ClaudeAccountPool;
+};
 
 export interface ClaudeScopeBlockEntry {
   resets_at: string | null;
@@ -218,14 +170,13 @@ export interface ClaudeAccountUpdatePatch {
   priority?: number | null;
 }
 
-export interface ClaudeAccountDeleteResult {
-  id: string;
-  deleted: boolean;
-  deferred: boolean;
+export type ClaudeAccountDeleteResult = Omit<
+  WireClaudeAccountDeleteResult,
+  "accounts" | "pool"
+> & {
   accounts: ClaudeAccountView[];
-  pool: ClaudeAccountPoolSummary;
-  fable_pool: ClaudeAccountPoolSummary | null;
-}
+  pool: ClaudeAccountPool;
+};
 
 export interface ClaudeLoginAccountPort {
   createPendingDir(loginId: string): Promise<string>;

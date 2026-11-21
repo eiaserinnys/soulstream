@@ -1,7 +1,5 @@
-import type {
-  ClaudeAccountPoolSummary,
-  ClaudeAccountView,
-} from "../claude_accounts/index.js";
+import type { ClaudeAccountPool } from "@soulstream/wire-schema";
+import type { ClaudeAccountView } from "../claude_accounts/index.js";
 
 export interface ProviderQuota {
   id: string;
@@ -37,8 +35,8 @@ export interface ProviderLimits {
   error?: string;
   mode?: "pool" | "legacy";
   accounts?: ClaudeAccountView[];
-  pool?: ClaudeAccountPoolSummary;
-  fable_pool?: ClaudeAccountPoolSummary | null;
+  pool?: ClaudeAccountPool;
+  fable_pool?: ClaudeAccountPool | null;
 }
 
 export function emptyLimits(

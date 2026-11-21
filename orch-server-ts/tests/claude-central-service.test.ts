@@ -108,9 +108,6 @@ describe("central Claude service", () => {
       observed_at: null,
       blocked: null,
       active_sessions: 0,
-      expires_at: "2026-11-19T10:00:00.000Z",
-      refreshed_at: "2026-11-19T02:30:00.000Z",
-      relogin_reason: "refresh_rejected",
     });
     const serialized = JSON.stringify(list);
     expect(serialized).not.toContain("access-token-1");

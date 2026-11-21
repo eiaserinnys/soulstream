@@ -15,7 +15,11 @@
 import type { OrchestrationPurpose } from "./task_orchestration_purpose.js";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { CallerInfo as WireCallerInfo, SessionLifecycleStatus } from "@soulstream/wire-schema";
+import type {
+  CallerInfo as WireCallerInfo,
+  ClaudeRuntimeTaskStatus,
+  SessionLifecycleStatus,
+} from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
@@ -309,7 +313,7 @@ export interface ActiveDeliveryTurnReceipt {
   register(intervention: InterventionMessage): Promise<void>;
 }
 
-export type CallerInfo = ({ [K in keyof WireCallerInfo as K extends "source" ? never : K]: WireCallerInfo[K] }) & { source?: string | null };
+export type CallerInfo = { [K in keyof WireCallerInfo as K extends "source" ? never : K]: WireCallerInfo[K] } & { source?: string | null };
 
 export interface LastMessage {
   type: "user_message" | "assistant_message";
@@ -320,14 +324,6 @@ export interface LastMessage {
 export type SessionType = "claude" | "llm";
 
 export type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
-
-export type ClaudeRuntimeTaskStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped"
-  | "killed";
 
 export interface ClaudeRuntimeTaskState {
   taskId: string;

@@ -1,5 +1,5 @@
-// Account lifecycle and pool operations share one store and session-activity contract.
 import * as fs from "node:fs";
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import type { Logger } from "pino";
 import type { ClaudeProfileCredentialRenewer } from "./credential_renewal.js";
 import { ClaudeAccountNotFoundError } from "./errors.js";
@@ -45,7 +45,6 @@ import type {
   ClaudeAccountSelectionWithCredential,
   ClaudeAccountUpdatePatch,
   ClaudeAccountView,
-  ClaudeCentralPoolAccount,
   ClaudeLoginAccountPort,
 } from "./types.js";
 import {
@@ -720,24 +719,18 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.removeBindingsForAccount(accountId);
       const list = await this.getAccountList();
       return {
-        id: accountId,
-        deleted: true,
         deferred: true,
         accounts: list.accounts,
         pool: list.pool,
-        fable_pool: list.fable_pool,
       };
     }
 
     this.finalizeAccountRemoval(accountId, accounts);
     const list = await this.getAccountList();
     return {
-      id: accountId,
-      deleted: true,
       deferred: false,
       accounts: list.accounts,
       pool: list.pool,
-      fable_pool: list.fable_pool,
     };
   }
 

@@ -1,3 +1,4 @@
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import {
@@ -11,7 +12,6 @@ import type { SessionCommandTransportBridge } from "../session/session_command_t
 import type { ClaudeCentralSettingsRepository } from "./settings_repository.js";
 import type {
   ClaudeCentralAccountRecord,
-  ClaudeCentralPoolSyncAccount,
   ClaudeCentralUsageObservation,
 } from "./types.js";
 
@@ -21,7 +21,7 @@ export type ClaudeCentralPoolSyncServiceOptions = {
   readonly registry: InMemoryNodeRegistry;
   readonly bridge: Pick<SessionCommandTransportBridge, "sendPendingCommand">;
   readonly settings: Pick<ClaudeCentralSettingsRepository, "read">;
-  readonly listAccounts: () => Promise<readonly ClaudeCentralPoolSyncAccount[]>;
+  readonly listAccounts: () => Promise<readonly ClaudeCentralPoolAccount[]>;
   readonly timeoutMs?: number;
   readonly now?: () => number;
   readonly onWarning?: (message: string, error?: unknown) => void;
@@ -48,7 +48,7 @@ export class ClaudeCentralPoolSyncService {
   private readonly registry: InMemoryNodeRegistry;
   private readonly bridge: Pick<SessionCommandTransportBridge, "sendPendingCommand">;
   private readonly settings: Pick<ClaudeCentralSettingsRepository, "read">;
-  private readonly listAccounts: () => Promise<readonly ClaudeCentralPoolSyncAccount[]>;
+  private readonly listAccounts: () => Promise<readonly ClaudeCentralPoolAccount[]>;
   private readonly timeoutMs: number;
   private readonly now: () => number;
   private readonly onWarning?: (message: string, error?: unknown) => void;
@@ -216,7 +216,7 @@ export class ClaudeCentralPoolSyncService {
 export function toPoolSyncAccount(input: {
   readonly record: ClaudeCentralAccountRecord;
   readonly observation: ClaudeCentralUsageObservation | null;
-}): ClaudeCentralPoolSyncAccount {
+}): ClaudeCentralPoolAccount {
   const { record, observation } = input;
   const withholdsToken = record.authState === "needs_relogin" || !record.enabled;
   return {

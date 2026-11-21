@@ -824,9 +824,8 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(svc.activeSessions(ACC_A)).toBe(1);
 
     const profileDirA = svc.profileDir(ACC_A)!;
-    // Delete while active_sessions > 0 -> deferred: true, enabled becomes false immediately
     const delRes = await svc.deleteAccount(ACC_A);
-    expect(delRes).toMatchObject({ id: ACC_A, deleted: true, deferred: true });
+    expect(delRes).toMatchObject({ deferred: true });
     expect(delRes.accounts[0]?.enabled).toBe(false);
     expect(delRes.pool.available_count).toBe(0);
     expect(fs.existsSync(profileDirA)).toBe(true);

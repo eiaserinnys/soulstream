@@ -1,18 +1,13 @@
-// 중앙 Claude 계정 풀 스냅샷의 해석 규칙. 오케스트레이터가 내려준
-// `claude_central_pool_sync` payload를 노드가 읽는 방식만 담는다.
 import { createHash } from "node:crypto";
+
+import type { ClaudeAccountUsage, ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 
 import {
   emptyClaudeAccountUsage,
   parseAnthropicOAuthUsagePayload,
 } from "./usage.js";
-import type {
-  ClaudeAccountUsage,
-  ClaudeCentralPoolAccount,
-  ClaudeCentralPoolSyncPayload,
-} from "./types.js";
+import type { ClaudeCentralPoolSyncPayload } from "./types.js";
 
-/** 이 여유 안에 만료되는 중앙 토큰은 후보로 쓰지 않는다. */
 export const CENTRAL_TOKEN_MIN_VALIDITY_MS = 10 * 60_000;
 
 /** 중앙 계정 인증 실패 뒤 그 (계정, 토큰) 쌍을 후보에서 빼 두는 시간. */

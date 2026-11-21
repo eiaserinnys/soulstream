@@ -64,6 +64,7 @@ describe("Claude account pool wire contract", () => {
   it("defines account usage, pools, and account-list mode as the shared contract", () => {
     const accountList = schema.$defs.ClaudeAccountList!;
     const account = schema.$defs.ClaudeAccount!;
+    const usage = schema.$defs.ClaudeAccountUsage!;
     const usageWindow = schema.$defs.ClaudeAccountUsageWindow!;
     const pool = schema.$defs.ClaudeAccountPool!;
 
@@ -77,7 +78,8 @@ describe("Claude account pool wire contract", () => {
     ]);
     expect(account.properties?.login_expires_at?.format).toBe("date-time");
     expect(account.required ?? []).not.toContain("login_expires_at");
-    expect(Object.keys(account.properties?.usage?.properties ?? {}).sort()).toEqual([
+    expect(account.properties?.usage?.$ref).toBe("#/$defs/ClaudeAccountUsage");
+    expect(Object.keys(usage.properties ?? {}).sort()).toEqual([
       "fable_weekly", "five_hour", "seven_day",
     ]);
     expect(account.properties?.auth_state?.enum).toEqual([

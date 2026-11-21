@@ -6,7 +6,8 @@ import { ClaudeAccountService } from "../../src/claude_accounts/service.js";
 import { ClaudeAccountUsageCollector } from "../../src/claude_accounts/usage.js";
 import { countSelectableCandidates, selectBestCandidate } from "../../src/claude_accounts/selector.js";
 import { computePoolSummary } from "../../src/claude_accounts/pool.js";
-import type { ClaudeAccountUsage, ClaudeAccountView } from "../../src/claude_accounts/types.js";
+import type { ClaudeAccountUsage } from "@soulstream/wire-schema";
+import type { ClaudeAccountView } from "../../src/claude_accounts/types.js";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const now = Date.parse("2026-10-28T01:00:00.000Z");

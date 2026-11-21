@@ -1,16 +1,10 @@
 import type {
-  ClaudeCentralPoolSummary,
-  ClaudeCentralUsage,
-  ClaudeCentralUsageWindow,
-} from "./types.js";
+  ClaudeAccountPool,
+  ClaudeAccountUsage,
+  ClaudeAccountUsageWindow,
+} from "@soulstream/wire-schema";
 
-/**
- * 노드 `claude_accounts/usage.ts`의 사용량 창 해석을 그대로 옮긴 것이다.
- * 창 키·퍼센트 키·재설정 시각 키의 이름과 0..100 자름이 같아야 화면이
- * 노드 계정 행과 같은 값을 본다.
- */
-
-export function emptyCentralUsage(): ClaudeCentralUsage {
+export function emptyCentralUsage(): ClaudeAccountUsage {
   return { five_hour: null, seven_day: null, fable_weekly: null };
 }
 
@@ -31,7 +25,7 @@ function normalizeResetIso(raw: unknown): string | null {
   return null;
 }
 
-function parseWindowNode(node: unknown): ClaudeCentralUsageWindow | null {
+function parseWindowNode(node: unknown): ClaudeAccountUsageWindow | null {
   if (!node || typeof node !== "object") return null;
   const obj = node as Record<string, unknown>;
   const rawPct =
@@ -49,7 +43,7 @@ function parseWindowNode(node: unknown): ClaudeCentralUsageWindow | null {
   };
 }
 
-function findScopedFableWindow(obj: Record<string, unknown>): ClaudeCentralUsageWindow | null {
+function findScopedFableWindow(obj: Record<string, unknown>): ClaudeAccountUsageWindow | null {
   if (!Array.isArray(obj.limits)) return null;
   for (const item of obj.limits) {
     if (!item || typeof item !== "object") continue;
@@ -75,7 +69,7 @@ function findScopedFableWindow(obj: Record<string, unknown>): ClaudeCentralUsage
   return null;
 }
 
-export function parseCentralUsagePayload(payload: unknown): ClaudeCentralUsage {
+export function parseCentralUsagePayload(payload: unknown): ClaudeAccountUsage {
   if (!payload || typeof payload !== "object") return emptyCentralUsage();
   const obj = payload as Record<string, unknown>;
   return {
@@ -89,7 +83,7 @@ export function parseCentralUsagePayload(payload: unknown): ClaudeCentralUsage {
 }
 
 export function effectiveWindowUsedPercent(
-  window: ClaudeCentralUsageWindow | null | undefined,
+  window: ClaudeAccountUsageWindow | null | undefined,
   nowMs: number,
 ): number | null {
   if (!window || typeof window.used_percent !== "number" || !Number.isFinite(window.used_percent)) {
@@ -103,19 +97,19 @@ export function effectiveWindowUsedPercent(
 }
 
 function exhaustedWindows(
-  usage: ClaudeCentralUsage,
+  usage: ClaudeAccountUsage,
   scope: "all" | "fable",
   nowMs: number,
-): ClaudeCentralUsageWindow[] {
-  const windows: Array<ClaudeCentralUsageWindow | null> = [usage.five_hour, usage.seven_day];
+): ClaudeAccountUsageWindow[] {
+  const windows: Array<ClaudeAccountUsageWindow | null> = [usage.five_hour, usage.seven_day];
   if (scope === "fable") windows.push(usage.fable_weekly);
-  return windows.filter((window): window is ClaudeCentralUsageWindow =>
+  return windows.filter((window): window is ClaudeAccountUsageWindow =>
     window !== null && (effectiveWindowUsedPercent(window, nowMs) ?? 0) >= 100,
   );
 }
 
 export function isUsageExhaustedForScope(
-  usage: ClaudeCentralUsage,
+  usage: ClaudeAccountUsage,
   scope: "all" | "fable",
   nowMs: number,
 ): boolean {
@@ -123,7 +117,7 @@ export function isUsageExhaustedForScope(
 }
 
 export function usageExhaustionResetMs(
-  usage: ClaudeCentralUsage,
+  usage: ClaudeAccountUsage,
   scope: "all" | "fable",
   nowMs: number,
 ): number | null {
@@ -137,7 +131,7 @@ export type ClaudeCentralSummaryAccount = {
   readonly id: string;
   readonly enabled: boolean;
   readonly auth_state: "ok" | "needs_relogin";
-  readonly usage: ClaudeCentralUsage;
+  readonly usage: ClaudeAccountUsage;
 };
 
 function clampPercent(value: number): number {
@@ -213,7 +207,7 @@ export function computeCentralPoolSummary(
   accounts: readonly ClaudeCentralSummaryAccount[],
   scope: "all" | "fable",
   nowMs: number,
-): ClaudeCentralPoolSummary {
+): ClaudeAccountPool {
   const enabledAccounts = accounts.filter((account) => account.enabled);
   const availableAccounts = enabledAccounts.filter((account) =>
     accountAvailableForScope(account, scope, nowMs));

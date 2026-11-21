@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 201개 $defs (top-level wire 95 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 95 + supporting/SSE 108). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -2493,6 +2493,31 @@
         }
       }
     },
+    "ClaudeAccountUsage": {
+      "type": "object",
+      "required": ["five_hour", "seven_day", "fable_weekly"],
+      "additionalProperties": false,
+      "properties": {
+        "five_hour": {
+          "anyOf": [
+            { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
+            { "type": "null" }
+          ]
+        },
+        "seven_day": {
+          "anyOf": [
+            { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
+            { "type": "null" }
+          ]
+        },
+        "fable_weekly": {
+          "anyOf": [
+            { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "ClaudeAccountBlocked": {
       "type": "object",
       "required": ["until", "scope"],
@@ -2530,31 +2555,7 @@
           "format": "date-time",
           "description": "UTC ISO 8601 expiry of the in-progress login flow while auth_state is logging_in. Omitted otherwise."
         },
-        "usage": {
-          "type": "object",
-          "required": ["five_hour", "seven_day", "fable_weekly"],
-          "additionalProperties": false,
-          "properties": {
-            "five_hour": {
-              "anyOf": [
-                { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
-                { "type": "null" }
-              ]
-            },
-            "seven_day": {
-              "anyOf": [
-                { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
-                { "type": "null" }
-              ]
-            },
-            "fable_weekly": {
-              "anyOf": [
-                { "$ref": "#/$defs/ClaudeAccountUsageWindow" },
-                { "type": "null" }
-              ]
-            }
-          }
-        },
+        "usage": { "$ref": "#/$defs/ClaudeAccountUsage" },
         "observed_at": {
           "type": ["string", "null"],
           "format": "date-time",
@@ -4159,6 +4160,10 @@
         "timestamp": { "type": "number" }
       }
     },
+    "ClaudeRuntimeTaskStatus": {
+      "type": "string",
+      "enum": ["pending", "running", "completed", "failed", "stopped", "killed"]
+    },
     "SSEEventClaudeRuntimeTaskUpdated": {
       "type": "object",
       "description": "SSE: Claude Agent SDK runtime task 상태 patch.",
@@ -4172,10 +4177,7 @@
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "status": {
-              "type": "string",
-              "enum": ["pending", "running", "completed", "failed", "stopped", "killed"]
-            },
+            "status": { "$ref": "#/$defs/ClaudeRuntimeTaskStatus" },
             "description": { "type": "string" },
             "end_time": { "type": "number" },
             "total_paused_ms": { "type": "number" },

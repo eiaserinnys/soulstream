@@ -1,3 +1,4 @@
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
@@ -16,7 +17,6 @@ import type {
   ClaudeCentralAccountView,
   ClaudeCentralEffectiveNode,
   ClaudeCentralPoolSettings,
-  ClaudeCentralPoolSyncAccount,
   ClaudeCentralSettingsView,
 } from "./types.js";
 import { ClaudeCentralUsageService } from "./usage_service.js";
@@ -216,13 +216,10 @@ export class ClaudeCentralService {
       observed_at: observation?.fetched_at ?? null,
       blocked: null,
       active_sessions: 0,
-      expires_at: record.expiresAt,
-      refreshed_at: record.refreshedAt,
-      relogin_reason: record.reloginReason,
     };
   }
 
-  private async listSyncAccounts(): Promise<readonly ClaudeCentralPoolSyncAccount[]> {
+  private async listSyncAccounts(): Promise<readonly ClaudeCentralPoolAccount[]> {
     const records = await this.repository.list();
     return records.map((record) => toPoolSyncAccount({
       record,

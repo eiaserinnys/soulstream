@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
 import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-schema";
+import { parseProfileIdentity } from "@soulstream/wire-schema/claude-oauth";
 
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
@@ -381,12 +382,7 @@ export async function runClaudeAuthStatusProcess(input: {
 export function parseAuthStatusOutput(rawStdout: string): ParsedAuthStatus {
   try {
     const parsed: unknown = JSON.parse(rawStdout);
-    const email = findString(parsed, new Set(["email", "emailAddress", "email_address"]));
-    const accountUuid = extractAccountUuid(parsed);
-    const plan = findString(
-      parsed,
-      new Set(["plan", "subscriptionType", "subscription_type", "planType", "plan_type"]),
-    );
+    const { accountUuid, email, plan } = parseProfileIdentity(parsed);
     const loggedIn =
       findBoolean(parsed, new Set(["loggedIn", "logged_in", "authenticated", "isLoggedIn"])) ??
       Boolean(email);
@@ -394,53 +390,6 @@ export function parseAuthStatusOutput(rawStdout: string): ParsedAuthStatus {
   } catch {
     return { loggedIn: false, accountUuid: null, email: null, plan: null };
   }
-}
-
-export function parseProfileIdentity(payload: unknown): {
-  accountUuid: string | null;
-  email: string | null;
-  plan: string | null;
-} {
-  return {
-    accountUuid: extractAccountUuid(payload),
-    email: findString(payload, new Set(["email", "emailAddress", "email_address"])),
-    plan: findString(
-      payload,
-      new Set(["plan", "subscriptionType", "subscription_type", "planType", "plan_type"]),
-    ),
-  };
-}
-
-function extractAccountUuid(value: unknown): string | null {
-  if (isRecord(value) && isRecord(value.account) && typeof value.account.uuid === "string") {
-    const trimmed = value.account.uuid.trim();
-    if (trimmed.length > 0) return trimmed;
-  }
-  return findString(
-    value,
-    new Set(["accountUuid", "account_uuid", "uuid", "userUuid", "user_uuid"]),
-  );
-}
-
-function findString(value: unknown, keys: Set<string>): string | null {
-  if (!value || typeof value !== "object") return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findString(item, keys);
-      if (found) return found;
-    }
-    return null;
-  }
-  for (const [key, item] of Object.entries(value)) {
-    if (keys.has(key) && typeof item === "string" && item.trim().length > 0) {
-      return item.trim();
-    }
-  }
-  for (const item of Object.values(value)) {
-    const found = findString(item, keys);
-    if (found) return found;
-  }
-  return null;
 }
 
 function findBoolean(value: unknown, keys: Set<string>): boolean | null {
@@ -460,8 +409,4 @@ function findBoolean(value: unknown, keys: Set<string>): boolean | null {
     if (found !== null) return found;
   }
   return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

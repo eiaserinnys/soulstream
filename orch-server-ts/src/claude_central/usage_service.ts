@@ -1,10 +1,9 @@
+import { ANTHROPIC_USAGE_URL, CLAUDE_OAUTH_BETA } from "@soulstream/wire-schema/claude-oauth";
 import type { ClaudeCentralAccountRepository } from "./account_repository.js";
 import type { ClaudeCentralTokenRefreshService } from "./token_refresh_service.js";
 import type { ClaudeCentralUsageObservation } from "./types.js";
 
-export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const CENTRAL_USAGE_INTERVAL_MS = 4 * 60_000;
-const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
 const USAGE_TIMEOUT_MS = 14_000;
 
 export type ClaudeCentralUsageServiceOptions = {

@@ -274,8 +274,6 @@ describe("claude auth command boundary", () => {
         priority: 3,
       })),
       deleteAccount: vi.fn(async () => ({
-        id: sampleAccount.id,
-        deleted: true as const,
         deferred: false,
         accounts: [],
         pool: {

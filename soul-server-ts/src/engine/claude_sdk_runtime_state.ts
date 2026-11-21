@@ -1,15 +1,9 @@
+import type { ClaudeRuntimeTaskStatus } from "@soulstream/wire-schema";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { attachClaudeBackgroundProvenance } from
   "./claude_background_provenance.js";
 
 export type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
-export type ClaudeRuntimeTaskStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped"
-  | "killed";
 
 type ClaudeRuntimeTaskSnapshot = {
   status: ClaudeRuntimeTaskStatus;
