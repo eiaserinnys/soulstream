@@ -1429,7 +1429,9 @@ test("card429 R6 query and path parameter SVG keep the light picture background"
 
 test("card429 R7 toggle sits one token from close and the title truncates before it",async({page})=>{
   const longName="카드 #429 첨부 보기 창 머리줄 긴 이름 확인용 화면 캡처 원본 파일 이름입니다 ".repeat(4)+"final-capture-name.png";
-  for(const [vw,vh] of [[1920,1080],[390,844]] as const) {
+  // 700px 폭은 닫기 단추가 36px로 남는 구간이다. Tailwind sm 경계(--breakpoint-sm=48rem)와
+  // 같은 자리에서 변수가 바뀌지 않으면 「전체 보기」가 닫기 단추 쪽으로 밀린다.
+  for(const [vw,vh] of [[1920,1080],[390,844],[700,900]] as const) {
     const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200,"light",{name:longName,sample:"tall-screen"});
     await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
     await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});

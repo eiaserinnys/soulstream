@@ -1563,7 +1563,10 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
     --image-viewer-block-margin: calc(var(--spacing) * 6);
   }
 }
-@media (min-width: 40rem) {
+/* 닫기 단추의 size-9 → sm:size-8 전환 경계는 Tailwind --breakpoint-sm이다. 미디어 질의는
+   사용자 속성을 읽지 못하므로 theme()로 같은 토큰을 펼쳐 경계를 한 자리에서 따라간다.
+   창 여유(8/6) 규칙의 경계는 그대로 둔다. */
+@media (min-width: theme(--breakpoint-sm)) {
   .image-viewer-popup[data-slot="dialog-popup"] {
     --image-viewer-close-size: calc(var(--spacing) * 8);
   }
