@@ -1,3 +1,4 @@
+import type { PersistentJevObservation as WirePersistentJevObservation } from "@soulstream/wire-schema";
 import { isPersistentJevCandidatesDebugEvent as isWirePersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
 import { projectHiddenInputTurns } from "./persistent-cache-keepalive";
 
@@ -7,10 +8,9 @@ export interface PersistentJevCandidate {
   score: number;
 }
 
-export interface PersistentJevObservation {
-  input_id: string;
+export type PersistentJevObservation = Omit<WirePersistentJevObservation, "selected"> & {
   selected: PersistentJevCandidate[];
-}
+};
 
 export interface PersistentJevCandidatesProjectionItem {
   treeNodeId: string;

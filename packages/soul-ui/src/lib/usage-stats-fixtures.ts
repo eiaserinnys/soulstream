@@ -1,5 +1,4 @@
-// Pure, deterministic public fixture builders for the usage statistics mockup.
-import { formatUsageStatsModelLabel, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
+import { formatDate, formatUsageStatsModelLabel, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
 import {
   FIXTURE_MODEL_LABELS,
   MISSING_TURNS,
@@ -477,7 +476,3 @@ function parseDate(value: string): { year: number; month: number; day: number } 
   return { year: Number(parts[0]), month: Number(parts[1]), day: Number(parts[2]) };
 }
 
-function formatDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}

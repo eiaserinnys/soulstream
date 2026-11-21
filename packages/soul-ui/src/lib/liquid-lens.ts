@@ -108,7 +108,7 @@ function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-function getReducedTransparencyMatcher(): MediaQueryList | null {
+export function getReducedTransparencyMatcher(): MediaQueryList | null {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
   try {
     return window.matchMedia(REDUCED_TRANSPARENCY_QUERY);

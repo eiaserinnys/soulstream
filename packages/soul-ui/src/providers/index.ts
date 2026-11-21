@@ -13,7 +13,6 @@ export {
 } from "./FolderDragSurface";
 export type { FolderDragData, FolderRootDropData } from "./folder-dnd";
 export {
-  StarredFolderSortableContext,
   reorderStarredFolderIds,
   useStarredFolderDragSurface,
 } from "./starred-folder-dnd";
