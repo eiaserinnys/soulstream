@@ -10,7 +10,6 @@ import type { InfiniteData } from "@tanstack/react-query";
 import type {
   SessionSummary,
   CatalogState,
-  MetadataEntry,
 } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 import { normalizeSessionStatus } from "../shared/session-status";
@@ -416,31 +415,6 @@ export function buildSessionUpdates(
   return updates;
 }
 
-/**
- * metadata_updated 이벤트:
- * 모든 페이지에서 agentSessionId가 일치하는 세션의 metadata를 교체한다.
- */
-export function applyMetadataUpdated(
-  data: InfiniteData<SessionPage>,
-  agentSessionId: string,
-  metadata: MetadataEntry[],
-): InfiniteData<SessionPage> {
-  return retainEqualValue(data, {
-    ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      sessions: page.sessions.map((s) =>
-        s.agentSessionId === agentSessionId ? { ...s, metadata } : s,
-      ),
-    })),
-  });
-}
-
-/**
- * session_deleted 이벤트:
- * 모든 페이지에서 agentSessionId가 일치하는 세션을 제거한다.
- * 일치하는 세션이 없으면 data를 그대로 반환한다.
- */
 export function applySessionDeleted(
   data: InfiniteData<SessionPage>,
   agentSessionId: string,

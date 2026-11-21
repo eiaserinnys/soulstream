@@ -30,7 +30,6 @@ function makeHandlers(): SessionStreamHandlers & {
     onSessionUpdated: vi.fn(),
     onSessionDeleted: vi.fn(),
     onCatalogUpdated: vi.fn(),
-    onMetadataUpdated: vi.fn(),
     onFolderUpdated: vi.fn(),
     onCustomViewUpdated: vi.fn(),
     onPageUpdated: vi.fn(),
@@ -102,12 +101,6 @@ describe("dispatchSessionStreamEvent", () => {
       { type: "session_deleted", agent_session_id: "s1" },
       { type: "catalog_updated", catalog: { folders: [], sessions: {} } as never },
       {
-        type: "metadata_updated",
-        session_id: "s1",
-        entry: {} as never,
-        metadata: [],
-      },
-      {
         type: "folder_updated",
         folderId: "rb-1",
       },
@@ -129,7 +122,6 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onSessionUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onSessionDeleted).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCatalogUpdated).toHaveBeenCalledTimes(1);
-    expect(handlers.__spies.onMetadataUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onFolderUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCustomViewUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onPageUpdated).toHaveBeenCalledTimes(1);

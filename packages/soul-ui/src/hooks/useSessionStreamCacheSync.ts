@@ -23,7 +23,6 @@ import type {
 } from "../shared/types";
 import type {
   CatalogUpdatedStreamEvent,
-  MetadataUpdatedStreamEvent,
   PageUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
@@ -38,7 +37,6 @@ import type {
   StreamMetaStreamEvent,
 } from "../shared/stream-events";
 import {
-  applyMetadataUpdated,
   applySessionSummarySnapshot,
   applySessionSummarySnapshotToList,
   applySessionCreated,
@@ -91,14 +89,8 @@ export interface UseSessionStreamCacheSyncOptions {
    * 이 옵션은 useSessionStreamSSE에 그대로 패스스루된다.
    */
   urlBuilder: () => string;
-  /** session_created 이벤트 수신 시 현재 뷰의 queryKey (setQueryData 대상). */
   queryKey: QueryKey;
-  /**
-   * SSE id 부착 이벤트(session_created/updated/deleted/catalog_updated/metadata_updated) 수신 시
-   * 호출되어 호출자가 lastEventId 정본을 갱신하도록 한다. e.lastEventId가 빈 값이면 호출되지 않는다.
-   */
   onEventIdAdvance?: (lastEventId: string) => void;
-  /** stream_meta 수신 시 호출 (instance_id 변경 감지용). */
   onStreamMeta?: (event: StreamMetaStreamEvent) => boolean | void;
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
   onReplayGap?: (event: ReplayGapStreamEvent) => boolean | void;
@@ -404,20 +396,6 @@ export function useSessionStreamCacheSync(
     [queryClient, onEventIdAdvance, transformCatalogUpdate],
   );
 
-  const onMetadataUpdated = useCallback(
-    (event: MetadataUpdatedStreamEvent) => {
-      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      queryClient.setQueriesData<InfiniteData<SessionPage>>(
-        { queryKey: ["sessions"], exact: false },
-        (old) => {
-          if (!old) return old;
-          return applyMetadataUpdated(old, event.session_id, event.metadata);
-        },
-      );
-    },
-    [queryClient, onEventIdAdvance],
-  );
-
   const onCardUpdated = useCallback((event: CardUpdatedStreamEvent) => {
     if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
     onCardUpdatedOption?.(event);
@@ -525,9 +503,6 @@ export function useSessionStreamCacheSync(
       case "catalog_updated":
         onCatalogUpdated(event);
         break;
-      case "metadata_updated":
-        onMetadataUpdated(event);
-        break;
       case "card_updated":
         onCardUpdated(event);
         break;
@@ -550,7 +525,6 @@ export function useSessionStreamCacheSync(
   }, [
     onCatalogUpdated,
     onCustomViewUpdated,
-    onMetadataUpdated,
     onPageUpdated,
     onSessionCreated,
     onSessionDeleted,
@@ -751,7 +725,6 @@ export function useSessionStreamCacheSync(
     onSessionUpdated: routeDataEvent,
     onSessionDeleted: routeDataEvent,
     onCatalogUpdated: routeDataEvent,
-    onMetadataUpdated: routeDataEvent,
     onCardUpdated: routeDataEvent,
     onSessionDeliveryFailed: routeDataEvent,
     onFolderUpdated: routeDataEvent,

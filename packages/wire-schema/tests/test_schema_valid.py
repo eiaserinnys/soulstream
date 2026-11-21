@@ -403,9 +403,7 @@ def test_schema_has_all_message_types() -> None:
 
     sse_types = {
         "SSEEventInit",
-        "SSEEventReconnected",
         "SSEEventProgress",
-        "SSEEventMemory",
         "SSEEventSession",
         "SSEEventInterventionSent",
         "SSEEventSessionNotification",
@@ -460,15 +458,13 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventInputMaterialManifest",
         "SSEEventUsageObservation",
         "SSEEventCompact",
-        "SSEEventReconnect",
         "SSEEventHistorySync",
-        "SSEEventMetadataUpdated",
         "SSEEventAssistantError",
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 64, (
-        "SSE event $defs 64종."
+    assert len(sse_types) == 60, (
+        "SSE event $defs 60종."
     )
 
     expected = wire_types | sse_types
@@ -496,7 +492,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 68
+    assert len(sse_event_types) == 64
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -873,9 +869,7 @@ def test_known_sse_event_types_completeness() -> None:
 
     expected_known = {
         "init",
-        "reconnected",
         "progress",
-        "memory",
         "session",
         "intervention_sent",
         "session_notification",
@@ -932,9 +926,7 @@ def test_known_sse_event_types_completeness() -> None:
         "input_material_manifest",
         "usage_observation",
         "compact",
-        "reconnect",
         "history_sync",
-        "metadata_updated",
         "assistant_error",
         "turn_summary",
         "away_summary",

@@ -5,7 +5,6 @@ export type V3InvalidationSource =
   | "session_created"
   | "session_updated"
   | "session_deleted"
-  | "metadata_updated"
   | "catalog"
   | "folder"
   | "card"
@@ -22,7 +21,6 @@ const SOURCE_NAMES: readonly V3InvalidationSource[] = [
   "session_created",
   "session_updated",
   "session_deleted",
-  "metadata_updated",
   "catalog",
   "folder",
   "card",
@@ -55,7 +53,6 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
     case "session_created":
     case "session_updated":
     case "session_deleted":
-    case "metadata_updated":
       invalidateV3(event.type);
       break;
     case "catalog_updated":

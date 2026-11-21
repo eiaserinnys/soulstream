@@ -144,7 +144,6 @@ import type {
   InterventionSentEvent,
   UserMessageEvent,
   ProgressEvent,
-  MemoryEvent,
   EventTreeNode,
   SubagentStartEvent,
   SubagentStopEvent,

@@ -13,7 +13,6 @@ import type {
 import type { CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
 import type {
   LastMessage,
-  MetadataEntry,
   ReviewState,
   SessionStatus,
   SessionSummary,
@@ -99,17 +98,6 @@ export type CatalogUpdatedStreamEvent =
       lastEventId?: string;
     };
 
-/** 메타데이터 업데이트 이벤트 (세션 스트림) */
-export interface MetadataUpdatedStreamEvent {
-  type: "metadata_updated";
-  session_id: string;
-  entry: MetadataEntry;
-  metadata: MetadataEntry[];
-  /** broadcaster가 부여한 SSE event_id */
-  lastEventId?: string;
-}
-
-/** 폴더 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
 export interface FolderUpdatedStreamEvent {
   type: "folder_updated";
   folderId: string;
@@ -180,7 +168,6 @@ export type SessionStreamEvent =
   | SessionUpdatedStreamEvent
   | SessionDeletedStreamEvent
   | CatalogUpdatedStreamEvent
-  | MetadataUpdatedStreamEvent
   | CardUpdatedStreamEvent
   | SessionDeliveryFailedStreamEvent
   | FolderUpdatedStreamEvent

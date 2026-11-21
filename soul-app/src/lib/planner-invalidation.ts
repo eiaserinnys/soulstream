@@ -2,7 +2,6 @@ export type PlannerInvalidationSource =
   | 'session_created'
   | 'session_updated'
   | 'session_deleted'
-  | 'metadata_updated'
   | 'catalog'
   | 'folder'
   | 'custom_view'
@@ -24,7 +23,6 @@ const SOURCE_NAMES: readonly PlannerInvalidationSource[] = [
   'session_created',
   'session_updated',
   'session_deleted',
-  'metadata_updated',
   'catalog',
   'folder',
   'custom_view',
@@ -52,7 +50,6 @@ export function plannerSourceForStreamEvent(
     case 'session_created':
     case 'session_updated':
     case 'session_deleted':
-    case 'metadata_updated':
       return eventType;
     case 'catalog_updated':
       return 'catalog';

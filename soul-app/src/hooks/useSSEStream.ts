@@ -388,7 +388,6 @@ export const CATALOG_STREAM_EVENTS = [
   'session_updated',
   'session_deleted',
   'catalog_updated',
-  'metadata_updated',
   'folder_updated',
   'card_updated',
   'session_delivery_failed',

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 95 + supporting/SSE 108). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 199개 $defs (top-level wire 95 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -130,9 +130,7 @@
   ],
   "x-soulstream-event-durability": {
     "init": "durable",
-    "reconnected": "durable",
     "progress": "durable",
-    "memory": "durable",
     "session": "durable",
     "intervention_sent": "durable",
     "session_notification": "durable",
@@ -188,12 +186,10 @@
     "input_material_manifest": "durable",
     "usage_observation": "durable",
     "compact": "durable",
-    "reconnect": "durable",
     "history_sync": "durable",
     "folder_updated": "durable",
     "card_updated": "durable",
     "custom_view_updated": "durable",
-    "metadata_updated": "durable",
     "assistant_error": "durable",
     "away_summary": "durable",
     "metadata": "durable",
@@ -705,9 +701,7 @@
           "description": "SSE event payload. orch-server KNOWN_SSE_EVENT_TYPES 중 하나.",
           "oneOf": [
             { "$ref": "#/$defs/SSEEventInit" },
-            { "$ref": "#/$defs/SSEEventReconnected" },
             { "$ref": "#/$defs/SSEEventProgress" },
-            { "$ref": "#/$defs/SSEEventMemory" },
             { "$ref": "#/$defs/SSEEventSession" },
             { "$ref": "#/$defs/SSEEventInterventionSent" },
             { "$ref": "#/$defs/SSEEventSessionNotification" },
@@ -767,9 +761,7 @@
             { "$ref": "#/$defs/SSEEventInputMaterialManifest" },
             { "$ref": "#/$defs/SSEEventUsageObservation" },
             { "$ref": "#/$defs/SSEEventCompact" },
-            { "$ref": "#/$defs/SSEEventReconnect" },
             { "$ref": "#/$defs/SSEEventHistorySync" },
-            { "$ref": "#/$defs/SSEEventMetadataUpdated" },
             { "$ref": "#/$defs/SSEEventAssistantError" },
             { "$ref": "#/$defs/SSEEventAwaySummary" }
           ]
@@ -2911,16 +2903,8 @@
       "additionalProperties": true,
       "properties": { "type": { "const": "init" } }
     },
-    "SSEEventReconnected": {
-      "type": "object",
-      "description": "SSE: 재연결 안내.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": { "type": { "const": "reconnected" } }
-    },
     "SSEEventProgress": {
       "type": "object",
-      "description": "SSE: 진행 상태.",
       "required": ["type", "text"],
       "additionalProperties": true,
       "properties": {
@@ -2928,16 +2912,8 @@
         "text": {}
       }
     },
-    "SSEEventMemory": {
-      "type": "object",
-      "description": "SSE: memory 이벤트.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": { "type": { "const": "memory" } }
-    },
     "SSEEventSession": {
       "type": "object",
-      "description": "SSE: 세션 메타.",
       "required": ["type", "session_id"],
       "additionalProperties": true,
       "properties": {
@@ -4646,16 +4622,8 @@
         "parent_event_id": { "type": ["string", "number"] }
       }
     },
-    "SSEEventReconnect": {
-      "type": "object",
-      "description": "SSE: 클라이언트에 재연결 권고.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": { "type": { "const": "reconnect" } }
-    },
     "SSEEventHistorySync": {
       "type": "object",
-      "description": "SSE: 과거 이력 동기화.",
       "required": ["type", "last_event_id", "is_live"],
       "additionalProperties": true,
       "properties": {
@@ -4709,16 +4677,8 @@
         "revision": { "type": "integer" }
       }
     },
-    "SSEEventMetadataUpdated": {
-      "type": "object",
-      "description": "SSE: 세션 메타 갱신.",
-      "required": ["type"],
-      "additionalProperties": true,
-      "properties": { "type": { "const": "metadata_updated" } }
-    },
     "SSEEventAssistantError": {
       "type": "object",
-      "description": "SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.",
       "required": ["type", "error_type", "timestamp"],
       "additionalProperties": true,
       "properties": {

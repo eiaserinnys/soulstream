@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 95 + supporting/SSE 108). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 199개 $defs (top-level wire 95 + supporting/SSE 104). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -410,9 +410,7 @@ export interface SessionEventEnvelope {
    */
   event:
     | SSEEventInit
-    | SSEEventReconnected
     | SSEEventProgress
-    | SSEEventMemory
     | SSEEventSession
     | SSEEventInterventionSent
     | SSEEventSessionNotification
@@ -472,9 +470,7 @@ export interface SessionEventEnvelope {
     | SSEEventInputMaterialManifest
     | SSEEventUsageObservation
     | SSEEventCompact
-    | SSEEventReconnect
     | SSEEventHistorySync
-    | SSEEventMetadataUpdated
     | SSEEventAssistantError
     | SSEEventAwaySummary;
   [k: string]: unknown;
@@ -486,31 +482,11 @@ export interface SSEEventInit {
   type: "init";
   [k: string]: unknown;
 }
-/**
- * SSE: 재연결 안내.
- */
-export interface SSEEventReconnected {
-  type: "reconnected";
-  [k: string]: unknown;
-}
-/**
- * SSE: 진행 상태.
- */
 export interface SSEEventProgress {
   type: "progress";
   text: unknown;
   [k: string]: unknown;
 }
-/**
- * SSE: memory 이벤트.
- */
-export interface SSEEventMemory {
-  type: "memory";
-  [k: string]: unknown;
-}
-/**
- * SSE: 세션 메타.
- */
 export interface SSEEventSession {
   type: "session";
   /**
@@ -1740,16 +1716,6 @@ export interface SSEEventCompact {
   parent_event_id?: string | number;
   [k: string]: unknown;
 }
-/**
- * SSE: 클라이언트에 재연결 권고.
- */
-export interface SSEEventReconnect {
-  type: "reconnect";
-  [k: string]: unknown;
-}
-/**
- * SSE: 과거 이력 동기화.
- */
 export interface SSEEventHistorySync {
   type: "history_sync";
   last_event_id: number;
@@ -1758,16 +1724,6 @@ export interface SSEEventHistorySync {
   reset_reason?: "cursor_ahead" | "history_gap" | "catchup_overflow";
   [k: string]: unknown;
 }
-/**
- * SSE: 세션 메타 갱신.
- */
-export interface SSEEventMetadataUpdated {
-  type: "metadata_updated";
-  [k: string]: unknown;
-}
-/**
- * SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.
- */
 export interface SSEEventAssistantError {
   type: "assistant_error";
   error_type: string;
@@ -3609,9 +3565,7 @@ export interface ReflectBrief {
  */
 export const EVENT_DURABILITY = {
   "init": "durable",
-  "reconnected": "durable",
   "progress": "durable",
-  "memory": "durable",
   "session": "durable",
   "intervention_sent": "durable",
   "session_notification": "durable",
@@ -3667,12 +3621,10 @@ export const EVENT_DURABILITY = {
   "input_material_manifest": "durable",
   "usage_observation": "durable",
   "compact": "durable",
-  "reconnect": "durable",
   "history_sync": "durable",
   "folder_updated": "durable",
   "card_updated": "durable",
   "custom_view_updated": "durable",
-  "metadata_updated": "durable",
   "assistant_error": "durable",
   "away_summary": "durable",
   "metadata": "durable",
@@ -3684,9 +3636,7 @@ export type EventDurability = (typeof EVENT_DURABILITY)[PersistenceEventType];
 
 export const SSE_EVENT_TYPES = [
   "init",
-  "reconnected",
   "progress",
-  "memory",
   "session",
   "intervention_sent",
   "session_notification",
@@ -3742,12 +3692,10 @@ export const SSE_EVENT_TYPES = [
   "report_timeline",
   "report_timeline_question_closed",
   "compact",
-  "reconnect",
   "history_sync",
   "card_updated",
   "folder_updated",
   "custom_view_updated",
-  "metadata_updated",
   "assistant_error",
   "away_summary",
   "system_message",

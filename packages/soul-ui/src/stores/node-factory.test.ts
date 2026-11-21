@@ -27,7 +27,6 @@ import type {
   ToolResultEvent,
   SubagentStopEvent,
   ProgressEvent,
-  MemoryEvent,
   ToolNode,
   UserMessageNode,
   InterventionNode,
@@ -941,16 +940,6 @@ describe("createNodeFromEvent", () => {
     it("should return null for progress", () => {
       const event: ProgressEvent = { type: "progress", text: "loading" };
       expect(createNodeFromEvent(event, 7)).toBeNull();
-    });
-
-    it("should return null for memory", () => {
-      const event: MemoryEvent = {
-        type: "memory",
-        used_gb: 1,
-        total_gb: 8,
-        percent: 12.5,
-      };
-      expect(createNodeFromEvent(event, 8)).toBeNull();
     });
   });
 });
