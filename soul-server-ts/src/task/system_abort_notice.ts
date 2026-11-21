@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
-
-import type { ContextItem } from "../context/prompt_assembler.js";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import { USER_STOP_PROJECTION } from "./task_lifecycle_transition.js";
 import {

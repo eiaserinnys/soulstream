@@ -1,6 +1,5 @@
+import type { ContextItem } from "@soulstream/wire-schema";
 import type { CatalogFolderRow } from "../db/session_db.js";
-
-import type { ContextItem } from "./prompt_assembler.js";
 
 interface BoardWorkspaceCatalog {
   folders: CatalogFolderRow[];

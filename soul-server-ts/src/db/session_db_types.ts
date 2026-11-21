@@ -1,4 +1,4 @@
-import type { CardAssigneeKind, FolderStatus, FolderOperationActorKind, FolderCompletionKind } from "@soulstream/mcp-contract";
+import type { CardAssigneeKind, FolderStatus, FolderCompletionKind } from "@soulstream/mcp-contract";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { CardStatus } from "@soulstream/wire-schema";
@@ -244,29 +244,11 @@ export interface AppendEventParams {
   dedupeKey?: string | null;
 }
 
-export type FolderOperationTargetKind = "folder" | "card";
-
 export interface CardAssigneeFields {
   assignee_kind: CardAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
-}
-
-export interface FolderOperationRow {
-  id: string;
-  folderId: string;
-  targetKind: FolderOperationTargetKind;
-  targetId: string;
-  operationType: string;
-  actorKind: FolderOperationActorKind;
-  actorSessionId: string | null;
-  actorEventId: number | null;
-  actorUserId: string | null;
-  idempotencyKey: string | null;
-  payloadJson: Record<string, unknown>;
-  reason: string | null;
-  createdAt: string;
 }
 
 /** Folder host HTTP rows use camelCase; direct get_all rows use FolderRow above. */

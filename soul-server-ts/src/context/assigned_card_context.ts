@@ -1,7 +1,7 @@
 import { CARD_STATUS_LABELS } from "@soulstream/wire-schema/card-status-labels";
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 import type { SessionDB } from "../db/session_db.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export interface AssignedCardContext {
   capturedAt: string;

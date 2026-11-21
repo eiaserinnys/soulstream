@@ -1,6 +1,6 @@
+import type { ContextItem } from "@soulstream/wire-schema";
 import { atomContextSpecKey, type AtomContextSpec } from "./atom_context.js";
 import { isPageContextSourcesItem } from "./page_context_resolver.js";
-import type { ContextItem } from "./prompt_assembler.js";
 
 export const ATOM_CONTEXT_SOURCES_KEY = "atom_context_sources";
 

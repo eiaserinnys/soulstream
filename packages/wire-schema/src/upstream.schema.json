@@ -231,7 +231,7 @@
     "ContextItem": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["key", "label", "content"],
+      "required": ["key", "content"],
       "properties": {
         "key": { "type": "string" },
         "label": { "type": "string" },

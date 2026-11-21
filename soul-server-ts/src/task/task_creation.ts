@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";

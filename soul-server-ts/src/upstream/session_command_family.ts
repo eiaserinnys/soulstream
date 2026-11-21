@@ -2,8 +2,8 @@ import type { Logger } from "pino";
 import { parsePersistentSettingsPatch, type PersistentSettingsPatch } from "@soulstream/wire-schema/persistent-session-settings";
 import { parsePersistentInstructionsApplyPayload } from "@soulstream/wire-schema/persistent-session-instructions";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { ContextItem } from "@soulstream/wire-schema";
 
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";

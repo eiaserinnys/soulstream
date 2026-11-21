@@ -1,5 +1,5 @@
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
-import type { ContextItem } from "../context/prompt_assembler.js";
+import type { ContextItem } from "@soulstream/wire-schema";
 import type { CallerInfo } from "../task/task_models.js";
 import type { DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
 import { nodeResponseRejection } from "../task/state/node_response_handling.js";

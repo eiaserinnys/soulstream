@@ -1,8 +1,8 @@
 import type { AgentProfile } from "../agent_registry.js";
-import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 import type { Task } from "../task/task_models.js";
 import { SYSTEM_ABORT_NOTICE_KEY } from "../task/system_abort_notice.js";
-import { assemblePrompt, type ContextItem } from "./prompt_assembler.js";
+import { assemblePrompt } from "./prompt_assembler.js";
 import {
   createInputMaterialPart,
   joinInputMaterialSegments,

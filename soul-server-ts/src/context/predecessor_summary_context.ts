@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { SessionDB } from "../db/session_db.js";
 import {
@@ -8,8 +9,6 @@ import {
 } from "../control_plane/session_data_host_client.js";
 import { serializeSessionStoryView } from
   "../db/session_story_types.js";
-
-import type { ContextItem } from "./prompt_assembler.js";
 
 const LEGACY_TURN_SUMMARY_LIMIT = 30;
 
