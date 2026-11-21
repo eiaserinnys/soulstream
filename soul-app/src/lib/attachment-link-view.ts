@@ -5,6 +5,7 @@ import {
   attachmentMediaKind,
   isHtmlAttachmentView,
   isLegacyAttachmentImage,
+  isPdfAttachmentView,
   type AttachmentView,
 } from './attachment-view';
 
@@ -155,12 +156,13 @@ export function attachmentLinkView(link: AttachmentLink, { serverUrl, jwt, api, 
   const context = resolveAttachmentReadContext(parsed.context, readContext);
   if (parsed.context.invalid || (parsed.kind === 'id' && (!context || !api))) return null;
   const key = parsed.kind === 'id' ? parsed.id : `${parsed.nodeId}:${parsed.path}`;
-  // Hint the document layout before the HEAD resolves: an html/htm legacy path is a document.
-  const legacyHtml = parsed.kind === 'legacy'
-    && isHtmlAttachmentView({ mimeType: null, name: filenameFromPath(parsed.path) });
+  // Hint the document layout before the HEAD resolves: an html/htm or pdf legacy path is a document.
+  const legacyName = parsed.kind === 'legacy' ? filenameFromPath(parsed.path) : '';
+  const legacyHtml = parsed.kind === 'legacy' && isHtmlAttachmentView({ mimeType: null, name: legacyName });
+  const legacyPdf = parsed.kind === 'legacy' && !legacyHtml && isPdfAttachmentView({ mimeType: null, name: legacyName });
   return {
     key: `${key}:${context?.type ?? 'legacy'}:${context && 'id' in context ? context.id : ''}`, name: link.label || (parsed.kind === 'legacy' ? filenameFromPath(parsed.path) : parsed.id),
-    mimeType: legacyHtml ? 'text/html' : null, byteSize: null, previewKind: 'info', readContext: context ?? undefined,
+    mimeType: legacyHtml ? 'text/html' : legacyPdf ? 'application/pdf' : null, byteSize: null, previewKind: 'info', readContext: context ?? undefined,
     source: { kind: 'unavailable', availability: 'unresolved' },
     loadMetadata: async () => {
       if (parsed.kind === 'legacy') return readLegacyAttachmentView({ ...parsed, context, jwt, api });

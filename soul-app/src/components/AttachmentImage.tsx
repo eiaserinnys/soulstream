@@ -14,8 +14,9 @@ import {
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { getAttachmentImageSize } from '../lib/attachment-image-size';
 import { restoreAttachmentFocus } from '../lib/attachment-focus';
-import { isLegacyAttachmentImage, type AttachmentView } from '../lib/attachment-view';
+import { isLegacyAttachmentImage, isSvgAttachmentImage, type AttachmentView } from '../lib/attachment-view';
 import { ImageViewerModal } from './ImageViewerModal';
+import { AttachmentSvg } from './AttachmentSvg';
 
 /** The thumbnail is the existing chat attachment Image, with a viewer on tap. */
 export type ChatRefinedGalleryItem = {
@@ -62,7 +63,7 @@ export function useChatImageMetadata(
   }));
 }
 
-export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign, unavailableMessage }: {
+export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, mimeType, chatImageRole = 'assistant', filenames, alts, mimeTypes, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign, unavailableMessage }: {
   source: ImageSourcePropType; sources?: ImageSourcePropType[]; index?: number; testID?: string; accessibilityLabel: string;
   captions?: readonly string[];
   unavailableMessage?: string;
@@ -88,22 +89,27 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   const defaultTriggerRef = useRef<any>(null);
   if (variant === 'chatRefined') {
     return <ChatRefinedAttachment source={source} sources={sources} index={index} testID={testID}
-      accessibilityLabel={accessibilityLabel} filename={filename} alt={alt} role={chatImageRole}
-      filenames={filenames} alts={alts} items={items} onSaveOriginal={onSaveOriginal} onOpen={onOpen} byteSizes={byteSizes} captionColor={captionColor} contentAlign={contentAlign} />;
+      accessibilityLabel={accessibilityLabel} filename={filename} alt={alt} role={chatImageRole} mimeType={mimeType}
+      filenames={filenames} alts={alts} mimeTypes={mimeTypes} items={items} onSaveOriginal={onSaveOriginal} onOpen={onOpen} byteSizes={byteSizes} captionColor={captionColor} contentAlign={contentAlign} />;
   }
   const dimensions = variant === 'cardCheckItem' ? { width: 104, height: 60 } : attachment.thumbnailFrameSize;
   const closeViewer = () => {
     setOpen(false);
     restoreAttachmentFocus(defaultTriggerRef.current);
   };
+  const svg = isSvgAttachmentImage({ mimeType, name: filename }, (source as ImageURISource).uri);
   return <>
     <Pressable ref={defaultTriggerRef} onPress={() => onOpen ? onOpen(closeViewer) : setOpen(true)} accessibilityRole="button" accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => ({ minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, opacity: pressed ? 0.82 : 1 })}>
       {unavailableMessage ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border,
-        alignItems: 'center', justifyContent: 'center' }}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{unavailableMessage}</Text></View> : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border }}
-        resizeMode="cover" accessible={false} />}
+        alignItems: 'center', justifyContent: 'center' }}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{unavailableMessage}</Text></View>
+        : svg ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border, overflow: 'hidden' }}>
+          <AttachmentSvg source={source as ImageURISource} label={accessibilityLabel} radius={t.radius.floor} />
+        </View>
+          : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.floor, backgroundColor: t.colors.border }}
+            resizeMode="cover" accessible={false} />}
     </Pressable>
-    {open ? <ImageViewerModal sources={sources} captions={captions} items={items} onSaveOriginal={onSaveOriginal}
+    {open ? <ImageViewerModal sources={sources} captions={captions} items={items} mimeTypes={mimeTypes} onSaveOriginal={onSaveOriginal}
       initialIndex={index} onClose={closeViewer} /> : null}
   </>;
 }
@@ -208,7 +214,7 @@ export function isChatImageAttachmentPath(path: string): boolean {
   return isLegacyAttachmentImage(path);
 }
 
-function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign = role === 'user' ? 'right' : 'left' }: {
+function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, mimeType, filenames, alts, mimeTypes, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign = role === 'user' ? 'right' : 'left' }: {
   source: ImageSourcePropType;
   sources: ImageSourcePropType[];
   index: number;
@@ -219,8 +225,10 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   contentAlign?: 'left' | 'right';
   alt?: string;
   role: 'assistant' | 'user';
+  mimeType?: string;
   filenames?: readonly string[];
   alts?: readonly string[];
+  mimeTypes?: readonly (string | undefined)[];
   items?: readonly AttachmentView[];
   byteSizes?: readonly (number | undefined)[];
   onSaveOriginal?(index: number, anchor?: number): Promise<void>;
@@ -233,6 +241,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   const imageSource = source as ImageURISource;
   const uri = imageSource.uri ?? '';
   const headersKey = JSON.stringify(Object.entries(imageSource.headers ?? {}).sort(([left], [right]) => left.localeCompare(right)));
+  const svg = isSvgAttachmentImage({ mimeType, name: filename }, uri);
   const [imageInfo, setImageInfo] = useState<{ uri: string; headersKey: string; aspectRatio: number | null; failed: boolean }>({
     uri,
     headersKey,
@@ -245,7 +254,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   useEffect(() => {
     let active = true;
     setImageInfo({ uri, headersKey, aspectRatio: null, failed: false });
-    if (uri) {
+    if (uri && !svg) {
       void getAttachmentImageSize(imageSource).then(({ width, height }) => {
         if (active && width > 0 && height > 0) {
           setImageInfo({ uri, headersKey, aspectRatio: width / height, failed: false });
@@ -255,7 +264,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       });
     }
     return () => { active = false; };
-  }, [headersKey, imageSource, uri]);
+  }, [headersKey, imageSource, svg, uri]);
 
   const handleError = () => setImageInfo({ uri, headersKey, aspectRatio: null, failed: true });
   const frameStyle = {
@@ -292,7 +301,8 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
         opacity: pressed ? 0.82 : 1,
       })}
     >
-      {currentInfo.failed ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      {svg ? <AttachmentSvg source={imageSource} label={accessibilityLabel} radius={attachment.radius} />
+        : currentInfo.failed ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Text lineBreakStrategyIOS="hangul-word" style={{ ...attachment.metadata,
           ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {}),
           color: attachment.textMuted, textAlign: 'center' }}>
@@ -323,6 +333,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       filenames={filenames ?? sources.map((entry) => getChatAttachmentFilename((entry as ImageURISource).uri ?? ''))}
       alts={alts ?? sources.map(() => alt ?? '')}
       items={items}
+      mimeTypes={mimeTypes}
       byteSizes={byteSizes}
       onSaveOriginal={onSaveOriginal}
     /> : null}

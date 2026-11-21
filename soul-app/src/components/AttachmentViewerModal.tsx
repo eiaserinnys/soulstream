@@ -42,6 +42,7 @@ function ChatRefinedImageViewerContent({
   onClose,
   filenames,
   items,
+  mimeTypes,
   onSaveOriginal,
   byteSizes,
   renderAttachment,
@@ -106,7 +107,7 @@ function ChatRefinedImageViewerContent({
             borderColor: attachment.border,
             backgroundColor: attachment.surface,
           }}>
-            <ImageViewerPages sources={sources} items={items} currentIndex={currentIndex}
+            <ImageViewerPages sources={sources} items={items} mimeTypes={mimeTypes} currentIndex={currentIndex}
               onIndexChange={setCurrentIndex} style={{ width: '100%', height: '100%' }}
               activeImageTestID="chat-image-viewer-image" renderAttachment={renderAttachment} />
           </View>

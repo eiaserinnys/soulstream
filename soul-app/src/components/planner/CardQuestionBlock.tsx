@@ -103,6 +103,8 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
       <AttachmentImage accessibilityLabel={item.label || `볼 것 ${index + 1}`} onOpen={undefined}
         unavailableMessage={item.availability === 'missing' ? '찾을 수 없음' : item.availability ? '불러오지 못함' : undefined}
         source={imageSources[index]} sources={imageSources} captions={images.map(image => image.label)}
+        mimeType={item.descriptor?.mime_type} filename={item.descriptor?.name ?? item.label}
+        mimeTypes={images.map(image => image.descriptor?.mime_type)}
         index={index} variant="cardCheckItem" />
     </View>)}</View> : null}
     {links.length ? <View style={styles.evidenceLinks}>{links.map((item, index) => <CompactTouchTarget

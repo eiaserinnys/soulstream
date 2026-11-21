@@ -192,6 +192,7 @@ export function CardCheckItemRow({
                       source={imageSources[index]}
                       sources={imageSources}
                       captions={images.map((image) => image.label || '')}
+                      mimeType={entries[index]?.mimeType ?? undefined}
                       index={index}
                       variant="cardCheckItem"
                     />
