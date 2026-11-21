@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogService } from "../../src/catalog/catalog_service.js";
-import type { SessionHistorySearchParams } from "../../src/control_plane/session_data_host_client.js";
+import type { SessionHistorySearchParams } from "@soulstream/mcp-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { startSessionTestHost } from "./session-test-host.js";

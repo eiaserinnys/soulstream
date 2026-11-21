@@ -1,0 +1,18 @@
+export interface SessionEventRow {
+  id: number;
+  session_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  searchable_text: string;
+  created_at: Date;
+}
+
+export interface SessionHistorySearchParams {
+  query: string;
+  sessionIds: string[] | null;
+  limit: number;
+  eventTypes: string[] | null;
+  searchSessionId: boolean;
+  includeHighlight: boolean;
+  includeStory: boolean;
+}

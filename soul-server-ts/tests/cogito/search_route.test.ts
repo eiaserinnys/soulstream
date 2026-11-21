@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionHistorySearchParams } from "../../src/control_plane/session_data_host_client.js";
+import type { SessionHistorySearchParams } from "@soulstream/mcp-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildServer, type ServerInstance } from "../../src/server.js";

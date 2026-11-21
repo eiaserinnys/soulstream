@@ -8,9 +8,9 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import { SessionPageBindingService } from "../../src/page/session_page_binding_service.js";
 import type {
   EnqueueSessionPageBinding,
-  SessionPageBindingHostClient,
   SessionPageBindingRow,
-} from "../../src/control_plane/persistence_host_clients.js";
+} from "@soulstream/mcp-contract";
+import type { SessionPageBindingHostClient } from "../../src/control_plane/persistence_host_clients.js";
 import { TaskCreation } from "../../src/task/task_creation.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";

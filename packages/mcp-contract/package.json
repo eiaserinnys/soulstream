@@ -9,7 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^4.3.6",
@@ -18,6 +19,8 @@
     "@soulstream/model-catalog": "workspace:*"
   },
   "devDependencies": {
-    "tsx": "^4.19.0"
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2"
   }
 }

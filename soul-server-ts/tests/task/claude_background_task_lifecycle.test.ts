@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ClaudeBackgroundTaskGenerationRow } from
-  "../../src/control_plane/persistence_host_clients.js";
+import type { ClaudeBackgroundTaskGenerationRow } from "@soulstream/mcp-contract";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import { readClaudeBackgroundDeliveryMetadata } from

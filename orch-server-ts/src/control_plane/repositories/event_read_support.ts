@@ -1,4 +1,5 @@
-import type { HostEventRow, HostEventSearchRow } from "./event_read_repository.js";
+import type { SessionEventRow } from "@soulstream/mcp-contract";
+import type { HostEventSearchRow } from "./event_read_repository.js";
 
 export type EventSearchRecord = Omit<HostEventSearchRow, "payload"> & { payload: unknown };
 
@@ -10,8 +11,8 @@ export function isPostgresStatementTimeout(error: unknown): boolean {
 }
 
 export function normalizeEvent(
-  row: Omit<HostEventRow, "payload"> & { payload: unknown },
-): HostEventRow {
+  row: Omit<SessionEventRow, "payload"> & { payload: unknown },
+): SessionEventRow {
   return {
     id: Number(row.id),
     session_id: row.session_id,

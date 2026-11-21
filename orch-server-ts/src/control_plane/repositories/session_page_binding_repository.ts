@@ -1,22 +1,5 @@
+import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
 import type { SqlClient } from "../control_plane_types.js";
-
-export type BindingStepState = "pending" | "bound" | "completed" | "manual_repair";
-
-export interface SessionPageBindingRow {
-  session_id: string;
-  node_id: string;
-  target_page_id: string | null;
-  target_block_id: string | null;
-  target_expected_version: number | null;
-  daily_date: string;
-  session_type: string;
-  legacy_folder_id: string | null;
-  page_state: "pending" | "bound" | "manual_repair";
-  legacy_state: "pending" | "completed" | "manual_repair";
-  attempts: number;
-  last_error: string | null;
-  next_retry_at: Date;
-}
 
 export interface EnqueueSessionPageBinding {
   sessionId: string;

@@ -2,6 +2,7 @@ import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
+import type { ClaudeBackgroundTaskGenerationRow, ResolveClaudeBackgroundTaskGenerationResult } from "@soulstream/mcp-contract";
 import {
   ORCH_HOST_REQUEST_TIMEOUT_MS,
   requestHostOperationWithRetry,
@@ -14,17 +15,6 @@ export type ClaudeBackgroundGenerationTerminalStatus = Exclude<
   ClaudeBackgroundGenerationStatus,
   "pending" | "running"
 >;
-
-export interface ClaudeBackgroundTaskGenerationRow {
-  source_node: string; session_id: string; sdk_session_id: string; task_id: string;
-  initiating_tool_use_id: string; generation_sequence: string | number;
-  generation_key: string; relation_key: string; completion_id: string;
-  runner_registration_id: string | null; execution_command_id: string | null;
-  status: ClaudeBackgroundGenerationStatus; close_reason: string | null;
-  description: string | null; summary: string | null; output_file: string | null;
-  terminal_revision: string | null; notification_delivery_id: string | null;
-  created_at: Date; updated_at: Date; terminal_at: Date | null;
-}
 
 export interface ObserveClaudeBackgroundTaskGenerationParams {
   idempotencyKey?: string;
@@ -46,16 +36,7 @@ export interface TerminalizeClaudeBackgroundTaskGenerationParams
 export type TerminalizeClaudeBackgroundTaskGenerationResult =
   | { accepted: true; row: ClaudeBackgroundTaskGenerationRow; delivery?: SessionDeliveryRow }
   | { accepted: false; row: ClaudeBackgroundTaskGenerationRow };
-export type ResolveClaudeBackgroundTaskGenerationResult =
-  | { status: "absent" }
-  | { status: "resolved"; row: ClaudeBackgroundTaskGenerationRow }
-  | { status: "ambiguous" };
 
-/**
- * Covers a ~66s core restart (nginx answers 502 while the orchestrator is
- * down) with about 20s of headroom. The retry helper makes one more attempt
- * than there are delays.
- */
 export const CLAUDE_BACKGROUND_GENERATION_RETRY_DELAYS_MS = [
   500, 1_000, 2_000, 4_000, 8_000, 12_000, 15_000, 15_000, 15_000, 15_000,
 ] as const;

@@ -3,31 +3,25 @@ import type {
   SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
 import type {
+  ClaudeBackgroundTaskGenerationRow,
+  ClaudeBackgroundTaskKey,
+  ClaudeBackgroundTaskStatus,
+  ClaudeBackgroundTerminalStatus,
+  ObserveClaudeBackgroundTaskParams,
+  ResolveClaudeBackgroundTaskGenerationResult,
+  TerminalizeClaudeBackgroundTaskParams,
+} from "@soulstream/mcp-contract";
+export type {
+  ClaudeBackgroundTaskGenerationRow,
+  ResolveClaudeBackgroundTaskGenerationResult,
+} from "@soulstream/mcp-contract";
+import type {
   SqlClient,
 } from "../control_plane_types.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";
 import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 import { ClaudeBackgroundTaskGenerationRepository } from
   "./claude_background_task_generation_repository.js";
-
-export type ClaudeBackgroundTaskStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped"
-  | "killed";
-
-export type ClaudeBackgroundTerminalStatus = Exclude<
-  ClaudeBackgroundTaskStatus,
-  "pending" | "running"
->;
-
-/** Primary-key pair of one node-owned background task row. */
-export interface ClaudeBackgroundTaskKey {
-  sessionId: string;
-  taskId: string;
-}
 
 export interface ClaudeBackgroundTaskRow {
   source_node: string;
@@ -48,43 +42,6 @@ export interface ClaudeBackgroundTaskRow {
   startup_reconciled_at: Date | null;
 }
 
-export interface ClaudeBackgroundTaskGenerationRow {
-  source_node: string;
-  session_id: string;
-  sdk_session_id: string;
-  task_id: string;
-  initiating_tool_use_id: string;
-  generation_sequence: string | number;
-  generation_key: string;
-  relation_key: string;
-  completion_id: string;
-  runner_registration_id: string | null;
-  execution_command_id: string | null;
-  status: ClaudeBackgroundTaskStatus;
-  close_reason: string | null;
-  description: string | null;
-  summary: string | null;
-  output_file: string | null;
-  terminal_revision: string | null;
-  notification_delivery_id: string | null;
-  created_at: Date;
-  updated_at: Date;
-  terminal_at: Date | null;
-}
-export interface ObserveClaudeBackgroundTaskParams {
-  idempotencyKey?: string;
-  sourceNode: string;
-  sessionId: string;
-  taskId: string;
-  sdkSessionId?: string;
-  status?: "pending" | "running";
-  description?: string;
-  summary?: string;
-  outputFile?: string;
-  toolUseId?: string;
-  observedAt?: Date;
-}
-
 export interface ObserveClaudeBackgroundTaskGenerationParams
   extends Omit<ObserveClaudeBackgroundTaskParams, "sdkSessionId" | "toolUseId"> {
   sdkSessionId: string;
@@ -94,14 +51,6 @@ export interface ObserveClaudeBackgroundTaskGenerationParams
   completionId: string;
   runnerRegistrationId?: string;
   executionCommandId?: string;
-}
-
-export interface TerminalizeClaudeBackgroundTaskParams
-  extends Omit<ObserveClaudeBackgroundTaskParams, "status"> {
-  status: ClaudeBackgroundTerminalStatus;
-  closeReason: string;
-  terminalRevision: string;
-  delivery: RegisterSessionDeliveryParams;
 }
 
 export interface TerminalizeClaudeBackgroundTaskGenerationParams
@@ -134,12 +83,6 @@ export type TerminalizeClaudeBackgroundTaskGenerationResult =
       row: ClaudeBackgroundTaskGenerationRow;
     };
 
-export type ResolveClaudeBackgroundTaskGenerationResult =
-  | { status: "absent" }
-  | { status: "resolved"; row: ClaudeBackgroundTaskGenerationRow }
-  | { status: "ambiguous" };
-
-/** PostgreSQL CAS owner for background state and its semantic delivery outbox. */
 export class ClaudeBackgroundTaskRepository {
   private readonly generations: ClaudeBackgroundTaskGenerationRepository;
 

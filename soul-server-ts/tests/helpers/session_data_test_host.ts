@@ -6,7 +6,8 @@ import { SessionReadRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_read_repository.js";
 import { SessionStoryReadRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_story_read_repository.js";
-import type { SessionDataHost, SessionHistorySearchParams } from
+import type { SessionHistorySearchParams } from "@soulstream/mcp-contract";
+import type { SessionDataHost } from
   "../../src/control_plane/session_data_host_client.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 
