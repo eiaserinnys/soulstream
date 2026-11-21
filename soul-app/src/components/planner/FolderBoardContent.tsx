@@ -357,7 +357,6 @@ function renderAssetMediaHtml(
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline';"><style>html,body{margin:0;width:100%;height:100%;background:transparent}body{display:flex;align-items:center;justify-content:center}img,video{width:100%;height:100%;object-fit:contain}audio{width:94%}</style></head><body>${media}</body></html>`;
 }
 
-
 function formatByteSize(value: number | undefined): string {
   if (!value || value <= 0) return '';
   const units = ['B', 'KB', 'MB', 'GB'];

@@ -1,7 +1,6 @@
 import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
-
 export type SessionPresentationStatus = SessionSummary["status"] | "offline";
 
 export function sessionPresentationStatus(

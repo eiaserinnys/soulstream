@@ -41,6 +41,7 @@ interface SessionStore {
   catalogReady: boolean;
   /** 초기 catalog snapshot의 사용자 표시 상태. 정상적인 0건은 ready와 구분한다. */
   catalogLoadState: 'loading' | 'ready' | 'error';
+  /** 사용자의 명시 재시도마다 증가하며 REST snapshot·SSE의 새 연결 단위가 된다. */
   catalogRetryRequest: number;
   feedSessionIds: string[];
   pendingAttentionVersionsBySession: Record<string, PendingAttentionVersionState>;

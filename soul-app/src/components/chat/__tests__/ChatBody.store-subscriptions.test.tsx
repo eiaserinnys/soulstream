@@ -67,7 +67,6 @@ jest.mock('../ChatEventList', () => {
   };
 });
 
-
 jest.mock('../SessionStoryPanel', () => ({
   SessionStoryPanel: () => require('react').createElement(require('react-native').View, { testID: 'session-story-panel' }),
 }));

@@ -50,7 +50,6 @@ type Props = {
   centralSettingsApi?: ClaudeCentralSettingsApi;
 };
 
-
 function ProviderHeaderLoading({ testID, name }: { testID: string; name: string }) {
   const t = useTokens();
   const poolStyles = useMemo(() => makeClaudePoolStyles(t), [t]);

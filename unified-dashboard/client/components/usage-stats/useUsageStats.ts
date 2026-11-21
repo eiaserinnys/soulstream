@@ -13,7 +13,6 @@ export type UsageStatsFilter =
   | { kind: "provider"; id: string; label: string; provider: UsageStatsProvider; model: null }
   | { kind: "model"; id: string; label: string; provider: UsageStatsProvider; model: string };
 
-
 export const ALL_USAGE_STATS_FILTER: UsageStatsFilter = {
   kind: "all",
   id: usageStatsFilterKey("all", null, null),

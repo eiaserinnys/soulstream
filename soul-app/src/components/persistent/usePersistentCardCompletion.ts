@@ -7,7 +7,6 @@ import { cardOperationId } from '../../hooks/useCardActions';
 import { performCardTransition } from '../../lib/card-transition';
 import { isReviewCardEntry, persistentReportStatusCard } from '../../lib/persistent-report-card';
 
-
 export interface CardCompletionRecent {
   cardId: string;
   number: number | null;

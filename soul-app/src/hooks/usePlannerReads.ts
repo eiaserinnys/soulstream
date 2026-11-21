@@ -18,7 +18,6 @@ import {
 import { replaceEqualDeep } from '../lib/structural-sharing';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
 
-
 export function usePlannerPageDetail(
   api: ApiClient | null,
   pageId: string | null,

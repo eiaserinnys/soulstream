@@ -188,7 +188,6 @@ test.each([
   expect(StyleSheet.flatten(tasks.getByTestId('runtime-task-row-task').props.style).minHeight).toBe(40);
   expect(StyleSheet.flatten(tasks.getByText('백그라운드 작업').props.style).fontSize).toBeLessThan(chatBody);
 
-
   const assistant = render(
     <AssistantMessage
       event={{ id: 'assistant', type: 'text_delta', data: { text: '기존 채팅 본문' } }}

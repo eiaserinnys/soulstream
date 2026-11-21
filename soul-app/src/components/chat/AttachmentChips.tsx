@@ -1,4 +1,3 @@
-import { filenameFromContentDisposition } from '../../lib/attachment-link-view';
 import React, { useEffect, useRef, useState } from 'react';
 import { File } from 'expo-file-system';
 import { Platform, ScrollView, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
@@ -17,6 +16,7 @@ import {
   isLegacyAttachmentImage,
   type AttachmentView,
 } from '../../lib/attachment-view';
+import { filenameFromContentDisposition } from '../../lib/attachment-link-view';
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { AttachmentPreviewModal, type AttachmentTextContent } from '../AttachmentPreviewModal';
 
@@ -294,7 +294,6 @@ function previewKindFor(mimeType: string | null, name: string, idBacked: boolean
 function safeFileSize(size: number | null): number | null {
   return Number.isSafeInteger(size) && (size ?? -1) >= 0 ? size : null;
 }
-
 
 async function saveLocalAttachmentOriginal(view: AttachmentView, anchor?: number): Promise<'shared' | 'cancelled'> {
   if (view.source.kind !== 'ready' || !view.source.originalUrl) return 'cancelled';

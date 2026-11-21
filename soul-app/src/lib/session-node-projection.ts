@@ -1,7 +1,6 @@
 import type { SessionNodeConnectivity } from "../../../packages/soul-ui/src/lib/session-node-connectivity";
 import type { Session } from '../api/types';
 
-
 export function normalizeNodeId(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();

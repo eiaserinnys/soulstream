@@ -9,7 +9,6 @@ import type {
   UsageStatsQuery,
 } from '../../../../../packages/wire-schema/src/session_statistics';
 
-
 export function useUsageStats(query: UsageStatsQuery, date: string | null) {
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => createApiClient(serverUrl), [serverUrl]);

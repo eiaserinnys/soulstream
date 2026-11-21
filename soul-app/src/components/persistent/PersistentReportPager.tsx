@@ -16,7 +16,6 @@ import type { usePersistentReportSend } from './usePersistentReportSend';
 import type { CardCompletion } from './usePersistentCardCompletion';
 import { ReportComposerFocusContext, useReportComposerScroll } from './useReportComposerScroll';
 
-
 function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
   const held = useRef(false);
   const release = () => { if (held.current) { held.current = false; interaction(false); } };
