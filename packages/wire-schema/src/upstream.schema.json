@@ -2905,6 +2905,7 @@
     },
     "SSEEventProgress": {
       "type": "object",
+      "description": "SSE: 진행 상태.",
       "required": ["type", "text"],
       "additionalProperties": true,
       "properties": {
@@ -2914,6 +2915,7 @@
     },
     "SSEEventSession": {
       "type": "object",
+      "description": "SSE: 세션 메타.",
       "required": ["type", "session_id"],
       "additionalProperties": true,
       "properties": {
@@ -4624,6 +4626,7 @@
     },
     "SSEEventHistorySync": {
       "type": "object",
+      "description": "SSE: 과거 이력 동기화.",
       "required": ["type", "last_event_id", "is_live"],
       "additionalProperties": true,
       "properties": {
@@ -4679,6 +4682,7 @@
     },
     "SSEEventAssistantError": {
       "type": "object",
+      "description": "SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.",
       "required": ["type", "error_type", "timestamp"],
       "additionalProperties": true,
       "properties": {

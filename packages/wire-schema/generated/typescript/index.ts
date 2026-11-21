@@ -482,11 +482,17 @@ export interface SSEEventInit {
   type: "init";
   [k: string]: unknown;
 }
+/**
+ * SSE: 진행 상태.
+ */
 export interface SSEEventProgress {
   type: "progress";
   text: unknown;
   [k: string]: unknown;
 }
+/**
+ * SSE: 세션 메타.
+ */
 export interface SSEEventSession {
   type: "session";
   /**
@@ -1716,6 +1722,9 @@ export interface SSEEventCompact {
   parent_event_id?: string | number;
   [k: string]: unknown;
 }
+/**
+ * SSE: 과거 이력 동기화.
+ */
 export interface SSEEventHistorySync {
   type: "history_sync";
   last_event_id: number;
@@ -1724,6 +1733,9 @@ export interface SSEEventHistorySync {
   reset_reason?: "cursor_ahead" | "history_gap" | "catchup_overflow";
   [k: string]: unknown;
 }
+/**
+ * SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.
+ */
 export interface SSEEventAssistantError {
   type: "assistant_error";
   error_type: string;

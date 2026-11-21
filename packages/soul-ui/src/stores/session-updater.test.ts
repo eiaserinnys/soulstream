@@ -25,7 +25,6 @@ import type {
   ProgressEvent,
 } from "../shared/types";
 
-// === shouldNotify ===
 
 describe("shouldNotify", () => {
   describe("events that should trigger notification", () => {

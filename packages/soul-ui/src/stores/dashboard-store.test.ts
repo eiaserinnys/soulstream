@@ -1,13 +1,5 @@
-/**
- * dashboard-store 테스트
- *
- * Zustand 스토어의 트리 기반 이벤트 처리 로직을 검증합니다.
- * 세션 키는 agentSessionId (예: "sess-xxx") 형식입니다.
- */
-
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
-import type { InfiniteData } from "@tanstack/react-query";
+import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   getRawDetailEventId,
   getRawReadAcknowledgementEventId,
@@ -42,7 +34,7 @@ describe("feed unread coordinate", () => {
       eventCount: 0,
       lastEventId: 80,
       lastReadEventId: 70,
-    } as import("../shared/types").SessionSummary;
+    } as SessionSummary;
 
     expect(isSessionUnread({ ...base, feedLastEventId: null })).toBe(true);
     expect(isSessionUnread({ ...base, feedLastEventId: 70 })).toBe(false);
@@ -140,7 +132,6 @@ import type {
   SessionSummary,
   CatalogState,
   SessionEvent,
-  ErrorEvent,
   InterventionSentEvent,
   UserMessageEvent,
   ProgressEvent,
@@ -175,8 +166,7 @@ function makeTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-/** QueryClient에 초기 세션 데이터를 시드 */
-function seedQueryClient(qc: QueryClient, sessions: import("../shared/types").SessionSummary[]) {
+function seedQueryClient(qc: QueryClient, sessions: SessionSummary[]) {
   qc.setQueryData<InfiniteData<SessionPage>>(["sessions"], {
     pages: [{ sessions, total: sessions.length }],
     pageParams: [0],
@@ -187,7 +177,7 @@ function seedQueryClient(qc: QueryClient, sessions: import("../shared/types").Se
 function seedQueryClientAt(
   qc: QueryClient,
   queryKey: readonly unknown[],
-  sessions: import("../shared/types").SessionSummary[],
+  sessions: SessionSummary[],
 ) {
   qc.setQueryData<InfiniteData<SessionPage>>(queryKey, {
     pages: [{ sessions, total: sessions.length }],
@@ -195,8 +185,7 @@ function seedQueryClientAt(
   });
 }
 
-/** QueryClient 캐시에서 세션 목록 조회 */
-function getQuerySessions(qc: QueryClient): import("../shared/types").SessionSummary[] {
+function getQuerySessions(qc: QueryClient): SessionSummary[] {
   const data = qc.getQueryData<InfiniteData<SessionPage>>(["sessions"]);
   return data?.pages.flatMap((p) => p.sessions) ?? [];
 }
@@ -205,7 +194,7 @@ function getQuerySessions(qc: QueryClient): import("../shared/types").SessionSum
 function getQuerySessionsAt(
   qc: QueryClient,
   queryKey: readonly unknown[],
-): import("../shared/types").SessionSummary[] {
+): SessionSummary[] {
   const data = qc.getQueryData<InfiniteData<SessionPage>>(queryKey);
   return data?.pages.flatMap((p) => p.sessions) ?? [];
 }

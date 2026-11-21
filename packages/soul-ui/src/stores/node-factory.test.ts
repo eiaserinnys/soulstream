@@ -1,13 +1,6 @@
-/**
- * node-factory 테스트
- *
- * createNodeFromEvent (생성형/업데이트형 분류) 및 applyUpdate를 검증합니다.
- */
-
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createNodeFromEvent, applyFinalAssistantMessageToLiveText, applyUpdate } from "./node-factory";
-import { createProcessingContext, makeNode, registerNode } from "./processing-context";
-import type { ProcessingContext } from "./processing-context";
+import { createProcessingContext, makeNode, registerNode, type ProcessingContext } from "./processing-context";
 import type {
   AssistantMessageEvent,
   AssistantMessageNode,

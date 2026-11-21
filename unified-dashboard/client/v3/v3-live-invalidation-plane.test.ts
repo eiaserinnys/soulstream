@@ -4,7 +4,6 @@ import {
   acceptV3SessionStreamEvent,
   getV3PageInvalidationKey,
   getV3InvalidationSnapshot,
-  invalidateV3,
   resetV3InvalidationForTest,
   selectV3InvalidationKey,
   selectV3PlannerInvalidationKeys,
