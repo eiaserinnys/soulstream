@@ -1,3 +1,5 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
+
 export interface InitialFolderAtomReference {
   instance: "atom" | "atom-nl";
   nodeId: string;
@@ -165,10 +167,6 @@ export function serializeInitialFolderContext(
     atom_references: atomReferences,
     ...(sessionDefaults ? { session_defaults: sessionDefaults } : {}),
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isAtomContextMode(value: unknown): value is "full" | "index" | "titles" {
