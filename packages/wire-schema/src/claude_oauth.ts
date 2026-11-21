@@ -1,4 +1,5 @@
 import { isRecord } from "./json_record.js";
+
 export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
 export const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";

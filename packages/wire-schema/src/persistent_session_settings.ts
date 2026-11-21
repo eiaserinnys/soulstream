@@ -251,7 +251,6 @@ function lastEntryValue(metadata: unknown, type: string): unknown {
   return undefined;
 }
 
-
 function isPersistentTurnUsageMode(value: unknown): value is PersistentTurnUsageMode {
   return typeof value === "string"
     && (PERSISTENT_TURN_USAGE_MODES as readonly string[]).includes(value);

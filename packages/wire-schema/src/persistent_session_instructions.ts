@@ -255,7 +255,6 @@ function isInstructionStatus(value: unknown): value is PersistentInstructionStat
   return value === "active" || value === "removed";
 }
 
-
 function invalid(message: string): PersistentInstructionParseResult<never> {
   return { ok: false, message };
 }

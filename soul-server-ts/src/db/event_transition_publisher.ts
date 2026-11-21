@@ -6,7 +6,6 @@ import type {
   EventOutboxSessionEffect,
 } from "../upstream/event_outbox.js";
 
-
 const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 
 export type EventSessionTransitionApplication = {

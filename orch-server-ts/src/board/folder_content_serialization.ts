@@ -1,4 +1,3 @@
-
 import type { BoardItemType } from "@soulstream/wire-schema";
 import type {
   CatalogBoardItemRow,

@@ -49,7 +49,6 @@ export function timestampFromMs(ms: number | undefined): number {
   return typeof ms === "number" ? ms / 1000 : nowEpochSec();
 }
 
-
 export function fieldString(value: unknown, key: string): string | undefined {
   if (!isRecord(value)) return undefined;
   const raw = value[key];

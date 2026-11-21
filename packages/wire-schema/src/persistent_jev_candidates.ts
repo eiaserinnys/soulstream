@@ -129,7 +129,6 @@ function isBoundedText(value: unknown, maxLength: number): value is string {
   return isNonEmptyText(value) && value.length <= maxLength;
 }
 
-
 function hasRequiredKeys(
   value: unknown,
   required: readonly string[],

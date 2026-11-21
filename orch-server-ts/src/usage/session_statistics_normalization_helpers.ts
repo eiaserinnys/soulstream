@@ -13,7 +13,6 @@ const PROVIDERS = new Set<UsageStatsProvider>([
   "claude", "codex", "antigravity", "deepseek", "kimi", "unknown",
 ]);
 
-
 export function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }

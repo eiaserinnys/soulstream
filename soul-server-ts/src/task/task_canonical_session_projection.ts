@@ -1,6 +1,5 @@
 import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 
-
 import {
   isTaskStatus,
   isTerminationReason,

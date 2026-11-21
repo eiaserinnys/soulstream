@@ -99,7 +99,6 @@ export function ignoredStaleMessageEvent(params: {
   };
 }
 
-
 function messageType(message: Record<string, unknown>): string {
   return typeof message.type === "string" ? message.type : "<unknown>";
 }

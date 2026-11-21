@@ -114,7 +114,6 @@ export function lastEventIdFromEventRelay(
   return lastEventIdFromPayload(payload);
 }
 
-
 export function nestedSession(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {

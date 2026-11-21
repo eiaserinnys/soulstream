@@ -6,7 +6,6 @@ import type {
   FolderRow,
 } from "./card_types.js";
 import type { RepositorySql } from "./repository_helpers.js";
-
 import { CardRepositoryRead } from "./card_repository_read.js";
 import {
   type AppendFolderOperationTxParams,

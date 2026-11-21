@@ -1,4 +1,5 @@
 import { isRecord } from "./json_record.js";
+
 export interface NodeCpuMetrics {
   usagePercent: number;
   cores: number;
