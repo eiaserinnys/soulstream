@@ -301,7 +301,7 @@ describe("dashboard-store", () => {
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
       );
-      useDashboardStore.getState().processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      useDashboardStore.getState().processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       const tree = useDashboardStore.getState().tree;
       expect(tree).not.toBeNull();
@@ -316,7 +316,7 @@ describe("dashboard-store", () => {
     it("should accumulate text on text_delta", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Hello " } as TextDeltaEvent, 2);
       processEvent({ type: "text_delta", text: "World" } as TextDeltaEvent, 3);
 
@@ -328,7 +328,7 @@ describe("dashboard-store", () => {
     it("should mark completed on text_end", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Done" } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
 
@@ -345,7 +345,7 @@ describe("dashboard-store", () => {
     it("should create tool node on tool_start", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       const event: ToolStartEvent = {
         type: "tool_start",
@@ -353,7 +353,6 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_abc",
-        parent_event_id: "0",
       } as ToolStartEvent;
       processEvent(event, 10);
 
@@ -369,7 +368,7 @@ describe("dashboard-store", () => {
     it("should complete tool node on tool_result", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       processEvent({
         type: "tool_start",
@@ -377,7 +376,6 @@ describe("dashboard-store", () => {
         tool_name: "Bash",
         tool_input: { command: "ls" },
         tool_use_id: "toolu_bash1",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
       processEvent({
         type: "tool_result",
@@ -396,7 +394,7 @@ describe("dashboard-store", () => {
     it("should handle tool error", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       processEvent({
         type: "tool_start",
@@ -404,7 +402,6 @@ describe("dashboard-store", () => {
         tool_name: "Bash",
         tool_input: { command: "invalid" },
         tool_use_id: "toolu_bash2",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
       processEvent({
         type: "tool_result",
@@ -419,16 +416,15 @@ describe("dashboard-store", () => {
       expect(toolNode?.completed).toBe(true);
     });
 
-    it("tool_start → parent_event_id로 user_message에 배치", () => {
+    it("tool_start → root.children에 배치", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Read",
         tool_input: {},
-        parent_event_id: "0",
       } as ToolStartEvent, 42);
 
       const tree = useDashboardStore.getState().tree!;
@@ -448,7 +444,7 @@ describe("dashboard-store", () => {
     it("tool_result without tool_use_id is silently ignored (no fallback matching)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       processEvent({
         type: "tool_start",
@@ -456,10 +452,8 @@ describe("dashboard-store", () => {
         tool_name: "Bash",
         tool_input: { command: "echo hello" },
         tool_use_id: "tu1",
-        parent_event_id: "0",
       } as ToolStartEvent, 10);
 
-      // tool_result without tool_use_id → no match (fallback removed)
       processEvent({
         type: "tool_result",
         tool_name: "Bash",
@@ -477,7 +471,7 @@ describe("dashboard-store", () => {
     it("tool_result with matching tool_use_id completes the tool", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       processEvent({
         type: "tool_start",
@@ -485,7 +479,6 @@ describe("dashboard-store", () => {
         tool_name: "Bash",
         tool_input: {},
         tool_use_id: "tu1",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
       processEvent({
@@ -523,19 +516,16 @@ describe("dashboard-store", () => {
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
 
-      // Text card 1
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Analyzing..." } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
 
-      // Tool card (parent_event_id: "0" → user_message)
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Bash",
         tool_input: { command: "ls" },
         tool_use_id: "toolu_bash1",
-        parent_event_id: "0",
       } as ToolStartEvent, 4);
       processEvent({
         type: "tool_result",
@@ -545,8 +535,7 @@ describe("dashboard-store", () => {
         tool_use_id: "toolu_bash1",
       } as ToolResultEvent, 5);
 
-      // Text card 2
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 6);
+      processEvent({ type: "text_start" } as TextStartEvent, 6);
       processEvent({ type: "text_delta", text: "Done!" } as TextDeltaEvent, 7);
 
       const tree = useDashboardStore.getState().tree!;
@@ -563,7 +552,6 @@ describe("dashboard-store", () => {
       expect(toolNodes[0].completed).toBe(true);
       expect((toolNodes[0] as ToolNode).toolUseId).toBe("toolu_bash1");
 
-      // Phase 2-A 평탄화: tool-4는 root.children에 user_message와 형제로 push (parent_event_id 무시)
       const userMsg = tree.children[0];
       expect(userMsg.type).toBe("user_message");
       expect(tree.children.some((c) => c.id === "tool-4")).toBe(true);
@@ -587,7 +575,7 @@ describe("dashboard-store", () => {
     it("Phase 2-A 평탄화: text는 root.children에 user_message와 형제로 push", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
       expect(tree.children).toHaveLength(2);
@@ -595,16 +583,15 @@ describe("dashboard-store", () => {
       expect(tree.children[1].type).toBe("text");
     });
 
-    it("Phase 2-A 평탄화: tool은 root.children에 push (parent_event_id 무시)", () => {
+    it("Phase 2-A 평탄화: tool은 root.children에 push", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Bash",
         tool_input: {},
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
@@ -614,7 +601,7 @@ describe("dashboard-store", () => {
     it("Phase 2-A 평탄화: complete은 root.children에 push", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 1);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
       expect(tree.children.some((c) => c.type === "complete")).toBe(true);
@@ -634,13 +621,12 @@ describe("dashboard-store", () => {
     it("resume creates a sibling user_message", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "first" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 3);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
 
-      // Resume: new user_message
       processEvent({ type: "user_message", user: "u", text: "resume" } as UserMessageEvent, 4);
-      processEvent({ type: "text_start", parent_event_id: "4" } as TextStartEvent, 5);
+      processEvent({ type: "text_start" } as TextStartEvent, 5);
 
       const tree = useDashboardStore.getState().tree!;
       const userMsgs = tree.children.filter((c) => c.type === "user_message");
@@ -981,24 +967,20 @@ describe("dashboard-store", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
-      // Task tool
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Task",
         tool_input: { subagent_type: "Explore" },
         tool_use_id: "toolu_task_1",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
-      // subagent_start → ignored
       processEvent({
         type: "subagent_start",
         agent_id: "agent-1",
         agent_type: "Explore",
-        parent_event_id: "toolu_task_1",
       } as SubagentStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1014,7 +996,7 @@ describe("dashboard-store", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       processEvent({
         type: "tool_start",
@@ -1022,15 +1004,12 @@ describe("dashboard-store", () => {
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
-      // Both subagent events ignored
       processEvent({
         type: "subagent_start",
         agent_id: "agent-1",
         agent_type: "Explore",
-        parent_event_id: "toolu_task_1",
       } as SubagentStartEvent, 3);
 
       processEvent({
@@ -1041,64 +1020,15 @@ describe("dashboard-store", () => {
       const tree = useDashboardStore.getState().tree!;
       expect(collectNodes(tree, "error")).toHaveLength(0);
     });
-
-    it("events with parent_event_id go to tool node directly (no subagent intermediary)", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-
-      // Task tool
-      processEvent({
-        type: "tool_start",
-        timestamp: 0,
-        tool_name: "Task",
-        tool_input: {},
-        tool_use_id: "toolu_task_1",
-        parent_event_id: "0",
-      } as ToolStartEvent, 2);
-
-      // subagent_start ignored
-      processEvent({
-        type: "subagent_start",
-        agent_id: "agent-1",
-        agent_type: "Explore",
-        parent_event_id: "toolu_task_1",
-      } as SubagentStartEvent, 3);
-
-      // Phase 2-A 평탄화: parent_event_id="toolu_task_1"은 무시. tool_use_id 보조 등록은
-      // applyUpdate 매칭 용도로 유지되지만 트리 배치는 root.children 평면 push.
-      processEvent({
-        type: "tool_start",
-        timestamp: 0,
-        tool_name: "Read",
-        tool_input: { file_path: "/test.ts" },
-        tool_use_id: "toolu_2",
-        parent_event_id: "toolu_task_1",
-      } as ToolStartEvent, 4);
-
-      const tree = useDashboardStore.getState().tree!;
-      expect(collectNodes(tree, "error")).toHaveLength(0);
-      // Phase 2-A 평탄화: Task tool과 inner Read tool 둘 다 root.children에 형제로 push.
-      // (parent_event_id="toolu_task_1"은 무시되지만 tool_use_id 보조 등록은 유지되어
-      //  applyUpdate가 tool_result를 매칭할 수 있다.)
-      const tools = collectNodes(tree, "tool");
-      expect(tools).toHaveLength(2);
-      expect((tools[0] as ToolNode).toolName).toBe("Task");
-      expect((tools[1] as ToolNode).toolName).toBe("Read");
-    });
   });
 
-  // === thinking + text 결합 ===
-
   describe("processEvent - thinking + text lifecycle", () => {
-    it("thinking 노드 생성 → parent_event_id로 user_message 자식으로 배치", () => {
+    it("thinking 노드 생성 → user_message와 형제로 배치", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({
         type: "thinking",
         thinking: "Let me think...",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1116,12 +1046,10 @@ describe("dashboard-store", () => {
       processEvent({
         type: "thinking",
         thinking: "Reasoning...",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
-      // Phase 2-A 평탄화: user_message + thinking + text 모두 root.children에 형제
       expect(tree.children).toHaveLength(3);
       expect(tree.children[0].type).toBe("user_message");
       expect(tree.children[1].type).toBe("thinking");
@@ -1134,9 +1062,8 @@ describe("dashboard-store", () => {
       processEvent({
         type: "thinking",
         thinking: "Deep thought",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 2);
       processEvent({ type: "text_delta", text: "Here is " } as TextDeltaEvent, 3);
       processEvent({ type: "text_delta", text: "the answer." } as TextDeltaEvent, 4);
 
@@ -1154,9 +1081,8 @@ describe("dashboard-store", () => {
       processEvent({
         type: "thinking",
         thinking: "Pondering",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 2);
       processEvent({ type: "text_delta", text: "Answer" } as TextDeltaEvent, 3);
       processEvent({ type: "text_end" } as TextEndEvent, 4);
 
@@ -1167,13 +1093,12 @@ describe("dashboard-store", () => {
       expect(thinkingNode.completed).toBe(true);
     });
 
-    it("tool_start → parent_event_id로 user_message에 배치 (thinking과 형제)", () => {
+    it("tool_start → thinking과 형제로 배치", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({
         type: "thinking",
         thinking: "Planning to read file",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
       processEvent({
         type: "tool_start",
@@ -1181,7 +1106,6 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_read1",
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1193,7 +1117,7 @@ describe("dashboard-store", () => {
     it("thinking 없이 text_start → 독립 text 노드 생성", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Direct text" } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
 
@@ -1208,10 +1132,9 @@ describe("dashboard-store", () => {
     it("text_start → 독립 text 노드 생성, text_delta로 activeTextTarget 갱신", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      // Phase 2-A 평탄화: text 노드는 root.children에 push
       const textNodes = collectNodes(tree, "text");
       expect(textNodes).toHaveLength(1);
       expect(textNodes[0].id).toBe("text-1");
@@ -1230,20 +1153,17 @@ describe("dashboard-store", () => {
       processEvent({
         type: "thinking",
         thinking: "First thought",
-        parent_event_id: "0",
       } as ThinkingEvent, 1);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 2);
       processEvent({ type: "text_delta", text: "Response 1" } as TextDeltaEvent, 3);
       processEvent({ type: "text_end" } as TextEndEvent, 4);
 
-      // 도구 호출 (parent_event_id → user_message)
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "toolu_1",
-        parent_event_id: "0",
       } as ToolStartEvent, 5);
       processEvent({
         type: "tool_result",
@@ -1257,9 +1177,8 @@ describe("dashboard-store", () => {
       processEvent({
         type: "thinking",
         thinking: "Second thought",
-        parent_event_id: "0",
       } as ThinkingEvent, 7);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 8);
+      processEvent({ type: "text_start" } as TextStartEvent, 8);
       processEvent({ type: "text_delta", text: "Response 2" } as TextDeltaEvent, 9);
       processEvent({ type: "text_end" } as TextEndEvent, 10);
 
@@ -1314,30 +1233,27 @@ describe("dashboard-store", () => {
   // === 세션 재오픈 무결성 ===
 
   describe("processEvent - session reopen integrity", () => {
-    /** 세션 A: user→text→tool→text→complete */
     function replaySessionA(processEvent: (event: any, eventId: number) => void) {
       processEvent({ type: "user_message", user: "u", text: "Session A" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Analyzing..." } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: { file_path: "/test.ts" }, tool_use_id: "tu-a1", parent_event_id: "0" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: { file_path: "/test.ts" }, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "content", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 6);
+      processEvent({ type: "text_start" } as TextStartEvent, 6);
       processEvent({ type: "text_delta", text: "Done." } as TextDeltaEvent, 7);
       processEvent({ type: "text_end" } as TextEndEvent, 8);
-      processEvent({ type: "complete", result: "Session A done", attachments: [], parent_event_id: "0" } as CompleteEvent, 9);
+      processEvent({ type: "complete", result: "Session A done", attachments: [] } as CompleteEvent, 9);
     }
 
-    /** 세션 B: user→text→complete (tool 없음) */
     function replaySessionB(processEvent: (event: any, eventId: number) => void) {
       processEvent({ type: "user_message", user: "u", text: "Session B" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Simple answer." } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "complete", result: "Session B done", attachments: [], parent_event_id: "0" } as CompleteEvent, 4);
+      processEvent({ type: "complete", result: "Session B done", attachments: [] } as CompleteEvent, 4);
     }
 
-    /** 트리를 재귀 순회하여 타입별 노드 수 집계 */
     function snapshotTree(tree: EventTreeNode | null): Record<string, number> {
       const counts: Record<string, number> = {};
       for (const node of collectNodes(tree)) {
@@ -1380,13 +1296,11 @@ describe("dashboard-store", () => {
     it("fast switch: no duplicate nodes from incomplete replay", () => {
       const { processEvent, setActiveSession } = useDashboardStore.getState();
 
-      // Session A: partial replay (user + text + tool, no complete)
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "Session A" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1", parent_event_id: "0" } as ToolStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 2);
 
-      // Immediately switch to B
       setActiveSession("sess-B");
       replaySessionB(processEvent);
 
@@ -1405,30 +1319,26 @@ describe("dashboard-store", () => {
     it("same eventId across sessions: no type confusion", () => {
       const { processEvent, setActiveSession } = useDashboardStore.getState();
 
-      // Session A: eventId=4 → tool node
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1", parent_event_id: "0" } as ToolStartEvent, 4);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 9);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
 
-      // Session B: eventId=4 → complete node (different type for same eventId!)
       setActiveSession("sess-B");
       processEvent({ type: "user_message", user: "u", text: "B" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "complete", result: "B done", attachments: [], parent_event_id: "0" } as CompleteEvent, 4);
+      processEvent({ type: "complete", result: "B done", attachments: [] } as CompleteEvent, 4);
 
-      // Switch back to A — replay
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1", parent_event_id: "0" } as ToolStartEvent, 4);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 9);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
 
-      // Verify eventId=4 in session A is a tool node, not a complete node
       const tree = useDashboardStore.getState().tree!;
       const toolNode = findTreeNode(tree, "tool-4");
       expect(toolNode).not.toBeNull();
@@ -1444,30 +1354,28 @@ describe("dashboard-store", () => {
       const { processEvent } = useDashboardStore.getState();
       let id = 0;
 
-      // Turn 1: user(0) → text → tool(Skill) → complete
-      processEvent({ type: "user_message", user: "u", text: "Load skill" } as UserMessageEvent, id++); // 0
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, id++); // 1
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill", parent_event_id: "0" } as ToolStartEvent, id++); // 2
-      processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++); // 3
-      processEvent({ type: "text_delta", text: "Loaded." } as TextDeltaEvent, id++); // 4
-      processEvent({ type: "text_end" } as TextEndEvent, id++); // 5
-      processEvent({ type: "complete", result: "Skill loaded", attachments: [], parent_event_id: "0" } as CompleteEvent, id++); // 6
+      processEvent({ type: "user_message", user: "u", text: "Load skill" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start" } as TextStartEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++);
+      processEvent({ type: "text_delta", text: "Loaded." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end" } as TextEndEvent, id++);
+      processEvent({ type: "complete", result: "Skill loaded", attachments: [] } as CompleteEvent, id++);
 
-      // Turn 2: user(7) → text → Task(subagent_start ignored) → inner tool → subagent_stop ignored → text → complete
-      processEvent({ type: "user_message", user: "u", text: "Analyze" } as UserMessageEvent, id++); // 7
-      processEvent({ type: "text_start", parent_event_id: "7" } as TextStartEvent, id++); // 8
-      processEvent({ type: "text_delta", text: "Exploring..." } as TextDeltaEvent, id++); // 9
-      processEvent({ type: "text_end" } as TextEndEvent, id++); // 10
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1", parent_event_id: "7" } as ToolStartEvent, id++); // 11
-      processEvent({ type: "subagent_start", agent_id: "agent-1", agent_type: "Explore", parent_event_id: "tu-task1" } as SubagentStartEvent, id++); // 12
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-sub-grep", parent_event_id: "tu-task1" } as ToolStartEvent, id++); // 13
-      processEvent({ type: "tool_result", tool_name: "Grep", result: "found", is_error: false, tool_use_id: "tu-sub-grep", parent_event_id: "tu-task1" } as ToolResultEvent, id++); // 14
-      processEvent({ type: "subagent_stop", agent_id: "agent-1", parent_event_id: "tu-task1" } as SubagentStopEvent, id++); // 15
-      processEvent({ type: "tool_result", tool_name: "Task", result: "Explored", is_error: false, tool_use_id: "tu-task1" } as ToolResultEvent, id++); // 16
-      processEvent({ type: "text_start", parent_event_id: "7" } as TextStartEvent, id++); // 17
-      processEvent({ type: "text_delta", text: "Found results." } as TextDeltaEvent, id++); // 18
-      processEvent({ type: "text_end" } as TextEndEvent, id++); // 19
-      processEvent({ type: "complete", result: "Done", attachments: [], parent_event_id: "7" } as CompleteEvent, id++); // 20
+      processEvent({ type: "user_message", user: "u", text: "Analyze" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start" } as TextStartEvent, id++);
+      processEvent({ type: "text_delta", text: "Exploring..." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end" } as TextEndEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
+      processEvent({ type: "subagent_start", agent_id: "agent-1", agent_type: "Explore" } as SubagentStartEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-sub-grep" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Grep", result: "found", is_error: false, tool_use_id: "tu-sub-grep" } as ToolResultEvent, id++);
+      processEvent({ type: "subagent_stop", agent_id: "agent-1" } as SubagentStopEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Task", result: "Explored", is_error: false, tool_use_id: "tu-task1" } as ToolResultEvent, id++);
+      processEvent({ type: "text_start" } as TextStartEvent, id++);
+      processEvent({ type: "text_delta", text: "Found results." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end" } as TextEndEvent, id++);
+      processEvent({ type: "complete", result: "Done", attachments: [] } as CompleteEvent, id++);
 
       const tree = useDashboardStore.getState().tree!;
 
@@ -1494,22 +1402,19 @@ describe("dashboard-store", () => {
     it("tool은 Task tool의 자식으로 배치 (subagent 없이)", () => {
       const { processEvent } = useDashboardStore.getState();
 
-      // Turn 1
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 3);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
 
-      // Turn 2: Task tool with parent_event_id but NO subagent_start/stop
       processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-      processEvent({ type: "text_start", parent_event_id: "4" } as TextStartEvent, 5);
+      processEvent({ type: "text_start" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: {}, tool_use_id: "tu-task", parent_event_id: "4" } as ToolStartEvent, 7);
-      // Phase 2-A 평탄화: Inner tool도 parent_event_id 무시되고 root.children에 평면 push.
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolStartEvent, 8);
-      processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolResultEvent, 9);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep" } as ToolStartEvent, 8);
+      processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep" } as ToolResultEvent, 9);
       processEvent({ type: "tool_result", tool_name: "Task", result: "done", is_error: false, tool_use_id: "tu-task" } as ToolResultEvent, 10);
-      processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "4" } as CompleteEvent, 11);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 11);
 
       const tree = useDashboardStore.getState().tree!;
 
@@ -1522,7 +1427,6 @@ describe("dashboard-store", () => {
       expect(allTools.some(t => (t as ToolNode).toolName === "Task")).toBe(true);
       expect(allTools.some(t => (t as ToolNode).toolName === "Grep")).toBe(true);
 
-      // 에러 노드 없음 (parent_event_id 매칭 실패도 silent — 평탄화 후 root.children push)
       const errorNodes = collectNodes(tree, "error");
       expect(errorNodes).toHaveLength(0);
     });
@@ -1535,10 +1439,10 @@ describe("dashboard-store", () => {
       const { processEvent } = useDashboardStore.getState();
       let id = 0;
 
-      processEvent({ type: "user_message", user: "u", text: "Run tasks" } as UserMessageEvent, id++); // 0
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, id++); // 1
-      processEvent({ type: "text_delta", text: "Planning..." } as TextDeltaEvent, id++); // 2
-      processEvent({ type: "text_end" } as TextEndEvent, id++); // 3
+      processEvent({ type: "user_message", user: "u", text: "Run tasks" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start" } as TextStartEvent, id++);
+      processEvent({ type: "text_delta", text: "Planning..." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end" } as TextEndEvent, id++);
 
       // Task-1
       processEvent({
@@ -1547,25 +1451,20 @@ describe("dashboard-store", () => {
         tool_name: "Task",
         tool_input: { prompt: "Explore" },
         tool_use_id: "toolu_task_1",
-        parent_event_id: "0",
-      } as ToolStartEvent, id++); // 4
+      } as ToolStartEvent, id++);
 
-      // subagent_start → ignored
       processEvent({
         type: "subagent_start",
         agent_id: "agent-1",
         agent_type: "Explore",
-        parent_event_id: "toolu_task_1",
       } as SubagentStartEvent, id++);
 
-      // Inner tool with parent_event_id → goes to Task tool node directly
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Grep",
         tool_input: {},
         tool_use_id: "toolu_grep",
-        parent_event_id: "toolu_task_1",
       } as ToolStartEvent, id++);
       processEvent({
         type: "tool_result",
@@ -1573,14 +1472,11 @@ describe("dashboard-store", () => {
         result: "found",
         is_error: false,
         tool_use_id: "toolu_grep",
-        parent_event_id: "toolu_task_1",
       } as ToolResultEvent, id++);
 
-      // subagent_stop → ignored
       processEvent({
         type: "subagent_stop",
         agent_id: "agent-1",
-        parent_event_id: "toolu_task_1",
       } as SubagentStopEvent, id++);
       processEvent({
         type: "tool_result",
@@ -1597,7 +1493,6 @@ describe("dashboard-store", () => {
         tool_name: "Task",
         tool_input: { prompt: "Review" },
         tool_use_id: "toolu_task_2",
-        parent_event_id: "0",
       } as ToolStartEvent, id++);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1613,19 +1508,16 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === 에러 노드 삽입 (orphan detection) ===
-
   describe("processEvent - orphan error node insertion", () => {
-    it("tool이 parent_event_id로 user_message에 배치", () => {
+    it("tool이 root.children에 배치", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Read",
         tool_input: {},
-        parent_event_id: "0",
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1642,14 +1534,13 @@ describe("dashboard-store", () => {
     it("복수 tool이 모두 root.children에 push (Phase 2-A 평면)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "text_start" } as TextStartEvent, 2);
       processEvent({
         type: "tool_start",
         timestamp: 0,
         tool_name: "Read",
         tool_input: {},
-        parent_event_id: "0",
       } as ToolStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
@@ -1658,27 +1549,6 @@ describe("dashboard-store", () => {
       const toolNodes = tree.children.filter(c => c.type === "tool");
       expect(toolNodes).toHaveLength(1);
       expect((toolNodes[0] as ToolNode).toolName).toBe("Read");
-    });
-
-    it("parent_event_id 매칭 실패 시 root에 배치 (에러 노드 없음)", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
-      processEvent({
-        type: "tool_start",
-        timestamp: 0,
-        tool_name: "Read",
-        tool_input: {},
-        parent_event_id: "nonexistent-id",
-      } as ToolStartEvent, 2);
-
-      const tree = useDashboardStore.getState().tree!;
-      // Phase 6: orphan error 삽입 없음
-      const errorNodes = collectNodes(tree, "error");
-      expect(errorNodes).toHaveLength(0);
-
-      // tool은 root에 배치 (nodeMap에 매칭 실패 → fallback to root)
-      expect(tree.children.some(c => c.id === "tool-2")).toBe(true);
     });
 
     it("currentTurnNode 없이 thinking → root 직접 배치 (implicit turn 생성 안 함)", () => {
@@ -1721,48 +1591,7 @@ describe("dashboard-store", () => {
       expect(textNode.content).toBe("hello");
       expect(tree.children.some(c => c.id === "text-0")).toBe(true);
     });
-
-    it("서브에이전트 내부 text_start에서 parent_event_id 매칭 실패 시 root에 배치 (에러 노드 없음)", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-
-      // parent_event_id가 있지만 매칭되는 노드가 없는 text_start
-      processEvent({
-        type: "text_start",
-        parent_event_id: "nonexistent-parent",
-      } as TextStartEvent, 1);
-
-      const tree = useDashboardStore.getState().tree!;
-      // Phase 6: orphan error 삽입 없음
-      const errorNodes = collectNodes(tree, "error");
-      expect(errorNodes).toHaveLength(0);
-
-      // text는 root에 배치 (nodeMap에 매칭 실패 → fallback to root)
-      expect(tree.children.some(c => c.id === "text-1")).toBe(true);
-    });
-
-    it("서브에이전트 내부 thinking에서 parent_event_id 매칭 실패 시 root에 배치 (에러 노드 없음)", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-
-      // parent_event_id가 있지만 매칭되는 노드가 없는 thinking
-      processEvent({
-        type: "thinking",
-        thinking: "Lost thought...",
-        parent_event_id: "nonexistent-parent",
-      } as ThinkingEvent, 1);
-
-      const tree = useDashboardStore.getState().tree!;
-      // Phase 6: orphan error 삽입 없음
-      const errorNodes = collectNodes(tree, "error");
-      expect(errorNodes).toHaveLength(0);
-
-      // thinking은 root에 배치 (nodeMap에 매칭 실패 → fallback to root)
-      expect(tree.children.some(c => c.type === "thinking")).toBe(true);
-    });
   });
-
-  // === 초기화 ===
 
   describe("reset", () => {
     it("should reset all state to initial values", () => {
@@ -1904,33 +1733,6 @@ describe("dashboard-store", () => {
       expect(tree!.children).toHaveLength(1);
       expect(tree!.children[0].type).toBe("compact");
     });
-
-    it("processEvents should not crash when parent_event_id references missing node", () => {
-      const store = useDashboardStore.getState();
-      store.clearTree();
-
-      // parent_event_id="2"를 참조하지만, eventId=2 노드가 없음
-      store.processEvents([
-        {
-          event: { type: "user_message", text: "hello", timestamp: 0 } as UserMessageEvent,
-          eventId: 1,
-        },
-        {
-          event: {
-            type: "thinking",
-            thinking: "test",
-            timestamp: 0,
-            parent_event_id: "999",
-          } as ThinkingEvent,
-          eventId: 3,
-        },
-      ]);
-
-      const tree = useDashboardStore.getState().tree;
-      expect(tree).not.toBeNull();
-      // parent "999"를 찾지 못해 root로 폴백 — crash 없이 처리
-      expect(tree!.children).toHaveLength(2);
-    });
   });
 
   describe("reorderFolders", () => {
@@ -2068,7 +1870,7 @@ describe("dashboard-store", () => {
         100,
       );
       useDashboardStore.getState().processEvent(
-        { type: "text_start", parent_event_id: "100" } as TextStartEvent,
+        { type: "text_start" } as TextStartEvent,
         101,
       );
       const ctx = useDashboardStore.getState().processingCtx;
@@ -2082,7 +1884,7 @@ describe("dashboard-store", () => {
           eventId: 50,
         },
         {
-          event: { type: "text_start", parent_event_id: "50" } as TextStartEvent,
+          event: { type: "text_start" } as TextStartEvent,
           eventId: 51,
         },
       ]);
@@ -2180,13 +1982,10 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "tu_live",
-        parent_event_id: "200",
       } as ToolStartEvent, 210);
 
       const beforeChat = useDashboardStore.getState().chatPrependedCount;
 
-      // prepend: tool 1개 (이전 시점, eventId 더 작음)
-      // Phase 2-A 평탄화 후: parent_event_id 무시, 모든 노드는 root.children에 평면 push
       const events = [
         {
           event: { type: "user_message", content: "old-u" } as UserMessageEvent,
@@ -2199,7 +1998,6 @@ describe("dashboard-store", () => {
             tool_name: "Bash",
             tool_input: {},
             tool_use_id: "tu_old",
-            parent_event_id: "50",
           } as ToolStartEvent,
           eventId: 60,
         },
@@ -2236,11 +2034,8 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "tu_1",
-        parent_event_id: "100",
       } as ToolStartEvent, 110);
 
-      // 라이브 트리 grouped 길이 측정 (basis)
-      // (직접 측정하지 않고 chatPrependedCount 기준으로 검증)
       const beforeChat = useDashboardStore.getState().chatPrependedCount;
 
       // prepend: 같은 부모(100)에 tool 2개 추가 → 트리에 tool 3개 연속(자식 순서로)
@@ -2254,7 +2049,6 @@ describe("dashboard-store", () => {
             tool_name: "Bash",
             tool_input: {},
             tool_use_id: "tu_2",
-            parent_event_id: "100",
           } as ToolStartEvent,
           eventId: 120,
         },
@@ -2265,7 +2059,6 @@ describe("dashboard-store", () => {
             tool_name: "Glob",
             tool_input: {},
             tool_use_id: "tu_3",
-            parent_event_id: "100",
           } as ToolStartEvent,
           eventId: 130,
         },
@@ -2288,7 +2081,6 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "tu_live",
-        parent_event_id: "200",
       } as ToolStartEvent, 210);
 
       const beforeChat = useDashboardStore.getState().chatPrependedCount;
@@ -2305,7 +2097,6 @@ describe("dashboard-store", () => {
             tool_name: "Bash",
             tool_input: {},
             tool_use_id: "tu_old1",
-            parent_event_id: "50",
           } as ToolStartEvent,
           eventId: 60,
         },
@@ -2320,7 +2111,6 @@ describe("dashboard-store", () => {
             tool_name: "Glob",
             tool_input: {},
             tool_use_id: "tu_old2",
-            parent_event_id: "70",
           } as ToolStartEvent,
           eventId: 80,
         },
@@ -2424,10 +2214,8 @@ describe("dashboard-store", () => {
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "tu_live",
-        parent_event_id: "300",
       } as ToolStartEvent, 310);
 
-      // 1차 prepend (중간 페이지): u100, t110 — 라이브와 가장 오래된 페이지 사이
       useDashboardStore.getState().processHistoryEvents([
         {
           event: { type: "user_message", content: "mid-u" } as UserMessageEvent,
@@ -2440,7 +2228,6 @@ describe("dashboard-store", () => {
             tool_name: "Bash",
             tool_input: {},
             tool_use_id: "tu_m",
-            parent_event_id: "100",
           } as ToolStartEvent,
           eventId: 110,
         },
@@ -2459,7 +2246,6 @@ describe("dashboard-store", () => {
             tool_name: "Glob",
             tool_input: {},
             tool_use_id: "tu_o",
-            parent_event_id: "10",
           } as ToolStartEvent,
           eventId: 20,
         },

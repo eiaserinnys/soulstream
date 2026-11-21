@@ -44,7 +44,6 @@ function makeTextStartEvent(eventId: number): { event: SoulSSEEvent; eventId: nu
     event: {
       type: "text_start",
       timestamp: 0,
-      parent_event_id: undefined,
     } as unknown as SoulSSEEvent,
     eventId,
   };
