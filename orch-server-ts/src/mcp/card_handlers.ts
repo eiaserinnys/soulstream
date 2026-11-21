@@ -4,12 +4,12 @@ import { callWithReferenceTranslation, errorResultFromError, jsonResult, readOrc
 import { allowed, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
 import type { DispatchWorkInput } from "../cards/card_work_dispatch_service.js";
 import type { CardMcpGetInput, CardMcpListInput, CardMcpSearchInput } from "../cards/card_mcp_read.js";
-import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
+import { normalizeBoardAccess } from "../board/board_access.js";
 import { filterFolders } from "../folders/folder_route_access.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { CardOperation } from "../cards/card_operations.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
-import { cardMaintenanceHandlers } from "./card_maintenance_handlers.js";
+import { cardMaintenanceHandlers, resolveDispatchReferences } from "./card_maintenance_handlers.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -226,13 +226,6 @@ async function mcpAllowedFolderIds(options: Options): Promise<readonly string[] 
   const [access, folders] = await Promise.all([options.resolveAccess!(), options.provider.listFolders()]);
   const normalized = normalizeBoardAccess(access);
   return normalized.restricted ? filterFolders(normalized, folders).map(folder => folder.id) : null;
-}
-async function resolveDispatchReferences(options: Options, refs: string[]) {
-  const [service, access, folders] = await Promise.all([
-    options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
-  ]);
-  const normalized = normalizeBoardAccess(access);
-  return service.resolveReferences(refs, folderId => isBoardFolderAllowed(normalized, folders, folderId));
 }
 async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args,
   cas = false, project: MutationProjector = compactMutation) {

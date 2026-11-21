@@ -119,7 +119,7 @@ export function registerPageBlockTransferRoute(
   });
 }
 
-function decodeBase64(value: string): Uint8Array {
+export function decodeBase64(value: string): Uint8Array {
   const bytes = Buffer.from(value, "base64");
   const normalized = value.replace(/=+$/, "");
   if (!bytes.length || bytes.toString("base64").replace(/=+$/, "") !== normalized) {

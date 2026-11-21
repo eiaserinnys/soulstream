@@ -82,11 +82,7 @@ function maintenanceActor(args: Args, context: McpCallContext): MaintenanceActor
   return { actorKind: "agent", actorSessionId: authenticated };
 }
 
-function translate(options: Options, args: Args, call: (translated: Args) => Promise<CallToolResult>) {
-  return callWithReferenceTranslation(args, refs => lookupReferences(options, refs), call);
-}
-
-async function lookupReferences(options: Options, refs: string[]) {
+export async function resolveDispatchReferences(options: Options, refs: string[]) {
   const [service, access, folders] = await Promise.all([
     options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
   ]);
@@ -94,10 +90,14 @@ async function lookupReferences(options: Options, refs: string[]) {
   return service.resolveReferences(refs, folderId => isBoardFolderAllowed(normalized, folders, folderId));
 }
 
+function translate(options: Options, args: Args, call: (translated: Args) => Promise<CallToolResult>) {
+  return callWithReferenceTranslation(args, refs => resolveDispatchReferences(options, refs), call);
+}
+
 async function resolveBulkReference(options: Options, input: string): Promise<string> {
   const trimmed = input.trim();
   if (!trimmed.startsWith("#")) return trimmed;
-  const [resolved] = await lookupReferences(options, [trimmed]);
+  const [resolved] = await resolveDispatchReferences(options, [trimmed]);
   if (!resolved) throw new Error(`번호 참조를 해석하지 못했습니다: ${trimmed}`);
   if ("error" in resolved) throw new Error(resolved.error);
   if (resolved.kind !== "card")

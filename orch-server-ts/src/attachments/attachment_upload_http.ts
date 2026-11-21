@@ -117,3 +117,10 @@ function isSafeRouteError(error: unknown): error is { statusCode: number; code: 
 function safeDetail(error: { detail?: string }): string {
   return typeof error.detail === "string" && error.detail.length > 0 ? error.detail : MASKED_DETAIL;
 }
+
+export function asObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new AttachmentUploadHttpError(400, "invalid_upload", "JSON 객체가 필요합니다");
+  }
+  return value as Record<string, unknown>;
+}

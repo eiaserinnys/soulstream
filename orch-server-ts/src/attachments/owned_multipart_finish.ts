@@ -13,6 +13,7 @@ import {
   AttachmentUploadHttpError,
   UPLOAD_CONTRACT_HEADER,
   UPLOAD_CONTRACT_ID_V1,
+  asObject,
   readUploadMode,
   sendUploadFailure,
   type UploadMode,
@@ -230,11 +231,4 @@ function conflict(detail: string): AttachmentUploadHttpError {
 
 function requestBody(request: FastifyRequest): Record<string, unknown> {
   return asObject(request.body);
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new AttachmentUploadHttpError(400, "invalid_upload", "JSON 객체가 필요합니다");
-  }
-  return value as Record<string, unknown>;
 }

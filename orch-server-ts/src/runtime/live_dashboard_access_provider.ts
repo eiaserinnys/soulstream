@@ -19,6 +19,7 @@ import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
 import type { OAuthResourceAccess } from "../oauth/oauth_access.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
+import { requireLiveDatabaseUrl } from "./live_db_sql.js";
 import {
   extractDashboardBearerToken,
   extractDashboardJwtCookieToken,
@@ -174,7 +175,7 @@ export function createPostgresDashboardUserRepository(
 
   async function resolveSql(): Promise<DashboardPostgresSql> {
     if (sql !== undefined) return sql;
-    const databaseUrl = options.databaseUrl ?? await requireDatabaseUrl(options.configProvider);
+    const databaseUrl = options.databaseUrl ?? await requireLiveDatabaseUrl(options.configProvider);
     const factory = options.postgresFactory ?? defaultPostgresFactory;
     sql = factory(databaseUrl, { max: maxConnections });
     ownsSql = true;
@@ -302,23 +303,6 @@ export function serviceTokenAccessWithoutEmail(): DashboardAccess {
 
 function restrictedAccess(allowedFolderIds: readonly string[]): DashboardAccess {
   return { restricted: true, allowedFolderIds: [...allowedFolderIds] };
-}
-
-async function requireDatabaseUrl(
-  configProvider: LiveConfigProviderBoundary | undefined,
-): Promise<string> {
-  if (configProvider === undefined) {
-    throw new Error("databaseUrl is required");
-  }
-  let value: unknown;
-  try {
-    value = await configProvider.requireConfig("databaseUrl");
-  } catch {
-    throw new Error("databaseUrl is required");
-  }
-  if (typeof value !== "string") throw new Error("databaseUrl must be a string");
-  if (value.length === 0) throw new Error("databaseUrl must be configured");
-  return value;
 }
 
 function dashboardUserFromRow(row: Record<string, unknown>): DashboardUserRecord {

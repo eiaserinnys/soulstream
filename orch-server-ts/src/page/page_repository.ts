@@ -7,7 +7,7 @@ import type {
 } from "../runtime/live_db_sql.js";
 import { createPostgresQueryAdapter } from "../runtime/postgres_query_adapter.js";
 import {
-  parsePageYjsDocumentName,
+  requirePageDocumentName,
 } from "./page_yjs_model.js";
 import type { StorePageYjsStateInput } from "./page_yjs_persistence.js";
 import type { PageMutationApplication } from "./page_mutation_core.js";
@@ -440,8 +440,3 @@ function assertPageCapableQuerySql(
   }
 }
 
-function requirePageDocumentName(documentName: string): string {
-  const pageId = parsePageYjsDocumentName(documentName);
-  if (!pageId) throw new Error(`PAGE_YJS_DOCUMENT_NAME_INVALID: ${documentName}`);
-  return pageId;
-}

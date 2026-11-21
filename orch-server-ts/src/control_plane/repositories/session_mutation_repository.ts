@@ -481,7 +481,7 @@ function legacyPersistenceHostCamelCase(value: unknown, key?: string): unknown {
   );
 }
 
-function isLegacyHostDateValue(value: string, key?: string): boolean {
+export function isLegacyHostDateValue(value: string, key?: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
   if (key === undefined) return true;
   return /(?:At|Before|Until|ExpiresAt)$/.test(key) && key !== "timestamp";

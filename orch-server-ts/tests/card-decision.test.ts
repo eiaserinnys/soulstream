@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { decodeCardDecision } from '../src/cards/state/card_decision_decoder.js';
 import { decideCardTransition } from '../src/cards/state/card_decision.js';
-import { rowToStateValue, stateValueToColumns } from '../src/cards/state/card_machine_facts.js';
+import { rowToStateValue, stateValueToColumns } from '../src/cards/state/card_state_value.js';
 
 const row = { status: 'running', blocked_kind: null, blocked_detail: null, archived: false, assignee_kind: 'session', assignee_session_id: 'owner', wake_at: null, limit_resume_session_id: null, limit_resume_at: null };
 it('keeps rejected commands in all stored regions', () => {

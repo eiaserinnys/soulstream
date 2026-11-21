@@ -8,8 +8,8 @@ import type {
 import * as Y from "yjs";
 
 import {
-  parsePageYjsDocumentName,
   readPageYDocReplica,
+  requirePageDocumentName,
   type PageYjsReplica,
 } from "./page_yjs_model.js";
 import { isCommittedPageSnapshotOrigin } from "./page_committed_snapshot_sync.js";
@@ -218,10 +218,4 @@ export function createPageYjsPersistence(
       retryAttempts,
     }),
   };
-}
-
-function requirePageDocumentName(documentName: string): string {
-  const pageId = parsePageYjsDocumentName(documentName);
-  if (!pageId) throw new Error(`PAGE_YJS_DOCUMENT_NAME_INVALID: ${documentName}`);
-  return pageId;
 }

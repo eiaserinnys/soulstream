@@ -7,7 +7,7 @@ import type {
   DashboardUserRecord,
   DashboardUserRepository,
 } from "./live_dashboard_access_provider.js";
-import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import { postgresErrorCode, type LiveDbSqlResolver } from "./live_db_sql.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import {
   readSessionReviewPolicy,
@@ -230,13 +230,6 @@ function stringOrNull(value: unknown): string | null {
 function numberValue(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function postgresErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  return typeof error.code === "string" ? error.code : undefined;
 }
 
 function userNotFoundError(): AdminUsersRouteError {

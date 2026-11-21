@@ -4,14 +4,14 @@ import type {
   ContextBundleWrite,
 } from "../node/context_bundle_routes.js";
 import { ContextBundleVersionConflictError } from "../node/context_bundle_routes.js";
-import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import { optionalRead, type LiveDbSqlResolver } from "./live_db_sql.js";
 
 export function createLiveContextBundleRepository(
   sqlResolver: LiveDbSqlResolver,
 ): ContextBundleRepository {
   return {
     async list() {
-      const rows = await optionalBundleRead(async () =>
+      const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT bundle_id, description, atom_contexts, version, created_at, updated_at
           FROM context_bundles
@@ -20,7 +20,7 @@ export function createLiveContextBundleRepository(
       return rows.map(mapBundle);
     },
     async get(bundleId) {
-      const rows = await optionalBundleRead(async () =>
+      const rows = await optionalRead(async () =>
         (await sqlResolver.resolveSql())`
           SELECT bundle_id, description, atom_contexts, version, created_at, updated_at
           FROM context_bundles
@@ -49,22 +49,6 @@ export function createLiveContextBundleRepository(
       return false;
     },
   };
-}
-
-async function optionalBundleRead(
-  read: () => Promise<readonly Record<string, unknown>[]>,
-): Promise<readonly Record<string, unknown>[]> {
-  try {
-    return await read();
-  } catch (error) {
-    if (isUndefinedTable(error)) return [];
-    throw error;
-  }
-}
-
-function isUndefinedTable(error: unknown): boolean {
-  return typeof error === "object" && error !== null
-    && (error as { code?: unknown }).code === "42P01";
 }
 
 async function insertBundle(sqlResolver: LiveDbSqlResolver, input: ContextBundleWrite) {

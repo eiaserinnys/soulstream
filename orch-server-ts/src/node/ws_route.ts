@@ -20,7 +20,7 @@ import {
   type NodeEventIngressControllerOptions,
 } from "./event_ingress_controller.js";
 import { isEventAppendBatchFrame } from "./event_ingress_types.js";
-import { registerNodeControlWsRoute } from "./control_ws_route.js";
+import { payloadToText, registerNodeControlWsRoute } from "./control_ws_route.js";
 import type {
   ReleaseActivationReceiptRecord,
   ReleaseActivationReceiptStore,
@@ -628,16 +628,6 @@ function parseJsonFrame(payload: unknown): JsonFrameParseResult {
     };
   }
   return { ok: true, frame: decoded };
-}
-
-function payloadToText(payload: unknown): string | undefined {
-  if (typeof payload === "string") return payload;
-  if (Buffer.isBuffer(payload)) return payload.toString("utf8");
-  if (payload instanceof ArrayBuffer) return Buffer.from(payload).toString("utf8");
-  if (Array.isArray(payload) && payload.every(Buffer.isBuffer)) {
-    return Buffer.concat(payload).toString("utf8");
-  }
-  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

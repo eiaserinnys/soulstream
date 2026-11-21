@@ -3,7 +3,7 @@ import {
   type UserPreferencesRecord,
 } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
-import type { LiveDbSqlResolver } from "./live_db_sql.js";
+import { postgresErrorCode, type LiveDbSqlResolver } from "./live_db_sql.js";
 
 export type CreateLiveUserPreferencesRepositoryOptions = {
   readonly sqlResolver: LiveDbSqlResolver;
@@ -79,13 +79,6 @@ export function createLiveUserPreferencesRepository(
       }
     },
   };
-}
-
-function postgresErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  return typeof error.code === "string" ? error.code : undefined;
 }
 
 function errorMessage(error: unknown): string {

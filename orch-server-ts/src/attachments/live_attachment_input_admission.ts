@@ -4,6 +4,7 @@ import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import { createAttachmentInputAdmission, type AdmittedAttachmentInput } from "./attachment_input_admission.js";
 import {
   AttachmentReadError,
+  statusCode,
   type AttachmentReadActor,
   type AttachmentReadRepository,
   type AttachmentReadService,
@@ -100,9 +101,4 @@ async function admit(
     ...(input.attachmentIds === undefined ? {} : { attachmentIds: input.attachmentIds }),
     ...(input.attachmentPaths === undefined ? {} : { attachmentPaths: input.attachmentPaths }),
   });
-}
-
-function statusCode(error: unknown): number | undefined {
-  return typeof error === "object" && error !== null && "statusCode" in error &&
-    typeof error.statusCode === "number" ? error.statusCode : undefined;
 }

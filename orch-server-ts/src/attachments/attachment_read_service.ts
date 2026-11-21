@@ -477,7 +477,7 @@ function storageReadError(): AttachmentReadError {
   );
 }
 
-function statusCode(error: unknown): number | undefined {
+export function statusCode(error: unknown): number | undefined {
   return typeof error === "object" && error !== null && "statusCode" in error &&
     typeof error.statusCode === "number" ? error.statusCode : undefined;
 }
