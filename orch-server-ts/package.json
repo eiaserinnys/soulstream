@@ -27,6 +27,7 @@
     "@modelcontextprotocol/server": "2.2.0",
     "@soulstream/agent-profile-contract": "workspace:*",
     "@soulstream/atomic-file-rename": "workspace:*",
+    "@soulstream/executable-path": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/mcp-contract": "workspace:*",
     "@soulstream/model-catalog": "workspace:*",

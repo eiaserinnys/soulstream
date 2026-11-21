@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveCodexCliPath } from "../../src/engine/codex_cli_path.js";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 import { addVirtualFile, resetVirtualFs } from "../helpers/virtual_fs.js";
@@ -44,8 +44,7 @@ describe("resolveCodexCliPath", () => {
     const codex = join(dir, "codex");
     makeExecutable(codex);
 
-    expect(resolveCodexCliPath({
-      CODEX_CLI_PATH: join(dir, "missing", "codex"),
+    expect(resolveCodexCliPath(join(dir, "missing", "codex"), {
       PATH: dir,
       HOME: "",
     })).toEqual({ path: codex, source: "PATH" });
@@ -56,7 +55,7 @@ describe("resolveCodexCliPath", () => {
     const codex = join(dir, "codex");
     makeExecutable(codex);
 
-    expect(resolveCodexCliPath({ PATH: dir, HOME: "" })).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: dir, HOME: "" })).toEqual({
       path: codex,
       source: "PATH",
     });
@@ -69,7 +68,7 @@ describe("resolveCodexCliPath", () => {
     makeFile(bashShim);
     makeFile(cmdShim);
 
-    expect(resolveCodexCliPath({ PATH: dir, HOME: "" }, "win32")).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: dir, HOME: "" }, "win32")).toEqual({
       path: cmdShim,
       source: "PATH",
     });
@@ -82,7 +81,7 @@ describe("resolveCodexCliPath", () => {
     makeFile(cmdShim);
     makeFile(exe);
 
-    expect(resolveCodexCliPath({ PATH: dir, HOME: "" }, "win32")).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: dir, HOME: "" }, "win32")).toEqual({
       path: exe,
       source: "PATH",
     });
@@ -95,7 +94,7 @@ describe("resolveCodexCliPath", () => {
     makeFile(cmdShim);
     makeFile(exe);
 
-    expect(resolveCodexCliPath({ PATH: dir, PATHEXT: ".CMD;.EXE" }, "win32"))
+    expect(resolveCodexCliPath(undefined, { PATH: dir, PATHEXT: ".CMD;.EXE" }, "win32"))
       .toEqual({ path: cmdShim, source: "PATH" });
   });
 
@@ -104,7 +103,7 @@ describe("resolveCodexCliPath", () => {
     const cmdShim = join(dir, "codex.cmd");
     makeFile(cmdShim);
 
-    expect(resolveCodexCliPath({ Path: dir }, "win32")).toEqual({
+    expect(resolveCodexCliPath(undefined, { Path: dir }, "win32")).toEqual({
       path: cmdShim,
       source: "PATH",
     });
@@ -119,6 +118,7 @@ describe("resolveCodexCliPath", () => {
 
     expect(
       resolveCodexCliPath(
+        undefined,
         { PATH: "", APPDATA: appData, USERPROFILE: "" },
         "win32",
       ),
@@ -137,6 +137,7 @@ describe("resolveCodexCliPath", () => {
 
     expect(
       resolveCodexCliPath(
+        undefined,
         { PATH: "", APPDATA: "", USERPROFILE: userProfile },
         "win32",
       ),
@@ -153,7 +154,7 @@ describe("resolveCodexCliPath", () => {
     mkdirSync(binDir, { recursive: true });
     makeExecutable(codex);
 
-    expect(resolveCodexCliPath({ PATH: "", HOME: home })).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: "", HOME: home })).toEqual({
       path: codex,
       source: "HOME_NPM_GLOBAL",
     });
@@ -165,14 +166,14 @@ describe("resolveCodexCliPath", () => {
     writeFileSync(codex, "#!/usr/bin/env node\n");
     chmodSync(codex, 0o644);
 
-    expect(resolveCodexCliPath({ PATH: dir, HOME: "" })).toBeUndefined();
+    expect(resolveCodexCliPath(undefined, { PATH: dir, HOME: "" })).toBeUndefined();
   });
 
   it("darwin에서 HOME이 없으면 Homebrew ARM64 접두사를 찾는다", () => {
     addVirtualFile("/opt/homebrew/bin/codex");
     addVirtualFile("/usr/local/bin/codex");
 
-    expect(resolveCodexCliPath({ PATH: "", HOME: "" }, "darwin")).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: "", HOME: "" }, "darwin")).toEqual({
       path: "/opt/homebrew/bin/codex",
       source: "HOMEBREW_ARM64_BIN",
     });
@@ -182,7 +183,7 @@ describe("resolveCodexCliPath", () => {
     addVirtualFile("/opt/homebrew/bin/codex", false);
     addVirtualFile("/usr/local/bin/codex");
 
-    expect(resolveCodexCliPath({ PATH: "", HOME: "" }, "darwin")).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: "", HOME: "" }, "darwin")).toEqual({
       path: "/usr/local/bin/codex",
       source: "HOMEBREW_INTEL_BIN",
     });
@@ -197,7 +198,7 @@ describe("resolveCodexCliPath", () => {
     addVirtualFile("/opt/homebrew/bin/codex");
     addVirtualFile("/usr/local/bin/codex");
 
-    expect(resolveCodexCliPath({ PATH: "", HOME: home }, "darwin")).toEqual({
+    expect(resolveCodexCliPath(undefined, { PATH: "", HOME: home }, "darwin")).toEqual({
       path: codex,
       source: "HOME_LOCAL_BIN",
     });

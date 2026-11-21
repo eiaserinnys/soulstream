@@ -79,6 +79,117 @@ export function findSpawnableExecutable<T extends { path: string }>(
     inspectExecutablePath(candidate.path, platform).spawnable);
 }
 
+export type CodexCliPathSource =
+  | "CODEX_CLI_PATH"
+  | "PATH"
+  | "WINDOWS_APPDATA_NPM"
+  | "WINDOWS_USERPROFILE_NPM"
+  | "HOME_NPM_GLOBAL"
+  | "HOME_LOCAL_BIN"
+  | "HOMEBREW_ARM64_BIN"
+  | "HOMEBREW_INTEL_BIN";
+
+export interface CodexCliPathResolution {
+  path: string;
+  source: CodexCliPathSource;
+}
+
+type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
+type PlatformLike = NodeJS.Platform;
+
+export function resolveCodexCliPath(
+  configuredPath: string | null | undefined,
+  env: EnvLike,
+  platform: PlatformLike = process.platform,
+): CodexCliPathResolution | undefined {
+  const explicit = nonEmpty(configuredPath);
+  if (explicit && inspectExecutablePath(explicit, platform).spawnable) {
+    return { path: explicit, source: "CODEX_CLI_PATH" };
+  }
+
+  return findSpawnableExecutable(candidateCodexCliPaths(env, platform), platform);
+}
+
+function candidateCodexCliPaths(
+  env: EnvLike,
+  platform: PlatformLike,
+): CodexCliPathResolution[] {
+  const candidates: CodexCliPathResolution[] = executableCandidatesInPath(
+    "codex",
+    env,
+    platform,
+    "PATH",
+  );
+
+  if (platform === "win32") {
+    const appData = nonEmpty(env.APPDATA);
+    if (appData) {
+      candidates.push(
+        ...executableCandidatesInDirectory(
+          joinExecutablePath(appData, "npm"),
+          "codex",
+          "WINDOWS_APPDATA_NPM",
+          env.PATHEXT,
+          platform,
+        ),
+      );
+    }
+    const userProfile = nonEmpty(env.USERPROFILE);
+    if (userProfile) {
+      candidates.push(
+        ...executableCandidatesInDirectory(
+          joinExecutablePath(userProfile, "AppData", "Roaming", "npm"),
+          "codex",
+          "WINDOWS_USERPROFILE_NPM",
+          env.PATHEXT,
+          platform,
+        ),
+      );
+    }
+    return candidates;
+  }
+
+  const home = nonEmpty(env.HOME);
+  if (home) {
+    candidates.push(
+      ...executableCandidatesInDirectory(
+        joinExecutablePath(home, ".npm-global", "bin"),
+        "codex",
+        "HOME_NPM_GLOBAL",
+        env.PATHEXT,
+        platform,
+      ),
+      ...executableCandidatesInDirectory(
+        joinExecutablePath(home, ".local", "bin"),
+        "codex",
+        "HOME_LOCAL_BIN",
+        env.PATHEXT,
+        platform,
+      ),
+    );
+  }
+  if (platform === "darwin") {
+    candidates.push(
+      ...executableCandidatesInDirectory(
+        "/opt/homebrew/bin",
+        "codex",
+        "HOMEBREW_ARM64_BIN",
+        env.PATHEXT,
+        platform,
+      ),
+      ...executableCandidatesInDirectory(
+        "/usr/local/bin",
+        "codex",
+        "HOMEBREW_INTEL_BIN",
+        env.PATHEXT,
+        platform,
+      ),
+    );
+  }
+
+  return candidates;
+}
+
 function executableNames(
   name: string,
   pathExt: string | undefined,
@@ -109,7 +220,7 @@ function trimPathEntry(value: string): string {
     : trimmed;
 }
 
-function nonEmpty(value: string | undefined): string | undefined {
+function nonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }

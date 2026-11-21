@@ -11,7 +11,7 @@ import type { ClaudeSessionClientRegistry } from
 import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
-import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { CodexCliPathResolution } from "@soulstream/executable-path";
 import type { McpConfigService, ResolvedMcpServer } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import { withFullSessionCredential } from "../runner/full_session_credential.js";

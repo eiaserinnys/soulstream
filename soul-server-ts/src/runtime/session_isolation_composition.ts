@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { Env } from "../config.js";
-import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { CodexCliPathResolution } from "@soulstream/executable-path";
 import { createLogger } from "../logger.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type { McpConfigService } from "../mcp_config_service.js";
