@@ -152,6 +152,101 @@ async function menuOnSessionRow(page: Page) {
   return popup;
 }
 
+/** 세라피엘 conflicts.js와 같은 셈: 변형 접두어 없는 rounded-* 클래스가 한 요소에 둘 이상이면 곡률이 뒤집힌 자리다. */
+async function radiusClassConflicts(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      const classes = element.getAttribute("class");
+      if (!classes) continue;
+      const all: string[] = [];
+      for (const name of classes.split(/\s+/)) {
+        if (name.includes(":")) continue;
+        const match = name.match(/^rounded(-(t|r|b|l|s|e|tl|tr|br|bl|ss|se|es|ee))?(-.*)?$/);
+        if (!match) continue;
+        if ((match[2] ?? "all") === "all") all.push(name);
+      }
+      if (all.length > 1) found.push(`${element.tagName.toLowerCase()} ${all.join(" ")}`);
+    }
+    return found;
+  });
+}
+
+/** /components 질문 장의 선택지 단추는 동심 12다. 한 줄·여러 줄 모두 같은 값이다. */
+async function expectChoiceButtonsFloor(page: Page, label: string) {
+  const buttons = page.locator("#components-question .v3-card-question-choices [data-slot=button]");
+  const count = await buttons.count();
+  expect(count, `${label}: 질문 선택지 단추를 찾지 못했습니다`).toBeGreaterThan(0);
+  let checked = 0;
+  for (let index = 0; index < count; index++) {
+    const button = buttons.nth(index);
+    if (!(await button.isVisible())) continue;
+    await expectFloor(button, `${label} 선택지 ${index + 1}`);
+    checked++;
+  }
+  expect(checked, `${label}: 보이는 선택지 단추가 없습니다`).toBeGreaterThan(0);
+}
+
+/** 같은 질문 장 안에서 선택지 밖의 단추는 알약 그대로다. */
+async function expectOtherButtonsPill(page: Page, label: string) {
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("#components-question [data-slot='button']")]
+      .filter((element) => !element.closest(".v3-card-question-choices"))
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          name: (element.textContent ?? element.getAttribute("aria-label") ?? "").trim().slice(0, 30),
+          height: rect.height,
+          radius: Number.parseFloat(getComputedStyle(element).borderTopLeftRadius),
+        };
+      }),
+  );
+  expect(rows.length, `${label}: 질문 선택지 밖 단추를 찾지 못했습니다`).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.radius, `${label}: "${row.name}" 단추 곡률 ${row.radius} < 높이의 절반 ${row.height / 2}`)
+      .toBeGreaterThanOrEqual(row.height / 2 - TOLERANCE);
+  }
+}
+
+/** soul-ui 체크박스 상자(카드 확인 항목은 누름 영역이 아니라 보이는 ::before)는 고정 4다. */
+async function expectCheckboxBoxesMark(page: Page, label: string) {
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-slot="checkbox"]')]
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => {
+        const pseudo = element.getAttribute("data-variant") === "card-item" ? "::before" : null;
+        return {
+          variant: element.getAttribute("data-variant") ?? "default",
+          radius: Number.parseFloat(getComputedStyle(element, pseudo).borderTopLeftRadius),
+        };
+      }),
+  );
+  expect(rows.length, `${label}: 체크박스를 찾지 못했습니다`).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.radius, `${label}: ${row.variant} 체크박스 상자 ${row.radius} ≠ 4`).toBeCloseTo(4, 1);
+  }
+}
+
+/** 포스트잇 턴 블록은 감싼 포스트잇과 같은 곡률이다(배율 반영). */
+async function expectPostitTurnMatchesCard(page: Page, label: string) {
+  const card = page.getByTestId("folder-card-section")
+    .locator(".v3-postit-card[data-card-enhanced]")
+    .filter({ has: page.locator(".v3-postit-turn") })
+    .first();
+  await expect(card, `${label}: 턴 블록이 있는 포스트잇을 찾지 못했습니다`).toBeVisible({ timeout: 60_000 });
+  await card.scrollIntoViewIfNeeded();
+  const turn = card.locator(".v3-postit-turn").first();
+  await expect(turn).toBeVisible();
+  const scale = await card.evaluate((element) => {
+    const value = getComputedStyle(element).getPropertyValue("--postit-scale").trim();
+    return value === "" ? 1 : Number.parseFloat(value);
+  });
+  await expectCorners(card, `${label} 포스트잇(scale ${scale})`, [12 * scale, 12 * scale, 12 * scale, 12 * scale]);
+  await expectCorners(turn, `${label} 포스트잇 턴`, [12 * scale, 12 * scale, 12 * scale, 12 * scale]);
+  return turn;
+}
+
 /** Select와 Popover는 폴더 화면 픽스처에 없으므로, 검수 창과 같은 방식으로 화면에 바로 띄운다. */
 async function mountPopups(page: Page) {
   await page.evaluate(async (paths) => {
@@ -236,6 +331,29 @@ test("폴더 화면 1440: 틀 24·동심 12·고정 4·알약·메뉴·선택 �
   await expectCorners(postit, `포스트잇(scale ${postitScale})`, [postitRadius, postitRadius, postitRadius, postitRadius]);
 
   await page.screenshot({ path: path.join(OUT, "web-folder-1440.png"), animations: "disabled" });
+
+  const folderConflicts = await radiusClassConflicts(page);
+  expect(folderConflicts, `폴더 1440: 변형 없는 rounded-* 클래스가 둘 이상인 요소 ${folderConflicts.join(", ")}`).toEqual([]);
+
+  // 압축 보기(보드)와 일반 보기(격자) 각각에서 턴 블록이 포스트잇과 같은 곡률인지 본다.
+  await expectPostitTurnMatchesCard(page, "압축 보기");
+  await page.getByTestId("folder-card-section").getByLabel("일반 보기").first().click();
+  await expect(page.getByTestId("folder-card-section").locator(".v3-postit-grid .v3-postit-card").first()).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(600);
+  const normalTurn = await expectPostitTurnMatchesCard(page, "일반 보기");
+  const turnBox = await normalTurn.boundingBox();
+  if (turnBox) {
+    await page.screenshot({
+      path: path.join(OUT, "zoom-postit-turn.png"),
+      clip: {
+        x: Math.max(0, turnBox.x - 12),
+        y: Math.max(0, turnBox.y - 12),
+        width: Math.min(760, turnBox.width + 24),
+        height: turnBox.height + 24,
+      },
+      animations: "disabled",
+    });
+  }
 
   const menu = await menuOnSessionRow(page);
   await expectFrame(menu, "메뉴");
@@ -342,6 +460,21 @@ test("대화상자 1440: 틀 24·입력 12·바닥 단추 알약 + 390 시트", 
   await expectPill(page.locator('[data-slot="dialog-footer"] button:visible').first(), "대화상자 바닥 단추");
   await page.screenshot({ path: path.join(OUT, "web-dialog-1440.png"), animations: "disabled" });
 
+  // atom-edit 표본: 처음부터 펼쳐진 atom 목록 판과 트리거가 같은 동심 12다(R2).
+  await page.goto("/dialogues?sample=atom-edit", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("dialogue-sample")).toBeVisible({ timeout: 120_000 });
+  const atomPopup = page.locator("[data-slot=popover-popup]:visible").first();
+  await expect(atomPopup).toBeVisible({ timeout: 60_000 });
+  const atomTrigger = atomPopup.locator("[data-slot=atom-node-selector-trigger]").first();
+  await expect(atomTrigger).toBeVisible({ timeout: 60_000 });
+  const atomPanel = atomPopup.locator("[data-slot=atom-node-selector-panel]").first();
+  await expect(atomPanel).toBeVisible({ timeout: 60_000 });
+  const atomTriggerCorners = await corners(atomTrigger);
+  const atomPanelCorners = await corners(atomPanel);
+  expect(atomTriggerCorners[0], `atom 트리거 곡률 ${atomTriggerCorners[0]} ≠ 12`).toBeCloseTo(12, 1);
+  expect(atomPanelCorners[0], `atom 목록 판 곡률 ${atomPanelCorners[0]} ≠ 트리거 ${atomTriggerCorners[0]}`).toBeCloseTo(atomTriggerCorners[0], 1);
+  await atomPopup.screenshot({ path: path.join(OUT, "web-atom-edit-1440.png"), animations: "disabled" });
+
   // 390 하단 시트: 위는 24, 아래는 0.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/ui-events/config", (route) =>
@@ -355,8 +488,8 @@ test("대화상자 1440: 틀 24·입력 12·바닥 단추 알약 + 390 시트", 
   await page.screenshot({ path: path.join(OUT, "web-sheet-390.png"), animations: "disabled" });
 });
 
-test("구성 요소 1440: 상세 팬 24와 카드 체크박스 4", async ({ page }) => {
-  test.setTimeout(300_000);
+test("구성 요소: 상세 팬 24·체크박스 4·질문 선택지 12 (1440과 390)", async ({ page }) => {
+  test.setTimeout(420_000);
   await prepare(page, 1440, false);
   await page.goto("/components");
   await expect(page.getByTestId("components-review")).toBeVisible({ timeout: 30_000 });
@@ -371,6 +504,7 @@ test("구성 요소 1440: 상세 팬 24와 카드 체크박스 4", async ({ page
   await expect(checkbox, "카드 확인 항목 체크박스를 찾지 못했습니다").toBeVisible();
   const before = await corners(checkbox, "::before");
   expect(before[0], `카드 확인 항목 체크박스 ::before ${before[0]} ≠ 4`).toBeCloseTo(4, 1);
+  await expectCheckboxBoxesMark(page, "components 1440");
 
   await page.screenshot({ path: path.join(OUT, "web-components-1440.png"), animations: "disabled", fullPage: false });
   const box = await checkbox.boundingBox();
@@ -381,4 +515,34 @@ test("구성 요소 1440: 상세 팬 24와 카드 체크박스 4", async ({ page
       animations: "disabled",
     });
   }
+
+  // 질문 장 선택지는 알약이 아니라 동심 12다(곡률 클래스 합치기 R1).
+  const questionSample = page.locator('#components-question [data-component^="CardQuestionBlock"]').first();
+  await questionSample.scrollIntoViewIfNeeded();
+  await questionSample.screenshot({ path: path.join(OUT, "components-question-1440.png"), animations: "disabled" });
+  await expectChoiceButtonsFloor(page, "components 1440");
+  await expectOtherButtonsPill(page, "components 1440");
+
+  const componentsConflicts = await radiusClassConflicts(page);
+  expect(componentsConflicts, `components 1440: 변형 없는 rounded-* 클래스가 둘 이상인 요소 ${componentsConflicts.join(", ")}`).toEqual([]);
+
+  // 390에서도 같은 값이어야 한다(여러 줄로 접힌 선택지 포함).
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(800);
+  const narrowChoices = page.locator("#components-question .v3-card-question-choices").first();
+  await narrowChoices.scrollIntoViewIfNeeded();
+  const narrowBox = await narrowChoices.boundingBox();
+  if (narrowBox) {
+    const x = Math.max(0, narrowBox.x - 8);
+    await page.screenshot({
+      path: path.join(OUT, "components-question-390.png"),
+      clip: { x, y: Math.max(0, narrowBox.y - 8), width: Math.min(390 - x, narrowBox.width + 16), height: narrowBox.height + 16 },
+      animations: "disabled",
+    });
+  }
+  await expectChoiceButtonsFloor(page, "components 390");
+  await expectOtherButtonsPill(page, "components 390");
+  await expectCheckboxBoxesMark(page, "components 390");
+  const componentsConflicts390 = await radiusClassConflicts(page);
+  expect(componentsConflicts390, `components 390: 변형 없는 rounded-* 클래스가 둘 이상인 요소 ${componentsConflicts390.join(", ")}`).toEqual([]);
 });

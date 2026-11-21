@@ -71,9 +71,10 @@ describe("Apple-style radius canon", () => {
       // ProfileAvatar의 모양 값 shape: 'rounded'는 클래스가 아니다.
       const [where] = hit.split(" ");
       const [, lineNo] = where.split(":");
-      const line = readFileSync(`${ROOT}${where.slice(0, where.lastIndexOf(":"))}`, "utf8").split("\n")[
-        Number(lineNo) - 1
-      ];
+      const rel = where.slice(0, where.lastIndexOf(":"));
+      // cn.ts의 classGroups 키 `rounded`도 클래스가 아니라 tailwind-merge의 곡률 클래스 그룹 이름이다.
+      if (rel === "packages/soul-ui/src/lib/cn.ts") return false;
+      const line = readFileSync(`${ROOT}${rel}`, "utf8").split("\n")[Number(lineNo) - 1];
       return !(/\bshape\b/.test(line) && /['"]rounded['"]/.test(line));
     });
     expect(found).toEqual([]);
