@@ -1,9 +1,6 @@
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
-export interface SessionNodeConnectivity {
-  ready: boolean;
-  connectedNodeIds: ReadonlySet<string>;
-}
 
 export type SessionPresentationStatus = SessionSummary["status"] | "offline";
 

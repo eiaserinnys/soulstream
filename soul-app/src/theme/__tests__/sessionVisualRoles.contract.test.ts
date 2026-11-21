@@ -23,7 +23,6 @@ const DIRECT_FILES = [
   'components/chat/ChatInterruptButton.tsx',
   'components/chat/ChatToolApprovalRequest.tsx',
   'components/chat/ClaudeRuntimeSchedulesStrip.tsx',
-  'components/chat/ClaudeRuntimeSignalsStrip.tsx',
   'components/chat/ClaudeRuntimeTasksStrip.tsx',
   'components/chat/HistoryFetchError.tsx',
   'components/chat/RealtimeVoiceControls.tsx',
@@ -43,16 +42,16 @@ const DIRECT_FILES = [
   'hooks/useChatAttachments.ts',
 ] as const;
 
-test('N4 폐쇄 산술은 28 files / 34 units / 미할당 0이다', () => {
-  expect(new Set(DIRECT_FILES).size).toBe(28);
+test('N4 폐쇄 산술은 27 files / 31 units / 미할당 0이다', () => {
+  expect(new Set(DIRECT_FILES).size).toBe(27);
   for (const file of DIRECT_FILES) {
     expect(readFileSync(join(ROOT, file), 'utf8').length).toBeGreaterThan(0);
   }
   const unitCounts = [
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 1, 2, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 1, 2, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
   ];
-  expect(unitCounts.reduce((sum, count) => sum + count, 0)).toBe(34);
+  expect(unitCounts.reduce((sum, count) => sum + count, 0)).toBe(31);
 });
 
 test.each([

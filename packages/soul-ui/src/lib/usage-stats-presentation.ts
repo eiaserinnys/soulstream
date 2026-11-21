@@ -5,6 +5,8 @@ import type {
 } from "../../../wire-schema/src/session_statistics";
 import { formatUsageStatsInputCategoryLabel } from "./usage-stats-format";
 
+export type UsageStatsLoadState = "loading" | "ready" | "error" | "forbidden";
+
 export type UsageStatsFilterKind = "all" | "provider" | "model";
 
 export interface UsageStatsModelOption {

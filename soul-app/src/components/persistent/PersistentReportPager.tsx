@@ -1,3 +1,4 @@
+import { CARD_QUESTION_ANSWERED_HOLD_MS } from '../../../../packages/wire-schema/src/persistent_report';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -15,8 +16,6 @@ import type { usePersistentReportSend } from './usePersistentReportSend';
 import type { CardCompletion } from './usePersistentCardCompletion';
 import { ReportComposerFocusContext, useReportComposerScroll } from './useReportComposerScroll';
 
-/** 계약 판 8, 3절 2번: 답한 장은 펼치지 않은 채 이만큼 지나면 놓는다. */
-export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
 
 function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
   const held = useRef(false);

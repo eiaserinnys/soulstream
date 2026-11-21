@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -17,7 +17,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../../api/client';
 import { StarredFolderList } from '../planner/StarredFolderList';
-import { usePlannerDailyHistory, usePlannerStarred } from '../../hooks/usePlannerReads';
+import { usePlannerDailyHistory } from '../../hooks/usePlannerReads';
+import { usePlannerStarred } from '../../hooks/usePlannerStarred';
 import { buildPlannerProjectTreeRows } from '../../lib/planner-project-tree';
 import { openStarredPageWorkspace } from '../../lib/planner-folder-workspace';
 import { useSessionStore } from '../../store/sessionStore';

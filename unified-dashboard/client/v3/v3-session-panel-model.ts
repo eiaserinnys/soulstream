@@ -1,3 +1,4 @@
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import {
   getSessionActivityMs,
   type CatalogFolder,
@@ -7,7 +8,6 @@ import {
 import { singleLinePreview } from "./session-preview";
 import {
   sessionPresentationStatus,
-  type SessionNodeConnectivity,
 } from "./session-node-connectivity";
 
 const SESSION_PANEL_TITLE_LENGTH = 80;

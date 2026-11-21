@@ -22,6 +22,7 @@ import { GlassButton } from '../GlassSurface';
 import {
   ClaudeAccountPoolSection,
   poolAvailabilityLabel,
+  localClock,
   type ClaudeAccountPoolApi,
   type ClaudeAccountPoolSectionHandle,
 } from './ClaudeAccountPoolSection';
@@ -49,12 +50,6 @@ type Props = {
   centralSettingsApi?: ClaudeCentralSettingsApi;
 };
 
-function localClock(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-}
 
 function ProviderHeaderLoading({ testID, name }: { testID: string; name: string }) {
   const t = useTokens();

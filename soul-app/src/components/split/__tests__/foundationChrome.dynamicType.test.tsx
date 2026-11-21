@@ -22,6 +22,8 @@ jest.mock('../../planner/FolderWorkspace', () => ({
 }));
 jest.mock('../../../hooks/usePlannerReads', () => ({
   usePlannerDailyHistory: () => ({ dates: [] }),
+}));
+jest.mock('../../../hooks/usePlannerStarred', () => ({
   usePlannerStarred: () => ({ data: { items: [], nextCursor: null }, loading: false, error: null, loadMore: jest.fn() }),
 }));
 jest.mock('../../../hooks/usePlannerActions', () => ({ usePlannerActions: () => ({}) }));
@@ -30,7 +32,6 @@ jest.mock('../../../screens/SettingsScreen', () => ({ SettingsScreen: () => null
 
 import fs from 'node:fs';
 import path from 'node:path';
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { MainListPane } from '../MainListPane';

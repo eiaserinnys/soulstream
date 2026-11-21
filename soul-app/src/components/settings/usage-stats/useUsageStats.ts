@@ -1,3 +1,4 @@
+import type { UsageStatsLoadState } from '../../../../../packages/soul-ui/src/lib/usage-stats-presentation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createApiClient } from '../../../api/client';
 import { ApiHttpError } from '../../../api/clientCore';
@@ -8,7 +9,6 @@ import type {
   UsageStatsQuery,
 } from '../../../../../packages/wire-schema/src/session_statistics';
 
-export type UsageStatsLoadState = 'loading' | 'ready' | 'error' | 'forbidden';
 
 export function useUsageStats(query: UsageStatsQuery, date: string | null) {
   const serverUrl = useSettingsStore(state => state.serverUrl);

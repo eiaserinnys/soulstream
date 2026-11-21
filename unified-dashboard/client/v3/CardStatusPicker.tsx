@@ -1,11 +1,11 @@
-import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
+import type {CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution-state";
+import {cardExecutionState,subscribeCardExecution} from "@seosoyoung/soul-ui/cards/card-execution";
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
 import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
 import { Check, MoreHorizontal } from "lucide-react";
-import {CARD_COLORS, CARD_COLOR_KEYS} from "@seosoyoung/soul-ui/cards/card-types";
+import {CARD_COLORS, CARD_COLOR_KEYS, type CardColor, type CardRow, type CardStatus} from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DashboardIconCap, FrameLoading, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
-import type { CardColor, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
 import { cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";

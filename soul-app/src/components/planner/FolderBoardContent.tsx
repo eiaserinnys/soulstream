@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { webViewContentLinks } from '../../lib/webview-content-links';
@@ -13,6 +13,7 @@ import { usePlannerFolder } from '../../hooks/usePlannerFolder';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import {
   buildCustomViewBindings,
+  escapeHtml,
   renderCustomViewHtml,
 } from '../../lib/custom-view-renderer';
 import { useSessionStore } from '../../store/sessionStore';
@@ -348,22 +349,14 @@ function renderAssetMediaHtml(
   url: string,
   title: string,
 ): string {
-  const safeUrl = escapeAttribute(url);
-  const safeTitle = escapeAttribute(title);
+  const safeUrl = escapeHtml(url);
+  const safeTitle = escapeHtml(title);
   const media = kind === 'image'
     ? `<img src="${safeUrl}" alt="${safeTitle}">`
     : `<${kind} src="${safeUrl}" controls preload="metadata"></${kind}>`;
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline';"><style>html,body{margin:0;width:100%;height:100%;background:transparent}body{display:flex;align-items:center;justify-content:center}img,video{width:100%;height:100%;object-fit:contain}audio{width:94%}</style></head><body>${media}</body></html>`;
 }
 
-function escapeAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
 
 function formatByteSize(value: number | undefined): string {
   if (!value || value <= 0) return '';

@@ -17,7 +17,6 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import { SessionCard } from '../../components/SessionCard';
 import { ToolEvent } from '../../components/events/ToolEvent';
 import { ClaudeRuntimeTasksStrip } from '../../components/chat/ClaudeRuntimeTasksStrip';
-import { ClaudeRuntimeSignalsStrip } from '../../components/chat/ClaudeRuntimeSignalsStrip';
 import { CollapsibleCaption } from '../../components/chat/CollapsibleCaption';
 import { useChatStore } from '../../store/chatStore';
 
@@ -96,14 +95,7 @@ describe('direct touch target contract', () => {
             },
           },
           schedules: {},
-          notifications: {
-            'notice-1': {
-              notificationId: 'notice-1',
-              source: 'system',
-              message: 'runtime notification',
-              updatedAt: 100,
-            },
-          },
+          notifications: {},
           remoteTriggers: {},
         },
       },
@@ -132,16 +124,10 @@ describe('direct touch target contract', () => {
       tasks.getByTestId('runtime-task-output-touch-task-1'),
       tasks.getByTestId('runtime-task-stop-touch-task-1'),
     ];
-    const signals = render(React.createElement(ClaudeRuntimeSignalsStrip, {
-      sessionId: runtimeSessionId,
-      api: null,
-    }));
     const touchFrames = [
       sessionReviewFrame,
       toolHeaderFrame,
       ...taskFrames,
-      signals.getByTestId('runtime-signals-header-touch'),
-      signals.getByTestId('runtime-signals-refresh-touch'),
     ];
     const caption = render(React.createElement(CollapsibleCaption, {
       title: 'Jev 후보 3',

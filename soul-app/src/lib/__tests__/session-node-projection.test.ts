@@ -1,8 +1,8 @@
+import type { SessionNodeConnectivity } from '../../../../packages/soul-ui/src/lib/session-node-connectivity';
 import type { Session } from '../../api/types';
 import {
   isSessionOnDisconnectedNode,
   projectVisibleSessions,
-  type SessionNodeConnectivity,
 } from '../session-node-projection';
 
 function makeSession(overrides: Partial<Session> = {}): Session {

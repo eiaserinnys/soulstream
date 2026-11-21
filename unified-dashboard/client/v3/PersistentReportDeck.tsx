@@ -5,10 +5,10 @@ import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-r
 import { createPortal } from 'react-dom';
 import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
-import { reportActionParts } from '../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, CARD_QUESTION_ANSWERED_HOLD_MS, reportActionParts } from '../../../packages/wire-schema/src/persistent_report';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
-import { CARD_COMPLETION_UNDO_MS, usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
+import { usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
 import { UndoCountdownRing } from './UndoCountdownRing';
 import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2 } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
@@ -24,8 +24,6 @@ export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(
 type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-floor outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
-/** 계약 판 8, 3절 2번: 답한 장은 펼치지 않은 채 이만큼 지나면 놓는다. */
-export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
 
 export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderQuestion, renderCardDetails, renderCardStatus, cardTransition, completion: providedCompletion }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);

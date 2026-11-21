@@ -6,7 +6,6 @@ export type ReportSendContext = {
   reportBase?: PersistentReportEntry[];
   reportReply?: ReportReplyDraft;
 };
-export const EMPTY_REPORT: PersistentReportEntry[] = [];
 
 export function isReportReply(text: string, reply: ReportReplyDraft | null | undefined): reply is ReportReplyDraft {
   return !!reply && text.trim() === reply.text;

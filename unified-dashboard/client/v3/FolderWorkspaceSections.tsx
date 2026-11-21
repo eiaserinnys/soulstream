@@ -14,7 +14,7 @@ import { ProjectContextEditor } from "./ProjectContextEditor";
 import { fetchProjectPageDetails, type ProjectPageSnapshot } from "./project-page-details";
 import { loadConfirmedResult } from "./planner-query-state";
 import type { PlannerFolder } from "./planner-data";
-import type { SessionNodeConnectivity } from "./session-node-connectivity";
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { plannerEntryForFolder } from "./folder-workspace-model";
 

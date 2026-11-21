@@ -1,8 +1,8 @@
+import { CARD_COMPLETION_UNDO_MS } from '../../../packages/wire-schema/src/persistent_report';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 
-export const CARD_COMPLETION_UNDO_MS = 5000;
 export type CardCompletionTarget = 'done' | 'on_hold';
 export type CardTransition = (cardId: string, status: CardCompletionTarget | 'review') => Promise<void>;
 export type CompletionEntry = Pick<PersistentReportEntry, 'card_numbers'> & { card_id: string; key?: string; updated_at?: string } & Partial<PersistentReportEntry>;

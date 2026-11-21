@@ -25,6 +25,7 @@
 !/packages/soul-ui/src/cards
 /packages/soul-ui/src/cards/*
 !/packages/soul-ui/src/cards/completed-cards.ts
+!/packages/soul-ui/src/cards/card-execution-state.ts
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
 !/packages/soul-ui/src/lib/action-failure.ts
@@ -36,6 +37,7 @@
 !/packages/soul-ui/src/lib/usage-summary.ts
 !/packages/soul-ui/src/lib/usage-stats-format.ts
 !/packages/soul-ui/src/lib/usage-stats-presentation.ts
+!/packages/soul-ui/src/lib/session-node-connectivity.ts
 !/packages/soul-ui/src/lib/usage-stats-fixtures.ts
 !/packages/soul-ui/src/lib/usage-stats-fixture-data.ts
 !/packages/soul-ui/src/lib/usage-stats-fixture-aggregate.ts

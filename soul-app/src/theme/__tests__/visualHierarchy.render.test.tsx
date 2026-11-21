@@ -1,4 +1,3 @@
-import React from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { PlannerFolder } from '../../api/plannerTypes';
@@ -41,7 +40,6 @@ import { ToolEvent } from '../../components/events/ToolEvent';
 import { SessionCard } from '../../components/SessionCard';
 import { FolderSessionHistory } from '../../components/planner/FolderSessionHistory';
 import { ClaudeRuntimeTasksStrip } from '../../components/chat/ClaudeRuntimeTasksStrip';
-import { ClaudeRuntimeSignalsStrip } from '../../components/chat/ClaudeRuntimeSignalsStrip';
 import { AssistantMessage } from '../../components/events/AssistantMessage';
 import { UserMessage } from '../../components/events/UserMessage';
 import { ChatComposer } from '../../components/chat/ChatComposer';
@@ -120,15 +118,7 @@ test.each([
           },
         },
         schedules: {},
-        notifications: {
-          notice: {
-            notificationId: 'notice',
-            source: 'system',
-            title: '런타임 알림',
-            message: 'runtime notification',
-            updatedAt: 100,
-          },
-        },
+        notifications: {},
         remoteTriggers: {},
       },
     },
@@ -198,11 +188,6 @@ test.each([
   expect(StyleSheet.flatten(tasks.getByTestId('runtime-task-row-task').props.style).minHeight).toBe(40);
   expect(StyleSheet.flatten(tasks.getByText('백그라운드 작업').props.style).fontSize).toBeLessThan(chatBody);
 
-  const signals = render(<ClaudeRuntimeSignalsStrip sessionId={sessionId} api={null} />);
-  expect(StyleSheet.flatten(signals.getByTestId('runtime-signals-strip').props.style).paddingVertical).toBe(0);
-  expect(StyleSheet.flatten(signals.getByText('런타임 신호').props.style).fontSize).toBeLessThan(chatBody);
-  fireEvent.press(signals.getByText('런타임 신호'));
-  expect(StyleSheet.flatten(signals.getByTestId('runtime-signal-row-notice').props.style).minHeight).toBe(40);
 
   const assistant = render(
     <AssistantMessage

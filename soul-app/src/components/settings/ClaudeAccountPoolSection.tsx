@@ -109,7 +109,7 @@ function priorityBetween(accounts: readonly ClaudeAccount[], accountId: string):
   return candidate;
 }
 
-function localClock(value: string | null): string | null {
+export function localClock(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;

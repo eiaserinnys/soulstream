@@ -1,7 +1,6 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
-jest.mock('../../hooks/usePlannerReads', () => ({ usePlannerStarred: () => mockState }));
+jest.mock('../../hooks/usePlannerStarred', () => ({ usePlannerStarred: () => mockState }));
 jest.mock('../../hooks/usePlannerContextMenus', () => ({ usePlannerContextMenus: () => ({ openFolderMenu: jest.fn() }) }));
-import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { RefreshControl, StyleSheet } from 'react-native';
 import { StarredFoldersScreen } from '../StarredFoldersScreen';

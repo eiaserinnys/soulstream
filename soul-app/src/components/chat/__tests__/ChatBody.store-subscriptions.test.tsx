@@ -1,5 +1,4 @@
-import React from 'react';
-import { AppState, Pressable, TextInput, View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockRenderChatEventList = jest.fn();
@@ -68,9 +67,6 @@ jest.mock('../ChatEventList', () => {
   };
 });
 
-jest.mock('../ChatRuntimeStrips', () => ({
-  ChatRuntimeStrips: () => require('react').createElement(require('react-native').View, { testID: 'chat-runtime-strips' }),
-}));
 
 jest.mock('../SessionStoryPanel', () => ({
   SessionStoryPanel: () => require('react').createElement(require('react-native').View, { testID: 'session-story-panel' }),

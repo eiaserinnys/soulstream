@@ -1,8 +1,8 @@
+import type {CardExecutionState} from "./card-execution-state";
 import {cardRequest,cardPath,cardMutationKey,CardApiError} from "./card-api";
 import type {CardRow} from "./card-types";
 export interface CardExecutionResult {card:CardRow;execution:{requestId:string;sessionId:string;state:"started"|"already_running"|"pending"}}
 export interface CardExecutionSettings {folderId:string;nodeId:string|null;agentId:string|null;modelPreset:string|null}
-export interface CardExecutionState {phase:"pending"|"delayed"|"error";message:string}
 type Attempt={key:string;version:number;requestId?:string;timer?:ReturnType<typeof setTimeout>;deadline?:number;timeout?:ReturnType<typeof setTimeout>;onResult?:(result:CardExecutionResult)=>void};
 const attempts=new Map<string,Attempt>();
 const states=new Map<string,CardExecutionState>();

@@ -71,8 +71,6 @@ function sessionSnapshot() {
     catalog: state.catalog,
     catalogReady: state.catalogReady,
     feedSessionIds: state.feedSessionIds,
-    sessionChangeSerial: state.sessionChangeSerial,
-    lastChangedSessionId: state.lastChangedSessionId,
     activeSection: useUIStore.getState().activeSection,
     planner: {
       folderByPageId: usePlannerStore.getState().folderByPageId,

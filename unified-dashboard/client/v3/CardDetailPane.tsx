@@ -1,3 +1,4 @@
+import type {CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution-state";
 import {dialoguesAssignment} from "./dialogues-api";
 import {CardExecutionSettings} from "./CardExecutionSettings";
 import {useLocalDialogueUpload} from "./use-local-dialogue-upload";
@@ -6,7 +7,7 @@ import { DashboardIconCap, FrameLoading, useAuth, useDashboardStore, useGlassSur
 import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
-import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
+import {cardExecutionState,subscribeCardExecution} from "@seosoyoung/soul-ui/cards/card-execution";
 import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHistory";

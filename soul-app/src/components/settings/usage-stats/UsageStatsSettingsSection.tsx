@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Platform, Text, View, type TextStyle } from 'react-native';
 import { useSettingsWorkspace } from '../SettingsWorkspaceContext';
 import { GlassButton } from '../../GlassSurface';
@@ -12,6 +12,7 @@ import {
   groupUsageStatsInputMaterial,
   usageStatsFilterKey,
   type UsageStatsModelOption,
+  type UsageStatsLoadState,
 } from '../../../../../packages/soul-ui/src/lib/usage-stats-presentation';
 import {
   formatUsageStatsCoverage,
@@ -38,7 +39,7 @@ import type {
 import { UsageShareRow } from './UsageShareRow';
 import { makeUsageStatsBuckets, sumKnown } from './usage-stats-chart-data';
 import { UsageStackedBars } from './UsageStackedBars';
-import { useUsageStats, type UsageStatsLoadState } from './useUsageStats';
+import { useUsageStats } from './useUsageStats';
 
 type Measure = 'tokens' | 'cost';
 type CacheReadSetting = 'exclude' | 'include';

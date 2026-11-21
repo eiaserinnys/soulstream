@@ -1,3 +1,4 @@
+import type { CardExecutionState } from '../../../packages/soul-ui/src/cards/card-execution-state';
 import {ApiHttpError} from '../api/clientCore';
 import type { ApiClient } from '../api/client';
 import type { CardDetail, CardDto, CardStatus, CardExecutionResult, CardMutationResult } from '../api/cardTypes';
@@ -6,7 +7,6 @@ import { useCardStore } from '../store/cardStore';
 
 type Attempt={key:string;version:number;requestId?:string;timer?:ReturnType<typeof setTimeout>;deadline?:number;timeout?:ReturnType<typeof setTimeout>};
 const executionAttempts=new Map<string,Attempt>();
-export interface CardExecutionState {phase:'pending'|'delayed'|'error';message:string}
 const states=new Map<string,CardExecutionState>();
 export const cardExecutionState=(id:string)=>states.get(id);
 export class CardExecutionSettingsRequired extends Error {constructor(readonly card:CardDto){super('실행 설정을 보완하세요.');}}

@@ -158,9 +158,11 @@ function applyClosure<T>(
     }
   }
 }
+export const CARD_COMPLETION_UNDO_MS = 5000;
+export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
+export const EMPTY_REPORT: PersistentReportEntry[] = [];
 export const PERSISTENT_REPORT_LIMIT = 12;
 export const PERSISTENT_REPORT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
-/** 카드 질문을 판에 올릴 때 쓰는 예약 key 접두사. `cq_` + 질문 UUID. */
 export const CARD_QUESTION_KEY_PREFIX = "cq_";
 /** 카드 상태를 판에 올릴 때 쓰는 예약 key 접두사. `card_` + 카드 UUID. */
 export const CARD_ENTRY_KEY_PREFIX = "card_";

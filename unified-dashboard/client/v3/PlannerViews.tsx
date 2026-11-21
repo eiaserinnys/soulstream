@@ -3,17 +3,16 @@ import { groupCards } from "@seosoyoung/soul-ui/cards/card-api";
 import { CardInbox } from "./CardInbox";
 import { CardHandoff } from "./CardHandoff";
 import { DashboardIconCap, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
-import { Plus, Sun } from "lucide-react";
+import { Sun } from "lucide-react";
 
 import { DailyMemo } from "./DailyMemo";
-import { PlannerFolderCard } from "./PlannerFolderCard";
 import type {
   DailyPlannerData,
   PlannerFolder,
 } from "./planner-data";
 import { visibleDailyFolders } from "./today-folder-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
-import type { SessionNodeConnectivity } from "./session-node-connectivity";
+import type { SessionNodeConnectivity } from "@seosoyoung/soul-ui/lib/session-node-connectivity";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
