@@ -55,7 +55,7 @@ export function ReportTimelineRow({
   </>;
 
   return line.card_id ? <a
-    className={`${rowClassName} rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background`}
+    className={`${rowClassName} rounded-floor text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background`}
     data-slot="report-timeline-row"
     href={`/?card=${encodeURIComponent(line.card_id)}`}
     onClick={internalLinkClick}

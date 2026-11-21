@@ -99,11 +99,11 @@ export function ClaudeRuntimeNotificationsPanel({
           <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bell className="size-4 text-muted-foreground" />
           <span className="break-keep">런타임 신호</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
             {signals.visibleCount}
           </span>
           {signals.hasError ? (
-            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
               오류 {signals.errorCount}

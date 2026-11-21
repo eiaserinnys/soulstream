@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* 곡률 정본 사본. 정본은 packages/soul-ui/src/styles/globals.css, 같은 값 사본.
+   뿌리 하나(root)에서 바닥(floor = root / 2), 표시(mark = root / 6)가 나온다. 알약은 --radius-pill. */
+@theme {
+  --radius-*: initial;
+  --radius-root: 24px;
+  --radius-floor: calc(var(--radius-root) / 2);
+  --radius-mark: calc(var(--radius-root) / 6);
+}
+
+/* 동심 곡률. 부모의 안쪽 여백이 --spacing 단계 N이면 자식은 rounded-in-N(예: p-2 안이면 rounded-in-2). */
+@utility rounded-in-* {
+  border-radius: max(var(--radius-floor), calc(var(--radius-root) - var(--spacing) * --value(integer)));
+}
+
 :root {
   --color-bg: #0f1117;
   --color-surface: #1a1d27;

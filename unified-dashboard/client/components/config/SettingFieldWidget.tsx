@@ -175,7 +175,7 @@ export function SettingFieldWidget({
     <div
       data-testid="config-field-row"
       className={cn(
-        "grid grid-cols-1 gap-2 items-start px-1 py-1.5 rounded sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]",
+        "grid grid-cols-1 gap-2 items-start px-1 py-1.5 rounded-floor sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]",
         className,
       )}
     >

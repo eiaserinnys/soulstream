@@ -6,7 +6,7 @@
 .v3-inline-board-item {
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
 }
 
 .v3-inline-board-item > a,
@@ -63,7 +63,7 @@
   min-width: 0;
   flex: 1;
   border: 1px solid var(--accent-blue);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   background: var(--lg-card);
   padding: 5px 8px;
   color: var(--foreground);

@@ -45,7 +45,7 @@ export function RunRowFrame({avatar,title,agentLine,affiliation,preview,cardSumm
       <RowActionIcon action={action}/>
     </DashboardIconCap>)}</span>:null}
   </>;
-  return <LiquidGlassCard webglSurface={surface==="glass"} cornerRadius="xl"
+  return <LiquidGlassCard webglSurface={surface==="glass"} cornerRadius="floor"
     style={{"--v3-run-text-lines":lines} as CSSProperties}
     className={`v3-run-row${size==="small"?" v3-run-row--small":""}${variant==="card"?" v3-card-row":variant==="folder"?" v3-task-card":""}${surface==="paper"?" v3-run-row--paper-surface":""}${active?" is-active":""}${failed?" v3-run-row--failed":""}${offline?" v3-run-row--offline":""}`}
     data-has-actions={hasActions || undefined} data-has-agent={Boolean(agentLine) || undefined} data-row-variant={variant} data-row-state={status.tone} data-row-lines={lines} data-load-state={failed?"failed":"ready"}

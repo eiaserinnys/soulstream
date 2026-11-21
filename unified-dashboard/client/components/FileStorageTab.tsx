@@ -54,7 +54,7 @@ function StorageSection({ purpose, title, request }: { request: typeof fetch; pu
     catch { setError("연결을 확인하지 못했습니다."); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-lg border border-border p-4" aria-label={title} aria-busy={busy}>
+  return <section className="space-y-3 rounded-floor border border-border p-4" aria-label={title} aria-busy={busy}>
     <h3 className="text-sm font-semibold">{title}</h3>
     <div className="space-y-2">
       {FIELDS.map(([key, label, description]) => <SettingFieldWidget key={key} field={{ key: `${purpose}-${key}`, field_name: key, label, description,

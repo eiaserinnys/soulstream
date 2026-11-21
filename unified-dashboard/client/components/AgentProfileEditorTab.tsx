@@ -254,7 +254,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   // 첫 읽기 실패: 편집 영역 안의 오류 줄만 남기지 않고, 로더와 같은 자리에서
   // 실패 안내를 보여 준다. 프로필이 이미 있으면 종전처럼 편집기 안 오류 줄을 쓴다.
   if (error && profiles.length === 0 && !draft) {
-    return <FrameNotice><p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p></FrameNotice>;
+    return <FrameNotice><p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p></FrameNotice>;
   }
 
   return (
@@ -267,7 +267,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
       {managingBundles ? (
         <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
-    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded border border-border">
+    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-floor border border-border">
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
           새 프로필
@@ -276,7 +276,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
           <button
             key={profile.agent_id}
             type="button"
-            className={`mb-1 flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm ${draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
             onClick={() => selectProfile(profile)}
           >
             {profile.has_portrait ? (
@@ -320,10 +320,10 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
                     <img
                       src={portraitPreviewUrl ?? profilePortraitUrl(draft)}
                       alt={draft.name}
-                      className="h-24 w-24 shrink-0 rounded object-cover"
+                      className="h-24 w-24 shrink-0 rounded-full object-cover"
                     />
                   ) : (
-                    <span data-testid="profile-portrait-placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center rounded bg-muted text-2xl font-medium text-muted-foreground" aria-hidden="true">
+                    <span data-testid="profile-portrait-placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-medium text-muted-foreground" aria-hidden="true">
                       {draft.name.charAt(0) || "?"}
                     </span>
                   )}
@@ -360,7 +360,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
                 {draft.context_bundles.map((bundleId, index) => {
                   const bundle = bundles.find((candidate) => candidate.bundle_id === bundleId);
                   return (
-                    <div key={bundleId} className="flex items-center gap-2 rounded border border-border bg-muted/10 px-3 py-2 text-sm">
+                    <div key={bundleId} className="flex items-center gap-2 rounded-floor border border-border bg-muted/10 px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate" title={bundle?.description} data-v3-selectable-content="true">
                         <strong>{bundleId}</strong>{bundle?.description ? ` · ${bundle.description}` : ""}
                       </span>
@@ -424,7 +424,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               <SectionHeading title="실제 주입 순서 (effective)" />
               <div className="space-y-1">
                 {effectiveContexts.map(({ context, source }, index) => (
-                  <div key={index} data-testid="effective-context-row" data-source={source} className="rounded border border-border/60 px-3 py-2 text-xs">
+                  <div key={index} data-testid="effective-context-row" data-source={source} className="rounded-floor border border-border/60 px-3 py-2 text-xs">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-mono" data-v3-selectable-content="true">{context.node_id}</span>
                       <span data-v3-selectable-content="true">mode: {context.mode ?? "full"}</span>
@@ -457,7 +457,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               </div>
             </section>
 
-            <section className="rounded border border-border p-3">
+            <section className="rounded-floor border border-border p-3">
               <SectionHeading title="컴파일 미리보기" />
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-xs font-medium">
@@ -491,8 +491,8 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               )}
             </section>
 
-            {error && <p role="alert" className="rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
-            {message && <p role="status" className="rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
+            {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
+            {message && <p role="status" className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
             <div className="flex justify-end gap-2">
               {error === VERSION_CONFLICT_MESSAGE && (
                 <Button type="button" size="sm" variant="outline" onClick={() => void loadProfiles(draft.agent_id)}>최신 버전 다시 불러오기</Button>

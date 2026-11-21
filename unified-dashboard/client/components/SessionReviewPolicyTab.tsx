@@ -125,7 +125,7 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
 
   return (
     <div className="space-y-4" data-testid="session-review-policy-tab">
-      <section className="rounded-lg border border-border bg-muted/20 p-4">
+      <section className="rounded-floor border border-border bg-muted/20 p-4">
         <h3 className="text-sm font-semibold">브라우저 요청</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           로그인한 브라우저 요청은 항상 검수합니다. 이 항목은 따로 설정할 필요가 없습니다.
@@ -136,7 +136,7 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
       </section>
 
       <section
-        className="space-y-3 rounded-lg border border-border p-4"
+        className="space-y-3 rounded-floor border border-border p-4"
         aria-busy={saving}
       >
         <div>
@@ -149,14 +149,14 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
 
         <div className="space-y-2" data-testid="session-review-policy-sources">
           {sources.length === 0 && (
-            <div className="rounded border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+            <div className="rounded-floor border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
               로그인한 브라우저 요청 외에 검수할 출처가 없습니다.
             </div>
           )}
           {sources.map((source) => {
             const entry = catalog.get(source);
             return (
-              <div key={source} className="flex items-start justify-between gap-3 rounded border border-border px-3 py-2">
+              <div key={source} className="flex items-start justify-between gap-3 rounded-floor border border-border px-3 py-2">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">
                     {entry?.label ?? source} <code className="ml-1 text-xs text-muted-foreground">{source}</code>
@@ -183,7 +183,7 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
-            className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="min-w-0 flex-1 rounded-floor border border-border bg-background px-3 py-2 text-sm"
             value={draft}
             list="session-review-source-catalog"
             aria-label="추가할 출처 ID"
@@ -224,8 +224,8 @@ export function SessionReviewPolicyTab({ request = fetch }: { request?: typeof f
           현재 v{payload.policy.version}. 마지막 수정: {payload.policy.updatedBy}, {formatTimestamp(payload.policy.updatedAt)}
         </div>
       )}
-      {message && <div className="rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</div>}
-      {error && <div className="rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</div>}
+      {message && <div className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</div>}
+      {error && <div className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</div>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" size="sm" disabled={loading || saving} onClick={() => void load()}>
           다시 불러오기

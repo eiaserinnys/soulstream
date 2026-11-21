@@ -23,7 +23,7 @@ const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }
   { field: "card_role", label: "카드 역할" },
 ];
 
-export const inputClassName = "mt-1 h-8 w-full rounded border border-border bg-background px-2 text-sm";
+export const inputClassName = "mt-1 h-8 w-full rounded-floor border border-border bg-background px-2 text-sm";
 
 export function LabeledInput({ label, value, onChange, ...props }: {
   label: string;
@@ -45,7 +45,7 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
   onRemove: () => void;
 }) {
   return (
-    <div className="rounded border border-border bg-muted/10 p-3">
+    <div className="rounded-floor border border-border bg-muted/10 p-3">
       <div className="grid grid-cols-[minmax(0,1fr)_7rem_5rem_auto] gap-2">
         <LabeledInput
           label="Atom node UUID"

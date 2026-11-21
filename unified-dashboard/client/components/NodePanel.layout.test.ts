@@ -101,7 +101,7 @@ describe("NodePanel layout", () => {
 
     const cards = Array.from(container?.querySelectorAll<HTMLElement>('[data-testid="node-card"]') ?? []);
     expect(cards).toHaveLength(3);
-    expect(cards[0]?.className).toContain("rounded-xl");
+    expect(cards[0]?.className).toContain("rounded-floor");
     expect(cards[0]?.className.split(/\s+/)).not.toContain("border-b");
   });
 });

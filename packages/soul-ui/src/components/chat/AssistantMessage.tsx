@@ -62,7 +62,7 @@ export const AssistantMessage = memo(function AssistantMessage({
     ? "w-full min-w-0 text-foreground"
     : cn(
       contentLayout === "structured" ? "w-full min-w-0 max-w-[86%]" : "max-w-[86%]",
-      "rounded-2xl rounded-bl-lg bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]",
+      "rounded-floor bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]",
     );
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)

@@ -190,14 +190,14 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
       </div>
 
       {error && (
-        <div data-v3-selectable-content="true" className="rounded border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">
+        <div data-v3-selectable-content="true" className="rounded-floor border border-accent-red/40 bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">
           {error}
         </div>
       )}
 
       <div
         data-testid="user-management-table-scroll"
-        className="overflow-x-auto rounded border border-border"
+        className="overflow-x-auto rounded-floor border border-border"
       >
         <Table className="min-w-[720px]">
           <TableHeader>
@@ -281,7 +281,7 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
                   onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
                 />
               </label>
-              <div className="flex items-center justify-between rounded border border-border px-3 py-2">
+              <div className="flex items-center justify-between rounded-floor border border-border px-3 py-2">
                 <span className="text-sm font-medium">Admin</span>
                 <Switch
                   disabled={saving}
@@ -292,12 +292,12 @@ export function UserManagementTab({ request = fetch, initialEditor }: { initialE
               <div className={cn("space-y-2", form.isAdmin && "opacity-50")}>
                 <div className="text-sm font-medium text-muted-foreground">폴더</div>
                 <p className="text-sm text-muted-foreground">{form.isAdmin ? "관리자는 전체 폴더에 접근할 수 있습니다." : form.allowedFolderIds.length === 0 ? "선택한 폴더가 없으면 전체 폴더에 접근할 수 있습니다." : "선택한 폴더에만 접근할 수 있습니다."}</p>
-                <ScrollArea className="h-48 rounded border border-border">
+                <ScrollArea className="h-48 rounded-floor border border-border">
                   <div className="space-y-1 p-2">
                     {folders.map((folder) => (
                       <label
                         key={folder.id}
-                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40"
+                        className="flex cursor-pointer items-center gap-2 rounded-floor px-2 py-1.5 text-sm hover:bg-muted/40"
                       >
                         <Checkbox
                           checked={form.allowedFolderIds.includes(folder.id)}

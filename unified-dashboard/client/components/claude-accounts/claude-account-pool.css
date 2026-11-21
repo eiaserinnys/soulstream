@@ -1,5 +1,5 @@
 .c724-node-card {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   border: 1px solid var(--border);
   background: color-mix(in oklch, var(--card) 86%, transparent);
   overflow: hidden;
@@ -24,7 +24,7 @@
   flex-direction: column;
   gap: var(--v3-space-2);
   padding: var(--v3-space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   border: 1px solid var(--border);
   background: color-mix(in oklch, var(--background) 78%, transparent);
   transition: opacity 0.15s ease, border-color 0.15s ease;
@@ -271,7 +271,7 @@
   flex-direction: column;
   gap: var(--v3-space-3);
   padding: var(--v3-space-3);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   border: 1px solid color-mix(in oklch, var(--v3-accent) 50%, var(--border));
   background: color-mix(in oklch, var(--background) 82%, transparent);
 }

@@ -72,7 +72,7 @@ describe("MarkdownContent — table scroll focus ring", () => {
     }
 
     // 초점 클래스 밖의 모양 클래스는 그대로다.
-    for (const shapeClass of ["overflow-auto", "rounded", "border", "border-border", "bg-card", marginClass]) {
+    for (const shapeClass of ["overflow-auto", "rounded-floor", "border", "border-border", "bg-card", marginClass]) {
       expect(wrapper.classList.contains(shapeClass)).toBe(true);
     }
 

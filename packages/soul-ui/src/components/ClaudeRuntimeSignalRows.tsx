@@ -24,7 +24,7 @@ export function ClaudeRuntimeSignalRows({
       {signals.mirror ? (
         <div
           data-testid="runtime-signals-mirror-error"
-          className={`rounded-md border p-2 ${
+          className={`rounded-floor border p-2 ${
             tone === "calm"
               ? "chat-tone-danger-panel"
               : "border-destructive/40 bg-destructive/5"
@@ -34,7 +34,7 @@ export function ClaudeRuntimeSignalRows({
             <DatabaseZap className={`size-3.5 shrink-0 ${
               tone === "calm" ? "chat-tone-danger-text" : "text-destructive"
             }`} />
-            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
               tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
             }`}>
               미러
@@ -64,10 +64,10 @@ export function ClaudeRuntimeSignalRows({
 
 function NotificationRow({ notification }: { notification: ClaudeRuntimeNotificationView }) {
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
+    <div className="rounded-floor border border-border bg-muted/20 p-2">
       <div className="flex min-w-0 items-center gap-2">
         <Bell className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+        <span className="rounded-full bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
           {notification.notificationType ?? notification.key ?? notification.source}
         </span>
         <span className="truncate text-xs font-medium">
@@ -89,10 +89,10 @@ function RemoteTriggerRow({ trigger }: { trigger: ClaudeRuntimeRemoteTriggerView
     ?? trigger.triggerType
     ?? trigger.source;
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-2">
+    <div className="rounded-floor border border-border bg-muted/20 p-2">
       <div className="flex min-w-0 items-center gap-2">
         <Radio className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+        <span className="rounded-full bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
           원격
         </span>
         <span className="truncate text-xs font-medium">{label}</span>

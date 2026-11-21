@@ -69,7 +69,7 @@ export function V3ContextMenu({
                 {action.separatorBefore ? <div className="my-1 border-t border-border" /> : null}
                 <button
                   type="button"
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-64${action.destructive ? " text-destructive" : ""}`}
+                  className={`w-full rounded-full px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-64${action.destructive ? " text-destructive" : ""}`}
                   disabled={action.disabled}
                   onClick={(event) => select(action, event)}
                 >
@@ -81,7 +81,7 @@ export function V3ContextMenu({
               <div className="my-1 border-t border-border" />
               <strong className="block px-3 py-2 text-sm font-semibold">{group.label}</strong>
               {group.actions.map(action=><button key={action.label} type="button"
-                className={`w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-64${action.destructive?" text-destructive":""}`}
+                className={`w-full rounded-full px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-64${action.destructive?" text-destructive":""}`}
                 disabled={action.disabled} onClick={event=>select(action,event)}>{action.label}</button>)}
             </div>)}
           </div>

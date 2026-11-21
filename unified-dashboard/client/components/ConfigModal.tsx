@@ -373,7 +373,7 @@ function WallpaperPicker({ local = false }: {local?: boolean}) {
         ))}
       </div>
       {error && (
-        <div role="alert" className="mt-2 rounded-lg bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">
+        <div role="alert" className="mt-2 rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">
           {error}
         </div>
       )}

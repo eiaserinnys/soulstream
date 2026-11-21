@@ -57,13 +57,13 @@ export default function UpdateBanner({ update, onDismiss }: UpdateBannerProps) {
             </span>
             <button
               onClick={handleInstall}
-              className="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-medium transition-colors"
+              className="px-3 py-1.5 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-medium transition-colors"
             >
               지금 업데이트
             </button>
             <button
               onClick={onDismiss}
-              className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg)] transition-colors"
+              className="px-3 py-1.5 rounded-full border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg)] transition-colors"
             >
               나중에
             </button>
@@ -92,7 +92,7 @@ export default function UpdateBanner({ update, onDismiss }: UpdateBannerProps) {
             </span>
             <button
               onClick={handleRelaunch}
-              className="px-3 py-1.5 rounded-lg bg-[var(--color-success)] hover:brightness-110 text-white text-sm font-medium transition-all"
+              className="px-3 py-1.5 rounded-full bg-[var(--color-success)] hover:brightness-110 text-white text-sm font-medium transition-all"
             >
               재시작
             </button>
@@ -106,7 +106,7 @@ export default function UpdateBanner({ update, onDismiss }: UpdateBannerProps) {
             </span>
             <button
               onClick={onDismiss}
-              className="p-1 rounded hover:bg-[var(--color-bg)] transition-colors"
+              className="p-1 rounded-full hover:bg-[var(--color-bg)] transition-colors"
               title="닫기"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

@@ -48,7 +48,7 @@ const ToolCallItem = memo(function ToolCallItem({
     <>
       {expanded && (inputContent || msg.toolInputTruncation) && (
         <div className="ml-5 mt-0.5">
-          <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+          <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded-floor px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
             {displayInputContent}
           </pre>
           {msg.toolInputTruncation && (
@@ -63,7 +63,7 @@ const ToolCallItem = memo(function ToolCallItem({
       {expanded && (resultContent || msg.toolResultTruncation) && (
         <div className={cn("ml-5", msg.toolInputTruncation ? "mt-2" : "mt-0.5")}>
           <pre data-slot="chat-tool-body" className={cn(
-            "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
+            "text-xs bg-input rounded-floor px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}>
             {displayResultContent}
@@ -85,7 +85,7 @@ const ToolCallItem = memo(function ToolCallItem({
         </div>
       )}
       {expanded && traceContent.progressContent && (
-        <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+        <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded-floor px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
           {traceContent.progressContent}
         </pre>
       )}

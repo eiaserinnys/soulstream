@@ -181,15 +181,15 @@ describe("AskQuestionBanner", () => {
     expect(form?.contains(submit ?? null)).toBe(true);
     expect(form?.className).toContain("flex");
     expect(form?.className).toContain("gap-2");
-    expect(input?.className).toContain("rounded-xl");
+    expect(input?.className).toContain("rounded-floor");
     expect(input?.className).toContain("px-3");
     expect(submit?.className).toContain("h-auto");
     expect(submit?.className).toContain("sm:h-auto");
     expect(submit?.className).toContain("self-stretch");
-    expect(submit?.className).toContain("rounded-xl");
+    expect(submit?.className).toContain("rounded-full");
     expect(submit?.className).toContain("px-3");
     expect(submit?.className).not.toContain("sm:h-6");
-    expect(submit?.className).not.toContain("rounded-full");
+    expect(submit?.className).toContain("rounded-full");
   });
 
   it("uses the same wider layout for tool approval prompts", () => {

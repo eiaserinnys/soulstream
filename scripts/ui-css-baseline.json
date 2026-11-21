@@ -62,8 +62,6 @@
     "unified-dashboard/client/v3/v3-session-panel.css": 6
   },
   "tw-rounded-arbitrary": {
-    "packages/soul-ui/src/components/ui/alert-dialog.tsx": 1,
-    "packages/soul-ui/src/components/ui/button.tsx": 3,
     "packages/soul-ui/src/components/ui/dialog.tsx": 1,
     "packages/soul-ui/src/components/ui/input.tsx": 2,
     "packages/soul-ui/src/components/ui/scroll-area.tsx": 1,

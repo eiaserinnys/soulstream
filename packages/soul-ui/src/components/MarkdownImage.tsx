@@ -35,7 +35,7 @@ export function MarkdownImage({
       ? loadState.status
       : "loading";
   const classes = [
-    "max-w-full rounded my-1.5",
+    "max-w-full rounded-floor my-1.5",
     variant === "card-evidence" ? "v3-card-evidence-image" : "",
     variant === "chatRefined" ? "chat-image-refined" : "",
     onOpen ? "outline-none focus-visible:ring-2 focus-visible:ring-ring" : "",

@@ -138,7 +138,7 @@ export function SessionStoryDisclosure({
           align="end"
           sideOffset={8}
           collisionPadding={14}
-          className="max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-1.75rem))] overflow-y-auto rounded-3xl border border-glass-border glass-shadow-xs p-4 text-left break-keep [overflow-wrap:anywhere] [&_[data-slot=popover-viewport]]:overflow-visible [&_[data-slot=popover-viewport]]:p-0"
+          className="max-h-[min(60vh,36rem)] w-[min(32rem,calc(100vw-1.75rem))] overflow-y-auto rounded-root border border-glass-border glass-shadow-xs p-4 text-left break-keep [overflow-wrap:anywhere] [&_[data-slot=popover-viewport]]:overflow-visible [&_[data-slot=popover-viewport]]:p-0"
         >
           {loading ? <LoadingState /> : null}
           {!loading && error ? (

@@ -156,7 +156,7 @@ export function AtomNodeSelector({
   // inset으로 그린다.
   const panelButtonFocus = "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-  const triggerClass = "w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
+  const triggerClass = "w-full rounded-floor border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none";
   const triggerContent = <>
     <span className={`${value ? "" : "text-muted-foreground"} ${presentation === "inline" ? "min-w-0 truncate" : ""}`}>{displayLabel}</span>
     <span className="text-muted-foreground text-xs flex-shrink-0">▼</span>
@@ -253,7 +253,7 @@ export function AtomNodeSelector({
   if (presentation === "inline") {
     return <div className="min-w-0 w-full">
       <button ref={inlineTriggerRef} type="button" data-slot="atom-node-selector-trigger" className={triggerClass} disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>{triggerContent}</button>
-      {open && <div data-slot="atom-node-selector-panel" className="w-full min-w-0 rounded-lg border border-input bg-background dark:bg-input/32">{panel}</div>}
+      {open && <div data-slot="atom-node-selector-panel" className="w-full min-w-0 rounded-floor border border-input bg-background dark:bg-input/32">{panel}</div>}
     </div>;
   }
   return (

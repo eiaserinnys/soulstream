@@ -144,7 +144,7 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
       </a> : null}
       <div className="c724-auth-hint">Anthropic 페이지에 표시된 코드를 붙여넣으세요.</div>
       <textarea
-        className="w-full text-xs font-mono p-1.5 border border-border rounded resize-none bg-background"
+        className="w-full text-xs font-mono p-1.5 border border-border rounded-floor resize-none bg-background"
         rows={2}
         aria-label="Claude 인증 코드"
         placeholder="YSrAXqZq...#7RVDts..."

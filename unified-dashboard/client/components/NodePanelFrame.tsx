@@ -17,7 +17,7 @@ export function NodeCardFrame({
   return <div
     data-testid={testId}
     className={cn(
-      "overflow-hidden rounded-xl border border-border bg-muted/10",
+      "overflow-hidden rounded-floor border border-border bg-muted/10",
       dimmed && "opacity-60",
     )}
   >
@@ -52,7 +52,7 @@ export function NodeCardHeader({
       type="button"
       aria-expanded={expanded}
       aria-label={expanded ? "접기" : "펼치기"}
-      className="shrink-0 inline-flex items-center rounded text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      className="shrink-0 inline-flex items-center rounded-full text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       onClick={(event) => {
         event.stopPropagation();
         onClick();

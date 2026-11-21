@@ -26,13 +26,13 @@ export default function ErrorPage({ message, onRetry, onChangeUrl }: ErrorPagePr
         <div className="space-y-3">
           <button
             onClick={onRetry}
-            className="w-full py-2.5 px-4 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium transition-colors"
+            className="w-full py-2.5 px-4 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium transition-colors"
           >
             다시 시도
           </button>
           <button
             onClick={onChangeUrl}
-            className="w-full py-2.5 px-4 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface)] font-medium transition-colors"
+            className="w-full py-2.5 px-4 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-surface)] font-medium transition-colors"
           >
             URL 변경
           </button>

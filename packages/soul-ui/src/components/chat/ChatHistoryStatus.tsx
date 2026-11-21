@@ -23,7 +23,7 @@ export function ChatHistoryStatus({
           type="button"
           disabled={loading}
           onClick={onRetry}
-          className="rounded-md border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+          className="rounded-full border border-glass-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
         >
           {loading ? "이전 대화를 불러오는 중" : "이전 대화를 불러오지 못했습니다. 다시 시도"}
         </button>

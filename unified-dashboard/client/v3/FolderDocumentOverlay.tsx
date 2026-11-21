@@ -30,7 +30,7 @@ export function FolderDocumentOverlay({
     <LiquidGlassCard
       ref={surfaceRef}
       webglSurface
-      cornerRadius="3xl"
+      cornerRadius="root"
       className={`v3-folder-board-document-overlay${expanded ? " is-expanded" : ""}${closing ? " is-closing" : ""}`}
       data-testid="v3-folder-board-document-overlay"
       data-state={closing ? "closing" : "open"}

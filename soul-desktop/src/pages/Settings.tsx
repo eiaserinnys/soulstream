@@ -34,7 +34,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
         <div className="flex items-center mb-8">
           <button
             onClick={onBack}
-            className="mr-3 p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors"
+            className="mr-3 p-1.5 rounded-full hover:bg-[var(--color-surface)] transition-colors"
             title="뒤로"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -45,7 +45,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
         </div>
 
         <div className="space-y-6">
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <section className="rounded-root border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h2 className="text-sm font-medium text-[var(--color-text-muted)] mb-3">
               연결
             </h2>
@@ -59,7 +59,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
                     setUrlInput(e.target.value);
                     setError("");
                   }}
-                  className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  className="w-full px-3 py-2 rounded-floor border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                   autoFocus
                 />
                 {error && (
@@ -69,7 +69,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
                   <button
                     onClick={handleSave}
                     disabled={!urlInput.trim()}
-                    className="flex-1 py-2 px-3 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-medium transition-colors disabled:opacity-50"
+                    className="flex-1 py-2 px-3 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     저장 및 연결
                   </button>
@@ -79,7 +79,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
                       setEditing(false);
                       setError("");
                     }}
-                    className="py-2 px-3 rounded-lg border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg)] transition-colors"
+                    className="py-2 px-3 rounded-full border border-[var(--color-border)] text-sm hover:bg-[var(--color-bg)] transition-colors"
                   >
                     취소
                   </button>
@@ -98,7 +98,7 @@ export default function Settings({ currentUrl, onSave, onBack }: SettingsProps) 
             )}
           </section>
 
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <section className="rounded-root border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h2 className="text-sm font-medium text-[var(--color-text-muted)] mb-3">
               정보
             </h2>

@@ -26,7 +26,7 @@ export function SessionMenuItems({actions, mobile = false}: {
     return <Fragment key={action.label}>
       {index > 0 ? mobile ? <div className="border-t border-border my-1" /> : <MenuSeparator /> : null}
       {mobile ? <button
-        className={cn("w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64",
+        className={cn("w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-full disabled:pointer-events-none disabled:opacity-64",
           action.description && "flex flex-col items-start", action.className)}
         disabled={action.disabled} title={action.description} onClick={() => { void action.onClick(); }}
       >{content}</button> : <MenuItem disabled={action.disabled} title={action.description}

@@ -26,14 +26,17 @@
   --font-size-xl--line-height: 1.75rem;
 }
 
-/* 곡률 정본. CSS는 var(--radius-*), Tailwind는 표준 rounded-* */
+/* 곡률 정본. 뿌리 하나(root)에서 바닥(floor = root / 2), 표시(mark = root / 6)가 나온다. 알약은 :root --radius-pill */
 @theme static {
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
-  --radius-3xl: 24px;
+  --radius-*: initial;
+  --radius-root: 24px;
+  --radius-floor: calc(var(--radius-root) / 2);
+  --radius-mark: calc(var(--radius-root) / 6);
+}
+
+/* 동심 곡률. 부모의 안쪽 여백이 --spacing 단계 N이면 자식은 rounded-in-N(예: p-2 안이면 rounded-in-2). */
+@utility rounded-in-* {
+  border-radius: max(var(--radius-floor), calc(var(--radius-root) - var(--spacing) * --value(integer)));
 }
 
 @theme inline {
@@ -151,7 +154,7 @@
   }
   ::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
@@ -603,7 +606,7 @@ pre[data-markdown-code-layout="document"] {
   .dashboard-toolbar-search kbd {
     margin-left: auto;
     border: 1px solid var(--lg-line);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-mark);
     padding: 1px 6px;
     color: color-mix(in srgb, var(--foreground) 42%, transparent);
     font-family: var(--font-mono);
@@ -682,14 +685,14 @@ pre[data-markdown-code-layout="document"] {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-radius: var(--radius-3xl);
+    border-radius: var(--radius-root);
     padding: 14px 10px 10px;
     transition: width 150ms ease-out, padding 150ms ease-out, border-radius 150ms ease-out;
     box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
   }
 
   .dashboard-floating-sidebar[data-collapsed="true"] {
-    border-radius: var(--radius-3xl);
+    border-radius: var(--radius-root);
     padding: 6px;
   }
 
@@ -829,7 +832,7 @@ pre[data-markdown-code-layout="document"] {
     gap: 9px;
     width: 100%;
     min-height: 34px;
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-floor);
     padding: 8px 13px;
     color: color-mix(in srgb, var(--foreground) 62%, transparent);
     font-size: 0.875rem;
@@ -902,7 +905,7 @@ pre[data-markdown-code-layout="document"] {
   }
 
   .chat-focus-ring {
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-floor);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-amber) 44%, transparent);
   }
 
@@ -926,12 +929,12 @@ pre[data-markdown-code-layout="document"] {
   }
 
   .dashboard-center-panel {
-    border-radius: var(--radius-3xl);
+    border-radius: var(--radius-root);
     box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
   }
 
   .dashboard-chat-panel {
-    border-radius: var(--radius-3xl);
+    border-radius: var(--radius-root);
     --glass-chrome-surface-strong: var(--lg-chat-panel);
     box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
   }
@@ -1375,7 +1378,7 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   --chat-attachment-phone-assistant-max-width: 100%;
   --chat-attachment-phone-user-max-width: 88%;
   --chat-attachment-thumbnail-max-size: 200px;
-  --chat-attachment-radius: var(--radius-lg);
+  --chat-attachment-radius: var(--radius-floor);
   --chat-attachment-filename-gap: 6px;
 }
 
@@ -1781,18 +1784,18 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
 
 /* Approved dialog content only; the shared DialogPopup owns its glass frame,
    header/footer insets, focus treatment and responsive button sizes. */
-.approved-dialog .dialog-selection-context { display:flex; align-items:center; gap:calc(var(--spacing) * 2); margin-bottom:calc(var(--spacing) * 4); padding:calc(var(--spacing) * 3); border:1px solid var(--border); border-radius:var(--radius-lg); color:var(--muted-foreground); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
+.approved-dialog .dialog-selection-context { display:flex; align-items:center; gap:calc(var(--spacing) * 2); margin-bottom:calc(var(--spacing) * 4); padding:calc(var(--spacing) * 3); border:1px solid var(--border); border-radius:var(--radius-floor); color:var(--muted-foreground); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
 .approved-dialog .dialog-selection-context strong { color:var(--foreground); font-weight:600; }
 .approved-dialog .dialog-selection-destination { margin-right:auto; font-size:var(--font-size-sm); color:var(--muted-foreground); align-self:center; min-width:0; overflow-wrap:anywhere; }
-.approved-dialog .dialog-confirm-summary { padding:calc(var(--spacing) * 4); border:1px solid var(--border); border-radius:var(--radius-xl); font-size:var(--font-size-sm); background:var(--control-surface); }
+.approved-dialog .dialog-confirm-summary { padding:calc(var(--spacing) * 4); border:1px solid var(--border); border-radius:var(--radius-floor); font-size:var(--font-size-sm); background:var(--control-surface); }
 .approved-dialog .dialog-confirm-summary span { display:block; color:var(--muted-foreground); margin-top:calc(var(--spacing) * 2); }
-.approved-dialog .dialog-confirm-icon { display:grid; place-items:center; width:calc(var(--spacing) * 10); height:calc(var(--spacing) * 10); border-radius:var(--radius-xl); margin-bottom:calc(var(--spacing) * 2); background:color-mix(in srgb,var(--destructive) 9%,transparent); color:var(--destructive); }
+.approved-dialog .dialog-confirm-icon { display:grid; place-items:center; width:calc(var(--spacing) * 10); height:calc(var(--spacing) * 10); border-radius:var(--radius-floor); margin-bottom:calc(var(--spacing) * 2); background:color-mix(in srgb,var(--destructive) 9%,transparent); color:var(--destructive); }
 .approved-dialog .dialog-error-notice { display:grid; gap:calc(var(--spacing) * 2); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
 .approved-dialog .dialog-error-notice summary { cursor:pointer; color:var(--muted-foreground); }
-.approved-dialog .dialog-error-notice pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; max-height:30dvh; padding:calc(var(--spacing) * 3); border-radius:var(--radius-lg); background:var(--control-surface); }
+.approved-dialog .dialog-error-notice pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; max-height:30dvh; padding:calc(var(--spacing) * 3); border-radius:var(--radius-floor); background:var(--control-surface); }
 /* Keep the existing glass rim above a readable popup surface, including nested editors. */
 .approved-dialog[data-slot="dialog-popup"] { background:var(--popover); }
-.approved-dialog .dialog-error-notice summary:focus-visible { outline:none; border-radius:var(--radius-lg); box-shadow:0 0 0 calc(var(--spacing) / 2) var(--ring); }
+.approved-dialog .dialog-error-notice summary:focus-visible { outline:none; border-radius:var(--radius-floor); box-shadow:0 0 0 calc(var(--spacing) / 2) var(--ring); }
 
 /* 프레임 자리 — 로더(FrameLoading)와 실패 안내(FrameNotice)가 함께 쓰는 공통 자리.
    프레임 가운데에 내용을 한 줄로 세우고, 채움 프레임이면 남은 높이를 채운다. */

@@ -7,7 +7,7 @@ const viteBin = realpathSync(new URL("../node_modules/vite/bin/vite.js", import.
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["radius-glass-review.e2e.ts", "mobile-chat-glass-toolbar.e2e.ts"],
+  testMatch: ["radius-glass-review.e2e.ts", "mobile-chat-glass-toolbar.e2e.ts", "apple-radius.e2e.ts"],
   workers: 1,
   retries: 0,
   timeout: 180_000,

@@ -123,7 +123,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
   };
 
   return (
-    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded border border-border">
+    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-floor border border-border">
       <header className="col-span-2 border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">컨텍스트 번들</h2>
         <p className="mt-1 text-xs text-muted-foreground">여러 프로필이 함께 쓰는 atom 컨텍스트 묶음입니다. 여기서 번들을 만들고 고치면, 각 프로필의 「컨텍스트 번들」 절에서 참조합니다. 참조 중인 번들은 삭제할 수 없습니다.</p>
@@ -137,7 +137,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
             key={bundle.bundle_id}
             type="button"
             aria-label={bundle.bundle_id}
-            className={`mb-1 w-full rounded px-3 py-2 text-left text-sm ${draft?.bundle_id === bundle.bundle_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            className={`mb-1 w-full rounded-floor px-3 py-2 text-left text-sm ${draft?.bundle_id === bundle.bundle_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
             onClick={() => selectBundle(bundle)}
           >
             <span className="block font-semibold">{bundle.bundle_id}</span>
@@ -202,8 +202,8 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
             </div>
           </div>
         )}
-        {error && <p role="alert" className="mt-3 rounded bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">{error}</p>}
-        {message && <p role="status" className="mt-3 rounded bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
+        {error && <p role="alert" className="mt-3 rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground">{error}</p>}
+        {message && <p role="status" className="mt-3 rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
       </div>
     </div>
   );

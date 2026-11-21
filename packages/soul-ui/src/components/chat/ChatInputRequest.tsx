@@ -60,8 +60,8 @@ export const ChatInputRequest = memo(function ChatInputRequest({
       <div
         ref={cardRef}
         className={presentation === "manuscript"
-          ? "flex flex-col gap-2 rounded-2xl border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-4 py-3"
-          : "flex flex-col gap-2 rounded-2xl border border-glass-border glass-strong glass-shadow-md px-4 py-3"}
+          ? "flex flex-col gap-2 rounded-floor border border-[var(--persistent-session-line)] bg-[var(--persistent-session-panel)] px-4 py-3"
+          : "flex flex-col gap-2 rounded-floor border border-glass-border glass-strong glass-shadow-md px-4 py-3"}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">

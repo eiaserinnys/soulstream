@@ -31,7 +31,7 @@
   place-items: center;
   gap: var(--v3-space-1);
   border: 1px solid transparent;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: var(--v3-space-2) 0;
   color: var(--muted-foreground);
   background: transparent;

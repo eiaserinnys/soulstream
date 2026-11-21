@@ -4,7 +4,7 @@
   column-gap: var(--v3-space-1);
   align-items: center;
   padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
 }
 
 .v3-project-nav-row:hover,
@@ -28,7 +28,7 @@
 
 .v3-project-tree-root {
   min-height: 4px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
 }
 
 .v3-project-root-drop {
@@ -37,7 +37,7 @@
   place-items: center;
   margin-bottom: 4px;
   border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--glass-border));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
 }
@@ -58,7 +58,7 @@
   min-height: 28px;
   place-items: center;
   gap: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   padding: 0;
 }
 
@@ -111,7 +111,7 @@
   min-width: 0;
   align-items: center;
   gap: 2px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
 }
 
 .v3-starred-task-row.is-dragging {
@@ -178,7 +178,7 @@
 .v3-new-project-form input {
   min-width: 0;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 7px 8px;
   color: var(--foreground);
   background: color-mix(in srgb, var(--card) 72%, transparent);
@@ -317,7 +317,7 @@
 .v3-project-context-editor input[type="number"],
 .v3-project-context-popover select[aria-label="atom 렌더 방식"] {
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 8px;
   color: var(--foreground);
   background: color-mix(in srgb, var(--card) 72%, transparent);
@@ -341,7 +341,7 @@
   gap: 8px;
   margin: 0;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-floor);
   padding: 12px;
 }
 
@@ -357,7 +357,7 @@
 .v3-project-dialog-form textarea {
   min-width: 0;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-floor);
   padding: 8px 10px;
   color: var(--foreground);
   background: color-mix(in srgb, var(--card) 72%, transparent);

@@ -14,7 +14,7 @@ export function ChatTypographyTab({ preference }: { preference?: { value: ChatFo
   const chatFontSize = preference?.value ?? storedChatFontSize;
   const setChatFontSize = preference?.set ?? storedSetChatFontSize;
   return (
-    <section className="space-y-4 rounded-xl border border-[var(--lg-line)] bg-muted/20 px-4 py-4">
+    <section className="space-y-4 rounded-floor border border-[var(--lg-line)] bg-muted/20 px-4 py-4">
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-foreground">채팅 글자 크기</div>
