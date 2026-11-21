@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { CLAUDE_OAUTH_TOKEN_URL } from "../node/node_claude_auth_helpers.js";
 
 import type { ClaudeCentralAccountRepository } from "./account_repository.js";
@@ -232,8 +233,4 @@ export class ClaudeCentralTokenRefreshService {
       // 경고 통지 실패가 갱신 주기를 막지 않는다.
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

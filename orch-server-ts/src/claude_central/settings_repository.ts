@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 
 import type { ClaudeCentralPoolSettings } from "./types.js";
@@ -102,8 +103,4 @@ export function parseSettings(value: unknown): ClaudeCentralPoolSettings {
     }
   }
   return { default_receive: defaultReceive, nodes };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

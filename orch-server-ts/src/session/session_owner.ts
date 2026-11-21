@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { DashboardUserRepository } from "../runtime/live_dashboard_access_provider.js";
 
 export type SessionOwner = { ownerEmail: string; callerInfo: Record<string, unknown> };
@@ -17,10 +18,10 @@ export function createSessionOwnerResolver(options: {
       if (!session) return null;
       const metadata = session.metadata;
       const callers = Array.isArray(metadata)
-        ? metadata.filter(record).filter(e => e.type === "caller_info").map(e => e.value)
-        : record(metadata) ? [metadata.caller_info ?? metadata.callerInfo] : [];
+        ? metadata.filter(isRecord).filter(e => e.type === "caller_info").map(e => e.value)
+        : isRecord(metadata) ? [metadata.caller_info ?? metadata.callerInfo] : [];
       for (const caller of callers.reverse()) {
-        if (!record(caller) || typeof caller.email !== "string") continue;
+        if (!isRecord(caller) || typeof caller.email !== "string") continue;
         const email = caller.email.trim().toLowerCase();
         if (!email) continue;
         const externalId = caller.external_agent_id ?? (caller.source === "external-llm" ? caller.agent_id : undefined);
@@ -47,9 +48,6 @@ export function createSessionOwnerResolver(options: {
     }
     return resolve(sessionId);
   };
-}
-function record(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Sender labels/agent user_id belong to the current sender, not the owning human. */

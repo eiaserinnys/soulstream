@@ -24,6 +24,7 @@ import {
 } from "../claude_accounts/index.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ModelPreset } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
 import {
   PROVIDER_USAGE_REQUEST_TIMEOUT_MS,
@@ -1199,10 +1200,6 @@ function resetEpoch(raw: unknown): number | null {
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function stringifyError(err: unknown): string {

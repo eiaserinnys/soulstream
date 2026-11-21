@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { parseObjectBody } from "../http/route_validation.js";
 import { extractBearerToken } from "./service_bearer.js";
 
@@ -432,10 +433,6 @@ function defaultState(): string {
 
 function isSuccessStatus(statusCode: number): boolean {
   return statusCode >= 200 && statusCode < 300;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function devDefaultAvatarUrl(email: string): string {

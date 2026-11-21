@@ -1,15 +1,16 @@
-import type {
-  AgentProfileUpdateInput,
-  AgentContextPreviewInput,
-  ApplyAgentProfileUpdateInput,
-  NodeAgentProfileProvider,
-  NodeAgentProfileRouteOptions,
-  NodePortraitRequestOptions,
-  NodePortraitResult,
-  RawNodeAgentProfile,
-  RollbackAgentsConfigInput,
+import { isRecord } from "@soulstream/wire-schema/json-record";
+import {
+  NodeAgentProfileRouteError,
+  type AgentProfileUpdateInput,
+  type AgentContextPreviewInput,
+  type ApplyAgentProfileUpdateInput,
+  type NodeAgentProfileProvider,
+  type NodeAgentProfileRouteOptions,
+  type NodePortraitRequestOptions,
+  type NodePortraitResult,
+  type RawNodeAgentProfile,
+  type RollbackAgentsConfigInput,
 } from "../node/node_agent_profile_routes.js";
-import { NodeAgentProfileRouteError } from "../node/node_agent_profile_routes.js";
 import type {
   NodeCommandResponse,
   RequestResponseNodeCommandPayload,
@@ -395,10 +396,6 @@ function mapCommandError(error: unknown): NodeAgentProfileRouteError {
     error instanceof Error ? error.message : String(error),
     400,
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isDisconnectedCommandError(error: unknown): error is Error {

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { NodeCommandResponse, RequestResponseNodeCommandPayload } from "./pending_commands.js";
 import type { InMemoryNodeRegistry } from "./registry.js";
 import { supportsClaudeAccountPool } from "./registry_helpers.js";
@@ -331,8 +332,4 @@ function loginFlowIsDone(value: unknown): boolean {
 
 function isAccountId(value: unknown): value is string {
   return typeof value === "string" && ACCOUNT_ID.test(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

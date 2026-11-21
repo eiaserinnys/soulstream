@@ -1,5 +1,6 @@
 import type { SSEEventPayload } from "../protocol.js";
 import type { UsageSnapshotV1 } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 interface OpenCodeRawUsage {
   input: number | null;
@@ -22,10 +23,6 @@ interface OpenCodeUsageContext {
   commandId: string;
   inputId: string | null;
   usageSnapshot: UsageSnapshotV1;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function knownCounter(value: unknown): number | null {

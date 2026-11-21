@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 
 export const SESSION_REVIEW_POLICY_KEY = "session_review_policy";
@@ -337,10 +338,6 @@ function nonEmptyString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function postgresErrorCode(error: unknown): string | undefined {

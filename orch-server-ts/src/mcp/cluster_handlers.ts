@@ -1,6 +1,7 @@
 import { withVerifiedSessionOwner } from "../session/session_owner.js";
 import { STATUS_CODES } from "node:http";
 import { clusterTools, errorResult, jsonResult, readOrchErrorEnvelopeText, type CallToolResult } from "@soulstream/mcp-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { SERVICE_CALLER } from "../auth/service_caller.js";
 import { executeNodeSnapshotRoute } from "../node/node_snapshot_routes.js";
 import { executeNodeAgentProfileRoute } from "../node/node_agent_profile_routes.js";
@@ -27,9 +28,6 @@ type Handler = (options: McpHostOptions, args: Args, context: McpCallContext) =>
 type Response = { status: number; body: unknown };
 class OrchHttpError extends Error {
   constructor(message: string, readonly code?: string, readonly detailMessage?: string, readonly errorDetail?: Record<string, unknown>) { super(message); }
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /** The flat error record orch sent, regardless of the envelope shape. */
 function readErrorDetail(body: unknown): Record<string, unknown> | undefined {

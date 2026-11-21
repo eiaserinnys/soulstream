@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import { RunnerChildConfigSchema } from "./runner_child_config.js";
 import { canCache, type RunnerRegistrationScanCache, type RunnerRegistrationSnapshotEntry } from "./runner_registration_scan_cache.js";
@@ -44,10 +45,6 @@ export class RunnerRegistrationScanCacheSnapshot {
     this.lastWritten = content;
     return true;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function optionalString(value: unknown): boolean {

@@ -2,7 +2,7 @@ import type { Readable } from "node:stream";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { isJsonObject } from "../http/route_validation.js";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   parseExecuteProxyPayload,
   type ExecuteProxyNewProviderRequest,
@@ -141,8 +141,8 @@ function formatExecuteProxyEventList(result: ExecuteProxySseResult): string {
 
 function rawEventToFrame(raw: ExecuteProxyRawEvent): ExecuteProxySseFrame {
   const eventPayload =
-    isJsonObject(raw.event) ? raw.event
-      : isJsonObject(raw.payload) ? raw.payload
+    isRecord(raw.event) ? raw.event
+      : isRecord(raw.payload) ? raw.payload
         : undefined;
   if (eventPayload !== undefined) {
     return {

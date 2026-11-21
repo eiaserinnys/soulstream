@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { queryValue, rawQueryValue, type Validation } from "../http/route_validation.js";
@@ -690,10 +691,6 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 
 function routeError(reply: FastifyReply, statusCode: number, detail: string): FastifyReply {
   return reply.code(statusCode).send({ detail });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
@@ -62,7 +63,7 @@ export class DeliveryCommands {
   async respond(cmd: RespondCommand): Promise<RespondAck | null> {
     const sessionId = cmd.agentSessionId ?? "";
     const inputRequestId = cmd.inputRequestId ?? cmd.request_id ?? "";
-    if (!sessionId || !inputRequestId || !isPlainObject(cmd.answers)) {
+    if (!sessionId || !inputRequestId || !isRecord(cmd.answers)) {
       throw new DeliveryCommandError(
         "respond requires agentSessionId, inputRequestId, and answers",
       );
@@ -137,8 +138,4 @@ export class DeliveryCommands {
     }
     this.deps.taskExecutor.startNewExecution(task, agent);
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

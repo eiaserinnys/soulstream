@@ -1,4 +1,5 @@
 import type { ModelCatalogConfig } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { codexTurnCostUsd } from "../engine/list_price.js";
 
 export interface BackfillEvent {
@@ -9,10 +10,6 @@ export interface BackfillEvent {
 }
 
 export type ModelTotals = Record<string, { count: number; cost_usd: number }>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function calculateBackfillCost(event: BackfillEvent, catalog: ModelCatalogConfig): number | undefined {
   if (event.event_type !== "complete" && event.event_type !== "error") return undefined;

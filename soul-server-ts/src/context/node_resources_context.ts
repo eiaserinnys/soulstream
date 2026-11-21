@@ -2,6 +2,7 @@ import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-sessio
 import { parseNodeResourceSnapshot, type NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionRow } from "../db/session_db_types.js";
@@ -126,8 +127,4 @@ function formatResourceSnapshot(resources: NodeResourceSnapshot): string {
 
 function toGiB(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(2);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

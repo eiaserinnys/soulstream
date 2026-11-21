@@ -15,6 +15,7 @@ import {
   ANTHROPIC_USAGE_URL,
   CLAUDE_OAUTH_BETA,
 } from "@soulstream/wire-schema/claude-oauth";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import {
@@ -457,10 +458,6 @@ function normalizeScopes(value: unknown): string[] {
   const scope = normalizeOptionalString(value);
   if (!scope) return [];
   return scope.split(/\s+/).filter(Boolean);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function stringifyError(err: unknown): string {

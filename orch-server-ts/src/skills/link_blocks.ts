@@ -1,4 +1,5 @@
 import { parseDocument, Scalar, type ScalarTag } from "yaml";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type LinkKind = "call" | "include" | "pick";
 export type LinkFields = {
@@ -73,10 +74,6 @@ function fenceClose(line: string, open: Fence): boolean {
   if (!match) return false;
   const marker = match[1]!;
   return marker[0] === open.char && marker.length >= open.length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function hasString(value: unknown): value is string {

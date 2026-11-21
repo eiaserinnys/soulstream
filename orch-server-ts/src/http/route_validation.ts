@@ -1,4 +1,5 @@
 import type { FastifyReply } from "fastify";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -6,16 +7,8 @@ export type Validation<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; statusCode?: number };
 
-export function isJsonObject(value: unknown): value is JsonObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
-}
-
 export function jsonObjectOrUndefined(value: unknown): JsonObject | undefined {
-  return isJsonObject(value) ? value : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 export function parseObjectBody(
@@ -25,7 +18,7 @@ export function parseObjectBody(
   if (options.allowEmpty && (body === undefined || body === null)) {
     return { ok: true, value: {} };
   }
-  if (isJsonObject(body)) return { ok: true, value: body };
+  if (isRecord(body)) return { ok: true, value: body };
   return { ok: false, message: "Request body must be a JSON object" };
 }
 

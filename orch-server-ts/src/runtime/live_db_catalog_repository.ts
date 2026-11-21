@@ -4,6 +4,7 @@ import {
   projectSessionBindingWarnings,
   type SessionBindingWarning,
 } from "@soulstream/page-model";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
@@ -710,8 +711,4 @@ function folderExcludesNotifications(
   if (folderId === null) return false;
   const folder = folders.find((item) => item.id === folderId);
   return isRecord(folder?.settings) && folder.settings.excludeFromNotification === true;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

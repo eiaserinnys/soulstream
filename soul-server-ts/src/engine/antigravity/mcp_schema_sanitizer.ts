@@ -1,3 +1,5 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
+
 type SchemaObject = Record<string, unknown>;
 
 const schemaMapKeywords = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] as const;
@@ -12,7 +14,7 @@ const schemaArrayKeywords = ["anyOf", "oneOf", "allOf", "prefixItems"] as const;
 
 /** Remove schema enum entries Gemini rejects while retaining their original contract in the description. */
 export function sanitizeAntigravityInputSchema(schema: unknown): unknown {
-  if (!isObject(schema)) return schema;
+  if (!isRecord(schema)) return schema;
 
   const sanitized: SchemaObject = { ...schema };
   const enumValues = schema.enum;
@@ -30,7 +32,7 @@ export function sanitizeAntigravityInputSchema(schema: unknown): unknown {
 
   for (const keyword of schemaMapKeywords) {
     const value = schema[keyword];
-    if (!isObject(value)) continue;
+    if (!isRecord(value)) continue;
     sanitized[keyword] = Object.fromEntries(
       Object.entries(value).map(([name, child]) => [name, sanitizeSubschema(child)]),
     );
@@ -54,7 +56,7 @@ export function sanitizeAntigravityInputSchema(schema: unknown): unknown {
   }
 
   const dependencies = schema.dependencies;
-  if (isObject(dependencies)) {
+  if (isRecord(dependencies)) {
     const sanitizedDependencies: SchemaObject = { ...dependencies };
     for (const [name, dependency] of Object.entries(dependencies)) {
       if (isPlainObject(dependency)) sanitizedDependencies[name] = sanitizeAntigravityInputSchema(dependency);
@@ -71,12 +73,8 @@ function sanitizeSubschema(value: unknown): unknown {
   return value === true ? {} : sanitizeAntigravityInputSchema(value);
 }
 
-function isObject(value: unknown): value is SchemaObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isPlainObject(value: unknown): value is SchemaObject {
-  if (!isObject(value)) return false;
+  if (!isRecord(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }

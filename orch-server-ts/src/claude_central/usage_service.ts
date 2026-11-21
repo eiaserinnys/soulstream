@@ -1,4 +1,5 @@
 import { ANTHROPIC_USAGE_URL, CLAUDE_OAUTH_BETA } from "@soulstream/wire-schema/claude-oauth";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ClaudeCentralAccountRepository } from "./account_repository.js";
 import type { ClaudeCentralTokenRefreshService } from "./token_refresh_service.js";
 import type { ClaudeCentralUsageObservation } from "./types.js";
@@ -126,8 +127,4 @@ export class ClaudeCentralUsageService {
       // 경고 통지 실패가 사용량 주기를 막지 않는다.
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

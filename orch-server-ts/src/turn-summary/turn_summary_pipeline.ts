@@ -6,6 +6,7 @@ import {
 import { readPersistentEnabled } from
   "@soulstream/wire-schema/persistent-session-settings";
 import type { RuntimeSessionEventHub } from "../runtime/session_event_hub.js";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
@@ -616,8 +617,4 @@ function stringValue(value: unknown): string | null {
 
 function recordValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

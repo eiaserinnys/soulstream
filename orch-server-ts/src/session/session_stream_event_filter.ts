@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
@@ -381,8 +382,4 @@ function queryBool(query: unknown, key: string): boolean {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

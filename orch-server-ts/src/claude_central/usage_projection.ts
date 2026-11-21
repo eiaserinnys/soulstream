@@ -3,6 +3,7 @@ import type {
   ClaudeAccountUsage,
   ClaudeAccountUsageWindow,
 } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export function emptyCentralUsage(): ClaudeAccountUsage {
   return { five_hour: null, seven_day: null, fable_weekly: null };
@@ -229,8 +230,4 @@ export function computeCentralPoolSummary(
       ? earliestAvailableAt(accounts, scope, nowMs)
       : null,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

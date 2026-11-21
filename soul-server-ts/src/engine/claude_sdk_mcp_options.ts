@@ -7,6 +7,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import {
@@ -218,8 +219,4 @@ function withSessionAuthorization(
   }
   if (bearerToken) replaced.Authorization = `Bearer ${bearerToken}`;
   return Object.keys(replaced).length > 0 ? replaced : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

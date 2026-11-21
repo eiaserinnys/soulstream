@@ -6,6 +6,7 @@ import {
   type UiEventTargetKind,
   type UiEventType,
 } from "@soulstream/wire-schema/ui-events";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   UI_EVENT_CLIENT_KINDS,
   UI_EVENT_MAX_BATCH,
@@ -381,8 +382,4 @@ function isoTimestamp(value: unknown): string | undefined {
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

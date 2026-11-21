@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export interface CogitoContextConfig {
   baseUrl: string;
@@ -339,8 +340,4 @@ function numberField(
 ): number | undefined {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

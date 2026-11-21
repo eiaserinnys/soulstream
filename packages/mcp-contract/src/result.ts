@@ -1,3 +1,5 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
+
 /**
  * MCP CallToolResult 헬퍼.
  *
@@ -80,8 +82,4 @@ function toStructuredContent(value: unknown): Record<string, unknown> {
   }
 
   return { result: value };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

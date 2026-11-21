@@ -33,6 +33,7 @@ import type { RuntimeLiveTextSnapshot } from
 import type { SessionHistoryResetReason } from
   "@soulstream/wire-schema/session-feed-contract";
 import { registerSessionConversationRoute } from "./session_conversation_routes.js";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
@@ -533,8 +534,4 @@ function liveSequence(envelope: Record<string, unknown>): number | undefined {
       : envelope;
   const value = payload.liveSeq;
   return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

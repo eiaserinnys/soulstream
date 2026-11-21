@@ -5,6 +5,7 @@ import {
   type SessionFeedState,
   type SessionNotice,
 } from "@soulstream/wire-schema/session-feed-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export const SESSION_FEED_RECENT_NOTICE_LIMIT = 8;
 
@@ -163,10 +164,6 @@ function parseJson(value: unknown): unknown {
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown): string | null {

@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { TRANSITION_ACK_TIMEOUT_MS } from "../db/event_persistence.js";
 
 import type { EngineExecuteParams } from "../engine/protocol.js";
@@ -1617,10 +1618,6 @@ function readExecutionCommandId(frame: RunnerCommandResultFrame): string | null 
     if (typeof commandId === "string" && commandId.length > 0) return commandId;
   }
   throw new Error("registered runner returned invalid execution status");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function asError(error: unknown): Error {

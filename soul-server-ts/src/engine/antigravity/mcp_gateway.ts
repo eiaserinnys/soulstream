@@ -6,6 +6,7 @@ import {
   CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, PaginatedResultSchema, ToolSchema, type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { createUpstreamTransport, parseAntigravityMcpUpstream, type AntigravityMcpProxyConfig, type ProxyIo } from "./mcp_schema_proxy.js";
 import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV } from "./mcp_schema_proxy_launch.js";
 import { sanitizeAntigravityInputSchema } from "./mcp_schema_sanitizer.js";
@@ -40,12 +41,12 @@ export function antigravityGatewayServerName(agentId: string): string {
 export function parseAntigravityMcpGatewayConfig(raw: string): AntigravityMcpGatewayUpstream[] {
   let parsed: unknown;
   try { parsed = JSON.parse(raw) as unknown; } catch { throw new Error("Invalid Antigravity MCP gateway configuration"); }
-  if (!isObject(parsed) || parsed.version !== 1 || !Array.isArray(parsed.servers)) {
+  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.servers)) {
     throw new Error("Invalid Antigravity MCP gateway configuration");
   }
   const names = new Set<string>();
   return parsed.servers.map((server: unknown) => {
-    if (!isObject(server) || typeof server.name !== "string" || !server.name || server.name.includes("__") || names.has(server.name)) {
+    if (!isRecord(server) || typeof server.name !== "string" || !server.name || server.name.includes("__") || names.has(server.name)) {
       throw new Error("Invalid Antigravity MCP gateway configuration");
     }
     names.add(server.name);
@@ -53,13 +54,9 @@ export function parseAntigravityMcpGatewayConfig(raw: string): AntigravityMcpGat
   });
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** Log only an error's kind, never its message: messages can embed credentials or paths. */
 function errorKind(error: unknown): string {
-  if (isObject(error) && typeof error.code === "string" && error.code.length > 0) return error.code;
+  if (isRecord(error) && typeof error.code === "string" && error.code.length > 0) return error.code;
   if (error instanceof Error && error.name.length > 0) return error.name;
   return "unknown";
 }
@@ -85,8 +82,8 @@ export async function runAntigravityMcpGateway(upstreams: AntigravityMcpGatewayU
           LooseListToolsResultSchema,
         );
         for (const rawTool of page.tools) {
-          const toolName = isObject(rawTool) && typeof rawTool.name === "string" ? rawTool.name : undefined;
-          const tool = isObject(rawTool)
+          const toolName = isRecord(rawTool) && typeof rawTool.name === "string" ? rawTool.name : undefined;
+          const tool = isRecord(rawTool)
             ? { ...rawTool, inputSchema: sanitizeAntigravityInputSchema(rawTool.inputSchema) }
             : rawTool;
           if (toolName === undefined || !ToolSchema.safeParse(tool).success) {

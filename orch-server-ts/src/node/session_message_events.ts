@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { PerNodeSessionCache } from "./session_cache.js";
 import type { NodeRegistryEvent } from "./registry_types.js";
 
@@ -94,8 +95,4 @@ function stripFeedFields(value: Record<string, unknown>): Record<string, unknown
   return Object.fromEntries(Object.entries(value).filter(
     ([key]) => !COMMITTED_SESSION_FEED_FIELDS.has(key),
   ));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

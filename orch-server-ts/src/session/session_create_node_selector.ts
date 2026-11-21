@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
@@ -383,8 +384,4 @@ function selectionError(
     message,
     ...metadata,
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

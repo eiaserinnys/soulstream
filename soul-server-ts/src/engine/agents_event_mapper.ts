@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { SSEEventPayload } from "./protocol.js";
 
 type UnknownRecord = Record<string, unknown>;
@@ -191,10 +192,6 @@ function readString(record: UnknownRecord, key: string): string | undefined {
 
 function asRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function asSSE(payload: Record<string, unknown>): SSEEventPayload {

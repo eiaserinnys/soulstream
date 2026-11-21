@@ -4,6 +4,7 @@ import {
   modelCatalogPathForRepository,
   repositoryRootFromEntryUrl,
 } from "@soulstream/model-catalog/file-loader";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import type { Env } from "../config.js";
 import { hashArtifactSet } from "../runner/runner_release_materializer.js";
@@ -143,10 +144,6 @@ function validExecutable(value: unknown, kind: "claude" | "codex"): boolean {
     && value.kind === kind
     && (typeof value.path === "string" || value.path === null)
     && (typeof value.identity === "string" || value.identity === null);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function requireExactKeys(

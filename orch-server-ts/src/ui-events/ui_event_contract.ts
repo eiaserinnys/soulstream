@@ -7,6 +7,7 @@ import {
   type UiEventTargetKind,
   type UiEventType,
 } from "@soulstream/wire-schema/ui-events";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isUuid } from "../http/uuid.js";
 
 export const UI_EVENT_MAX_BATCH = 50;
@@ -281,8 +282,4 @@ function parseRef(raw: unknown): UiEventTargetRef | null | "invalid" {
 
 function fail(reason: string): UiEventValidation {
   return { ok: false, reason };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

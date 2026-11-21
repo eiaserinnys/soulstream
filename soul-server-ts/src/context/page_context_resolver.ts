@@ -7,6 +7,7 @@ import type { BlockDto } from "@soulstream/page-model";
 import type { ContextItem } from "@soulstream/wire-schema";
 
 import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { Task } from "../task/task_models.js";
 import type { AtomFetchConfig } from "./atom_context.js";
 import type { ContextManifest } from "./compiler/index.js";
@@ -398,8 +399,4 @@ function failure(
 function compareParents(a: PageContextAnchor, b: PageContextAnchor): number {
   return compareLexicographically(a.pageId, b.pageId)
     || compareLexicographically(a.blockId, b.blockId);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
