@@ -1,16 +1,11 @@
 const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
 const { resolveChatUiSourceRequest } = require('./chat-ui-source-resolution.cjs');
+const sharedSourceFolders = require('./shared-source-folders.cjs');
 
 function createReviewMetroConfig(projectRoot) {
   const config = getDefaultConfig(projectRoot);
-  config.watchFolders = [
-    path.resolve(projectRoot, '..'),
-    path.resolve(projectRoot, '../../packages/soul-ui/src/cards'),
-    path.resolve(projectRoot, '../../packages/soul-ui/src/lib'),
-    path.resolve(projectRoot, '../../packages/wire-schema/src'),
-    path.resolve(projectRoot, '../../packages/chat-ui'),
-  ];
+  config.watchFolders = [path.resolve(projectRoot, '..'), ...sharedSourceFolders];
   config.resolver.nodeModulesPaths = [path.resolve(projectRoot, '../node_modules')];
   const client = path.resolve(projectRoot, '../src/api/client.ts');
   const pickers = path.resolve(projectRoot, '../src/hooks/attachmentPickers.ts');

@@ -1,25 +1,12 @@
-/**
- * useInputRequestTimer — AskUserQuestion 타임아웃 카운트다운 훅
- *
- * receivedAt(수신 시각 ms)과 timeoutSec(타임아웃 초)를 기반으로
- * 남은 시간과 만료 여부를 1초 단위로 갱신한다.
- *
- * web soul-ui의 동일 훅을 그대로 포팅. RN도 useState/useEffect/setInterval 동일.
- */
-
 import { useState, useEffect } from 'react';
-
-const calcRemaining = (at: number | undefined, timeoutSec: number): number => {
-  if (!at) return timeoutSec;
-  return Math.max(0, timeoutSec - Math.floor((Date.now() - at) / 1000));
-};
+import { INPUT_REQUEST_TIMEOUT_SEC, inputRequestRemainingSec } from '../../../packages/soul-ui/src/lib/input-request-countdown';
 
 export function useInputRequestTimer(
   receivedAt: number | undefined,
-  timeoutSec: number = 300
+  timeoutSec: number = INPUT_REQUEST_TIMEOUT_SEC
 ): { remainingSec: number; isExpired: boolean } {
   const [remainingSec, setRemainingSec] = useState<number>(() =>
-    calcRemaining(receivedAt, timeoutSec)
+    inputRequestRemainingSec(receivedAt, timeoutSec)
   );
 
   useEffect(() => {
@@ -27,10 +14,7 @@ export function useInputRequestTimer(
 
     let intervalId: ReturnType<typeof setInterval>;
     const update = () => {
-      const remaining = Math.max(
-        0,
-        timeoutSec - Math.floor((Date.now() - receivedAt) / 1000)
-      );
+      const remaining = inputRequestRemainingSec(receivedAt, timeoutSec);
       setRemainingSec(remaining);
       if (remaining === 0) clearInterval(intervalId);
     };

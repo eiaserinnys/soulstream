@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import type { SearchMatchSource } from '../../api/client';
+import type { SearchMatchSource } from '../../../../packages/search-contract/src/search_core';
 import { AppGlassPressable } from '../AppGlassCard';
 import { useTokens, type DesignTokens } from '../../theme';
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import type {
@@ -6,7 +5,7 @@ import type {
   PersistentSessionResource,
   PersistentTurnUsageMode,
 } from '../../api/persistentSessionEndpoints';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import {
   SettingsFormGroup as Group,

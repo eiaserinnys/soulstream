@@ -1,4 +1,5 @@
-import type { CallerInfo, ReviewState } from "./task_models.js";
+import type { CallerInfo } from "./task_models.js";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 
 const USER_SOURCES = new Set(["slack", "soul-app"]);
 const BROWSER_IDENTITY_FIELDS = ["user_id", "email", "display_name"] as const;

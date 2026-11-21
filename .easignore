@@ -50,6 +50,16 @@
 !/packages/soul-ui/src/lib/rate-limit-notice.ts
 !/packages/soul-ui/src/lib/claude-runtime-projection.ts
 !/packages/soul-ui/src/lib/card-board-status-labels.ts
+!/packages/soul-ui/src/lib/model-preset-availability.ts
+!/packages/soul-ui/src/lib/reasoning-effort.ts
+!/packages/soul-ui/src/lib/custom-view-binding.ts
+!/packages/soul-ui/src/lib/input-request-countdown.ts
+!/packages/soul-ui/src/page
+/packages/soul-ui/src/page/*
+!/packages/soul-ui/src/page/page-structure-operation.ts
+!/packages/soul-ui/src/shared
+/packages/soul-ui/src/shared/*
+!/packages/soul-ui/src/shared/exhaustive.ts
 !/packages/wire-schema
 /packages/wire-schema/*
 !/packages/wire-schema/generated
@@ -74,6 +84,12 @@
 !/packages/wire-schema/src/persistent_session_settings.ts
 !/packages/wire-schema/src/push_notification.ts
 !/packages/wire-schema/src/session_statistics.ts
+!/packages/wire-schema/src/session_review.ts
+!/packages/search-contract
+/packages/search-contract/*
+!/packages/search-contract/src
+/packages/search-contract/src/*
+!/packages/search-contract/src/search_core.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/

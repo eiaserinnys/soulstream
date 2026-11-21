@@ -3,7 +3,7 @@
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -54,11 +54,13 @@ import { makeStyles } from './SessionSuccessionSheet.styles';
 import {
   buildEffortActionSheet,
   effortRowValue,
+  resolveEffortActionSheetSelection,
+} from '../sheets/reasoningEffort';
+import {
   isEffortSupported,
   presetSupportsEffort,
   reasoningEffortForSubmit,
-  resolveEffortActionSheetSelection,
-} from '../sheets/reasoningEffort';
+} from '../../../../packages/soul-ui/src/lib/reasoning-effort';
 
 export const INITIAL_SESSION_PROMPT = '';
 

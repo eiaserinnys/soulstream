@@ -1,14 +1,3 @@
-import { useSessionMenu } from "@seosoyoung/soul-ui";
-/**
- * SearchModal - 세션 기록 BM25 전문 검색 모달 (unified-dashboard)
- *
- * soul-dashboard의 SearchModal에서 포팅.
- * 탑바 검색 버튼 클릭 시 열리며, 300ms debounce 자동 검색을 수행합니다.
- * 결과 클릭 시 해당 세션으로 이동하고 이벤트 위치로 자동 스크롤합니다.
- *
- * 검색 엔드포인트: /cogito/search (orch가 공유 PostgreSQL을 직접 조회)
- */
-
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
@@ -20,6 +9,7 @@ import {
   useDashboardStore,
   useUiEventEntryMarker,
   useUiEventTracker,
+  useSessionMenu,
   applyCatalogSessionDisplayName,
   resolveSearchChatFocus,
   cn,
@@ -29,18 +19,16 @@ import {
 import { Search } from "lucide-react";
 import {
   useSessionSearch,
-  type SearchResultItem,
   type SearchSessionResult,
   type SearchFilters,
-  type SearchMatchSource,
   type SearchNavigationResult,
 } from "../hooks/useSessionSearch";
 import {
   searchEventTypeLabel,
   type SearchEventCategory,
+  type SearchMatchSource,
+  type SearchResultItem,
 } from "@soulstream/search-contract";
-
-// === Filter state ===
 
 interface FilterState {
   sessionId: boolean;

@@ -2,8 +2,8 @@ import type {
   BlockDto,
   PageApiClient,
   PageMutationResponse,
-  PageStructureOperation,
 } from "@seosoyoung/soul-ui/page";
+import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 import { operationId } from "./folder-star-actions";
 
 export type ContextOperationIdFactory = (prefix: string) => string;

@@ -7,7 +7,7 @@ import {
   useRef,
 } from 'react';
 import type { SessionAgentOption } from './optimisticSession';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import {
   resolveSelectedAgentName,
   resolveSelectedFolderName,

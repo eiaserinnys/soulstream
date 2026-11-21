@@ -2,6 +2,7 @@ import {
   DEFAULT_SEARCH_CATEGORIES,
   buildSearchPreview,
   eventTypesForSearchCategories,
+  type SearchMatchSource,
 } from "./search_core.js";
 
 export const DEFAULT_READABLE_SEARCH_EVENT_TYPES =
@@ -28,12 +29,6 @@ interface SearchMatch {
   score: number;
   match_source: SearchMatchSource;
 }
-
-export type SearchMatchSource =
-  | "message"
-  | "turn_summary"
-  | "highlight"
-  | "story";
 
 export interface SearchSessionEventsParams {
   query: string;

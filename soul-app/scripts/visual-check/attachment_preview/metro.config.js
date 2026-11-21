@@ -1,21 +1,13 @@
 const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
 const { resolveChatUiSourceRequest } = require('../../../scripts/chat-ui-source-resolution.cjs');
+const sharedSourceFolders = require('../../../scripts/shared-source-folders.cjs');
 
-// Same replacements as the component-review shell (scripts/review-metro-config.cjs),
-// rebased because this project sits three levels below soul-app.
 const appRoot = path.resolve(__dirname, '../../..');
-const repoRoot = path.resolve(appRoot, '..');
 const reviewFixtures = path.join(appRoot, 'src/component-review');
 
 const config = getDefaultConfig(__dirname);
-config.watchFolders = [
-  appRoot,
-  path.join(repoRoot, 'packages/soul-ui/src/cards'),
-  path.join(repoRoot, 'packages/soul-ui/src/lib'),
-  path.join(repoRoot, 'packages/wire-schema/src'),
-  path.join(repoRoot, 'packages/chat-ui'),
-];
+config.watchFolders = [appRoot, ...sharedSourceFolders];
 config.resolver.nodeModulesPaths = [path.join(appRoot, 'node_modules')];
 const client = path.join(appRoot, 'src/api/client.ts');
 const pickers = path.join(appRoot, 'src/hooks/attachmentPickers.ts');

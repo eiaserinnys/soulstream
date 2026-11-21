@@ -8,7 +8,6 @@ import { useId, useCallback, useMemo, useRef, useState, type RefObject } from "r
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  reasoningEffortLabel,
   Dialog,
   DialogFooter,
   DialogHeader,
@@ -18,10 +17,11 @@ import {
   useFileUpload,
   useDashboardStore,
   type AgentInfo,
-  type ModelPresetAvailability,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
+import { reasoningEffortLabel } from "@seosoyoung/soul-ui/lib/reasoning-effort";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { createDashboardSession } from "../lib/session-create";
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";

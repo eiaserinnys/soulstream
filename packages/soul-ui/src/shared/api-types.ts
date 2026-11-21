@@ -8,61 +8,8 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { SessionSummary } from "./session-types";
-import type { ReasoningEffort } from "@soulstream/model-catalog";
 
-/**
- * Read vocabulary. `minimal` only exists for rows written before the model
- * catalog became the source of truth; no current model advertises it.
- * Selectable values always come from a preset's `supported_efforts`.
- */
 export type { ReasoningEffort } from "@soulstream/model-catalog";
-
-/**
- * Display labels only. Which efforts are *offered* is decided by the selected
- * model preset's advertised `supported_efforts` — never by a client-side list.
- */
-export const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "X High",
-  max: "Max",
-  ultra: "Ultra",
-};
-
-export function reasoningEffortLabel(value: string): string {
-  return REASONING_EFFORT_LABELS[value] ?? value;
-}
-
-export interface WeeklyHeadroom {
-  status: "ok" | "stale" | "unavailable";
-  headroom: number | null;
-  remaining_percent: number | null;
-  window_remaining_percent: number | null;
-  resets_at: string | null;
-  observed_at: string | null;
-  quota_label: string | null;
-}
-
-export interface ModelPresetAvailability {
-  id: string;
-  label: string;
-  backend: string;
-  available: boolean;
-  reason: string | null;
-  reason_label: string | null;
-  resets_at: string | null;
-  usage_warning: boolean;
-  /** Selectable efforts advertised by the node. Absent = no effort control. */
-  supported_efforts?: readonly string[];
-  /** Effort applied when the request omits one. Absent = backend default. */
-  default_effort?: string;
-  /** Server-computed remaining weekly allowance for this provider. */
-  weekly_headroom?: WeeklyHeadroom | null;
-}
-
-// === JSONL Record ===
 
 /** EventStore JSONL 레코드 형식 (파일의 한 줄) */
 export interface EventRecord {

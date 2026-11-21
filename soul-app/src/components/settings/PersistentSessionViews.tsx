@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Text, View } from 'react-native';
 
 import {
@@ -7,7 +7,7 @@ import {
   type PersistentSessionModelWrite,
   type PersistentSessionResource,
 } from '../../api/client';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import type { PersistentSessionSettingsPatch, PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import { useSessionStore } from '../../store/sessionStore';

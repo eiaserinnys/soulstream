@@ -6,10 +6,9 @@ import {
   isEffortSupported,
   reasoningEffortForSubmit,
   type EffortPreset,
-} from "../utils/reasoningEffort";
+} from "@seosoyoung/soul-ui/lib/reasoning-effort";
 
 export interface ReasoningEffortSelection {
-  /** Advertised choices for the current preset. Empty means "no effort control". */
   options: readonly string[];
   /** Value to render: the manual pick, else the preset default, else undefined. */
   effective: string | undefined;

@@ -13,14 +13,12 @@ import type {
 import type { CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
 import type {
   LastMessage,
-  ReviewState,
   SessionStatus,
   SessionSummary,
   PersistentReportEntry,
 } from "./session-types";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 import type { SessionFeedDelta } from "../../../../orch-server-ts/src/session/session_feed_contract";
-
-// === Session Stream SSE Events ===
 
 /**
  * 세션 스트림 SSE 이벤트 - /sessions/stream에서 전송

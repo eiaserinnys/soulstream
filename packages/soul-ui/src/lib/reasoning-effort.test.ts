@@ -6,8 +6,7 @@ import {
   isEffortSupported,
   presetSupportsEffort,
   reasoningEffortForSubmit,
-  selectedAgentBackend,
-} from "./reasoningEffort";
+} from "./reasoning-effort";
 
 const claudeOpus = {
   supported_efforts: ["low", "medium", "high", "xhigh", "max"],
@@ -17,13 +16,10 @@ const codexAstra = {
   supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
   default_effort: "medium",
 };
-/** A preset whose model has no effort control (e.g. Kimi, haiku). */
 const noEffort = {};
 
 describe("reasoning effort UI helper", () => {
   it("offers exactly what the preset advertises, regardless of backend", () => {
-    // The old gate was hardcoded to `backend === "codex"`, which hid the control
-    // for every Claude preset.
     expect(presetSupportsEffort(claudeOpus)).toBe(true);
     expect(presetSupportsEffort(codexAstra)).toBe(true);
     expect(effortOptionsForPreset(claudeOpus)).toEqual([
@@ -60,8 +56,6 @@ describe("reasoning effort UI helper", () => {
   });
 
   it("omits rather than downgrades an unsupported carry-over value", () => {
-    // Switching from astra (ultra) to a preset without ultra must not silently
-    // become xhigh — it must fall back to the preset default server-side.
     expect(reasoningEffortForSubmit(claudeOpus, "ultra")).toBeUndefined();
     expect(isEffortSupported(claudeOpus, "ultra")).toBe(false);
     expect(isEffortSupported(codexAstra, "ultra")).toBe(true);
@@ -69,15 +63,5 @@ describe("reasoning effort UI helper", () => {
 
   it("keeps a stale legacy value visible as unsupported", () => {
     expect(isEffortSupported(claudeOpus, "minimal")).toBe(false);
-  });
-
-  it("finds the selected agent backend and returns null when absent", () => {
-    const agents = [
-      { id: "a", backend: "claude" },
-      { id: "b", backend: "codex" },
-    ];
-    expect(selectedAgentBackend(agents, "b")).toBe("codex");
-    expect(selectedAgentBackend(agents, "zzz")).toBeNull();
-    expect(selectedAgentBackend(agents, "")).toBeNull();
   });
 });

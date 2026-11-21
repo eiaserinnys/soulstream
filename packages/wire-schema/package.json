@@ -34,7 +34,8 @@
     "./resume-after-limit": "./src/resume_after_limit.ts",
     "./model-preset-fallbacks": "./src/model_preset_fallbacks.ts",
     "./session-statistics": "./src/session_statistics.ts",
-    "./node-resources": "./src/node_resources.ts"
+    "./node-resources": "./src/node_resources.ts",
+    "./session-review": "./src/session_review.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

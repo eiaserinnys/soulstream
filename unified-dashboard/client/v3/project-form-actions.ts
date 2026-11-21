@@ -1,4 +1,5 @@
-import type { BlockDto, PageApiClient, PageStructureOperation } from "@seosoyoung/soul-ui/page";
+import type { BlockDto, PageApiClient } from "@seosoyoung/soul-ui/page";
+import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 import { decodeStateVector, projectAtomProperties } from "./project-context-actions";
 import type { ProjectFormValue } from "./project-form-model";
 import { parseProjectPageDetails, type ProjectPageDetails } from "./project-page-details";

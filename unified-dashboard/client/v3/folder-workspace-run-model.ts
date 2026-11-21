@@ -2,8 +2,8 @@ import type { SessionSummary } from "@seosoyoung/soul-ui";
 import type {
   BlockDto,
   PageDto,
-  PageStructureOperation,
 } from "@seosoyoung/soul-ui/page";
+import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
 import {
   markdownToPageBlocks,

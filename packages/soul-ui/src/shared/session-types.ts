@@ -8,6 +8,7 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { SessionStatus } from "@soulstream/wire-schema";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 export type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 
 export type { SessionStatus } from "@soulstream/wire-schema";
@@ -21,9 +22,6 @@ import type {
 
 export type { PendingAttention, SessionNotice } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
-export type ReviewState = "not_required" | "needs_review" | "acknowledged";
-
-/** LLM 토큰 사용량 */
 export interface LlmUsage {
   inputTokens: number;
   outputTokens: number;

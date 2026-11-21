@@ -8,7 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { useReasoningEffortSelection } from "./useReasoningEffortSelection";
-import type { EffortPreset } from "../utils/reasoningEffort";
+import type { EffortPreset } from "@seosoyoung/soul-ui/lib/reasoning-effort";
 
 const OPUS: EffortPreset = {
   supported_efforts: ["low", "medium", "high", "xhigh", "max"],

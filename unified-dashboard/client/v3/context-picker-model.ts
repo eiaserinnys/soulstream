@@ -1,4 +1,4 @@
-import type { PageStructureOperation } from "@seosoyoung/soul-ui/page";
+import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
 export type ContextPickerSelection =
   | { key: string; kind: "page"; pageId: string; title: string }

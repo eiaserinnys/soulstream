@@ -161,3 +161,9 @@ function isHighSurrogate(code: number): boolean {
 function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
+
+export type SearchMatchSource =
+  | "message"
+  | "turn_summary"
+  | "highlight"
+  | "story";

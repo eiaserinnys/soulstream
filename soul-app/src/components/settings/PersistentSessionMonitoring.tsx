@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { HistoricalMessage } from '../../api/historyTypes';
 import type { PersistentSessionResource } from '../../api/persistentSessionEndpoints';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { pairTurnUsage } from '../../../../packages/soul-ui/src/lib/persistent-turn-usage';
 import { formatTurnUsageCaptionTitle } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import { useTokens } from '../../theme';
