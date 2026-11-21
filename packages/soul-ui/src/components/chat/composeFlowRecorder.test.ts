@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createComposeFlowRecorder } from "./composeFlowRecorder";
-import type { UiEventDraft, UiEventType } from "../../lib/ui-events";
+import type { UiEventType } from "@soulstream/wire-schema/ui-events";
+import type { UiEventDraft } from "../../lib/ui-events";
 
 type Recorded = { type: UiEventType; draft: UiEventDraft | undefined };
 

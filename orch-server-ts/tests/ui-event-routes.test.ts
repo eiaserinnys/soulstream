@@ -1,7 +1,7 @@
+import { UI_EVENT_SCHEMA_VERSION } from "@soulstream/wire-schema/ui-events";
 import { describe, expect, it } from "vitest";
 
 import {
-  UI_EVENT_SCHEMA_VERSION,
   createApp,
   parseOrchServerConfig,
   type StoredUiEvent,

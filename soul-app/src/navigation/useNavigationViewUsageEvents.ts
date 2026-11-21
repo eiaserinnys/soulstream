@@ -1,7 +1,7 @@
+import type { UiEventEntry } from '../../../packages/wire-schema/src/ui_events';
 import { useCallback, useRef } from 'react';
 import {
   recordUiUsageEvent,
-  type UiEventEntry,
   type UiEventTarget,
   type UiUsageEventInput,
 } from '../lib/ui-usage-events';

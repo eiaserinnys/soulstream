@@ -36,7 +36,8 @@
     "./session-statistics": "./src/session_statistics.ts",
     "./node-resources": "./src/node_resources.ts",
     "./session-review": "./src/session_review.ts",
-    "./session-feed-contract": "./src/session_feed_contract.ts"
+    "./session-feed-contract": "./src/session_feed_contract.ts",
+    "./ui-events": "./src/ui_events.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

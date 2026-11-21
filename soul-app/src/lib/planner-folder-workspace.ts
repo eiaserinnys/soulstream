@@ -1,3 +1,4 @@
+import type { UiEventEntry } from '../../../packages/wire-schema/src/ui_events';
 import { createApiClient, type ApiClient } from '../api/client';
 import type {
   PlannerSessionSummary,
@@ -31,7 +32,6 @@ import {
 import {
   createUiUsageFlowId,
   recordUiUsageEvent,
-  type UiEventEntry,
   type UiEventTarget,
 } from './ui-usage-events';
 

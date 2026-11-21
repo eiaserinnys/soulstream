@@ -1,12 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { UiEventEntry, UiEventType } from "@soulstream/wire-schema/ui-events";
 
 import {
   NOOP_UI_EVENT_COLLECTOR,
   type UiEventCollector,
   type UiEventDraft,
-  type UiEventEntry,
-  type UiEventType,
 } from "./collector";
 import { startBrowserUiEventCollector } from "./browser-collector";
 

@@ -1,17 +1,19 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
+  UI_EVENT_SCHEMA_VERSION,
+  type UiEventEntry,
+  type UiEventTargetKind,
+  type UiEventType,
+} from "@soulstream/wire-schema/ui-events";
+import {
   UI_EVENT_CLIENT_KINDS,
   UI_EVENT_MAX_BATCH,
-  UI_EVENT_SCHEMA_VERSION,
   isUiEventTargetKind,
   validateUiEvent,
   type NormalizedUiEvent,
   type UiEventClientKind,
-  type UiEventEntry,
   type UiEventRejection,
-  type UiEventTargetKind,
-  type UiEventType,
 } from "./ui_event_contract.js";
 import type { UiEventCollectionConfig } from "./ui_event_settings.js";
 

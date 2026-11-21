@@ -1,9 +1,6 @@
-/**
- * 브라우저 어댑터. window·localStorage·fetch·타이머와의 결합은 전부 여기에만 둔다.
- */
+import { UI_EVENT_SCHEMA_VERSION } from "@soulstream/wire-schema/ui-events";
 import {
   UI_EVENT_CLIENT_CONFIG_OFF,
-  UI_EVENT_SCHEMA_VERSION,
   createUiEventCollector,
   type QueuedUiEvent,
   type UiEventClientConfig,

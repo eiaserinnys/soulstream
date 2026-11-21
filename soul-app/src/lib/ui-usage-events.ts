@@ -3,9 +3,8 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { createApiClient, type ApiClient } from '../api/client';
 import { ApiHttpError } from '../api/clientCore';
+import { UI_EVENT_SCHEMA_VERSION, type UiEventEntry } from '../../../packages/wire-schema/src/ui_events';
 import {
-  UI_EVENT_SCHEMA_VERSION,
-  type UiEventEntry,
   type UiEventTarget,
   type UiEventsBatch,
   type UiEventsConfig,
@@ -13,8 +12,7 @@ import {
   type UiEventWire,
 } from '../api/uiEventsEndpoints';
 import { isAuthScopeCurrent, type AuthScopeSnapshot } from './auth-scope';
-export { UI_EVENT_SCHEMA_VERSION } from '../api/uiEventsEndpoints';
-export type { UiEventEntry, UiEventTarget } from '../api/uiEventsEndpoints';
+export type { UiEventTarget } from '../api/uiEventsEndpoints';
 const INSTALL_ID_KEY = 'soul-app.ui-events.install-id.v1';
 const PENDING_QUEUE_KEY = 'soul-app.ui-events.pending.v1';
 const DEFAULT_CONFIG = {

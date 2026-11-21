@@ -6,8 +6,8 @@ import type {
   UiEventRepository,
   UiEventRow,
 } from "../ui-events/ui_event_routes.js";
-import type { UiEventClientKind, UiEventEntry, UiEventTargetKind, UiEventType }
-  from "../ui-events/ui_event_contract.js";
+import type { UiEventEntry, UiEventTargetKind, UiEventType } from "@soulstream/wire-schema/ui-events";
+import type { UiEventClientKind } from "../ui-events/ui_event_contract.js";
 import { readUiEventCollectionConfig } from "../ui-events/ui_event_settings.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 

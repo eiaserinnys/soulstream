@@ -1,10 +1,10 @@
+import { UI_EVENT_TYPES } from "@soulstream/wire-schema/ui-events";
 import { describe, expect, it } from "vitest";
 
 import {
   UI_EVENT_ATTRS,
   UI_EVENT_FLOW_REQUIRED,
   UI_EVENT_QUERY_TEXT_MAX,
-  UI_EVENT_TYPES,
   validateUiEvent,
 } from "../src/index.js";
 

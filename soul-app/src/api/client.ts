@@ -58,9 +58,7 @@ export type {
 } from './searchEndpoints';
 export type { FeedPage } from './feedPage';
 export type {
-  UiEventEntry,
   UiEventTarget,
-  UiEventTargetKind,
   UiEventsBatch,
   UiEventsConfig,
   UiEventsPostResult,

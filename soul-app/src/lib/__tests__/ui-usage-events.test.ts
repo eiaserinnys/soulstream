@@ -1,6 +1,6 @@
+import { UI_EVENT_SCHEMA_VERSION } from '../../../../packages/wire-schema/src/ui_events';
 import { ApiHttpError } from '../../api/clientCore';
 import {
-  UI_EVENT_SCHEMA_VERSION,
   UiUsageEvents,
 } from '../ui-usage-events';
 

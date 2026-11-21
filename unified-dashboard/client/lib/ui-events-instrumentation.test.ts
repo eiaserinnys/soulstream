@@ -7,7 +7,8 @@ import {
   subscribeNavigationUiEvents,
   type StoreSubscribable,
 } from "./ui-events-instrumentation";
-import type { UiEventDraft, UiEventType } from "@seosoyoung/soul-ui";
+import type { UiEventDraft } from "@seosoyoung/soul-ui";
+import type { UiEventType } from "../../../packages/wire-schema/src/ui_events";
 
 type State = Record<string, unknown>;
 
