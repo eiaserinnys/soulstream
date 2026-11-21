@@ -19,6 +19,9 @@ on:
       - 'scripts/check-ui-css.test.mjs'
       - 'scripts/ui-css-check.config.json'
       - 'scripts/ui-css-baseline.json'
+      - 'scripts/check-source-guards.mjs'
+      - 'scripts/check-source-guards.test.mjs'
+      - 'scripts/source-guards.config.json'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -41,6 +44,9 @@ on:
       - 'scripts/check-ui-css.test.mjs'
       - 'scripts/ui-css-check.config.json'
       - 'scripts/ui-css-baseline.json'
+      - 'scripts/check-source-guards.mjs'
+      - 'scripts/check-source-guards.test.mjs'
+      - 'scripts/source-guards.config.json'
       - 'deploy/haniel/build-core.sh'
       - 'deploy/haniel/pack_portable_node_release.sh'
       - 'deploy/macos/check-macos-node.sh'
@@ -155,7 +161,7 @@ jobs:
           elif [[ "${{ matrix.package }}" == "packages/search-contract" ]]; then
             corepack pnpm --dir packages/search-contract test
           elif [[ "${{ matrix.package }}" == "scripts" ]]; then
-            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs
+            node --test scripts/tests/verify_bundle_load.test.mjs scripts/verify-workspace-bundle.test.mjs scripts/check-ui-css.test.mjs scripts/check-source-guards.test.mjs
           elif [[ "${{ matrix.kind }}" == "python" ]]; then
             python -m pytest deploy/haniel/test_build_core_darwin.py -q --timeout=60
           elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
@@ -204,6 +210,9 @@ jobs:
 
       - name: Check UI CSS baseline
         run: node scripts/check-ui-css.mjs
+
+      - name: Check source guards
+        run: node scripts/check-source-guards.mjs
 
       - name: Build orch-server-ts bundle (includes verify:bundle)
         run: corepack pnpm --dir orch-server-ts build
