@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { createApiClient } from '../api/client';
@@ -15,13 +15,8 @@ import type { SettingsCategory } from '../components/settings/settingsCategories
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
 import { resolveBackgroundImageSource } from '../lib/wallpaper-source';
 import { useAuthStore } from '../store/authStore';
-import {
-  useSettingsStore,
-  type Appearance,
-  type ServerType,
-  type WallpaperMode,
-  type WallpaperSettings,
-} from '../store/settingsStore';
+import { useSettingsStore, type ServerType } from '../store/settingsStore';
+import type { WallpaperMode } from '../../../packages/soul-ui/src/lib/wallpaper-settings';
 import { useTokens } from '../theme';
 import { useSettingsWorkspace, useSettingsSaveScope } from '../components/settings/SettingsWorkspaceContext';
 import { makeSettingsStyles } from './SettingsScreen.styles';
@@ -192,7 +187,7 @@ export function SettingsContent({
       if (revision !== preferencesRevision.current || identity.current.serverUrl !== scope.serverUrl || identity.current.jwt !== scope.jwt) return;
       const saved = await api.putUserPreferences({
         appearance,
-        wallpaper: uploaded.wallpaper,
+        wallpaper: uploaded.preferences.wallpaper,
       });
       if (revision !== preferencesRevision.current || identity.current.serverUrl !== scope.serverUrl || identity.current.jwt !== scope.jwt) return;
       applyUserPreferences(saved.preferences);

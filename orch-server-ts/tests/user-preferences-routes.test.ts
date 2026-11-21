@@ -113,9 +113,6 @@ describe("user preferences route harness", () => {
           tint: 0.42,
         },
       },
-      appearance: "system",
-      chatFontSize: 14,
-      wallpaper: { mode: "bokeh" },
       hasBackground: false,
       backgroundUrl: null,
       updatedAt: null,
@@ -148,13 +145,15 @@ describe("user preferences route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       email: "user@example.com",
-      appearance: "dark",
-      chatFontSize: 18,
+      preferences: {
+        appearance: "dark",
+        chatFontSize: 18,
+      },
       hasBackground: true,
       backgroundUrl: "/api/user/background?v=1783566306",
       updatedAt: "2026-07-09T03:05:06+00:00",
     });
-    expect(response.json().wallpaper).toEqual({
+    expect(response.json().preferences.wallpaper).toEqual({
       mode: "photo",
       customImage: "/api/user/background?v=1783566306",
     });
@@ -210,8 +209,10 @@ describe("user preferences route harness", () => {
       ],
     ]);
     expect(response.json()).toMatchObject({
-      appearance: "dark",
-      wallpaper: { mode: "metal" },
+      preferences: {
+        appearance: "dark",
+        wallpaper: { mode: "metal" },
+      },
       hasBackground: false,
     });
 
@@ -274,10 +275,12 @@ describe("user preferences route harness", () => {
       ],
     ]);
     expect(response.json()).toMatchObject({
-      appearance: "light",
-      wallpaper: {
-        mode: "photo",
-        customImage: "/api/user/background?v=1",
+      preferences: {
+        appearance: "light",
+        wallpaper: {
+          mode: "photo",
+          customImage: "/api/user/background?v=1",
+        },
       },
       hasBackground: false,
     });
@@ -333,8 +336,10 @@ describe("user preferences route harness", () => {
       ],
     ]);
     expect(response.json()).toMatchObject({
-      appearance: "dark",
-      wallpaper: { mode: "plain" },
+      preferences: {
+        appearance: "dark",
+        wallpaper: { mode: "plain" },
+      },
     });
 
     await app.close();

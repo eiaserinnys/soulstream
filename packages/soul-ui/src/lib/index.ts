@@ -129,13 +129,12 @@ export {
   deleteUserBackground,
   fetchUserPreferences,
   normalizeUserPreferences,
-  normalizeUserPreferencesResponse,
   readCachedUserPreferences,
   saveUserPreferences,
   uploadUserBackground,
   writeCachedUserPreferences,
 } from "./user-preferences";
-export type { UserPreferencesResponse, UserPreferencesSnapshot } from "./user-preferences";
+export type { UserPreferencesSnapshot } from "./user-preferences";
 export {
   CHAT_FONT_SIZE_STEPS,
   DEFAULT_CHAT_FONT_SIZE,

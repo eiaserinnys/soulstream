@@ -1,23 +1,18 @@
 import type { ApiRequestContext } from './clientCore';
 import { appendNativeUploadFile, type NativeUploadFile } from './nativeUpload';
 import type { WallpaperMode, WallpaperSettings } from '../../../packages/soul-ui/src/lib/wallpaper-settings';
-
-export type Appearance = 'system' | 'light' | 'dark';
+import {
+  normalizeAppearance,
+  normalizeUserPreferencesResponse,
+  type Appearance,
+  type UserPreferencesResponse,
+} from '../../../packages/soul-ui/src/lib/user-preferences-envelope';
 
 export interface UserPreferencesSnapshot {
   appearance: Appearance;
   wallpaper: WallpaperSettings;
 }
 
-export interface UserPreferencesResponse extends UserPreferencesSnapshot {
-  email: string;
-  preferences: UserPreferencesSnapshot;
-  hasBackground: boolean;
-  backgroundUrl: string | null;
-  updatedAt: string | null;
-}
-
-const APPEARANCES = new Set<Appearance>(['system', 'light', 'dark']);
 const WALLPAPER_MODES = new Set<WallpaperMode>([
   'bokeh',
   'metal',
@@ -36,15 +31,15 @@ export function createPreferencesEndpoints({
   readJson,
 }: ApiRequestContext) {
   return {
-    getUserPreferences: (): Promise<UserPreferencesResponse> =>
+    getUserPreferences: (): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> =>
       authFetch(`${base}/api/user/preferences`)
         .then((r) => readJson<unknown>(r, 'getUserPreferences'))
-        .then(normalizeUserPreferencesResponse),
+        .then((value) => normalizeUserPreferencesResponse(value, normalizeUserPreferences)),
 
     putUserPreferences: (
       preferences: UserPreferencesSnapshot,
       options: { clearBackground?: boolean } = {},
-    ): Promise<UserPreferencesResponse> =>
+    ): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> =>
       authFetch(`${base}/api/user/preferences`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -54,9 +49,9 @@ export function createPreferencesEndpoints({
         }),
       })
         .then((r) => readJson<unknown>(r, 'putUserPreferences'))
-        .then(normalizeUserPreferencesResponse),
+        .then((value) => normalizeUserPreferencesResponse(value, normalizeUserPreferences)),
 
-    uploadUserBackground: (file: NativeUploadFile): Promise<UserPreferencesResponse> => {
+    uploadUserBackground: (file: NativeUploadFile): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> => {
       const formData = new FormData();
       appendNativeUploadFile(formData, 'file', file);
       return authFetch(`${base}/api/user/background`, {
@@ -64,13 +59,13 @@ export function createPreferencesEndpoints({
         body: formData,
       })
         .then((r) => readJson<unknown>(r, 'uploadUserBackground'))
-        .then(normalizeUserPreferencesResponse);
+        .then((value) => normalizeUserPreferencesResponse(value, normalizeUserPreferences));
     },
 
-    deleteUserBackground: (): Promise<UserPreferencesResponse> =>
+    deleteUserBackground: (): Promise<UserPreferencesResponse<UserPreferencesSnapshot>> =>
       authFetch(`${base}/api/user/background`, { method: 'DELETE' })
         .then((r) => readJson<unknown>(r, 'deleteUserBackground'))
-        .then(normalizeUserPreferencesResponse),
+        .then((value) => normalizeUserPreferencesResponse(value, normalizeUserPreferences)),
   };
 }
 
@@ -78,28 +73,8 @@ export function normalizeUserPreferences(value: unknown): UserPreferencesSnapsho
   if (!value || typeof value !== 'object') return DEFAULT_USER_PREFERENCES;
   const source = value as Partial<UserPreferencesSnapshot>;
   return {
-    appearance: APPEARANCES.has(source.appearance as Appearance)
-      ? (source.appearance as Appearance)
-      : 'system',
+    appearance: normalizeAppearance(source.appearance),
     wallpaper: normalizeWallpaperSettings(source.wallpaper),
-  };
-}
-
-export function normalizeUserPreferencesResponse(value: unknown): UserPreferencesResponse {
-  const source =
-    value && typeof value === 'object'
-      ? (value as Partial<UserPreferencesResponse>)
-      : {};
-  const preferences = normalizeUserPreferences(source.preferences ?? source);
-  return {
-    email: typeof source.email === 'string' ? source.email : '',
-    preferences,
-    appearance: preferences.appearance,
-    wallpaper: preferences.wallpaper,
-    hasBackground: Boolean(source.hasBackground),
-    backgroundUrl:
-      typeof source.backgroundUrl === 'string' ? source.backgroundUrl : null,
-    updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : null,
   };
 }
 
