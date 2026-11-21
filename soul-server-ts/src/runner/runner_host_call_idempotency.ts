@@ -3,13 +3,6 @@ import type { RunnerHostCall } from "./runner_process_dispatcher.js";
 type HostService = RunnerHostCall["service"];
 
 const OPERATION_MUTABILITY = {
-  session_store: {
-    append: true,
-    load: false,
-    listSessions: false,
-    delete: true,
-    listSubkeys: false,
-  },
   claude_accounts: { select: true, reject: true, reportAuthFailure: true, release: true },
   snapshot: {
     persistRunState: true,

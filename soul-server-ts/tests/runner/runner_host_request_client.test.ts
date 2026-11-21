@@ -20,7 +20,7 @@ describe("RunnerHostRequestClient", () => {
       async () => {},
     );
 
-    await expect(client.call("session_store", "load", [{ sessionId: "s" }], {
+    await expect(client.call("snapshot", "persistRunState", [{}], {
       timeoutMs: 50,
       deadlineMs: 50,
       retryDelayMs: 0,
@@ -62,7 +62,7 @@ describe("RunnerHostRequestClient", () => {
         () => ({ request, send } as never),
       );
 
-      const result = client.call("session_store", "load", [{ sessionId: "s" }], {
+      const result = client.call("snapshot", "persistRunState", [{}], {
         timeoutMs: 10,
         retryDelayMs: 5,
       });
@@ -90,7 +90,7 @@ describe("RunnerHostRequestClient", () => {
       }));
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    const request = client.call("session_store", "append", [{}, []], {
+    const request = client.call("snapshot", "persistSessionItems", [{}], {
       timeoutMs: 50,
       deadlineMs: 10,
       retryDelayMs: 1,
@@ -104,7 +104,7 @@ describe("RunnerHostRequestClient", () => {
     const delay = vi.fn(async () => {});
     const client = new RunnerHostRequestClient(() => undefined, delay);
 
-    const request = client.call("session_store", "append", [{}, []], {
+    const request = client.call("snapshot", "persistSessionItems", [{}], {
       timeoutMs: 10,
       attempts: 3,
       retryDelayMs: 1,
@@ -136,7 +136,7 @@ describe("RunnerHostRequestClient", () => {
       }));
     const client = new RunnerHostRequestClient(() => ({ request } as never));
 
-    const requestResult = client.call("session_store", "load", [{}], {
+    const requestResult = client.call("snapshot", "persistRunState", [{}], {
       timeoutMs: 10,
       attempts: 61,
       retryDelayMs: 1,

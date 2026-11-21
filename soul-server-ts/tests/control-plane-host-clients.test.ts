@@ -29,7 +29,7 @@ describe("worker control-plane host clients", () => {
       return new Response("too large", { status: 413 });
     }));
     const transport = new PersistenceHostTransport({ orch, logger: { info: vi.fn(), warn } as unknown as Logger });
-    await expect(transport.request("claude-runtime", "append_transcript_entries_idempotent", [{ sessionId: "session-1", entries: ["한글"] }])).rejects.toThrow();
+    await expect(transport.request("session-data", "rename_session", [{ sessionId: "session-1", displayName: "한글" }])).rejects.toThrow();
     expect(warn).toHaveBeenCalledWith(expect.objectContaining({ status: 413, sessionId: "session-1", requestBodyBytes: Buffer.byteLength(sentBody, "utf8") }), "persistence host request failed");
   });
   it("records all four persistence host round-trip timestamps", async () => {

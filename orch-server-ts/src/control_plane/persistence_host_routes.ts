@@ -26,7 +26,6 @@ export interface PersistenceHostRouteOptions {
 type RepositoryKey = keyof PersistenceHostRepositories;
 type OperationTarget = readonly [RepositoryKey, string | null, string];
 const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "callerInfo"]);
-const OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS = new Set([...OPAQUE_ARGUMENT_KEYS, "entries"]);
 const REQUEST_ID_HEADER = "x-soulstream-persistence-request-id";
 const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
@@ -98,13 +97,6 @@ const claudeRuntimeOperations = {
   active_background_generations_for_node: ["claudeBackgroundTasks", null, "activeGenerationsForNode"],
   active_background_generations_for_execution: ["claudeBackgroundTasks", null, "activeGenerationsForExecution"],
   resolve_background_generation: ["claudeBackgroundTasks", null, "resolveGeneration"],
-  append_transcript_entries: ["claudeTranscripts", null, "appendClaudeTranscriptEntries"],
-  append_transcript_entries_idempotent: ["claudeTranscripts", null, "appendClaudeTranscriptEntriesIdempotent"],
-  load_transcript_entries: ["claudeTranscripts", null, "loadClaudeTranscriptEntries"],
-  list_transcript_sessions: ["claudeTranscripts", null, "listClaudeTranscriptSessions"],
-  list_transcript_subkeys: ["claudeTranscripts", null, "listClaudeTranscriptSubkeys"],
-  delete_transcript: ["claudeTranscripts", null, "deleteClaudeTranscript"],
-  delete_transcript_idempotent: ["claudeTranscripts", null, "deleteClaudeTranscriptIdempotent"],
 } as const satisfies Record<string, OperationTarget>;
 
 const pageBindingOperations = {
@@ -360,13 +352,8 @@ function readArgs(value: unknown, operation: string): unknown[] | null {
   const args = (value as Record<string, unknown>).args;
   if (!Array.isArray(args)) return null;
   return args.map((child, index) => {
-    // The transcript store is an opaque SDK wire format. Keep its snake-case
-    // fields intact so resume materialization receives the same entries the worker wrote.
-    if ((operation === "append_transcript_entries" || operation === "put_report_entry") && index === 1) return child;
-    const opaqueKeys = operation === "append_transcript_entries_idempotent"
-      ? OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS
-      : OPAQUE_ARGUMENT_KEYS;
-    return camelCase(child, undefined, opaqueKeys);
+    if (operation === "put_report_entry" && index === 1) return child;
+    return camelCase(child, undefined, OPAQUE_ARGUMENT_KEYS);
   });
 }
 

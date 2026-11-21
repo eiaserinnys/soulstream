@@ -541,8 +541,8 @@ describe("RunnerSqliteEventOutbox", () => {
 
     await outbox.recordHostCallApplied({
       correlationId: "host-call-a",
-      service: "session_store",
-      operation: "append",
+      service: "snapshot",
+      operation: "persistRunState",
       createdAt: "2026-08-11T01:00:00.000Z",
     });
     expect(await outbox.hasPendingDurableWork()).toBe(false);
