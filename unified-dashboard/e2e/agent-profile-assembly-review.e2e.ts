@@ -218,12 +218,22 @@ for (const [width, height] of [[1440, 900], [1920, 1080], [1024, 768], [768, 102
 
 test("s2 focus rings and s3 skill back label", async ({ page }) => {
   await open(page, 1440, 900); await expect(row(page, "스킬 목록")).toBeVisible();
-  const first = row(page, "스킬 목록"); await page.keyboard.press("Tab"); await first.focus();
+  await page.getByLabel("실행 노드").focus();
+  const tabOrder: string[] = [];
+  for (let index = 0; index < 22; index++) {
+    await page.keyboard.press("Tab");
+    const focused = page.locator(":focus");
+    await expect(focused).toBeVisible();
+    tabOrder.push(await focused.evaluate(element => element.getAttribute("aria-label") || (element.textContent ?? "").trim()));
+  }
+  console.log(`tab order: ${JSON.stringify(tabOrder)}`);
+  const first = row(page, "스킬 목록"); await first.focus();
   const focused = await first.evaluate(element => ({ outline: getComputedStyle(element).outlineStyle, shadow: getComputedStyle(element).boxShadow }));
   expect(focused.shadow).not.toBe("none");
   await page.getByLabel("조립 백엔드").focus();
   expect(await page.getByLabel("조립 백엔드").evaluate(element => getComputedStyle(element).boxShadow)).not.toBe("none");
   await first.click(); await page.getByLabel("소스 목록으로").click();
+  await expect(first).toBeFocused();
   expect(await first.evaluate(element => getComputedStyle(element).boxShadow)).toBe("none");
   await first.click(); await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
   const back = page.getByRole("button", { name: "소스 본문으로" });
