@@ -26,7 +26,7 @@ export function ContextContentRenderer({ content, fill = false }: ContextContent
   if (typeof content === "string") {
     return (
       <pre
-        className={`text-xs whitespace-pre-wrap break-words overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1 ${fill ? "min-h-0" : "max-h-[200px]"}`}
+        className={`text-xs whitespace-pre-wrap break-words overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1 ${fill ? "min-h-0 overscroll-contain" : "max-h-[200px]"}`}
         data-slot={fill ? "context-content-fill" : undefined}
       >
         {content}

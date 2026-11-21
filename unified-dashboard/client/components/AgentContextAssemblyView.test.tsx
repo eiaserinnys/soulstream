@@ -6,6 +6,38 @@ import { expect, it, vi } from "vitest";
 import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { assemblyBundles, assemblyContexts, assemblyPreview } from "../v3/agent-profile-assembly-fixture";
 
+it("keeps the source detail and condition focus while reassembling", async () => {
+  let resolveReload!: (response: Response) => void;
+  let count = 0;
+  const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body));
+    if (++count === 1) return Response.json(assemblyPreview(payload));
+    return await new Promise<Response>(resolve => { resolveReload = resolve; });
+  });
+  const context = assemblyContexts[0]!;
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    flushSync(() => root.render(createElement(AgentContextAssemblyView, {
+      target: { kind: "central", agentId: "agent", specs: [{ context, source: "프로필" }] },
+      nodeId: "node-a", initialBackend: "claude", presentOnNode: true, request,
+    })));
+    await vi.waitFor(() => expect(host.textContent).toContain("프로필 지침"));
+    const row = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.includes("프로필 지침"))!;
+    flushSync(() => row.click());
+    const backend = host.querySelector<HTMLSelectElement>('select[aria-label="조립 백엔드"]')!;
+    backend.focus();
+    flushSync(() => { backend.value = "codex"; backend.dispatchEvent(new Event("change", { bubbles: true })); });
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="agent-context-assembly-detail"] [data-slot="frame-loading"]')).not.toBeNull());
+    expect(host.querySelector('[data-testid="agent-context-assembly-detail"]')).not.toBeNull();
+    expect(document.activeElement).toBe(backend);
+    resolveReload(Response.json(assemblyPreview({ atom_contexts: [context], session: { backend: "codex" } })));
+    await vi.waitFor(() => expect(host.querySelector('[data-slot="context-content-fill"]')).not.toBeNull());
+  } finally {
+    flushSync(() => root.unmount()); host.remove();
+  }
+});
+
 it("retries a failed assembly and refreshes only on demand", async () => {
   let calls = 0;
   const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

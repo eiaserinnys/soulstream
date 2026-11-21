@@ -15,7 +15,12 @@ async function open(page: Page, width: number, state = "normal") {
     if (pathname === "/api/auth/config") return route.fulfill({ json: { authEnabled: true, devModeEnabled: false } });
     if (pathname === "/api/auth/status") return route.fulfill({ json: { authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } } });
     if (pathname === "/api/ui-events/config") return route.fulfill({ json: { enabled: true, flushIntervalMs: 1000, maxBatchSize: 1, maxQueueSize: 500, schemaVersion: "soulstream.ui_event.v1" } });
-    return route.fallback();
+    if (pathname === "/api/health") return route.fulfill({ json: { healthy: true, ready: true, draining: false, build_id: "dev" } });
+    if (pathname === "/api/nodes") return route.fulfill({ json: { nodes: [] } });
+    if (pathname === "/api/nodes/stream") return route.fulfill({ status: 200, contentType: "text/event-stream", body: "event: snapshot\ndata: []\n\n" });
+    if (pathname === "/api/sessions/stream") return route.fulfill({ status: 200, contentType: "text/event-stream", body: 'event: session_list\ndata: {"type":"session_list","sessions":[],"total":0}\n\n' });
+    if (pathname.endsWith("/stream") || pathname.endsWith("/events")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": empty\n\n" });
+    return route.fulfill({ status: 200, json: {} });
   });
   await page.goto(`/dialogues?sample=settings&assemblyState=${state}`);
   await expect(page.getByRole("dialog")).toBeVisible({ timeout: 30_000 });
@@ -142,7 +147,7 @@ for (const width of [1440, 360]) {
     await page.getByLabel("스킬 정의 원문").selectOption({ label: "검수 스킬" });
     await expect(page.getByTestId("agent-context-skill-original")).toContainText("가상의 스킬 정의 원문");
     await capture(page, width, "skill");
-    await page.getByLabel("스킬 목록로").click();
+    await page.getByLabel("소스 본문으로").click();
     await expect(page.getByLabel("스킬 정의 원문")).toBeFocused();
     await capture(page, width, "skill-focus");
     await page.keyboard.press("Tab"); await expect(page.locator(":focus")).toBeVisible();

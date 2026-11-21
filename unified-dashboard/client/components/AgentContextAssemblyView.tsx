@@ -1,5 +1,5 @@
 // 고른 조건으로 노드 미리보기를 불러, 주입 순서대로 소스 목록을 보이고 고른 소스의 본문을 같은 자리에서 연다.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Copy, ExternalLink, RotateCw } from "lucide-react";
 import { Badge, Button, ContextContentRenderer, DashboardIconCap, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
 
@@ -69,6 +69,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; data: PreviewResponse } | { status: "error"; message: string }>({ status: "loading" });
   const [view, setView] = useState<View>({ kind: "list" });
   const [attempt, setAttempt] = useState(0);
+  const lastData = useRef<PreviewResponse | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const returnFocus = useRef<string | null>(null);
 
@@ -93,6 +94,7 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
         });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(typeof json.detail === "string" ? json.detail : "조립하지 못했습니다.");
+        lastData.current = json as PreviewResponse;
         setState({ status: "ready", data: json as PreviewResponse });
       } catch (caught) {
         if (controller.signal.aborted) return;
@@ -103,7 +105,8 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
   }, [body, nodeId, request, attempt]);
 
   const data = state.status === "ready" ? state.data : null;
-  const rows = useMemo(() => buildRows(specs, data), [specs, data]);
+  const displayedData = data ?? lastData.current;
+  const rows = useMemo(() => buildRows(specs, displayedData), [specs, displayedData]);
 
   useEffect(() => {
     if (view.kind !== "list" || !returnFocus.current) return;
@@ -145,24 +148,21 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
     </div>
   );
 
-  if (view.kind !== "list" && data) {
-    const row = view.kind === "all" ? null : rows.find((candidate) => candidate.key === view.key) ?? null;
-    if (view.kind === "skill" && row) {
-      return <div className="flex min-h-0 flex-1 flex-col gap-3">{conditions}<SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={data.atom_base_url} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(row)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: row.key }); }} /></div>;
-    }
-    return <div className="flex min-h-0 flex-1 flex-col gap-3">{conditions}<SourceDetail
-      row={row}
-      data={data}
-      focusSkill={returnFocus.current === "skill"}
-      onBack={() => back(view.kind === "all" ? "all" : row?.key ?? null)}
-      onOpenSkill={(skill) => row && open({ kind: "skill", key: row.key, nodeId: skill.nodeId, name: skill.name })}
-      onRetry={() => { setAttempt((value) => value + 1); }}
-    /></div>;
-  }
+  const selectedRow = view.kind === "source" || view.kind === "skill" ? rows.find(row => row.key === view.key) ?? null : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-assembly">
       {conditions}
+      {view.kind !== "list" && displayedData ? (
+        view.kind === "skill" && selectedRow ? (
+          <SkillOriginal nodeId={nodeId} request={request} atomBaseUrl={displayedData.atom_base_url} skillNodeId={view.nodeId} name={view.name} parentTitle={rowTitle(selectedRow)} parentRow={selectedRow} parentState={state} onRetryParent={() => setAttempt(value => value + 1)} onBack={() => { returnFocus.current = "skill"; setView({ kind: "source", key: selectedRow.key }); }} />
+        ) : (
+          <SourceDetail row={selectedRow} data={displayedData} requestState={state} focusSkill={returnFocus.current === "skill"}
+            onBack={() => back(view.kind === "all" ? "all" : selectedRow?.key ?? null)}
+            onOpenSkill={skill => selectedRow && open({ kind: "skill", key: selectedRow.key, nodeId: skill.nodeId, name: skill.name })}
+            onRetry={() => setAttempt(value => value + 1)} />
+        )
+      ) : (<>
       {!presentOnNode && (
         <p className="text-xs text-muted-foreground">{nodeId}에는 이 프로필이 없습니다.</p>
       )}
@@ -212,10 +212,11 @@ export function AgentContextAssemblyView({ target, nodeId, initialBackend, prese
               {data?.atom_base_url && <DashboardIconCap size="small" label={`${rowTitle(row)} atom에서 열기`} onClick={() => window.open(`${data.atom_base_url}/#${row.nodeId}`, "_blank", "noopener")}><ExternalLink className="size-4" aria-hidden="true" /></DashboardIconCap>}
               </div>
             ))}
-            <p className="pt-1 text-xs text-muted-foreground">프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.</p>
           </div>
         )}
       </div>
+      <p className="pt-1 text-xs text-muted-foreground">프로필이 정하는 몫입니다. 실제 들어간 글은 세션 기록에서 봅니다.</p>
+      </>)}
     </div>
   );
 }
@@ -237,7 +238,7 @@ function AssemblyRow({ rowKey, refs, title, meta, status = null, tokens, loading
     <button
       type="button"
       ref={(element) => { if (element) refs.current.set(rowKey, element); else refs.current.delete(rowKey); }}
-      className="flex min-w-0 w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm enabled:hover:bg-muted disabled:cursor-default"
+      className="flex min-w-0 w-full items-center gap-3 rounded-floor border border-border bg-muted/10 px-3 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background enabled:hover:bg-muted disabled:cursor-default"
       data-status={status ?? undefined}
       disabled={loading || inactive}
       onClick={onClick}
@@ -265,11 +266,11 @@ function StatusBadge({ status }: { status: RowStatus }) {
 }
 
 function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atomUrl, onBack, backLabel }: {
-  title: string; meta: string | null; copyText: string | null; copyLabel?: string; atomUrl: string | null; onBack(): void; backLabel: string;
+  title: string; meta: ReactNode; copyText: string | null; copyLabel?: string; atomUrl: string | null; onBack(): void; backLabel: string;
 }) {
   const [copied, setCopied] = useState(false);
   const backRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { backRef.current?.focus(); }, [title]);
+  useEffect(() => { backRef.current?.focus(); }, []);
   return (
     <div className="flex items-center gap-2">
       <DashboardIconCap ref={backRef} size="small" label={backLabel} onClick={onBack}>
@@ -277,7 +278,7 @@ function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atom
       </DashboardIconCap>
       <div className="min-w-0 flex-1">
         <h4 className="truncate text-sm font-semibold" data-v3-selectable-content="true">{title}</h4>
-        {meta && <p className="truncate text-xs text-muted-foreground" data-v3-selectable-content="true">{meta}</p>}
+        {meta && <p className="flex min-w-0 flex-wrap gap-x-1 text-xs text-muted-foreground" data-v3-selectable-content="true">{meta}</p>}
       </div>
       {copyText !== null && (
         <DashboardIconCap size="small" label={copied ? "복사됨" : copyLabel} onClick={() => { void navigator.clipboard?.writeText(copyText).then(() => setCopied(true), () => setCopied(false)); }}>
@@ -293,8 +294,8 @@ function DetailHeader({ title, meta, copyText, copyLabel = "본문 복사", atom
   );
 }
 
-function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
-  row: Row | null; data: PreviewResponse; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
+function SourceDetail({ row, data, requestState, focusSkill, onBack, onOpenSkill, onRetry }: {
+  row: Row | null; data: PreviewResponse; requestState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; focusSkill?: boolean; onBack(): void; onOpenSkill(skill: { nodeId: string; name: string }): void; onRetry(): void;
 }) {
   const all = row === null;
   const skillSelectRef = useRef<HTMLSelectElement>(null);
@@ -302,13 +303,14 @@ function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
   const text = all ? data.assembled : row.markdown;
   const skills = all ? [] : extractSkills(row.markdown);
   const atomUrl = !all && data.atom_base_url ? `${data.atom_base_url}/#${row.nodeId}` : null;
-  const meta = all
-    ? `${formatChars(data.manifest.total_chars ?? 0)} · 예상 ${(data.manifest.total_token_estimate ?? 0).toLocaleString()} 토큰`
-    : [row.origin, contextShape(row.context), row.chars !== null ? formatChars(row.chars) : null, row.status === "ok" && row.tokens !== null ? `예상 ${row.tokens.toLocaleString()} 토큰` : null].filter(Boolean).join(" · ");
+  const origin = all ? null : [row.origin, contextShape(row.context)].filter(Boolean).join(" · ");
+  const chars = all ? data.manifest.total_chars ?? 0 : row.chars;
+  const tokens = all ? data.manifest.total_token_estimate ?? 0 : row.status === "ok" ? row.tokens : null;
+  const meta = <>{origin && <span className="max-w-full min-w-0 truncate">{origin} · </span>}{chars !== null && <span className="shrink-0 whitespace-nowrap">{formatChars(chars)}{tokens !== null ? " · " : ""}</span>}{tokens !== null && <span className="shrink-0 whitespace-nowrap">예상 {tokens.toLocaleString()} 토큰</span>}</>;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-assembly-detail">
       <DetailHeader title={all ? "전체" : rowTitle(row)} meta={meta} copyText={text ?? null} copyLabel={all ? "전체 복사" : "본문 복사"} atomUrl={atomUrl} onBack={onBack} backLabel="소스 목록으로" />
-      {skills.length > 0 && (
+      {requestState.status === "ready" && skills.length > 0 && (
         <label className="text-xs font-medium">
           스킬 정의 원문
           <select ref={skillSelectRef} aria-label="스킬 정의 원문" className={inputClassName} value="" onChange={(event) => {
@@ -320,7 +322,9 @@ function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
           </select>
         </label>
       )}
-      {text ? (
+      {requestState.status === "loading" ? <FrameLoading label="조립하는 중..." /> : requestState.status === "error" ? (
+        <FrameNotice><div className="flex flex-col items-center gap-3"><p role="alert" className="text-sm text-destructive-foreground">{requestState.message}</p><Button type="button" size="sm" variant="outline" onClick={onRetry}>다시 시도</Button></div></FrameNotice>
+      ) : text ? (
         <div className="flex min-h-0 flex-1 flex-col" data-v3-selectable-content="true">
           <ContextContentRenderer content={text} fill />
         </div>
@@ -344,8 +348,8 @@ function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
   );
 }
 
-function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parentTitle, onBack }: {
-  nodeId: string; request: typeof fetch; atomBaseUrl: string | null; skillNodeId: string; name: string; parentTitle: string; onBack(): void;
+function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parentTitle, parentRow, parentState, onRetryParent, onBack }: {
+  nodeId: string; request: typeof fetch; atomBaseUrl: string | null; skillNodeId: string; name: string; parentTitle: string; parentRow: Row; parentState: { status: "loading" } | { status: "ready" } | { status: "error"; message: string }; onRetryParent(): void; onBack(): void;
 }) {
   const [state, setState] = useState<{ status: "loading" } | { status: "ready"; markdown: string | null } | { status: "error" }>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -370,8 +374,10 @@ function SkillOriginal({ nodeId, request, atomBaseUrl, skillNodeId, name, parent
   const markdown = state.status === "ready" ? state.markdown : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-skill-original">
-      <DetailHeader title={name} meta={`${parentTitle} · 스킬 정의 원문${markdown ? ` · ${formatChars(markdown.length)}` : ""}`} copyText={markdown} atomUrl={atomBaseUrl ? `${atomBaseUrl}/#${skillNodeId}` : null} onBack={onBack} backLabel={`${parentTitle}로`} />
-      {state.status === "loading" ? <FrameLoading label="원문을 불러오는 중..." />
+      <DetailHeader title={name} meta={<><span className="max-w-full min-w-0 truncate">{parentTitle} · 스킬 정의 원문{markdown && parentRow.status !== "filtered" ? " · " : ""}</span>{markdown && parentRow.status !== "filtered" && <span className="shrink-0 whitespace-nowrap">{formatChars(markdown.length)}</span>}</>} copyText={parentRow.status === "filtered" ? null : markdown} atomUrl={atomBaseUrl ? `${atomBaseUrl}/#${skillNodeId}` : null} onBack={onBack} backLabel="소스 본문으로" />
+      {parentState.status === "loading" ? <FrameLoading label="조립하는 중..." /> : parentState.status === "error" ? <FrameNotice><div className="flex flex-col items-center gap-3"><p role="alert" className="text-sm text-destructive-foreground">{parentState.message}</p><Button type="button" size="sm" variant="outline" onClick={onRetryParent}>다시 시도</Button></div></FrameNotice>
+        : parentRow.status === "filtered" ? <FrameNotice><p className="text-sm text-muted-foreground">이 조건에서는 빠집니다. {conditionSummary(parentRow.context.applies_when)}</p></FrameNotice>
+        : state.status === "loading" ? <FrameLoading label="원문을 불러오는 중..." />
         : state.status === "error" ? (
           <FrameNotice>
             <div className="flex flex-col items-center gap-3">

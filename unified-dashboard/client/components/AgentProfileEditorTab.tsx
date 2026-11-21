@@ -252,7 +252,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   }
 
   return (
-    <div>
+    <div data-testid="agent-profile-settings" className="sm:flex sm:min-h-0 sm:flex-1 sm:flex-col">
       {/* 설정 창이 한 칸이 되는 좁은 폭(40rem 미만)에서는 프로필 목록 대신 위쪽 선택 칸으로 고른다. */}
       <div className="mb-2 grid grid-cols-2 items-end gap-2 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-0">
         {managingBundles ? <span /> : (
@@ -298,7 +298,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
       {managingBundles ? (
         <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
-    <div className="grid h-[520px] min-h-0 grid-cols-1 overflow-hidden rounded-floor border border-border sm:grid-cols-[13rem_minmax(0,1fr)]">
+    <div className="grid h-[520px] min-h-0 grid-cols-1 overflow-hidden rounded-floor border border-border sm:h-auto sm:flex-1 sm:grid-cols-[13rem_minmax(0,1fr)]">
       <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2 max-sm:hidden">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
           새 프로필
