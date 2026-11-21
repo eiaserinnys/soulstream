@@ -1,9 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const phase = process.env.IMAGE_VIEWER_PHASE ?? "after";
+// 카드 #429 보완: 단색 사각형 대신 글자와 아이콘이 있는 화면 꼴 표본(하나 500KB 안).
+const tallScreenSvg = readFileSync(path.resolve("e2e/fixtures/tall-screen.svg"), "utf8");
+const wideTimelineSvg = readFileSync(path.resolve("e2e/fixtures/wide-timeline.svg"), "utf8");
 const output = path.resolve("../.local/card429/web", phase);
 mkdirSync(output, {recursive:true});
 const headroomOutput = path.resolve("../.local/card429/web/headroom");
@@ -17,8 +20,11 @@ async function open(page: Page, viewer: string, vw:number, vh:number, w:number, 
     localStorage.setItem("ls.webglGlass","0");
     localStorage.setItem("soul-dashboard-theme",theme);
   },theme);
-  await page.route(/\/(fixture|next|third|last)\.svg/,route=>{
+  await page.route(/\/(fixture|next|third|last|tall|wide)\.svg/,route=>{
     const url=new URL(route.request().url());
+    if(url.pathname==="/tall.svg"||url.pathname==="/wide.svg") {
+      return route.fulfill({contentType:"image/svg+xml",body:url.pathname==="/tall.svg"?tallScreenSvg:wideTimelineSvg});
+    }
     const width=url.pathname==="/next.svg"?64:Number(url.searchParams.get("width"));
     const height=url.pathname==="/next.svg"?64:Number(url.searchParams.get("height"));
     return route.fulfill({contentType:"image/svg+xml",body:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="steelblue"/><text x="12" y="40" fill="white" font-size="24">${width} × ${height}</text></svg>`});
@@ -385,14 +391,14 @@ for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[240,8
 // 늘리지 않음), 문서는 읽기 폭, 긴 문서는 화면 높이 한도에서 본문 스크롤. 질문 장의 첨부
 // 링크는 새 탭이 아니라 이 보기 창으로 열린다.
 const attachmentViewports = [[2560,1392],[1440,900],[360,780]] as const;
-async function openAttachment(page:Page, kind:string, vw:number, vh:number, w=800, h=600, theme:"light"|"dark"="light") {
+async function openAttachment(page:Page, kind:string, vw:number, vh:number, w=800, h=600, theme:"light"|"dark"="light", options:{name?:string;sample?:string}={}) {
   await page.setViewportSize({width:vw,height:vh});
   await page.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});
   await page.addInitScript((nextTheme:string)=>{
     localStorage.setItem("ls.webglGlass","0");
     localStorage.setItem("soul-dashboard-theme",nextTheme);
   },theme);
-  await page.goto(`/e2e/image-viewer.fixture.html?viewer=attachment&attachment=${kind}&width=${w}&height=${h}`);
+  await page.goto(`/e2e/image-viewer.fixture.html?viewer=attachment&attachment=${kind}&width=${w}&height=${h}&theme=${theme}${options.name?`&name=${encodeURIComponent(options.name)}`:""}${options.sample?`&sample=${options.sample}`:""}`);
   const popup=page.locator('[data-slot="dialog-popup"]');
   await expect(popup).toBeVisible();
   await expect(popup).not.toHaveAttribute("data-starting-style");
@@ -880,6 +886,9 @@ async function readingMetrics(popup:Locator) {
       status:status?{rect:rect(status),center:center(status.getBoundingClientRect())}:null,
       contentCenter,
       toggle:toggle?{rect:rect(toggle),label:toggle.getAttribute("aria-label"),title:toggle.getAttribute("title")}:null,
+      close:(()=>{const node=el.querySelector<HTMLElement>('[aria-label="닫기"]');return node?rect(node):null;})(),
+      title:(()=>{const node=el.querySelector<HTMLElement>(".chat-image-viewer-title");return node?{...rect(node),scrollWidth:node.scrollWidth,clientWidth:node.clientWidth}:null;})(),
+      body:(()=>{const node=el.querySelector<HTMLElement>(".attachment-viewer-image-body");return node?rect(node):null;})(),
       figure:(()=>{const figure=el.querySelector("figure");return figure?rect(figure):null;})(),
       caption:el.querySelector("figcaption")?.textContent ?? null,
       pageScrollWidth:document.documentElement.scrollWidth,
@@ -1141,6 +1150,302 @@ test("card429 resized window keeps the reading frame and the scroll ratio",async
     const viewport=(await readingMetrics(popup)).viewport!;
     return viewport.maxY>0?viewport.scrollTop/viewport.maxY:0;
   },{timeout:3000}).toBeCloseTo(before.scrollTop/before.maxY,1);
+});
+
+/* 카드 #429 화면 검수 반려 보완(R1~R7). 항목마다 장면과 단언을 두고, 캡처 이름에 R 번호를 남긴다. */
+function centerOf(rect:{left:number;top:number;width:number;height:number}) {
+  return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+}
+async function actionStyles(popup:Locator) {
+  return popup.evaluate(el=>{
+    const read=(node:HTMLElement)=>{
+      const style=getComputedStyle(node);
+      return {background:style.backgroundColor,borderColor:style.borderTopColor,borderWidth:style.borderTopWidth};
+    };
+    const close=el.querySelector<HTMLElement>('[aria-label="닫기"]');
+    const toggle=el.querySelector<HTMLElement>(".attachment-viewer-actions button");
+    return {close:close?read(close):null,toggle:toggle?read(toggle):null};
+  });
+}
+async function openCardImage(page:Page,vw:number,vh:number,options:{theme?:"light"|"dark";sample?:string;caption?:string}={}) {
+  await page.setViewportSize({width:vw,height:vh});
+  const theme=options.theme ?? "light";
+  await page.emulateMedia({colorScheme:theme,reducedMotion:"reduce"});
+  await page.addInitScript((nextTheme:string)=>{
+    localStorage.setItem("ls.webglGlass","0");
+    localStorage.setItem("soul-dashboard-theme",nextTheme);
+  },theme);
+  await page.goto(`/e2e/image-viewer.fixture.html?viewer=card&width=1170&height=7200&caption=${options.caption ?? "one"}&theme=${theme}&sample=${options.sample ?? ""}`);
+  const popup=page.locator('[data-slot="dialog-popup"]');
+  await expect(popup).toBeVisible();
+  await expect(popup).not.toHaveAttribute("data-starting-style");
+  return popup;
+}
+async function openFailingCard(page:Page,status:number,vw:number,vh:number) {
+  await page.route("**/image-viewer-screen-fail.png*",route=>{
+    if(route.request().method()==="HEAD") return route.fulfill({status});
+    return route.fulfill({status,body:"failed"});
+  });
+  return openCardImage(page,vw,vh,{sample:"fail"});
+}
+
+test("card429 R1 arrow keys step a vertical gallery and scroll a horizontal frame",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await open(page,"chat",vw,vh,1170,7200,"",{gallery:"reading"});
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const viewport=popup.locator('[data-slot="scroll-area-viewport"]');
+  await expect(viewport).toBeFocused({timeout:3000});
+  const start=await captureReading(page,popup,`card429-R1-vertical-start-${vw}x${vh}`,vw,vh);
+  expect(start.imageSrc).toContain("/tall.svg");
+  // 세로 읽기 틀에서는 세로 키가 스크롤하고 그림은 그대로다.
+  const positions:number[]=[];
+  for(const key of ["ArrowDown","PageDown","Space","End"]) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(120);
+    const next=await readingMetrics(popup);
+    expect(next.imageSrc).toContain("/tall.svg");
+    positions.push(next.viewport!.scrollTop);
+  }
+  expect(positions[0]).toBeGreaterThan(0);
+  expect(positions[1]).toBeGreaterThan(positions[0]);
+  expect(positions[2]).toBeGreaterThanOrEqual(positions[1]);
+  expect(positions[3]).toBe((await readingMetrics(popup)).viewport!.maxY);
+  expect(positions[3]).toBeGreaterThanOrEqual(positions[2]);
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(120);
+  const up=(await readingMetrics(popup)).viewport!.scrollTop;
+  await page.keyboard.press("PageUp");
+  await page.waitForTimeout(120);
+  const pageUp=(await readingMetrics(popup)).viewport!.scrollTop;
+  expect(up).toBeLessThan(positions[3]);
+  expect(pageUp).toBeLessThan(up);
+  await page.keyboard.press("Home");
+  await expect.poll(async()=>(await readingMetrics(popup)).viewport!.scrollTop,{timeout:2000}).toBe(0);
+  await captureReading(page,popup,`card429-R1-vertical-scrolled-${vw}x${vh}`,vw,vh);
+  // 세로 틀에서 →는 다음 그림으로 넘긴다(주 동작).
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async()=>(await readingMetrics(popup)).imageSrc,{timeout:5000}).toContain("/wide.svg");
+  await expect(popup.locator(".chat-image-viewer-count")).toHaveText("2/2");
+  await expect(popup).toHaveAttribute("data-image-frame","full",{timeout:5000});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const stepped=await captureReading(page,popup,`card429-R1-vertical-next-${vw}x${vh}`,vw,vh);
+  expect(stepped.imageSrc).toContain("/wide.svg");
+  // 가로 읽기 틀에 초점이 있으면 ←/→는 스크롤한다.
+  await expect(viewport).toBeFocused({timeout:3000});
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async()=>(await readingMetrics(popup)).viewport!.scrollLeft,{timeout:2000}).toBeGreaterThan(0);
+  await expect(popup.locator(".chat-image-viewer-count")).toHaveText("2/2");
+  const right=(await readingMetrics(popup)).viewport!.scrollLeft;
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(async()=>(await readingMetrics(popup)).viewport!.scrollLeft,{timeout:2000}).toBeLessThan(right);
+  await expect(popup.locator(".chat-image-viewer-count")).toHaveText("2/2");
+  await captureReading(page,popup,`card429-R1-horizontal-scroll-${vw}x${vh}`,vw,vh);
+});
+
+test("card429 R1 ArrowLeft steps back while the frame is vertical",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await open(page,"chat",vw,vh,7200,600,"",{gallery:"reading-wide"});
+  await expect(popup).toHaveAttribute("data-image-frame","full",{timeout:5000});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await popup.getByRole("button",{name:"다음 이미지"}).click();
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  await expect(popup.locator(".chat-image-viewer-count")).toHaveText("2/2");
+  await page.waitForTimeout(300);
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(async()=>(await readingMetrics(popup)).imageSrc,{timeout:5000}).toContain("/wide.svg");
+  await expect(popup.locator(".chat-image-viewer-count")).toHaveText("1/2");
+  await captureReading(page,popup,`card429-R1-horizontal-back-${vw}x${vh}`,vw,vh);
+});
+
+test("card429 R2 one gallery frame holds tall and wide pictures (wide and narrow)",async({page})=>{
+  for(const [vw,vh] of [[1920,1080],[390,844]] as const) {
+    const margin=viewportMargin(vw);
+    const popup=await open(page,"chat",vw,vh,1170,7200,"",{gallery:"reading"});
+    await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+    await page.waitForTimeout(200);
+    const tall=await captureReading(page,popup,`card429-R2-gallery-tall-${vw}x${vh}`,vw,vh);
+    expect(tall.popup.width).toBeCloseTo(vw-32,0);
+    expect(tall.popup.height).toBeCloseTo(vh-2*margin,0);
+    expect(tall.image!.width).toBeCloseTo(Math.min(398,tall.viewport!.clientWidth),0);
+    const viewportCenter=centerOf(tall.viewport!.rect);
+    expect(Math.abs(centerOf(tall.image!).x-viewportCenter.x)).toBeLessThanOrEqual(2);
+    expect(tall.viewport!.maxY).toBeGreaterThan(0);
+    expect(tall.close).not.toBeNull();
+    await popup.getByRole("button",{name:"다음 이미지"}).click();
+    await expect(popup).toHaveAttribute("data-image-frame","full",{timeout:5000});
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+    await page.waitForTimeout(200);
+    const wide=await captureReading(page,popup,`card429-R2-gallery-wide-${vw}x${vh}`,vw,vh);
+    expect(wide.imageSrc).toContain("/wide.svg");
+    // 창 틀과 닫기 단추 자리는 장마다 같다.
+    expect(wide.popup.width).toBeCloseTo(tall.popup.width,0);
+    expect(wide.popup.height).toBeCloseTo(tall.popup.height,0);
+    expect(wide.popup.left).toBeCloseTo(tall.popup.left,0);
+    expect(wide.popup.top).toBeCloseTo(tall.popup.top,0);
+    expect(wide.close!.left).toBeCloseTo(tall.close!.left,0);
+    expect(wide.close!.top).toBeCloseTo(tall.close!.top,0);
+    expect(wide.image!.height).toBeCloseTo(Math.min(wide.natural![1],wide.viewport!.clientHeight),0);
+    expect(wide.viewport!.maxX).toBeGreaterThan(0);
+    expect(wide.pageScrollWidth).toBeLessThanOrEqual(wide.innerWidth);
+    // 한 장만 여는 창의 448 읽기 틀은 그대로다.
+    if(vw===1920) {
+      const single=await openAttachment(page,"image-tall",vw,vh,1170,7200);
+      await expect(single).toHaveAttribute("data-image-frame","column",{timeout:5000}).catch(()=>{});
+      await single.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+      await page.waitForTimeout(200);
+      const shot=await captureReading(page,single,`card429-R2-single-tall-${vw}x${vh}`,vw,vh);
+      expect(shot.popup.width).toBeCloseTo(448,0);
+      expect(shot.image!.width).toBeCloseTo(shot.viewport!.clientWidth,0);
+    }
+  }
+});
+
+test("card429 R3 fit toggle matches the close button on light, dark and bright pictures",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const scenes=[
+    {name:"light-bright",theme:"light" as const,sample:"tall-screen"},
+    {name:"dark-bright",theme:"dark" as const,sample:"tall-screen"},
+    {name:"light-dark-picture",theme:"light" as const,sample:"tall-screen-dark"},
+  ];
+  for(const scene of scenes) {
+    const popup=await open(page,"card",vw,vh,1170,7200,"one",{theme:scene.theme,sample:scene.sample});
+    const toggle=popup.locator(".attachment-viewer-actions button");
+    await expect(toggle).toBeVisible({timeout:5000});
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+    const data=await captureReading(page,popup,`card429-R3-${scene.name}-${vw}x${vh}`,vw,vh);
+    const styles=await actionStyles(popup);
+    expect(data.close).not.toBeNull();
+    expect(Math.abs(data.toggle!.rect.width-data.close!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(data.toggle!.rect.height-data.close!.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(data.toggle!.rect.top-data.close!.top)).toBeLessThanOrEqual(1);
+    const gap=data.close!.left-data.toggle!.rect.right;
+    expect(gap).toBeGreaterThanOrEqual(3);
+    expect(gap).toBeLessThanOrEqual(5);
+    expect(styles.close).not.toBeNull();
+    expect(styles.toggle!.background).toBe(styles.close!.background);
+    expect(styles.toggle!.background).not.toBe("rgba(0, 0, 0, 0)");
+    expect(styles.toggle!.borderColor).toBe(styles.close!.borderColor);
+    expect(styles.toggle!.borderWidth).toBe(styles.close!.borderWidth);
+  }
+});
+
+test("card429 R4 card image window focuses the scroll area and PageDown and Space scroll it",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  const popup=await open(page,"card",vw,vh,1170,7200,"one",{sample:"tall-screen"});
+  await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const viewport=popup.locator('[data-slot="scroll-area-viewport"]');
+  await expect(viewport).toBeFocused({timeout:3000});
+  const start=await captureReading(page,popup,`card429-R4-card-first-focus-${vw}x${vh}`,vw,vh);
+  expect(start.viewport!.focused).toBe(true);
+  for(const key of ["PageDown","Space"]) {
+    const before=(await readingMetrics(popup)).viewport!.scrollTop;
+    await page.keyboard.press(key);
+    await expect.poll(async()=>(await readingMetrics(popup)).viewport!.scrollTop,{timeout:2000}).toBeGreaterThan(before);
+    await expect(popup).toHaveCount(1);
+  }
+  const data=await captureReading(page,popup,`card429-R4-card-scrolled-${vw}x${vh}`,vw,vh);
+  expect(data.viewport!.focused).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+});
+
+test("card429 R5 card failure keeps one centred group and the original caption",async({page})=>{
+  for(const [vw,vh] of [[1920,1080],[390,844]] as const) for(const status of [500,404]) {
+    const popup=await openFailingCard(page,status,vw,vh);
+    await expect(popup).toHaveAttribute("data-image-state","failed",{timeout:8000});
+    const state=popup.locator(".attachment-viewer-state");
+    await expect(state).toContainText("파일을 불러오지 못했습니다");
+    await page.waitForTimeout(300);
+    const retry=popup.getByRole("button",{name:"다시 시도"});
+    const data=await captureReading(page,popup,`card429-R5-fail-${status}-${vw}x${vh}`,vw,vh);
+    expect(data.caption).toBe("화면 캡처");
+    await expect(popup.locator("figcaption")).not.toContainText("불러오지");
+    expect(data.body).not.toBeNull();
+    const bodyCenter=centerOf(data.body!);
+    expect(Math.abs(data.status!.center.x-bodyCenter.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(data.status!.center.y-bodyCenter.y)).toBeLessThanOrEqual(2);
+    const message=popup.locator('[data-slot="dialog-error-message"]');
+    await expect(message).toBeVisible();
+    if(status===500) {
+      await expect(retry).toBeVisible({timeout:3000});
+      const messageBox=(await message.boundingBox())!;
+      const retryBox=(await retry.boundingBox())!;
+      expect(retryBox.y).toBeGreaterThan(messageBox.y+messageBox.height-1);
+      expect(Math.abs((messageBox.x+messageBox.width/2)-(retryBox.x+retryBox.width/2))).toBeLessThanOrEqual(2);
+    } else {
+      await expect(retry).toHaveCount(0);
+    }
+  }
+});
+
+test("card429 R6 query and path parameter SVG keep the light picture background",async({page})=>{
+  const [vw,vh]=[1920,1080];
+  await page.setViewportSize({width:vw,height:vh});
+  await page.emulateMedia({colorScheme:"dark",reducedMotion:"reduce"});
+  await page.addInitScript(()=>{
+    localStorage.setItem("ls.webglGlass","0");
+    localStorage.setItem("soul-dashboard-theme","dark");
+  });
+  const diagram=`<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320"><path d="M40 260 L240 60 L440 260" fill="none" stroke="#2f3a4a" stroke-width="10"/><circle cx="240" cy="60" r="24" fill="#c85028"/><text x="40" y="300" font-family="sans-serif" font-size="22" fill="#222">attachment flow</text></svg>`;
+  await page.route(/\/fixture\.svg\?/,route=>route.fulfill({contentType:"image/svg+xml",body:diagram}));
+  await page.route(/\/api\/attachments\/files\?/,route=>{
+    if(route.request().method()==="HEAD") return route.fulfill({status:200,headers:{"Content-Type":"application/octet-stream"}});
+    return route.fulfill({contentType:"image/svg+xml",body:diagram});
+  });
+  await page.goto("/e2e/image-viewer.fixture.html?viewer=chat&width=480&height=320&gallery=svgurls&theme=dark");
+  const tiles=page.locator(".chat-image-grid img");
+  await expect(tiles).toHaveCount(2,{timeout:8000});
+  const tileStyles=await tiles.evaluateAll(images=>images.map(image=>({
+    format:image.getAttribute("data-image-format"),
+    background:getComputedStyle(image).backgroundColor,
+    scheme:getComputedStyle(image).colorScheme,
+  })));
+  for(const tile of tileStyles) {
+    expect(tile.format).toBe("svg");
+    expect(tile.background).toBe("rgb(255, 255, 255)");
+    expect(tile.scheme).toBe("light");
+  }
+  await page.screenshot({path:path.join(output,`card429-R6-tiles-${vw}x${vh}.png`),animations:"disabled",timeout:15000});
+  writeFileSync(path.join(output,`card429-R6-tiles-${vw}x${vh}.json`),JSON.stringify(tileStyles,null,2));
+  await page.locator(".chat-image-grid img[role=button]").first().click();
+  const popup=page.locator('[data-slot="dialog-popup"]');
+  await expect(popup).toBeVisible();
+  await expect(popup).not.toHaveAttribute("data-starting-style");
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const first=await captureReading(page,popup,`card429-R6-viewer-query-${vw}x${vh}`,vw,vh);
+  expect(first.imageBackground).toBe("rgb(255, 255, 255)");
+  expect(first.colorScheme).toBe("light");
+  await popup.getByRole("button",{name:"다음 이미지"}).click();
+  await expect.poll(async()=>(await readingMetrics(popup)).imageSrc,{timeout:5000}).toContain("path=chart.svg");
+  await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+  const second=await captureReading(page,popup,`card429-R6-viewer-path-${vw}x${vh}`,vw,vh);
+  expect(second.imageBackground).toBe("rgb(255, 255, 255)");
+  expect(second.colorScheme).toBe("light");
+});
+
+test("card429 R7 toggle sits one token from close and the title truncates before it",async({page})=>{
+  const longName="카드 #429 첨부 보기 창 머리줄 긴 이름 확인용 화면 캡처 원본 파일 이름입니다 ".repeat(4)+"final-capture-name.png";
+  for(const [vw,vh] of [[1920,1080],[390,844]] as const) {
+    const popup=await openAttachment(page,"image-tall",vw,vh,1170,7200,"light",{name:longName,sample:"tall-screen"});
+    await expect(popup).toHaveAttribute("data-image-frame","column",{timeout:5000});
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode()).catch(()=>{});
+    const toggle=popup.locator(".attachment-viewer-actions button");
+    await expect(toggle).toBeVisible({timeout:5000});
+    const data=await captureReading(page,popup,`card429-R7-header-${vw}x${vh}`,vw,vh);
+    expect(data.title).not.toBeNull();
+    expect(data.close).not.toBeNull();
+    expect(data.toggle).not.toBeNull();
+    expect(Math.abs(data.toggle!.rect.top-data.close!.top)).toBeLessThanOrEqual(1);
+    const gap=data.close!.left-data.toggle!.rect.right;
+    expect(gap).toBeGreaterThanOrEqual(3);
+    expect(gap).toBeLessThanOrEqual(5);
+    expect(data.title!.right).toBeLessThanOrEqual(data.toggle!.rect.left+1);
+    expect(data.title!.scrollWidth).toBeGreaterThan(data.title!.clientWidth);
+  }
 });
 
 test("card429 card image window uses the same reading layout",async({page})=>{

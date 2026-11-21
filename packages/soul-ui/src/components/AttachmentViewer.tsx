@@ -254,9 +254,40 @@ export function AttachmentViewer({
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!multiItem || event.target instanceof HTMLMediaElement) return;
-    // A focused reading frame scrolls on its own arrow keys instead of stepping
-    // through the gallery.
-    if (imageViewer.viewportRef.current?.contains(event.target as Node)) return;
+    const viewport = imageViewer.viewportRef.current;
+    const inReadingFrame = viewport?.contains(event.target as Node) ?? false;
+    // The focused reading frame scrolls on the same keys the design says it
+    // should. The browser does not do this reliably inside a dialog, so the
+    // frame moves here. Left/Right keep the main gallery behaviour (step) in
+    // a vertical frame and scroll sideways in a horizontal one.
+    const line = 40;
+    const frameSize = imageViewer.reading?.axis === "x" ? viewport?.clientWidth : viewport?.clientHeight;
+    const page = Math.max(line, Math.round((frameSize ?? 0) * 0.9));
+    const moves: Record<string, number | "home" | "end"> = imageViewer.reading?.axis === "x"
+      ? {
+          ArrowLeft: -line, ArrowRight: line, PageDown: page, PageUp: -page,
+          " ": event.shiftKey ? -page : page, Home: "home", End: "end",
+        }
+      : inReadingFrame
+        ? {
+            ArrowDown: line, ArrowUp: -line, PageDown: page, PageUp: -page,
+            " ": event.shiftKey ? -page : page, Home: "home", End: "end",
+          }
+        : {};
+    const move = inReadingFrame ? moves[event.key] : undefined;
+    if (move !== undefined && viewport) {
+      event.preventDefault();
+      if (imageViewer.reading?.axis === "x") {
+        viewport.scrollLeft = move === "home" ? 0
+          : move === "end" ? viewport.scrollWidth
+            : viewport.scrollLeft + move;
+      } else {
+        viewport.scrollTop = move === "home" ? 0
+          : move === "end" ? viewport.scrollHeight
+            : viewport.scrollTop + move;
+      }
+      return;
+    }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       changeIndex(index - 1);

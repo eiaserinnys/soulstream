@@ -91,6 +91,7 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogPopup
       ref={popupRef}
+      initialFocus={popupRef}
       className="v3-surface image-viewer-popup"
       {...imageViewer.popupAttributes}
       style={imageViewer.popupStyle}
@@ -111,12 +112,12 @@ export function CardImageViewer({ image, attachments, attachmentStatus, returnFo
           ) : viewerImage)}
           <AttachmentViewerImageStatus
             state={imageViewer.state}
-            message={null}
+            message="파일을 불러오지 못했습니다"
             retryable={imageViewer.retryable}
             onRetry={imageViewer.retry}
           />
         </div>
-        {image.alt || imageFailed ? <figcaption data-v3-selectable-content="true">{imageFailed ? "파일을 불러오지 못했습니다" : image.alt}</figcaption> : null}
+        {image.alt ? <figcaption data-v3-selectable-content="true">{image.alt}</figcaption> : null}
       </figure> : null}
       {image && imageViewer.showToggle && (
         <AttachmentViewerFitToggle

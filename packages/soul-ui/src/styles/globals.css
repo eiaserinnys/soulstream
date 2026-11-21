@@ -1550,6 +1550,9 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   --image-viewer-block-margin: calc(var(--spacing) * 8);
   --image-viewer-inline-reserve: 0rem;
   --image-viewer-block-reserve: 0rem;
+  /* The dialog close button is ui/button.tsx size="icon" (size-9, sm:size-8).
+     Neighbouring actions measure against the same size so their gap stays a token. */
+  --image-viewer-close-size: calc(var(--spacing) * 9);
   width: fit-content;
   min-width: min(var(--container-xs), calc(100dvw - 2rem));
   max-width: calc(100dvw - 2rem);
@@ -1558,6 +1561,11 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
 @media (max-width: 40rem) {
   .image-viewer-popup[data-slot="dialog-popup"] {
     --image-viewer-block-margin: calc(var(--spacing) * 6);
+  }
+}
+@media (min-width: 40rem) {
+  .image-viewer-popup[data-slot="dialog-popup"] {
+    --image-viewer-close-size: calc(var(--spacing) * 8);
   }
 }
 .image-viewer-popup:not(:has([data-slot="dialog-header"])) {
@@ -1587,7 +1595,8 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
 .image-viewer-popup:not(:has([data-slot="dialog-header"])) img {
   border-radius: var(--chat-attachment-radius);
 }
-.image-viewer-popup:not(:has([data-slot="dialog-header"])) > button {
+.image-viewer-popup:not(:has([data-slot="dialog-header"])) > button,
+.image-viewer-popup:not(:has([data-slot="dialog-header"])) .attachment-viewer-actions > button {
   background-color: color-mix(in srgb, var(--background) 80%, transparent);
   border-color: var(--border);
 }
@@ -1599,7 +1608,7 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   flex-shrink: 0;
 }
 .chat-image-viewer-header {
-  padding-inline-end: calc(var(--v3-action-size) + var(--v3-space-2));
+  padding-inline-end: calc(var(--spacing) * 2 + var(--image-viewer-close-size) + var(--v3-space-2));
   gap: var(--chat-attachment-filename-gap);
   min-width: 0;
 }
@@ -1653,7 +1662,8 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   --image-viewer-inline-reserve: calc(2 * var(--v3-space-3));
   --image-viewer-block-reserve: calc(3lh + 3 * var(--v3-space-3));
 }
-.image-viewer-popup[data-slot="dialog-popup"][data-image-frame][data-image-fit] {
+/* 한 장만 여는 창의 읽기 틀. 넘기기 창은 아래 갤러리 고정 틀 계약을 지키므로 제외한다. */
+.image-viewer-popup[data-slot="dialog-popup"][data-image-frame][data-image-fit]:not([data-attachment-bundle]) {
   --attachment-viewer-read-cap: var(--container-md);
   width: min(
     var(--attachment-viewer-read-cap),
@@ -1663,11 +1673,17 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   height: calc(100dvh - 2 * var(--image-viewer-block-margin));
   max-height: calc(100dvh - 2 * var(--image-viewer-block-margin));
 }
-.image-viewer-popup[data-slot="dialog-popup"][data-image-frame="full"][data-image-fit] {
+.image-viewer-popup[data-slot="dialog-popup"][data-image-frame="full"][data-image-fit]:not([data-attachment-bundle]) {
   width: min(
     calc(100dvw - 2rem),
     calc(var(--attachment-natural-width) + var(--image-viewer-inline-reserve) + 2 * var(--image-viewer-rim))
   );
+}
+/* 넘기기 창의 긴 그림은 고정된 갤러리 틀 안에서 읽는다. 세로로 긴 그림은 한 장 창과
+   같은 읽기 폭(448 상한에서 틀 안쪽 여백을 뺀 폭)으로 가운데에 두고 세로로 스크롤한다. */
+.chat-image-viewer-popup[data-attachment-bundle] .attachment-viewer-scroll[data-fit="read"][data-axis="y"] img.attachment-viewer-image {
+  width: min(100%, calc(var(--container-md) - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve)));
+  margin-inline: auto;
 }
 .chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"],
 .chat-image-viewer-popup[data-image-frame] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
@@ -1763,17 +1779,18 @@ html[data-webgl-glass="off"] [data-slot="select-popup"] {
   min-height: 0;
   text-align: center;
 }
-/* 「전체 보기」 단추는 닫기 단추 왼쪽, 같은 머리줄 자리에 둔다. 이름은 aria-label과 title이다. */
+/* 「전체 보기」 단추는 닫기 단추 왼쪽, 같은 머리줄 자리에 둔다. 이름은 aria-label과 title이다.
+   닫기 단추의 실제 크기(--image-viewer-close-size)와 --v3-space-1만큼만 띄운다. */
 .attachment-viewer-actions {
   position: absolute;
   inset-block-start: calc(var(--spacing) * 2);
-  inset-inline-end: calc(var(--spacing) * 2 + var(--v3-action-size) + var(--v3-space-1));
+  inset-inline-end: calc(var(--spacing) * 2 + var(--image-viewer-close-size) + var(--v3-space-1));
   display: flex;
   align-items: center;
   gap: var(--v3-space-1);
 }
 .chat-image-viewer-popup:has(.attachment-viewer-actions) > [data-slot="dialog-header"] {
-  padding-inline-end: calc(2 * var(--v3-action-size) + var(--v3-space-1) + var(--v3-space-2));
+  padding-inline-end: calc(var(--spacing) * 2 + 2 * var(--image-viewer-close-size) + var(--v3-space-1) + var(--v3-space-2));
 }
 /* SVG는 격자 타일과 보기 창 모두 HTML 보기 틀과 같은 밝은 바탕 위에 그린다. */
 img[data-image-format="svg"],

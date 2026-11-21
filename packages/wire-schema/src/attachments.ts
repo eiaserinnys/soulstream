@@ -130,6 +130,21 @@ export function mimeTypeForFileName(name: string | null | undefined): string | n
   return extension === undefined ? null : MIME_BY_EXTENSION[extension] ?? null;
 }
 
+/**
+ * MIME type for an attachment address. Query strings and fragments never change
+ * the judgment: the files API keeps the name in the `path` parameter, so that
+ * value wins, otherwise the address pathname's extension is read.
+ */
+export function mimeTypeForUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, "https://soulstream.invalid");
+    return mimeTypeForFileName(parsed.searchParams.get("path") || parsed.pathname);
+  } catch {
+    return null;
+  }
+}
+
 /** Normalizes parameters and case before comparing against {@link IMAGE_PREVIEW_MIME_TYPES}. */
 export function isImagePreviewMimeType(value: string | null | undefined): boolean {
   const normalized = value?.trim().toLowerCase().split(";", 1)[0] ?? "";

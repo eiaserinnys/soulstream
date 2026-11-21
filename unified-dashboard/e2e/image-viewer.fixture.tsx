@@ -16,8 +16,14 @@ const width = Number(params.get("width") ?? 800);
 const height = Number(params.get("height") ?? 600);
 const svg = (w: number, h: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="steelblue"/><text x="12" y="40" fill="white" font-size="24">${w} × ${h}</text></svg>`;
 const image = svg(width, height);
+const customName = params.get("name");
 const sampleSrc = params.get("sample") === "dark" ? "/image-viewer-screen.png"
-  : params.get("sample") === "bright" ? "/e2e/fixtures/image-viewer-bright.png" : null;
+  : params.get("sample") === "bright" ? "/e2e/fixtures/image-viewer-bright.png"
+  : params.get("sample") === "tall-screen" ? "/e2e/fixtures/tall-screen.svg"
+  : params.get("sample") === "tall-screen-dark" ? "/e2e/fixtures/tall-screen-dark.svg"
+  : params.get("sample") === "fail" ? "/image-viewer-screen-fail.png" : null;
+const sampleMime = params.get("sample") === "tall-screen" || params.get("sample") === "tall-screen-dark"
+  ? "image/svg+xml" : "image/png";
 const src = sampleSrc ?? "data:image/svg+xml," + encodeURIComponent(image);
 const file = new File([sampleSrc ? await fetch(sampleSrc).then(response => response.blob()) : image],
   sampleSrc ? "screen.png" : "fixture.svg", {type:sampleSrc ? "image/png" : "image/svg+xml"});
@@ -97,8 +103,8 @@ function attachmentItem(kind: string): ChatAttachmentItem {
   };
   if (kind === "image-tall" || kind === "image-wide") return {
     key: `asset:${kind}`,
-    name: kind === "image-tall" ? "IMG_0398.PNG" : "timeline-2611.png",
-    mimeType: "image/png", byteSize: kind === "image-tall" ? 369747 : 89177,
+    name: customName ?? (kind === "image-tall" ? "IMG_0398.PNG" : "timeline-2611.png"),
+    mimeType: sampleSrc ? sampleMime : "image/png", byteSize: kind === "image-tall" ? 369747 : 89177,
     previewKind: "image", availability: "ready", previewUrl: src, originalUrl, legacySources: [],
     source: {kind: "asset", attachmentId: kind, context},
   };
@@ -159,6 +165,15 @@ function attachmentItems(kind: string): ChatAttachmentItem[] {
   return [attachmentItem(kind)];
 }
 
+// 카드 #429 보완: 넘기기 창의 두 축(세로 읽기 틀과 가로 읽기 틀), 주소 쿼리와 path 인자로
+// 판정해야 하는 SVG. 장면마다 첫 장의 축이 달라야 ←/→와 스크롤을 가려 잴 수 있다.
+function chatContent(width: number, height: number, gallery: string): string {
+  if (gallery === "reading") return "![tall.svg](/tall.svg?width=1170&height=7200)\n\n![wide.svg](/wide.svg?width=7200&height=600)";
+  if (gallery === "reading-wide") return "![wide.svg](/wide.svg?width=7200&height=600)\n\n![tall.svg](/tall.svg?width=1170&height=7200)";
+  if (gallery === "svgurls") return "![query.svg](/fixture.svg?width=480&height=320)\n\n![path.svg](/api/attachments/files?nodeId=fixture&path=chart.svg&context_type=session&context_id=fixture)";
+  return `![fixture.svg](/fixture.svg?width=${width}&height=${height})${gallery === "single" ? "" : "\n\n![next.svg](/next.svg)"}${gallery === "mixed" ? "\n\n![third.svg](/third.svg?width=800&height=600)\n\n![last.svg](/last.svg?width=200&height=120)" : ""}`;
+}
+
 function AttachmentFixture({kind}:{kind:string}) {
   const [index, setIndex] = useState<number|null>(0);
   const items = attachmentItems(kind);
@@ -171,7 +186,7 @@ function Fixture() {
   return <main>
     {viewer === "card" && <CardImageViewer image={open ? {src, alt:caption} : null} onClose={() => setOpen(false)}/>}
     {viewer === "file" && <FileAttachmentPreview initialImageOpen file={file} status="done" onRemove={() => {}}/>}
-    {viewer === "chat" && <MarkdownContent content={`![fixture.svg](/fixture.svg?width=${width}&height=${height})${params.get("gallery") === "single" ? "" : "\n\n![next.svg](/next.svg)"}${params.get("gallery") === "mixed" ? "\n\n![third.svg](/third.svg?width=800&height=600)\n\n![last.svg](/last.svg?width=200&height=120)" : ""}`} chatImages={{role:"assistant"}} />}
+    {viewer === "chat" && <MarkdownContent content={chatContent(width, height, params.get("gallery") ?? "")} chatImages={{role:"assistant"}} />}
     {viewer === "ordinary" && <Dialog open={open} onOpenChange={setOpen}><DialogPopup><DialogHeader><DialogTitle>기존 다이얼로그</DialogTitle></DialogHeader></DialogPopup></Dialog>}
     {viewer === "attachment" && <AttachmentFixture kind={params.get("attachment") ?? "doc-long"}/>}
   </main>;

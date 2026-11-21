@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mimeTypeForFileName } from "@soulstream/wire-schema/attachments";
+import { mimeTypeForUrl } from "@soulstream/wire-schema/attachments";
 
 const HEIC_MIME_TYPES = new Set(["image/heic", "image/heif"]);
 
@@ -13,17 +13,17 @@ export function isSvgImageSource(
   src?: string | null,
 ): boolean {
   if (normalizedMimeType(mimeType) === "image/svg+xml") return true;
-  if (src) return mimeTypeForFileName(src) === "image/svg+xml";
+  if (src) return mimeTypeForUrl(src) === "image/svg+xml";
   return false;
 }
 
-/** HEIC/HEIF by MIME type or by the file extension exposed in the URL. */
+/** HEIC/HEIF by MIME type or by the file extension exposed in the address. */
 export function isHeicImageSource(
   mimeType: string | null | undefined,
   src?: string | null,
 ): boolean {
   if (HEIC_MIME_TYPES.has(normalizedMimeType(mimeType))) return true;
-  const inferred = mimeTypeForFileName(src);
+  const inferred = mimeTypeForUrl(src);
   return inferred !== null && HEIC_MIME_TYPES.has(inferred);
 }
 
