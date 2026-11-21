@@ -8,7 +8,6 @@ import {
   type UiEventTarget,
   type UiEventsBatch,
   type UiEventsConfig,
-  type UiEventsPostResult,
   type UiEventWire,
 } from '../api/uiEventsEndpoints';
 import { isAuthScopeCurrent, type AuthScopeSnapshot } from './auth-scope';

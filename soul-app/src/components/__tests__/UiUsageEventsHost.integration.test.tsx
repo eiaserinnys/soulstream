@@ -1,5 +1,5 @@
 import { UI_EVENT_SCHEMA_VERSION } from '../../../../packages/wire-schema/src/ui_events';
-import React, { useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { View } from 'react-native';
 import {
   NavigationContainer,
