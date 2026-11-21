@@ -95,6 +95,9 @@ function makeFullSlice(sessionId: string) {
     discardIfConsumed: vi.fn().mockResolvedValue(false),
     recordTurnStarted: vi.fn().mockResolvedValue(undefined),
     recordConsumed: vi.fn().mockResolvedValue(undefined),
+    recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(true),
+    recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+    recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
   };
   const executor = new TaskExecutor(
     () => engine,

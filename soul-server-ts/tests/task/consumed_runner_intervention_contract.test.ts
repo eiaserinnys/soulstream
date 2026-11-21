@@ -29,6 +29,8 @@ function runnerTask(interventionQueue: InterventionMessage[]): Task {
     status: "running",
     profileId: "roselin",
     createdAt: new Date("2026-08-28T10:00:00.000Z"),
+    lastEventId: 0,
+    lastReadEventId: 0,
     interventionQueue,
     runner: {
       engine: {} as never,

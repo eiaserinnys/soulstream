@@ -1,6 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
@@ -17,7 +18,9 @@ import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.
  */
 function setup(options: { executionRegistration?: Task["executionRegistration"]; runnerRegistrationId?: string | null } = {}) {
   const double = makeEventPersistenceTestDouble();
-  const enqueueTerminal = vi.fn(async () => ({
+  const enqueueTerminal = vi.fn<
+    EventPersistence["enqueueTerminalTransitionAndWaitForApplication"]
+  >(async () => ({
     eventId: 9,
     applied: true,
     canonicalSession: {

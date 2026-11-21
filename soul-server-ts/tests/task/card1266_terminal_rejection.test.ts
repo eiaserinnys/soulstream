@@ -1,5 +1,6 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -33,7 +34,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function canonical(terminationEventId: number | null, status = "completed") {
+function canonical(
+  terminationEventId: number | null,
+  status = "completed",
+): EventCanonicalSessionProjection {
   return {
     status,
     termination_reason: terminationEventId === null ? null : "completed_ok",

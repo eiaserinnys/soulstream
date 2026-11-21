@@ -18,6 +18,10 @@ import {
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 const silentLogger = pino({ level: "silent" });
 
 const agent: AgentProfile = {
@@ -37,6 +41,7 @@ const PROOF = {
 function fakeEngine(): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {},
     async interrupt() { return true; },

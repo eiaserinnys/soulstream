@@ -3,37 +3,7 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": [
-    "src/**/*",
-    "tests/cogito",
-    "tests/collaboration",
-    "tests/folder",
-    "tests/fixtures",
-    "tests/setup",
-    "tests/catalog",
-    "tests/claude_accounts",
-    "tests/release",
-    "tests/security",
-    "tests/realtime",
-    "tests/helpers",
-    "tests/search",
-    "tests/attachments",
-    "tests/page",
-    "tests/lab",
-    "tests/control_plane",
-    "tests/runtime",
-    "tests/auth",
-    "tests/llm",
-    "tests/card-orchestration",
-    "tests/integration",
-    "tests/context",
-    "tests/schedule",
-    "tests/upstream",
-    "tests/scripts",
-    "tests/engine",
-    "tests/*.ts",
-    "tests/mcp"
-  ],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": [
     "node_modules",
     "dist"

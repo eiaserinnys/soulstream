@@ -3,8 +3,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import { createFolderContentSqlAdapter } from
-  "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { registerPersistenceHostRoutes } from
   "../../../orch-server-ts/src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from
@@ -24,12 +22,10 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    const productionSql = createFolderContentSqlAdapter(
-      harness.sql as unknown as Parameters<typeof createFolderContentSqlAdapter>[0],
-    );
-    repository = new SessionDeliveryRepository(productionSql);
+    repository = new SessionDeliveryRepository(harness.sql);
     registerPersistenceHostRoutes(app, {
       authBearerToken: "service-token",
+      nodeCredentials: null,
       repositoryProvider: async () => ({ deliveries: repository }) as
         unknown as PersistenceHostRepositories,
     });
@@ -71,9 +67,10 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
           NOW() + INTERVAL '1 minute'
         )
       `;
-      const [{ now: before }] = await harness.sql<Array<{ now: Date }>>`
+      const [beforeRow] = await harness.sql<Array<{ now: Date }>>`
         SELECT NOW() AS now
       `;
+      const before = beforeRow!.now;
 
       const retried = await repository.retryDeliveryAttempt(
         deliveryId,
@@ -82,9 +79,10 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
         retryDelayMs,
       );
 
-      const [{ now: after }] = await harness.sql<Array<{ now: Date }>>`
+      const [afterRow] = await harness.sql<Array<{ now: Date }>>`
         SELECT NOW() AS now
       `;
+      const after = afterRow!.now;
       expect(retried).toMatchObject({
         delivery_id: deliveryId,
         state: "pending",

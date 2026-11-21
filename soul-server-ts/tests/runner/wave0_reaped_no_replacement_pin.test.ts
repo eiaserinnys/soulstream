@@ -24,6 +24,10 @@ import { makeEventPersistenceTestDouble } from "../task/event_persistence_test_d
 import { makeOwnerlessRegistration } from
   "./ownerless_running_reconciliation_fixture.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 const logger = pino({ level: "silent" });
 const SESSION_ID = "wave0-reaped-no-replacement";
 const NODE_ID = "node-wave0-replacement-pin";
@@ -65,7 +69,6 @@ describe("Wave 0 replacement boundary pin", () => {
     const replacementRunner = durableReplacementRunner(replacementPaths.databasePath);
     const runnerFactory = (() => replacementRunner) as RunnerProcessRuntimeFactory;
     runnerFactory.recover = () => offlineRecoveryRunner();
-    runnerFactory.restart = () => replacementRunner;
     const taskExecutor = new TaskExecutor(
       () => { throw new Error("replacement pin must use the process runtime"); },
       db,
@@ -110,7 +113,8 @@ describe("Wave 0 replacement boundary pin", () => {
       hydrate: async (value) => value,
       markReaped: async () => undefined,
       spawner: {
-        terminate: async () => undefined,
+        terminate: async () => "registration_invalidated" as const,
+        retireTerminalRegistration: async () => undefined,
         invalidateRegistration: async () => undefined,
       },
       taskManager,
@@ -131,6 +135,7 @@ function offlineRecoveryRunner(): TaskRunnerRuntime {
   return {
     engine: {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/workspace/wave0",
       async *execute() {},
       async interrupt() { return true; },
@@ -150,6 +155,7 @@ function durableReplacementRunner(databasePath: string): TaskRunnerRuntime {
   return {
     engine: {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/workspace/wave0",
       async *execute() {},
       async interrupt() { return true; },

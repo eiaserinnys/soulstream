@@ -20,10 +20,15 @@ import { buildInterventionSentEvent } from "../../src/task/task_intervention_eve
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
 import {
   TaskExecutor,
+  type EngineFactory,
 } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 
 const logger = pino({ level: "silent" });
 const agent: AgentProfile = {
@@ -128,6 +133,7 @@ function makeUsage(weeklyWindow = "7d"): ProviderLimits {
 function makeEngine(events: SSEEventPayload[]): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {
       for (const event of events) yield event;
@@ -186,17 +192,18 @@ function makeRuntime(task: Task, events: Array<{
   const providerUsage = {
     fetchUsage: vi.fn(async () => ({ success: false })),
   } as unknown as ProviderUsageCommandHandler;
+  type PersistentScheduleService = Pick<
+    SoulstreamScheduleService,
+    "deleteCacheKeepaliveSchedules" | "scheduleCacheKeepalive" | "scheduleResumeAfterLimit"
+  >;
   const scheduleService = {
-    deleteCacheKeepaliveSchedules: vi.fn(async () => undefined),
-    scheduleCacheKeepalive: vi.fn(async () => undefined),
-    scheduleResumeAfterLimit: vi.fn(async (
-      _sessionId: string,
-      _terminalEventId: number,
-      _runOnceAt: Date,
-      _now: Date,
-      _prompt?: string,
-    ): Promise<SoulstreamSchedule | null> => null),
-  };
+    deleteCacheKeepaliveSchedules:
+      vi.fn<PersistentScheduleService["deleteCacheKeepaliveSchedules"]>(async () => undefined),
+    scheduleCacheKeepalive:
+      vi.fn<PersistentScheduleService["scheduleCacheKeepalive"]>(),
+    scheduleResumeAfterLimit:
+      vi.fn<PersistentScheduleService["scheduleResumeAfterLimit"]>(async () => null),
+  } satisfies PersistentScheduleService;
   return {
     persistenceDouble,
     db,
@@ -211,7 +218,7 @@ function makeRuntime(task: Task, events: Array<{
 function taskExecutor(
   task: Task,
   runtime: ReturnType<typeof makeRuntime>,
-  engineFactory: (profile: AgentProfile, backend?: string) => EnginePort,
+  engineFactory: EngineFactory,
   contextBuilder?: ReturnType<typeof makeContextBuilder>,
   sessionMutations?: { setModelSelection: ReturnType<typeof vi.fn> },
 ) {
@@ -454,7 +461,7 @@ describe("TaskExecutor persistent decision wiring", () => {
         } as unknown as SSEEventPayload,
       ]),
       backendId: "codex",
-    };
+    } satisfies EnginePort;
     const claudeEngine = {
       ...makeEngine([{
         type: "complete",
@@ -463,7 +470,7 @@ describe("TaskExecutor persistent decision wiring", () => {
         first_call: { input_tokens: 40_000, cached_input_tokens: 0 },
       } as unknown as SSEEventPayload]),
       backendId: "claude",
-    };
+    } satisfies EnginePort;
     const codexExecute = vi.spyOn(codexEngine, "execute");
     const claudeExecute = vi.spyOn(claudeEngine, "execute");
     const requestedBackends: Array<string | undefined> = [];
@@ -851,6 +858,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-default",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -1110,6 +1118,7 @@ describe("TaskExecutor persistent decision wiring", () => {
 function antigravityQuotaEngine(): EnginePort {
   return {
     backendId: "antigravity",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/antigravity",
     async *execute(): AsyncIterable<SSEEventPayload> {
       const mapper = new AntigravityEventMapper("quota-turn");
@@ -1128,6 +1137,7 @@ function antigravityQuotaEngine(): EnginePort {
 function limitHitEngine(resetAt: string): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {
       yield { type: "credential_alert", status: "rejected", timestamp: Date.now() / 1_000 } as SSEEventPayload;

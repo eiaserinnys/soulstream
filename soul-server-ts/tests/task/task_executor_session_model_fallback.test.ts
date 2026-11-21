@@ -101,9 +101,14 @@ function stubAdvertisedPresets(): void {
   )));
 }
 
-function limitEngine(backendId: string): EnginePort {
+function limitEngine(backendId: EnginePort["backendId"]): EnginePort {
   return {
     backendId,
+    intervene: async () => ({
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+    } as const),
     workspaceDir: "/tmp/antigravity",
     async *execute(): AsyncIterable<SSEEventPayload> {
       const mapper = new AntigravityEventMapper("quota-turn");
@@ -119,9 +124,14 @@ function limitEngine(backendId: string): EnginePort {
   };
 }
 
-function completingEngine(backendId: string, nativeSessionId: string): EnginePort {
+function completingEngine(backendId: EnginePort["backendId"], nativeSessionId: string): EnginePort {
   return {
     backendId,
+    intervene: async () => ({
+      status: "not_delivered",
+      mechanism: "unsupported",
+      reason: "not_supported",
+    } as const),
     workspaceDir: "/tmp/workspace",
     async *execute(): AsyncIterable<SSEEventPayload> {
       yield { type: "session", session_id: nativeSessionId } as SSEEventPayload;

@@ -170,7 +170,7 @@ async function readUserPromptFromIterator(iterator: AsyncIterator<SDKUserMessage
   expect(next.done).toBe(false);
   const content = next.value.message.content;
   if (typeof content === "string") return content;
-  const textBlock = content.find((block) => block.type === "text");
+  const textBlock = content.find((block: { type: string; text?: string }) => block.type === "text");
   expect(textBlock).toBeDefined();
   return textBlock!.text;
 }
@@ -427,6 +427,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         {
           interrupt: vi.fn(async () => {
             interrupted.resolve();
+            return undefined;
           }),
         },
       );

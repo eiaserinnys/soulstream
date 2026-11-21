@@ -14,6 +14,10 @@ import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.j
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 const silentLogger = pino({ level: "silent" });
 
 const agent: AgentProfile = {
@@ -53,6 +57,14 @@ class HumanLiveSteerEvidenceLedger {
     this.row.state = "consumed";
     this.row.consumedAt = "2026-08-24T15:53:26.597Z";
   });
+
+  readonly discardIfConsumed = vi.fn(async () => false);
+
+  readonly recordRuntimeFollowupRelationConsumed = vi.fn(async () => false);
+
+  readonly recordConsumptionFailure = vi.fn(async () => undefined);
+
+  readonly recordAdmissionFailure = vi.fn(async () => undefined);
 
   constructor(
     deliveryId: string,
@@ -175,6 +187,7 @@ async function executeHumanLiveSteer(options: HarnessOptions): Promise<HumanLive
 function makeEngine(failure?: Error): EnginePort {
   return {
     backendId: "claude",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/claude-roselin",
     async *execute(): AsyncIterable<SSEEventPayload> {
       if (failure) throw failure;

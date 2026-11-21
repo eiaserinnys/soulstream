@@ -22,6 +22,9 @@ function makeEngine(overrides: Partial<EnginePort> = {}): EnginePort {
     backendId: "codex",
     workspaceDir: "/tmp/runner",
     async *execute() {},
+    async intervene() {
+      return { status: "not_delivered", mechanism: "unsupported", reason: "not_supported" };
+    },
     async interrupt() { return true; },
     async close() {},
     ...overrides,
@@ -36,7 +39,7 @@ async function drain<T>(values: AsyncIterable<T>): Promise<T[]> {
 
 describe("RunnerCommandDispatcher", () => {
   it("moves private Claude Result proof into the legacy runner metadata envelope", async () => {
-    const result = { type: "result", success: true, output: "done" } as const;
+    const result = { type: "result", success: true, output: "done", timestamp: 1 } as const;
     attachClaudeResultReceiptMetadata(result, { inputUuid: "input-1" });
     const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
       async *execute() { yield result; },

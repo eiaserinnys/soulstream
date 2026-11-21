@@ -17,6 +17,7 @@ import {
   ClaudeRuntimeTaskFollowupController,
 } from "../../src/task/claude_runtime_task_followup.js";
 import type { Task } from "../../src/task/task_models.js";
+import type { TaskManager } from "../../src/task/task_manager.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";
 
@@ -69,7 +70,7 @@ function makeNativeTranscriptReconciliation(
     taskId: "task-native", status: "completed", updatedAt: 1,
     isBackgrounded: true, toolUseId: "toolu-native",
   };
-  const addIntervention = vi.fn();
+  const addIntervention = vi.fn<TaskManager["addIntervention"]>();
   const releaseRetainedRunner = vi.fn(async () => undefined);
   const controller = new ClaudeRuntimeTaskFollowupController({
     taskManager: {
@@ -156,7 +157,15 @@ function makeController(
   deliveryV2Enabled = false,
   recordInlineConsumed?: ReturnType<typeof vi.fn>,
 ) {
-  const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+  const addIntervention = vi.fn<TaskManager["addIntervention"]>(
+      async () => ({
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "queue_only_policy",
+      }),
+    );
   const onResume = vi.fn();
   const releaseRetainedRunner = vi.fn(async () => undefined);
   const subject = new ClaudeRuntimeTaskFollowupController({
@@ -211,7 +220,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-unresolved", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-unresolved",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention }, onResume: vi.fn(),
       releaseRetainedRunner: vi.fn(async () => undefined), logger: silentLogger,
@@ -254,7 +263,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       sourceNode: "node-1", agentSessionId: "sess-1", sdkSessionId: "sdk-sess-1",
       sdkTaskId: "task-native", initiatingToolUseId: "toolu-native",
     });
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
@@ -294,7 +303,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-native", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-native",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const releaseRetainedRunner = vi.fn(async () => undefined);
     const controller = new ClaudeRuntimeTaskFollowupController({
@@ -354,7 +363,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-native", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-native",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const inspectInput = vi.fn()
       .mockRejectedValueOnce(new Error("transcript temporarily unavailable"))
@@ -434,7 +443,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
         isBackgrounded: true, toolUseId,
       };
     }
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const inspectInput = vi.fn(async () => ({
       kind: "completed" as const,
@@ -506,7 +515,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-native", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-native",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const inspectInput = vi.fn();
     const inspectNativeTaskNotification = vi.fn(async () => ({
@@ -959,7 +968,15 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
         taskId: "task-native", status: "completed", updatedAt: 1,
         isBackgrounded: true, toolUseId: "toolu-native",
       };
-      const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+      const addIntervention = vi.fn<TaskManager["addIntervention"]>(
+      async () => ({
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "queue_only_policy",
+      }),
+    );
       const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
       const releaseRetainedRunner = vi.fn(async () => undefined);
       const inspectNativeTaskNotification = vi.fn()
@@ -1018,7 +1035,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     async (candidateCount) => {
       const task = makeTask();
       task.status = "completed";
-      const addIntervention = vi.fn();
+      const addIntervention = vi.fn<TaskManager["addIntervention"]>();
       const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
       const inspectNativeTaskNotification = vi.fn(async () => ({
         kind: "completed" as const,
@@ -1078,7 +1095,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-native", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-native",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
@@ -1150,7 +1167,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
         taskId: "task-native", status: "completed", updatedAt: 1,
         isBackgrounded: true, toolUseId: "toolu-native",
       };
-      const addIntervention = vi.fn();
+      const addIntervention = vi.fn<TaskManager["addIntervention"]>();
       const recordRuntimeFollowupRelationConsumed = vi.fn(async () => true);
       const controller = new ClaudeRuntimeTaskFollowupController({
         taskManager: {
@@ -1213,7 +1230,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       taskId: "task-native", status: "completed", updatedAt: 1,
       isBackgrounded: true, toolUseId: "toolu-native",
     };
-    const addIntervention = vi.fn();
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>();
     const recordRuntimeFollowupRelationConsumed = vi.fn(async () => false);
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: {
@@ -1274,7 +1291,15 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       isBackgrounded: true,
       toolUseId: "toolu-metadata-session",
     };
-    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const addIntervention = vi.fn<TaskManager["addIntervention"]>(
+      async () => ({
+        delivered: false,
+        queued: true,
+        queuePosition: 1,
+        consumeWhen: "next_turn",
+        reason: "queue_only_policy",
+      }),
+    );
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
@@ -1284,6 +1309,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       sourceNode: "node-1",
     });
     const event = {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-metadata-session",
       tool_use_id: "toolu-metadata-session",
@@ -1323,6 +1349,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention } = makeController(true);
 
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "shared-task",
       session_id: "sdk-sess-1",
@@ -1361,6 +1388,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       toolUseId: "toolu-A",
     };
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "shared-task",
       session_id: "sdk-sess-1",
@@ -1370,6 +1398,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     } as SSEEventPayload);
     await controller.flush(task);
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_updated",
       task_id: "shared-task",
       session_id: "sdk-sess-1",
@@ -1386,6 +1415,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       toolUseId: "toolu-B",
     };
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "shared-task",
       session_id: "sdk-sess-1",
@@ -1482,6 +1512,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention } = makeController(true);
 
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-v2",
       status: "completed",
@@ -1525,6 +1556,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention, onResume, releaseRetainedRunner } =
       makeController(true, recordInlineConsumed);
     const event = {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-inline",
       status: "completed",
@@ -1564,6 +1596,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention } =
       makeController(true, recordInlineConsumed);
     const event = markPostResultDrainEvent({
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-after-result",
       status: "completed",
@@ -1602,6 +1635,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention } = makeController(true);
 
     await controller.collectDetached(task, markPostResultDrainEvent({
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-first",
       status: "completed",
@@ -1612,6 +1646,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
 
     task.claudeRuntime!.tasks["task-last"]!.status = "completed";
     await controller.collectDetached(task, markPostResultDrainEvent({
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-last",
       status: "completed",
@@ -1642,6 +1677,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     const { controller, addIntervention } = makeController(true);
 
     controller.collect(task, {
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-complete",
       status: "completed",
@@ -1675,6 +1711,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       const { controller, addIntervention } = makeController(true);
 
       await controller.collectDetached(task, markPostResultDrainEvent({
+        timestamp: 0,
         type: "claude_runtime_task_notification",
         task_id: "task-first",
         status: "completed",
@@ -1682,6 +1719,7 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       } as SSEEventPayload));
       task.claudeRuntime!.tasks["task-last"]!.status = terminalStatus;
       await controller.collectDetached(task, markPostResultDrainEvent({
+        timestamp: 0,
         type: "claude_runtime_task_notification",
         task_id: "task-last",
         status: terminalStatus,

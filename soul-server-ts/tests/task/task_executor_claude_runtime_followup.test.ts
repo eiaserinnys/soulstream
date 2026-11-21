@@ -24,6 +24,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 const silentLogger = pino({ level: "silent" });
 
 const claudeAgent: AgentProfile = {
@@ -212,12 +216,14 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       collectDetached: vi.fn(),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const capturedPrompts: string[] = [];
     const capturedOrigins: Array<unknown> = [];
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompts.push(params.prompt);
@@ -290,7 +296,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     };
     const addIntervention = vi.fn(async (message) => {
       task.interventionQueue.push(message);
-      return { queued: true as const, queuePosition: 1 };
+      return { delivered: false as const, queued: true as const, queuePosition: 1, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const };
     });
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
@@ -303,12 +309,17 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     const prompts: string[] = [];
     let turnCount = 0;
     const interrupt = vi.fn(async () => true);
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         prompts.push(params.prompt);
@@ -316,9 +327,10 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         if (turnCount === 1) {
           task.claudeRuntime!.tasks.watcher!.status = "killed";
           yield {
-            type: "claude_runtime_task_notification",
+            timestamp: 0,
+            type: "claude_runtime_task_updated",
             task_id: "watcher",
-            status: "killed",
+            patch: { status: "killed" },
             _event_id: 77,
             session_id: "sdk-session-1",
             tool_use_id: "toolu-watcher",
@@ -385,15 +397,21 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           deliveryIntent: "runtime_followup",
         });
       }),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     const prompts: string[] = [];
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         prompts.push(params.prompt);
@@ -461,15 +479,21 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       collectDetached: vi.fn(),
       flush: vi.fn(),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     const deliveredInputUuids: Array<string | undefined> = [];
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         deliveredInputUuids.push(params.inputUuid);
@@ -523,14 +547,20 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       collectDetached: vi.fn(),
       flush: vi.fn(),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         turnCount += 1;
@@ -577,16 +607,22 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       collectDetached: vi.fn(),
       flush: vi.fn(),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     const prompts: string[] = [];
     const deliveredInputUuids: Array<string | undefined> = [];
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         prompts.push(params.prompt);
@@ -644,15 +680,21 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       collectDetached: vi.fn(),
       flush: vi.fn(),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     const prompts: string[] = [];
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         prompts.push(params.prompt);
@@ -709,7 +751,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
   it("interrupt로 종료된 turn은 runtime follow-up보다 finalizer를 먼저 완료한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
-    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const addIntervention = vi.fn(async () => ({ delivered: false as const, queued: true as const, queuePosition: 1, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const }));
     const controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
       onResume: vi.fn(),
@@ -719,6 +761,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     });
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -776,7 +819,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
             followupAttempt: params.followupAttempt,
             followupKey: params.followupKey,
           });
-          return { queued: true, queuePosition: addInterventionCalls };
+          return { delivered: false as const, queued: true as const, queuePosition: addInterventionCalls, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const };
         }),
       },
       onResume: vi.fn(),
@@ -788,6 +831,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         prompts.push(params.prompt);
@@ -873,7 +917,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
               followupKey: params.followupKey,
               followupTaskIds: params.followupTaskIds,
             });
-            return { queued: true, queuePosition: addInterventionCalls };
+            return { delivered: false as const, queued: true as const, queuePosition: addInterventionCalls, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const };
           }),
         },
         onResume: vi.fn(),
@@ -897,6 +941,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       } as SSEEventPayload;
       const engine: EnginePort = {
         backendId: "claude",
+        intervene: unsupportedEngineIntervention,
         workspaceDir: "/tmp/claude-roselin",
         async *execute(params): AsyncIterable<SSEEventPayload> {
           prompts.push(params.prompt);
@@ -973,14 +1018,20 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           deliveryIntent: "runtime_followup",
         });
       }),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const deliveryRecorder = {
       recordTurnStarted: vi.fn(async () => undefined),
       recordConsumed: vi.fn(async () => undefined),
+      discardIfConsumed: vi.fn(async () => false),
+      recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+      recordConsumptionFailure: vi.fn(async () => undefined),
+      recordAdmissionFailure: vi.fn(async () => undefined),
     };
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         if (turnCount === 0) {
@@ -1044,6 +1095,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       },
     };
     const event = markPostResultDrainEvent({
+      timestamp: 0,
       type: "claude_runtime_task_notification",
       task_id: "task-reentrant",
       status: "completed",
@@ -1062,7 +1114,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           "Delivery delivery-reentrant could not stage notification",
         );
       }
-      return { queued: true as const, queuePosition: 1 };
+      return { delivered: false as const, queued: true as const, queuePosition: 1, consumeWhen: "next_turn" as const, reason: "queue_only_policy" as const };
     });
     controller = new ClaudeRuntimeTaskFollowupController({
       taskManager: { addIntervention },
@@ -1080,9 +1132,11 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         controller.collect(target, event);
         await controller.flush(target);
       },
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "text_delta", text: "foreground done" } as SSEEventPayload;
@@ -1124,9 +1178,11 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       flush: vi.fn(async () => {
         throw new Error("route unavailable");
       }),
+      reconcileTranscriptAppend: vi.fn(async () => undefined),
     };
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "complete", result: "first", timestamp: 1 } as SSEEventPayload;

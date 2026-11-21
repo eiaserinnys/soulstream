@@ -39,14 +39,14 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   fn.array = (a: unknown[]) => a;
   fn.json = (value: unknown) => value;
   fn.end = vi.fn().mockResolvedValue(undefined);
-  fn.begin = vi.fn(async <T>(callback: (sql: SqlClient) => Promise<T>) => {
+  fn.begin = (async <T>(callback: (sql: SqlClient) => Promise<T>) => {
     inTransaction = true;
     try {
       return await callback(fn as unknown as SqlClient);
     } finally {
       inTransaction = false;
     }
-  });
+  }) as typeof fn.begin;
 
   return { sql: fn as unknown as SqlClient, calls, begin: fn.begin };
 }
@@ -63,14 +63,14 @@ describe("SessionDB folder ops (B-5)", () => {
     const { sql, calls } = createMockSql();
     await createFolderHostedDb(sql).assignSessionToFolder("sess-1", "folder-42");
     expect(calls).toHaveLength(1);
-    expect(calls[0].values).toEqual(["sess-1", "folder-42"]);
-    expect(calls[0].fragments.join("|")).toContain("session_assign_folder");
+    expect(calls[0]!.values).toEqual(["sess-1", "folder-42"]);
+    expect(calls[0]!.fragments.join("|")).toContain("session_assign_folder");
   });
 
   it("assignSessionToFolder(folderId=null) → stored proc에 NULL 전달 (폴더 해제)", async () => {
     const { sql, calls } = createMockSql();
     await createFolderHostedDb(sql).assignSessionToFolder("sess-1", null);
-    expect(calls[0].values).toEqual(["sess-1", null]);
+    expect(calls[0]!.values).toEqual(["sess-1", null]);
   });
 
   it("getDefaultFolder(name) → folder_get_default 호출, 첫 행 반환 또는 null", async () => {

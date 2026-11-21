@@ -1103,7 +1103,7 @@ async function closedRunnerState(label: string, lifecycleState: "closed" | "comp
 function registration(options: {
   sessionId?: string;
   pidAlive?: boolean;
-  lifecycleState?: "running" | "completed" | "failed";
+  lifecycleState?: NonNullable<RunnerRegistration["lifecycle"]>["execution_state"];
   progressedAt?: string;
   livenessAt?: string;
   inFlightTools?: Array<{ tool_use_id: string; started_at: string }>;
@@ -1119,13 +1119,16 @@ function registration(options: {
         sessionDirectory: `/runner/${sessionId}`,
         databasePath: `/runner/${sessionId}/runner.sqlite`,
         socketPath: `/runner/${sessionId}/runner.sock`,
+        socketKind: "unix_socket",
         pidPath: `/runner/${sessionId}/runner.pid`,
         lockPath: `/runner/${sessionId}/runner.lock`,
         configPath: `/runner/${sessionId}/runner-config.json`,
+        logPath: `/runner/${sessionId}/runner.log`,
       },
       codeSha: "release-a",
       snapshotPath: "/release/release-a",
       codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,

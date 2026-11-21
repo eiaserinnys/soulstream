@@ -17,6 +17,7 @@ function makeTask(): Task {
     lastReadEventId: 0,
     interventionQueue: [],
     claudeRuntime: {
+      updatedAt: 1,
       tasks: {
         "bg-1": {
           taskId: "bg-1",

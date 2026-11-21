@@ -26,9 +26,14 @@ import {
 } from "../../src/runner/runner_child_runtime_helpers.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import type { RunnerBootstrapInput } from "../../src/runner/sqlite_event_outbox_schema.js";
 import { readRunnerRegistrationIdentity } from
   "../../src/runner/runner_registration_identity.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 
 const directories: string[] = [];
 
@@ -142,10 +147,10 @@ describe("buildDurableRunnerEvent", () => {
     for (const [index, durable] of durableEvents.slice(0, 2).entries()) {
       expect(Buffer.byteLength(JSON.stringify(durable.appendInput), "utf8"))
         .toBeLessThan(2 * 1024 * 1024);
-      expect(durable.appendInput.payload.truncation).toMatchObject({
+      expect((durable.appendInput.payload as Record<string, unknown>).truncation).toMatchObject({
         attachment: descriptor,
       });
-      expect(durable.appendInput.payload.attachment_ids).toEqual(index === 0
+      expect((durable.appendInput.payload as Record<string, unknown>).attachment_ids).toEqual(index === 0
         ? ["preexisting-attachment", descriptor.attachment_id]
         : [descriptor.attachment_id]);
       expect(durable.frame.payload).toEqual(durable.appendInput.payload);
@@ -173,10 +178,10 @@ describe("buildDurableRunnerEvent", () => {
       timestamp: 2,
     } as SSEEventPayload, undefined, undefined, archive);
 
-    expect(first.appendInput.payload.truncation).toMatchObject({ attachment: null });
+    expect((first.appendInput.payload as Record<string, unknown>).truncation).toMatchObject({ attachment: null });
     expect(first.appendInput.payload).not.toHaveProperty("attachment_ids");
     expect(first.frame.payload).toEqual(first.appendInput.payload);
-    expect(second.appendInput.payload.content).toBe("next event");
+    expect((second.appendInput.payload as Record<string, unknown>).content).toBe("next event");
     expect(second.appendInput.payload).not.toHaveProperty("truncation");
 
     const nullArchive = vi.fn(async () => null);
@@ -189,8 +194,8 @@ describe("buildDurableRunnerEvent", () => {
       is_error: false,
       timestamp: 3,
     } as unknown as SSEEventPayload, undefined, undefined, nullArchive);
-    expect(nullResult.appendInput.payload.truncation).toMatchObject({ attachment: null });
-    expect(nullResult.appendInput.payload.attachment_ids).toEqual(["keep-existing"]);
+    expect((nullResult.appendInput.payload as Record<string, unknown>).truncation).toMatchObject({ attachment: null });
+    expect((nullResult.appendInput.payload as Record<string, unknown>).attachment_ids).toEqual(["keep-existing"]);
   });
 
   it("raises the Linux runner OOM kill preference without affecting other platforms", async () => {
@@ -245,6 +250,7 @@ describe("RunnerChildRuntime startup", () => {
       claudeRuntimeMaxEntries: 16,
       claudeRuntimeTurnTimeoutMs: 1_800_000,
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+      codexDetachedResultRetentionMs: 1_800_000,
       codexHome: null,
       rolloutRoot: null,
     };
@@ -298,9 +304,7 @@ describe("RunnerChildRuntime startup", () => {
     });
     const shutdown = vi.fn(async () => undefined);
     const finish = vi.fn();
-    const runtime = Object.create(RunnerChildRuntime.prototype) as RunnerChildRuntime & {
-      handleCommand(command: RunnerCommandFrame): Promise<void>;
-    };
+    const runtime = Object.create(RunnerChildRuntime.prototype) as RunnerChildRuntime;
     Object.assign(runtime, {
       config: { sessionId: "close-child" },
       endpoint: { currentConnection: { send }, close: vi.fn(async () => undefined) },
@@ -326,7 +330,7 @@ describe("RunnerChildRuntime startup", () => {
       commandId: "close-a",
     } as RunnerCommandFrame;
 
-    const handled = runtime.handleCommand(closeCommand);
+    const handled = Reflect.get(runtime, "handleCommand").call(runtime, closeCommand);
     if (sendFails) await expect(handled).rejects.toThrow("host disconnected");
     else await handled;
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -409,7 +413,7 @@ describe("RunnerChildRuntime backend session rotation", () => {
       await expect(child.outbox.readBootstrap()).resolves.toMatchObject({
         payload: { backend_session_id: "ses_rate_limit_runner" },
       });
-      expect((await child.outbox.readBatch())?.events.map((event) => event.payload.type))
+      expect((await child.outbox.readBatch())?.events.map((event) => (event.payload as Record<string, unknown>).type))
         .toEqual(["session", "error"]);
       expect((await child.outbox.readBatch())?.events[1]?.payload).toMatchObject(fatal);
     } finally {
@@ -418,7 +422,7 @@ describe("RunnerChildRuntime backend session rotation", () => {
   });
 
   it.each([true, false])("records a naturally ended fatal=%s stream in the lifecycle and end frame", async (fatal) => {
-    const error = { type: "error", message: "provider rejected model", fatal, timestamp: 1 } as SSEEventPayload;
+    const error = { type: "error", message: "provider rejected model", fatal, timestamp: 1 } as Extract<SSEEventPayload, { type: "error" }>;
     const { runtime, sessionId } = await createRotationRuntime("backend-session-old", [error]);
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
     const command = executeCommandFrame("fatal-turn", {
@@ -577,7 +581,7 @@ describe("RunnerChildRuntime backend session rotation", () => {
       });
       expect(buffer.frames).toHaveLength(0);
       const events = (await child.outbox.readBatch())?.events ?? [];
-      expect(events.map((event) => event.payload.type)).toEqual([
+      expect(events.map((event) => (event.payload as Record<string, unknown>).type)).toEqual([
         "assistant_message",
         "session",
       ]);
@@ -689,6 +693,7 @@ async function createRotationRuntime(
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
     internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
+    codexDetachedResultRetentionMs: 1_800_000,
     codexHome: null,
     rolloutRoot: null,
   };
@@ -704,6 +709,7 @@ async function createRotationRuntime(
 function rotationEngine(backendId: RunnerChildConfig["backend"], workspaceDir: string): EnginePort {
   return {
     backendId,
+    intervene: unsupportedEngineIntervention,
     workspaceDir,
     async *execute() {},
     async interrupt() { return true; },
@@ -738,7 +744,7 @@ function rotationBootstrapInput(
   sessionId: string,
   directory: string,
   backendSessionId: string,
-) {
+): RunnerBootstrapInput {
   return {
     session_id: sessionId,
     created_at: "2026-10-05T00:00:00.000Z",
@@ -773,6 +779,7 @@ async function appendRotation(
 function standaloneEngine(workspaceDir: string): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir,
     async *execute() {},
     async interrupt() { return true; },

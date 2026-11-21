@@ -7,7 +7,18 @@ import postgres from "postgres";
 
 import { startPostgresTestContainer } from
   "../../../packages/db-schema/scripts/postgres-test-container.mjs";
-import type { SqlClient } from "../../src/db/session_db.js";
+
+type PostgresSql = ReturnType<typeof postgres>;
+export type HarnessSql = PostgresSql & {
+  json(value: unknown): ReturnType<PostgresSql["json"]>;
+};
+
+function widenJson(sql: PostgresSql): HarnessSql {
+  const json = sql.json.bind(sql);
+  return Object.assign(sql, {
+    json: (value: unknown) => json(value as Parameters<PostgresSql["json"]>[0]),
+  });
+}
 
 const TEST_DB_NAME = "container_browse_test_db";
 const TEST_USER = "container_browse_test";
@@ -15,8 +26,8 @@ const TEST_PASSWORD = "container_browse_test";
 
 export interface FullSchemaPostgresHarness {
   readonly databaseUrl: string;
-  sql: SqlClient;
-  createPeer(): SqlClient;
+  sql: HarnessSql;
+  createPeer(): HarnessSql;
   cleanup(): Promise<void>;
 }
 
@@ -53,12 +64,12 @@ async function connect(
   stopContainer: (() => void) | undefined,
 ): Promise<FullSchemaPostgresHarness> {
   const schema = `container_browse_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const sql = postgres(url, {
+  const sql = widenJson(postgres(url, {
     max: 1,
     idle_timeout: 1,
     connection: { search_path: schema },
-  });
-  const peers: ReturnType<typeof postgres>[] = [];
+  }));
+  const peers: HarnessSql[] = [];
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
   const schemaSql = readFileSync(
@@ -70,15 +81,15 @@ async function connect(
   scopedUrl.searchParams.set("options", `-csearch_path=${schema}`);
   return {
     databaseUrl: scopedUrl.toString(),
-    sql: sql as unknown as SqlClient,
+    sql,
     createPeer() {
-      const peer = postgres(url, {
+      const peer = widenJson(postgres(url, {
         max: 1,
         idle_timeout: 1,
         connection: { search_path: schema },
-      });
+      }));
       peers.push(peer);
-      return peer as unknown as SqlClient;
+      return peer;
     },
     async cleanup() {
       try {

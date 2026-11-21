@@ -30,14 +30,8 @@ function makeRunningTask(overrides: Partial<Task> = {}): Task {
     lastReadEventId: 3,
     interventionQueue: [],
     executionRegistration: {
-      ownerKind: "in_process",
-      manifestId: "manifest:s1",
-      runtimeEnvIdentity: "runtime:s1",
       registrationId: "registration:s1",
-      pid: 42_201,
-      startIdentity: "start:s1",
       executionCommandId: "command:s1",
-      ownershipGeneration: 1,
     },
     ...overrides,
   };
@@ -155,6 +149,7 @@ describe("RunningInterventionTransition", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       discardIfConsumed: vi.fn().mockResolvedValue(false),
       recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
       recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(false),
     };
     const receipt = new TaskDeliveryTurnReceipt(
@@ -509,7 +504,7 @@ describe("RunningInterventionTransition", () => {
       persistence: persistenceDouble.persistence,
     });
 
-    const message = {
+    const message: InterventionMessage = {
       text: "child completed",
       user: "agent",
       deliveryId: "idle-runner-completion",
@@ -899,7 +894,7 @@ describe("RunningInterventionTransition", () => {
         user: "alice",
         callerInfo,
         attachmentPaths: ["/tmp/a.png", "/tmp/a.pdf"],
-        context: [{ title: "trace", body: "line 1" }],
+        context: [{ key: "trace", content: "line 1" }],
       }),
     ).resolves.toEqual({
       delivered: false,
@@ -916,7 +911,7 @@ describe("RunningInterventionTransition", () => {
         user: "alice",
         callerInfo,
         attachmentPaths: ["/tmp/a.png", "/tmp/a.pdf"],
-        context: [{ title: "trace", body: "line 1" }],
+        context: [{ key: "trace", content: "line 1" }],
         runnerInterventionId: expect.any(String),
       },
     ]);

@@ -8,6 +8,7 @@ import type {
   EngineExecuteParams,
   EnginePort,
   SSEEventPayload,
+  SupportsCompact,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
@@ -58,6 +59,7 @@ import {
   EventAcknowledgementTimeoutError,
   isValidEventAppendAck,
   type EventAppendAck,
+  type EventAppendAcknowledgement,
 } from "../../src/upstream/event_outbox_pump_protocol.js";
 import { appendSystemAbortNotice, SYSTEM_ABORT_NOTICE_KEY } from "../../src/task/system_abort_notice.js";
 
@@ -67,7 +69,18 @@ import {
 } from "./card1266_request_cells_harness.js";
 import { stopTask } from "./card1266_request_cells_steps.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 const silentLogger = pino({ level: "silent" });
+
+
+function asExecutionContextBuilderPort(
+  fake: Record<string, unknown>,
+): ConstructorParameters<typeof TaskExecutor>[5] {
+  return Object.assign(Object.create(null), fake);
+}
 
 const agent: AgentProfile = {
   id: "codex-default",
@@ -90,12 +103,13 @@ function makeFakeEngine(
 ): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {
       const total = Math.max(events.length, (opts.throwAt ?? -1) + 1);
       for (let i = 0; i < total; i++) {
         if (opts.throwAt === i) throw new Error("engine boom");
-        if (i < events.length) yield events[i];
+        if (i < events.length) yield events[i]!;
       }
     },
     async interrupt() { return true; },
@@ -198,16 +212,33 @@ describe("TaskExecutor.startNewExecution", () => {
     const warn = vi.spyOn(warningLogger, "warn");
     const compact = vi.fn();
     const execute = vi.fn(async function* (): AsyncIterable<SSEEventPayload> {
-      yield { type: "result", success: false, output: "Prompt is too long", terminal_reason: "prompt_too_long" } as SSEEventPayload;
+      yield { timestamp: 1,  type: "result", success: false, output: "Prompt is too long", terminal_reason: "prompt_too_long" } as SSEEventPayload;
       yield { type: "error", message: "Prompt is too long", fatal: false, error_code: "claude_prompt_too_long" } as SSEEventPayload;
     });
-    const engine: EnginePort = { ...makeFakeEngine([]), backendId: "antigravity", execute, compact };
+    const engine: EnginePort & SupportsCompact = { ...makeFakeEngine([]), backendId: "antigravity", execute, compact };
     const factory = vi.fn(() => engine);
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, warningLogger,
       undefined, undefined, undefined, undefined, undefined,
       {
         resolve: () => { throw new UnknownModelPresetError("gemini"); },
-        snapshot: () => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } }),
+        snapshot: () => ({
+          schema_version: 1,
+          groups: [],
+          presets: [],
+          models: [],
+          price_snapshot: {
+            price_version: "test-v1",
+            as_of: "2026-10-19",
+            checked_at: "2026-10-19",
+            currency: "USD",
+            unit: "per_1m_tokens",
+            model_mapping_version: "exact-provider-model-v1",
+            refreshed_model_rows: {},
+            sources: {},
+            assumptions: [],
+          },
+          persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        }),
       } as never);
     const task = hydrateEvictedTaskFromSessionRow(sessionRow({
       agent_id: claudeAgent.id, model_preset: "gemini", model: "gemini",
@@ -531,6 +562,24 @@ describe("TaskExecutor.startNewExecution", () => {
           backend: "claude",
           model: "new-catalog-model",
         }),
+        snapshot: () => ({
+          schema_version: 1,
+          groups: [],
+          presets: [],
+          models: [],
+          price_snapshot: {
+            price_version: "test-v1",
+            as_of: "2026-10-19",
+            checked_at: "2026-10-19",
+            currency: "USD",
+            unit: "per_1m_tokens",
+            model_mapping_version: "exact-provider-model-v1",
+            refreshed_model_rows: {},
+            sources: {},
+            assumptions: [],
+          },
+          persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        }),
       },
     );
     const task = {
@@ -582,6 +631,24 @@ describe("TaskExecutor.startNewExecution", () => {
         resolve: () => {
           throw new UnknownModelPresetError("removed-preset");
         },
+        snapshot: () => ({
+          schema_version: 1,
+          groups: [],
+          presets: [],
+          models: [],
+          price_snapshot: {
+            price_version: "test-v1",
+            as_of: "2026-10-19",
+            checked_at: "2026-10-19",
+            currency: "USD",
+            unit: "per_1m_tokens",
+            model_mapping_version: "exact-provider-model-v1",
+            refreshed_model_rows: {},
+            sources: {},
+            assumptions: [],
+          },
+          persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+        }),
       },
     );
     const task = {
@@ -640,6 +707,10 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
@@ -669,7 +740,7 @@ describe("TaskExecutor.startNewExecution", () => {
       task,
       "event:0",
     );
-    expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(deliveryRecorder.recordTurnStarted.mock.invocationCallOrder[0]!).toBeLessThan(
       deliveryRecorder.recordConsumed.mock.invocationCallOrder[0]!,
     );
     const sessionEventCall = mocks.persistEvent.mock.calls.findIndex(
@@ -757,6 +828,9 @@ describe("TaskExecutor.startNewExecution", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([], { throwAt: 0 }),
@@ -793,6 +867,10 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
@@ -833,6 +911,10 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => ({
@@ -961,7 +1043,7 @@ describe("TaskExecutor.startNewExecution", () => {
         deliveryId,
         expect.stringMatching(/^event:/),
       );
-      expect(markConsumed.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(markConsumed.mock.invocationCallOrder[0]!).toBeLessThan(
         mocks.enqueueTerminalTransitionAndWaitForApplication.mock.invocationCallOrder[0]!,
       );
       expect(attempt).toBe(1);
@@ -1091,6 +1173,7 @@ describe("TaskExecutor.startNewExecution", () => {
     let turn = 0;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(): AsyncIterable<SSEEventPayload> {
         turn += 1;
@@ -1151,10 +1234,14 @@ describe("TaskExecutor.startNewExecution", () => {
       recordTurnStarted: vi.fn()
         .mockRejectedValueOnce(new Error("transient database error")),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
-        { type: "error", error: "recoverable diagnostic" },
+        { type: "error", message: "recoverable diagnostic" },
         { type: "assistant_message", content: "consumed", timestamp: 1 },
       ] as SSEEventPayload[]),
       mocks.db,
@@ -1189,6 +1276,10 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockRejectedValue(new Error("database unavailable")),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
@@ -1225,10 +1316,14 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
-        { type: "error", error: "recoverable diagnostic" },
+        { type: "error", message: "recoverable diagnostic" },
       ] as SSEEventPayload[]),
       mocks.db,
       mocks.persistence,
@@ -1262,6 +1357,9 @@ describe("TaskExecutor.startNewExecution", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([
@@ -1305,11 +1403,15 @@ describe("TaskExecutor.startNewExecution", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
       recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const task = makeTask();
     task.interventionQueue.push(message);
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(): AsyncIterable<SSEEventPayload> {
         // Re-admitted while the turn runs; the turn still ends without a receipt.
@@ -1374,7 +1476,7 @@ describe("TaskExecutor.startNewExecution", () => {
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
 
     // 첫 persistEvent는 user_message 영속화
-    expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
+    expect(mocks.persistEvent.mock.calls[0]![1]).toMatchObject({
       type: "user_message",
       text: "hi",
     });
@@ -1489,10 +1591,11 @@ describe("TaskExecutor.startNewExecution", () => {
     let capturedImageAttachmentPaths: string[] | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedImageAttachmentPaths = params.imageAttachmentPaths;
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -1510,7 +1613,7 @@ describe("TaskExecutor.startNewExecution", () => {
     await task.executionPromise;
 
     expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.jpeg"]);
-    expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
+    expect(mocks.persistEvent.mock.calls[0]![1]).toMatchObject({
       type: "user_message",
       attachments: ["/tmp/incoming/sess/a.jpeg", "/tmp/incoming/sess/readme.txt"],
     });
@@ -1521,10 +1624,11 @@ describe("TaskExecutor.startNewExecution", () => {
     let capturedReasoningEffort: string | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedReasoningEffort = params.reasoningEffort;
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -1549,6 +1653,7 @@ describe("TaskExecutor.startNewExecution", () => {
     let capturedExtraEnv: Record<string, string> | undefined;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedExtraEnv = params.extraEnv;
@@ -1604,6 +1709,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const engine: EnginePort & SupportsToolApproval = {
       backendId: "openai-agents",
       workspaceDir: "/tmp/agents",
+      intervene: async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" } as const),
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
           type: "handoff_requested",
@@ -1681,6 +1787,7 @@ describe("TaskExecutor.startNewExecution", () => {
     let captured: EngineExecuteParams | undefined;
     const engine: EnginePort = {
       backendId: "openai-agents",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agents",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames(params: EngineExecuteParams) {
@@ -1815,6 +1922,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "error", message: "claude boom", fatal: true, timestamp: 1 } as SSEEventPayload;
@@ -1862,6 +1970,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -1877,7 +1986,7 @@ describe("TaskExecutor.startNewExecution", () => {
         } as SSEEventPayload;
         yield {
           type: "assistant_message",
-          text: "You've hit your usage limit.",
+          content: "You've hit your usage limit.",
           timestamp: 3,
         } as SSEEventPayload;
         yield {
@@ -1901,6 +2010,10 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => engine,
@@ -1934,7 +2047,7 @@ describe("TaskExecutor.startNewExecution", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "assistant_message",
-          text: "You've hit your usage limit.",
+          content: "You've hit your usage limit.",
         }),
         expect.objectContaining({
           type: "claude_runtime_hook_event",
@@ -1974,6 +2087,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const message = "You've hit your usage limit. Try again after the reset.";
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: agent.workspace_dir,
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -2034,6 +2148,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -2114,6 +2229,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
@@ -2181,6 +2297,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
@@ -2276,7 +2393,7 @@ describe("TaskExecutor.startNewExecution", () => {
 
     expect(task.status).toBe("error");
     expect(mocks.persistEvent).toHaveBeenCalledTimes(2);
-    expect((mocks.persistEvent.mock.calls[1][1] as SSEEventPayload).type).toBe("session_ended");
+    expect((mocks.persistEvent.mock.calls[1]![1] as SSEEventPayload).type).toBe("session_ended");
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 
@@ -2446,6 +2563,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const finishTurn = deferred<void>();
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute() {
         turnStarted.resolve();
@@ -2764,7 +2882,8 @@ describe("TaskExecutor runner process boundary", () => {
     const mocks = makeMocks();
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     dispatcher.invoke.mockResolvedValue(result);
-    runner.engine = new RunnerProcessEngineProxy(
+    const mutableRunner = runner as { engine: EnginePort };
+    mutableRunner.engine = new RunnerProcessEngineProxy(
       "codex",
       agent.workspace_dir,
       dispatcher as never,
@@ -2868,7 +2987,8 @@ describe("TaskExecutor runner process boundary", () => {
       pendingInputRequestCount: 0,
       pendingRuntimeSignalCount,
     }));
-    runner.engine = {
+    const mutableRunner = runner as { engine: EnginePort };
+    mutableRunner.engine = {
       ...makeFakeEngine([]),
       backendId: "claude",
       detachedClaudeRuntime: true,
@@ -2927,7 +3047,8 @@ describe("TaskExecutor runner process boundary", () => {
     const mocks = makeMocks();
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     const detachedClaudeRuntimeActivity = vi.fn(async () => result);
-    runner.engine = {
+    const mutableRunner = runner as { engine: EnginePort };
+    mutableRunner.engine = {
       ...makeFakeEngine([]),
       backendId: "claude",
       detachedClaudeRuntime: true,
@@ -3194,10 +3315,10 @@ describe("TaskExecutor runner process boundary", () => {
           ? {}
           : { expectedTerminalEventId }),
       }));
-      expect(dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(dispatcher.prepareExecutionIdentity.mock.invocationCallOrder[0]!).toBeLessThan(
         acquire.mock.invocationCallOrder[0]!,
       );
-      expect(acquire.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(acquire.mock.invocationCallOrder[0]!).toBeLessThan(
         dispatcher.executeFrames.mock.invocationCallOrder[0]!,
       );
       expect(terminal).toHaveBeenCalledWith(
@@ -3832,6 +3953,10 @@ describe("TaskExecutor runner process boundary", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const { runner, dispatcher } = makeRunnerProcessRuntime([]);
     dispatcher.recoverFrames.mockReturnValue((async function* () {
@@ -3985,19 +4110,20 @@ describe("TaskExecutor runner process boundary", () => {
       updated_at: "2026-08-11T00:00:00.000Z",
       last_event_id: 42,
     };
+    const acknowledgementEvent: EventAppendAcknowledgement = {
+      source_seq: 7,
+      event_id: 42,
+      effect_application: {
+        applied: false,
+        rejection_reason: "worktree_busy",
+        canonical_session: canonicalSession,
+      },
+    };
     const acknowledgement: EventAppendAck = {
       type: "event_append_ack",
       stream_id: "stream-1",
       acked_through: 7,
-      events: [{
-        source_seq: 7,
-        event_id: 42,
-        effect_application: {
-          applied: false,
-          rejection_reason: "worktree_busy",
-          canonical_session: canonicalSession,
-        },
-      }],
+      events: [acknowledgementEvent],
     };
     expect(isValidEventAppendAck(acknowledgement)).toBe(true);
     const record: EventOutboxRecord = {
@@ -4014,7 +4140,7 @@ describe("TaskExecutor runner process boundary", () => {
     };
     const pump = {
       waitForAcknowledgement: vi.fn(),
-      waitForAcknowledgementResult: vi.fn(async () => ({
+      waitForAcknowledgementResult: vi.fn<() => Promise<EventAppendAcknowledgement>>(async () => ({
         source_seq: 7,
         event_id: 42,
         effect_application: {
@@ -4024,8 +4150,8 @@ describe("TaskExecutor runner process boundary", () => {
       })),
     };
     pump.waitForAcknowledgementResult
-      .mockResolvedValueOnce(acknowledgement.events[0])
-      .mockResolvedValueOnce(acknowledgement.events[0]);
+      .mockResolvedValueOnce(acknowledgementEvent)
+      .mockResolvedValueOnce(acknowledgementEvent);
     const persistence = new EventPersistence(
       mocks.db,
       mocks.broadcaster,
@@ -4158,9 +4284,28 @@ describe("TaskExecutor runner process boundary", () => {
   );
 });
 
+type RunnerDispatcherDouble = {
+  dispatch: ReturnType<typeof vi.fn>;
+  executeFrames: ReturnType<typeof vi.fn>;
+  recoverFrames: ReturnType<typeof vi.fn>;
+  registrationId: ReturnType<typeof vi.fn>;
+  prepareExecutionIdentity: ReturnType<typeof vi.fn>;
+  rollbackExecutionIdentity: ReturnType<typeof vi.fn>;
+  prepareSession: ReturnType<typeof vi.fn>;
+  interrupt: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  detachHost: ReturnType<typeof vi.fn>;
+  releaseEventStreamRegistration: ReturnType<typeof vi.fn>;
+  releaseUnadoptedRecovery: ReturnType<typeof vi.fn>;
+  sendControlFrame: ReturnType<typeof vi.fn>;
+  requestContext: ReturnType<typeof vi.fn>;
+  waitForSessionAck: ReturnType<typeof vi.fn>;
+  invoke: ReturnType<typeof vi.fn>;
+};
+
 function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
   runner: TaskRunnerRuntime;
-  dispatcher: Record<string, ReturnType<typeof vi.fn>>;
+  dispatcher: RunnerDispatcherDouble;
 } {
   const dispatcher = {
     dispatch: vi.fn(),
@@ -4173,6 +4318,7 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
       startIdentity: "start-1",
       executionCommandId: "execute-1",
     })),
+    rollbackExecutionIdentity: vi.fn(async () => {}),
     prepareSession: vi.fn(async () => {}),
     interrupt: vi.fn(async () => true),
     close: vi.fn(async () => {}),
@@ -4225,13 +4371,14 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     let executeCalls = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         executeCalls += 1;
         captured.push({
           prompt: params.prompt,
           resumeSessionId: params.resumeSessionId,
-          hasOnIntervention: typeof params.onIntervention === "function",
+          hasOnIntervention: "onIntervention" in params,
         });
         if (executeCalls === 1) {
           yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
@@ -4266,16 +4413,16 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     await task.executionPromise;
 
     expect(executeCalls).toBe(2);
-    expect(captured[0]).toEqual({ prompt: "hi", resumeSessionId: undefined, hasOnIntervention: false });
-    expect(captured[1]).toMatchObject({
+    expect(captured[0]!).toEqual({ prompt: "hi", resumeSessionId: undefined, hasOnIntervention: false });
+    expect(captured[1]!).toMatchObject({
       resumeSessionId: "claude-sess-1",
       hasOnIntervention: false,
     });
-    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt).toContain(
+    expect(captured[1]!.prompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(captured[1]!.prompt).toContain(
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     );
-    expect(captured[1].prompt.endsWith(
+    expect(captured[1]!.prompt.endsWith(
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     )).toBe(true);
     expect(task.interventionQueue).toHaveLength(0);
@@ -4296,12 +4443,13 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     }> = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push({
           prompt: params.prompt,
           imageAttachmentPaths: params.imageAttachmentPaths,
-          hasOnIntervention: typeof params.onIntervention === "function",
+          hasOnIntervention: "onIntervention" in params,
         });
         if (captured.length === 1) {
           yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
@@ -4340,18 +4488,18 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       imageAttachmentPaths: [],
       hasOnIntervention: false,
     });
-    expect(captured[1]).toMatchObject({
+    expect(captured[1]!).toMatchObject({
       imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
       hasOnIntervention: false,
     });
-    expect(captured[1].prompt).toContain(
+    expect(captured[1]!.prompt).toContain(
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
     );
-    expect(captured[1].prompt).toContain(
+    expect(captured[1]!.prompt).toContain(
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     );
-    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt.endsWith(
+    expect(captured[1]!.prompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(captured[1]!.prompt.endsWith(
       "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
     )).toBe(true);
   });
@@ -4364,6 +4512,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompts.push(params.systemPrompt);
@@ -4402,7 +4551,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -4426,18 +4575,19 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const onInterventionFlags: boolean[] = [];
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
-        onInterventionFlags.push(typeof params.onIntervention === "function");
+        onInterventionFlags.push("onIntervention" in params);
         if (turnCount === 0) {
           turnCount += 1;
           yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
           task.interventionQueue.push({ text: "queued for next turn", user: "u" });
-          yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+          yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
           return;
         }
         turnCount += 1;
-        yield { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 2 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -4468,12 +4618,12 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       { type: "session", session_id: "thr-1" } as SSEEventPayload,
       { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
       { type: "text_end", timestamp: 1 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const turn2: SSEEventPayload[] = [
       { type: "text_delta", text: "b", timestamp: 2 } as SSEEventPayload,
       { type: "text_end", timestamp: 2 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 2 } as SSEEventPayload,
     ];
     let turnCount = 0;
     const captured: { turn: number; resumeSessionId: string | undefined }[] = [];
@@ -4481,6 +4631,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const task = makeTask();
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       // eslint-disable-next-line require-yield
       async *execute(params): AsyncIterable<SSEEventPayload> {
@@ -4511,9 +4662,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     await task.executionPromise;
 
     expect(turnCount).toBe(2);
-    expect(captured[0].resumeSessionId).toBeUndefined();
+    expect(captured[0]!.resumeSessionId).toBeUndefined();
     // 두 번째 turn은 첫 turn에서 박힌 codexThreadId로 resume
-    expect(captured[1].resumeSessionId).toBe("thr-1");
+    expect(captured[1]!.resumeSessionId).toBe("thr-1");
     expect(task.status).toBe("completed");
     expect(task.interventionQueue).toHaveLength(0);
   });
@@ -4526,6 +4677,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
 
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompts.push(params.prompt);
@@ -4585,6 +4737,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
 
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         turnCount += 1;
@@ -4638,6 +4791,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
 
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(): AsyncIterable<SSEEventPayload> {
         // 첫 yield 후 외부 intervention 도착 시뮬레이션
@@ -4682,11 +4836,16 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(true),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     task.interventionQueue.push(interruptedDelivery);
 
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         turnCount += 1;
@@ -4751,9 +4910,14 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      discardIfConsumed: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         executeInputs.push(params);
@@ -4840,7 +5004,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
       { type: "text_end", timestamp: 1 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const factory = vi.fn(() => makeFakeEngine(events));
     const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
@@ -4860,6 +5024,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const capturedResumeIds: Array<string | undefined> = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedResumeIds.push(params.resumeSessionId);
@@ -4899,6 +5064,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const capturedPrompts: string[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompts.push(params.systemPrompt);
@@ -4931,7 +5097,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -4961,11 +5127,13 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
         if (captured.length === 1) {
           yield {
+            timestamp: 1,
             type: "result",
             success: false,
             output: "Prompt is too long",
@@ -5002,7 +5170,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5013,7 +5181,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       prompt: "resume this work",
       resumeSessionId: "claude-over-limit",
     });
-    expect(captured[1]).toMatchObject({
+    expect(captured[1]!).toMatchObject({
       prompt: expect.stringContaining("resume this work"),
       systemPrompt: "full system after rollover",
       backendSessionRolloverFrom: "claude-over-limit",
@@ -5054,6 +5222,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5122,7 +5291,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5133,7 +5302,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       prompt: "이어서 작업해",
       resumeSessionId: "claude-missing-transcript",
     });
-    expect(captured[1]).toMatchObject({
+    expect(captured[1]!).toMatchObject({
       backendSessionRolloverFrom: "claude-missing-transcript",
     });
     expect(captured[1]).not.toHaveProperty("resumeSessionId");
@@ -5196,8 +5365,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.codexThreadId = "claude-large-jump";
     const compact = vi.fn().mockResolvedValue(compactResult);
     const captured: EngineExecuteParams[] = [];
-    const engine: EnginePort = {
+    const engine: EnginePort & SupportsCompact = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5230,7 +5400,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5252,8 +5422,8 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       (event, index) => index > compactIndex && event.type === "context_usage",
     );
     if (contextUsageIndex !== -1) {
-      const compactOrder = mocks.persistEvent.mock.invocationCallOrder[compactIndex];
-      const contextUsageOrder = mocks.persistEvent.mock.invocationCallOrder[contextUsageIndex];
+      const compactOrder = mocks.persistEvent.mock.invocationCallOrder[compactIndex]!;
+      const contextUsageOrder = mocks.persistEvent.mock.invocationCallOrder[contextUsageIndex]!;
       expect(
         mocks.waitForSessionAck.mock.invocationCallOrder.some(
           (order) => order > compactOrder && order < contextUsageOrder,
@@ -5289,6 +5459,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         if (captured.length === 2) {
           return [
             {
+              timestamp: 1,
               type: "result",
               success: false,
               output: "Prompt is too long",
@@ -5307,8 +5478,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
           { type: "complete", result: "recovered" } as SSEEventPayload,
         ];
       };
-      const engine: EnginePort = {
+      const engine: EnginePort & SupportsCompact = {
         backendId: "claude",
+        intervene: unsupportedEngineIntervention,
         workspaceDir: "/tmp/claude-roselin",
         async *execute(params): AsyncIterable<SSEEventPayload> {
           for (const event of eventsForTurn(params)) yield event;
@@ -5349,7 +5521,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         mocks.persistence,
         mocks.broadcaster,
         silentLogger,
-        fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+        asExecutionContextBuilderPort(fakeBuilder),
         undefined,
         undefined,
         undefined,
@@ -5363,7 +5535,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
 
       expect(compact).toHaveBeenCalledTimes(1);
       expect(captured).toHaveLength(3);
-      expect(captured[1]).toMatchObject({ resumeSessionId: "claude-over-limit" });
+      expect(captured[1]!).toMatchObject({ resumeSessionId: "claude-over-limit" });
       expect(captured[2]).toMatchObject({
         backendSessionRolloverFrom: "claude-over-limit",
         systemPrompt: "fresh system",
@@ -5384,6 +5556,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5413,7 +5586,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5436,6 +5609,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5463,7 +5637,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5495,6 +5669,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5514,7 +5689,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -5555,6 +5730,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5591,6 +5767,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const captured: EngineExecuteParams[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push(params);
@@ -5623,14 +5800,14 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
     await task.executionPromise;
 
     expect(captured).toHaveLength(4);
-    expect(captured[1]).toMatchObject({ backendSessionRolloverFrom: "claude-old" });
+    expect(captured[1]!).toMatchObject({ backendSessionRolloverFrom: "claude-old" });
     expect(captured[2]).toMatchObject({ resumeSessionId: "claude-fresh-1" });
     expect(captured[3]).toMatchObject({ backendSessionRolloverFrom: "claude-fresh-1" });
     expect(task.codexThreadId).toBe("claude-fresh-2");
@@ -5649,6 +5826,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     const execute = vi.fn();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         execute();
@@ -5690,8 +5868,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-session-1";
     const compact = vi.fn().mockResolvedValue(undefined);
-    const engine: EnginePort = {
+    const engine: EnginePort & SupportsCompact = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -5737,6 +5916,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.codexThreadId = "claude-session-1";
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -5802,6 +5982,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     };
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "complete", result: "done" } as SSEEventPayload;
@@ -5839,6 +6020,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     mocks.enqueueMetadataEffect.mockRejectedValueOnce(new Error("db down"));
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -5949,6 +6131,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.profileId = claudeAgent.id;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield {
@@ -5996,6 +6179,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     let turnCount = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompts.push(params.systemPrompt);
@@ -6038,7 +6222,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     executor.startNewExecution(task, claudeAgent);
@@ -6093,8 +6277,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       task.interventionQueue.push({ text: "arrived during compact", user: "browser" });
       return undefined;
     });
-    const engine: EnginePort = {
+    const engine: EnginePort & SupportsCompact = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompts.push(params.prompt);
@@ -6125,7 +6310,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
 
     try {
@@ -6166,8 +6351,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     task.codexThreadId = "claude-no-preturn-compact";
     const compact = vi.fn();
     const captured: Array<{ prompt: string; queue: InterventionMessage[] }> = [];
-    const engine: EnginePort = {
+    const engine: EnginePort & SupportsCompact = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured.push({ prompt: params.prompt, queue: [...task.interventionQueue] });
@@ -6223,7 +6409,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
       { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
       { type: "prompt_suggestion", text: "follow-up", timestamp: 1.5 } as SSEEventPayload,
       { type: "credential_alert", status: "allowed_warning", utilization: 0.91, timestamp: 1.6 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
@@ -6261,7 +6447,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
     });
     const events: SSEEventPayload[] = [
       { type: "assistant_message", content: "hi", timestamp: 1 } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
@@ -6288,7 +6474,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
@@ -6296,7 +6482,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     executor.startNewExecution(task, agent);
     await task.executionPromise;
 
-    const firstCall = mocks.persistEvent.mock.calls[0];
+    const firstCall = mocks.persistEvent.mock.calls[0]!;
     expect(firstCall[0]).toBe("sess-1");  // sessionId
     expect(firstCall[1]).toMatchObject({
       type: "user_message",
@@ -6314,14 +6500,14 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
   it("caller_info 미설정 → user 필드는 'unknown', caller_info 키 미박음", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();  // callerInfo 미설정
     executor.startNewExecution(task, agent);
     await task.executionPromise;
 
-    const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
+    const first = mocks.persistEvent.mock.calls[0]![1] as Record<string, unknown>;
     expect(first.user).toBe("unknown");
     expect(first.caller_info).toBeUndefined();
   });
@@ -6329,7 +6515,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
   it("context builder가 없어도 내부 page source marker는 user_message에 노출하지 않는다", async () => {
     const mocks = makeMocks();
     const executor = new TaskExecutor(
-      () => makeFakeEngine([{ type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload]),
+      () => makeFakeEngine([{ type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload]),
       mocks.db,
       mocks.persistence,
       mocks.broadcaster,
@@ -6343,7 +6529,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     executor.startNewExecution(task, agent);
     await task.executionPromise;
 
-    const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
+    const first = mocks.persistEvent.mock.calls[0]![1] as Record<string, unknown>;
     expect(first.context).toEqual([{ key: "visible", label: "Visible", content: "keep" }]);
   });
 
@@ -6354,7 +6540,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     });
     mocks.persistEvent.mockImplementation(async () => 42);
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
@@ -6368,7 +6554,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     // executor는 queue를 엔진에 전달하되 timeline 이벤트를 다시 만들지 않는다.
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
@@ -6388,11 +6574,12 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     // task.prompt는 prior turn에서 이미 codex thread에 처리된 원래 발화 — 재실행하면 중복 응답.
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     let capturedPrompt: string | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
@@ -6412,12 +6599,13 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
   it("auto-resume attachmentPaths → 이미지 attachment는 EngineExecuteParams.imageAttachmentPaths로 전달", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     let capturedPrompt = "";
     let capturedImageAttachmentPaths: string[] | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
@@ -6446,12 +6634,13 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
   it("auto-resume attachmentPaths → 본문 note에 남고 이미지는 imageAttachmentPaths로도 분리된다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     let capturedPrompt = "";
     let capturedImageAttachmentPaths: string[] | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
@@ -6517,7 +6706,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("effectiveSystemPrompt 있음 → system_message 이벤트 영속화 + broadcast (Python L133-146)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = makeFakeContextBuilder({
       effectiveSystemPrompt: "you are codex",
@@ -6530,7 +6719,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);
@@ -6555,7 +6744,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("effectiveSystemPrompt 없음 → system_message 영속화 skip (Python L134 가드 정합)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = makeFakeContextBuilder({
       // effectiveSystemPrompt undefined
@@ -6568,7 +6757,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);
@@ -6583,7 +6772,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("combinedContextItems 있음 → user_message 페이로드에 context 키 박힘 (Python L155)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const items = [
       { key: "soulstream_session", label: "Soulstream 세션 정보", content: { foo: 1 } },
@@ -6599,7 +6788,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);
@@ -6621,11 +6810,12 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     let capturedSystemPrompt: string | undefined;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
         capturedSystemPrompt = params.systemPrompt;
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -6644,7 +6834,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     task.profileId = claudeAgent.id;
@@ -6666,7 +6856,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("combinedContextItems 빈 배열 → user_message에 context 키 미박힘", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = makeFakeContextBuilder({
       combinedContextItems: [],
@@ -6678,7 +6868,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);
@@ -6693,7 +6883,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("system_message + user_message 순서 — system_message가 먼저 (Python 정합)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = makeFakeContextBuilder({
       effectiveSystemPrompt: "sys",
@@ -6706,7 +6896,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);
@@ -6722,7 +6912,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("contextBuilder.build throw → outer error finalizer runs before executeTurn", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = {
       build: vi.fn(async () => {
@@ -6735,7 +6925,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     const executeTurnSpy = vi.spyOn(TaskEngineTurnRunner.prototype, "executeTurn");
@@ -6770,7 +6960,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
   it("auto-resume (queue 비어있지 않음) → contextBuilder.build 없이 follow-up context만 붙인다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
-      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload,
     ];
     const fakeBuilder = makeFakeContextBuilder({
       effectiveSystemPrompt: "sys",
@@ -6783,7 +6973,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     task.prompt = "queued";
@@ -6851,6 +7041,7 @@ describe("TaskExecutor persistent generation rollover", () => {
     let capturedParams: EngineExecuteParams | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedParams = params;
@@ -6978,10 +7169,11 @@ describe("TaskExecutor persistent generation rollover", () => {
       let capturedParams: EngineExecuteParams | undefined;
       const engine: EnginePort = {
         backendId: "codex",
+        intervene: unsupportedEngineIntervention,
         workspaceDir: "/tmp/codex-default",
         async *execute(params): AsyncIterable<SSEEventPayload> {
           capturedParams = params;
-          yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+          yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
         },
         async interrupt() { return true; },
         async close() {},
@@ -7141,6 +7333,7 @@ describe("TaskExecutor persistent generation rollover", () => {
     let capturedParams: EngineExecuteParams | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedParams = params;
@@ -7242,11 +7435,12 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     let capturedPrompt: string | undefined;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompt = params.systemPrompt;
         capturedPrompt = params.prompt;
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -7262,7 +7456,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     task.profileId = claudeAgent.id;
@@ -7280,11 +7474,12 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     let capturedPrompt: string | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompt = params.systemPrompt;
         capturedPrompt = params.prompt;
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -7300,7 +7495,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
       mocks.persistence,
       mocks.broadcaster,
       silentLogger,
-      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+      asExecutionContextBuilderPort(fakeBuilder),
     );
     const task = makeTask();
     executor.startNewExecution(task, agent);  // codex agent
@@ -7317,10 +7512,11 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     let capturedParams: Record<string, unknown> = {};
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedParams = { ...params };
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -7353,10 +7549,11 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     let capturedParams: Record<string, unknown> = {};
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedParams = { ...params };
-        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},

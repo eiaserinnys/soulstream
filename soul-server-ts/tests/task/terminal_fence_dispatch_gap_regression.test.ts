@@ -373,10 +373,12 @@ function makeBroadcaster(): SessionBroadcaster {
 function makeSessionMutations(): SessionMutationHost {
   return {
     registerSession: vi.fn(async () => undefined),
+    registerSessionWithWorktree: vi.fn(async () => undefined),
     transitionSession: vi.fn(async () => undefined),
     renameSession: vi.fn(async () => undefined),
     deleteSession: vi.fn(async () => undefined),
     acknowledgeReview: vi.fn(async () => "not_required" as const),
+    setModelSelection: vi.fn(async () => undefined),
   };
 }
 

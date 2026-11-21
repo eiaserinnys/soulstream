@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import type { EventArchiveContent } from "../../src/db/event_payload_truncation.js";
 import { archiveRunnerEvent } from "../../src/runner/runner_event_archive.js";
+import type { RunnerHostRequestClient } from "../../src/runner/runner_host_request_client.js";
 import { createProducedAttachmentRegistration } from "../../src/attachments/produced_attachment_registration.js";
 
 const directories: string[] = [];
@@ -65,7 +66,7 @@ describe("archiveRunnerEvent", () => {
       preview_kind: "text",
       preview_mime_type: "text/plain",
     } satisfies AttachmentDescriptor;
-    const hostCall = vi.fn(async () => descriptor);
+    const hostCall = vi.fn<RunnerHostRequestClient["call"]>(async () => descriptor);
     const content: EventArchiveContent = {
       body,
       mimeType: "text/plain",
@@ -98,7 +99,7 @@ describe("archiveRunnerEvent", () => {
     const common = {
       sessionId: "session-a",
       eventType: "tool_result",
-      content: { body: "payload", mimeType: "text/plain", extension: "txt" },
+      content: { body: "payload", mimeType: "text/plain", extension: "txt" } as const,
       host: { call: hostCall } as never,
       logger,
     };

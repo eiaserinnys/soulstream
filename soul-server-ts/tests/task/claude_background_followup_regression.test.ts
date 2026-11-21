@@ -16,6 +16,10 @@ import {
 } from "../../src/task/claude_runtime_task_followup.js";
 import { TaskCompletionNotifier } from "../../src/task/completion_notifier.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
+import type {
+  AddInterventionParams,
+  StartExecutionCallback,
+} from "../../src/task/task_intervention_route.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import { makeDeliveryRepository } from "./delivery_repository_test_fake.js";
@@ -119,7 +123,11 @@ describe("Claude background follow-up regression", () => {
         isBackgrounded: true,
         toolUseId: "toolu-native",
       };
-      const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+      const addIntervention = vi.fn(
+        async (_params: AddInterventionParams, _onResume: StartExecutionCallback) => ({
+          autoResumed: true,
+        }),
+      );
       const releaseRetainedRunner = vi.fn(async () => undefined);
       const notifyBackgroundStopped = vi.fn(async () => undefined);
       const controller = new ClaudeRuntimeTaskFollowupController({
@@ -310,7 +318,11 @@ describe("Claude background follow-up regression", () => {
         status: "completed",
         runnerRetainedForDetachedWork: true,
       });
-      const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+      const addIntervention = vi.fn(
+        async (_params: AddInterventionParams, _onResume: StartExecutionCallback) => ({
+          autoResumed: true,
+        }),
+      );
       const notifyBackgroundStopped = vi.fn(async () => undefined);
       const releaseRetainedRunner = vi.fn(async (target: Task) => {
         target.runnerRetainedForDetachedWork = undefined;
@@ -406,7 +418,12 @@ describe("Claude background follow-up regression", () => {
   });
 
   it("T3b: V2에서 완료 알림과 멈춤 알림은 겹치지 않는 전달로 둘 다 남는다", async () => {
-    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const addIntervention = vi.fn(
+      async (_params: AddInterventionParams, _onResume: StartExecutionCallback) => ({
+        queued: true,
+        queuePosition: 1,
+      }),
+    );
     const rows = new Map<string, Record<string, unknown>>();
     const repository = makeDeliveryRepository(rows);
     const notifier = new TaskCompletionNotifier(
@@ -470,7 +487,12 @@ describe("Claude background follow-up regression", () => {
   it("T3: 보유 상한을 넘기면 보유를 풀고 부른 세션에 더 보고하지 않습니다를 보낸다", async () => {
     vi.useFakeTimers();
     try {
-      const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+      const addIntervention = vi.fn(
+        async (_params: AddInterventionParams, _onResume: StartExecutionCallback) => ({
+          queued: true,
+          queuePosition: 1,
+        }),
+      );
       const notifier = makeNotifier(addIntervention);
       const lifecycle = new TaskLifecycleTransition({
         logger: silentLogger,

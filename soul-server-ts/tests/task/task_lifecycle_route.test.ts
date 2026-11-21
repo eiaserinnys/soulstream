@@ -225,7 +225,7 @@ describe("TaskLifecycleRoute.cancelTask", () => {
     await expect(route.cancelTask("s1")).resolves.toBe(true);
     expect(closeSessionRuntime).toHaveBeenCalledOnce();
     expect(
-      enqueueTerminalTransitionAndWaitForApplication.mock.invocationCallOrder[0],
+      enqueueTerminalTransitionAndWaitForApplication.mock.invocationCallOrder[0]!,
     ).toBeLessThan(closeSessionRuntime.mock.invocationCallOrder[0]!);
     await expect(route.cancelTask("s1")).resolves.toBe(true);
 

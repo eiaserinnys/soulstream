@@ -19,7 +19,10 @@ import {
   EVENT_TRUNCATION_SUFFIX,
 } from "../../src/db/event_payload_truncation.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
-import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
+import {
+  RunnerProcessSpawner,
+  type SpawnRunnerProcessInput,
+} from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
@@ -77,15 +80,18 @@ describe("runner process detach/reconnect E2E", () => {
       prompt: "preserve amplified structured result",
     }));
 
-    expect(frames.map((frame) => frame.payload.type)).toEqual([
+    expect(frames.map((frame) =>
+      frame.kind === "engine_event" ? frame.payload.type : undefined,
+    )).toEqual([
       "session",
       "tool_start",
       "tool_result",
       "assistant_message",
       "complete",
     ]);
-    const toolResult = frames.find((frame) => frame.payload.type === "tool_result")
-      ?.payload as { result?: unknown; truncation?: unknown } | undefined;
+    const toolResult = frames.find(
+      (frame) => frame.kind === "engine_event" && frame.payload.type === "tool_result",
+    )?.payload as { result?: unknown; truncation?: unknown } | undefined;
     // The 600,000-byte text stays a structured object but is cut to the
     // durable string limit; its full text belongs to the archive, not the event.
     const result = toolResult?.result as
@@ -186,7 +192,8 @@ describe("runner process detach/reconnect E2E", () => {
         output_command_id: expect.stringMatching(/^execute:11111111-1111-4111-8111-111111111111:[0-9a-f-]{36}$/),
       },
     ]);
-    expect(second[1]?.payload?.output_command_id).not.toBe(firstCommandId);
+    expect((second[1]?.payload as { output_command_id?: unknown } | undefined)
+      ?.output_command_id).not.toBe(firstCommandId);
     expect(batches.flatMap((batch) => batch.events).some((event) =>
       event.event_type === "claude_runtime_hook_event"
     )).toBe(false);
@@ -232,7 +239,9 @@ describe("runner process detach/reconnect E2E", () => {
       agentSessionId: "session-e2e",
       prompt: "first",
     }));
-    expect(first.map((frame) => frame.payload.type)).toEqual([
+    expect(first.map((frame) =>
+      frame.kind === "engine_event" ? frame.payload.type : undefined,
+    )).toEqual([
       "claude_runtime_hook_event",
       "session",
       "assistant_message",
@@ -460,7 +469,7 @@ describe("runner process detach/reconnect E2E", () => {
 });
 
 function processDispatcher(
-  input: ReturnType<typeof spawnInput>,
+  input: SpawnRunnerProcessInput,
   pumpMux: EventOutboxPumpMux,
 ): RunnerProcessDispatcher {
   const spawner = new RunnerProcessSpawner();
@@ -526,7 +535,12 @@ function spawnInput(stateDirectory: string, snapshotPath: string, controlDirecto
           id: "root",
           name: "Root",
           instructions: "Runner process E2E fixture",
+          handoffs: [],
+          tools: [],
+          hosted_tools: [],
+          mcp_servers: [],
         }],
+        guardrails: { input_blocklist: [], output_blocklist: [] },
       },
     },
     codeSha: "e2e-sha",

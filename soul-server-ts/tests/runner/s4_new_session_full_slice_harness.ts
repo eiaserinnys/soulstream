@@ -89,7 +89,7 @@ export class ProductionFullSliceHarness {
     private readonly postgres: FullSchemaPostgresHarness,
     private readonly scenario: FullSliceScenario,
     private readonly backend: FullSliceBackend,
-    private readonly root: string,
+    readonly root: string,
     private readonly controlDirectory: string,
     private readonly stateDirectory: string,
     private readonly artifactDirectory: string,
@@ -590,10 +590,20 @@ export class ProductionFullSliceHarness {
       const identity = await readRunnerRegistrationIdentity(
         runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
       );
-      if (!identity || (expectedRegistrationId && identity.registrationId !== expectedRegistrationId)) {
+      if (
+        !identity
+        || identity.pid === null
+        || identity.startIdentity === null
+        || (expectedRegistrationId && identity.registrationId !== expectedRegistrationId)
+      ) {
         return null;
       }
-      const observed = { ...identity, alive: isPidAlive(identity.pid) };
+      const observed: RunnerIdentityObservation = {
+        registrationId: identity.registrationId,
+        pid: identity.pid,
+        startIdentity: identity.startIdentity,
+        alive: isPidAlive(identity.pid),
+      };
       if (!observed.alive) return null;
       this.rememberRunner(observed);
       return observed;
@@ -607,10 +617,21 @@ export class ProductionFullSliceHarness {
       const identity = await readRunnerRegistrationIdentity(
         runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
       );
-      if (!identity || identity.registrationId === previousRegistrationId || !isPidAlive(identity.pid)) {
+      if (
+        !identity
+        || identity.pid === null
+        || identity.startIdentity === null
+        || identity.registrationId === previousRegistrationId
+        || !isPidAlive(identity.pid)
+      ) {
         return null;
       }
-      const observed = { ...identity, alive: true };
+      const observed: RunnerIdentityObservation = {
+        registrationId: identity.registrationId,
+        pid: identity.pid,
+        startIdentity: identity.startIdentity,
+        alive: true,
+      };
       this.rememberRunner(observed);
       return observed;
     });
@@ -928,7 +949,14 @@ export class ProductionFullSliceHarness {
     const identity = await readRunnerRegistrationIdentity(
       runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
     );
-    if (identity) this.rememberRunner({ ...identity, alive: isPidAlive(identity.pid) });
+    if (identity && identity.pid !== null && identity.startIdentity !== null) {
+      this.rememberRunner({
+        registrationId: identity.registrationId,
+        pid: identity.pid,
+        startIdentity: identity.startIdentity,
+        alive: isPidAlive(identity.pid),
+      });
+    }
   }
 
   private rememberRunner(identity: RunnerIdentityObservation): void {
@@ -953,7 +981,7 @@ export class ProductionFullSliceHarness {
     this.throwIfWorkerFailed();
     let identityDiagnostic: {
       registrationId: string;
-      pid: number;
+      pid: number | null;
       hasStartIdentity: boolean;
       retiredAt: string;
     } | { readError: string } | "missing";

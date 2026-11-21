@@ -39,7 +39,7 @@ import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
 import type { EventOutboxPumpStore } from "../../src/upstream/event_outbox_pump_protocol.js";
 
-import contextUsageFixture from "../engine/claude_context_usage_after_compact.fixture.json";
+import contextUsageFixture from "../engine/claude_context_usage_after_compact.fixture.json" with { type: "json" };
 import { sdkInit, sdkResult } from "../engine/claude_sdk_persistent_test_harness.js";
 import {
   makeClaudeResumeTranscriptFixture,
@@ -168,7 +168,8 @@ function makeTaskManagerDeps(persistence: ReturnType<typeof makeEventPersistence
     transitionSession: vi.fn(async () => undefined),
     renameSession: vi.fn(async () => undefined),
     deleteSession: vi.fn(async () => undefined),
-    acknowledgeReview: vi.fn(async () => "acknowledged"),
+    acknowledgeReview: vi.fn(async () => "acknowledged" as const),
+    setModelSelection: vi.fn(async () => undefined),
   };
   const broadcaster = {
     emitCatalogUpdated: vi.fn(async () => undefined),
@@ -331,7 +332,10 @@ describe("Claude compact/intervention runner IPC integration", () => {
         spawn: input,
         runnerProcess: spawned,
         spawner: {
-          terminate: async () => await runtime.shutdown(),
+          terminate: async () => {
+            await runtime.shutdown();
+            return "registration_absent";
+          },
           retireTerminalRegistration: async () => await runtime.shutdown(),
         },
         pumpMux,

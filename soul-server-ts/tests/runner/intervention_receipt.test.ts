@@ -68,6 +68,9 @@ function makeEngine(overrides: Partial<EnginePort> = {}): EnginePort {
     backendId: "codex",
     workspaceDir: "/tmp/runner",
     async *execute() {},
+    async intervene() {
+      return { status: "unknown" as const, reason: "verdict_unknown" as const };
+    },
     async interrupt() { return true; },
     async close() {},
     ...overrides,
@@ -529,10 +532,12 @@ async function makeNodeFixture(receiptAnswer: unknown) {
       codeSha: "sha-receipt",
       snapshotPath: "/release/sha-receipt/soul-server-ts",
       codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,
       claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       codexHome: "/home/test/.codex",
       rolloutRoot: "/home/test/.codex/sessions",
     },

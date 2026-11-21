@@ -1,5 +1,5 @@
 import pino from "pino";
-import { vi } from "vitest";
+import { vi, type MockInstance } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
@@ -49,8 +49,8 @@ interface RuntimeObservation {
 interface RunningSubject {
   route: TaskInterventionRoute;
   task: Task;
-  deliver: ReturnType<typeof vi.spyOn>;
-  queueOnly: ReturnType<typeof vi.spyOn>;
+  deliver: MockInstance<RunningInterventionTransition["deliver"]>;
+  queueOnly: MockInstance<RunningInterventionTransition["queueOnly"]>;
   state: RuntimeObservation;
   admissionIds: string[];
 }
@@ -150,6 +150,7 @@ async function observeIdle(
           type: "result",
           success: true,
           output: "runtime follow-up consumed",
+          timestamp: 1,
         } as const;
         attachClaudeResultReceiptMetadata(result, { inputUuid: params.inputUuid });
         yield result;
@@ -186,6 +187,9 @@ async function observeIdle(
         }
       }),
       discardIfConsumed: vi.fn().mockResolvedValue(false),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(false),
     },
   );
   const autoResume = new AutoResumeTransition({
@@ -407,9 +411,16 @@ function makeLedgerGate(
     beginDispatch: vi.fn(async (candidate: DeliveryLedgerAdmission) => candidate),
     recordResult: vi.fn().mockResolvedValue(undefined),
     deferFailureToCoordinator: vi.fn().mockResolvedValue(undefined),
+    recordNotificationPublished: vi.fn().mockResolvedValue(undefined),
+    recordNotificationFailure: vi.fn().mockResolvedValue(undefined),
   } as Pick<
     TaskDeliveryLedgerGate,
-    "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
+    | "admit"
+    | "beginDispatch"
+    | "recordResult"
+    | "deferFailureToCoordinator"
+    | "recordNotificationPublished"
+    | "recordNotificationFailure"
   >;
   return { gate, admissionIds };
 }

@@ -32,6 +32,8 @@ describe("TaskDeliveryConsumption", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       discardIfConsumed: vi.fn().mockResolvedValue(false),
       recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(false),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -52,6 +54,8 @@ describe("TaskDeliveryConsumption", () => {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       discardIfConsumed: vi.fn().mockResolvedValue(false),
       recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+      recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(false),
     };
     const subject = new TaskDeliveryConsumption(
       recorder,
@@ -75,6 +79,8 @@ describe("TaskDeliveryConsumption", () => {
         recordTurnStarted: vi.fn().mockRejectedValue(new Error("db unavailable")),
         discardIfConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
         recordConsumptionFailure,
+        recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+        recordRuntimeFollowupRelationConsumed: vi.fn().mockRejectedValue(new Error("db unavailable")),
       },
       { warn } as unknown as Logger,
     );

@@ -8,9 +8,17 @@ import type {
 } from "@soulstream/wire-schema/session-delivery";
 import type {
   SqlClient,
-} from "../../src/db/session_db_types.js";
+} from "../../../orch-server-ts/src/control_plane/control_plane_types.js";
 
 type MockCall = { query: string; values: unknown[] };
+
+function postgresJsonParameter(value: unknown): ReturnType<SqlClient["json"]> {
+  return Object.assign(Object.create(null) as ReturnType<SqlClient["json"]>, {
+    type: 0,
+    value: JSON.stringify(value) ?? null,
+    raw: null,
+  });
+}
 
 function deliveryRow(
   overrides: Partial<SessionDeliveryRow> = {},
@@ -32,15 +40,26 @@ function deliveryRow(
     payload_hash: "hash-1",
     payload: { text: "done" },
     state: "pending",
+    aggregate_state: "pending",
     created_at: now,
     updated_at: now,
     claimed_at: null,
     dispatching_at: null,
+    attempt_token: null,
+    attempt_expires_at: null,
+    attempt_count: 0,
+    next_attempt_at: now,
+    last_error: null,
     queued_at: null,
     delivered_at: null,
     consumed_at: null,
     superseded_at: null,
     superseded_terminal_revision: null,
+    target_receipt_id: null,
+    target_receipt_at: null,
+    consumed_reason: null,
+    dead_letter_reason: null,
+    dead_lettered_at: null,
     ...overrides,
   };
 }
@@ -53,7 +72,9 @@ function createMockSql(results: unknown[][]) {
   }) as unknown as SqlClient & {
     json(value: unknown): unknown;
   };
-  sql.json = vi.fn((value: unknown) => value);
+  sql.json = vi.fn<(value: unknown) => ReturnType<SqlClient["json"]>>(
+    postgresJsonParameter,
+  );
   sql.begin = vi.fn(async (callback: (transaction: typeof sql) => unknown) =>
     await callback(sql)) as never;
   return { sql, calls };
@@ -135,11 +156,11 @@ describe("SessionDeliveryRepository", () => {
       createdAt,
     })).resolves.toEqual({ row: candidate, inserted: true, conflict: false });
 
-    expect(calls[0].query).toContain("pg_advisory_xact_lock");
-    expect(calls[4].query).toContain("state = 'pending'");
-    expect(calls[4].query).toContain("followup_attempt");
-    expect(calls[6].query).toContain("state = 'superseded'");
-    expect(calls[6].query).toContain("state = 'pending'");
+    expect(calls[0]!.query).toContain("pg_advisory_xact_lock");
+    expect(calls[4]!.query).toContain("state = 'pending'");
+    expect(calls[4]!.query).toContain("followup_attempt");
+    expect(calls[6]!.query).toContain("state = 'superseded'");
+    expect(calls[6]!.query).toContain("state = 'pending'");
   });
   it("registers a new delivery with an atomic conflict boundary", async () => {
     const row = deliveryRow();
@@ -148,8 +169,8 @@ describe("SessionDeliveryRepository", () => {
     const result = await new SessionDeliveryRepository(sql).register(registration);
 
     expect(result).toEqual({ row, inserted: true, conflict: false });
-    expect(calls[0].query).toContain("INSERT INTO session_deliveries");
-    expect(calls[0].query).toContain("ON CONFLICT DO NOTHING");
+    expect(calls[0]!.query).toContain("INSERT INTO session_deliveries");
+    expect(calls[0]!.query).toContain("ON CONFLICT DO NOTHING");
   });
 
   it("converges an identical retry on the existing ledger row", async () => {
@@ -160,7 +181,7 @@ describe("SessionDeliveryRepository", () => {
 
     expect(result).toEqual({ row, inserted: false, conflict: false });
     expect(calls).toHaveLength(2);
-    expect(calls[1].query).toContain("relation_key");
+    expect(calls[1]!.query).toContain("relation_key");
   });
 
   it("marks payload/relation identity conflicts uncertain instead of dispatching", async () => {
@@ -179,7 +200,7 @@ describe("SessionDeliveryRepository", () => {
     const result = await new SessionDeliveryRepository(sql).register(registration);
 
     expect(result).toEqual({ row: uncertain, inserted: false, conflict: true });
-    expect(calls[2].query).toContain("state = 'uncertain'");
+    expect(calls[2]!.query).toContain("state = 'uncertain'");
   });
 
   it("preserves a superseded audit row when a conflicting retry arrives", async () => {
@@ -194,7 +215,7 @@ describe("SessionDeliveryRepository", () => {
     const result = await new SessionDeliveryRepository(sql).register(registration);
 
     expect(result).toEqual({ row: superseded, inserted: false, conflict: true });
-    expect(calls[2].query).toContain("state NOT IN ('consumed', 'superseded')");
+    expect(calls[2]!.query).toContain("state NOT IN ('consumed', 'superseded')");
   });
 
   describe("dead-letter revival requested by the sender", () => {
@@ -224,7 +245,7 @@ describe("SessionDeliveryRepository", () => {
 
       expect(result).toEqual({ row: revived, inserted: false, conflict: false });
       expect(calls).toHaveLength(5);
-      const update = calls[2];
+      const update = calls[2]!;
       expect(update.query).toContain("state = 'pending', aggregate_state = 'pending'");
       expect(update.query).toContain("attempt_count = 0");
       expect(update.query).toContain("created_at = NOW()");
@@ -232,13 +253,13 @@ describe("SessionDeliveryRepository", () => {
       expect(update.query).toContain("state NOT IN ('consumed', 'superseded')");
       expect(update.values).toContain("hash-new");
       expect(update.values).toContain(registration.deliveryId);
-      expect(calls[3].query).toContain(
+      expect(calls[3]!.query).toContain(
         "DELETE FROM session_delivery_notification_outbox",
       );
-      expect(calls[3].values).toContain(registration.deliveryId);
-      expect(calls[4].query).toContain("session_delivery_attempts");
-      expect(calls[4].values).toContain("retryable");
-      expect(calls[4].values).toContain("delivery revived by sender");
+      expect(calls[3]!.values).toContain(registration.deliveryId);
+      expect(calls[4]!.query).toContain("session_delivery_attempts");
+      expect(calls[4]!.values).toContain("retryable");
+      expect(calls[4]!.values).toContain("delivery revived by sender");
     });
 
     it("leaves a dead row as it is when no revival is requested", async () => {
@@ -271,8 +292,8 @@ describe("SessionDeliveryRepository", () => {
       });
 
       expect(result).toEqual({ row: revived, inserted: false, conflict: false });
-      expect(calls[2].query).toContain("delivery identity conflict");
-      expect(calls[4].query).toContain("state = 'pending', aggregate_state = 'pending'");
+      expect(calls[2]!.query).toContain("delivery identity conflict");
+      expect(calls[4]!.query).toContain("state = 'pending', aggregate_state = 'pending'");
     });
 
     it("never revives consumed or superseded rows", async () => {
@@ -317,9 +338,9 @@ describe("SessionDeliveryRepository", () => {
       "caller-replacement",
     )).resolves.toEqual(claimed);
 
-    expect(calls[0].query).toContain("target_session_id");
-    expect(calls[0].query).toContain("state = 'claimed'");
-    expect(calls[0].query).toContain("state IN ('pending', 'queued')");
+    expect(calls[0]!.query).toContain("target_session_id");
+    expect(calls[0]!.query).toContain("state = 'claimed'");
+    expect(calls[0]!.query).toContain("state IN ('pending', 'queued')");
   });
 
   it("uses claimed to dispatching as the exclusive dispatch CAS", async () => {
@@ -330,10 +351,10 @@ describe("SessionDeliveryRepository", () => {
     await expect(repository.beginDispatch(dispatching.delivery_id))
       .resolves.toEqual(dispatching);
 
-    expect(calls[0].query).toContain("state = 'dispatching'");
-    expect(calls[0].query).toContain("state = 'claimed'");
-    expect(calls[0].query).toContain("termination_event_id::text");
-    expect(calls[0].query).toContain("producer_terminal_revision");
+    expect(calls[0]!.query).toContain("state = 'dispatching'");
+    expect(calls[0]!.query).toContain("state = 'claimed'");
+    expect(calls[0]!.query).toContain("termination_event_id::text");
+    expect(calls[0]!.query).toContain("producer_terminal_revision");
   });
 
   it("keeps the original target once a semantic completion has already been queued", async () => {
@@ -370,18 +391,18 @@ describe("SessionDeliveryRepository", () => {
     await repository.markDelivered(row.delivery_id, "receipt-9");
     await repository.markConsumed(row.delivery_id, "turn-10");
 
-    expect(calls[0].query).toContain("state = 'pending'");
-    expect(calls[1].query).toContain("state = 'claimed'");
-    expect(calls[2].query).toContain("'dispatching'");
-    expect(calls[3].query).toContain("session_delivery_attempts");
-    expect(calls[3].values).toContain("accepted");
-    expect(calls[4].query).toContain("aggregate_state = 'delivered'");
-    expect(calls[5].query).toContain("'consumed'");
-    expect(calls[5].query).toContain("aggregate_state IN ('pending', 'delivered')");
-    expect(calls[5].query).toContain(
+    expect(calls[0]!.query).toContain("state = 'pending'");
+    expect(calls[1]!.query).toContain("state = 'claimed'");
+    expect(calls[2]!.query).toContain("'dispatching'");
+    expect(calls[3]!.query).toContain("session_delivery_attempts");
+    expect(calls[3]!.values).toContain("accepted");
+    expect(calls[4]!.query).toContain("aggregate_state = 'delivered'");
+    expect(calls[5]!.query).toContain("'consumed'");
+    expect(calls[5]!.query).toContain("aggregate_state IN ('pending', 'delivered')");
+    expect(calls[5]!.query).toContain(
       "'pending', 'claimed', 'dispatching', 'queued', 'delivered'",
     );
-    expect(calls[5].query).toContain("target_receipt_id = COALESCE");
+    expect(calls[5]!.query).toContain("target_receipt_id = COALESCE");
   });
 
   it("marks consumed by relation and completion identity", async () => {
@@ -395,12 +416,12 @@ describe("SessionDeliveryRepository", () => {
       "turn-inline",
     )).resolves.toEqual(consumed);
 
-    expect(calls[0].query).toContain("relation_key");
-    expect(calls[0].query).toContain("completion_id");
-    expect(calls[0].query).toContain("state = 'consumed'");
-    expect(calls[0].query).toContain("'pending', 'claimed'");
-    expect(calls[0].query).not.toContain("'queued'");
-    expect(calls[0].query).toContain("aggregate_state IN ('pending', 'delivered')");
+    expect(calls[0]!.query).toContain("relation_key");
+    expect(calls[0]!.query).toContain("completion_id");
+    expect(calls[0]!.query).toContain("state = 'consumed'");
+    expect(calls[0]!.query).toContain("'pending', 'claimed'");
+    expect(calls[0]!.query).not.toContain("'queued'");
+    expect(calls[0]!.query).toContain("aggregate_state IN ('pending', 'delivered')");
   });
 
   it("supersedes only a pending delivery", async () => {
@@ -413,9 +434,9 @@ describe("SessionDeliveryRepository", () => {
       "user_message",
     )).resolves.toEqual(superseded);
 
-    expect(calls[0].query).toContain("state = 'superseded'");
-    expect(calls[0].query).toContain("state = 'pending'");
-    expect(calls[0].values).toContain("user_message");
+    expect(calls[0]!.query).toContain("state = 'superseded'");
+    expect(calls[0]!.query).toContain("state = 'pending'");
+    expect(calls[0]!.values).toContain("user_message");
   });
 });
 

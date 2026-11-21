@@ -72,7 +72,7 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
             user: "alice",
             callerInfo,
             attachmentPaths: ["/tmp/a.png", "/tmp/readme.pdf"],
-            context: [{ title: "Trace", body: "line 1" }],
+            context: [{ key: "Trace", content: "line 1" }],
           });
           yield { type: "session", session_id: "claude-sess-1", timestamp: 1 } as SSEEventPayload;
           yield {
@@ -141,7 +141,7 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       user: "alice",
       caller_info: callerInfo,
       attachments: ["/tmp/a.png", "/tmp/readme.pdf"],
-      context: [{ title: "Trace", body: "line 1" }],
+      context: [{ key: "Trace", content: "line 1" }],
     });
     expect(
       mocks.enqueueEvent.mock.calls.filter(
@@ -215,7 +215,14 @@ describe("TaskExecutor query-per-turn intervention queue", () => {
       undefined,
       undefined,
       undefined,
-      { recordTurnStarted, recordConsumed, discardIfConsumed: vi.fn() },
+      {
+        recordTurnStarted,
+        recordConsumed,
+        discardIfConsumed: vi.fn(),
+        recordRuntimeFollowupRelationConsumed: vi.fn(),
+        recordConsumptionFailure: vi.fn(),
+        recordAdmissionFailure: vi.fn(),
+      },
       undefined,
       undefined,
       undefined,

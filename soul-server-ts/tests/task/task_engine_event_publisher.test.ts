@@ -10,6 +10,8 @@ import type { Task } from "../../src/task/task_models.js";
 import { TransientEventLogAggregator } from
   "../../src/task/transient_event_log_aggregator.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import type { EventOutboxSessionEffect } from
+  "../../src/upstream/event_outbox_session_effect.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -22,21 +24,20 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastReadEventId: 0,
     interventionQueue: [],
     executionRegistration: {
-      ownerKind: "in_process",
-      manifestId: "manifest:sess-1",
-      runtimeEnvIdentity: "runtime:sess-1",
       registrationId: "registration:sess-1",
-      pid: 42_201,
-      startIdentity: "start:sess-1",
       executionCommandId: "command:sess-1",
-      ownershipGeneration: 1,
     },
     ...overrides,
   };
 }
 
 function makePublisherDeps() {
-  const enqueueEvent = vi.fn(async () => ({ source_seq: 42 }));
+  const enqueueEvent = vi.fn<(
+    sessionId: string,
+    event: SSEEventPayload,
+    explicitEffect?: EventOutboxSessionEffect,
+    registrationId?: string | null,
+  ) => Promise<{ source_seq: number }>>(async () => ({ source_seq: 42 }));
   const enqueueMetadataEffect = vi.fn(async () => null);
   const handleSideEffects = vi.fn(async () => undefined);
   const persistence = {
@@ -156,8 +157,8 @@ describe("TaskEngineEventPublisher", () => {
     expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
-    expect(deps.enqueueEvent.mock.invocationCallOrder[0]).toBeLessThan(
-      deps.handleSideEffects.mock.invocationCallOrder[0],
+    expect(deps.enqueueEvent.mock.invocationCallOrder[0]!).toBeLessThan(
+      deps.handleSideEffects.mock.invocationCallOrder[0]!,
     );
     expect(deps.logger.info).not.toHaveBeenCalled();
   });
@@ -366,7 +367,7 @@ describe("TaskEngineEventPublisher", () => {
       replaceExistingType: "session_cost",
       registrationId: "registration:sess-1",
     });
-    expect(deps.enqueueMetadataEffect.mock.invocationCallOrder[0]).toBeGreaterThan(
+    expect(deps.enqueueMetadataEffect.mock.invocationCallOrder[0]!).toBeGreaterThan(
       deps.enqueueEvent.mock.invocationCallOrder[0]!,
     );
     expect(task.sessionCost).toEqual({ usd: 17.91, partial: false });
@@ -591,7 +592,7 @@ describe("TaskEngineEventPublisher", () => {
     const task = makeTask({ lastEventId: 10 });
     const event = {
       type: "complete",
-      usage: {},
+      usage: { input_tokens: 0, output_tokens: 0 },
       timestamp: 2,
     } as SSEEventPayload;
 

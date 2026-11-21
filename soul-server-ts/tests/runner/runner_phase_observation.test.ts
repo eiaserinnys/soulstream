@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { RunnerOperationContext } from "../../src/runtime/node_stall_monitor.js";
 import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 
 describe("runner phase observation", () => {
   it("times async and sync phases and finishes each monitor operation", async () => {
     let now = 100;
-    const begins: Array<Record<string, unknown>> = [];
+    const begins: Array<RunnerOperationContext> = [];
     const finishes: string[] = [];
     const observation = createRunnerPhaseObservation({
       nodeId: "node-a",

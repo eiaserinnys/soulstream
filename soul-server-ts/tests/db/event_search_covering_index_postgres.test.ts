@@ -70,8 +70,8 @@ describe.sequential("event search covering index migrations", () => {
     expect(vacuum?.id).toBe("102_event_search_terms_insert_vacuum_scale.sql");
     expect(postingAggregation?.id).toBe("103_event_search_aggregate_postings.sql");
     expect(eventTypeIndex?.id).toBe("104_events_event_type_covering_index.sql");
-    expect(covering?.sha256).toBe(migrationSha256(MIGRATIONS[0]));
-    expect(vacuum?.sha256).toBe(migrationSha256(MIGRATIONS[1]));
+    expect(covering?.sha256).toBe(migrationSha256(MIGRATIONS[0]!));
+    expect(vacuum?.sha256).toBe(migrationSha256(MIGRATIONS[1]!));
     expect(postingAggregation?.sha256).toBe(
       migrationSha256(POSTING_AGGREGATION_MIGRATION),
     );
@@ -84,11 +84,11 @@ describe.sequential("event search covering index migrations", () => {
     expect(MIGRATIONS[0]).toContain("i.indkey[0] = v_term_att");
     expect(MIGRATIONS[0]).toContain("i.indcollation[0] = v_term_collation");
     expect(MIGRATIONS[0]).toContain("i.indpred IS NULL");
-    expect(MIGRATIONS[0].indexOf("IF v_staging_index IS NOT NULL")).toBeLessThan(
-      MIGRATIONS[0].indexOf("IF v_term_index IS NOT NULL"),
+    expect(MIGRATIONS[0]!.indexOf("IF v_staging_index IS NOT NULL")).toBeLessThan(
+      MIGRATIONS[0]!.indexOf("IF v_term_index IS NOT NULL"),
     );
-    expect(MIGRATIONS[0].indexOf("indisvalid")).toBeLessThan(
-      MIGRATIONS[0].indexOf("DROP INDEX public.idx_event_search_terms_term"),
+    expect(MIGRATIONS[0]!.indexOf("indisvalid")).toBeLessThan(
+      MIGRATIONS[0]!.indexOf("DROP INDEX public.idx_event_search_terms_term"),
     );
     expect(POSTING_AGGREGATION_MIGRATION).toContain(
       "CREATE OR REPLACE FUNCTION event_search(",
@@ -152,10 +152,10 @@ describe.sequential("event search covering index migrations", () => {
         indnkeyatts: 1,
         indnatts: 5,
       });
-      expect(catalog[0].definition).toContain(
+      expect(catalog[0]!.definition).toContain(
         "INCLUDE (session_id, event_id, term_freq, doc_len)",
       );
-      expect(catalog[0].reloptions).toContain("autovacuum_vacuum_insert_scale_factor=0.05");
+      expect(catalog[0]!.reloptions).toContain("autovacuum_vacuum_insert_scale_factor=0.05");
 
       const longMultibyteTerm = makeHighEntropyTerm(2400);
       const longInsert = await sql`
@@ -163,7 +163,7 @@ describe.sequential("event search covering index migrations", () => {
         VALUES ('session-long-insert', 5, ${longMultibyteTerm}, 2, 19)
         RETURNING octet_length(term)::int AS term_bytes
       `;
-      expect(longInsert[0].term_bytes).toBe(2400);
+      expect(longInsert[0]!.term_bytes).toBe(2400);
       await sql`
         UPDATE event_search_terms
         SET term_freq = 4, doc_len = 21
@@ -189,7 +189,7 @@ describe.sequential("event search covering index migrations", () => {
         FROM public.event_search_terms
         WHERE term = '검색'
       `;
-      const rawPlan = explain[0]["QUERY PLAN"];
+      const rawPlan = explain[0]!["QUERY PLAN"];
       const plan = typeof rawPlan === "string" ? JSON.parse(rawPlan) : rawPlan;
       expect(findIndexOnlyScan(plan)).toBe("idx_event_search_terms_term");
     } finally {
@@ -230,7 +230,7 @@ describe.sequential("event search covering index migrations", () => {
           continue;
         }
         try {
-          await sql.begin((tx) => tx.unsafe(MIGRATIONS[0]));
+          await sql.begin((tx) => tx.unsafe(MIGRATIONS[0]!));
           fitsCovering = termBytes;
         } catch (error) {
           migrationError = error;
@@ -319,7 +319,7 @@ describe.sequential("event search covering index migrations", () => {
         ON public.event_search_terms (term)
       `)).rejects.toThrow();
 
-      await expect(sql.begin((tx) => tx.unsafe(MIGRATIONS[0])))
+      await expect(sql.begin((tx) => tx.unsafe(MIGRATIONS[0]!)))
         .rejects.toThrow(/staging index/i);
       const preserved = await sql`
         SELECT
@@ -407,7 +407,13 @@ function makeHighEntropyTerm(targetBytes: number) {
 }
 
 async function readPostings(sql: ReturnType<typeof postgres>) {
-  return await sql`
+  return await sql<Array<{
+    session_id: string;
+    event_id: number;
+    term: string;
+    term_freq: number;
+    doc_len: number;
+  }>>`
     SELECT session_id, event_id, term, term_freq, doc_len
     FROM public.event_search_terms
     ORDER BY session_id, event_id, term

@@ -32,14 +32,8 @@ const silentLogger = pino({ level: "silent" });
 
 function markDurablyRunning(task: Task): void {
   task.executionRegistration = {
-    ownerKind: "adopted_runner",
-    manifestId: `manifest:${task.agentSessionId}`,
-    runtimeEnvIdentity: `runtime:${task.agentSessionId}`,
     registrationId: `registration:${task.agentSessionId}`,
-    pid: 42_201,
-    startIdentity: `start:${task.agentSessionId}`,
     executionCommandId: `command:${task.agentSessionId}`,
-    ownershipGeneration: 1,
   };
 }
 
@@ -50,14 +44,24 @@ const folderContentHosts = new WeakMap<SessionDB, FolderContentHost>();
 function legacyMutationHost(db: SessionDB): SessionMutationHost {
   const legacy = db as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
   return {
-    registerSession: async (params) => await legacy.registerSession(params),
-    transitionSession: async (sessionId, fields) =>
-      await legacy.updateSession(sessionId, fields),
-    renameSession: async (sessionId, displayName) =>
-      await legacy.renameSession(sessionId, displayName),
-    deleteSession: async (sessionId) => await legacy.deleteSession(sessionId),
+    registerSession: async (params) =>
+      await legacy.registerSession!(params) as Awaited<ReturnType<SessionMutationHost["registerSession"]>>,
+    registerSessionWithWorktree: async (params) =>
+      await legacy.registerSessionWithWorktree!(params) as Awaited<ReturnType<SessionMutationHost["registerSessionWithWorktree"]>>,
+    transitionSession: async (sessionId, fields) => {
+      await legacy.updateSession!(sessionId, fields);
+    },
+    renameSession: async (sessionId, displayName) => {
+      await legacy.renameSession!(sessionId, displayName);
+    },
+    deleteSession: async (sessionId) => {
+      await legacy.deleteSession!(sessionId);
+    },
     acknowledgeReview: async (sessionId) =>
-      await legacy.acknowledgeSessionReview(sessionId) as never,
+      await legacy.acknowledgeSessionReview!(sessionId) as Awaited<ReturnType<SessionMutationHost["acknowledgeReview"]>>,
+    setModelSelection: async (sessionId, fields) => {
+      await legacy.setModelSelection!(sessionId, fields);
+    },
   };
 }
 
@@ -199,6 +203,24 @@ describe("TaskManager model preset defaults", () => {
         backend: "codex" as const,
         model: "gpt-5.6-sol",
       })),
+      snapshot: () => ({
+        schema_version: 1 as const,
+        groups: [],
+        presets: [],
+        models: [],
+        price_snapshot: {
+          price_version: "test-v1",
+          as_of: "2026-10-19",
+          checked_at: "2026-10-19",
+          currency: "USD",
+          unit: "per_1m_tokens",
+          model_mapping_version: "exact-provider-model-v1",
+          refreshed_model_rows: {},
+          sources: {},
+          assumptions: [],
+        },
+        persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+      }),
     };
     const tm = new TaskManager(
       "n",
@@ -256,6 +278,24 @@ describe("TaskManager model preset defaults", () => {
         backend: "claude" as const,
         model: "claude-opus-4-6",
       })),
+      snapshot: () => ({
+        schema_version: 1 as const,
+        groups: [],
+        presets: [],
+        models: [],
+        price_snapshot: {
+          price_version: "test-v1",
+          as_of: "2026-10-19",
+          checked_at: "2026-10-19",
+          currency: "USD",
+          unit: "per_1m_tokens",
+          model_mapping_version: "exact-provider-model-v1",
+          refreshed_model_rows: {},
+          sources: {},
+          assumptions: [],
+        },
+        persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
+      }),
     };
     const tm = new TaskManager(
       "n",
@@ -328,6 +368,24 @@ describe("TaskManager model preset defaults", () => {
           };
         }
         throw new UnknownModelPresetError(id);
+      }),
+      snapshot: () => ({
+        schema_version: 1 as const,
+        groups: [],
+        presets: [],
+        models: [],
+        price_snapshot: {
+          price_version: "test-v1",
+          as_of: "2026-10-19",
+          checked_at: "2026-10-19",
+          currency: "USD",
+          unit: "per_1m_tokens",
+          model_mapping_version: "exact-provider-model-v1",
+          refreshed_model_rows: {},
+          sources: {},
+          assumptions: [],
+        },
+        persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
       }),
     };
     const tm = new TaskManager(
@@ -502,7 +560,7 @@ describe("TaskManager.createTask", () => {
     expect(task.createdAt).toBeInstanceOf(Date);
 
     expect(registerSession).toHaveBeenCalledTimes(1);
-    const regArg = registerSession.mock.calls[0][0];
+    const regArg = registerSession.mock.calls[0]![0];
     expect(regArg.sessionId).toBe("sess-1");
     expect(regArg.nodeId).toBe("eias-shopping-ts");
     expect(regArg.agentId).toBe("codex-default");
@@ -522,7 +580,7 @@ describe("TaskManager.createTask", () => {
     expect(moveSessionToFolder).toHaveBeenCalledWith("sess-1", "claude");
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
+    expect(emitSessionCreated.mock.calls[0]![1]).toBe("claude");
   });
 
   it("callerInfo 부재/빈 객체면 metadata append 생략", async () => {
@@ -686,7 +744,7 @@ describe("TaskManager.createTask", () => {
     });
     await tm.waitForCreationEffects("s1");
     expect(moveSessionToFolder).toHaveBeenCalledWith("s1", "folder-42");
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-42");
+    expect(emitSessionCreated.mock.calls[0]![1]).toBe("folder-42");
   });
 });
 
@@ -705,6 +763,7 @@ describe("TaskManager.deliverToolApproval", () => {
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "openai-agents",
       workspaceDir: "/tmp/agents",
+      intervene: async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" } as const),
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
@@ -754,6 +813,7 @@ describe("TaskManager.deliverToolApproval", () => {
     task.runner = createInProcessTaskRunnerRuntime({
       backendId: "codex",
       workspaceDir: "/tmp/codex",
+      intervene: async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" } as const),
       async *execute(): AsyncIterable<never> {},
       async interrupt() { return true; },
       async close() {},
@@ -2054,7 +2114,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     await tm.waitForCreationEffects("s1");
     expect(moveSessionToFolder).toHaveBeenCalledWith("s1", "folder-explicit");
     expect(getFolderById).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
+    expect(emitSessionCreated.mock.calls[0]![1]).toBe("folder-explicit");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -2069,7 +2129,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     await tm.waitForCreationEffects("s2");
     expect(getFolderById).toHaveBeenCalledWith("claude");
     expect(moveSessionToFolder).toHaveBeenCalledWith("s2", "claude");
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
+    expect(emitSessionCreated.mock.calls[0]![1]).toBe("claude");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -2084,7 +2144,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     });
     await tm.waitForCreationEffects("s3");
     expect(moveSessionToFolder).not.toHaveBeenCalled();
-    expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
+    expect(emitSessionCreated.mock.calls[0]![1]).toBeNull();
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // 폴더 배정 안 됐으면 broadcast 안 함 (Python L311 gate)
   });
 
@@ -2101,7 +2161,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     await tm.waitForCreationEffects(task.agentSessionId);
     expect(task.agentSessionId).toBe("s4");  // task 생성 성공
     // 폴더 배정 실패 → emit에 null 전달, catalog broadcast 안 함
-    expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
+    expect(emitSessionCreated.mock.calls[0]![1]).toBeNull();
     expect(emitCatalogUpdated).not.toHaveBeenCalled();
   });
 
@@ -2117,7 +2177,7 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     });
     await tm.waitForCreationEffects(task.agentSessionId);
     expect(task.agentSessionId).toBe("s5");
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("f-y");  // Y.Doc 원자 배치는 성공
+    expect(emitSessionCreated.mock.calls[0]![1]).toBe("f-y");  // Y.Doc 원자 배치는 성공
     expect(emitCatalogUpdated).not.toHaveBeenCalled();  // catalog 실패는 broadcast 차단
   });
 
@@ -2132,9 +2192,9 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
     });
     await tm.waitForCreationEffects("s6");
     // mock 호출 순서 검증
-    const catalogOrder = emitCatalogUpdated.mock.invocationCallOrder[0];
-    const createdOrder = emitSessionCreated.mock.invocationCallOrder[0];
-    expect(moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(catalogOrder);
+    const catalogOrder = emitCatalogUpdated.mock.invocationCallOrder[0]!;
+    const createdOrder = emitSessionCreated.mock.invocationCallOrder[0]!;
+    expect(moveSessionToFolder.mock.invocationCallOrder[0]!).toBeLessThan(catalogOrder);
     expect(catalogOrder).toBeLessThan(createdOrder);
   });
 });
@@ -2834,7 +2894,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     const task = tm.getTask("sess-h")!;
     // Python parity: auto-resume 메시지가 새 task prompt로 승격되고 queue 첫 turn으로 실행됨.
     expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0].text).toBe("새 메시지");
+    expect(task.interventionQueue[0]!.text).toBe("새 메시지");
     expect(task.prompt).toBe("새 메시지");
   });
 });
@@ -2889,7 +2949,7 @@ describe("TaskManager.resolveExecutionSecurity", () => {
       name: "서소영",
       backend: "claude",
       workspace_dir: "/tmp/seosoyoung",
-      default_preset: options.defaultPreset ?? null,
+      default_preset: options.defaultPreset ?? undefined,
     }]);
     const tm = new TaskManager(
       "n",

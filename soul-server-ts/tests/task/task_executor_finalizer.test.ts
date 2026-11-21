@@ -20,6 +20,10 @@ import {
   type Task,
 } from "../../src/task/task_models.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     agentSessionId: "sess-1",
@@ -50,18 +54,21 @@ function makeFinalizer(deps: {
     lifecycleTransition: {
       ...deps.lifecycleTransition,
       notifyCompletionIfApplied: deps.lifecycleTransition.notifyCompletionIfApplied
-        ?? vi.fn(async (task, persistence) => {
-          if (persistence.terminalTransitionApplied && task.callerSessionId) {
-            try {
-              await completionNotifier?.notify(task);
-            } catch (err) {
-              deps.logger.warn(
-                { err, sessionId: task.agentSessionId },
-                "completion notification failed after terminal transition was applied",
-              );
+        ?? vi.fn<Pick<TaskLifecycleTransition, "notifyCompletionIfApplied">["notifyCompletionIfApplied"]>(
+          async (task, persistence) => {
+            if (persistence.terminalTransitionApplied && task.callerSessionId) {
+              try {
+                await completionNotifier?.notify(task);
+              } catch (err) {
+                deps.logger.warn(
+                  { err, sessionId: task.agentSessionId },
+                  "completion notification failed after terminal transition was applied",
+                );
+              }
             }
-          }
-        }),
+            return true;
+          },
+        ),
     },
   });
 }
@@ -69,6 +76,7 @@ function makeFinalizer(deps: {
 function makeEngine(close: () => Promise<void>): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute() {},
     async interrupt() { return true; },

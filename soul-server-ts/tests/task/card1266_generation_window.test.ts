@@ -151,7 +151,7 @@ function generationStartedEvents(world: ReturnType<typeof makeWorld>): number {
 }
 
 function prompts(runner: ReturnType<typeof fakeRunner>): string[] {
-  return runner.dispatcher.executeFrames.mock.calls
+  return vi.mocked(runner.runner.dispatcher.executeFrames).mock.calls
     .map((call) => String((call[0] as { prompt?: string }).prompt));
 }
 
@@ -161,7 +161,7 @@ describe("세대 넘김 창의 경계 시험 (카드 #1266 U5b)", () => {
     const prepared = deferred();
     const original = TaskTurnInputBuilder.prototype.prepareInitialTurnInput;
     const prepare = vi.spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
-      .mockImplementationOnce(async function (task, agent) {
+      .mockImplementationOnce(async function (this: TaskTurnInputBuilder, task, agent) {
         const input = await original.call(this, task, agent);
         prepared.resolve();
         await held.promise;

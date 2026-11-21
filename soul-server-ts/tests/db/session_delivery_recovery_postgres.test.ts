@@ -220,14 +220,8 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
         prompt: "previous turn",
         status: "running",
         executionRegistration: {
-          ownerKind: "adopted_runner",
-          manifestId: "manifest-held-human",
-          runtimeEnvIdentity: "runtime-held-human",
           registrationId: "registration-held-human",
-          pid: 42_101,
-          startIdentity: "start-held-human",
           executionCommandId: "command-held-human",
-          ownershipGeneration: 1,
         },
         createdAt: new Date("2026-08-28T00:00:00.000Z"),
         lastEventId: 42,
@@ -346,7 +340,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
             newlyFinalized: true,
             terminalTransitionApplied: true,
           })),
-          notifyCompletionIfApplied: vi.fn(async () => {}),
+          notifyCompletionIfApplied: vi.fn(async () => true),
         },
         logger: { warn() {} } as never,
       });
@@ -580,7 +574,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
       dispatch,
-      logger: { error() {}, warn() {} },
+      logger: { error() {}, warn() {}, info() {} },
     }, "worker-user-retry");
 
     await coordinator.recoverPending(1);
@@ -674,7 +668,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
       dispatch,
-      logger: { error() {}, warn() {} },
+      logger: { error() {}, warn() {}, info() {} },
     }, "worker-fifo");
     await coordinator.recoverPending(10);
     await coordinator.recoverPending(10);
@@ -898,7 +892,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
     const coordinator = new CompletionDeliveryCoordinator({
       repository,
       dispatch,
-      logger: { error() {}, warn() {} },
+      logger: { error() {}, warn() {}, info() {} },
     }, "recovery-worker");
 
     await coordinator.recoverPending(10);
@@ -975,7 +969,7 @@ describePostgres("session delivery recovery PostgreSQL integration", () => {
       dispatch: async (params) => {
         dispatched.push(params.deliveryId!);
       },
-      logger: { error() {}, warn() {} },
+      logger: { error() {}, warn() {}, info() {} },
     }, "transcript-coordinator");
 
     await queuedRecovery.recoverAfterNodeRestart("node-test");

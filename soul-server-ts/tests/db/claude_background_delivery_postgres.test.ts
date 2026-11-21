@@ -12,7 +12,8 @@ import { replayPendingImmediateDeliveriesForNode } from
   "../../../orch-server-ts/src/production.js";
 import { OrchestratorMaintenanceService } from
   "../../../orch-server-ts/src/runtime/orchestrator_maintenance_service.js";
-import type { SqlClient } from "../../src/db/session_db.js";
+import type { SqlClient } from
+  "../../../orch-server-ts/src/control_plane/control_plane_types.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import { mapClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
@@ -21,12 +22,17 @@ import { ClaudeBackgroundTaskLifecycle } from
   "../../src/task/claude_background_task_lifecycle.js";
 import { ClaudeRuntimeTaskFollowupController } from
   "../../src/task/claude_runtime_task_followup.js";
+import type { ClaudeRuntimeHostClient } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
 import { hydrateEvictedTaskFromSessionRow } from
   "../../src/task/task_evicted_hydration.js";
-import { TaskInterventionRoute } from
-  "../../src/task/task_intervention_route.js";
+import {
+  TaskInterventionRoute,
+  type AddInterventionParams,
+  type StartExecutionCallback,
+} from "../../src/task/task_intervention_route.js";
 import type { Task } from "../../src/task/task_models.js";
 import { createInterventionCommandFamily } from
   "../../src/upstream/intervention_command_family.js";
@@ -488,7 +494,9 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
 
 function makeLifecycle(sql: SqlClient): ClaudeBackgroundTaskLifecycle {
   return new ClaudeBackgroundTaskLifecycle({
-    repository: new ClaudeBackgroundTaskRepository(sql),
+    repository: Object.create(
+      new ClaudeBackgroundTaskRepository(sql),
+    ) as ClaudeRuntimeHostClient,
     sourceNode: "node-test",
     now: () => new Date("2026-07-26T10:00:00.000Z"),
   });
@@ -607,11 +615,11 @@ function makeDeliveryPath(
       createTask: async () => {
         throw new Error("unexpected task creation");
       },
-      addIntervention: (params, callback) =>
+      addIntervention: (params: AddInterventionParams, callback: StartExecutionCallback) =>
         route.addIntervention(params, callback),
     } as never,
     taskExecutor: {
-      startNewExecution: (resumedTask: Task) => onResume(resumedTask),
+      startNewExecution: (resumedTask: Task) => onResume(),
     } as never,
     logger: pino({ level: "silent" }),
   });

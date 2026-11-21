@@ -321,7 +321,7 @@ describe("effective turn preset", () => {
     expect(
       resolveEffectiveTurnPreset(
         { request: { model: null, modelPreset: null }, stored: { model: null, modelPreset: null } },
-        { ...agent, default_preset: null },
+        { ...agent, default_preset: undefined },
         catalog,
       ),
     ).toBeUndefined();

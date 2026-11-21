@@ -526,7 +526,9 @@ describe("RunnerIpcConnection", () => {
     const received: unknown[] = [];
     const hostConnection = new RunnerIpcConnection(host);
     const runnerConnection = new RunnerIpcConnection(runner);
-    hostConnection.onFrame(async (frame) => received.push(frame));
+    hostConnection.onFrame(async (frame) => {
+      received.push(frame);
+    });
 
     await expect(runnerConnection.send(engineEventFrame({
       type: "debug",

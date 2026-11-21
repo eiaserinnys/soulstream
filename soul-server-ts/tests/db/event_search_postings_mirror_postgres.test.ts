@@ -442,7 +442,7 @@ function readCommandReport(stdout: string): {
   differences: { missing: number; extra: number; changed: number };
 } {
   const lines = stdout.trim().split(/\r?\n/);
-  return JSON.parse(lines[lines.length - 1]);
+  return JSON.parse(lines[lines.length - 1]!);
 }
 
 function expectNoDatabaseUrl(result: { stdout: string; stderr: string }, databaseUrl: string) {

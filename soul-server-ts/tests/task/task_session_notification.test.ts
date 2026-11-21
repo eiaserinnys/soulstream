@@ -14,14 +14,8 @@ function makeTask(): Task {
     lastReadEventId: 10,
     interventionQueue: [],
     executionRegistration: {
-      ownerKind: "in_process",
-      manifestId: "manifest:caller-1",
-      runtimeEnvIdentity: "runtime:caller-1",
       registrationId: "registration:caller-1",
-      pid: 42_201,
-      startIdentity: "start:caller-1",
       executionCommandId: "command:caller-1",
-      ownershipGeneration: 1,
     },
   };
 }

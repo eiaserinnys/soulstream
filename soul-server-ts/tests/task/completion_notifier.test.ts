@@ -71,7 +71,13 @@ interface TaskManagerStub {
 }
 
 function makeTaskManagerStub(
-  result: AddInterventionResult | Error = { queued: true, queuePosition: 1 },
+  result: AddInterventionResult | Error = {
+    delivered: false,
+    queued: true,
+    queuePosition: 1,
+    consumeWhen: "next_turn",
+    reason: "execution_admission_in_flight",
+  },
 ): TaskManagerStub {
   const addIntervention = vi.fn(
     async (_p: AddInterventionParams, _r: StartExecutionCallback) => {

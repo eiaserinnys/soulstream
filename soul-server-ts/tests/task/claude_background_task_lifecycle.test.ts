@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ClaudeBackgroundTaskGenerationRow } from "@soulstream/mcp-contract";
+import type {
+  ClaudeBackgroundTaskGenerationRow,
+  ObserveClaudeBackgroundTaskGenerationParams,
+} from "@soulstream/mcp-contract";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import { readClaudeBackgroundDeliveryMetadata } from
@@ -22,7 +25,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
     const old = { ...row("caller-session", "background-agent"), status: "completed" as const };
     const getGeneration = vi.fn(async (_node, _session, _sdk, _task, id) =>
       id === "toolu-background-agent" ? old : null);
-    const observeGeneration = vi.fn(async () => row("caller-session", "background-agent"));
+    const observeGeneration = vi.fn(async (_input: ObserveClaudeBackgroundTaskGenerationParams) => row("caller-session", "background-agent"));
     const resolveGeneration = vi.fn(async () => ({ status: "ambiguous" }));
     const terminalizeGeneration = vi.fn(async (input) => ({
       accepted: true,
@@ -85,7 +88,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
   it("skips earlier terminal resume ids when the task resumes again", async () => {
     const getGeneration = vi.fn(async (_node, _session, _sdk, _task, id) =>
       id === "toolu-A#r2" ? null : { ...row("caller-session", "task-a"), status: "completed" });
-    const observeGeneration = vi.fn(async () => row("caller-session", "task-a"));
+    const observeGeneration = vi.fn(async (_input: ObserveClaudeBackgroundTaskGenerationParams) => row("caller-session", "task-a"));
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: { getGeneration, observeGeneration } as never, sourceNode: "node-a",
     });
@@ -104,7 +107,7 @@ describe("ClaudeBackgroundTaskLifecycle provenance boundary", () => {
       if (id === "toolu-A#r1") return row("caller-session", "task-a");
       return null;
     });
-    const observeGeneration = vi.fn(async () => row("caller-session", "task-a"));
+    const observeGeneration = vi.fn(async (_input: ObserveClaudeBackgroundTaskGenerationParams) => row("caller-session", "task-a"));
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
       repository: { getGeneration, observeGeneration } as never, sourceNode: "node-a",
     });

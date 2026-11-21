@@ -18,6 +18,8 @@ import type {
   RegisterSessionDeliveryParams,
 } from "@soulstream/wire-schema/session-delivery";
 import type { SqlClient } from "../../src/db/session_db.js";
+import type { ClaudeRuntimeHostClient } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";
 import { ClaudeBackgroundTaskLifecycle } from
@@ -36,6 +38,12 @@ import {
 
 const describePostgres =
   hasFullSchemaPostgresBackend || hasDockerBinary() ? describe : describe.skip;
+
+function lifecycleRepository(
+  repository: ClaudeBackgroundTaskRepository,
+): ClaudeRuntimeHostClient {
+  return Object.create(repository) as ClaudeRuntimeHostClient;
+}
 
 describePostgres("Claude background generation PostgreSQL contract", () => {
   let harness: FullSchemaPostgresHarness;
@@ -286,7 +294,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     await repository.observeGeneration(dead);
     await repository.observeGeneration(live);
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository,
+      repository: lifecycleRepository(repository),
       sourceNode: "node-test",
       now: () => new Date("2026-09-05T00:35:00.000Z"),
     });
@@ -542,7 +550,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
 
     const deliveryRepository = new SessionDeliveryRepository(harness.sql);
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository,
+      repository: lifecycleRepository(repository),
       sourceNode: "node-test",
       now: () => new Date("2026-09-05T00:40:00.000Z"),
     });
@@ -552,7 +560,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       recordRelationConsumed: (input) =>
         deliveryRepository.recordRelationConsumed(input),
       sourceNode: "node-test",
-      logger: { error: () => undefined },
+      logger: { error: () => undefined, info: () => undefined },
       getSession: async () => ({
         session_id: "caller-session",
         claude_session_id: "sdk-session",
@@ -649,7 +657,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     });
     const deliveryRepository = new SessionDeliveryRepository(harness.sql);
     const lifecycle = new ClaudeBackgroundTaskLifecycle({
-      repository,
+      repository: lifecycleRepository(repository),
       sourceNode: "node-test",
       now: () => new Date("2026-09-05T00:40:00.000Z"),
     });
@@ -665,6 +673,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       },
       sourceNode: "node-test",
       logger: {
+        info: () => undefined,
         error: (...args: unknown[]) => {
           rowErrors.push(args);
         },

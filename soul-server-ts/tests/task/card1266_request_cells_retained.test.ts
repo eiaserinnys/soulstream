@@ -213,7 +213,7 @@ describe("바깥 요청 칸의 경계 시험 (카드 #1266 U5b)", () => {
       registration: ReturnType<typeof runnerRegistration>,
       order: string[] = [],
     ) {
-      const terminate = vi.fn(async () => {});
+      const terminate = vi.fn(async () => "registration_absent" as const);
       const retireTerminalRegistration = vi.fn(async () => { order.push("retire"); });
       const coordinator = new RunnerRecoveryCoordinator({
         nodeId: "node-cell",

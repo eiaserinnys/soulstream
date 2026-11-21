@@ -15,7 +15,10 @@ import {
 } from "../../src/runner/runner_process_runtime_factory.js";
 import type { PreparedRunnerIsolation, RunnerIsolationHost } from
   "../../src/runner/runner_process_isolation.js";
-import type { RunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
+import type {
+  RunnerChildConfig,
+  SpawnRunnerProcessInput,
+} from "../../src/runner/runner_process_spawn.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_process_spawn.js";
 import { verifyFullSessionMcpToken } from "../../src/security/restricted_mcp_auth.js";
 import type { SessionIsolationSpec } from
@@ -154,7 +157,7 @@ function makeFactory(options: {
   backend?: "claude" | "codex" | "opencode" | "antigravity";
   turnAgent?: AgentProfile;
 }) {
-  const spawn = vi.fn(async () => {
+  const spawn = vi.fn(async (_input: SpawnRunnerProcessInput) => {
     throw new Error("captured isolation spawn input");
   });
   const factory = createRunnerProcessRuntimeFactory({
@@ -227,8 +230,8 @@ describe("runner process factory restricted wiring", () => {
       agent,
       backend: "claude",
     });
-    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
-    const childProcessEnv = input.childProcessEnv as Record<string, string | undefined>;
+    const input = spawn.mock.calls[0]![0];
+    const childProcessEnv: NodeJS.ProcessEnv = input.childProcessEnv ?? {};
     expect(childProcessEnv.AUTH_BEARER_TOKEN).toBe(RESTRICTED_CREDENTIAL);
     expect(childProcessEnv.GH_TOKEN).toBe(RESTRICTED_GH_TOKEN);
     expect(childProcessEnv.PATH).toBe("/usr/bin");
@@ -237,13 +240,7 @@ describe("runner process factory restricted wiring", () => {
     expect(childProcessEnv.SCCACHE_DIR).toBeUndefined();
     expect(input.claudeAccountPool).toBeUndefined();
     expect(input.resolvedMcpServers).toEqual(prepared.plan.sanitizedServers);
-    const isolation = input.isolation as {
-      envKeys: string[];
-      contextNotice: string;
-      spec: unknown;
-      attachedWorktreeIds: string[];
-      tools: { netnsHelper: string };
-    };
+    const isolation = input.isolation!;
     // helper는 이 러너가 실제로 스폰될 릴리스 스냅샷 안에 있다.
     expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
     expect(isolation.tools.netnsHelper).toBe(
@@ -290,8 +287,8 @@ describe("runner process factory restricted wiring", () => {
     await expect(runtime.dispatcher.prepareSession("session-restricted"))
       .rejects.toThrow("captured isolation spawn input");
 
-    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
-    const childProcessEnv = input.childProcessEnv as Record<string, string | undefined>;
+    const input = spawn.mock.calls[0]![0];
+    const childProcessEnv: NodeJS.ProcessEnv = input.childProcessEnv ?? {};
     // preset이 ${KIMI_API_KEY}를 참조하는 그 세션에서만 풀린다.
     expect(childProcessEnv.KIMI_API_KEY).toBe("kimi-key");
     expect(childProcessEnv.PATH).toBe("/usr/bin");
@@ -310,13 +307,13 @@ describe("runner process factory restricted wiring", () => {
     await expect(runtime.dispatcher.prepareSession("session-restricted"))
       .rejects.toThrow("captured isolation spawn input");
 
-    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+    const input = spawn.mock.calls[0]![0];
     // 이 경로만 계정 풀을 유지하고, 선택 계정의 토큰은 러너 host-call 응답으로만 간다.
     expect(input.claudeAccountPool).toEqual({
       enabled: true,
       accountsDir: "/worker/claude-accounts",
     });
-    const isolation = input.isolation as { spec: { authKind: string } };
+    const isolation = input.isolation!;
     expect(isolation.spec.authKind).toBe("claude-oauth-token");
   });
 
@@ -362,11 +359,11 @@ describe("runner process factory restricted wiring", () => {
         .rejects.toThrow("captured isolation spawn input");
 
       expect(prepare).not.toHaveBeenCalled();
-      const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+      const input = spawn.mock.calls[0]![0];
       expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
       expect(input.isolation).toBeUndefined();
 
-      const env = input.childProcessEnv as Record<string, string | undefined>;
+      const env: NodeJS.ProcessEnv = input.childProcessEnv ?? {};
       const credential = env.AUTH_BEARER_TOKEN!;
       expect(credential.startsWith("ssf1.")).toBe(true);
       expect(verifyFullSessionMcpToken(credential, HOST_BEARER))
@@ -375,7 +372,7 @@ describe("runner process factory restricted wiring", () => {
       expect(env.DATABASE_URL).toBe(HOST_DATABASE_URL);
       expect(env.PATH).toBe("/usr/bin");
 
-      const servers = input.resolvedMcpServers as Array<Record<string, unknown>>;
+      const servers = input.resolvedMcpServers ?? [];
       expect(servers[0]?.headers).toEqual({ Authorization: `Bearer ${credential}` });
       expect(servers[1]).toEqual(mcpServers[1]);
 

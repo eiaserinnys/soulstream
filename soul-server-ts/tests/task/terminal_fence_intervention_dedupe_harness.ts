@@ -101,7 +101,7 @@ export async function createStoppedProductHarness(): Promise<ProductHarness> {
     throw new Error("product harness could not converge user_stop");
   }
   const terminalRevision = task.terminalEventId;
-  if (terminalRevision === undefined || task.status !== "interrupted") {
+  if (terminalRevision === undefined || (task.status as Task["status"]) !== "interrupted") {
     throw new Error("product harness did not reach canonical user_stop terminal");
   }
   repository.forcePendingRetry(RETRY_DELIVERY_ID);
@@ -198,6 +198,8 @@ function makeBroadcaster(): SessionBroadcaster {
 function makeSessionMutations(): SessionMutationHost {
   return {
     registerSession: vi.fn(async () => undefined),
+    registerSessionWithWorktree: vi.fn(async () => undefined),
+    setModelSelection: vi.fn(async () => undefined),
     transitionSession: vi.fn(async () => undefined),
     renameSession: vi.fn(async () => undefined),
     deleteSession: vi.fn(async () => undefined),

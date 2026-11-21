@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { ResolvedMcpServer } from "../../src/mcp_config_service.js";
 import {
   fullSessionCredential,
+  type FullSessionCredentialSpawnInput,
   withFullSessionCredential,
 } from "../../src/runner/full_session_credential.js";
 import {
@@ -132,7 +133,7 @@ describe("withFullSessionCredential", () => {
     });
     const credential = fullSessionCredential(SESSION, HOST_TOKEN)!;
 
-    const built = withFullSessionCredential(
+    const built = withFullSessionCredential<FullSessionCredentialSpawnInput>(
       { sessionId: SESSION },
       { hostBearerToken: HOST_TOKEN, buildChildProcessEnv },
     );
@@ -230,7 +231,7 @@ describe("withFullSessionCredential", () => {
   });
 
   it("does not touch MCP servers when there are none", () => {
-    const result = withFullSessionCredential(
+    const result = withFullSessionCredential<FullSessionCredentialSpawnInput>(
       { sessionId: SESSION, childProcessEnv: {} },
       { hostBearerToken: HOST_TOKEN },
     );

@@ -47,6 +47,7 @@ function makeHarness(
     recordTurnStarted: vi.fn().mockResolvedValue(undefined),
     discardIfConsumed: vi.fn().mockResolvedValue(false),
     recordConsumptionFailure: vi.fn().mockResolvedValue(undefined),
+    recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     recordRuntimeFollowupRelationConsumed: vi.fn().mockResolvedValue(true),
   };
   const consumption = new TaskDeliveryConsumption(

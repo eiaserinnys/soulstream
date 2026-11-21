@@ -5,6 +5,7 @@ import {
   type RunnerRecoveryCoordinatorOptions,
 } from "../../src/runner/runner_recovery_coordinator.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
+import type { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const NOW_MS = Date.parse("2026-08-24T02:30:07.900Z");
@@ -95,8 +96,15 @@ function makeHarness(input: {
     eventPersistence: "runner",
   } as unknown as NonNullable<Task["runner"]>;
   const recoveryModes: RecoveryMode[] = [];
-  const terminate = vi.fn(async () => {});
-  const invalidateRegistration = vi.fn(async () => {});
+  const terminate = vi.fn<RunnerProcessSpawner["terminate"]>(
+    async () => "registration_invalidated" as const,
+  );
+  const invalidateRegistration = vi.fn<RunnerProcessSpawner["invalidateRegistration"]>(
+    async () => {},
+  );
+  const retireSpawnerTerminalRegistration = vi.fn<
+    RunnerProcessSpawner["retireTerminalRegistration"]
+  >(async () => {});
   const markRunnerFailure = vi.fn(async () => {});
   const recoverRegisteredRunner = vi.fn((
     candidate: Task,
@@ -132,7 +140,11 @@ function makeHarness(input: {
     },
     closedTailDrainer: { drain: vi.fn(async () => {}) },
     logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
-    spawner: { terminate, invalidateRegistration, retireTerminalRegistration },
+    spawner: {
+      terminate,
+      invalidateRegistration,
+      retireTerminalRegistration: retireSpawnerTerminalRegistration,
+    },
     scan: async () => structuredClone({ registrations: [scannedRegistration], errors: [] }),
     hydrate: input.hydrate ?? (async (registration) => registration),
     ...(input.refreshRegistration
@@ -174,13 +186,16 @@ function runnerRegistration(input: {
         sessionDirectory: "/runner/session-a",
         databasePath: "/runner/session-a/runner.sqlite",
         socketPath: "/runner/session-a/runner.sock",
+        socketKind: "unix_socket",
         pidPath: "/runner/session-a/runner.pid",
         lockPath: "/runner/session-a/runner.lock",
         configPath: "/runner/session-a/runner-config.json",
+        logPath: "/runner/session-a/runner.log",
       },
       codeSha: "sha-a",
       snapshotPath: "/release/sha-a/soul-server-ts",
       codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,

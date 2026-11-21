@@ -271,7 +271,7 @@ describe("card1266 instruction path: restart recovery of a Codex queue (I6)", ()
         })),
       },
       instructionReceipt: {
-        lookup: async (r) => {
+        lookup: async (r: SessionDeliveryRow) => {
           asked.push(r.delivery_id);
           return verdicts[r.delivery_id]!;
         },

@@ -28,12 +28,9 @@ import {
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
-import type { CanonicalExecutionRegistration } from
+import type { ExecutionRegistration, RunnerExecutionIdentity } from
   "../../src/task/execution_registration.js";
-import {
-  TaskExecutor,
-  type RunnerProcessRuntimeFactory,
-} from "../../src/task/task_executor.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
 import { createExecutionActivation, type Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
@@ -51,6 +48,10 @@ import {
   type HProductBoundaryRepair,
   type HProductBoundaryViolation,
 } from "./h_orphaned_spawn_product_boundary_oracle.js";
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 
 const SESSION_ID = "session-h-product-boundary";
 const MESSAGE_ID = "message-h-1";
@@ -194,17 +195,11 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   const livePids = new Set([EXISTING_PID, SPAWNED_PID]);
   const signalTargets: Array<{ pid: number; signal: NodeJS.Signals }> = [];
   const persistenceDouble = makeEventPersistenceTestDouble();
-  const canonicalOwner: CanonicalExecutionRegistration = {
-    ownershipGeneration: 1,
-    ownerKind: "runner_process",
-    manifestId: "release-existing",
-    runtimeEnvIdentity: "runtime-existing",
+  const canonicalOwner: RunnerExecutionIdentity = {
     registrationId: "registration-existing",
+    executionCommandId: "execute-existing",
     pid: EXISTING_PID,
     startIdentity: EXISTING_START_IDENTITY,
-    executionCommandId: "execute-existing",
-    phase: "active",
-    failureReason: null,
   };
 
   const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
@@ -263,10 +258,6 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
     },
     now: () => Date.parse(OBSERVED_AT),
     delay: async () => {},
-    readLifecycle: async (databasePath) => {
-      trace.push("rollback_read_lifecycle");
-      return await readAuthoritativeRunnerLifecycle(databasePath);
-    },
   });
   const connection = inertConnection();
   const dispatcher = new RunnerProcessDispatcher({
@@ -300,7 +291,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
   const processFactory = vi.fn(() => {
     trace.push("spawn");
     return runner;
-  }) as unknown as RunnerProcessRuntimeFactory;
+  });
   const executor = new TaskExecutor(
     () => inertEngine(),
     {
@@ -405,7 +396,7 @@ async function observeCurrentProductRollback(): Promise<HProductBoundaryFixtureR
 function transition(
   applied: boolean,
   status: "initializing" | "running" | "error",
-  canonicalExecutionRegistration: CanonicalExecutionRegistration,
+  canonicalExecutionRegistration: ExecutionRegistration,
 ): EventSessionTransitionApplication {
   return {
     eventId: 10,
@@ -437,6 +428,7 @@ function spawnInput(stateDirectory: string) {
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,
     claudeRuntimeTurnTimeoutMs: 1_800_000,
+    codexDetachedResultRetentionMs: 1_800_000,
     internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
     codexHome: null,
     rolloutRoot: null,
@@ -457,6 +449,7 @@ function inertConnection(): RunnerIpcConnection {
 function inertEngine(): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-h",
     async *execute() {},
     async interrupt() { return true; },

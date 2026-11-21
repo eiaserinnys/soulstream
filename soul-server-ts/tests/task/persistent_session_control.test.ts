@@ -124,11 +124,17 @@ describe("PersistentSessionControl", () => {
   it("durably replaces the marker before updating the in-memory Task", async () => {
     const task = {
       agentSessionId: "session-persistent",
+      prompt: "persistent session",
+      status: "running",
+      createdAt: new Date("2026-11-14T00:00:00.000Z"),
+      lastEventId: 0,
+      lastReadEventId: 0,
       sessionType: "claude",
       metadata: [
         { type: "other_metadata", value: { retained: true } },
         { type: "persistent_session", value: { enabled: false, updated_at: "old" } },
       ],
+      interventionQueue: [],
     } as Task;
     const enqueueMetadataEffect = vi.fn().mockResolvedValue(42);
     const control = new PersistentSessionControl({

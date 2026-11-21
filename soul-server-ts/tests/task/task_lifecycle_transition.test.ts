@@ -76,7 +76,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const engine = { interrupt } as unknown as EnginePort;
     const runnerCommandDispatcher = new InProcessRunnerCommandDispatcher(engine);
     const dispatch = vi.spyOn(runnerCommandDispatcher, "dispatch");
-    task.runner = { engine, dispatcher: runnerCommandDispatcher };
+    task.runner = { eventPersistence: "host",  engine, dispatcher: runnerCommandDispatcher };
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
@@ -97,6 +97,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const task = makeTask({ callerSessionId: "parent-session" });
     const engine = { interrupt: vi.fn().mockResolvedValue(true) } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -122,6 +123,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     task.interventionQueue.push(pendingDelivery);
     const engine = { interrupt: vi.fn(interrupt) } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -144,6 +146,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const terminalConverged = makeTask({ status: "completed" });
     const engine = { interrupt: vi.fn() } as unknown as EnginePort;
     terminalZombie.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -200,6 +203,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -270,6 +274,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
       },
       interventionQueue: [pendingDelivery],
       runner: {
+        eventPersistence: "host",
         engine,
         dispatcher: new InProcessRunnerCommandDispatcher(engine),
       },
@@ -333,6 +338,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -395,6 +401,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -420,6 +427,7 @@ describe("TaskLifecycleTransition completion notification recovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: transition,
+      logger: silentLogger,
     });
     const task = makeTask({ callerSessionId: "parent-session" });
 
@@ -436,6 +444,7 @@ describe("TaskLifecycleTransition completion notification recovery", () => {
       loadTask: vi.fn(),
       rememberTask: vi.fn(),
       lifecycleTransition: transition,
+      logger: silentLogger,
     });
     const task = makeTask({ callerSessionId: "parent-session" });
 
@@ -740,6 +749,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
     const interrupt = vi.fn().mockRejectedValue(new Error("already closed"));
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -759,6 +769,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
     const interrupt = vi.fn().mockResolvedValue(true);
     const engine = { interrupt } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };

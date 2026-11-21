@@ -283,7 +283,16 @@ function spawnInput(
       workspace_dir: controlDirectory,
       agents_sdk: {
         entry_agent: "root",
-        agents: [{ id: "root", name: "Root", instructions: "Runner process E2E fixture" }],
+        agents: [{
+          id: "root",
+          name: "Root",
+          instructions: "Runner process E2E fixture",
+          handoffs: [],
+          tools: [],
+          hosted_tools: [],
+          mcp_servers: [],
+        }],
+        guardrails: { input_blocklist: [], output_blocklist: [] },
       },
     },
     codeSha: "e2e-sha",

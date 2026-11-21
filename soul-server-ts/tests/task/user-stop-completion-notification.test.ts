@@ -120,7 +120,7 @@ function makeRunner(events: string[]) {
     await close();
   });
   return {
-    runner: { engine, dispatcher },
+    runner: { eventPersistence: "host" as const, engine, dispatcher },
     closeSpy,
   };
 }
@@ -188,6 +188,7 @@ describe("사람의 멈춤 완료 통지 (card #1261)", () => {
       close: vi.fn(async () => {}),
     } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };
@@ -215,6 +216,7 @@ describe("사람의 멈춤 완료 통지 (card #1261)", () => {
       close: vi.fn(async () => {}),
     } as unknown as EnginePort;
     task.runner = {
+      eventPersistence: "host",
       engine,
       dispatcher: new InProcessRunnerCommandDispatcher(engine),
     };

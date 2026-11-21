@@ -5,6 +5,7 @@ import {
   extractPersistentGeneration,
 } from "../../src/task/task_metadata.js";
 import { resolveGenerationState } from "../../src/task/persistent_generation_state.js";
+import type { PersistentGenerationPending } from "../../src/task/task_models.js";
 
 const firstCall = {
   generation: 1,
@@ -15,23 +16,25 @@ const firstCall = {
   measuredAt: "2026-10-05T09:00:00.000Z",
 };
 
+const applyingPending: PersistentGenerationPending = {
+  number: 2,
+  reason: "manual",
+  requestedAt: "2026-10-05T09:00:00.000Z",
+  targetModelPreset: "codex-balanced",
+  targetReasoningEffort: "high",
+  resetContext: false,
+  keepInstructions: true,
+  applyingFrom: "native-old",
+  previousModelPreset: "codex-source",
+  previousBackend: "codex",
+};
+
 const applyingState = {
   number: 1,
   backendSessionId: "native-old",
   startedAt: "2026-10-01T09:00:00.000Z",
   firstCall,
-  pending: {
-    number: 2,
-    reason: "manual",
-    requestedAt: "2026-10-05T09:00:00.000Z",
-    targetModelPreset: "codex-balanced",
-    targetReasoningEffort: "high",
-    resetContext: false,
-    keepInstructions: true,
-    applyingFrom: "native-old",
-    previousModelPreset: "codex-source",
-    previousBackend: "codex",
-  },
+  pending: applyingPending,
 };
 
 describe("extractPersistentGeneration", () => {

@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentRegistry } from "../../src/agent_registry.js";
 import type { ExecutionContextBuilder } from "../../src/context/context_builder.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
-import type { EnginePort } from "../../src/engine/protocol.js";
+import type { EnginePort, SupportsCodexDetachedCommandRuntime } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
-import type { Task } from "../../src/task/task_models.js";
+import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
@@ -202,12 +202,12 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       order.push("resume");
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
     const transition = new AutoResumeTransition({
       logger: silentLogger,
@@ -259,11 +259,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await transition.resume(
@@ -295,11 +295,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await transition.resume(task, {
@@ -324,11 +324,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await transition.resume(task, {
@@ -360,11 +360,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await transition.resume(task, {
@@ -406,11 +406,11 @@ describe("AutoResumeTransition", () => {
       }));
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
     const observePersistentResume = vi.fn(async () => undefined);
     const transition = new AutoResumeTransition({
@@ -487,18 +487,18 @@ describe("AutoResumeTransition", () => {
     });
     const startNewExecution = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       expect(resumedTask.status).toBe("initializing");
       expect(resumedTask.executionActivation).toBe(activation);
       expect(resumedTask.pendingExecutionExpectedTerminalEventId).toBeUndefined();
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       startNewExecution(resumedTask, activation);
     });
@@ -624,7 +624,7 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       order.push("onResume");
       expect(resumedTask).toBe(task);
@@ -632,7 +632,7 @@ describe("AutoResumeTransition", () => {
       expect(resumedTask.interventionQueue).toHaveLength(1);
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await expect(
@@ -686,11 +686,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await expect(
@@ -734,11 +734,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await expect(
@@ -861,12 +861,12 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       expect(resumedTask.executionActivation).toBe(activation);
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
     const transition = new AutoResumeTransition({
       persistence: makeEventPersistenceTestDouble(undefined, [], {
@@ -1112,7 +1112,7 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       expect(resumedTask.runner).toBe(runner);
       expect(resumedTask.runnerRetainedForDetachedWork).toBe(true);
@@ -1120,7 +1120,7 @@ describe("AutoResumeTransition", () => {
       expect(resumedTask.executionActivation).toBe(activation);
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     await transition.resume(task, { text: "runtime result", user: "system" }, onResume);
@@ -1138,15 +1138,21 @@ describe("AutoResumeTransition", () => {
     }>();
     const query = vi.fn(() => activity.promise);
     const close = vi.fn(async () => undefined);
-    const runner = createTaskRunnerRuntime({
+    const engine = {
       backendId: "codex",
       workspaceDir: "/tmp/codex-work",
       codexDetachedCommandRuntime: true,
       codexDetachedCommandActivity: query,
+      intervene: async () => ({
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      } as const),
       async *execute(): AsyncIterable<never> {},
       interrupt: vi.fn(async () => true),
       close: vi.fn(async () => undefined),
-    } as EnginePort, {
+    } satisfies EnginePort & SupportsCodexDetachedCommandRuntime;
+    const runner = createTaskRunnerRuntime(engine, {
       close,
       registrationId: () => "registration-a",
       activeExecutionCommandId: () => undefined,
@@ -1175,11 +1181,11 @@ describe("AutoResumeTransition", () => {
     });
     const onResume = vi.fn((
       resumedTask: Task,
-      activation: NonNullable<Task["executionActivation"]>,
+      activation?: NonNullable<Task["executionActivation"]>,
     ) => {
       resumedTask.status = "running";
       resumedTask.executionActivation = undefined;
-      activation.resolve();
+      activation!.resolve();
     });
 
     const release = finalizer.releaseExpiredRetainedRunner(
@@ -1430,7 +1436,7 @@ describe("AutoResumeTransition queued resume system abort notice", () => {
       terminationDetail: "runner process exited before execution completed",
       terminalEventId: 3114,
     });
-    const message = { text: "밀린 입력", user: "system" };
+    const message: InterventionMessage = { text: "밀린 입력", user: "system" };
     task.interventionQueue.push(message);
     const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({
@@ -1454,7 +1460,7 @@ describe("AutoResumeTransition queued resume system abort notice", () => {
       terminationDetail: "user_stop",
       terminalEventId: 3115,
     });
-    const message = { text: "밀린 입력", user: "system" };
+    const message: InterventionMessage = { text: "밀린 입력", user: "system" };
     task.interventionQueue.push(message);
     const persistenceDouble = makeEventPersistenceTestDouble();
     const transition = new AutoResumeTransition({

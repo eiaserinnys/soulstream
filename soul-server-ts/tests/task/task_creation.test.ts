@@ -260,11 +260,11 @@ describe("TaskCreation", () => {
     );
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-42");
 
-    expect(h.appendMetadata.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitSessionCreated.mock.invocationCallOrder[0],
+    expect(h.appendMetadata.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0]!,
     );
-    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitSessionCreated.mock.invocationCallOrder[0],
+    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -416,11 +416,11 @@ describe("TaskCreation", () => {
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.getBoardItemsByFolder).not.toHaveBeenCalled();
     expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-folder-immediate", "folder-42");
-    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitCatalogUpdated.mock.invocationCallOrder[0],
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitCatalogUpdated.mock.invocationCallOrder[0]!,
     );
-    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitSessionCreated.mock.invocationCallOrder[0],
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0]!,
     );
   });
 
@@ -472,11 +472,11 @@ describe("TaskCreation", () => {
     expect(h.getBoardItemsByFolder).not.toHaveBeenCalled();
     expect(h.getBoardItems).not.toHaveBeenCalled();
     expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-task", "rb-1");
-    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
-      h.getAllFolders.mock.invocationCallOrder[0],
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.getAllFolders.mock.invocationCallOrder[0]!,
     );
-    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitSessionCreated.mock.invocationCallOrder[0],
+    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0]!,
     );
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "rb-1");
   });
