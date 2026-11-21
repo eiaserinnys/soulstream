@@ -1,7 +1,7 @@
 import { callWithReferenceTranslation, errorResultFromError, jsonResult, type CallToolResult } from "@soulstream/mcp-contract";
 import type { AuthorizeFolder, BulkSetCardStatusInput, BulkStatusItem, UpdateUnstartedFields } from "../cards/card_maintenance_service.js";
 import { allowed } from "../cards/card_route_body.js";
-import { resolveDispatchReferences } from "./card_handlers.js";
+import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -80,6 +80,14 @@ function maintenanceActor(args: Args, context: McpCallContext): MaintenanceActor
   if (explicit && explicit !== authenticated)
     throw Object.assign(new Error("caller_session_id가 인증된 호출 세션과 다릅니다."), { statusCode: 403 });
   return { actorKind: "agent", actorSessionId: authenticated };
+}
+
+export async function resolveDispatchReferences(options: Options, refs: string[]) {
+  const [service, access, folders] = await Promise.all([
+    options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
+  ]);
+  const normalized = normalizeBoardAccess(access);
+  return service.resolveReferences(refs, folderId => isBoardFolderAllowed(normalized, folders, folderId));
 }
 
 function translate(options: Options, args: Args, call: (translated: Args) => Promise<CallToolResult>) {

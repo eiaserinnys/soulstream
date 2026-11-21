@@ -27,3 +27,9 @@ export function numberField(sql: SqlClient, object: "usage" | "first_call", fiel
   return sql`CASE WHEN jsonb_typeof(${source}->${field}) = 'number'
     THEN (${source}->>${field})::numeric END`;
 }
+
+export function asNumber(value: string | number | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}

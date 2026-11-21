@@ -51,6 +51,12 @@ export function parsePageYjsDocumentName(documentName: string): string | null {
   return isIdentifier(pageId) ? pageId : null;
 }
 
+export function requirePageDocumentName(documentName: string): string {
+  const pageId = parsePageYjsDocumentName(documentName);
+  if (!pageId) throw new Error(`PAGE_YJS_DOCUMENT_NAME_INVALID: ${documentName}`);
+  return pageId;
+}
+
 export function createPageYDocSnapshot(input: {
   page: PageYjsPageReplica;
   blocks: readonly PageYjsBlockInput[];

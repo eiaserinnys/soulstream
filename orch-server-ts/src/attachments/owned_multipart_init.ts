@@ -8,13 +8,13 @@ import {
   AttachmentUploadHttpError,
   UPLOAD_CONTRACT_HEADER,
   UPLOAD_CONTRACT_ID_V1,
+  asObject,
   readUploadChecksum,
   readUploadId,
   readUploadMode,
   sendUploadFailure,
   type UploadMode,
 } from "./attachment_upload_http.js";
-import { asObject } from "./owned_multipart_finish.js";
 import type { MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
 
 export type OwnedMultipartOptions = MultipartAttachmentOptions & {

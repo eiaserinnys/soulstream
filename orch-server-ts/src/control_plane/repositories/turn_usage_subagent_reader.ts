@@ -1,6 +1,5 @@
 import type { SqlClient } from "../control_plane_types.js";
-import { asNumber } from "./turn_usage_repository.js";
-import { normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
+import { asNumber, normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
 import {
   computeSessionSubagentRollups,
   type TurnSubagentModelUsage,

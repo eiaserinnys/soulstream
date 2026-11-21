@@ -1,6 +1,6 @@
 import type { SqlClient } from "../control_plane_types.js";
 import { readSubagentUsage, subagentRollupFields } from "./turn_usage_subagent_reader.js";
-import { normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
+import { asNumber, normalizedInputTokens, numberField } from "./turn_usage_sql_fields.js";
 import {
   aggregateSubagentRollups,
   type TurnSubagentModelUsage,
@@ -491,12 +491,6 @@ function createTurnUsageCtes(sql: SqlClient, scope: TurnUsageScope) {
       FROM no_usage
     )
   `;
-}
-
-export function asNumber(value: string | number | null | undefined): number | undefined {
-  if (value === null || value === undefined) return undefined;
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) ? number : undefined;
 }
 
 function optionalNumber<K extends string>(key: K, value: string | number | null | undefined): Partial<Record<K, number>> {

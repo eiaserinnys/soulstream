@@ -9,10 +9,10 @@ import * as Y from "yjs";
 
 import {
   readPageYDocReplica,
+  requirePageDocumentName,
   type PageYjsReplica,
 } from "./page_yjs_model.js";
 import { isCommittedPageSnapshotOrigin } from "./page_committed_snapshot_sync.js";
-import { requirePageDocumentName } from "./page_repository.js";
 
 export interface StorePageYjsStateInput {
   documentName: string;
