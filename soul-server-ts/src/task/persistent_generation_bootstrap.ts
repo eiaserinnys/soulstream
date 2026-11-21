@@ -1,4 +1,5 @@
 import type { EventPersistence } from "../db/event_persistence.js";
+import { asRecord } from "../engine/claude_sdk_helpers.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
 import type { PersistentGenerationBootstrap, PersistentGenerationState, Task } from "./task_models.js";
@@ -13,11 +14,6 @@ export interface GenerationExecutionIdentity {
 export interface BootstrapUpdate {
   bootstrap: PersistentGenerationBootstrap;
   firstCall?: PersistentGenerationState["firstCall"];
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown> : undefined;
 }
 
 function number(value: unknown): number | null {
@@ -37,9 +33,9 @@ export function captureGenerationBootstrap(
     || (b.backendSessionId !== null && b.backendSessionId !== identity.nativeId)) return undefined;
   const payload = event as Record<string, unknown>;
   if (payload.type !== "complete" && payload.type !== "error") return undefined;
-  const usage = record(payload.usage);
-  const first = record(payload.first_call);
-  const growth = record(payload.generation_usage);
+  const usage = asRecord(payload.usage);
+  const first = asRecord(payload.first_call);
+  const growth = asRecord(payload.generation_usage);
   const input = number(usage?.input_tokens);
   const cached = number(usage?.cached_input_tokens);
   const output = number(usage?.output_tokens);
@@ -93,14 +89,14 @@ export async function persistGenerationGrowth(
   eventId: number | null, persistence: EventPersistence,
 ): Promise<void> {
   if (event.type !== "complete" || eventId === null || !identity.nativeId) return;
-  const growth = record((event as Record<string, unknown>).generation_usage);
+  const growth = asRecord((event as Record<string, unknown>).generation_usage);
   const tokens = number(growth?.context_growth_tokens);
   const samples = number(growth?.context_growth_samples);
   if (tokens === null || samples === null || samples === 0) return;
   const existing = (task.metadata ?? []).find(e => e.type === "persistent_generation_growth");
-  const oldValue = record(existing?.value);
-  const presets = { ...record(oldValue?.presets) };
-  const old = record(presets[identity.modelPreset]);
+  const oldValue = asRecord(existing?.value);
+  const presets = { ...asRecord(oldValue?.presets) };
+  const old = asRecord(presets[identity.modelPreset]);
   if (old && number(old.last_event_id) === eventId) return;
   const sameModel = old?.model === identity.model;
   presets[identity.modelPreset] = {
