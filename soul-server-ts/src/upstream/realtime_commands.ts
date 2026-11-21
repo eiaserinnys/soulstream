@@ -18,7 +18,6 @@ interface CommandLike {
 export interface RealtimeCreateCallCommand extends CommandLike {
   type: "realtime_create_call";
   agentSessionId?: string;
-  session_id?: string;
   offerSdp?: string;
   offer_sdp?: string;
   model?: string | null;
@@ -29,7 +28,6 @@ export interface RealtimeCreateCallCommand extends CommandLike {
 export interface RealtimeEventCommand extends CommandLike {
   type: "realtime_event";
   agentSessionId?: string;
-  session_id?: string;
   event?: unknown;
   callId?: string | null;
   call_id?: string | null;
@@ -38,7 +36,6 @@ export interface RealtimeEventCommand extends CommandLike {
 export interface RealtimeResolveToolApprovalCommand extends CommandLike {
   type: "realtime_resolve_tool_approval";
   agentSessionId?: string;
-  session_id?: string;
   approvalId?: string;
   approval_id?: string;
   decision?: "approved" | "rejected";
@@ -85,7 +82,7 @@ export class RealtimeCommands {
     cmd: RealtimeCreateCallCommand,
   ): Promise<RealtimeCallCreatedAck | null> {
     const requestId = commandRequestId(cmd);
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const sessionId = cmd.agentSessionId ?? "";
     const offerSdp = cmd.offerSdp ?? cmd.offer_sdp ?? "";
 
     const broker = this.getBroker("realtime_call_created", requestId, sessionId);
@@ -124,7 +121,7 @@ export class RealtimeCommands {
 
   async relayEvent(cmd: RealtimeEventCommand): Promise<RealtimeEventAck | null> {
     const requestId = commandRequestId(cmd);
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const sessionId = cmd.agentSessionId ?? "";
 
     const broker = this.getBroker("realtime_event_ack", requestId, sessionId);
     if (!sessionId || cmd.event === undefined) {
@@ -162,7 +159,7 @@ export class RealtimeCommands {
     cmd: RealtimeResolveToolApprovalCommand,
   ): Promise<RealtimeToolApprovalAck | null> {
     const requestId = commandRequestId(cmd);
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const sessionId = cmd.agentSessionId ?? "";
     const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
     const decision = cmd.decision;
 

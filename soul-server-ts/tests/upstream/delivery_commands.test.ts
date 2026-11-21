@@ -175,7 +175,7 @@ describe("DeliveryCommands.toolApproval", () => {
 
     const ack = await commands.toolApproval({
       type: "approve_tool",
-      session_id: "sess-agents",
+      agentSessionId: "sess-agents",
       approval_id: "approval-1",
       request_id: "orch-approval-1",
       message: "approved by user",

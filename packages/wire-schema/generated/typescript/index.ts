@@ -2484,10 +2484,6 @@ export interface PrepareCardOrchestrationDecision {
 export interface Intervene {
   type: "intervene";
   agentSessionId: string;
-  /**
-   * 구버전 호환 — 신규 코드는 agentSessionId 사용.
-   */
-  session_id?: string;
   text: string;
   /**
    * Original human text retained for conversation display when the agent input has appended context.
@@ -2561,10 +2557,6 @@ export interface EnsureSessionRunningAck {
 export interface InterruptSession {
   type: "interrupt_session";
   agentSessionId: string;
-  /**
-   * 구버전 호환 — 신규 코드는 agentSessionId 사용.
-   */
-  session_id?: string;
   requestId?: string;
   request_id?: string;
   [k: string]: unknown;
@@ -2575,10 +2567,6 @@ export interface InterruptSession {
 export interface DeleteSession {
   type: "delete_session";
   agentSessionId: string;
-  /**
-   * 구버전 호환 — 신규 코드는 agentSessionId 사용.
-   */
-  session_id?: string;
   requestId?: string;
   request_id?: string;
   [k: string]: unknown;
@@ -2589,10 +2577,6 @@ export interface DeleteSession {
 export interface AcknowledgeSessionReview {
   type: "acknowledge_session_review";
   agentSessionId: string;
-  /**
-   * 구버전 호환.
-   */
-  session_id?: string;
   requestId?: string;
   request_id?: string;
   [k: string]: unknown;
@@ -2699,10 +2683,6 @@ export interface ApplyPersistentSessionInstructions {
 export interface Respond {
   type: "respond";
   agentSessionId: string;
-  /**
-   * 구버전 호환.
-   */
-  session_id?: string;
   inputRequestId?: string;
   /**
    * 구버전 호환.
@@ -2720,10 +2700,6 @@ export interface Respond {
 export interface ApproveTool {
   type: "approve_tool";
   agentSessionId: string;
-  /**
-   * 구버전 호환.
-   */
-  session_id?: string;
   approvalId: string;
   /**
    * 구버전 호환.
@@ -2740,10 +2716,6 @@ export interface ApproveTool {
 export interface RejectTool {
   type: "reject_tool";
   agentSessionId: string;
-  /**
-   * 구버전 호환.
-   */
-  session_id?: string;
   approvalId: string;
   /**
    * 구버전 호환.
@@ -2761,7 +2733,6 @@ export interface RejectTool {
 export interface RealtimeCreateCall {
   type: "realtime_create_call";
   agentSessionId: string;
-  session_id?: string;
   offerSdp: string;
   offer_sdp?: string;
   model?: string | null;
@@ -2777,7 +2748,6 @@ export interface RealtimeCreateCall {
 export interface RealtimeEvent {
   type: "realtime_event";
   agentSessionId: string;
-  session_id?: string;
   event: {
     [k: string]: unknown;
   };
@@ -2793,7 +2763,6 @@ export interface RealtimeEvent {
 export interface RealtimeResolveToolApproval {
   type: "realtime_resolve_tool_approval";
   agentSessionId: string;
-  session_id?: string;
   approvalId: string;
   approval_id?: string;
   decision: "approved" | "rejected";
@@ -3231,8 +3200,7 @@ export interface HealthCheck {
  */
 export interface SubscribeEvents {
   type: "subscribe_events";
-  session_id?: string;
-  agentSessionId?: string;
+  agentSessionId: string;
   after_id?: number;
   request_id?: string;
   requestId?: string;
@@ -3556,8 +3524,7 @@ export interface ClaudeCentralPoolSyncResult {
 export interface ClaudeRuntimeListTasks {
   type: "claude_runtime_list_tasks";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   [k: string]: unknown;
 }
 /**
@@ -3566,8 +3533,7 @@ export interface ClaudeRuntimeListTasks {
 export interface ClaudeRuntimeTaskOutput {
   type: "claude_runtime_task_output";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   taskId?: string;
   task_id?: string;
   [k: string]: unknown;
@@ -3578,8 +3544,7 @@ export interface ClaudeRuntimeTaskOutput {
 export interface ClaudeRuntimeStopTask {
   type: "claude_runtime_stop_task";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   taskId?: string;
   task_id?: string;
   [k: string]: unknown;
@@ -3590,8 +3555,7 @@ export interface ClaudeRuntimeStopTask {
 export interface ClaudeRuntimeBackgroundTasks {
   type: "claude_runtime_background_tasks";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   toolUseId?: string;
   tool_use_id?: string;
   [k: string]: unknown;
@@ -3602,8 +3566,7 @@ export interface ClaudeRuntimeBackgroundTasks {
 export interface ClaudeRuntimeListSchedules {
   type: "claude_runtime_list_schedules";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   [k: string]: unknown;
 }
 /**
@@ -3612,8 +3575,7 @@ export interface ClaudeRuntimeListSchedules {
 export interface ClaudeRuntimeDeleteSchedule {
   type: "claude_runtime_delete_schedule";
   requestId?: string;
-  agentSessionId?: string;
-  session_id?: string;
+  agentSessionId: string;
   scheduleId?: string;
   schedule_id?: string;
   [k: string]: unknown;

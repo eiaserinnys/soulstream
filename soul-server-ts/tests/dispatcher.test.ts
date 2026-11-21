@@ -1276,7 +1276,7 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
     }]);
   });
 
-  it("continues to accept the legacy session_id envelope", async () => {
+  it("fills missing source_turns and source_event_ids with empty lists", async () => {
     const applyPersistentInstructions = vi.fn(async () => ({
       sessionId: "sess-pas",
       results: [{ status: "ok" as const }],
@@ -1287,10 +1287,10 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
 
     await dispatcher.dispatch({
       type: "apply_persistent_session_instructions",
-      session_id: "sess-pas",
+      agentSessionId: "sess-pas",
       origin: "user",
       ops: [{ op: "add", text: "Keep replies concise." }],
-      requestId: "instructions-legacy",
+      requestId: "instructions-defaults",
     });
 
     expect(applyPersistentInstructions).toHaveBeenCalledWith("sess-pas", {
@@ -1300,7 +1300,7 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
     });
     expect(sent).toEqual([expect.objectContaining({
       type: "persistent_session_instructions_applied",
-      requestId: "instructions-legacy",
+      requestId: "instructions-defaults",
       agentSessionId: "sess-pas",
       results: [{ status: "ok" }],
     })]);
@@ -1327,7 +1327,7 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
 
     await dispatcher.dispatch({
       type: "apply_persistent_session_instructions",
-      session_id: "sess-pas",
+      agentSessionId: "sess-pas",
       origin: "agent",
       ops: [{ op: "add", text: "Keep replies concise." }],
       unrecognized: true,

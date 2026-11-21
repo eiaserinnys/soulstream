@@ -68,7 +68,7 @@ describe("CommandDispatcher.delete_session (card #1261)", () => {
 
     await dispatcher.dispatch({
       type: "delete_session",
-      session_id: "sess-gone",
+      agentSessionId: "sess-gone",
       requestId: "delete-2",
     });
 
