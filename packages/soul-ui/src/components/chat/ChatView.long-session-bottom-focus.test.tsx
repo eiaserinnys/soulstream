@@ -1111,7 +1111,6 @@ describe("ChatView long-session initial bottom focus", () => {
     useDashboardStore.getState().processEvent(
       {
         type: "text_start",
-        parent_event_id: "0",
         timestamp: 0,
       } as unknown as SoulSSEEvent,
       1000,

@@ -624,7 +624,6 @@ export interface SSEEventAssistantMessage {
   model?: string;
   provider?: string;
   timestamp?: number;
-  parent_event_id?: string | number;
   _final_for_live_stream?: boolean;
   truncation?: EventTruncation;
   [k: string]: unknown;
@@ -687,7 +686,6 @@ export interface SSEEventInputRequest {
   }[];
   started_at: number;
   timeout_sec: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -697,7 +695,6 @@ export interface SSEEventInputRequestExpired {
   type: "input_request_expired";
   request_id: string;
   timestamp: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -707,7 +704,6 @@ export interface SSEEventInputRequestResponded {
   type: "input_request_responded";
   request_id: string;
   timestamp: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -719,7 +715,6 @@ export interface SSEEventDebug {
   message?: string;
   kind?: string;
   timestamp?: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -886,7 +881,6 @@ export interface SSEEventComplete {
   turn_cost_usd?: number;
   session_cost_usd?: number;
   session_cost_partial?: boolean;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 export interface UsageSnapshotV1 {
@@ -923,7 +917,6 @@ export interface SSEEventError {
   resets_at?: string;
   thread_id?: string;
   turn_id?: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -936,7 +929,6 @@ export interface SSEEventCredentialAlert {
   status?: string;
   resets_at?: string;
   timestamp?: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -960,7 +952,6 @@ export interface SSEEventThinking {
   text?: string;
   signature?: string;
   truncation?: EventTruncation;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -973,7 +964,6 @@ export interface SSEEventTextStart {
   liveSeq?: number;
   liveTextMode?: "replace" | "append";
   timestamp?: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -986,7 +976,6 @@ export interface SSEEventTextDelta {
   liveSeq?: number;
   liveTextMode?: "replace" | "append";
   timestamp?: number;
-  parent_event_id?: string | number;
   text: string;
   [k: string]: unknown;
 }
@@ -1000,7 +989,6 @@ export interface SSEEventTextEnd {
   liveSeq?: number;
   liveTextMode?: "replace" | "append";
   timestamp?: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1052,7 +1040,6 @@ export interface SSEEventToolStart {
   completed_at?: number | null;
   duration_ms?: number | null;
   tool_use_id?: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1074,7 +1061,6 @@ export interface SSEEventToolResult {
   duration_ms?: number | null;
   is_error: boolean;
   tool_use_id?: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1202,7 +1188,6 @@ export interface SSEEventResult {
     [k: string]: unknown;
   };
   permission_denials?: string[];
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1212,7 +1197,6 @@ export interface SSEEventPromptSuggestion {
   type: "prompt_suggestion";
   timestamp: number;
   text: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1223,7 +1207,6 @@ export interface SSEEventSubagentStart {
   timestamp: number;
   agent_id: string;
   agent_type: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1233,7 +1216,6 @@ export interface SSEEventSubagentStop {
   type: "subagent_stop";
   timestamp: number;
   agent_id: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1719,7 +1701,6 @@ export interface SSEEventCompact {
   type: "compact";
   trigger: string;
   message: string;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1742,7 +1723,6 @@ export interface SSEEventAssistantError {
   model?: string;
   message_id?: string;
   timestamp: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**
@@ -1752,7 +1732,6 @@ export interface SSEEventAwaySummary {
   type: "away_summary";
   content: string;
   timestamp: number;
-  parent_event_id?: string | number;
   [k: string]: unknown;
 }
 /**

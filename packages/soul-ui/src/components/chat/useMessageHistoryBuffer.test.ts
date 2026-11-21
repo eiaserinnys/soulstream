@@ -121,4 +121,19 @@ describe("toSSEEvent", () => {
       },
     });
   });
+
+  it("preserves the numeric parent event ID for a turn summary", () => {
+    const message: HistoricalMessage = {
+      id: 17,
+      parent_event_id: 16,
+      event_type: "turn_summary",
+      payload: { type: "turn_summary", final_response_event_id: 16, parent_event_id: 16 },
+      created_at: "2026-05-24T00:00:00+00:00",
+    };
+
+    expect(toSSEEvent(message)).toEqual({
+      eventId: 17,
+      event: { type: "turn_summary", final_response_event_id: 16, parent_event_id: 16 },
+    });
+  });
 });

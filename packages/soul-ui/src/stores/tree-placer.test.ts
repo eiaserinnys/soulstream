@@ -25,8 +25,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleTextStart, placeInTree, removeIncompleteTransientTextNodes } from "./tree-placer";
 import { diag } from "../lib/diag";
-import { createProcessingContext, makeNode, registerNode } from "./processing-context";
-import type { ProcessingContext } from "./processing-context";
+import { createProcessingContext, makeNode, registerNode, type ProcessingContext } from "./processing-context";
 import type {
   EventTreeNode,
   UserMessageEvent,
@@ -89,7 +88,7 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
       expect(root.children).toContain(node);
     });
 
-    it("thinking → root.children (parent_event_id 무시)", () => {
+    it("thinking → root.children", () => {
       const { ctx, root } = makeCtxWithRoot();
       const parent = makeNode("user-msg-1", "user_message", "hi", { completed: true });
       registerNode(ctx, parent);
@@ -101,7 +100,6 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
         type: "thinking",
         timestamp: 0,
         thinking: "hmm",
-        parent_event_id: "100", // 무시됨
       };
 
       placeInTree(node, event, 3, ctx, root);
@@ -112,14 +110,13 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
       expect(root.children).toEqual([parent, node]);
     });
 
-    it("complete → root.children (parent_event_id 무시)", () => {
+    it("complete → root.children", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("complete-12", "complete", "Done", { completed: true });
       const event: CompleteEvent = {
         type: "complete",
         result: "Done",
         attachments: [],
-        parent_event_id: "100", // 무시됨
       };
 
       placeInTree(node, event, 12, ctx, root);
@@ -127,17 +124,17 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
       expect(root.children).toContain(node);
     });
 
-    it("error → root.children (parent_event_id 무시)", () => {
+    it("error → root.children", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("error-14", "error", "boom", { completed: true, isError: true });
-      const event: ErrorEvent = { type: "error", message: "boom", parent_event_id: "100" };
+      const event: ErrorEvent = { type: "error", message: "boom" };
 
       placeInTree(node, event, 14, ctx, root);
 
       expect(root.children).toContain(node);
     });
 
-    it("result → root.children (parent_event_id 무시)", () => {
+    it("result → root.children", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("result-17", "result", "out", { completed: true });
       const event: ResultEvent = {
@@ -145,7 +142,6 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
         timestamp: 0,
         success: true,
         output: "out",
-        parent_event_id: "toolu_res", // 무시됨
       };
 
       placeInTree(node, event, 17, ctx, root);
@@ -323,21 +319,6 @@ describe("handleTextStart (Phase 2-A 평탄화)", () => {
     expect(root.children).toContain(thinkingNode);
     expect(root.children).toContain(ctx.activeTextTarget);
     expect(root.children).toHaveLength(2);
-  });
-
-  it("parent_event_id가 있어도 root.children에 push (parent 매칭 무시)", () => {
-    const { ctx, root } = makeCtxWithRoot();
-    const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
-    registerNode(ctx, parentNode);
-    ctx.nodeMap.set("100", parentNode);
-    root.children.push(parentNode);
-
-    const event: TextStartEvent = { type: "text_start", timestamp: 0, parent_event_id: "100" };
-    handleTextStart(event, 13, ctx, root);
-
-    // parent.children에 들어가지 *않음*
-    expect(parentNode.children).toHaveLength(0);
-    expect(root.children).toContain(ctx.activeTextTarget);
   });
 
   it("같은 eventId 재진입 시 false 반환 + activeTextTarget 변경 없음", () => {

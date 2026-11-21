@@ -1,14 +1,5 @@
-/**
- * Claude client event → Soulstream SSE event mapping.
- *
- * This mapper is intentionally Claude-specific. Codex ThreadEvent mapping stays in
- * codex_event_mapper.ts because the source event cardinality differs: Python Claude
- * represents one completed text block as a semantic assistant_message. Live
- * text_start/text_delta/text_end is reserved for generation-time transport.
- */
-
 import type { SSEEventPayload } from "./protocol.js";
-import type { ClaudeClientEvent, ParentEventId } from "./claude_client_event.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { makeContextUsagePayload } from "./context_usage.js";
 import { copyClaudeBackgroundDeliveryMetadata } from
   "./claude_background_delivery_metadata.js";
@@ -50,7 +41,6 @@ export function mapClaudeClientEvent(
           type: "debug",
           message: event.message,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -67,13 +57,11 @@ export function mapClaudeClientEvent(
 
     case "text": {
       const timestamp = event.timestamp ?? nowEpochSec();
-      const parent = parentField(event.parentEventId);
       return [
         asSSE({
           type: "assistant_message",
           content: event.text,
           timestamp,
-          ...parent,
         }),
       ];
     }
@@ -85,7 +73,6 @@ export function mapClaudeClientEvent(
           thinking: event.thinking,
           signature: event.signature ?? "",
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -97,7 +84,6 @@ export function mapClaudeClientEvent(
           tool_input: event.toolInput ?? {},
           ...(event.toolUseId ? { tool_use_id: event.toolUseId } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -110,7 +96,6 @@ export function mapClaudeClientEvent(
           is_error: event.isError ?? false,
           ...(event.toolUseId ? { tool_use_id: event.toolUseId } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -131,7 +116,6 @@ export function mapClaudeClientEvent(
             ? { permission_denials: event.permissionDenials }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -163,7 +147,6 @@ export function mapClaudeClientEvent(
               }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
     }
@@ -180,7 +163,6 @@ export function mapClaudeClientEvent(
             : {}),
           ...(event.resetsAt !== undefined ? { resets_at: event.resetsAt } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -190,7 +172,6 @@ export function mapClaudeClientEvent(
           type: "prompt_suggestion",
           text: event.text,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -203,7 +184,6 @@ export function mapClaudeClientEvent(
           ...(event.status !== undefined ? { status: event.status } : {}),
           ...(event.resetsAt !== undefined ? { resets_at: event.resetsAt } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -217,7 +197,6 @@ export function mapClaudeClientEvent(
           ...(event.startedAt !== undefined ? { started_at: event.startedAt } : {}),
           ...(event.timeoutSec !== undefined ? { timeout_sec: event.timeoutSec } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -227,7 +206,6 @@ export function mapClaudeClientEvent(
           type: "input_request_expired",
           request_id: event.requestId,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -237,7 +215,6 @@ export function mapClaudeClientEvent(
           type: "input_request_responded",
           request_id: event.requestId,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -248,7 +225,6 @@ export function mapClaudeClientEvent(
           trigger: event.trigger,
           message: event.message,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -260,7 +236,6 @@ export function mapClaudeClientEvent(
           ...(event.model !== undefined ? { model: event.model } : {}),
           ...(event.messageId !== undefined ? { message_id: event.messageId } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -270,7 +245,6 @@ export function mapClaudeClientEvent(
           type: "away_summary",
           content: event.content,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -281,7 +255,6 @@ export function mapClaudeClientEvent(
           agent_id: event.agentId,
           agent_type: event.agentType,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -291,7 +264,6 @@ export function mapClaudeClientEvent(
           type: "subagent_stop",
           agent_id: event.agentId,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -302,7 +274,6 @@ export function mapClaudeClientEvent(
           state: event.state,
           ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -321,7 +292,6 @@ export function mapClaudeClientEvent(
             ? { skip_transcript: event.skipTranscript }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -336,7 +306,6 @@ export function mapClaudeClientEvent(
           ...(event.teammateName !== undefined ? { teammate_name: event.teammateName } : {}),
           ...(event.teamName !== undefined ? { team_name: event.teamName } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -348,7 +317,6 @@ export function mapClaudeClientEvent(
           ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
           patch: event.patch,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -364,7 +332,6 @@ export function mapClaudeClientEvent(
           ...(event.lastToolName !== undefined ? { last_tool_name: event.lastToolName } : {}),
           ...(event.summary !== undefined ? { summary: event.summary } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -379,7 +346,6 @@ export function mapClaudeClientEvent(
           ...(event.teammateName !== undefined ? { teammate_name: event.teammateName } : {}),
           ...(event.teamName !== undefined ? { team_name: event.teamName } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -398,7 +364,6 @@ export function mapClaudeClientEvent(
             ? { skip_transcript: event.skipTranscript }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -412,7 +377,6 @@ export function mapClaudeClientEvent(
           ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
           ...(event.hookInput !== undefined ? { hook_input: event.hookInput } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -432,7 +396,6 @@ export function mapClaudeClientEvent(
           ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
           ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -453,7 +416,6 @@ export function mapClaudeClientEvent(
           ...(event.triggerType !== undefined ? { trigger_type: event.triggerType } : {}),
           ...(event.payload !== undefined ? { payload: event.payload } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -468,7 +430,6 @@ export function mapClaudeClientEvent(
           ...(event.subpath !== undefined ? { subpath: event.subpath } : {}),
           error: event.error,
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
 
@@ -488,7 +449,6 @@ export function mapClaudeClientEvent(
             ? { worktree_action: event.worktreeAction }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
-          ...parentField(event.parentEventId),
         }),
       ];
     }
@@ -512,12 +472,6 @@ export function mapClaudeClientEvent(
 
 function nowEpochSec(): number {
   return Date.now() / 1000;
-}
-
-function parentField(parentEventId: ParentEventId | undefined): Record<string, string | number> {
-  return parentEventId === undefined || parentEventId === null
-    ? {}
-    : { parent_event_id: parentEventId };
 }
 
 function stringifyToolResult(result: unknown): string {

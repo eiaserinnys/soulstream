@@ -35,32 +35,6 @@ type ExpectedShape = {
   optional: string[];
 };
 
-/**
- * Python schemas.py 정본 인용 (BaseModel 필드 — type 자체 포함):
- *
- * - ProgressEvent: type, text
- * - ContextUsageEvent: type, used_tokens, max_tokens, percent
- * - DebugEvent (L73-78): type, message, timestamp, parent_event_id?
- * - ThinkingSSEEvent (L146-152): type, timestamp, thinking, signature, parent_event_id?
- * - TextStartSSEEvent (L155-159): type, timestamp, parent_event_id?
- * - TextDeltaSSEEvent (L162-167): type, timestamp, text, parent_event_id?
- * - TextEndSSEEvent (L170-174): type, timestamp, parent_event_id?
- * - AssistantMessageSSEEvent (L177-183): type, timestamp, content, parent_event_id?
- * - ToolStartSSEEvent (L177-184): type, timestamp, tool_name, tool_input, tool_use_id?, parent_event_id?
- * - ToolResultSSEEvent (L187-195): type, timestamp, tool_name, result, is_error, tool_use_id?, parent_event_id?
- * - ResultSSEEvent (L198-211): type, timestamp, success, output, error?, usage?, total_cost_usd?,
- *   parent_event_id?, stop_reason?, errors?, model_usage?, permission_denials?
- * - AwaySummarySSEEvent (L214-219): type, timestamp, content, parent_event_id?
- * - PromptSuggestionSSEEvent (L222-227): type, timestamp, text, parent_event_id?
- * - SubagentStartSSEEvent (L230-236): type, timestamp, agent_id, agent_type, parent_event_id?
- * - SubagentStopSSEEvent (L239-244): type, timestamp, agent_id, parent_event_id?
- * - InputRequestSSEEvent (L255-264): type, timestamp, request_id, tool_use_id, questions, started_at,
- *   timeout_sec, parent_event_id?
- * - InputRequestExpiredSSEEvent (L267-272): type, request_id, parent_event_id?, timestamp
- * - InputRequestRespondedSSEEvent (L275-280): type, request_id, parent_event_id?, timestamp
- * - AssistantErrorSSEEvent (L283-290): type, timestamp, error_type, model, message_id?, parent_event_id?
- * - CredentialAlertEvent (L293-301): type, utilization?, rate_limit_type?, status?, resets_at?, timestamp, parent_event_id?
- */
 const PYTHON_SHAPES: Record<string, ExpectedShape> = {
   progress: {
     required: ["type", "text"],
@@ -72,35 +46,35 @@ const PYTHON_SHAPES: Record<string, ExpectedShape> = {
   },
   debug: {
     required: ["type", "message", "timestamp"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   thinking: {
     required: ["type", "timestamp", "thinking"],
-    optional: ["signature", "parent_event_id"],
+    optional: ["signature"],
   },
   text_start: {
     required: ["type", "timestamp"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   text_delta: {
     required: ["type", "timestamp", "text"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   text_end: {
     required: ["type", "timestamp"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   assistant_message: {
     required: ["type", "timestamp", "content"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   tool_start: {
     required: ["type", "timestamp", "tool_name", "tool_input"],
-    optional: ["tool_use_id", "parent_event_id"],
+    optional: ["tool_use_id"],
   },
   tool_result: {
     required: ["type", "timestamp", "tool_name", "result", "is_error"],
-    optional: ["tool_use_id", "parent_event_id"],
+    optional: ["tool_use_id"],
   },
   result: {
     required: ["type", "timestamp", "success", "output"],
@@ -108,7 +82,6 @@ const PYTHON_SHAPES: Record<string, ExpectedShape> = {
       "error",
       "usage",
       "total_cost_usd",
-      "parent_event_id",
       "stop_reason",
       "errors",
       "model_usage",
@@ -117,46 +90,43 @@ const PYTHON_SHAPES: Record<string, ExpectedShape> = {
   },
   away_summary: {
     required: ["type", "timestamp", "content"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   prompt_suggestion: {
     required: ["type", "timestamp", "text"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   subagent_start: {
     required: ["type", "timestamp", "agent_id", "agent_type"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   subagent_stop: {
     required: ["type", "timestamp", "agent_id"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   input_request: {
     required: ["type", "timestamp", "request_id", "questions", "started_at", "timeout_sec"],
-    optional: ["tool_use_id", "parent_event_id"],
+    optional: ["tool_use_id"],
   },
   input_request_expired: {
     required: ["type", "timestamp", "request_id"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   input_request_responded: {
     required: ["type", "timestamp", "request_id"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
   assistant_error: {
     required: ["type", "timestamp", "error_type"],
-    optional: ["model", "message_id", "parent_event_id"],
+    optional: ["model", "message_id"],
   },
   credential_alert: {
     required: ["type", "timestamp"],
-    optional: ["utilization", "rate_limit_type", "status", "resets_at", "parent_event_id"],
+    optional: ["utilization", "rate_limit_type", "status", "resets_at"],
   },
-  /**
-   * Python `CompactEvent` (schemas.py:66-71): type, timestamp, trigger, message, parent_event_id?
-   */
   compact: {
     required: ["type", "timestamp", "trigger", "message"],
-    optional: ["parent_event_id"],
+    optional: [],
   },
 };
 
