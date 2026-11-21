@@ -16,6 +16,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 import { makeEventPersistenceTestDouble } from "../task/event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 /**
  * 카드 #1266 U2a 고침 A. 종료가 거절되어 거절 표시가 남은 뒤, 백그라운드 작업으로 보유한
  * 러너가 같은 등록으로 다음 턴을 돌린다. 실제 TaskExecutor가 보유 러너를 다시 쓰고, 그 턴이
@@ -36,6 +40,7 @@ const agent: AgentProfile = {
 function fakeEngine(): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {},
     async interrupt() { return true; },
@@ -54,13 +59,16 @@ function liveRegistration(sessionId: string): RunnerRegistration {
         sessionDirectory: `/runner/${sessionId}`,
         databasePath: `/runner/${sessionId}/runner.sqlite`,
         socketPath: `/runner/${sessionId}/runner.sock`,
+        socketKind: "unix_socket",
         pidPath: `/runner/${sessionId}/runner.pid`,
         lockPath: `/runner/${sessionId}/runner.lock`,
         configPath: `/runner/${sessionId}/runner-config.json`,
+        logPath: `/runner/${sessionId}/runner.log`,
       },
       codeSha: "sha-a",
       snapshotPath: "/release/sha-a/soul-server-ts",
       codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,

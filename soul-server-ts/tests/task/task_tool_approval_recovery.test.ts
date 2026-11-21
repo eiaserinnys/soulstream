@@ -157,10 +157,10 @@ describe("ToolApprovalRecovery.tryQueueAgentsResume", () => {
     );
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
     expect(onResume).toHaveBeenCalledWith(task);
-    expect(persistToolApprovalResolved.mock.invocationCallOrder[0])
-      .toBeLessThan(emitSessionUpdated.mock.invocationCallOrder[0]);
-    expect(emitSessionUpdated.mock.invocationCallOrder[0])
-      .toBeLessThan(onResume.mock.invocationCallOrder[0]);
+    expect(persistToolApprovalResolved.mock.invocationCallOrder[0]!)
+      .toBeLessThan(emitSessionUpdated.mock.invocationCallOrder[0]!);
+    expect(emitSessionUpdated.mock.invocationCallOrder[0]!)
+      .toBeLessThan(onResume.mock.invocationCallOrder[0]!);
   });
 
   it("does not queue when approval id does not match the restored pending id", async () => {

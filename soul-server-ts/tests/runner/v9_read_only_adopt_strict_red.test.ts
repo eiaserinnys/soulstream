@@ -309,7 +309,7 @@ interface Fixture {
 }
 async function createFixture(
   version: 9 | 10 | 11,
-  state: RunnerExecutionState = "running",
+  state: Exclude<RunnerExecutionState, "reaped"> = "running",
   terminalTail = false,
 ): Promise<Fixture> {
   const directory = await mkdtemp(join(tmpdir(), "v9-read-only-adopt-red-"));
@@ -396,10 +396,13 @@ function makeRegistration(fixture: Fixture, pidAlive: boolean): RunnerRegistrati
       agent: { id: "agent-v9", name: "Agent V9", backend: "codex", workspace_dir: fixture.directory },
       paths: {
         sessionDirectory: fixture.directory, databasePath: fixture.databasePath,
-        socketPath: join(fixture.directory, "runner.sock"), pidPath: join(fixture.directory, "runner.pid"),
+        socketPath: join(fixture.directory, "runner.sock"), socketKind: "unix_socket",
+        pidPath: join(fixture.directory, "runner.pid"),
         lockPath: join(fixture.directory, "runner.lock"), configPath: join(fixture.directory, "runner-config.json"),
+        logPath: join(fixture.directory, "runner.log"),
       },
       codeSha: "release-v9-compat", snapshotPath: "/release/v9-compat", codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true, claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16, claudeRuntimeTurnTimeoutMs: 600_000,
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal", codexHome: null, rolloutRoot: null,
@@ -442,17 +445,16 @@ function makeCoordinator(
           await parent.close();
         }
       },
-      restartRegisteredRunner: async () => { observation.newRunnerCount += 1; },
     },
     taskManager: {
       hydrateRunnerRecoveryTask: async () => task,
-      markRunnerFailureAndResume: async () => {}, projectClosedRunner: async () => true,
+      projectClosedRunner: async () => true,
     },
   } as unknown as RunnerRecoveryCoordinatorOptions;
   return new RunnerRecoveryCoordinator(options);
 }
 class ActiveV9Writer {
-  private readonly database: DatabaseSync;
+  private readonly database: SqliteDatabase;
   constructor(private readonly fixture: Fixture) {
     this.database = new DatabaseSync(fixture.databasePath);
   }

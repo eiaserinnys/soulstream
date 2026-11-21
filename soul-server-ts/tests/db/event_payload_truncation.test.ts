@@ -29,7 +29,7 @@ describe("truncateEventStrings", () => {
     };
 
     const result = truncateEventStrings(input);
-    const truncated = result.payload.result[0].output;
+    const truncated = result.payload.result[0]!.output;
 
     expect(Buffer.byteLength(truncated, "utf8")).toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
     expect(truncated.endsWith(EVENT_TRUNCATION_SUFFIX)).toBe(true);
@@ -37,7 +37,7 @@ describe("truncateEventStrings", () => {
     expect(hasUnpairedSurrogate(truncated)).toBe(false);
     expect(result.payload).toMatchObject({ content: "small", "unchanged-key": "keep" });
     expect(result.truncatedFields).toEqual([{ path: ["result", 0, "output"], original }]);
-    expect(input.result[0].output).toBe(original);
+    expect(input.result[0]!.output).toBe(original);
   });
 });
 

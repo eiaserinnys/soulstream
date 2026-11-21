@@ -94,7 +94,7 @@ async function makeSubject(options: {
     persistence: persistence.persistence,
     completionNotifier: harness.notifier,
     settlement: store,
-    closeSettlementPending: async (task) => {
+    closeSettlementPending: async (task: Task) => {
       order.push("close");
       const key = terminalDedupeKeyOf(task);
       if (key) await store.close(key);

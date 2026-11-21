@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
-import type { EnginePort } from "../../src/engine/protocol.js";
+import type { EnginePort, EngineUserInput } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
@@ -51,7 +51,7 @@ describe("TaskManager concurrent evicted task loading", () => {
         backendId: "codex",
         workspaceDir: "/workspace/a",
         async *execute() {},
-        async intervene(input) {
+        async intervene(input: EngineUserInput) {
           delivered.push(input.prompt);
           return { status: "delivered", mechanism: "active_turn" };
         },
@@ -108,13 +108,13 @@ describe("TaskManager concurrent evicted task loading", () => {
       emitCatalogUpdated: vi.fn(async () => {}),
     } as unknown as SessionBroadcaster;
     const manager = new TaskManager("node-a", db, broadcaster, logger, persistence);
-    let activation: Task["executionActivation"] = undefined;
+    const observed: { activation: Task["executionActivation"] } = { activation: undefined };
     let announceResumeStarted!: () => void;
     const resumeStarted = new Promise<void>((resolve) => {
       announceResumeStarted = resolve;
     });
     const onResume = vi.fn((_task: Task, current?: Task["executionActivation"]) => {
-      activation = current;
+      observed.activation = current;
       announceResumeStarted();
     });
 
@@ -127,8 +127,8 @@ describe("TaskManager concurrent evicted task loading", () => {
       agentSessionId: "session-a", text: "second", user: "agent",
     }, onResume);
 
-    expect(activation).toBeDefined();
-    activation?.resolve();
+    expect(observed.activation).toBeDefined();
+    observed.activation?.resolve();
     await expect(first).resolves.toEqual({ autoResumed: true });
     await expect(second).rejects.toThrow(
       "execution activation did not reach running state for session-a",

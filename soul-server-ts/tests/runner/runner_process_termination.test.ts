@@ -49,7 +49,7 @@ describe("terminateExactRunner", () => {
 
     await expect(terminateExactRunner(expectedRunner, dependencies({
       platform: "win32",
-      inspectWriterLock: vi.fn(async () => treeTerminated
+      inspectWriterLock: vi.fn(async (): Promise<RunnerWriterLockState> => treeTerminated
         ? { kind: "free" }
         : { kind: "held", owner: expectedRunner }),
       requestShutdown,

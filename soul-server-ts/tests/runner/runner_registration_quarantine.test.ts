@@ -230,6 +230,7 @@ function childConfig(
     codeSha: "release-a",
     snapshotPath: "/release/release-a/soul-server-ts",
     codexAdapterMode: "sdk",
+    codexDetachedResultRetentionMs: 1_800_000,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,

@@ -26,7 +26,7 @@ describe("omitInlineImageData", () => {
         { type: "image", data: "[omitted image]", mimeType: "image/jpeg" },
       ],
     });
-    expect(input.result[0].source.data).toBe("A".repeat(80));
+    expect(input.result[0]!.source!.data).toBe("A".repeat(80));
     expect(omitInlineImageData(transformed)).toBe(transformed);
   });
 

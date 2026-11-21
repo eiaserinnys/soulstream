@@ -14,14 +14,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     lastReadEventId: 0,
     interventionQueue: [],
     executionRegistration: {
-      ownerKind: "in_process",
-      manifestId: "manifest:sess-response",
-      runtimeEnvIdentity: "runtime:sess-response",
       registrationId: "registration:sess-response",
-      pid: 42_201,
-      startIdentity: "start:sess-response",
       executionCommandId: "command:sess-response",
-      ownershipGeneration: 1,
     },
     ...overrides,
   };

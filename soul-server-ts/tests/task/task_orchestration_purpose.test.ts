@@ -32,7 +32,7 @@ describe("canonical card orchestration purpose", () => {
     await h.creation.waitForDeferredEffects("decision");
     expect(value.orchestrationPurpose).toEqual(purpose);
     expect(h.appendMetadata).toHaveBeenCalledWith("decision", { type: "card_orchestration_decision", ...purpose }, { waitForAck: true });
-    expect(h.appendMetadata.mock.invocationCallOrder[0]).toBeLessThan(h.emitSessionCreated.mock.invocationCallOrder[0]!);
+    expect(h.appendMetadata.mock.invocationCallOrder[0]!).toBeLessThan(h.emitSessionCreated.mock.invocationCallOrder[0]!);
     expect(hydrateEvictedTaskFromSessionRow(row(), logger)?.orchestrationPurpose).toEqual(purpose);
   });
   it.each([null, [], [{ type: "card_orchestration_decision", runId: "run" }], [{ type: "card_orchestration_decision", ...purpose }, { type: "card_orchestration_decision", ...purpose, leaseToken: "other" }]])("fails closed when reserved profile loses or corrupts marker %j", metadata => {

@@ -648,6 +648,7 @@ function configFor(
     codeSha: "sha-a",
     snapshotPath: "/releases/sha-a/soul-server-ts",
     codexAdapterMode: "sdk" as const,
+    codexDetachedResultRetentionMs: 1_800_000,
     claudeRuntimeV2Enabled: true,
     claudeRuntimeIdleTtlMs: 300_000,
     claudeRuntimeMaxEntries: 16,

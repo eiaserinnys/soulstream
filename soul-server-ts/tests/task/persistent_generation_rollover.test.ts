@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
-import { UnknownModelPresetError } from "../../src/model_catalog.js";
+import {
+  UnknownModelPresetError,
+  type ModelCatalog,
+  type ModelPreset,
+} from "../../src/model_catalog.js";
 import { resolveGenerationState } from "../../src/task/persistent_generation_state.js";
 import {
   beginGenerationRolloverIfPending,
@@ -50,14 +54,14 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date("2026-10-05T00:00:00.000Z"),
     lastEventId: 0,
     lastReadEventId: 0,
-    interventionQueue: [{ text: "continue" }],
+    interventionQueue: [{ text: "continue", user: "system" }],
     ...overrides,
   };
 }
 
 function makeCatalog() {
   return {
-    resolve: vi.fn((id: string) => {
+    resolve: vi.fn<ModelCatalog["resolve"]>((id: string): ModelPreset => {
       if (id === "codex-new") {
         return {
           id,
@@ -137,7 +141,7 @@ describe("beginGenerationRolloverIfPending", () => {
     ["queue empty", { interventionQueue: [] }],
     ["retained runner", { runnerRetainedForDetachedWork: true }],
     ["runtime follow-up is first", {
-      interventionQueue: [{ text: "background result", source: "claude_runtime_task_followup" }],
+      interventionQueue: [{ text: "background result", user: "system", source: "claude_runtime_task_followup" }],
     }],
   ])("leaves a requested generation pending when %s", (_label, overrides) => {
     const task = makeTask(overrides);
@@ -213,7 +217,7 @@ describe("beginGenerationRolloverIfPending", () => {
       activeGenerationRollover: resolved.activeGenerationRollover,
     });
     beginGenerationRolloverIfPending(task, agent, makeCatalog());
-    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
       record: {} as never,
       eventId: 26,
     }));
@@ -268,7 +272,7 @@ describe("beginGenerationRolloverIfPending", () => {
       _entry: Record<string, unknown>,
       _options: { semanticDedupeKey?: string },
     ) => 25);
-    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
       record: {} as never,
       eventId: 26,
     }));
@@ -340,7 +344,7 @@ describe("beginGenerationRolloverIfPending", () => {
       _entry: Record<string, unknown>,
       _options: { semanticDedupeKey?: string },
     ) => 25);
-    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
       record: {} as never,
       eventId: 26,
     }));
@@ -513,7 +517,7 @@ describe("beginGenerationRolloverIfPending", () => {
       recentFromEventId: 10,
       recentToEventId: 12,
     };
-    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
       record: {} as never,
       eventId: 26,
     }));
@@ -563,7 +567,7 @@ describe("beginGenerationRolloverIfPending", () => {
       },
     });
     beginGenerationRolloverIfPending(task, agent, makeCatalog());
-    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+    const enqueueEventAndWaitForSessionAck = vi.fn<EventPersistence["enqueueEventAndWaitForSessionAck"]>(async () => ({
       record: {} as never,
       eventId: 26,
     }));
@@ -589,7 +593,8 @@ describe("beginGenerationRolloverIfPending", () => {
       inputTokens: 5_000,
       cachedInputTokens: 2_000,
     };
-    const enqueueMetadataEffect = vi.fn(async () => 27);
+    const enqueueMetadataEffect =
+      vi.fn<EventPersistence["enqueueMetadataEffect"]>(async () => 27);
     await complete(task, { enqueueMetadataEffect } as unknown as EventPersistence);
 
     expect(task.persistentGeneration?.firstCall).toMatchObject({

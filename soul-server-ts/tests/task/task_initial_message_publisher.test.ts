@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
+import type { ContextManifest } from "../../src/context/compiler/index.js";
 import type { Task } from "../../src/task/task_models.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -108,11 +109,11 @@ describe("TaskInitialMessagePublisher", () => {
       "system_message",
       "user_message",
     ]);
-    expect(enqueueEvent.mock.calls[0][1]).toEqual({
+    expect(enqueueEvent.mock.calls[0]![1]).toEqual({
       type: "system_message",
       text: "system prompt",
     });
-    expect(enqueueEvent.mock.calls[1][1]).toEqual({
+    expect(enqueueEvent.mock.calls[1]![1]).toEqual({
       type: "user_message",
       user: "로젤린",
       text: "사용자 요청",
@@ -122,7 +123,7 @@ describe("TaskInitialMessagePublisher", () => {
       attachments: ["/tmp/incoming/sess/a.png"],
       context: [{ key: "atom_context", label: "atom", content: "# tree" }],
     });
-    expect(enqueueEvent.mock.calls[1][2]).toBeUndefined();
+    expect(enqueueEvent.mock.calls[1]![2]).toBeUndefined();
     expect(enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith("sess-initial", {
       reviewState: "not_required",
       transitionId: "initial",
@@ -143,8 +144,8 @@ describe("TaskInitialMessagePublisher", () => {
   it("durably records one context_manifest before the initial timeline messages", async () => {
     const task = makeTask();
     const { publisher, enqueueEvent, emitEventEnvelope } = makeSubject();
-    const contextManifest = {
-      compiler_version: "phase-a.v1",
+    const contextManifest: ContextManifest = {
+      compiler_version: "phase-d.v1",
       spec_hash: "a".repeat(64),
       source_count: 1,
       total_chars: 120,
@@ -157,6 +158,9 @@ describe("TaskInitialMessagePublisher", () => {
         mode: "full" as const,
         depth: 5,
         titles_only: false,
+        include_ids: false,
+        priority: 0,
+        never_truncate: false,
         chars: 100,
         token_estimate: 25,
         status: "ok" as const,
@@ -197,7 +201,7 @@ describe("TaskInitialMessagePublisher", () => {
       combinedContextItems: [],
       assembledPrompt: "사용자 요청",
       contextManifest: {
-        compiler_version: "phase-a.v1",
+        compiler_version: "phase-d.v1",
         spec_hash: "b".repeat(64),
         source_count: 0,
         total_chars: 0,
@@ -228,14 +232,14 @@ describe("TaskInitialMessagePublisher", () => {
     });
 
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
-    expect(enqueueEvent.mock.calls[0][1]).toEqual({
+    expect(enqueueEvent.mock.calls[0]![1]).toEqual({
       type: "user_message",
       user: "unknown",
       text: "사용자 요청",
       timestamp: 1779505200,
     });
     expect(emitEventEnvelope).not.toHaveBeenCalled();
-    const userEvent = enqueueEvent.mock.calls[0][1] as Record<string, unknown>;
+    const userEvent = enqueueEvent.mock.calls[0]![1] as Record<string, unknown>;
     expect(userEvent.caller_info).toBeUndefined();
     expect(userEvent.attachments).toBeUndefined();
     expect(userEvent.context).toBeUndefined();

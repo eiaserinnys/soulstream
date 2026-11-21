@@ -17,6 +17,7 @@ import {
   UnsupportedReasoningEffortError,
   resolveEffortPreset,
   resolveReasoningEffortForCreate,
+  type ReasoningEffortPreset,
 } from "../../src/task/task_reasoning_effort.js";
 import {
   toClaudeSdkEffort,
@@ -24,20 +25,20 @@ import {
 } from "../../src/engine/effort_boundary.js";
 import { isReasoningEffort } from "../../src/engine/protocol.js";
 
-const opus = {
+const opus: ReasoningEffortPreset = {
   id: "claude-opus",
   supported_efforts: ["low", "medium", "high", "xhigh", "max"],
   default_effort: "xhigh",
-} as const;
+};
 
-const astra = {
+const astra: ReasoningEffortPreset = {
   id: "codex-6-astra",
   supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
   default_effort: "medium",
-} as const;
+};
 
 /** Kimi: vendor ignores output_config.effort, so the preset advertises nothing. */
-const noEffortPreset = { id: "kimi-3" } as const;
+const noEffortPreset: ReasoningEffortPreset = { id: "kimi-3" };
 
 describe("resolveReasoningEffortForCreate", () => {
   it("falls back to the preset default when the request omits effort", () => {

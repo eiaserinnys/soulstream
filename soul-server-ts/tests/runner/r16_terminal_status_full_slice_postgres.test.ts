@@ -1,6 +1,7 @@
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import type { SessionRow } from "../../src/db/session_db.js";
 import { recoverRunnerByDisposition } from
   "../../src/runner/runner_recovery_disposition.js";
 import { prepareRecoveredTask } from
@@ -109,8 +110,9 @@ describe("R16 terminal status full slice", () => {
     task.executionRegistration = undefined;
     const terminalWrite = vi.fn()
       .mockRejectedValueOnce(new Error("terminal projection RPC reset"))
-      .mockImplementation((...args) => ingress.persistence
-        .enqueueTerminalTransitionAndWaitForApplication(...args));
+      .mockImplementation((...args: Parameters<
+        typeof ingress.persistence.enqueueTerminalTransitionAndWaitForApplication
+      >) => ingress.persistence.enqueueTerminalTransitionAndWaitForApplication(...args));
     const lifecycle = new TaskLifecycleTransition({
       logger,
       persistence: {
@@ -285,20 +287,20 @@ describe("R16 terminal status full slice", () => {
     const acquired = await ingress.persistence
       .recordExecutionRegistrationAndWaitForApplication(sessionId, {
         ...LIVE_OWNER_IDENTITY,
-        ownerKind: "runner_process",
-        leaseExpiresAt: new Date(Date.now() + 60_000),
         reviewState: "not_required",
       });
     expect(acquired.applied).toBe(true);
   }
 
   async function loadTask(sessionId: string): Promise<Task> {
-    const rows = await postgres.sql<Array<Record<string, unknown>>>`
+    const rows = await postgres.sql<SessionRow[]>`
       SELECT * FROM sessions WHERE session_id = ${sessionId}
     `;
     const row = rows[0];
     if (!row) throw new Error(`missing fixture session ${sessionId}`);
-    return hydrateEvictedTaskFromSessionRow(row as never, logger);
+    const task = hydrateEvictedTaskFromSessionRow(row, logger);
+    if (!task) throw new Error(`missing hydrated task ${sessionId}`);
+    return task;
   }
 
   async function persistRecoveredTerminal(

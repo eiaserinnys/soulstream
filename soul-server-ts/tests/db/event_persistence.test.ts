@@ -19,6 +19,8 @@ import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
 import type { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
+type ToolResultEvent = Extract<SSEEventPayload, { type: "tool_result" }>;
+
 const SECTION_7_TRANSIENT_STREAMING_TYPES = [
   "text_start",
   "text_delta",
@@ -37,6 +39,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
+    interventionQueue: [],
     ...overrides,
   };
 }
@@ -258,8 +261,8 @@ describe("EventPersistence durable ingress", () => {
       timestamp: 2,
     } as unknown as SSEEventPayload, undefined, "registration-2");
 
-    expect(ingress.append.mock.calls[0][0].registration_id).toBe("registration-1");
-    expect(ingress.append.mock.calls[2][0].registration_id).toBe("registration-2");
+    expect(ingress.append.mock.calls[0]![0].registration_id).toBe("registration-1");
+    expect(ingress.append.mock.calls[2]![0].registration_id).toBe("registration-2");
   });
 
   it.each([
@@ -377,10 +380,10 @@ describe("EventPersistence durable ingress", () => {
     const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", event);
 
     expect(Buffer.byteLength(JSON.stringify(appendInput), "utf8")).toBeLessThan(2 * 1024 * 1024);
-    expect(Buffer.byteLength(appendInput.payload.result as string, "utf8"))
+    expect(Buffer.byteLength((appendInput.payload as ToolResultEvent).result as string, "utf8"))
       .toBe(EVENT_STRING_MAX_BYTES);
-    expect((appendInput.payload.result as string).endsWith("\n[잘림]")).toBe(true);
-    expect(appendInput.payload.truncation).toEqual({
+    expect(((appendInput.payload as ToolResultEvent).result as string).endsWith("\n[잘림]")).toBe(true);
+    expect((appendInput.payload as ToolResultEvent).truncation).toEqual({
       original_bytes: Buffer.byteLength(archive!.body, "utf8"),
       attachment: null,
     });
@@ -405,8 +408,8 @@ describe("EventPersistence durable ingress", () => {
 
     const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", event);
 
-    expect(appendInput.payload.result).toContain("[omitted image]");
-    expect(appendInput.payload.result).not.toContain(original);
+    expect((appendInput.payload as ToolResultEvent).result).toContain("[omitted image]");
+    expect((appendInput.payload as ToolResultEvent).result).not.toContain(original);
     expect(appendInput.payload).not.toHaveProperty("truncation");
     expect(archive).toBeNull();
     expect(appendInput.searchable_text).not.toContain(original);
@@ -425,7 +428,7 @@ describe("EventPersistence durable ingress", () => {
 
     const result = buildEventOutboxAppendInput("sess-1", event);
 
-    expect(result.appendInput.payload.result).toBe(event.result);
+    expect((result.appendInput.payload as ToolResultEvent).result).toBe((event as ToolResultEvent).result);
     expect(result.archive).toBeNull();
     expect(result.appendInput.payload).not.toHaveProperty("truncation");
   });

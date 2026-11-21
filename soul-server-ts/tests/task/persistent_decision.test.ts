@@ -596,7 +596,7 @@ const decisionCases: DecisionCase[] = [
       default_model: "claude-opus",
       fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
-      accounts: { codex: { weekly_headroom: 0, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
+      accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: {
       action: "wait_until",

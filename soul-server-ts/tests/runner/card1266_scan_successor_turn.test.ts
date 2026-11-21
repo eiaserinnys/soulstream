@@ -16,6 +16,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 import { makeEventPersistenceTestDouble } from "../task/event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 /**
  * 카드 #1266 U6 결함 1. 종료가 기록된 등록의 러너에서 뒤이은 턴이 막 시작됐다. 러너는 붙었고
  * 실행 슬롯(executionPromise)은 잡혔지만, 중앙이 새 실행 등록을 받기 전이라 러너에는 붙은
@@ -38,6 +42,7 @@ const agent: AgentProfile = {
 function fakeEngine(): EnginePort {
   return {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(): AsyncIterable<SSEEventPayload> {},
     async interrupt() { return true; },
@@ -56,13 +61,16 @@ function terminalRegistration(sessionId: string): RunnerRegistration {
         sessionDirectory: `/runner/${sessionId}`,
         databasePath: `/runner/${sessionId}/runner.sqlite`,
         socketPath: `/runner/${sessionId}/runner.sock`,
+        socketKind: "unix_socket",
         pidPath: `/runner/${sessionId}/runner.pid`,
         lockPath: `/runner/${sessionId}/runner.lock`,
         configPath: `/runner/${sessionId}/runner-config.json`,
+        logPath: `/runner/${sessionId}/runner.log`,
       },
       codeSha: "sha-a",
       snapshotPath: "/release/sha-a/soul-server-ts",
       codexAdapterMode: "sdk",
+      codexDetachedResultRetentionMs: 1_800_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,

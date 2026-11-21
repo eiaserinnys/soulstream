@@ -10,6 +10,7 @@ import * as runnerDecision from "../../../src/runner/state/runner_central_check_
 import {
   NODE_CLEANUP_INTENTS,
   decideNodeResponse,
+  type NodeCleanupIntent,
 } from "../../../src/task/state/node_response_decision.js";
 import {
   NODE_RESPONSE_CELLS,
@@ -41,8 +42,9 @@ describe("node response cell", () => {
       const decision = decideNodeResponse(facts);
       expect(NODE_RESPONSE_CELLS).toContain(decision.cell);
       expect(new Set(decision.intents).size).toBe(decision.intents.length);
-      expect([...decision.intents]).toEqual(
-        NODE_CLEANUP_INTENTS.filter((intent) => decision.intents.includes(intent)),
+      const intents: readonly NodeCleanupIntent[] = decision.intents;
+      expect([...intents]).toEqual(
+        NODE_CLEANUP_INTENTS.filter((intent) => intents.includes(intent)),
       );
       if (decision.cell === "applied") expect(decision.intents).toEqual([]);
       count += 1;
@@ -111,7 +113,8 @@ describe("node response cell", () => {
   it("releases local ownership once the central session is confirmed missing", () => {
     for (const facts of allNodeResponseFacts()) {
       const decision = decideNodeResponse(facts);
-      const releases = decision.intents.includes("release_local_ownership");
+      const intents: readonly NodeCleanupIntent[] = decision.intents;
+      const releases = intents.includes("release_local_ownership");
       expect(releases).toBe(facts.centralSession === "absent" && decision.cell !== "applied");
     }
     expect(decide({ centralSession: "absent", reason: "session_missing" }).intents)

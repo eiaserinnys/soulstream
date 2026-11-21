@@ -7,12 +7,56 @@ import {
 } from "@soulstream/wire-schema/session-delivery";
 import { redeliverStoredDeliveryContent } from
   "../../src/task/delivery_row_intervention.js";
+import type { AddInterventionParams } from "../../src/task/task_intervention_route.js";
 import { hasLiveRunner } from "../../src/task/delivery_instruction_receipt.js";
 import type { Task } from "../../src/task/task_models.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../../src/task/queued_delivery_transcript_recovery.js";
 
 type LedgerState = "claimed" | "delivered" | "consumed" | "queued";
+
+function makeDeliveryRow(overrides: Partial<SessionDeliveryRow>): SessionDeliveryRow {
+  return Object.assign(
+    {
+      delivery_id: "delivery-fixture",
+      target_session_id: null,
+      source_session_id: null,
+      relation_key: "relation-fixture",
+      completion_id: null,
+      intent: "human_live_steer",
+      source: "user_message",
+      producer_kind: null,
+      producer_id: null,
+      producer_terminal_revision: null,
+      parent_delivery_id: null,
+      caller_turn_id: null,
+      payload_hash: "hash-fixture",
+      payload: {},
+      state: "pending",
+      aggregate_state: "pending",
+      created_at: new Date(0),
+      updated_at: new Date(0),
+      claimed_at: null,
+      dispatching_at: null,
+      attempt_token: null,
+      attempt_expires_at: null,
+      attempt_count: 0,
+      next_attempt_at: new Date(0),
+      last_error: null,
+      queued_at: null,
+      delivered_at: null,
+      consumed_at: null,
+      superseded_at: null,
+      superseded_terminal_revision: null,
+      target_receipt_id: null,
+      target_receipt_at: null,
+      consumed_reason: null,
+      dead_letter_reason: null,
+      dead_lettered_at: null,
+    } satisfies SessionDeliveryRow,
+    overrides,
+  );
+}
 
 describe("queued transcript recovery rolling contract", () => {
   it.each([false, true])("uses an attached runner's active execution (%s) to settle absent input", async (active) => {
@@ -54,7 +98,7 @@ describe("queued transcript recovery rolling contract", () => {
     proof,
   ) => {
     const addIntervention = vi.fn(async () => ({ queued: true }));
-    const row = {
+    const row = makeDeliveryRow({
       delivery_id: "delivery-proof",
       target_session_id: "session-proof",
       attempt_token: "startup-proof",
@@ -66,7 +110,7 @@ describe("queued transcript recovery rolling contract", () => {
       target_receipt_id: null,
       delivered_at: null,
       ...proof,
-    } as SessionDeliveryRow;
+    });
 
     await redeliverStoredDeliveryContent(
       row,
@@ -83,8 +127,8 @@ describe("queued transcript recovery rolling contract", () => {
   });
 
   it("routes a budgeted pending redelivery without its stale claim token", async () => {
-    const addIntervention = vi.fn(async () => ({ queued: true }));
-    const row = {
+    const addIntervention = vi.fn(async (_params: AddInterventionParams) => ({ queued: true }));
+    const row = makeDeliveryRow({
       delivery_id: "delivery-pending-redelivery",
       target_session_id: "session-pending-redelivery",
       attempt_token: null,
@@ -97,7 +141,7 @@ describe("queued transcript recovery rolling contract", () => {
       delivered_at: null,
       state: "pending",
       aggregate_state: "pending",
-    } as SessionDeliveryRow;
+    });
 
     await redeliverStoredDeliveryContent(
       row,
@@ -497,16 +541,16 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
     delivery_id: "delivery-rolling",
     relation_key: "relation-rolling",
     completion_id: "completion-rolling",
+    parent_delivery_id: null,
     intent: "human_live_steer",
     source: "user_message",
     producer_kind: null,
     producer_id: null,
     producer_terminal_revision: null,
     target_session_id: "session-rolling",
-    target_node_id: "node-a",
+    source_session_id: null,
     state,
-    aggregate_state: state === "consumed" ? "consumed" : state,
-    disposition: "queued",
+    aggregate_state: state === "consumed" ? "consumed" : state === "delivered" ? "delivered" : "pending",
     payload_hash: "hash-rolling",
     payload: { text: "keep this steer", user: "alice", source: "user_message" },
     caller_turn_id: receiptId,
@@ -521,6 +565,9 @@ function makeHarness(orchVersion: "old_orch" | "new_orch") {
       ? new Date("2026-08-24T15:50:09.100Z")
       : null,
     consumed_reason: null,
+    dead_letter_reason: null,
+    dead_lettered_at: null,
+    queued_at: null,
     attempt_token: state === "claimed" ? "rolling-worker" : null,
     attempt_expires_at: state === "claimed"
       ? new Date("2026-08-24T15:51:08.000Z")

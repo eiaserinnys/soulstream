@@ -117,7 +117,7 @@ function makeStrictRoute(params: {
     ) => Promise<unknown>;
   };
   completionNotifier: {
-    notify(task: Task): Promise<void>;
+    notify(task: Task): ReturnType<TaskCompletionNotifier["notify"]>;
     notifyForDelete?(task: Task): Promise<boolean>;
   };
 }) {
@@ -312,7 +312,7 @@ describe("TaskLifecycleRoute.deleteTask — 멈춘 뒤 삭제 (card #1261)", () 
       makeStrictRoute({
         task,
         persistence,
-        completionNotifier: { notify: vi.fn(async () => {}) },
+        completionNotifier: { notify: vi.fn(async () => undefined) },
       });
 
     await expect(route.deleteTask("sess-delete-1")).rejects.toThrow(
@@ -421,8 +421,8 @@ describe("TaskLifecycleRoute.deleteTask — 멈춘 뒤 삭제 (card #1261)", () 
 
     await expect(route.deleteTask("sess-delete-1")).resolves.toBe(true);
     expect(repository.register).toHaveBeenCalledTimes(2);
-    expect(repository.register.mock.calls[1][0].relationKey).toBe(
-      repository.register.mock.calls[0][0].relationKey,
+    expect(repository.register.mock.calls[1]![0].relationKey).toBe(
+      repository.register.mock.calls[0]![0].relationKey,
     );
     expect(deleteSession).toHaveBeenCalledOnce();
   });
@@ -466,7 +466,7 @@ describe("TaskLifecycleRoute.deleteTask — 멈춘 뒤 삭제 (card #1261)", () 
 
     await expect(route.deleteTask("sess-delete-1")).resolves.toBe(true);
 
-    expect(repository.register.mock.calls[0][0]).toMatchObject({
+    expect(repository.register.mock.calls[0]![0]).toMatchObject({
       reviveDeadLetter: true,
     });
     expect(repository.claimAttemptForTarget).toHaveBeenCalledOnce();

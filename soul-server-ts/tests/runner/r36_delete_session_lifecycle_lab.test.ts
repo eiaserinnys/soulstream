@@ -24,6 +24,8 @@ import {
   RunnerSessionGarbageCollector,
   type RunnerSessionGarbageCollectorDependencies,
 } from "../../src/runner/runner_session_gc.js";
+import type { RunnerSessionMutationLockObservationContext } from
+  "../../src/runner/runner_session_mutation_lock.js";
 import {
   TaskLifecycleRoute,
   type TaskLifecycleTransitionPort,
@@ -121,7 +123,7 @@ describe("R36 delete_session lifecycle lab", () => {
       hydrateRunnerRecoveryTask: vi.fn(async (sessionId: string) =>
         centralSessions.has(sessionId) ? tasks.get(sessionId) ?? task(sessionId) : null),
       listExistingSessionIds: vi.fn(async (ids: string[]) => ids.filter((id) => centralSessions.has(id))),
-      markRunnerFailureAndResume: vi.fn(async () => {}),
+      markRunnerFailure: vi.fn(async () => {}),
       projectClosedRunner: vi.fn(async () => true),
     } as unknown as TaskManager;
     const catalogService = {
@@ -160,7 +162,7 @@ describe("R36 delete_session lifecycle lab", () => {
         withMutationLock: async <T>(
           _path: string,
           operation: () => Promise<T>,
-          _observationContext,
+          _observationContext?: RunnerSessionMutationLockObservationContext,
         ) =>
           await operation(),
         refresh: async (candidate) => registrations.get(candidate.config.sessionId)!,
@@ -217,7 +219,6 @@ describe("R36 delete_session lifecycle lab", () => {
         retainRegisteredDetachedRunner: vi.fn(async () => false),
         releaseExpiredRetainedRunner: vi.fn(async () => "not_released" as const),
         completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
-        restartRegisteredRunner: vi.fn(),
       },
       closedTailDrainer: { drain: vi.fn(async () => {}) },
       logger,
@@ -446,7 +447,7 @@ function missingSessionTaskManager(): TaskManager {
   return {
     hydrateRunnerRecoveryTask: vi.fn(async () => null),
     listExistingSessionIds: vi.fn(async () => []),
-    markRunnerFailureAndResume: vi.fn(async () => {}),
+    markRunnerFailure: vi.fn(async () => {}),
     projectClosedRunner: vi.fn(async () => true),
   } as unknown as TaskManager;
 }
@@ -457,14 +458,14 @@ function recoveryTaskExecutor() {
     retainRegisteredDetachedRunner: vi.fn(async () => false),
     releaseExpiredRetainedRunner: vi.fn(async () => "not_released" as const),
     completeRetainedRunnerReleaseAfterTermination: vi.fn(() => false),
-    restartRegisteredRunner: vi.fn(),
   };
 }
 
 function testLogger() {
   return {
+    debug: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-  } as never;
+  };
 }

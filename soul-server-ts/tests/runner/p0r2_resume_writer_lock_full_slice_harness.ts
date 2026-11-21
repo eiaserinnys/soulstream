@@ -290,7 +290,10 @@ export class P0R2FullSliceHarness {
       publishToSessionSse(events);
     };
     const broadcaster = new SessionBroadcaster(
-      async (message) => publishEvents(nodeRegistry.receiveNodeMessage(nodeSource, message)),
+      async (message) => {
+        if (!isRecord(message)) return;
+        publishEvents(nodeRegistry.receiveNodeMessage(nodeSource, message));
+      },
       agentRegistry,
       P0R2_NODE_ID,
     );

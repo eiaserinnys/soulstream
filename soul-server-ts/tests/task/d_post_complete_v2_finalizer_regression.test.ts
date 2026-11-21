@@ -6,6 +6,8 @@ import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumptio
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import type { TaskFinalStatePersistenceResult } from
+  "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from
   "../../src/task/task_running_intervention_transition.js";
@@ -27,6 +29,7 @@ describe("D post-complete V2 finalizer regression", () => {
     const caller = makeTask("caller", {
       status: "running",
       runner: {
+        eventPersistence: "host",
         engine: {} as never,
         dispatcher: { hasActiveExecution: () => false } as never,
       },
@@ -90,7 +93,7 @@ describe("D post-complete V2 finalizer regression", () => {
     });
     let deliveryResult: Awaited<ReturnType<typeof route.addIntervention>> | undefined;
     const completionNotifier = {
-      notify: vi.fn(async () => {
+      notify: vi.fn(async (_task: Task) => {
         deliveryResult = await route.addIntervention({
           agentSessionId: caller.agentSessionId,
           text: "child completed",
@@ -110,8 +113,9 @@ describe("D post-complete V2 finalizer regression", () => {
     const finalizer = new TaskExecutorFinalizer({
       lifecycleTransition: {
         persistExecutorFinalState: terminalTransition,
-        notifyCompletionIfApplied: vi.fn(async (task, result) => {
+        notifyCompletionIfApplied: vi.fn(async (task: Task, result: TaskFinalStatePersistenceResult) => {
           if (result.terminalTransitionApplied) await completionNotifier.notify(task);
+          return result.terminalTransitionApplied;
         }),
       },
       logger: { warn: vi.fn() } as unknown as Logger,
@@ -189,7 +193,6 @@ describe("D post-complete V2 finalizer regression", () => {
         deferFailureToCoordinator: vi.fn(),
         recordNotificationPublished: vi.fn(),
         recordNotificationFailure: vi.fn(),
-        recordReservationRetry: vi.fn(),
       },
       sessionNotificationPublisher: { publish: notificationPublish },
     });
@@ -228,6 +231,9 @@ describe("D post-complete V2 finalizer regression", () => {
       recordTurnStarted,
       recordConsumed,
       discardIfConsumed: vi.fn(),
+      recordConsumptionFailure: vi.fn(),
+      recordAdmissionFailure: vi.fn(),
+      recordRuntimeFollowupRelationConsumed: vi.fn(),
     }, logger);
     const receipt = new TaskDeliveryTurnReceipt(consumption, input.interventions ?? []);
     await receipt.observe(task, { type: "assistant_message", content: "accepted" });

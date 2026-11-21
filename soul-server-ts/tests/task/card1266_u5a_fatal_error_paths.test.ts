@@ -108,7 +108,7 @@ describe("card #1266 U5a 가: a fatal engine error reaches an execution parked b
     factory.recover = vi.fn(() => ({
       engine: { backendId: "claude", workspaceDir: "/tmp/claude-roselin" } as never,
       dispatcher: dispatcher as never,
-      eventPersistence: "runner",
+      eventPersistence: "runner" as const,
     }));
     const { executor, double } = makeExecutor(factory);
     // 낡은 등록의 거절이라 다시 될 수 있는 거절이다. 러너와 프레임 통로를 붙인 채 멈춰 둔다.

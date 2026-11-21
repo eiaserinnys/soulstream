@@ -3,10 +3,15 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { runnerCommandResultFrame } from "../../src/runner/frame_protocol.js";
+import {
+  runnerCommandResultFrame,
+  type RunnerCommandFrame,
+} from "../../src/runner/frame_protocol.js";
 import type { EngineUserInput } from "../../src/engine/protocol.js";
-import { RunnerIpcRequestTimeoutError } from
-  "../../src/runner/runner_ipc_connection.js";
+import {
+  RunnerIpcRequestTimeoutError,
+  type RunnerIpcRequestOptions,
+} from "../../src/runner/runner_ipc_connection.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import { RunnerProcessDispatcher } from
@@ -59,7 +64,10 @@ describe("RunnerProcessEngineProxy", () => {
   it("gives compact the configured turn boundary without widening control commands", async () => {
     const turnTimeoutMs = 1_800_000;
     const controlTimeoutMs = 30_000;
-    const request = vi.fn(async (frame: { commandId: string; kind: string }) => (
+    const request = vi.fn(async (
+      frame: RunnerCommandFrame,
+      _options: RunnerIpcRequestOptions,
+    ) => (
       runnerCommandResultFrame(frame.commandId, {
         status: "ok",
         ...(frame.kind === "interrupt" ? { data: { interrupted: true } } : {}),
@@ -88,7 +96,7 @@ describe("RunnerProcessEngineProxy", () => {
     const observedTimeouts = request.mock.calls.map(([, options]) => options.timeoutMs);
     expect({
       observedTimeouts,
-      compactToControlRatio: observedTimeouts[0] / observedTimeouts[1],
+      compactToControlRatio: observedTimeouts[0]! / observedTimeouts[1]!,
     }).toEqual({
       observedTimeouts: [turnTimeoutMs, controlTimeoutMs],
       compactToControlRatio: 60,
@@ -179,7 +187,10 @@ describe("RunnerProcessEngineProxy", () => {
   });
 
   it("preserves image paths in both live-input invoke frames", async () => {
-    const request = vi.fn(async (frame: { commandId: string }) =>
+    const request = vi.fn(async (
+      frame: Extract<RunnerCommandFrame, { kind: "invoke" }>,
+      _options: RunnerIpcRequestOptions,
+    ) =>
       runnerCommandResultFrame(frame.commandId, {
         status: "ok",
         data: { status: "delivered", mechanism: "active_turn" },
@@ -204,9 +215,7 @@ describe("RunnerProcessEngineProxy", () => {
     await expect(proxy.intervene(input)).resolves.toMatchObject({ status: "delivered" });
     await expect(proxy.injectAtToolBoundary(input)).resolves.toMatchObject({ status: "delivered" });
 
-    const frames = request.mock.calls.map(([frame]) =>
-      frame as { capability: string; args: unknown[] },
-    );
+    const frames = request.mock.calls.map(([frame]) => frame);
     expect(frames).toHaveLength(2);
     expect(frames.map(({ capability, args }) => ({ capability, args }))).toEqual([
       { capability: "intervene", args: [input] },

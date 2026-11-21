@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
-import type { Task, TaskRunnerRuntime } from "../../src/task/task_models.js";
+import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";

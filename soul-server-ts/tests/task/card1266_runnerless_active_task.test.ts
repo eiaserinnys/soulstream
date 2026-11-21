@@ -130,14 +130,8 @@ describe("card #1266 U4: a running task restored from the DB without a runner", 
   it("keeps the earlier behavior for a restored task whose execution registration startup recovery may still adopt", async () => {
     const registered = makeHydratedRunningTask({
       executionRegistration: {
-        ownerKind: "adopted_runner",
-        manifestId: "manifest-restored",
-        runtimeEnvIdentity: "runtime-restored",
         registrationId: "registration-restored",
-        pid: 42_002,
-        startIdentity: "start-restored",
         executionCommandId: "command-restored",
-        ownershipGeneration: 3,
       },
     });
     const stopHarness = makeHarness(registered);

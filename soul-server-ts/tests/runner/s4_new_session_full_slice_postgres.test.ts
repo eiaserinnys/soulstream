@@ -54,7 +54,7 @@ describe("S3-S6 production full slice", () => {
         resumeSessionId: null,
       });
       expectPromptEndsWithExactlyOnce(
-        executeProbes[0].prompt,
+        executeProbes[0]!.prompt,
         `S4 ${backend} initial prompt`,
       );
       expect(observed.engineBoundaryProbes.filter((probe) => probe.call === "intervene"))
@@ -107,7 +107,7 @@ describe("S3-S6 production full slice", () => {
         resumeSessionId: null,
       });
       expectPromptEndsWithExactlyOnce(
-        initialProbes[0].prompt,
+        initialProbes[0]!.prompt,
         `S5 ${backend} initial prompt`,
       );
       const resumeProbes = executeProbes.filter((probe) => probe.resumeSessionId !== null);
@@ -121,7 +121,7 @@ describe("S3-S6 production full slice", () => {
         resumeSessionId: expect.any(String),
       });
       expectFollowupPromptWithAppendedContext(
-        resumeProbes[0].prompt,
+        resumeProbes[0]!.prompt,
         `S5 ${backend} completed resume`,
       );
       expect(observed.engineBoundaryProbes.filter((probe) => probe.call === "intervene"))
@@ -283,11 +283,11 @@ function assertActiveIntervention(
     resumeSessionId: null,
   });
   expectPromptEndsWithExactlyOnce(
-    executeProbes[0].prompt,
+    executeProbes[0]!.prompt,
     `${scenario} ${backend} initial prompt`,
   );
   // No assigned card at the first input: the session gets no assigned_cards block at all.
-  expect(executeProbes[0].prompt).not.toContain("<assigned_cards>");
+  expect(executeProbes[0]!.prompt).not.toContain("<assigned_cards>");
   if (backend === "claude") {
     expect(executeProbes[1]).toEqual({
       call: "executeFrames",
@@ -298,7 +298,7 @@ function assertActiveIntervention(
       resumeSessionId: expect.any(String),
     });
     expectFollowupPromptWithAppendedContext(
-      executeProbes[1].prompt,
+      executeProbes[1]!.prompt,
       `${scenario} ${backend} active intervention`,
     );
   }
@@ -321,14 +321,14 @@ function assertActiveIntervention(
       : { status: "delivered", mechanism: "active_turn" },
   });
   expectFollowupPromptWithAppendedContext(
-    interveneProbes[0].prompt, `${scenario} ${backend} active intervention`,
+    interveneProbes[0]!.prompt, `${scenario} ${backend} active intervention`,
   );
-  const snapshots = [...interveneProbes[0].prompt.matchAll(/<assigned_cards>\n([\s\S]*?)\n<\/assigned_cards>/g)];
+  const snapshots = [...interveneProbes[0]!.prompt.matchAll(/<assigned_cards>\n([\s\S]*?)\n<\/assigned_cards>/g)];
   expect(snapshots).toHaveLength(1);
-  expect(interveneProbes[0].prompt).toBe(
-    `${scenario} ${backend} active intervention\n\n<context>\n${snapshots[0][0]}\n</context>`,
+  expect(interveneProbes[0]!.prompt).toBe(
+    `${scenario} ${backend} active intervention\n\n<context>\n${snapshots[0]![0]}\n</context>`,
   );
-  expect(JSON.parse(snapshots[0][1])).toEqual({
+  expect(JSON.parse(snapshots[0]![1]!)).toEqual({
     trust: "untrusted_card_data",
     cards: [{id:'current-card',title:'최신 카드',status:scenario === 'S3' ? '실행 중' : '완료'}],
   });

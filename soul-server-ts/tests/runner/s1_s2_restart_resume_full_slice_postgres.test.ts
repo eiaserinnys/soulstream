@@ -42,7 +42,7 @@ describe("S1+S2 production restart and resume full slice", () => {
         resumeSessionId: null,
       });
       expectFirstTurnPromptWithPrependedContext(
-        executeProbes[0].prompt,
+        executeProbes[0]!.prompt,
         `S1 ${backend} initial prompt`,
       );
       expect(observed.engineBoundaryProbes.filter((probe) => probe.call === "intervene"))
@@ -96,7 +96,7 @@ describe("S1+S2 production restart and resume full slice", () => {
         resumeSessionId: null,
       });
       expectFirstTurnPromptWithPrependedContext(
-        initialProbes[0].prompt,
+        initialProbes[0]!.prompt,
         `S2 ${backend} initial prompt`,
       );
       const resumeProbes = executeProbes.filter((probe) => probe.resumeSessionId !== null);
@@ -109,7 +109,7 @@ describe("S1+S2 production restart and resume full slice", () => {
         resumeSessionId: expect.any(String),
       });
       expectFollowupPromptWithAppendedContext(
-        resumeProbes[0].prompt,
+        resumeProbes[0]!.prompt,
         `S2 ${backend} completed resume`,
       );
       expect(observed.engineBoundaryProbes.filter((probe) => probe.call === "intervene"))

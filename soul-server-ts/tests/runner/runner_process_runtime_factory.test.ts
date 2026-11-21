@@ -62,7 +62,11 @@ describe("createRunnerProcessRuntimeFactory", () => {
     const task = {
       agentSessionId: "session-pool",
       prompt: "start",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const runtime = factory(task, {
       id: "agent-pool",
@@ -124,7 +128,11 @@ describe("createRunnerProcessRuntimeFactory", () => {
     const task = {
       agentSessionId: "session-pinned",
       prompt: "start",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const runtime = factory(task, agent, "codex", {
       persistRunState: vi.fn(async () => undefined),
@@ -176,7 +184,11 @@ describe("createRunnerProcessRuntimeFactory", () => {
     const task = {
       agentSessionId: "session-opencode",
       prompt: "start",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const runtime = factory(task, agent, "opencode", {
       persistRunState: vi.fn(async () => undefined),
@@ -225,7 +237,11 @@ describe("createRunnerProcessRuntimeFactory", () => {
     const task = {
       agentSessionId: "session-adopt",
       prompt: "resume",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const phaseObservation = createRunnerPhaseObservation({
       nodeId: "node-test",
@@ -279,7 +295,11 @@ describe("createRunnerProcessRuntimeFactory", () => {
     const task = {
       agentSessionId: "session-adopt",
       prompt: "resume",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const runtime = factory.recover!(task, registration, {
       persistRunState: vi.fn(async () => undefined),
@@ -357,6 +377,8 @@ function runnerEnv() {
     CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 300_000,
     CLAUDE_SESSION_RUNTIME_MAX_ENTRIES: 16,
     CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: 1_800_000,
+    CLAUDE_ACCOUNT_POOL_ENABLED: false,
+    CLAUDE_ACCOUNTS_DIR: undefined,
     CODEX_DETACHED_RESULT_RETENTION_MS: 120_000,
     CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 45_000,
     CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 135_000,
@@ -644,13 +666,7 @@ describe("applyRunnerHostCall", () => {
     const task = {
       agentSessionId: "session-a",
       executionRegistration: {
-        ownershipGeneration: 7,
-        ownerKind: "runner_process",
-        manifestId: "manifest-a",
-        runtimeEnvIdentity: "runtime-a",
         registrationId: "registration-a",
-        pid: 4101,
-        startIdentity: "start-a",
         executionCommandId: "owner-a",
       },
     } as Task;

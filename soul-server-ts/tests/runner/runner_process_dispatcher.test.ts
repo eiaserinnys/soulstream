@@ -91,7 +91,7 @@ describe("RunnerProcessDispatcher", () => {
     let available = false;
     const store = {
       ...emptyStore("runner-stream"),
-      readBatch: vi.fn(async () => available ? {
+      readBatch: vi.fn(async (): Promise<EventOutboxBatch | null> => available ? {
         type: "event_append_batch" as const, protocol_version: 1, stream_id: "runner-stream", first_seq: 1,
         events: [{ stream_id: "runner-stream", source_seq: 1, session_id: "session-a", event_type: "complete",
           payload: { type: "complete" }, searchable_text: "", created_at: "2026-11-17T00:00:00.000Z",
@@ -133,7 +133,7 @@ describe("RunnerProcessDispatcher", () => {
       const unregister = mux.register(
         new EventOutboxPump(emptyStore("stream-session-a"), vi.fn()),
       );
-      let dispatcher!: RunnerProcessDispatcher & Record<string, unknown>;
+      let dispatcher!: RunnerProcessDispatcher;
       let connectCalls = 0;
       const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
       const stream = new ProcessFrameStream(async () => {});
@@ -181,7 +181,7 @@ describe("RunnerProcessDispatcher", () => {
                 }
                 throw new Error("initial socket failure");
               }
-              dispatcher.closed = true;
+              dispatcher["closed"] = true;
               throw new Error("unexpected reconnect");
             },
           },
@@ -194,14 +194,14 @@ describe("RunnerProcessDispatcher", () => {
           requestLifetimes: new Map(),
           releaseHostResources: vi.fn(async () => { unregister(); }),
         },
-      ) as RunnerProcessDispatcher & Record<string, unknown>;
+      ) as RunnerProcessDispatcher;
 
       await (dispatcher as unknown as {
         runReconnectLoop(socketPath: string, firstConnectedForMs: number): Promise<void>;
       }).runReconnectLoop(paths.socketPath, 0);
 
       expect(connectCalls).toBe(1);
-      expect(dispatcher.closed).toBe(true);
+      expect(dispatcher.isClosed()).toBe(true);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ expectedRegistrationId: identity.registrationId }),
         expect.stringContaining("Runner registration lost"),
@@ -225,7 +225,7 @@ describe("RunnerProcessDispatcher", () => {
       startIdentity: "start-1001",
     };
     await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
-    let dispatcher!: RunnerProcessDispatcher & Record<string, unknown>;
+    let dispatcher!: RunnerProcessDispatcher;
     let connectCalls = 0;
     dispatcher = Object.assign(Object.create(RunnerProcessDispatcher.prototype), {
       closed: false,
@@ -244,11 +244,11 @@ describe("RunnerProcessDispatcher", () => {
         }),
         connectSocket: async () => {
           connectCalls += 1;
-          if (connectCalls === 2) dispatcher.closed = true;
+          if (connectCalls === 2) dispatcher["closed"] = true;
           throw new Error("socket failure");
         },
       },
-    }) as RunnerProcessDispatcher & Record<string, unknown>;
+    }) as RunnerProcessDispatcher;
 
     await (dispatcher as unknown as {
       runReconnectLoop(socketPath: string, firstConnectedForMs: number): Promise<void>;
@@ -441,11 +441,9 @@ describe("RunnerProcessDispatcher", () => {
     const closeSeen = new Promise<void>((resolve) => { closeCommandSeen = resolve; });
     const terminate = vi.fn(async () => undefined);
     const hostCall = vi.fn(async () => ({ released: true }));
-    const responseSent = vi.fn(async () => { allowCloseAck(); });
+    const responseSent = vi.fn(async (_frame: unknown) => { allowCloseAck(); });
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
-      RunnerProcessDispatcher & {
-        trackFrameHandler(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
-      };
+      RunnerProcessDispatcher;
     Object.assign(dispatcher, {
       ready: Promise.resolve(),
       spawnedProcess: fixture.spawned,
@@ -480,12 +478,13 @@ describe("RunnerProcessDispatcher", () => {
 
     const closing = dispatcher.close();
     await closeSeen;
-    await dispatcher.trackFrameHandler(runnerRequestFrame("release-during-close", {
-      kind: "host_call",
-      service: "claude_accounts",
-      operation: "release",
-      args: [],
-    }));
+    await dispatcher["trackFrameHandler"](
+      runnerRequestFrame("release-during-close", {
+        kind: "host_call",
+        service: "claude_accounts",
+        operation: "release",
+        args: [],
+      }));
     const settledBeforeFallback = await Promise.race([
       closing.then(() => true),
       new Promise<false>((resolve) => setTimeout(() => resolve(false), 200)),
@@ -504,12 +503,13 @@ describe("RunnerProcessDispatcher", () => {
       pid: fixture.spawned.pid,
       startIdentity: "start-7101",
     });
-    await dispatcher.trackFrameHandler(runnerRequestFrame("after-close", {
-      kind: "host_call",
-      service: "claude_accounts",
-      operation: "release",
-      args: [],
-    }));
+    await dispatcher["trackFrameHandler"](
+      runnerRequestFrame("after-close", {
+        kind: "host_call",
+        service: "claude_accounts",
+        operation: "release",
+        args: [],
+      }));
     expect(hostCall).toHaveBeenCalledOnce();
   });
 
@@ -809,7 +809,7 @@ describe("RunnerProcessDispatcher", () => {
     // would only add an unrelated failure mode to a test about them.
     const registerPump = vi.fn(() => vi.fn());
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
-      RunnerProcessDispatcher & { ensurePump(): Promise<void> };
+      RunnerProcessDispatcher;
     Object.assign(dispatcher, {
       options: { pumpMux: { register: registerPump } },
       eventStreamReleased: false,
@@ -819,7 +819,7 @@ describe("RunnerProcessDispatcher", () => {
     });
 
     await dispatcher.releaseEventStreamRegistration();
-    await dispatcher.ensurePump();
+    await dispatcher["ensurePump"]();
 
     expect(registerPump).not.toHaveBeenCalled();
   });
@@ -829,11 +829,7 @@ describe("RunnerProcessDispatcher", () => {
     const sent: unknown[] = [];
     const warn = vi.fn();
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
-      RunnerProcessDispatcher & {
-        handleHostRequest(
-          frame: ReturnType<typeof runnerRequestFrame>,
-        ): Promise<(() => Promise<void>) | undefined>;
-      };
+      RunnerProcessDispatcher;
     Object.assign(dispatcher, {
       options: {
         logger: { warn },
@@ -862,12 +858,14 @@ describe("RunnerProcessDispatcher", () => {
       },
     });
 
-    const continuation = await dispatcher.handleHostRequest(runnerRequestFrame("host:a2", {
+    const continuation: (() => Promise<void>) | undefined =
+      await dispatcher["handleHostRequest"](
+        runnerRequestFrame("host:a2", {
       kind: "host_call",
       service: "detached_event",
       operation: "publish",
-      args: ["session-a", { type: "text", text: "done", timestamp: 1 }],
-    }));
+          args: ["session-a", { type: "text", text: "done", timestamp: 1 }],
+        }));
     await continuation?.();
 
     expect(order).toEqual(["publish", "response", "continuation"]);
@@ -1202,7 +1200,7 @@ describe("RunnerProcessDispatcher", () => {
     "identity-fenced rollback removes a spawned child after %s parent initialization failure",
     async (failurePoint) => {
       const fixture = await spawnedInitializationFixture();
-      const terminate = vi.fn(async () => {});
+      const terminate = vi.fn(async () => "registration_invalidated" as const);
       const close = vi.fn();
       const dispatcher = new RunnerProcessDispatcher({
         spawn: spawnInput(fixture.stateDirectory),
@@ -1976,7 +1974,9 @@ describe("RunnerProcessDispatcher", () => {
       terminateRegistration,
       invalidateRegistration,
       markReaped,
-      recoverOffline: async (_registration, recoveredTask) => recoveredTask,
+      recoverOffline: async (_registration, recoveredTask) => ({ task: recoveredTask, replayed: false }),
+      retireTerminal: vi.fn(async () => {}),
+      drainClosedTail: vi.fn(async () => {}),
       markFailure,
       onFailure: vi.fn(),
     };
@@ -2041,7 +2041,7 @@ describe("RunnerProcessDispatcher", () => {
     }, vi.fn());
     await endpoint.listen();
     const spawned = await spawnedProcessForTest(paths);
-    const terminate = vi.fn(async () => undefined);
+    const terminate = vi.fn(async () => "registration_invalidated" as const);
     let connectionCount = 0;
     const dispatcher = new RunnerProcessDispatcher({
       spawn: spawnInput(stateDirectory),
@@ -2227,7 +2227,7 @@ describe("RunnerProcessDispatcher", () => {
       backend: "claude" as const,
       agent: { ...codexInput.agent, backend: "claude" as const },
     };
-    const terminate = vi.fn(async () => undefined);
+    const terminate = vi.fn(async () => "registration_invalidated" as const);
     const dispatcher = new RunnerProcessDispatcher({
       spawn: backend,
       runnerProcess: spawned,
@@ -2313,7 +2313,7 @@ describe("RunnerProcessDispatcher", () => {
         await connection.send(executionEndedControlFrame(frame.commandId));
       }, vi.fn());
       await nextEndpoint.listen();
-      const nextTerminate = vi.fn(async () => undefined);
+      const nextTerminate = vi.fn(async () => "registration_invalidated" as const);
       nextDispatcher = new RunnerProcessDispatcher({
         spawn: backend,
         runnerProcess: nextSpawned,
@@ -2742,6 +2742,8 @@ function spawnInput(stateDirectory: string) {
     claudeRuntimeTurnTimeoutMs: 1_800_000,
     codexHome: "/home/test/.codex",
     rolloutRoot: "/home/test/.codex/sessions",
+    internalMcpUrl: "http://127.0.0.1:4100/mcp",
+    codexDetachedResultRetentionMs: 1_800_000,
   };
 }
 

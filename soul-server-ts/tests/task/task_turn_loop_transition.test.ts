@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
+import type {
+  EnginePort,
+  SupportsDetachedClaudeRuntime,
+} from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -90,15 +94,21 @@ describe("Task turn loop transition", () => {
   });
 
   it("persistent Claude runtime keeps background lifecycle orthogonal to foreground completion", () => {
+    const engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude",
+      detachedClaudeRuntime: true,
+      intervene: async () => ({
+        status: "not_delivered",
+        mechanism: "unsupported",
+        reason: "not_supported",
+      } as const),
+      execute: async function* () {},
+      interrupt: async () => false,
+      close: async () => undefined,
+    } satisfies EnginePort & Partial<SupportsDetachedClaudeRuntime>;
     const task = makeTask({
-      runner: createInProcessTaskRunnerRuntime({
-        backendId: "claude",
-        workspaceDir: "/tmp/claude",
-        detachedClaudeRuntime: true,
-        execute: async function* () {},
-        interrupt: async () => false,
-        close: async () => undefined,
-      }),
+      runner: createInProcessTaskRunnerRuntime(engine),
       claudeRuntime: {
         sessionState: "running",
         updatedAt: Date.now(),

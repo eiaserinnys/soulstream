@@ -5,6 +5,7 @@ import type { AgentProfile, AgentRegistry } from "../../src/agent_registry.js";
 import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import type { ModelCatalog, ModelCatalogConfig } from "../../src/model_catalog.js";
 import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor, type RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
@@ -14,6 +15,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 import { MemoryDeliveryRepository } from "./terminal_fence_intervention_dedupe_harness.js";
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 
 const logger = pino({ level: "silent" });
 
@@ -153,10 +158,26 @@ function makeFixture(
       supported_efforts: ["low" as const, "medium" as const, "high" as const, "xhigh" as const],
       default_effort: "xhigh" as const,
     })),
-    snapshot: vi.fn(() => ({
+    snapshot: vi.fn<ModelCatalog["snapshot"]>((): ModelCatalogConfig => ({
+      schema_version: 1,
+      groups: [],
       presets: [],
       models: [],
-      persistent_defaults: { fallback_models: [] },
+      price_snapshot: {
+        price_version: "test",
+        as_of: "2026-01-01",
+        checked_at: "2026-01-01",
+        currency: "USD",
+        unit: "per_1m_tokens",
+        model_mapping_version: "test",
+        refreshed_model_rows: {},
+        sources: {},
+        assumptions: [],
+      },
+      persistent_defaults: {
+        model_preset: "opus",
+        fallback_models: [],
+      },
     })),
   };
   const agentRegistry = { get: vi.fn(() => AGENT) } as unknown as AgentRegistry;
@@ -183,7 +204,7 @@ function makeFixture(
   const runnerEvents: SSEEventPayload[] = [
     { type: "session", session_id: "native-new" } as SSEEventPayload,
     { type: "assistant_message", content: "ok", timestamp: 1 } as SSEEventPayload,
-    { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+    { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 2 } as SSEEventPayload,
   ];
   const runnerFailure: { error?: Error } = {};
   const dispatcher = {
@@ -215,6 +236,7 @@ function makeFixture(
   };
   const engine: EnginePort = {
     backendId: "claude",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: AGENT.workspace_dir,
     async *execute(): AsyncIterable<SSEEventPayload> {},
     async interrupt() { return true; },
@@ -657,7 +679,7 @@ describe("persistent generation recovery after a rejected first turn", () => {
     );
     fixture.runnerFailure.error = undefined;
     fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
-      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 3 } as SSEEventPayload);
     await resume(fixture, "after quota reset");
     expect(fixture.executed[1]).toMatchObject({ resumeSessionId: "native-new" });
     expect(fixture.executed[1]).not.toHaveProperty("backendSessionRolloverFrom");
@@ -672,7 +694,7 @@ describe("persistent generation recovery after a rejected first turn", () => {
     fixture.runnerFailure.error = undefined;
     fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
       { type: "session", session_id: "native-new" } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 3 } as SSEEventPayload);
     await resume(fixture);
     expect(fixture.executed[1]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID });
     expect(task.persistentGeneration?.number).toBe(2);
@@ -695,7 +717,7 @@ describe("persistent generation recovery after a rejected first turn", () => {
     fixture.runnerFailure.error = undefined;
     fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
       { type: "session", session_id: "native-third" } as SSEEventPayload,
-      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+      { type: "complete", usage: { input_tokens: 0, output_tokens: 0 }, timestamp: 3 } as SSEEventPayload);
     await resume(fixture);
     const reconciled = fixture.persistenceDouble.enqueueMetadataEffect.mock.calls
       .find((call) => (call[1].value as { number: number; pending?: { number: number } }).number === 2

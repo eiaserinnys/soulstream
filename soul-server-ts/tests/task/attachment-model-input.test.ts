@@ -43,8 +43,8 @@ const claudeAgent: AgentProfile = {
 const attachmentIds = [IMAGE_ID, TEXT_ID];
 const attachmentPaths = [LEGACY_IMAGE_PATH, LEGACY_TEXT_PATH];
 const attachmentBindings = [
-  { attachment_id: IMAGE_ID, path: LEGACY_IMAGE_PATH },
-  { attachment_id: TEXT_ID, path: LEGACY_TEXT_PATH },
+  { attachment_id: IMAGE_ID, node_id: "eiaserinnys", path: LEGACY_IMAGE_PATH },
+  { attachment_id: TEXT_ID, node_id: "eiaserinnys", path: LEGACY_TEXT_PATH },
 ];
 const imageBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jz1sAAAAASUVORK5CYII=",
@@ -313,7 +313,7 @@ describe("attachment model input boundary", () => {
       backendId: claudeAgent.backend,
       workspaceDir: claudeAgent.workspace_dir,
       execute: vi.fn(async function* (_params: EngineExecuteParams): AsyncGenerator<never> {}),
-      intervene: vi.fn(async () => ({ status: "not_delivered", mechanism: "unsupported" })),
+      intervene: vi.fn<EnginePort["intervene"]>(async () => ({ status: "not_delivered", mechanism: "unsupported", reason: "not_supported" })),
       interrupt: vi.fn(async () => false),
       close: vi.fn(async () => {}),
     };

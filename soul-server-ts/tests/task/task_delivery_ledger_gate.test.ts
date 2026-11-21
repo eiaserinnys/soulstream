@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
+import type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "../../src/task/claude_background_generation_identity.js";
@@ -223,14 +224,14 @@ describe("TaskDeliveryLedgerGate", () => {
     const register = vi.fn(async () => ({
       row: {
         ...row(deliveryId, "pending"),
-        aggregate_state: "pending",
+        aggregate_state: "pending" as const,
       },
       inserted: true,
       conflict: false,
     }));
     const claimAttemptForTarget = vi.fn(async () => ({
       ...row(deliveryId, "claimed"),
-      aggregate_state: "pending",
+      aggregate_state: "pending" as const,
     }));
     const gate = new TaskDeliveryLedgerGate(true, {
       register,
@@ -243,6 +244,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.admit({
@@ -267,11 +276,11 @@ describe("TaskDeliveryLedgerGate", () => {
     const deliveryId = "78787878-7878-4878-8878-787878787878";
     const markQueued = vi.fn(async () => ({
       ...row(deliveryId, "queued"),
-      aggregate_state: "pending",
+      aggregate_state: "pending" as const,
     }));
     const markConsumed = vi.fn(async () => ({
       ...row(deliveryId, "consumed"),
-      aggregate_state: "consumed",
+      aggregate_state: "consumed" as const,
     }));
     const markDelivered = vi.fn();
     const markUncertain = vi.fn();
@@ -286,6 +295,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed,
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.recordResult({
@@ -308,7 +325,7 @@ describe("TaskDeliveryLedgerGate", () => {
   });
 
   it("binds attachment, context, and caller_info into the payload identity", async () => {
-    const register = vi.fn(async (params: { deliveryId: string }) => ({
+    const register = vi.fn(async (params: RegisterSessionDeliveryRequest) => ({
       row: row(params.deliveryId, "pending"),
       inserted: true,
       conflict: false,
@@ -327,6 +344,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
     const base = {
       agentSessionId: "caller-1",
@@ -385,6 +410,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.admit({
@@ -430,6 +463,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed,
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed,
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.recordConsumed({
@@ -473,6 +514,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn().mockResolvedValue(null),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
     const message = {
       text: "runtime followup",
@@ -546,6 +595,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn().mockRejectedValue(repositoryError),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.recordConsumed({
@@ -589,6 +646,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.beginDispatch({
@@ -615,6 +680,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.beginDispatch({
@@ -645,6 +718,12 @@ describe("TaskDeliveryLedgerGate", () => {
       recordRelationConsumed: vi.fn(),
       retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.recordResult({
@@ -697,6 +776,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
     const admission = {
       kind: "admitted" as const,
@@ -707,7 +794,13 @@ describe("TaskDeliveryLedgerGate", () => {
         attempt_token: "route-durable-acceptance",
       },
     };
-    const result = { queued: true as const, reason: "session_busy" };
+    const result = {
+      delivered: false as const,
+      queued: true as const,
+      queuePosition: 1,
+      consumeWhen: "next_turn" as const,
+      reason: "queue_only_policy" as const,
+    };
 
     await expect(gate.recordResult(admission, result)).resolves.toBeUndefined();
     await expect(gate.recordResult(admission, result)).resolves.toBeUndefined();
@@ -736,6 +829,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
     const admission = {
       kind: "admitted" as const,
@@ -752,8 +853,11 @@ describe("TaskDeliveryLedgerGate", () => {
     };
 
     await expect(gate.recordResult(admission, {
+      delivered: false,
       queued: true,
-      reason: "session_busy",
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
     })).rejects.toThrow(`Delivery ${deliveryId} lost queued-state CAS`);
   });
 
@@ -775,6 +879,12 @@ describe("TaskDeliveryLedgerGate", () => {
       recordRelationConsumed: vi.fn(),
       retryDeliveryAttempt: vi.fn(),
       markPendingSuperseded,
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.recordPendingSuperseded({
@@ -803,6 +913,12 @@ describe("TaskDeliveryLedgerGate", () => {
       recordRelationConsumed: vi.fn(),
       retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
     const now = Date.parse("2026-08-19T00:09:00.000Z");
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
@@ -848,6 +964,12 @@ describe("TaskDeliveryLedgerGate", () => {
       recordRelationConsumed: vi.fn(),
       retryDeliveryAttempt,
       markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await expect(gate.recordReservationRetry({
@@ -908,6 +1030,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.admit({
@@ -949,6 +1079,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed,
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.recordAdmissionFailure({
@@ -979,6 +1117,14 @@ describe("TaskDeliveryLedgerGate", () => {
       markConsumed: vi.fn(),
       markConsumedByRelation: vi.fn(),
       recordRelationConsumed: vi.fn(),
+      retryDeliveryAttempt: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+      notifications: {
+        stageWithQueuedDelivery: vi.fn(),
+        get: vi.fn(),
+        markPublished: vi.fn(),
+        retry: vi.fn(),
+      },
     });
 
     await gate.recordAdmissionFailure({

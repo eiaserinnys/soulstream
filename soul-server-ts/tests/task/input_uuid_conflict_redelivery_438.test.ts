@@ -40,7 +40,7 @@ describe("#438 same durable delivery across resume and startup redelivery", () =
         ...params,
         prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
           for await (const message of params.prompt as AsyncIterable<SDKUserMessage>) {
-            sdkInputUuids.push(message.uuid);
+            sdkInputUuids.push(message.uuid!);
             yield message;
           }
         })(),

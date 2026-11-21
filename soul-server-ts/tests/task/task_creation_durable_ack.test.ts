@@ -95,8 +95,8 @@ describe("TaskCreation durable ACK boundary", () => {
       code: "PAGE_BINDING_PENDING",
       message: "The session was created, but page binding status could not be confirmed. Check the page before retrying.",
     }]);
-    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
-      h.emitSessionCreated.mock.invocationCallOrder[0],
+    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0]!,
     );
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-1");
   });

@@ -8,7 +8,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { startPostgresTestContainer } from
   "../../../packages/db-schema/scripts/postgres-test-container.mjs";
-import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { SessionDB } from "../../src/db/session_db.js";
+import type { SqlClient } from
+  "../../../orch-server-ts/src/control_plane/control_plane_types.js";
 import { SessionPageBindingRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_page_binding_repository.js";
 import { SessionMutationRepository } from
@@ -16,6 +18,17 @@ import { SessionMutationRepository } from
 import { WorktreeRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/worktree_repository.js";
 import { configureTestSessionDataHost } from "../helpers/session_data_test_host.js";
+
+type HarnessSql = SqlClient & {
+  json(value: unknown): ReturnType<SqlClient["json"]>;
+};
+
+function widenJson(sql: SqlClient): HarnessSql {
+  const json = sql.json.bind(sql);
+  return Object.assign(sql, {
+    json: (value: unknown) => json(value as Parameters<SqlClient["json"]>[0]),
+  });
+}
 
 const TEST_DB_NAME = "session_db_integration_test";
 const TEST_USER = "session_db_integration_test";
@@ -452,7 +465,7 @@ function hasDockerBinary(): boolean {
 }
 
 interface PostgresHarness {
-  sql: SqlClient;
+  sql: HarnessSql;
   cleanup(): Promise<void>;
 }
 
@@ -482,7 +495,7 @@ async function createHarness(): Promise<PostgresHarness> {
 
 async function connect(url: string, stopContainer: (() => void) | undefined): Promise<PostgresHarness> {
   const schema = `session_db_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const sql = postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient;
+  const sql = widenJson(postgres(url, { max: 1, idle_timeout: 1 }) as SqlClient);
   await waitForPostgres(sql);
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
   await sql.unsafe(`SET search_path TO ${schema}`);

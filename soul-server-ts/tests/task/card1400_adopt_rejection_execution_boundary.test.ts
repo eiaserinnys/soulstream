@@ -184,7 +184,7 @@ function setup() {
   factory.recover = vi.fn(() => ({
     engine: { backendId: "claude", workspaceDir: "/tmp/claude-roselin" } as never,
     dispatcher: parkedDispatcher as never,
-    eventPersistence: "runner",
+    eventPersistence: "runner" as const,
   }));
 
   const executor = new TaskExecutor(

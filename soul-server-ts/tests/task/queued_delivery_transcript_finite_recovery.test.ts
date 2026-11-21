@@ -171,6 +171,9 @@ describe("queued transcript finite restart recovery", () => {
         recordTurnStarted: vi.fn(async () => undefined),
         recordConsumed,
         discardIfConsumed: vi.fn(async () => false),
+        recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+        recordConsumptionFailure: vi.fn(async () => undefined),
+        recordAdmissionFailure: vi.fn(async () => undefined),
       }, { warn: vi.fn() } as unknown as Logger),
       [],
     );
@@ -198,6 +201,7 @@ describe("queued transcript finite restart recovery", () => {
         get: vi.fn(async () => row()),
         markConsumed: vi.fn(),
         retryDeliveryAttempt: vi.fn(),
+        markUncertain: vi.fn(),
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart,
@@ -264,6 +268,9 @@ describe("queued transcript finite restart recovery", () => {
         recordTurnStarted: vi.fn(async () => undefined),
         recordConsumed,
         discardIfConsumed: vi.fn(async () => false),
+        recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+        recordConsumptionFailure: vi.fn(async () => undefined),
+        recordAdmissionFailure: vi.fn(async () => undefined),
       }, { warn: vi.fn() } as unknown as Logger),
       [],
     );
@@ -291,6 +298,7 @@ describe("queued transcript finite restart recovery", () => {
         get: vi.fn(async () => row()),
         markConsumed: vi.fn(),
         retryDeliveryAttempt: vi.fn(),
+        markUncertain: vi.fn(),
       },
       recoveryRepository: {
         claimQueuedAfterNodeRestart,

@@ -21,7 +21,7 @@ function gate() {
   return { open, opened };
 }
 
-type Tx = Parameters<Parameters<Sql["begin"]>[0]>[0];
+type Tx = Parameters<Parameters<Sql["begin"]>[1]>[0];
 
 /** Opens a transaction on the peer, takes the lock, and keeps the transaction open until release(). */
 async function holdLock(peer: Sql, lock: (tx: Tx) => PromiseLike<unknown>) {

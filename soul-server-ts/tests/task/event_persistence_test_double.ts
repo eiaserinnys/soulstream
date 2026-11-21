@@ -176,7 +176,9 @@ export function makeEventPersistenceTestDouble(
       return record.source_seq;
     },
   );
-  const enqueueRunningTransitionAndWaitForApplication = vi.fn(
+  const enqueueRunningTransitionAndWaitForApplication = vi.fn<
+    EventPersistence["enqueueRunningTransitionAndWaitForApplication"]
+  >(
     async (
       sessionId: string,
       input: {
@@ -206,7 +208,9 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
-  const enqueueTerminalTransitionAndWaitForApplication = vi.fn(
+  const enqueueTerminalTransitionAndWaitForApplication = vi.fn<
+    EventPersistence["enqueueTerminalTransitionAndWaitForApplication"]
+  >(
     async (
       sessionId: string,
       event: SSEEventPayload,
@@ -232,7 +236,9 @@ export function makeEventPersistenceTestDouble(
       };
     },
   );
-  const recordExecutionRegistrationAndWaitForApplication = vi.fn(
+  const recordExecutionRegistrationAndWaitForApplication = vi.fn<
+    EventPersistence["recordExecutionRegistrationAndWaitForApplication"]
+  >(
     async (
       _sessionId: string,
       input: {

@@ -18,6 +18,10 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
+
 /**
  * 카드 #1266 U5a 차 (운영 길): 지시를 러너에 넘기려다 큐로 되돌아온 뒤 task가 잊히면 그 지시는
  * 장부에서 모름(uncertain)으로 정리된다. 서버에 「넘기려 한 적 없음」으로 돌려주면 서버가 다시 띄워
@@ -114,10 +118,15 @@ function makeExecutor(engine: EnginePort) {
     collect: vi.fn(),
     collectDetached: vi.fn(),
     flush: vi.fn(),
+    reconcileTranscriptAppend: vi.fn(async () => {}),
   };
   const deliveryRecorder = {
     recordTurnStarted: vi.fn(async () => undefined),
     recordConsumed: vi.fn(async () => undefined),
+    discardIfConsumed: vi.fn(async () => false),
+    recordRuntimeFollowupRelationConsumed: vi.fn(async () => false),
+    recordConsumptionFailure: vi.fn(async () => undefined),
+    recordAdmissionFailure: vi.fn(async () => undefined),
   };
   return new TaskExecutor(
     () => engine,
@@ -183,6 +192,7 @@ describe("card #1266 U5a 차: an instruction that came back to the queue after a
     let queuedWhenForgotten: string[] = [];
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         turn += 1;
@@ -222,6 +232,7 @@ describe("card #1266 U5a 차: an instruction that came back to the queue after a
     let turn = 0;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         turn += 1;

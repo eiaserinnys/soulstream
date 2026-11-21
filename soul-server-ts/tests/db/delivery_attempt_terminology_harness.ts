@@ -190,5 +190,5 @@ export async function readSupersededDelivery(
     FROM session_deliveries
     WHERE delivery_id = 'delivery-1'
   `;
-  return delivery;
+  return delivery!;
 }

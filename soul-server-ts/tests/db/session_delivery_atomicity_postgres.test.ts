@@ -10,7 +10,8 @@ import {
   DELIVERY_MAX_AGE_MS,
   DELIVERY_MAX_ATTEMPTS,
 } from "../../../orch-server-ts/src/control_plane/repositories/session_delivery_retry_policy.js";
-import type { SqlClient } from "../../src/db/session_db.js";
+import type { SqlClient } from
+  "../../../orch-server-ts/src/control_plane/control_plane_types.js";
 import { runnerRequestFrame } from "../../src/runner/frame_protocol.js";
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
@@ -407,11 +408,10 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     const order: string[] = [];
     const logger = silentLogger();
     const activationError = new Error("activation rejected after durable publish");
-    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
-      RunnerProcessDispatcher & {
-        handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>):
-          Promise<(() => Promise<void>) | undefined>;
-      };
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as {
+      handleHostRequest(frame: ReturnType<typeof runnerRequestFrame>):
+        Promise<(() => Promise<void>) | undefined>;
+    };
     Object.assign(dispatcher, {
       options: {
         logger,
@@ -845,11 +845,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     );
     await repository.claimAttemptForTarget(deliveryId, "caller-old", "worker-racing");
     await repository.beginDispatch(deliveryId, "worker-racing");
-    const [{ count: attemptsBefore }] = await harness.sql<Array<{ count: number }>>`
+    const [attemptsRow] = await harness.sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count
       FROM session_delivery_attempts
       WHERE delivery_id = ${deliveryId}
     `;
+    const attemptsBefore = attemptsRow!.count;
 
     await expect(repository.notifications.stageWithQueuedDelivery({
       deliveryId,
@@ -969,11 +970,12 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
       attemptToken,
       "event:terminal-stage",
     );
-    const [{ count: attemptsBefore }] = await harness.sql<Array<{ count: number }>>`
+    const [attemptsRow] = await harness.sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count
       FROM session_delivery_attempts
       WHERE delivery_id = ${deliveryId}
     `;
+    const attemptsBefore = attemptsRow!.count;
 
     await expect(stage()).resolves.toMatchObject({
       state: "delivered",

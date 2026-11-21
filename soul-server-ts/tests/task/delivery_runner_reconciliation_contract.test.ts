@@ -22,10 +22,7 @@ import type {
   DeliveryLedgerAdmission,
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
-import {
-  TaskExecutor,
-  type RunnerProcessRuntimeFactory,
-} from "../../src/task/task_executor.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import { RunningInterventionTransition } from
@@ -108,11 +105,18 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   const beginDispatch = vi.fn(async (admission: DeliveryLedgerAdmission) => admission);
   const recordResult = vi.fn(async () => undefined);
   const deferFailureToCoordinator = vi.fn(async () => undefined);
-  const recordReservationRetry = vi.fn(async () => "retryable" as const);
+  const recordNotificationPublished = vi.fn(async () => undefined);
+  const recordNotificationFailure = vi.fn(async () => undefined);
+  const recordConsumptionFailure = vi.fn(async () => undefined);
+  const recordAdmissionFailure = vi.fn(async () => undefined);
+  const recordRuntimeFollowupRelationConsumed = vi.fn(async () => false);
   const recordConsumed = vi.fn(async (message: InterventionMessage) => {
     if (message.deliveryId) terminalStates.set(message.deliveryId, "consumed");
   });
-  const recordTurnStarted = vi.fn(async () => "turn-contract");
+  const recordTurnStarted = vi.fn(async (
+    _message: InterventionMessage,
+    _task: Task,
+  ) => undefined);
   const discardIfConsumed = vi.fn(async (
     message: InterventionMessage,
     task: Task,
@@ -130,15 +134,21 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
     beginDispatch,
     recordResult,
     deferFailureToCoordinator,
-    recordReservationRetry,
+    recordNotificationPublished,
+    recordNotificationFailure,
+    recordConsumptionFailure,
+    recordAdmissionFailure,
+    recordRuntimeFollowupRelationConsumed,
     recordConsumed,
     recordTurnStarted,
     discardIfConsumed,
-  } as unknown as Pick<
+  } satisfies Pick<
     TaskDeliveryLedgerGate,
     "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
-      | "recordReservationRetry" | "recordConsumed" | "recordTurnStarted"
-      | "discardIfConsumed"
+      | "recordNotificationPublished" | "recordNotificationFailure"
+      | "recordConsumptionFailure" | "recordAdmissionFailure"
+      | "recordRuntimeFollowupRelationConsumed"
+      | "recordConsumed" | "recordTurnStarted" | "discardIfConsumed"
   >;
 }
 
@@ -257,12 +267,7 @@ function makeHarness(input: {
   }
   const ledgerGate = makeLedgerGate(input.terminalStates ?? new Map());
   const { runner, executed, dispatcher } = makeRunner();
-  const runnerProcessFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
-  runnerProcessFactory.describe = vi.fn(async () => ({
-    ownerKind: "runner_process",
-    manifestId: "release-d-reconciliation",
-    runtimeEnvIdentity: "env-d-reconciliation",
-  }));
+  const runnerProcessFactory = vi.fn(() => runner);
   const db = {
     updateSession: vi.fn(async () => undefined),
     setClaudeSessionId: vi.fn(async () => undefined),
@@ -402,14 +407,8 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
       terminalEventId: undefined,
       runner: timedOut.runner,
       executionRegistration: {
-        ownerKind: "spawned_runner",
-        manifestId: "release-d-reconciliation",
-        runtimeEnvIdentity: "env-d-reconciliation",
         registrationId: "registration-d-reconciliation",
-        pid: 8_382,
-        startIdentity: "start-d-reconciliation",
         executionCommandId: "execute-d-reconciliation",
-        ownershipGeneration: 1,
       },
     });
     const harness = makeHarness({

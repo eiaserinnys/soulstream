@@ -79,7 +79,7 @@ function makeContextManifest(
   sources: Array<{ nodeId: string; status: ContextManifestSourceStatus }>,
 ): NonNullable<PreparedContext["contextManifest"]> {
   return {
-    compiler_version: "phase-a.v1",
+    compiler_version: "phase-d.v1",
     spec_hash: "turn-input-test",
     source_count: sources.length,
     total_chars: sources.filter((source) => source.status === "ok").length,
@@ -176,7 +176,7 @@ describe("TaskTurnInputBuilder", () => {
       prompt: "",
       attachmentIds: ["asset-1"],
       attachmentPaths: ["/legacy/photo.png"],
-      attachmentBindings: [{ attachment_id: "asset-1", path: "/legacy/photo.png" }],
+      attachmentBindings: [{ attachment_id: "asset-1", node_id: "node-1", path: "/legacy/photo.png" }],
       executionRegistration: {
         registrationId: "registration-initial",
         executionCommandId: "command:initial",
@@ -217,7 +217,7 @@ describe("TaskTurnInputBuilder", () => {
   it("prepares follow-up copies but returns the original intervention", async () => {
     const interventions = [{ text: "이 파일도 확인해줘", user: "u", deliveryId: "delivery-followup",
       attachmentIds: ["asset-2"], attachmentPaths: ["/legacy/report.pdf"],
-      attachmentBindings: [{ attachment_id: "asset-2", path: "/legacy/report.pdf" }] }];
+      attachmentBindings: [{ attachment_id: "asset-2", node_id: "node-1", path: "/legacy/report.pdf" }] }];
     const prepareAttachmentInput = vi.fn().mockResolvedValue({
       text: interventions[0]!.text,
       attachmentPaths: ["/cache/report.pdf"], imageAttachmentPaths: [],
@@ -248,7 +248,7 @@ describe("TaskTurnInputBuilder", () => {
 
   it("re-materializes the initial source on backend rollover", async () => {
     const source = { sessionId: "sess-turn-input", text: "원본 요청", attachmentIds: ["asset-3"],
-      attachmentPaths: ["/legacy/photo.png"], attachmentBindings: [{ attachment_id: "asset-3", path: "/legacy/photo.png" }] };
+      attachmentPaths: ["/legacy/photo.png"], attachmentBindings: [{ attachment_id: "asset-3", node_id: "node-1", path: "/legacy/photo.png" }] };
     const paths = ["/cache/first/photo.png", "/cache/second/photo.png"];
     const prepareAttachmentInput = vi.fn(async (input) => ({
       text: input.text,
@@ -415,6 +415,7 @@ describe("TaskTurnInputBuilder", () => {
       needsFullContextReinjection: true,
       interventionQueue: [{
         text: "이번 요청",
+        user: "u",
         deliveryId: "delivery-generation-1",
         runnerInterventionId: "runner-intervention-1",
         callerInfo: { source: "browser", display_name: "서소영" },
@@ -424,7 +425,7 @@ describe("TaskTurnInputBuilder", () => {
         ],
         attachmentIds: ["generation-id"],
         attachmentPaths: ["/legacy/generation.png"],
-        attachmentBindings: [{ attachment_id: "generation-id", path: "/legacy/generation.png" }],
+        attachmentBindings: [{ attachment_id: "generation-id", node_id: "node-1", path: "/legacy/generation.png" }],
       }],
     });
     const manifest = { compiler_version: "phase-a.v1", spec_hash: "generation-spec",
@@ -541,11 +542,13 @@ describe("TaskTurnInputBuilder", () => {
       },
       interventionQueue: [{
         text: "다음 요청",
+        user: "u",
         deliveryId: "delivery-generation-error",
         attachmentIds: ["generation-asset"],
         attachmentPaths: ["/tmp/incoming/generation.png"],
         attachmentBindings: [{
           attachment_id: "generation-asset",
+          node_id: "node-1",
           path: "/tmp/incoming/generation.png",
         }],
       }],
@@ -1317,6 +1320,7 @@ describe("TaskTurnInputBuilder", () => {
     const { builder } = makeSubject();
     const failedInput = {
       prompt: "runtime follow-up",
+      imageAttachmentPaths: [],
       inputUuid: "input-1",
       turnOrigin: { kind: "runtime_followup" as const, id: "delivery-1" },
       intervention: {
@@ -1485,6 +1489,7 @@ describe("TaskTurnInputBuilder", () => {
       claudeAgent,
       { prompt: "recover this", imageAttachmentPaths: [] },
       "claude-exhausted",
+      "prompt_too_long",
     );
 
     expect(input.prompt).toContain("recover this");

@@ -1,3 +1,7 @@
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 /**
  * Reproduction evidence from the unfixed code (main, bc9958d25e), run on
  * 2026-11-18 with:
@@ -161,12 +165,13 @@ function makeTurnEngine(
   let turn = 0;
   const engine: EnginePort = {
     backendId: "codex",
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/codex-default",
     async *execute(params): AsyncIterable<SSEEventPayload> {
       const build = turns[Math.min(turn, turns.length - 1)];
       turn += 1;
       prompts.push(params.prompt);
-      yield* build(task);
+      yield* build!(task);
     },
     async interrupt() { return true; },
     async close() {},

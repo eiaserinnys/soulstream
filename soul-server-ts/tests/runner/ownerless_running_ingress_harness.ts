@@ -141,9 +141,9 @@ export class OwnerlessIngressHarness {
     sessionId: string,
     kind: string,
   ): IngressApplicationLog | undefined {
-    return this.applications.findLast(
+    return this.applications.filter(
       (entry) => entry.sessionId === sessionId && entry.kind === kind,
-    );
+    ).at(-1);
   }
 
   async commitDirectRegistration(
@@ -248,7 +248,7 @@ export class OwnerlessIngressHarness {
     this.applications.push({
       sessionId: record.session_id,
       kind: record.session_effect?.kind ?? null,
-      outcome: result.outcome,
+      outcome: result.outcome ?? "committed",
       applied: result.outcome === "committed"
         ? result.sessionEffectApplication?.applied ?? null
         : null,

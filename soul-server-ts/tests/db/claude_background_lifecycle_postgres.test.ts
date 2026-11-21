@@ -5,7 +5,10 @@ import { ClaudeBackgroundTaskRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/claude_background_task_repository.js";
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import type { SqlClient } from "../../src/db/session_db.js";
+import type { SqlClient } from
+  "../../../orch-server-ts/src/control_plane/control_plane_types.js";
+import type { ClaudeRuntimeHostClient } from
+  "../../src/control_plane/persistence_host_clients.js";
 import { attachClaudeBackgroundProvenance } from
   "../../src/engine/claude_background_provenance.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
@@ -411,7 +414,7 @@ describePostgres("Claude background lifecycle PostgreSQL integration", () => {
 
 function makeLifecycle(sql: SqlClient): ClaudeBackgroundTaskLifecycle {
   return new ClaudeBackgroundTaskLifecycle({
-    repository: background(sql),
+    repository: Object.create(background(sql)) as ClaudeRuntimeHostClient,
     sourceNode: "node-test",
     // Stamps the delivery's created_at, which the retry budget measures age
     // against. A pinned past date would exhaust that budget before these

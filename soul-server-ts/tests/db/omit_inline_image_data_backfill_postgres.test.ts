@@ -63,9 +63,9 @@ describePostgres("omit inline image data backfill", () => {
       `;
       await harness.sql`
         INSERT INTO events (session_id, id, event_type, payload, searchable_text)
-        VALUES (${SESSION_ID}, 1, 'tool_result', ${initialPayloads[0]}, 'indexed image row'),
-               (${SESSION_ID}, 2, 'tool_result', ${ordinaryPayload}, 'indexed ordinary row'),
-               (${SESSION_ID}, 3, 'tool_start', ${initialPayloads[2]}, 'indexed truncated row')
+        VALUES (${SESSION_ID}, 1, 'tool_result', ${harness.sql.json(initialPayloads[0]!)}, 'indexed image row'),
+               (${SESSION_ID}, 2, 'tool_result', ${harness.sql.json(ordinaryPayload)}, 'indexed ordinary row'),
+               (${SESSION_ID}, 3, 'tool_start', ${harness.sql.json(initialPayloads[2]!)}, 'indexed truncated row')
       `;
       const originalSearchableText = await readSearchableText(harness);
       const originalTerms = await readEventSearchTerms(harness);

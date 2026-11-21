@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
+import type { SessionRow } from "../../src/db/session_db.js";
 import { recoverRunnerByDisposition } from
   "../../src/runner/runner_recovery_disposition.js";
 import { prepareRecoveredTask } from
@@ -303,12 +304,14 @@ async function loadTask(
   postgres: FullSchemaPostgresHarness,
   sessionId: string,
 ): Promise<Task> {
-  const rows = await postgres.sql<Array<Record<string, unknown>>>`
+  const rows = await postgres.sql<Array<SessionRow>>`
     SELECT * FROM sessions WHERE session_id = ${sessionId}
   `;
   const row = rows[0];
   if (!row) throw new Error(`missing fixture session ${sessionId}`);
-  return hydrateEvictedTaskFromSessionRow(row as never, logger);
+  const task = hydrateEvictedTaskFromSessionRow(row, logger);
+  if (!task) throw new Error(`unhydratable fixture session ${sessionId}`);
+  return task;
 }
 
 async function countCompletionDeliveries(

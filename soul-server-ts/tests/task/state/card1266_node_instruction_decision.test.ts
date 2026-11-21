@@ -58,7 +58,7 @@ describe("node instruction decision", () => {
 
     const withLedger = { deliveryId: "d" };
     expect(withInstructionNumber(withLedger, () => "new")).toBe(withLedger);
-    const bare = { text: "x" };
+    const bare: { text: string } & Parameters<typeof withInstructionNumber>[0] = { text: "x" };
     const filled = withInstructionNumber(bare, () => "new");
     expect(filled).toEqual({ text: "x", runnerInterventionId: "new" });
     expect(bare).toEqual({ text: "x" });

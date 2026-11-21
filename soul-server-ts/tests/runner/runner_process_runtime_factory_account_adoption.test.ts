@@ -9,7 +9,7 @@ import { applyRunnerHostCall, createRunnerProcessRuntimeFactory } from
   "../../src/runner/runner_process_runtime_factory.js";
 import { RunnerClaudeAccountTurnStateStore } from
   "../../src/runner/claude_account_turn_state_store.js";
-import { parseRunnerChildConfig } from "../../src/runner/runner_child_config.js";
+import { parseRunnerChildConfig, type RunnerChildConfig } from "../../src/runner/runner_child_config.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
@@ -145,7 +145,11 @@ describe("Claude account pool live runner adoption", () => {
     const task = {
       agentSessionId: sessionId,
       prompt: "resume",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const runtime = factory.recover!(task, registration, {
       persistRunState: vi.fn(async () => undefined),
@@ -179,7 +183,11 @@ describe("Claude account pool live runner adoption", () => {
     const kimiTask = {
       agentSessionId: kimiSessionId,
       prompt: "resume Kimi",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const kimiRuntime = factory.recover!(kimiTask, kimiRegistration, {
       persistRunState: vi.fn(async () => undefined),
@@ -199,10 +207,11 @@ describe("Claude account pool live runner adoption", () => {
     const legacyOutbox = await RunnerSqliteEventOutbox.create(legacyDatabasePath);
     legacyOutbox.close();
     const legacySessionId = "session-adopt-old-runner";
-    const legacyConfig = {
+    const legacyConfig: RunnerChildConfig = {
       ...config,
       sessionId: legacySessionId,
       paths: {
+        socketKind: "unix_socket",
         sessionDirectory: legacyDirectory,
         databasePath: legacyDatabasePath,
         socketPath: join(legacyDirectory, "runner.sock"),
@@ -228,7 +237,11 @@ describe("Claude account pool live runner adoption", () => {
     const legacyTask = {
       agentSessionId: legacySessionId,
       prompt: "resume old runner",
-      status: "pending",
+      status: "initializing",
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
     } as Task;
     const legacyRuntime = factory.recover!(legacyTask, legacyRegistration, {
       persistRunState: vi.fn(async () => undefined),

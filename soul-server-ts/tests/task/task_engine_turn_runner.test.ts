@@ -18,6 +18,7 @@ import {
   engineEventFrame,
   RUNNER_FRAME_PROTOCOL_VERSION,
   runnerRequestFrame,
+  type RunnerEventFrame,
 } from "../../src/runner/frame_protocol.js";
 import {
   DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
@@ -28,6 +29,10 @@ import { createInProcessTaskRunnerRuntime } from
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
+
+const unsupportedEngineIntervention = async () => ({
+  status: "not_delivered", mechanism: "unsupported", reason: "not_supported",
+} as const);
 
 type TurnRunnerCatalog = Pick<ModelCatalog, "resolve" | "snapshot">;
 
@@ -74,6 +79,7 @@ function makeEngine(
 ): EnginePort {
   return {
     backendId,
+    intervene: unsupportedEngineIntervention,
     workspaceDir: "/tmp/agent",
     async *execute(params): AsyncIterable<SSEEventPayload> {
       await onExecute(params);
@@ -139,7 +145,7 @@ describe("TaskEngineTurnRunner", () => {
     expect.soft(executeFrames).toHaveBeenCalledWith(expect.objectContaining({
       usage_snapshot: expect.objectContaining({ backend: "antigravity" }),
     }), undefined);
-    expect(executeFrames.mock.calls[0][0]).not.toHaveProperty("claudeAccountPoolTarget");
+    expect(executeFrames.mock.calls[0]![0]).not.toHaveProperty("claudeAccountPoolTarget");
   });
 
   it("marks only resolved official Claude models for pool selection and omits task OAuth", async () => {
@@ -423,13 +429,14 @@ describe("TaskEngineTurnRunner", () => {
       },
       extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
-    expect(captured?.onIntervention).toBeUndefined();
+    expect(captured).not.toHaveProperty("onIntervention");
   });
 
   it("consumes engine events and snapshots from the in-process runner frame stream", async () => {
     const task = makeTask();
     const engine: EnginePort = {
       backendId: "openai-agents",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {
         throw new Error("legacy execute path must not be used");
@@ -478,11 +485,17 @@ describe("TaskEngineTurnRunner", () => {
     const task = makeTask();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames() {
         yield engineEventFrame(
-          { type: "task_notification", task_id: "task-1" },
+          {
+            type: "claude_runtime_task_notification",
+            task_id: "task-1",
+            status: "completed",
+            timestamp: 1,
+          },
           { claudeBackgroundProvenance: "sdk_membership" },
         );
       },
@@ -498,7 +511,7 @@ describe("TaskEngineTurnRunner", () => {
       input: { prompt: "turn prompt" },
     }));
 
-    const event = events.find((candidate) => candidate.type === "task_notification");
+    const event = events.find((candidate) => candidate.type === "claude_runtime_task_notification");
     expect(event).toBeDefined();
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
@@ -511,9 +524,10 @@ describe("TaskEngineTurnRunner", () => {
     const sendControlFrame = vi.fn();
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
-      async *executeFrames() {
+      async *executeFrames(): AsyncIterable<RunnerEventFrame> {
         yield {
           protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
           channel: "event" as const,
@@ -587,6 +601,7 @@ describe("TaskEngineTurnRunner", () => {
     let controlFrame: unknown;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames(params) {
@@ -653,6 +668,7 @@ describe("TaskEngineTurnRunner", () => {
     };
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       executeFrames() {
@@ -711,6 +727,7 @@ describe("TaskEngineTurnRunner", () => {
     let controlFrame: unknown;
     const engine: EnginePort = {
       backendId: "claude",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames() {
@@ -839,6 +856,7 @@ describe("TaskEngineTurnRunner", () => {
     let captured: EngineExecuteParams | undefined;
     const engine: EnginePort = {
       backendId: "codex",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         captured = params;
@@ -1111,6 +1129,7 @@ describe("TaskEngineTurnRunner", () => {
     let captured: EngineExecuteParams | undefined;
     const engine: EnginePort = {
       backendId: "openai-agents",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       execute(params): AsyncIterable<SSEEventPayload> {
         captured = params;
@@ -1158,6 +1177,7 @@ describe("TaskEngineTurnRunner", () => {
     const task = makeTask();
     const engine: EnginePort = {
       backendId: "openai-agents",
+      intervene: unsupportedEngineIntervention,
       workspaceDir: "/tmp/agent",
       async *execute(): AsyncIterable<SSEEventPayload> {},
       async *executeFrames() {

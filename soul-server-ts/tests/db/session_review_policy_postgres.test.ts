@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
-import { SessionMutationRepository } from
+import {
+  SessionMutationRepository,
+  type RegisterSessionMutation,
+} from
   "../../../orch-server-ts/src/control_plane/repositories/session_mutation_repository.js";
 import { updateSessionReviewPolicy } from
   "../../../orch-server-ts/src/system/session_review_policy.js";
@@ -138,7 +141,7 @@ describePostgres("session review policy PostgreSQL ordering", () => {
   });
 });
 
-function input(sessionId: string, idempotencyKey: string, now: Date) {
+function input(sessionId: string, idempotencyKey: string, now: Date): RegisterSessionMutation {
   return {
     idempotencyKey,
     sessionId,

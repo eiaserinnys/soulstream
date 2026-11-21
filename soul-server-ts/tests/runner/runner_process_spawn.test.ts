@@ -9,6 +9,7 @@ import {
   parseRunnerChildConfig,
   RunnerProcessSpawner,
   type SpawnedRunnerProcess,
+  type SpawnRunnerProcessInput,
 } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { readAuthoritativeRunnerLifecycleLocal } from
@@ -910,7 +911,7 @@ function heldWriterLock(
   return { kind: "held", owner: { pid, startIdentity } };
 }
 
-async function input() {
+async function input(): Promise<SpawnRunnerProcessInput> {
   const stateDirectory = await mkdtemp(join(tmpdir(), "soulstream-runner-spawn-"));
   directories.push(stateDirectory);
   return {

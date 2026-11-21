@@ -108,7 +108,7 @@ class SharedDeliveryLedger {
           const stored = this.rows.get(admission.deliveryId);
           if (!stored) throw new Error(`unknown delivery ${admission.deliveryId}`);
           stored.row.state = "queued";
-          stored.row.aggregate_state = "queued";
+          stored.row.aggregate_state = "pending";
           stored.row.queued_at = new Date(this.clock.now);
         }
       },

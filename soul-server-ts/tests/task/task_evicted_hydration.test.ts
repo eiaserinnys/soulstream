@@ -31,6 +31,7 @@ function makeRow(overrides: Partial<SessionRow> = {}): SessionRow {
     updated_at: new Date("2026-05-23T01:05:00.000Z"),
     agent_id: "codex-default",
     caller_session_id: "caller-session-1",
+    predecessor_session_id: null,
     away_summary: null,
     termination_reason: "completed_ok",
     termination_detail: null,

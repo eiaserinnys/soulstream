@@ -547,7 +547,7 @@ describe("RunnerSessionGarbageCollector", () => {
   });
 
   it("labels only guarded central session lookups", async () => {
-    const centralSessionExists = vi.fn(async () => false);
+    const centralSessionExists = vi.fn(async (_sessionId: string) => false);
     const contexts: Array<{ phase?: string; operation?: string; sessionId?: string }> = [];
     const subject = makeSubject();
     const observation = createRunnerPhaseObservation({

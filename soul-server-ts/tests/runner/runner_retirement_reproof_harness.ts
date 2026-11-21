@@ -226,7 +226,8 @@ function makeCoordinatorSubject(
     }),
     taskManager: {
       hydrateRunnerRecoveryTask: async () => task,
-      markRunnerFailureAndResume: async (_task, _message, resume) => resume(task),
+      listExistingSessionIds: async (sessionIds) => sessionIds,
+      markRunnerFailure: async () => {},
       projectClosedRunner: async () => true,
     },
     taskExecutor: {
@@ -239,14 +240,14 @@ function makeCoordinatorSubject(
         replayEntered.resolve();
         if (gateReplay) await releaseReplay.promise;
       },
-      restartRegisteredRunner: async () => {},
     },
     closedTailDrainer: { drain: async () => {} },
-    sessionGarbageCollector: { collect: async () => {} },
+    sessionGarbageCollector: { collect: async () => ({ removed: [], retained: [] }) },
     spawner: {
       terminate: async (paths, expected) => {
         counters.terminate += 1;
         await fixture.spawner.terminate(paths, expected);
+        return "registration_invalidated" as const;
       },
       invalidateRegistration: async (paths, registrationId) =>
         await fixture.spawner.invalidateRegistration(paths, registrationId),
