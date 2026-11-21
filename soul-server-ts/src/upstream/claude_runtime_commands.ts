@@ -13,13 +13,11 @@ interface CommandLike {
 export interface ClaudeRuntimeListTasksCommand extends CommandLike {
   type: "claude_runtime_list_tasks";
   agentSessionId?: string;
-  session_id?: string;
 }
 
 export interface ClaudeRuntimeTaskOutputCommand extends CommandLike {
   type: "claude_runtime_task_output";
   agentSessionId?: string;
-  session_id?: string;
   taskId?: string;
   task_id?: string;
 }
@@ -27,7 +25,6 @@ export interface ClaudeRuntimeTaskOutputCommand extends CommandLike {
 export interface ClaudeRuntimeStopTaskCommand extends CommandLike {
   type: "claude_runtime_stop_task";
   agentSessionId?: string;
-  session_id?: string;
   taskId?: string;
   task_id?: string;
 }
@@ -35,7 +32,6 @@ export interface ClaudeRuntimeStopTaskCommand extends CommandLike {
 export interface ClaudeRuntimeBackgroundTasksCommand extends CommandLike {
   type: "claude_runtime_background_tasks";
   agentSessionId?: string;
-  session_id?: string;
   toolUseId?: string;
   tool_use_id?: string;
 }
@@ -43,13 +39,11 @@ export interface ClaudeRuntimeBackgroundTasksCommand extends CommandLike {
 export interface ClaudeRuntimeListSchedulesCommand extends CommandLike {
   type: "claude_runtime_list_schedules";
   agentSessionId?: string;
-  session_id?: string;
 }
 
 export interface ClaudeRuntimeDeleteScheduleCommand extends CommandLike {
   type: "claude_runtime_delete_schedule";
   agentSessionId?: string;
-  session_id?: string;
   scheduleId?: string;
   schedule_id?: string;
 }
@@ -181,7 +175,7 @@ export class ClaudeRuntimeCommands {
 }
 
 function sessionIdFromCommand(cmd: ClaudeRuntimeCommand): string {
-  return cmd.agentSessionId ?? cmd.session_id ?? "";
+  return cmd.agentSessionId ?? "";
 }
 
 function requiredRequestId(cmd: ClaudeRuntimeCommand): string {

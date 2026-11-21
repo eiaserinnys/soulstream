@@ -1,4 +1,3 @@
-import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 import { parsePersistentSettingsPatch, type PersistentSettingsPatch } from "@soulstream/wire-schema/persistent-session-settings";
 import { parsePersistentInstructionsApplyPayload } from "@soulstream/wire-schema/persistent-session-instructions";
@@ -23,6 +22,7 @@ import {
   TaskRuntimeCommands,
   UnknownAgentProfileError,
   buildSessionCreatedAck,
+  type OrchestrationWorkerAdmission,
 } from "./task_runtime_commands.js";
 import { PersistentSessionControlError } from "../task/persistent_session_control.js";
 import { UnsupportedReasoningEffortError } from "../task/task_reasoning_effort.js";
@@ -71,13 +71,11 @@ interface CreateSessionCmd extends CommandLike {
 interface InterruptSessionCmd extends CommandLike {
   type: "interrupt_session";
   agentSessionId?: string;
-  session_id?: string;
 }
 
 interface DeleteSessionCmd extends CommandLike {
   type: "delete_session";
   agentSessionId?: string;
-  session_id?: string;
 }
 
 interface CreateCardOrchestrationDecisionCmd extends CommandLike {
@@ -102,20 +100,17 @@ interface PrepareCardOrchestrationDecisionCmd extends CommandLike {
 interface SubscribeEventsCmd extends CommandLike {
   type: "subscribe_events";
   agentSessionId?: string;
-  session_id?: string;
   subscribeId?: string;
 }
 
 interface AcknowledgeSessionReviewCmd extends CommandLike {
   type: "acknowledge_session_review";
   agentSessionId?: string;
-  session_id?: string;
 }
 
 interface SetPersistentSessionSettingsCmd extends CommandLike {
   type: "set_persistent_session_settings";
   agentSessionId?: string;
-  session_id?: string;
   enabled?: unknown;
   settings?: unknown;
 }
@@ -123,7 +118,6 @@ interface SetPersistentSessionSettingsCmd extends CommandLike {
 interface ApplyPersistentSessionInstructionsCmd extends CommandLike {
   type: "apply_persistent_session_instructions";
   agentSessionId?: string;
-  session_id?: string;
   origin?: unknown;
   ops?: unknown;
   anchor?: unknown;
@@ -194,7 +188,7 @@ async function handleAcknowledgeSessionReview(
   deps: SessionCommandFamilyDeps,
   cmd: AcknowledgeSessionReviewCmd,
 ): Promise<void> {
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   if (!sessionId) {
     throw new CommandDispatchError(
       "acknowledge_session_review requires agentSessionId",
@@ -227,7 +221,7 @@ async function handleSetPersistentSessionSettings(
   deps: SessionCommandFamilyDeps,
   cmd: SetPersistentSessionSettingsCmd,
 ): Promise<void> {
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   if (!sessionId) {
     throw new CommandDispatchError("set_persistent_session_settings requires agentSessionId", "INVALID_REQUEST");
   }
@@ -268,12 +262,12 @@ async function handleApplyPersistentSessionInstructions(
   cmd: ApplyPersistentSessionInstructionsCmd,
 ): Promise<void> {
   const unknownKey = Object.keys(cmd).find((key) => ![
-    "type", "agentSessionId", "session_id", "origin", "ops", "anchor", "requestId", "request_id",
+    "type", "agentSessionId", "origin", "ops", "anchor", "requestId", "request_id",
   ].includes(key));
   if (unknownKey) {
     throw new CommandDispatchError(`apply_persistent_session_instructions.${unknownKey} is not supported`, "INVALID_REQUEST");
   }
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   if (!sessionId) {
     throw new CommandDispatchError(
       "apply_persistent_session_instructions requires agentSessionId",
@@ -323,11 +317,7 @@ function reviewOutcomeMessage(outcome: string): string {
   return "Session has no result pending review";
 }
 
-/**
- * 빈 text라도 첨부(IDs/paths)가 있으면 정상 입력으로 본다. 누락/비문자열 text는
- * 거부한다. 텍스트 본문과 기존 path note 동작은 그대로 보존한다.
- */
-function hasPromptInput(
+export function hasPromptInput(
   text: unknown,
   attachmentIds?: readonly string[],
   attachmentPaths?: readonly string[],
@@ -418,7 +408,7 @@ async function handleInterruptSession(
   deps: SessionCommandFamilyDeps,
   cmd: InterruptSessionCmd,
 ): Promise<void> {
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   if (!sessionId) {
     throw new CommandDispatchError("interrupt_session requires agentSessionId");
   }
@@ -458,7 +448,7 @@ async function handleDeleteSession(
   deps: SessionCommandFamilyDeps,
   cmd: DeleteSessionCmd,
 ): Promise<void> {
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   if (!sessionId) {
     throw new CommandDispatchError(
       "delete_session requires agentSessionId",
@@ -489,7 +479,7 @@ async function handleSubscribeEvents(
   deps: SessionCommandFamilyDeps,
   cmd: SubscribeEventsCmd,
 ): Promise<void> {
-  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  const sessionId = cmd.agentSessionId ?? "";
   deps.logger.info(
     { sessionId, subscribeId: cmd.subscribeId },
     "subscribe_events received — NOOP 수락 (broadcaster가 EVT_EVENT 직접 emit)",

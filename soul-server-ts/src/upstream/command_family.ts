@@ -5,7 +5,6 @@ export interface CommandLike {
   requestId?: string;
   request_id?: string;
   agentSessionId?: string;
-  session_id?: string;
 }
 
 export type CommandTraceFields = {
@@ -41,7 +40,7 @@ export function commandTraceFields(cmd: CommandLike): CommandTraceFields {
   return {
     type: nonEmptyString(cmd.type),
     requestId: nonEmptyString(cmd.requestId ?? cmd.request_id),
-    sessionId: nonEmptyString(cmd.agentSessionId ?? cmd.session_id),
+    sessionId: nonEmptyString(cmd.agentSessionId),
   };
 }
 

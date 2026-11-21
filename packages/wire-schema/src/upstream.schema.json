@@ -1637,10 +1637,6 @@
       "properties": {
         "type": { "const": "intervene" },
         "agentSessionId": { "type": "string" },
-        "session_id": {
-          "type": "string",
-          "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
-        },
         "text": { "type": "string" },
         "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "user": { "type": "string" },
@@ -1708,10 +1704,6 @@
       "properties": {
         "type": { "const": "interrupt_session" },
         "agentSessionId": { "type": "string" },
-        "session_id": {
-          "type": "string",
-          "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
-        },
         "requestId": { "type": "string" },
         "request_id": { "type": "string" }
       }
@@ -1724,10 +1716,6 @@
       "properties": {
         "type": { "const": "delete_session" },
         "agentSessionId": { "type": "string" },
-        "session_id": {
-          "type": "string",
-          "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
-        },
         "requestId": { "type": "string" },
         "request_id": { "type": "string" }
       }
@@ -1740,7 +1728,6 @@
       "properties": {
         "type": { "const": "acknowledge_session_review" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string", "description": "구버전 호환." },
         "requestId": { "type": "string" },
         "request_id": { "type": "string" }
       }
@@ -1856,7 +1843,6 @@
       "properties": {
         "type": { "const": "respond" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string", "description": "구버전 호환." },
         "inputRequestId": { "type": "string" },
         "request_id": { "type": "string", "description": "구버전 호환." },
         "answers": { "type": "object", "additionalProperties": true },
@@ -1871,7 +1857,6 @@
       "properties": {
         "type": { "const": "approve_tool" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string", "description": "구버전 호환." },
         "approvalId": { "type": "string" },
         "approval_id": { "type": "string", "description": "구버전 호환." },
         "requestId": { "type": "string" },
@@ -1887,7 +1872,6 @@
       "properties": {
         "type": { "const": "reject_tool" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string", "description": "구버전 호환." },
         "approvalId": { "type": "string" },
         "approval_id": { "type": "string", "description": "구버전 호환." },
         "requestId": { "type": "string" },
@@ -1904,7 +1888,6 @@
       "properties": {
         "type": { "const": "realtime_create_call" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "offerSdp": { "type": "string" },
         "offer_sdp": { "type": "string" },
         "model": { "type": ["string", "null"] },
@@ -1922,7 +1905,6 @@
       "properties": {
         "type": { "const": "realtime_event" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "event": { "type": "object", "additionalProperties": true },
         "callId": { "type": ["string", "null"] },
         "call_id": { "type": ["string", "null"] },
@@ -1938,7 +1920,6 @@
       "properties": {
         "type": { "const": "realtime_resolve_tool_approval" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "approvalId": { "type": "string" },
         "approval_id": { "type": "string" },
         "decision": { "type": "string", "enum": ["approved", "rejected"] },
@@ -2407,11 +2388,10 @@
     "SubscribeEvents": {
       "type": "object",
       "description": "orch→노드: 라이브 이벤트 구독.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "subscribe_events" },
-        "session_id": { "type": "string" },
         "agentSessionId": { "type": "string" },
         "after_id": { "type": "integer", "default": 0 },
         "request_id": { "type": "string" },
@@ -2828,25 +2808,23 @@
     "ClaudeRuntimeListTasks": {
       "type": "object",
       "description": "orch→노드: Claude runtime task 목록 조회.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_list_tasks" },
         "requestId": { "type": "string" },
-        "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" }
+        "agentSessionId": { "type": "string" }
       }
     },
     "ClaudeRuntimeTaskOutput": {
       "type": "object",
       "description": "orch→노드: Claude runtime task 출력 조회.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_task_output" },
         "requestId": { "type": "string" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "taskId": { "type": "string" },
         "task_id": { "type": "string" }
       }
@@ -2854,13 +2832,12 @@
     "ClaudeRuntimeStopTask": {
       "type": "object",
       "description": "orch→노드: Claude runtime task 중단.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_stop_task" },
         "requestId": { "type": "string" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "taskId": { "type": "string" },
         "task_id": { "type": "string" }
       }
@@ -2868,13 +2845,12 @@
     "ClaudeRuntimeBackgroundTasks": {
       "type": "object",
       "description": "orch→노드: Claude runtime background task 조회.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_background_tasks" },
         "requestId": { "type": "string" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "toolUseId": { "type": "string" },
         "tool_use_id": { "type": "string" }
       }
@@ -2882,25 +2858,23 @@
     "ClaudeRuntimeListSchedules": {
       "type": "object",
       "description": "orch→노드: Claude runtime schedule 목록 조회.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_list_schedules" },
         "requestId": { "type": "string" },
-        "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" }
+        "agentSessionId": { "type": "string" }
       }
     },
     "ClaudeRuntimeDeleteSchedule": {
       "type": "object",
       "description": "orch→노드: Claude runtime schedule 삭제.",
-      "required": ["type"],
+      "required": ["type", "agentSessionId"],
       "additionalProperties": true,
       "properties": {
         "type": { "const": "claude_runtime_delete_schedule" },
         "requestId": { "type": "string" },
         "agentSessionId": { "type": "string" },
-        "session_id": { "type": "string" },
         "scheduleId": { "type": "string" },
         "schedule_id": { "type": "string" }
       }

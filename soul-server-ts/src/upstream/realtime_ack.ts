@@ -3,6 +3,10 @@ import type {
   RealtimeRelayEventResult,
   RealtimeResolveApprovalResult,
 } from "../realtime/realtime_broker.js";
+import type {
+  RealtimeEventAck as WireRealtimeEventAck,
+  RealtimeToolApprovalAck as WireRealtimeToolApprovalAck,
+} from "@soulstream/wire-schema";
 
 export type RealtimeAckType =
   | "realtime_call_created"
@@ -46,25 +50,9 @@ export interface RealtimeCallCreatedAck {
   eventId?: number;
 }
 
-export interface RealtimeEventAck {
-  type: "realtime_event_ack";
-  requestId: string;
-  agentSessionId: string;
-  status: "ok";
-  normalizedType?: string;
-  eventId?: number;
-}
+export type RealtimeEventAck = { [K in keyof WireRealtimeEventAck as K extends "status" ? never : K]: WireRealtimeEventAck[K] } & { status: "ok" } & Required<Pick<WireRealtimeEventAck, "agentSessionId">>;
 
-export interface RealtimeToolApprovalAck {
-  type: "realtime_tool_approval_ack";
-  requestId: string;
-  agentSessionId: string;
-  approvalId: string;
-  decision: RealtimeResolveApprovalResult["decision"];
-  status: "ok";
-  dataChannelEvent: Record<string, unknown>;
-  eventId?: number;
-}
+export type RealtimeToolApprovalAck = { [K in keyof WireRealtimeToolApprovalAck as K extends "status" ? never : K]: WireRealtimeToolApprovalAck[K] } & { status: "ok" } & Required<Pick<WireRealtimeToolApprovalAck, "agentSessionId" | "approvalId" | "decision" | "dataChannelEvent">>;
 
 export interface RealtimeAckError {
   type: RealtimeAckType;

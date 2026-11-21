@@ -20,7 +20,6 @@ interface CommandLike {
 export interface RespondCommand extends CommandLike {
   type: "respond";
   agentSessionId?: string;
-  session_id?: string;
   inputRequestId?: string;
   answers?: Record<string, unknown>;
 }
@@ -28,7 +27,6 @@ export interface RespondCommand extends CommandLike {
 export interface ToolApprovalCommand extends CommandLike {
   type: "approve_tool" | "reject_tool";
   agentSessionId?: string;
-  session_id?: string;
   approvalId?: string;
   approval_id?: string;
   message?: string;
@@ -62,7 +60,7 @@ export class DeliveryCommands {
   constructor(private readonly deps: DeliveryCommandsDeps) {}
 
   async respond(cmd: RespondCommand): Promise<RespondAck | null> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const sessionId = cmd.agentSessionId ?? "";
     const inputRequestId = cmd.inputRequestId ?? cmd.request_id ?? "";
     if (!sessionId || !inputRequestId || !isPlainObject(cmd.answers)) {
       throw new DeliveryCommandError(
@@ -88,7 +86,7 @@ export class DeliveryCommands {
   }
 
   async toolApproval(cmd: ToolApprovalCommand): Promise<ToolApprovalAck | null> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const sessionId = cmd.agentSessionId ?? "";
     const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
     if (!sessionId || !approvalId) {
       throw new DeliveryCommandError(

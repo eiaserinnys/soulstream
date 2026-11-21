@@ -61,7 +61,7 @@ describe("RealtimeCommands.createCall", () => {
 
     const ack = await commands.createCall({
       type: "realtime_create_call",
-      session_id: "sess-rt",
+      agentSessionId: "sess-rt",
       offer_sdp: "offer-sdp",
       request_id: "rt-create-1",
       model: "gpt-realtime",
@@ -185,7 +185,7 @@ describe("RealtimeCommands.resolveToolApproval", () => {
 
     const ack = await commands.resolveToolApproval({
       type: "realtime_resolve_tool_approval",
-      session_id: "sess-rt",
+      agentSessionId: "sess-rt",
       approval_id: "approval-1",
       decision: "rejected",
       message: "no",

@@ -475,7 +475,7 @@ describe("TaskCompletionNotifier.notify", () => {
       const sessionId = new URL(String(url)).pathname.split("/").at(-2);
       await receiverCommands.intervene?.({
         type: "intervene",
-        session_id: sessionId,
+        agentSessionId: sessionId,
         ...body,
       });
       return new Response(JSON.stringify({ delivered: true }), { status: 200 });
