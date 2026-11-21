@@ -128,10 +128,6 @@ export class EventReadRepository {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
     if (metadata !== null && order === "desc") {
-      // 색인 (session_id, event_type, id)를 거꾸로 타도록 event_type은 리터럴로 둔다.
-      // metadata_type 조건은 CASE boolean으로 감싼다. `payload->>'metadata_type' = ANY(...)`만
-      // 쓰면 플래너가 JSON 추출 비교에 기본 선택도 0.005를 적용해 예상 행수를 LIMIT(50)보다 작게
-      // 잡고, 역방향 스캔이 LIMIT에서 멈출 수 있다고 보지 않아 Bitmap Index Scan + Bitmap Heap
       const rows = period
         ? await this.runPoolQuery(signal, () =>
             this.sql<Array<Omit<SessionEventRow, "payload"> & { payload: unknown }>>`

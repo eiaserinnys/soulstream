@@ -2,8 +2,6 @@ import type {
   ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTaskKey,
   ClaudeBackgroundTaskRow,
-  ClaudeBackgroundTaskStatus,
-  ClaudeBackgroundTerminalStatus,
   ObserveClaudeBackgroundTaskGenerationParams,
   ObserveClaudeBackgroundTaskParams,
   ResolveClaudeBackgroundTaskGenerationResult,

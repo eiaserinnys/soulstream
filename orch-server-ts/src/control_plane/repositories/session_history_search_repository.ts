@@ -1,5 +1,4 @@
 import type {
-  SessionEventSearchRow,
   SessionHistorySearchParams,
   SessionHistorySearchResult,
 } from "@soulstream/mcp-contract";

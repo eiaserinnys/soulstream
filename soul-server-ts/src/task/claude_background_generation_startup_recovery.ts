@@ -1,5 +1,4 @@
-import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
-import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, type SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";

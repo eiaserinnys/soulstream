@@ -1,10 +1,10 @@
 import type { SqlClient } from "../control_plane_types.js";
-import { withLiveSearchDbConnection } from "../../runtime/live_db_sql.js";
-import type {
-  LiveSearchDbConnectionFactory,
-  LiveSearchPendingQuery,
-  LiveSearchQueryRunner,
-  LiveSearchSql,
+import {
+  withLiveSearchDbConnection,
+  type LiveSearchDbConnectionFactory,
+  type LiveSearchPendingQuery,
+  type LiveSearchQueryRunner,
+  type LiveSearchSql,
 } from "../../runtime/live_db_sql.js";
 import type {
   SessionDigestSearchMatch,

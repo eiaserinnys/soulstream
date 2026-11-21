@@ -3,8 +3,6 @@ import type {
   SessionDeliveryRow,
 } from "@soulstream/wire-schema/session-delivery";
 
-export type BindingStepState = "pending" | "bound" | "completed" | "manual_repair";
-
 export interface SessionPageBindingRow {
   session_id: string;
   node_id: string;
