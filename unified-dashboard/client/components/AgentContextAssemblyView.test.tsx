@@ -15,8 +15,10 @@ it("keeps the newer assembly when an aborted response finishes reading later", a
   let finishOld!: (value: typeof older) => void;
   const oldBody = new Promise<typeof older>(resolve => { finishOld = resolve; });
   const readOld = vi.fn(() => oldBody);
+  const oldResponse = Response.json(older);
+  vi.spyOn(oldResponse, "json").mockImplementation(readOld);
   const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-    request.mock.calls.length === 1 ? { ok: true, json: readOld } as Response : Response.json(newer));
+    request.mock.calls.length === 1 ? oldResponse : Response.json(newer));
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
