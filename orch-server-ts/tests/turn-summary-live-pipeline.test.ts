@@ -204,6 +204,8 @@ describe("live persistent instruction extractor wiring", () => {
       storyCompletionMinSummaries: 1,
       storyCompletionSweepIntervalMs: 100,
       storyNarrativeMaxChars: 100,
+      storyTimeoutMs: 90_000,
+      storyFoldFailureCooldownMs: 900_000,
       catchUpIntervalMs: 900_000,
       catchUpWindowHours: 72,
       catchUpMaxJobsPerRound: 100,
