@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Image, StyleSheet } from 'react-native';

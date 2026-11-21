@@ -1,6 +1,6 @@
 jest.mock('../navigationRef', () => ({ navigationRef: { isReady: () => false } }));
 import React from 'react';
-import { act, render } from '@testing-library/react-native';
+import { act, render, renderHook } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
 import { PhoneCardDetail } from '../PhoneContentScreens';
 import { TabNavigator } from '../TabNavigator';
@@ -23,7 +23,6 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { PersistentSessionScreen } from '../../screens/PersistentSessionScreen';
 import { CardDetailContent } from '../../components/planner/CardDetailSheet';
 import { createSurfaceRoles, useTokens } from '../../theme';
-import { renderHook } from '@testing-library/react-native';
 let host: ReturnType<typeof usePersistentSessionHost>;
 function Probe() { host = usePersistentSessionHost(); return null; }
 test('정확한 가운데 슬롯만 기본 이동을 막고 같은 id로 scene을 전환하며 다른 탭 입구는 대화로 연다', async () => {

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import * as Crypto from 'expo-crypto';

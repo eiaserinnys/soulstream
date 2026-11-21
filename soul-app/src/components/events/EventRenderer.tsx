@@ -1,6 +1,5 @@
-import React from 'react';
 import type { SessionEvent, Session } from '../../api/types';
-import { UserMessage } from './UserMessage';
+import { UserMessage, extractAttachments } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { ChatUiMessage } from '../chat-ui/ChatUiMessage';
 import { ThinkingEvent } from './ThinkingEvent';
@@ -8,14 +7,11 @@ import { SystemEvent } from './SystemEvent';
 import { ChatInputRequest } from '../chat/ChatInputRequest';
 import { ChatToolApprovalRequest } from '../chat/ChatToolApprovalRequest';
 import type { MessageSelectionModel } from './message-selection-model';
-import type { PendingOptimisticEvent } from '../../store/chatStore';
-import { useChatStore } from '../../store/chatStore';
+import { useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { extractUserText } from './eventActions';
 import { removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
-import { getMessageAttachmentSignals } from '../../hooks/useMessageAttachments';
-import { extractAttachments } from './UserMessage';
+import { getMessageAttachmentSignals, useMessageAttachments } from '../../hooks/useMessageAttachments';
 import { MessageAttachments } from '../MessageAttachments';
-import { useMessageAttachments } from '../../hooks/useMessageAttachments';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
 export type ChatMessageSession = Pick<Session,

@@ -50,7 +50,6 @@ import { PhoneCardDetail, PhoneMarkdownDocument, type MarkdownDocumentRouteParam
 import { getDefaultTabBarStyle } from './tabBarStyle';
 import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersistentSession';
 import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
-import type { PhoneReturnTab } from './phonePanelHistory';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
@@ -60,10 +59,8 @@ import { DuoSafeTop } from './DuoSafeTop';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
+  type PhoneReturnTab,
 } from './phonePanelHistory';
-
-export { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
-export { RAIL_MIN_INSET_WIDTH } from './tabContract';
 
 function TabBarGlassBackground() {
   return (

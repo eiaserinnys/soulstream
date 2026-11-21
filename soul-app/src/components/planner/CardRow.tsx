@@ -1,5 +1,5 @@
 import {cardExecutionState,subscribeCardWrites} from '../../lib/card-transition';
-import React, { useMemo, useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { Image, Text, Pressable, View, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -16,8 +16,7 @@ import { GlassButton } from '../GlassSurface';
 import { makeSessionCardStyles } from '../sessionCardFrame';
 import { AppGlassCard } from '../AppGlassCard';
 import { useCardDetail } from '../../hooks/useCardDetail';
-import { resolveSessionModelLabel } from '../sessionCardDisplay';
-import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
+import { resolveSessionModelLabel, resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCardDisplay';
 import { formatRelativeTime } from '../../lib/relative-time';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';

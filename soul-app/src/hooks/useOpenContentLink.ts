@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 import { Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { NavigationContext } from '@react-navigation/native';

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Platform, View, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { webViewContentLinks } from '../../lib/webview-content-links';

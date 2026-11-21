@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { Image, Platform } from 'react-native';
 import { CardTimeline } from '../CardTimeline';
