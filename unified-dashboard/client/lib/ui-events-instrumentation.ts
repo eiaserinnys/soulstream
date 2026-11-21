@@ -1,5 +1,6 @@
 import type { UiEventDraft, UiEventTracker } from "@seosoyoung/soul-ui";
 import type { UiEventTargetKind } from "../../../packages/wire-schema/src/ui_events";
+import { isRecord } from "../../../packages/wire-schema/src/json_record";
 
 export type NavigationSnapshot = {
   readonly viewMode: string | null;
@@ -156,8 +157,4 @@ export function subscribeNavigationUiEvents<T extends StoreLike>(
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

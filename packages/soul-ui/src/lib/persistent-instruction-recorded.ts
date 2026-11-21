@@ -2,6 +2,7 @@ import type {
   PersistentInstructionRecordedData,
   PersistentInstructionRecordedInstruction,
 } from "@shared/types";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export interface PersistentInstructionRecordedDebugEvent {
   type: "debug";
@@ -10,10 +11,6 @@ export interface PersistentInstructionRecordedDebugEvent {
   cap_reached: boolean;
   input_id?: string;
   timestamp: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isSourceTurn(value: unknown): value is string {

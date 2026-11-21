@@ -5,6 +5,7 @@ import type {
   ClaudeAuthLoginFlow,
 } from "../../../packages/wire-schema/generated/typescript/index";
 import type { ClaudeCentralSettings } from "@seosoyoung/soul-ui";
+import { isRecord } from "../../../packages/wire-schema/src/json_record";
 
 export type ClaudeAccountPatch = {
   enabled?: boolean;
@@ -34,10 +35,6 @@ export class ClaudeAuthRequestError extends Error {
     super(message);
     this.name = "ClaudeAuthRequestError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function parseApiError(value: unknown): ClaudeAuthError | null {

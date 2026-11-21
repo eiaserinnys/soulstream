@@ -28,6 +28,7 @@ import {
   type DiagnosticsAppState,
   type FrameRateSnapshot,
 } from './session-diagnostics-runtime';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 let runtime: SessionDiagnosticsRuntime | null = null;
 let startupCalled = false;
@@ -139,8 +140,4 @@ function classifyRoute(name: string): DiagnosticSource {
 function toDiagnosticsAppState(state: AppStateStatus): DiagnosticsAppState {
   if (state === 'active' || state === 'inactive' || state === 'background') return state;
   return 'unknown';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

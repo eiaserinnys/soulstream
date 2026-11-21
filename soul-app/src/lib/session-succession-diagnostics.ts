@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Constants as ExpoConstants } from 'expo-constants';
 import { Platform } from 'react-native';
 import type { SessionContextItem } from './planner-session-context';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export const SESSION_SUCCESSION_DIAGNOSTICS_KEY =
   'soul-app.session-succession-diagnostics.v1';
@@ -346,10 +347,6 @@ function isFailureRecord(value: unknown): value is AppDiagnosticFailureRecord {
   if (value.phase === 'global') return true;
   return typeof value.folderId === 'string'
     && typeof value.folderPageId === 'string';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown): string | null {

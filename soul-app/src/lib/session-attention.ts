@@ -4,6 +4,7 @@ import type {
   Session,
 } from '../api/types';
 import { isValidIsoDateTime } from './session-feed-activity';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 const ATTENTION_KINDS = new Set<PendingAttentionKind>([
   'input_request',
@@ -350,10 +351,6 @@ function copyOptionalString(
 ): void {
   const value = source[key];
   if (typeof value === 'string' && value.length > 0) target[key] = value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

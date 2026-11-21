@@ -5,6 +5,7 @@ import type {
   SessionEvent,
 } from '../api/types';
 import { isValidIsoDateTime } from './session-feed-activity';
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
 
 export const LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES = 256 * 1024;
 
@@ -141,10 +142,6 @@ function utf8Bytes(value: string): number {
     if (bytes > LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES) return bytes;
   }
   return bytes;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

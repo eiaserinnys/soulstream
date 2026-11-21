@@ -1,3 +1,5 @@
+import { isRecord } from '../../../packages/wire-schema/src/json_record';
+
 export type ReviewAcknowledgeResult =
   | {
       kind: 'acknowledged' | 'already_acknowledged';
@@ -32,7 +34,7 @@ export async function parseReviewAcknowledgeResponse(
     };
   }
 
-  const error = isObject(payload) && isObject(payload.error)
+  const error = isRecord(payload) && isRecord(payload.error)
     ? payload.error
     : undefined;
   return {
@@ -56,14 +58,10 @@ function isSuccessPayload(value: unknown): value is {
   changed: boolean;
 } {
   return (
-    isObject(value) &&
+    isRecord(value) &&
     value.status === 'ok' &&
     typeof value.agentSessionId === 'string' &&
     value.reviewState === 'acknowledged' &&
     typeof value.changed === 'boolean'
   );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
