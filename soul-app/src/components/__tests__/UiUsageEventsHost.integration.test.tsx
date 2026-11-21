@@ -1,4 +1,5 @@
-import React, { useCallback, useRef } from 'react';
+import { UI_EVENT_SCHEMA_VERSION } from '../../../../packages/wire-schema/src/ui_events';
+import { useCallback, useRef } from 'react';
 import { View } from 'react-native';
 import {
   NavigationContainer,
@@ -8,7 +9,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { act, render, waitFor } from '@testing-library/react-native';
 import { UiUsageEventsHost } from '../UiUsageEventsHost';
 import {
-  UI_EVENT_SCHEMA_VERSION,
   UiUsageEvents,
 } from '../../lib/ui-usage-events';
 import { captureAuthScope, resetAuthScopeForTest } from '../../lib/auth-scope';

@@ -1,22 +1,9 @@
-/**
- * UI 사용 로그 수집기 — 순수 코어.
- *
- * window·fetch·타이머를 직접 만지지 않는다. 전부 주입받는다. 두 가지 이유다:
- * vitest가 `environment: "node"`로 돌아 브라우저 전역이 없고, 무엇보다
- * 큐·중복 제거·소유자 경계 같은 규칙은 브라우저 없이 검증할 수 있어야 한다.
- *
- * 브라우저 결합은 `browser-collector.ts`가 전담한다.
- */
-import {
-  UI_EVENT_SCHEMA_VERSION,
-  type UiEventEntry,
-  type UiEventAttrValue,
-  type UiEventTargetKind,
-  type UiEventType,
-} from "../../../../../orch-server-ts/src/ui-events/ui_event_contract";
-
-export { UI_EVENT_SCHEMA_VERSION };
-export type { UiEventAttrValue, UiEventEntry, UiEventTargetKind, UiEventType };
+import type {
+  UiEventEntry,
+  UiEventAttrValue,
+  UiEventTargetKind,
+  UiEventType,
+} from "@soulstream/wire-schema/ui-events";
 
 export type UiEventRef = { readonly kind: UiEventTargetKind; readonly id: string };
 

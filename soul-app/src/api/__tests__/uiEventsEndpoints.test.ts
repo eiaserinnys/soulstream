@@ -1,5 +1,5 @@
 import { createApiClient } from '../client';
-import { UI_EVENT_SCHEMA_VERSION } from '../uiEventsEndpoints';
+import { UI_EVENT_SCHEMA_VERSION } from '../../../../packages/wire-schema/src/ui_events';
 import { useAuthStore } from '../../store/authStore';
 
 const BASE = 'https://ui-events.example';

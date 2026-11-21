@@ -1,9 +1,10 @@
+import type { UiEventEntry } from '../../../packages/wire-schema/src/ui_events';
 import { createApiClient, type ApiClient } from '../api/client';
-import type {
-  PlannerSessionSummary,
-  PlannerFolder,
+import {
+  plannerFolderDetailToSummary,
+  type PlannerSessionSummary,
+  type PlannerFolder,
 } from '../api/plannerTypes';
-import { plannerFolderDetailToSummary } from '../api/plannerTypes';
 import type { Session } from '../api/types';
 import {
   bindPlannerFolderScope,
@@ -31,7 +32,6 @@ import {
 import {
   createUiUsageFlowId,
   recordUiUsageEvent,
-  type UiEventEntry,
   type UiEventTarget,
 } from './ui-usage-events';
 

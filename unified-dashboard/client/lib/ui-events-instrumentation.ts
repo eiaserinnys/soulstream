@@ -1,17 +1,6 @@
-/**
- * 화면 전환 사용 로그.
- *
- * V3 레이아웃은 hash 라우팅을 쓰지 않으므로 전환의
- * 단일 수렴점은 라우터가 아니라 **dashboard store** 다. zustand 구독은
- * `(state, prevState)`를 주므로 "이전 화면"이 공짜로 나온다.
- *
- * 핵심 제약: store 는 SSE 수신으로도 쉴 새 없이 갱신된다. 아래 네비게이션
- * 필드가 실제로 바뀐 경우에만 반응해야 자동 트래픽이 조작으로 기록되지 않는다.
- */
-import type { UiEventDraft, UiEventTargetKind, UiEventTracker }
-  from "@seosoyoung/soul-ui";
+import type { UiEventDraft, UiEventTracker } from "@seosoyoung/soul-ui";
+import type { UiEventTargetKind } from "../../../packages/wire-schema/src/ui_events";
 
-/** 화면이 어디인지 정하는 필드. 여기 없는 필드의 변화는 전환이 아니다. */
 export type NavigationSnapshot = {
   readonly viewMode: string | null;
   readonly activeSessionKey: string | null;

@@ -1,70 +1,24 @@
+import {
+  UI_EVENT_ENTRIES,
+  UI_EVENT_TARGET_KINDS,
+  UI_EVENT_TYPES,
+  type UiEventAttrValue,
+  type UiEventEntry,
+  type UiEventTargetKind,
+  type UiEventType,
+} from "@soulstream/wire-schema/ui-events";
 import { isUuid } from "../http/uuid.js";
 
-export const UI_EVENT_SCHEMA_VERSION = "soulstream.ui_event.v1";
-
-/** 배치 1건에 담을 수 있는 이벤트 수 상한. 초과하면 413. */
 export const UI_EVENT_MAX_BATCH = 50;
 
-/** `attrs.queryText` 저장 상한. 넘으면 자른다(거절하지 않는다). */
 export const UI_EVENT_QUERY_TEXT_MAX = 500;
 
-/** 클라이언트 시계가 이만큼 미래면 그 이벤트만 거절한다. */
 export const UI_EVENT_FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
-
-export const UI_EVENT_TYPES = [
-  "view_open",
-  "search_submit",
-  "search_result",
-  "search_result_open",
-  "notification_open",
-  "compose_start",
-  "compose_submit",
-  "compose_result",
-  "compose_abandon",
-  "compose_resume",
-  "app_active",
-  "app_inactive",
-  "action_start",
-  "action_end",
-] as const;
-export type UiEventType = (typeof UI_EVENT_TYPES)[number];
-
-export const UI_EVENT_TARGET_KINDS = [
-  "session",
-  "card",
-  "folder",
-  "page",
-  "document",
-  "feed",
-  "view",
-  "custom_view",
-] as const;
-export type UiEventTargetKind = (typeof UI_EVENT_TARGET_KINDS)[number];
-
-/**
- * 진입경로. `auto`는 **사용자 조작이 아님**을 뜻한다 — 피드 자동선택이나
- * 폴링/SSE 수신으로 생긴 화면 전환은 반드시 `auto`로 남긴다.
- */
-export const UI_EVENT_ENTRIES = [
-  "sidebar",
-  "feed",
-  "search",
-  "notification",
-  "my_turn",
-  "url",
-  "history",
-  "auto",
-  "nav",
-] as const;
-export type UiEventEntry = (typeof UI_EVENT_ENTRIES)[number];
 
 export const UI_EVENT_CLIENT_KINDS = ["browser", "soul-app"] as const;
 export type UiEventClientKind = (typeof UI_EVENT_CLIENT_KINDS)[number];
 
 const STATUSES = ["ok", "error", "aborted"] as const;
-
-/** attrs 값이 가질 수 있는 전부. allowlist 가 이 셋만 통과시킨다. */
-export type UiEventAttrValue = string | number | boolean;
 
 type AttrSpec = {
   readonly required: readonly string[];
@@ -164,28 +118,6 @@ export const UI_EVENT_FLOW_REQUIRED: ReadonlySet<UiEventType> = new Set<UiEventT
 export type UiEventTargetRef = {
   readonly kind: UiEventTargetKind;
   readonly id: string;
-};
-
-/** 클라이언트가 보내는 이벤트 1건. */
-export type UiEventInput = {
-  readonly eventId: string;
-  readonly seq: number;
-  readonly occurredAt: string;
-  readonly type: UiEventType;
-  readonly target?: UiEventTargetRef | null;
-  readonly from?: UiEventTargetRef | null;
-  readonly entry?: UiEventEntry | null;
-  readonly flowId?: string | null;
-  readonly attrs?: Readonly<Record<string, UiEventAttrValue>>;
-};
-
-/** 배치 봉투. 하나의 봉투 안의 이벤트는 모두 같은 실행에서 나온 것이다. */
-export type UiEventBatchInput = {
-  readonly schemaVersion: string;
-  readonly installId: string;
-  readonly clientSessionKey: string;
-  readonly appVersion: string;
-  readonly events: readonly UiEventInput[];
 };
 
 export type UiEventRejection = {

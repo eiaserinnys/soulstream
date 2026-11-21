@@ -1,10 +1,5 @@
-/**
- * 입력 구간(compose flow)의 사용 로그 규칙.
- *
- * ChatInput 에서 떼어 낸 이유는 하나다 — 규칙을 렌더링 없이 검증할 수 있어야 한다.
- * 여기서 만드는 attrs 는 **길이뿐**이다. 초안 문자열은 어떤 필드에도 싣지 않는다.
- */
-import type { UiEventAttrValue, UiEventTracker } from "../../lib/ui-events";
+import type { UiEventAttrValue } from "@soulstream/wire-schema/ui-events";
+import type { UiEventTracker } from "../../lib/ui-events";
 
 export type ComposeStatus = "ok" | "error" | "aborted";
 

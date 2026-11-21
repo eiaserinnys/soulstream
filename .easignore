@@ -86,6 +86,7 @@
 !/packages/wire-schema/src/push_notification.ts
 !/packages/wire-schema/src/session_statistics.ts
 !/packages/wire-schema/src/session_review.ts
+!/packages/wire-schema/src/ui_events.ts
 !/packages/search-contract
 /packages/search-contract/*
 !/packages/search-contract/src
