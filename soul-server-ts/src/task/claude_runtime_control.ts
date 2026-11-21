@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import type { SSEEventPayload, SupportsClaudeBackgroundTasks } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 
+import type { ClaudeRuntimeTaskStatus } from "@soulstream/wire-schema";
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type {
   ClaudeRuntimeState,
   ClaudeRuntimeTaskState,
-  ClaudeRuntimeTaskStatus,
   Task,
 } from "./task_models.js";
 

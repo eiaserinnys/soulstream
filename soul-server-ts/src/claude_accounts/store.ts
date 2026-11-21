@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { renameWithTransientRetrySync } from "@soulstream/atomic-file-rename";
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import type {
   ClaudeAccountBlocksRecord,
   ClaudeAccountRecord,
@@ -10,7 +11,6 @@ import type {
   ClaudeAccountsJsonFile,
   ClaudeBindingsJsonFile,
   ClaudeBlocksJsonFile,
-  ClaudeCentralPoolAccount,
   ClaudeCentralPoolSyncPayload,
   ClaudeReloginJsonFile,
   ClaudeSessionBindingEntry,

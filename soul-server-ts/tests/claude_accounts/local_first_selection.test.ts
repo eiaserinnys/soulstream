@@ -5,11 +5,7 @@ import {
   type SelectCandidateParams,
   type SelectableAccountCandidate,
 } from "../../src/claude_accounts/selector.js";
-import type { ClaudeAccountUsage } from "../../src/claude_accounts/types.js";
-
-// 카드 #1734: 98% 미만 층에서 노드 로컬 계정을 중앙 계정보다 먼저 쓴다.
-// affinity와 ok>idle은 로컬 먼저보다 앞이고, 98% 이상 층과 적격 필터는 그대로다.
-// 다만 중앙에 묶인 세션은 98% 미만 층에 ok 로컬이 있으면 affinity를 보지 않는다.
+import type { ClaudeAccountUsage } from "@soulstream/wire-schema";
 
 const NOW_MS = Date.parse("2026-11-20T01:00:00.000Z");
 const MODEL = "claude-sonnet-4-6";

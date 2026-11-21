@@ -1,11 +1,13 @@
 import type {
+  ClaudeAccountBlocked,
+  ClaudeAccountUsage,
+  ClaudeAccountUsageWindow,
+} from "@soulstream/wire-schema";
+import type {
   ClaudeAccountAuthState,
   ClaudeAccountBlocksRecord,
-  ClaudeAccountBlockView,
   ClaudeAccountSource,
-  ClaudeAccountUsage,
   ClaudeScopeBlockEntry,
-  ClaudeUsageWindow,
 } from "./types.js";
 
 export const SOFT_USAGE_CAP_PERCENT = 98;
@@ -59,7 +61,7 @@ export function isBlockedForModel(
 export function projectPublicBlockView(
   blocks: ClaudeAccountBlocksRecord | undefined,
   nowMs: number,
-): ClaudeAccountBlockView | null {
+): ClaudeAccountBlocked | null {
   if (!blocks) {
     return null;
   }
@@ -79,7 +81,7 @@ export function projectPublicBlockView(
 }
 
 export function effectiveWindowUsedPercent(
-  window: ClaudeUsageWindow | null | undefined,
+  window: ClaudeAccountUsageWindow | null | undefined,
   nowMs: number,
 ): number | null {
   if (!window || typeof window.used_percent !== "number" || !Number.isFinite(window.used_percent)) {
@@ -94,12 +96,10 @@ export function effectiveWindowUsedPercent(
   return window.used_percent;
 }
 
-function exhaustedWindows(usage: ClaudeAccountUsage, scope: "all" | "fable", nowMs: number): ClaudeUsageWindow[] {
+function exhaustedWindows(usage: ClaudeAccountUsage, scope: "all" | "fable", nowMs: number): ClaudeAccountUsageWindow[] {
   const windows = [usage.five_hour, usage.seven_day];
   if (scope === "fable") windows.push(usage.fable_weekly);
-  // Usage cannot decrease before a window resets, so a 100% observation remains
-  // valid until reset even when the observation is stale.
-  return windows.filter((window): window is ClaudeUsageWindow =>
+  return windows.filter((window): window is ClaudeAccountUsageWindow =>
     window !== null && (effectiveWindowUsedPercent(window, nowMs) ?? 0) >= 100,
   );
 }
@@ -116,7 +116,7 @@ export function usageExhaustionResetMs(usage: ClaudeAccountUsage, scope: "all" |
 }
 
 export function effectiveWindowResetMs(
-  window: ClaudeUsageWindow | null | undefined,
+  window: ClaudeAccountUsageWindow | null | undefined,
   nowMs: number,
 ): number | null {
   if (!window || typeof window.used_percent !== "number" || !Number.isFinite(window.used_percent)) {

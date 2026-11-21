@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ANTHROPIC_PROFILE_URL } from "@soulstream/wire-schema/claude-oauth";
 import {
-  ANTHROPIC_PROFILE_URL,
   ClaudeCentralLoginError,
   ClaudeCentralLoginService,
   type ClaudeCentralProfileFetcher,

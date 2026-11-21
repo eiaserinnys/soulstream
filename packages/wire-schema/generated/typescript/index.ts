@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 201개 $defs (top-level wire 95 + supporting/SSE 106). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 203개 $defs (top-level wire 95 + supporting/SSE 108). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -111,6 +111,7 @@ export type CallerInfoSource =
   | "soul-app"
   | "system"
   | "trello_watcher";
+export type ClaudeRuntimeTaskStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
 export type SessionLifecycleStatus = "initializing" | "running" | "completed" | "error" | "interrupted";
 
 /**
@@ -1301,7 +1302,7 @@ export interface SSEEventClaudeRuntimeTaskUpdated {
   task_id: string;
   session_id?: string;
   patch: {
-    status?: "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
+    status?: ClaudeRuntimeTaskStatus;
     description?: string;
     end_time?: number;
     total_paused_ms?: number;
@@ -3329,17 +3330,18 @@ export interface ClaudeAccount {
    * UTC ISO 8601 expiry of the in-progress login flow while auth_state is logging_in. Omitted otherwise.
    */
   login_expires_at?: string;
-  usage: {
-    five_hour: ClaudeAccountUsageWindow | null;
-    seven_day: ClaudeAccountUsageWindow | null;
-    fable_weekly: ClaudeAccountUsageWindow | null;
-  };
+  usage: ClaudeAccountUsage;
   /**
    * UTC ISO 8601 usage observation timestamp, or null when unmeasured.
    */
   observed_at: string | null;
   blocked: ClaudeAccountBlocked | null;
   active_sessions: number;
+}
+export interface ClaudeAccountUsage {
+  five_hour: ClaudeAccountUsageWindow | null;
+  seven_day: ClaudeAccountUsageWindow | null;
+  fable_weekly: ClaudeAccountUsageWindow | null;
 }
 /**
  * Claude 계정 사용 창. 시각은 UTC ISO 8601.

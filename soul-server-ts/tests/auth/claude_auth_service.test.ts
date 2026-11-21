@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import pino from "pino";
-import type { Logger } from "pino";
+import pino, { type Logger } from "pino";
 
 import {
   ANTHROPIC_PROFILE_URL,
   ANTHROPIC_USAGE_URL,
+} from "@soulstream/wire-schema/claude-oauth";
+import {
   ClaudeAuthService,
   FileClaudeAuthTokenStore,
   type ClaudeAuthHttpGet,

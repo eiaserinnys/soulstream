@@ -28,9 +28,6 @@ function accountList(): ClaudeCentralAccountList {
       observed_at: null,
       blocked: null,
       active_sessions: 0,
-      expires_at: null,
-      refreshed_at: null,
-      relogin_reason: null,
     }],
     pool: {
       total_count: 1,

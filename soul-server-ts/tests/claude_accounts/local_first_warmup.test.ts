@@ -6,12 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClaudeAccountService } from "../../src/claude_accounts/index.js";
 import { UNMEASURED_LOCAL_USAGE_WAIT_MS } from "../../src/claude_accounts/local_usage_wait.js";
-import type { ClaudeCentralPoolAccount } from "../../src/claude_accounts/types.js";
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import { composeClaudeAccountServices } from "../../src/runtime/claude_runtime_composition.js";
-
-// 카드 #1734: 노드가 재시작하면 로컬 계정의 사용량 관측이 비어 로컬이 idle로 보이고,
-// 늘 ok인 중앙이 ok>idle 규칙으로 이겼다. 계정별 측정을 하나로 합치고, 시작할 때 한 번 재며,
-// select는 아직 재지 않은 적격 로컬의 측정을 짧게 기다린 뒤 고른다.
 
 const LOCAL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CENTRAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

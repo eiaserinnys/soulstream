@@ -1,3 +1,5 @@
+import type { ClaudeAccountPool } from "@soulstream/wire-schema";
+import { ANTHROPIC_USAGE_URL } from "@soulstream/wire-schema/claude-oauth";
 import type { ProviderLimits, ProviderQuota } from "../auth/provider_limits.js";
 import {
   effectiveWindowUsedPercent,
@@ -9,7 +11,6 @@ import {
 import type {
   ClaudeAccountBlocksRecord,
   ClaudeAccountList,
-  ClaudeAccountPoolSummary,
   ClaudeAccountScope,
   ClaudeAccountView,
   ClaudeScopeBlockEntry,
@@ -203,7 +204,7 @@ export function computePoolSummary(
   blocksByAccount: Record<string, ClaudeAccountBlocksRecord | undefined>,
   scope: ClaudeAccountScope,
   nowMs: number,
-): ClaudeAccountPoolSummary {
+): ClaudeAccountPool {
   const enabledAccounts = accounts.filter((acc) => acc.enabled);
   const total_count = enabledAccounts.length;
 
@@ -246,7 +247,7 @@ export function claudeLimitsFromAccountPool(params: {
   source?: string;
 }): ProviderLimits {
   const { accountList, bestGeneralAccount, bestFableAccount } = params;
-  const source = params.source ?? "https://api.anthropic.com/api/oauth/usage";
+  const source = params.source ?? ANTHROPIC_USAGE_URL;
   const quotas: ProviderQuota[] = [];
 
   let shortUsedPercent: number | null = null;

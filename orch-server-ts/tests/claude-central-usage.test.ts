@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  ANTHROPIC_USAGE_URL,
-  ClaudeCentralUsageService,
-} from "../src/claude_central/usage_service.js";
+import { ANTHROPIC_USAGE_URL } from "@soulstream/wire-schema/claude-oauth";
+import { ClaudeCentralUsageService } from "../src/claude_central/usage_service.js";
 import type { ClaudeCentralRefreshOutcome } from "../src/claude_central/token_refresh_service.js";
 import {
   CENTRAL_ACCOUNT_ID,

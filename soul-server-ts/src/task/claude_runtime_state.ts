@@ -1,3 +1,4 @@
+import type { ClaudeRuntimeTaskStatus } from "@soulstream/wire-schema";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { asRecord } from "../engine/claude_sdk_helpers.js";
 import { parseRuntimeTaskStatus } from "../engine/claude_sdk_runtime_state.js";
@@ -11,7 +12,6 @@ import type {
   ClaudeRuntimeState,
   ClaudeRuntimeTranscriptMirrorState,
   ClaudeRuntimeTaskState,
-  ClaudeRuntimeTaskStatus,
   Task,
 } from "./task_models.js";
 

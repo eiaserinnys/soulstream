@@ -9,10 +9,8 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import {
-  ANTHROPIC_USAGE_URL,
-  type ClaudeAuthCommandHandler,
-} from "./claude_auth.js";
+import { ANTHROPIC_USAGE_URL } from "@soulstream/wire-schema/claude-oauth";
+import type { ClaudeAuthCommandHandler } from "./claude_auth.js";
 import { collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
 import {
   collectOpencodeGoUsage,
@@ -606,7 +604,7 @@ function primaryProviderEndpoint(provider: ProviderUsageName): string {
 
 export function claudeLimitsFromUsageResponse(
   payload: Record<string, unknown>,
-  source = "https://api.anthropic.com/api/oauth/usage",
+  source = ANTHROPIC_USAGE_URL,
   modelPresets: ModelPreset[] = [],
 ): ProviderLimits {
   const limits = emptyLimits("auto");

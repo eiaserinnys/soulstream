@@ -7,8 +7,8 @@ import {
   loadContractFixtures,
   type NodeRegistrationPayload,
 } from "../src/index.js";
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
 import { ClaudeCentralPoolSyncService } from "../src/claude_central/pool_sync_service.js";
-import type { ClaudeCentralPoolSyncAccount } from "../src/claude_central/types.js";
 import {
   CENTRAL_ACCOUNT_ID,
   CENTRAL_NOW_MS,
@@ -16,13 +16,12 @@ import {
 } from "./claude-central-test-support.js";
 
 type SyncHarnessOptions = {
-  accounts?: readonly ClaudeCentralPoolSyncAccount[];
+  accounts?: readonly ClaudeCentralPoolAccount[];
   defaultReceive?: boolean;
   nodes?: Record<string, boolean>;
   poolCapable?: boolean;
-  /** 응답을 직접 만든다. null이면 응답하지 않아 명령이 시간 초과로 끝난다. */
   ackFor?: (message: Record<string, unknown>) => Record<string, unknown> | null | undefined;
-  listAccounts?: () => Promise<readonly ClaudeCentralPoolSyncAccount[]>;
+  listAccounts?: () => Promise<readonly ClaudeCentralPoolAccount[]>;
   timeoutMs?: number;
   extraNodes?: number;
 };
@@ -117,8 +116,8 @@ function defaultAck(message: Record<string, unknown>): Record<string, unknown> {
 }
 
 function syncAccount(
-  overrides: Partial<ClaudeCentralPoolSyncAccount> = {},
-): ClaudeCentralPoolSyncAccount {
+  overrides: Partial<ClaudeCentralPoolAccount> = {},
+): ClaudeCentralPoolAccount {
   return {
     id: CENTRAL_ACCOUNT_ID,
     email: "central@example.com",

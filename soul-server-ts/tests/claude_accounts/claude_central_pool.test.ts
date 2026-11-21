@@ -7,10 +7,8 @@ import {
   ClaudeAccountService,
   centralTokenFingerprint,
 } from "../../src/claude_accounts/index.js";
-import type {
-  ClaudeCentralPoolAccount,
-  ClaudeCentralPoolSyncPayload,
-} from "../../src/claude_accounts/types.js";
+import type { ClaudeCentralPoolAccount } from "@soulstream/wire-schema";
+import type { ClaudeCentralPoolSyncPayload } from "../../src/claude_accounts/types.js";
 
 const CENTRAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OTHER_CENTRAL_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";

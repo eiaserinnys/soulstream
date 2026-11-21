@@ -1,16 +1,14 @@
-// Credential parsing, cache and polling form one collector contract; split when that contract changes.
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type {
+  ClaudeAccountUsage,
+  ClaudeAccountUsageWindow,
+} from "@soulstream/wire-schema";
+import { ANTHROPIC_USAGE_URL, CLAUDE_OAUTH_BETA } from "@soulstream/wire-schema/claude-oauth";
 import { claudeLimitsFromUsageResponse } from "../auth/provider_usage.js";
 import type { ClaudeProfileCredentialRenewer } from "./credential_renewal.js";
-import type {
-  ClaudeAccountAuthState,
-  ClaudeAccountUsage,
-  ClaudeUsageWindow,
-} from "./types.js";
+import type { ClaudeAccountAuthState } from "./types.js";
 
-const DEFAULT_USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
-// Shorter than orch's default 300-second usage summary interval, so every poll refreshes.
 const DEFAULT_POLL_TTL_MS = 4 * 60_000;
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_PER_ACCOUNT_TIMEOUT_MS = 4_000;
@@ -131,7 +129,7 @@ function normalizeResetIso(raw: unknown): string | null {
   return null;
 }
 
-function parseWindowNode(node: unknown): ClaudeUsageWindow | null {
+function parseWindowNode(node: unknown): ClaudeAccountUsageWindow | null {
   if (!node || typeof node !== "object") {
     return null;
   }
@@ -156,7 +154,7 @@ function parseWindowNode(node: unknown): ClaudeUsageWindow | null {
   };
 }
 
-function findScopedFableWindow(obj: Record<string, unknown>): ClaudeUsageWindow | null {
+function findScopedFableWindow(obj: Record<string, unknown>): ClaudeAccountUsageWindow | null {
   if (!Array.isArray(obj.limits)) return null;
   for (const item of obj.limits) {
     if (!item || typeof item !== "object") continue;
@@ -216,7 +214,7 @@ export function parseAnthropicOAuthUsagePayload(
       q.model?.toLowerCase() === "fable",
   );
 
-  const five_hour: ClaudeUsageWindow | null =
+  const five_hour: ClaudeAccountUsageWindow | null =
     fiveHourQuota && fiveHourQuota.usedPercent !== null
       ? {
           used_percent: fiveHourQuota.usedPercent,
@@ -228,7 +226,7 @@ export function parseAnthropicOAuthUsagePayload(
         }
       : rawFiveHour;
 
-  const seven_day: ClaudeUsageWindow | null =
+  const seven_day: ClaudeAccountUsageWindow | null =
     sevenDayQuota && sevenDayQuota.usedPercent !== null
       ? {
           used_percent: sevenDayQuota.usedPercent,
@@ -240,7 +238,7 @@ export function parseAnthropicOAuthUsagePayload(
         }
       : rawSevenDay;
 
-  const fable_weekly: ClaudeUsageWindow | null =
+  const fable_weekly: ClaudeAccountUsageWindow | null =
     fableQuota && fableQuota.usedPercent !== null
       ? {
           used_percent: fableQuota.usedPercent,
@@ -335,7 +333,7 @@ export class ClaudeAccountUsageCollector {
   constructor(options: ClaudeAccountUsageCollectorOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.now = options.now ?? (() => Date.now());
-    this.endpointUrl = options.endpointUrl ?? DEFAULT_USAGE_ENDPOINT;
+    this.endpointUrl = options.endpointUrl ?? ANTHROPIC_USAGE_URL;
     this.pollTtlMs = options.pollTtlMs ?? DEFAULT_POLL_TTL_MS;
     this.concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
     this.perAccountTimeoutMs = options.perAccountTimeoutMs ?? DEFAULT_PER_ACCOUNT_TIMEOUT_MS;
@@ -562,7 +560,7 @@ export class ClaudeAccountUsageCollector {
           method: "GET",
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            "anthropic-beta": "oauth-2025-04-20",
+            "anthropic-beta": CLAUDE_OAUTH_BETA,
             Accept: "application/json",
             "User-Agent": "soulstream-claude-account-pool/1.0",
           },

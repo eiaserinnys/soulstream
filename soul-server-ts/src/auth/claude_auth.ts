@@ -10,6 +10,12 @@ import { dirname } from "node:path";
 
 import type { Logger } from "pino";
 
+import {
+  ANTHROPIC_PROFILE_URL,
+  ANTHROPIC_USAGE_URL,
+  CLAUDE_OAUTH_BETA,
+} from "@soulstream/wire-schema/claude-oauth";
+
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import {
   providerUsageDurationMs,
@@ -19,11 +25,7 @@ import {
   providerUsageStarted,
 } from "./provider_usage_telemetry.js";
 
-export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
-export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
-
 const CLAUDE_AUTH_USAGE_TIMEOUT_MS = 14_000;
-const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
 const TOKEN_PATTERN = /^sk-ant-oat01-[A-Za-z0-9_-]+$/;
 const MISSING_STORAGE_MESSAGE = "CLAUDE_AUTH_TOKEN_PATH is not configured";
 
