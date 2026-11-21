@@ -1,7 +1,7 @@
 import {
   executableCandidatesInDirectory, executableCandidatesInPath,
   findSpawnableExecutable, inspectExecutablePath, joinExecutablePath,
-} from "./executable_path.js";
+} from "@soulstream/executable-path";
 
 export interface AntigravityCliPathResolution {
   path: string;

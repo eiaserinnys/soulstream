@@ -51,6 +51,9 @@ importers:
       '@soulstream/atomic-file-rename':
         specifier: workspace:*
         version: link:../packages/atomic-file-rename
+      '@soulstream/executable-path':
+        specifier: workspace:*
+        version: link:../packages/executable-path
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
@@ -171,6 +174,8 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9(patch_hash=9b4a8be0772c8837b587719ea9d16b13d8b685236998e03d9ff55fd948e68a92)
+
+  packages/executable-path: {}
 
   packages/fractional-position: {}
 
@@ -476,6 +481,9 @@ importers:
       '@soulstream/chat-ui':
         specifier: workspace:*
         version: link:../packages/chat-ui
+      '@soulstream/executable-path':
+        specifier: workspace:*
+        version: link:../packages/executable-path
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position

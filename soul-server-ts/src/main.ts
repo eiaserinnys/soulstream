@@ -10,7 +10,7 @@ import {
   configureClaudeExecutablePath,
   resolveClaudeExecutableFromPath,
 } from "./engine/claude_executable_path.js";
-import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
       "Claude Code executable path resolved",
     );
   }
-  const codexCliPath = resolveCodexCliPath(process.env);
+  const codexCliPath = resolveCodexCliPath(env.CODEX_CLI_PATH, process.env);
   if (hasCodexBackend) {
     if (codexCliPath) {
       logger.info(

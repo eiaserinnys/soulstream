@@ -42,6 +42,7 @@
     "@openai/codex-sdk": "^0.155.1",
     "@soulstream/agent-profile-contract": "workspace:*",
     "@soulstream/atomic-file-rename": "workspace:*",
+    "@soulstream/executable-path": "workspace:*",
     "@soulstream/chat-ui": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@soulstream/model-catalog": "workspace:*",

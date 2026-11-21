@@ -17,8 +17,7 @@ import {
   CodexExecTurnSummarizer,
   parseCodexJsonl,
 } from "../src/turn-summary/codex_exec_turn_summarizer.js";
-import { resolveCodexCliPath } from
-  "../src/turn-summary/codex_cli_path.js";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 import {
   OpenAiApiTurnSummarizer,
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
@@ -467,6 +466,7 @@ describe("Codex turn summary provider", () => {
   });
 
   it("uses the configured Codex CLI path before PATH discovery", () => {
+    addVirtualFile("/configured/codex");
     expect(resolveCodexCliPath("/configured/codex", {
       PATH: "/usr/bin",
     })).toEqual({

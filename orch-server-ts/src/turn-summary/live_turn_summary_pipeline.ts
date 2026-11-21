@@ -1,8 +1,8 @@
 import type { OrchServerEnvironmentConfig } from "../config.js";
-import { findRegisteredAgentProfile } from
-  "../node/agent_profile_lookup.js";
-import type { AgentProfileIdentityOverlay } from
-  "../node/agent_profile_lookup.js";
+import {
+  findRegisteredAgentProfile,
+  type AgentProfileIdentityOverlay,
+} from "../node/agent_profile_lookup.js";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import { warnForBlockedChildProcessEnvKeys } from
   "../runtime/child_process_env.js";
@@ -18,7 +18,7 @@ import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
-import { resolveCodexCliPath } from "./codex_cli_path.js";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 import { CodexExecTurnSummarizer } from
   "./codex_exec_turn_summarizer.js";
 import { createPersistentInstructionExtractor } from

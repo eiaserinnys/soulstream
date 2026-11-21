@@ -3,7 +3,7 @@ import {
   findSpawnableExecutable,
   inspectExecutablePath,
   joinExecutablePath,
-} from "./executable_path.js";
+} from "@soulstream/executable-path";
 
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
 

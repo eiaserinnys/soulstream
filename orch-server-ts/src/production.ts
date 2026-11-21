@@ -181,7 +181,7 @@ import {
   type LiveTurnSummaryPipeline,
   type LiveTurnSummaryProductionOverrides,
 } from "./turn-summary/live_turn_summary_pipeline.js";
-import { resolveCodexCliPath } from "./turn-summary/codex_cli_path.js";
+import { resolveCodexCliPath } from "@soulstream/executable-path";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;

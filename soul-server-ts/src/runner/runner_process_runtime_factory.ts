@@ -22,7 +22,7 @@ import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
 import {
   buildRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
-import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { CodexCliPathResolution } from "@soulstream/executable-path";
 import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
@@ -39,11 +39,11 @@ import {
   type RunnerHostCall,
 } from "./runner_process_dispatcher.js";
 import { RunnerProcessEngineProxy } from "./runner_process_engine_proxy.js";
-import { RunnerProcessSpawner } from "./runner_process_spawn.js";
-import type {
-  RunnerChildConfig,
-  SpawnedRunnerProcess,
-  SpawnRunnerProcessInput,
+import {
+  RunnerProcessSpawner,
+  type RunnerChildConfig,
+  type SpawnedRunnerProcess,
+  type SpawnRunnerProcessInput,
 } from "./runner_process_spawn.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
