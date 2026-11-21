@@ -613,14 +613,6 @@ test('labels a single fallback without a rank number', () => {
   expect(rows.map((row) => row.label)).toEqual(['Claude · 현재·기본', 'Codex · 대체']);
 });
 
-test('ignores the legacy fallback projection when the fallback list is absent', () => {
-  const legacySession = session({ settings: { ...session().settings, fallback_model: { model_preset: 'codex-6.1-sol', reasoning_effort: 'high' } } });
-  delete (legacySession.settings as Record<string, unknown>).fallback_models;
-  const rows = persistentSessionQuotaRows(legacySession as never, quotaPresets);
-
-  expect(rows.some((row) => row.label.includes('대체'))).toBe(false);
-});
-
 test('shows negative weekly headroom exactly as received', async () => {
   api.listModelPresets.mockResolvedValueOnce({ model_presets: [
     { id: 'model-a', label: '모델 A', backend: 'claude', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,

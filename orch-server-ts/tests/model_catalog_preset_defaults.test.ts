@@ -68,10 +68,6 @@ describe("persistent session catalogue defaults", () => {
     expect(defaults.settings.fallback_models).toEqual([
       { model_preset: "codex-6-sol", reasoning_effort: "xhigh" },
     ]);
-    expect(defaults.settings.fallback_model).toEqual({
-      model_preset: "codex-6-sol",
-      reasoning_effort: "xhigh",
-    });
 
     const listed = await service.list(SERVICE_CALLER);
     expect(listed.sessions[0]?.settings.fallback_models).toEqual([

@@ -246,25 +246,6 @@ it("labels a single fallback without a rank number", () => {
   expect(rows.map((row) => row.label)).toEqual(["Claude · 현재·기본", "Codex · 대체"]);
 });
 
-it("ignores the legacy fallback projection when the fallback list is absent", () => {
-  const resource = makeSession();
-  const legacyResource = {
-    ...resource,
-    settings: {
-      ...resource.settings,
-      fallback_model: { model_preset: "sample-sol", reasoning_effort: "high" },
-    },
-  } as unknown as PersistentSession;
-  const rows = persistentSessionQuotaRows(legacyResource, [
-    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
-      weekly_headroom: { status: "ok" as const, headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: null, observed_at: null, quota_label: "7일" } },
-    { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
-      weekly_headroom: { status: "ok" as const, headroom: 20, remaining_percent: 80, window_remaining_percent: 80, resets_at: null, observed_at: null, quota_label: "7일" } },
-  ]);
-
-  expect(rows.some((row) => row.label.includes("대체"))).toBe(false);
-});
-
 it("uses the shared account detail draft and save action", async () => {
   const resource = makeSession();
   const calls: Array<{ method: string; body: unknown }> = [];

@@ -295,7 +295,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(list.body.sessions![0]).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-        fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: false,
+        show_generation_separator: true, show_character: true, show_jev_candidates: false,
         show_turn_usage: false, turn_usage_mode: "hidden", animate_character: true, show_work_details: false,
       },
     });
@@ -304,7 +304,6 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(list.body.sessions![2]).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-sonnet", reasoning_effort: "low" },
-        fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: false,
         show_jev_candidates: false,
         show_turn_usage: true,
@@ -324,7 +323,6 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
         fallback_models: [{ model_preset: "codex-6.2-sol", reasoning_effort: "high" }],
-        fallback_model: { model_preset: "codex-6.2-sol", reasoning_effort: "high" },
         show_generation_separator: true,
         show_character: true,
         show_jev_candidates: false,
@@ -380,7 +378,6 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       persistent: true,
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-        fallback_model: { model_preset: "codex-6.2-sol", reasoning_effort: "high" },
         show_generation_separator: true,
         show_character: true,
         show_jev_candidates: false,
