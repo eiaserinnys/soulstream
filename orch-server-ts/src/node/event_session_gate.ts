@@ -1,6 +1,6 @@
+import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 import {
   EVENT_SESSION_REJECTION_REASONS,
-  type EventCanonicalSessionProjection,
   type EventIngressEnvelope,
   type EventSessionEffect,
   type EventSessionRejectionReason,

@@ -1,4 +1,4 @@
-// 500줄 예외: 노드 연결과 명령의 단일 메모리 정본을 유지한다.
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   PendingNodeCommands,
   type FireAndForgetNodeCommandPayload,
@@ -10,7 +10,6 @@ import {
 } from "./pending_commands.js";
 import {
   ignoredStaleMessageEvent,
-  isRecord,
   normalizeMessageSource,
   registryStats,
   snapshotNode,

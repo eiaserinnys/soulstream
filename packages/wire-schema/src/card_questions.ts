@@ -1,3 +1,4 @@
+import { isRecord } from "./json_record.js";
 import type { AttachmentDescriptor } from "./attachments.js";
 
 export type CardQuestionKind = "choice" | "request";
@@ -56,8 +57,4 @@ export function normalizeCardQuestionOptions(value: unknown): CardQuestionOption
 export function cardQuestionOptionLabels(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   return normalizeCardQuestionOptions(value).map((option) => option.label);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

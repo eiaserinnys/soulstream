@@ -1,4 +1,7 @@
-import type { EventIngressRejectionCode } from "@soulstream/wire-schema";
+import type {
+  EventIngressRejectionCode,
+  EventCanonicalSessionProjection,
+} from "@soulstream/wire-schema";
 import type { NodeRegistryEvent } from "./registry.js";
 import { shouldPublishSessionEventSemantically } from
   "../session/session_event_semantic_publication.js";
@@ -8,10 +11,9 @@ import type { EventFeedProjectionApplication } from
 import {
   EventIngressValidationError,
   parseEventAppendBatch,
-  type EventCanonicalSessionProjection,
   type EventAppendAck,
   type EventAppendBatch,
-  type EventSessionEffectApplication,
+  type EventSessionEffectResult,
 } from "./event_ingress_types.js";
 
 const TRANSIENT_FAILURE_REJECTION_CODE: EventIngressRejectionCode =
@@ -263,7 +265,7 @@ function ingressCoordinate(frame: Record<string, unknown>): Record<string, unkno
 function committedEffectSessionUpdate(
   effect: EventAppendBatch["events"][number]["session_effect"],
   input: { sessionId: string; eventId: number },
-  application?: EventSessionEffectApplication,
+  application?: EventSessionEffectResult,
   feedApplication?: EventFeedProjectionApplication,
   feedLastEventId?: number,
 ): Record<string, unknown> | null {

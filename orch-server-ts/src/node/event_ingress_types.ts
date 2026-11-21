@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { sanitizePgJsonValue, sanitizePgText } from "./pg_text_sanitizer.js";
 import type {
   EventAppendBatch,
@@ -7,7 +8,6 @@ import type {
 import {
   assertExactKeys,
   EventIngressValidationError,
-  isRecord,
   isoTimestamp,
   nonEmptyString,
   nullableNonEmptyString,
@@ -24,14 +24,10 @@ export type {
   EventAppendAck,
   EventAppendAcknowledgement,
   EventAppendBatch,
-  EventCanonicalExecutionRegistrationProjection,
-  EventCanonicalExecutionOwnershipProjection,
-  EventCanonicalSessionProjection,
   EventIngressEnvelope,
   EventIngressResult,
   EventSessionEffect,
-  EventSessionEffectApplication,
-  EventSessionEffectApplicationWire,
+  EventSessionEffectResult,
   EventSessionRejectionReason,
 } from "./event_ingress_contract.js";
 export {

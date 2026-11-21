@@ -1,3 +1,4 @@
+import { isRecord } from "./json_record.js";
 import type { CallerInfo, CallerInfoSource } from "../generated/typescript/index.js";
 
 const IDENTITY_BEARING_CALLER_SOURCES: ReadonlySet<CallerInfoSource> = new Set([
@@ -33,8 +34,4 @@ export function extractCallerInfo(metadata: unknown): CallerInfo | undefined {
     if (hasCallerIdentity(callerInfo)) lastWithIdentity = callerInfo;
   }
   return lastWithIdentity ?? lastAny;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

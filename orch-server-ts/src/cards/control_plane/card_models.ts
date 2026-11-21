@@ -1,7 +1,7 @@
+import type { FolderOperationActorKind } from "@soulstream/mcp-contract";
 import type {
   CardAssigneeFields,
   FolderOperationRow,
-  FolderOperationActorKind,
   FolderOperationTargetKind,
 } from "./card_types.js";
 import { recordFromDb } from "./repository_helpers.js";

@@ -1,4 +1,4 @@
-/** Shared storage and command/API contract for session-scoped persistent instructions. */
+import { isRecord } from "./json_record.js";
 
 export const PERSISTENT_INSTRUCTIONS_METADATA_TYPE = "persistent_instructions";
 
@@ -253,10 +253,6 @@ function isInstructionOrigin(value: unknown): value is PersistentInstructionOrig
 
 function isInstructionStatus(value: unknown): value is PersistentInstructionStatus {
   return value === "active" || value === "removed";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function invalid(message: string): PersistentInstructionParseResult<never> {

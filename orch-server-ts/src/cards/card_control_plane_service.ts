@@ -3,14 +3,12 @@ import type { CardCommand } from './state/card_decision_facts.js';
 import { cardServerEvidenceReader } from './card_server_evidence_reader.js';
 import type { ServerCardCommand } from './state/card_server_command.js';
 import { decideCardTransition } from './state/card_decision.js';
-import { decodeCardDecision } from './state/card_decision_decoder.js';
+import { decodeCardDecision, type DecodedCardWrite } from './state/card_decision_decoder.js';
 import { formatCardDecisionFailure } from './state/card_decision_errors.js';
 import { humanCardEvidence } from './state/card_human_evidence.js';
 import { assertCardCommandEntrance } from './state/card_command_entrance.js';
-import type { DecodedCardWrite } from './state/card_decision_decoder.js';
 import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
-// 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
 import { readCardBoardSessions } from "../session/card_board_connections.js";
 import type { AppendReportTimeline } from "../session/report_timeline_publisher.js";
@@ -25,12 +23,16 @@ import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type Ca
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
-import { readSupervisedCardContext } from "./supervised_card_context.js";
-import { parseCardReference, cardQuestionInputIssues, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
+import { readSupervisedCardContext, type SupervisedCardSnapshot } from "./supervised_card_context.js";
+import {
+  parseCardReference,
+  cardQuestionInputIssues,
+  type CardReferenceLookupResult,
+  type FolderStatus,
+} from "@soulstream/mcp-contract";
 import { cardQuestionOptionLabels, type CardQuestionAttachmentInput, type CardQuestionKind, type CardQuestionOption } from "@soulstream/wire-schema/card-questions";
 import { resolveCardQuestionAnswer, type CardQuestionAnswerInput } from "./card_question_rules.js";
 import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
-import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
 import { CardMcpReadService } from "./card_mcp_read.js";
 import { readCardSessionMessages, type CardSessionMessagesQuery } from "./card_session_messages.js";
@@ -38,10 +40,9 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMaintenanceService, type BulkSetCardStatusInput, type CardMaintenanceChange, type MergeCardsInput, type MergeCardsResult, type UpdateUnstartedFields, type UpdateUnstartedResult, type AuthorizeFolder } from "./card_maintenance_service.js";
-import { isCardOffBoard } from "./control_plane/card_types.js";
+import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort } from "./control_plane/card_types.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
-import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
 import {
   addCardItem as addItemRule,
   codePointLength,

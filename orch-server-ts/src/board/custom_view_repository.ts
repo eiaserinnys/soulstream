@@ -11,11 +11,13 @@ import {
 } from "./folder_content_serialization.js";
 import {
   type CreateCustomViewRecordInput,
-  type CustomViewRecordMutationResult,
-  type CustomViewWithBoardItem,
   type PatchCustomViewRecordInput,
 } from "./folder_content_types.js";
-import { CustomViewRevisionConflictError } from "@soulstream/wire-schema/catalog";
+import {
+  CustomViewRevisionConflictError,
+  type CustomViewWithBoardItem,
+  type CustomViewRecordMutationResult,
+} from "@soulstream/wire-schema/catalog";
 
 export class CustomViewProjectionRepository {
   private readonly sqlResolver: FolderContentSqlResolver;

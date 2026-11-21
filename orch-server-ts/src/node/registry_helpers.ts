@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   IgnoredStaleMessageEvent,
   MutableNodeConnection,
@@ -96,10 +97,6 @@ export function ignoredStaleMessageEvent(params: {
     currentConnectionId: params.currentConnectionId,
     messageType: messageType(params.message),
   };
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function messageType(message: Record<string, unknown>): string {

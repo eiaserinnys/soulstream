@@ -1,3 +1,4 @@
+import type { FolderOperationActorKind } from "@soulstream/mcp-contract";
 import { reconcileFolderParentMounts } from "./folder_parent_mounts.js";
 import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
@@ -310,7 +311,7 @@ async function insertOperation(
 ): Promise<OperationRow> {
   const operation = await appendFolderOperation(sql, {
     ...input, targetKind: "folder", targetId: input.folderId,
-    actorKind: input.actor.actorKind as import("../cards/control_plane/card_types.js").FolderOperationActorKind,
+    actorKind: input.actor.actorKind as FolderOperationActorKind,
     actorSessionId: input.actor.actorSessionId, actorUserId: input.actor.actorUserId, actorEventId: null,
   });
   return operation as OperationRow;

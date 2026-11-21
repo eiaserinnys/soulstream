@@ -1,10 +1,10 @@
+import type { EventCanonicalExecutionOwnershipProjection, EventSessionEffectApplication } from "@soulstream/wire-schema";
 import type { LiveDbSqlResolver, LivePostgresSql } from "../runtime/live_db_sql.js";
 import type {
   EventAppendBatch,
   EventIngressEnvelope,
   EventIngressResult,
-  EventSessionEffectApplication,
-  EventSessionEffectApplicationWire,
+  EventSessionEffectResult,
   EventSessionEffect,
 } from "./event_ingress_types.js";
 import {
@@ -86,10 +86,9 @@ export type EventSessionEffectApplier = (
     effect: EventSessionEffect;
     /** 세션 기계가 R1(잇기 되살림)로 판정했다. */
     terminalResume?: boolean;
-    /** 효과 적용기의 경고를 이 싱크로 보낸다. 저장소가 자기 싱크를 채워 넘긴다. */
     warn: EventIngressWarnSink;
   },
-) => Promise<EventSessionEffectApplication>;
+) => Promise<EventSessionEffectResult>;
 
 export type EventFeedProjectionApplier = (
   sql: EventIngressQuerySql,
@@ -97,7 +96,7 @@ export type EventFeedProjectionApplier = (
     nodeId: string;
     eventId: number;
     envelope: EventIngressEnvelope;
-    sessionEffectApplication?: EventSessionEffectApplication;
+    sessionEffectApplication?: EventSessionEffectResult;
   },
 ) => Promise<import("./event_feed_projection_applier.js").EventFeedProjectionApplication | null>;
 
@@ -341,7 +340,7 @@ export class EventIngressRepository {
         modelCatalog: this.modelCatalog,
       });
 
-    let sessionEffectApplication: EventSessionEffectApplication | undefined;
+    let sessionEffectApplication: EventSessionEffectResult | undefined;
     if (!semanticReceipt && envelope.session_effect !== null) {
       if (!this.applySessionEffect) {
         throw new Error("typed session effects are not enabled in this release");
@@ -495,7 +494,7 @@ async function handoffRetainedRunnerGenerations(
   rows: GenerationHandoffRow[],
   owner: SessionGateRow,
   effect: EventSessionEffect | null,
-  application: EventSessionEffectApplication | undefined,
+  application: EventSessionEffectResult | undefined,
 ): Promise<void> {
   if (rows.length === 0 || effect?.kind !== "execution_registration" || !application?.applied) {
     return;
@@ -615,7 +614,7 @@ async function findCanonicalEffectApplication(
   sessionId: string,
   eventId: number,
   sourceSeq: number,
-): Promise<EventSessionEffectApplication> {
+): Promise<EventSessionEffectResult> {
   const rows = await sql<Array<{ effect_application: unknown }>>`
     SELECT effect_application
     FROM event_ingress_receipts
@@ -659,8 +658,8 @@ function isCanonicalTransitionEffect(
 }
 
 function toReceiptEffectApplication(
-  application: EventSessionEffectApplication | undefined,
-): EventSessionEffectApplicationWire | null {
+  application: EventSessionEffectResult | undefined,
+): EventSessionEffectApplication | null {
   return application?.canonicalSession
     ? {
         applied: application.applied,
@@ -687,10 +686,9 @@ function toReceiptEffectApplication(
 function parseEffectApplication(
   value: unknown,
   sourceSeq: number,
-): EventSessionEffectApplication | undefined {
+): EventSessionEffectResult | undefined {
   if (!isRecord(value)) return undefined;
   if (typeof value.applied !== "boolean" || !isCanonicalSession(value.canonical_session)) {
-    // Stored shape, not transport state: retrying re-reads the same bad row.
     throw new EventIngressProtocolConflict(
       `event ingress receipt has invalid effect_application at source_seq ${sourceSeq}`,
       sourceSeq,
@@ -741,7 +739,7 @@ function parseRejectionReason(
 function parseCanonicalExecutionRegistration(
   value: unknown,
   sourceSeq: number,
-): EventSessionEffectApplicationWire["canonical_execution_registration"] {
+): EventSessionEffectApplication["canonical_execution_registration"] {
   if (value === null) return null;
   if (
     !isRecord(value)
@@ -764,33 +762,37 @@ function parseCanonicalExecutionRegistration(
 function parseCanonicalExecutionOwnership(
   value: unknown,
   sourceSeq: number,
-): EventSessionEffectApplicationWire["canonical_execution_ownership"] {
+): EventSessionEffectApplication["canonical_execution_ownership"] {
   if (value === null) return null;
-  if (
-    !isRecord(value)
-    || !Number.isSafeInteger(value.ownership_generation)
-    || Number(value.ownership_generation) <= 0
-    || !["runner_process", "adopted_runner", "in_process"].includes(String(value.owner_kind))
-    || typeof value.manifest_id !== "string"
-    || (value.registration_id !== null && typeof value.registration_id !== "string")
-    || (value.pid !== null && (!Number.isSafeInteger(value.pid) || Number(value.pid) <= 0))
-    || (value.start_identity !== null && typeof value.start_identity !== "string")
-    || (value.execution_command_id !== null && typeof value.execution_command_id !== "string")
-    || !["reserved", "identity_proven", "active", "terminal", "failed"]
-      .includes(String(value.phase))
-    || (value.failure_reason !== null && typeof value.failure_reason !== "string")
-  ) {
+  if (!isCanonicalExecutionOwnership(value)) {
     throw new EventIngressProtocolConflict(
       `event ingress receipt has invalid canonical ownership at source_seq ${sourceSeq}`,
       sourceSeq,
     );
   }
-  return value as EventSessionEffectApplicationWire["canonical_execution_ownership"];
+  return value;
+}
+
+function isCanonicalExecutionOwnership(
+  value: unknown,
+): value is EventCanonicalExecutionOwnershipProjection {
+  if (!isRecord(value)) return false;
+  return Number.isSafeInteger(value.ownership_generation)
+    && Number(value.ownership_generation) > 0
+    && ["runner_process", "adopted_runner", "in_process"].includes(String(value.owner_kind))
+    && typeof value.manifest_id === "string"
+    && (value.registration_id === null || typeof value.registration_id === "string")
+    && (value.pid === null || (Number.isSafeInteger(value.pid) && Number(value.pid) > 0))
+    && (value.start_identity === null || typeof value.start_identity === "string")
+    && (value.execution_command_id === null || typeof value.execution_command_id === "string")
+    && ["reserved", "identity_proven", "active", "terminal", "failed"]
+      .includes(String(value.phase))
+    && (value.failure_reason === null || typeof value.failure_reason === "string");
 }
 
 function isCanonicalSession(
   value: unknown,
-): value is EventSessionEffectApplicationWire["canonical_session"] {
+): value is EventSessionEffectApplication["canonical_session"] {
   if (!isRecord(value)) return false;
   return typeof value.status === "string"
     && (value.termination_reason === null || typeof value.termination_reason === "string")

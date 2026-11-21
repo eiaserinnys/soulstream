@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { makeContextUsagePayload, type ContextUsagePayload } from "../context_usage.js";
 import type {
   AppServerThreadTokenUsage,
@@ -46,10 +47,6 @@ export function nowEpochSec(): number {
 
 export function timestampFromMs(ms: number | undefined): number {
   return typeof ms === "number" ? ms / 1000 : nowEpochSec();
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function fieldString(value: unknown, key: string): string | undefined {

@@ -1,7 +1,7 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { NodeCommandResponse } from "./pending_commands.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
 import {
-  isRecord,
   lastEventIdFromEventRelay,
   lastEventIdFromPayload,
   nestedSession,

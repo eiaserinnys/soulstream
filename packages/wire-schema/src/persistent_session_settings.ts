@@ -1,9 +1,4 @@
-/**
- * 영구 에이전트 세션(PAS) 설정의 저장 모양과 읽기·쓰기 계약.
- *
- * 저장소는 sessions.metadata JSONB 배열의 `persistent_settings` 항목 하나다.
- * orch(조회)와 worker(저장)가 같은 reader·default·검증을 쓰도록 여기 한 곳에 둔다.
- */
+import { isRecord } from "./json_record.js";
 
 export const PERSISTENT_SETTINGS_METADATA_TYPE = "persistent_settings";
 export const PERSISTENT_FALLBACK_MODELS_MAX = 3;
@@ -254,10 +249,6 @@ function lastEntryValue(metadata: unknown, type: string): unknown {
     if (isRecord(entry) && entry.type === type) return entry.value ?? null;
   }
   return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPersistentTurnUsageMode(value: unknown): value is PersistentTurnUsageMode {

@@ -5,7 +5,7 @@ import type { EventFeedProjectionApplication } from
 import type { EventIngressQuerySql } from "../src/node/event_ingress_repository.js";
 import type {
   EventSessionEffect,
-  EventSessionEffectApplication,
+  EventSessionEffectResult,
 } from "../src/node/event_ingress_types.js";
 import {
   advanceSessionFeedLastEventId,
@@ -15,8 +15,8 @@ import {
 const CREATED_AT = "2026-09-22T00:00:00.000Z";
 
 function application(
-  overrides: Partial<EventSessionEffectApplication>,
-): EventSessionEffectApplication {
+  overrides: Partial<EventSessionEffectResult>,
+): EventSessionEffectResult {
   return {
     applied: false,
     canonicalSession: null,
@@ -28,7 +28,7 @@ describe("event feed semantic watermark", () => {
   it.each<{
     name: string;
     effect: EventSessionEffect | null;
-    sessionEffectApplication?: EventSessionEffectApplication;
+    sessionEffectApplication?: EventSessionEffectResult;
     feedProjectionApplication?: EventFeedProjectionApplication | null;
     expected: boolean;
   }>([

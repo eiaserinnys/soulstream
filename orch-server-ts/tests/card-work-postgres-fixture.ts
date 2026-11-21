@@ -1,12 +1,10 @@
+import type { EventSessionEffectApplication } from "@soulstream/wire-schema";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { FolderDbPort } from "../src/cards/control_plane/card_types.js";
 import type { CardWorkExecution } from "../src/cards/card_work_lifecycle.js";
-import type { EventSessionEffectApplicationWire } from "../src/node/event_ingress_contract.js";
 import type { PagePostgresHarness } from "./page/page_postgres_harness.js";
 
-// Same event_append implementation/port as card-dispatch.postgres.test.ts.
-// Both cards and folder_operations retain their real session/event foreign keys.
 export const appendCardEventTx: FolderDbPort["appendEventTx"] = async (tx,p) => {
   const rows=await tx<{id:number}[]>`SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
   return rows[0]!.id;
@@ -40,11 +38,11 @@ export async function recordWorkReceipt(h:PagePostgresHarness,sessionId:string,s
     execution_command_id=${execution?.executionCommandId ?? null} WHERE session_id=${sessionId}`;
   const terminal=["completed","error","interrupted"].includes(status);
   await h.sql`UPDATE sessions SET status=${status},termination_reason=${reason},termination_event_id=${terminal ? id! : null},updated_at=NOW() WHERE session_id=${sessionId}`;
-  const application:EventSessionEffectApplicationWire={applied:true,canonical_session:{status,termination_reason:reason,
+  const application={applied:true,canonical_session:{status,termination_reason:reason,
     termination_detail:null,termination_event_id:terminal ? id! : null,review_state:"not_required",last_assistant_text:null,
     updated_at:new Date().toISOString(),last_event_id:id!},
     ...(execution === undefined ? {} : {canonical_execution_registration:execution === null ? null : {
-      registration_id:execution.registrationId,execution_command_id:execution.executionCommandId}})};
+      registration_id:execution.registrationId,execution_command_id:execution.executionCommandId}})} satisfies EventSessionEffectApplication;
   const owner=(await h.sql`SELECT node_id FROM sessions WHERE session_id=${sessionId}`)[0]!;
   await h.sql`INSERT INTO event_ingress_receipts(node_id,stream_id,source_seq,session_id,payload_hash,event_id,effect_application)
     VALUES(${owner.node_id},${randomUUID()},1,${sessionId},${"a".repeat(64)},${id!},${h.sql.json(application)})`;

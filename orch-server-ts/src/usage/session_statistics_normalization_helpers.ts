@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   EventIdentity,
   FactDraft,
@@ -11,10 +12,6 @@ import { hasOwn } from "../http/route_validation.js";
 const PROVIDERS = new Set<UsageStatsProvider>([
   "claude", "codex", "antigravity", "deepseek", "kimi", "unknown",
 ]);
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;

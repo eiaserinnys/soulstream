@@ -14,6 +14,7 @@
     "./assigned-card-context-snapshot": "./src/assigned_card_context_snapshot.ts",
     "./schema": "./src/upstream.schema.json",
     "./catalog": "./src/catalog.ts",
+    "./json-record": "./src/json_record.ts",
     "./caller-info": "./src/caller_info.ts",
     "./claude-oauth": "./src/claude_oauth.ts",
     "./session-delivery": "./src/session_delivery.ts",

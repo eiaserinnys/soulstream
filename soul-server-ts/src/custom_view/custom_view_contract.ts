@@ -1,17 +1,8 @@
 import type {
-  CatalogBoardItemRow,
   CustomViewRow,
+  CustomViewWithBoardItem,
+  CustomViewRecordMutationResult,
 } from "@soulstream/wire-schema/catalog";
-
-export interface CustomViewWithBoardItem {
-  customView: CustomViewRow;
-  boardItem: CatalogBoardItemRow;
-}
-
-export interface CustomViewRecordMutationResult {
-  customView: CustomViewRow;
-  eventId: number | null;
-}
 
 export interface CustomViewProjectionHost {
   getCustomView(customViewId: string): Promise<CustomViewWithBoardItem | null>;

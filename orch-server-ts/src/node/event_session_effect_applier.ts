@@ -1,11 +1,11 @@
+import type { EventCanonicalSessionProjection } from "@soulstream/wire-schema";
 import type {
   EventIngressQuerySql,
   EventSessionEffectApplier,
 } from "./event_ingress_repository.js";
 import type {
-  EventCanonicalSessionProjection,
   EventSessionEffect,
-  EventSessionEffectApplication,
+  EventSessionEffectResult,
 } from "./event_ingress_types.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { discardTerminalResumeNotificationProjections } from
@@ -190,7 +190,7 @@ async function applyExecutionRegistration(
     EventSessionEffect,
     { kind: "execution_registration" | "execution_acquire" }
   >,
-): Promise<EventSessionEffectApplication> {
+): Promise<EventSessionEffectResult> {
   const rows = await sql<CanonicalRegistrationRow[]>`
     SELECT * FROM session_record_execution_registration(
       ${sessionId},
@@ -248,7 +248,7 @@ async function applyTerminalTransition(
   sessionId: string,
   eventId: number,
   effect: Extract<EventSessionEffect, { kind: "terminal_transition" }>,
-): Promise<EventSessionEffectApplication> {
+): Promise<EventSessionEffectResult> {
   const rows = await sql<CanonicalTransitionRow[]>`
     SELECT * FROM session_apply_terminal_transition(
       ${sessionId},
@@ -270,7 +270,7 @@ async function applyTerminalTransition(
 function canonicalTransitionApplication(
   rows: CanonicalTransitionRow[],
   transition: string,
-): EventSessionEffectApplication {
+): EventSessionEffectResult {
   const row = rows[0];
   if (!row || rows.length !== 1) {
     throw new Error(`${transition} transition did not return one canonical session row`);
@@ -306,6 +306,6 @@ function canonicalProjection(
   };
 }
 
-function appliedWithoutCanonicalProjection(): EventSessionEffectApplication {
+function appliedWithoutCanonicalProjection(): EventSessionEffectResult {
   return { applied: true, canonicalSession: null };
 }

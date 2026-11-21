@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isUuid } from "../http/uuid.js";
 
 export class EventIngressValidationError extends Error {}
@@ -75,8 +76,4 @@ export function nullableString(value: unknown, field: string): string | null {
 export function nullableNonEmptyString(value: unknown, field: string): string | null {
   if (value === null) return null;
   return nonEmptyString(value, field);
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

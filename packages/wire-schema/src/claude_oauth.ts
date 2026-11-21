@@ -1,3 +1,5 @@
+import { isRecord } from "./json_record.js";
+
 export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
 export const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
@@ -47,8 +49,4 @@ function findString(value: unknown, keys: Set<string>): string | null {
     if (found) return found;
   }
   return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

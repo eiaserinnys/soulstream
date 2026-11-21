@@ -1,15 +1,11 @@
 import type {
   CatalogBoardItemRow,
-  CustomViewRow,
   ListFolderItemsParams,
   ListFolderItemsResult,
   MarkdownDocumentRow,
+  CustomViewWithBoardItem,
+  CustomViewRecordMutationResult,
 } from "@soulstream/wire-schema/catalog";
-
-export interface CustomViewWithBoardItem {
-  customView: CustomViewRow;
-  boardItem: CatalogBoardItemRow;
-}
 
 export type ProjectionActorKind = "agent" | "user" | "system" | "llm";
 
@@ -32,11 +28,6 @@ export interface PatchCustomViewRecordInput {
   actorKind: ProjectionActorKind;
   actorSessionId: string | null;
   idempotencyKey: string;
-}
-
-export interface CustomViewRecordMutationResult {
-  customView: CustomViewRow;
-  eventId: number | null;
 }
 
 export interface BoardProjectionHost {

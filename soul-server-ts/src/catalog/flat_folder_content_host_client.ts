@@ -7,14 +7,14 @@ import {
   type ListFolderItemsParams,
   type ListFolderItemsResult,
   type MarkdownDocumentRow,
+  type CustomViewWithBoardItem,
+  type CustomViewRecordMutationResult,
 } from "@soulstream/wire-schema/catalog";
 
 import { PersistenceHostTransport, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
   CustomViewProjectionHost,
-  CustomViewRecordMutationResult,
-  CustomViewWithBoardItem,
 } from "../custom_view/custom_view_contract.js";
 
 export interface FlatFolderContentHostClientConfig {
