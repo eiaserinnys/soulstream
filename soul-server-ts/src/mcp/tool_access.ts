@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { callWithReferenceTranslation, type CallToolResult, errorResult } from "@soulstream/mcp-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { McpRuntime } from "./runtime.js";
 import { runIsolationToolGuard } from "./isolation_tool_guards.js";
 import {
@@ -243,8 +244,4 @@ function readDestructiveHint(config: unknown): boolean | undefined {
   return typeof config.annotations.destructiveHint === "boolean"
     ? config.annotations.destructiveHint
     : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

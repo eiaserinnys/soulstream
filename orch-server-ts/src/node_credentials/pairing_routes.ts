@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   NodePairingError,
   type NodePairingPollResult,
@@ -61,8 +62,4 @@ function sendPairingError(reply: FastifyReply, error: unknown): FastifyReply {
     error: error.message,
     ...(error.conflictReason === undefined ? {} : { reason: error.conflictReason }),
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

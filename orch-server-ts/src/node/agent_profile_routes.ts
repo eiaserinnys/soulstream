@@ -4,6 +4,7 @@ import {
   AGENT_PROFILE_PORTRAIT_MAX_BYTES,
   AGENT_PROFILE_PORTRAIT_UPLOAD_BODY_LIMIT_BYTES,
 } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { ContextBundleRecord, ContextBundleRepository } from "./context_bundle_routes.js";
@@ -270,7 +271,7 @@ export function unknownContextBundles(
 }
 
 export function parseAgentProfilePatch(body: unknown): AtomContextsParse<AgentProfilePatch> {
-  if (!isObject(body)) return invalid("Request body must be an object");
+  if (!isRecord(body)) return invalid("Request body must be an object");
   if (body.name !== undefined && (typeof body.name !== "string" || body.name.length === 0)) {
     return invalid("name is required");
   }
@@ -327,7 +328,7 @@ function parseProfileWrite(agentIdValue: string, body: unknown): AtomContextsPar
 }
 
 function parsePortraitWrite(agentIdValue: string, body: unknown): AtomContextsParse<AgentPortraitWrite> {
-  if (!isObject(body)) return invalid("Request body must be an object");
+  if (!isRecord(body)) return invalid("Request body must be an object");
   if (typeof body.data_base64 !== "string" || body.data_base64.length === 0) return invalid("data_base64 is required");
   if (!supportedPortraitMimes.includes(body.mime as SupportedPortraitMime)) return invalid("mime is not supported");
   const version = positiveInteger(body.expected_version, "expected_version");
@@ -362,7 +363,7 @@ function parseContextBundleIds(value: unknown): AtomContextsParse<string[]> {
 }
 
 export function expectedVersion(body: unknown): AtomContextsParse<number> {
-  return isObject(body) ? positiveInteger(body.expected_version, "expected_version") : invalid("expected_version is required");
+  return isRecord(body) ? positiveInteger(body.expected_version, "expected_version") : invalid("expected_version is required");
 }
 
 function nullableExpectedVersion(value: unknown): AtomContextsParse<number | null> {
@@ -381,7 +382,7 @@ function parseAliases(value: unknown): AtomContextsParse<AgentAlias[]> {
   for (const entry of value) {
     const alias = typeof entry === "string"
       ? entry
-      : isObject(entry) && typeof entry.id === "string"
+      : isRecord(entry) && typeof entry.id === "string"
         ? { id: entry.id, ...(typeof entry.default_preset === "string" ? { default_preset: entry.default_preset } : {}) }
         : null;
     const id = typeof alias === "string" ? alias : alias?.id;
@@ -398,10 +399,6 @@ function detectPortraitMime(data: Buffer): SupportedPortraitMime | null {
   if (data.subarray(0, 4).toString() === "RIFF" && data.subarray(8, 12).toString() === "WEBP") return "image/webp";
   if (data.subarray(0, 4).toString() === "GIF8") return "image/gif";
   return null;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function invalid<T>(error: string): AtomContextsParse<T> {

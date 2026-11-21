@@ -11,6 +11,7 @@ import {
   type LiveTextEventMetadata,
   type LiveTextSnapshotStream,
 } from "@soulstream/wire-schema/session-feed-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type RuntimeSessionEvent = {
   readonly nodeId: string;
@@ -630,8 +631,4 @@ function seenSessionBitIndexes(sessionKey: string): readonly [number, number] {
 
 function base64Url(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("base64url");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

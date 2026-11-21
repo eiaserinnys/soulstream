@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import { sessionCreateBadRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, createAckErrorStatus, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
@@ -6,7 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
-import { isJsonObject, parseObjectBody, type JsonObject } from "../http/route_validation.js";
+import { parseObjectBody, type JsonObject } from "../http/route_validation.js";
 import { parseAttachmentIds, parseAttachmentPaths } from "./session_action_command_payloads.js";
 import { invalidRequest } from "./session_action_command_errors.js";
 import { isUuid } from "../http/uuid.js";
@@ -144,7 +145,7 @@ export function registerSessionCommandRoutes(
     if (typeof inputRequestId !== "string" || inputRequestId.length === 0) {
       return invalidRequest(reply, "request_id is required");
     }
-    if (!isJsonObject(body.answers)) {
+    if (!isRecord(body.answers)) {
       return invalidRequest(reply, "answers must be a JSON object");
     }
 
@@ -423,7 +424,7 @@ function withCreateOutcome(
   outcome: "not_created" | "unknown",
 ): SessionCreateRouteResponse {
   const error = response.body.error;
-  if (!isJsonObject(error)) return response;
+  if (!isRecord(error)) return response;
   return {
     status: response.status,
     body: {
@@ -604,7 +605,7 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
 }
 
 function isPageAnchor(value: unknown): value is JsonObject {
-  return isJsonObject(value)
+  return isRecord(value)
     && typeof value.pageId === "string"
     && value.pageId.trim().length > 0
     && typeof value.blockId === "string"

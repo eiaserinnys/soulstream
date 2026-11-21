@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { join } from "node:path";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { sanitizeChildProcessEnv } from "../runtime/child_process_env.js";
 import type {
   CodexExecGenerateRequest, CodexExecGenerateResult, CodexExecInvocation,
@@ -269,7 +270,4 @@ class AntigravitySpawnLimiter {
 }
 function cancelledError(): AntigravityAttemptError {
   return new AntigravityAttemptError("ANTIGRAVITY_EXEC_FAILED", "agy execution was cancelled");
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -3,6 +3,7 @@ import type {
   LastChatMessageType,
   SessionFeedState,
 } from "@soulstream/wire-schema/session-feed-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export const SESSION_FEED_PROMPT_LIMIT = 200;
 
@@ -199,8 +200,4 @@ function stringValue(value: unknown): string | null {
 
 function truncateCodepoints(value: string, limit: number): string {
   return Array.from(value).slice(0, limit).join("");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

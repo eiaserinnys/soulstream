@@ -25,6 +25,7 @@ import {
 import type { Logger } from "pino";
 
 import type { AgentProfile, AgentsSdkConfig } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import { InProcessRunnerFrameChannel } from "../runner/in_process_frame_channel.js";
 import {
@@ -232,7 +233,7 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
                     typeof payload.tool_name === "string"
                       ? payload.tool_name
                       : "unknown",
-                  input: isJsonRecord(payload.tool_input) ? payload.tool_input : {},
+                  input: isRecord(payload.tool_input) ? payload.tool_input : {},
                 }));
               }
             }
@@ -811,10 +812,6 @@ function isToolApprovalEvent(event: unknown): event is {
 function approvalIdFromItem(item: RunToolApprovalItem): string {
   const raw = item.rawItem as { callId?: string; call_id?: string; id?: string };
   return raw.callId ?? raw.call_id ?? raw.id ?? "";
-}
-
-function isJsonRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringifyFinalOutput(value: unknown): string {

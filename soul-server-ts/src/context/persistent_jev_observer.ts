@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
-import { isPersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
-import type { PersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
+import { isPersistentJevCandidatesDebugEvent, type PersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
@@ -111,10 +111,6 @@ export function createPersistentJevObserver(
       logFailure(deps.logger, sessionId, isTimeout(error, timeoutSignal) ? "timeout" : "observer");
     }
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isTimeout(error: unknown, signal?: AbortSignal): boolean {

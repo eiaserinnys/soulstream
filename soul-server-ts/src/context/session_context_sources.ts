@@ -1,4 +1,5 @@
 import type { ContextItem } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { atomContextSpecKey, type AtomContextSpec } from "./atom_context.js";
 import { isPageContextSourcesItem } from "./page_context_resolver.js";
 
@@ -33,10 +34,6 @@ export function withoutSessionContextSourceMarkers(
   return (items ?? []).filter((item) => (
     !isPageContextSourcesItem(item) && item.key !== ATOM_CONTEXT_SOURCES_KEY
   ));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function finiteInteger(value: unknown, fallback: number): number {

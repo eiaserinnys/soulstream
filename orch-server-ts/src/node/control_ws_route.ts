@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { InMemoryNodeRegistry, NodeRegistryEvent } from "./registry.js";
 import type {
   NodeCommandTransport,
@@ -347,10 +348,6 @@ function emitEvents(
   } catch {
     // Event broadcasting is ride-along work; control settlement stays canonical.
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidControlResult(

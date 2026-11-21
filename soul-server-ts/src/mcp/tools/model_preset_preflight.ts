@@ -1,4 +1,5 @@
 import { chooseUsablePresetId } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import type { McpRuntime, OrchProxyConfig } from "../runtime.js";
 import { fetchOrchResponse } from "../../control_plane/persistence_host_transport.js";
@@ -20,10 +21,6 @@ type ModelPresetFallbackPreflightInput = ModelPresetLookup & {
   initialPresetId: string | undefined;
   fallbackPresetIds: readonly string[];
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** 선택 계산에 필요한 advertised preset의 정규화 형태. */
 export interface AdvertisedModelPreset {

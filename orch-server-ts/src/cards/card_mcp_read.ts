@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CARD_STATUSES } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import {
   CARD_MCP_READ_KINDS,
@@ -131,10 +132,6 @@ function decodeOpaque(value: string): unknown {
   } catch {
     return invalid("Invalid card cursor or change token");
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseListCursor(raw: string, folderId: string | null, status: string | null): ListCursor {

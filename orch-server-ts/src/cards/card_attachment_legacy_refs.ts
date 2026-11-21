@@ -1,4 +1,5 @@
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { normalizeAttachmentLegacyPath } from "../attachments/attachment_read_service.js";
 import { requireCardAttachmentTx } from "./card_attachment_policy.js";
 import type { FolderActorParams, RepositorySql } from "./control_plane/card_types.js";
@@ -315,9 +316,6 @@ function isEscapedBacktick(body: string, index: number): boolean {
 
 function rangesOverlap(left: TextRange, right: TextRange): boolean {
   return left.start < right.end && right.start < left.end;
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();

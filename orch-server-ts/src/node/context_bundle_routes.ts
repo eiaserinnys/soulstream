@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { expectedVersion, positiveInteger, type AgentProfileRepository } from "./agent_profile_routes.js";
 import { parseAtomContexts, type AgentAtomContext, type AtomContextsParse } from "./atom_contexts.js";
 
@@ -104,7 +105,7 @@ export function registerContextBundleRoutes(
 }
 
 function parseContextBundleWrite(bundleId: string, body: unknown): AtomContextsParse<ContextBundleWrite> {
-  if (!isObject(body)) return invalid("Request body must be an object");
+  if (!isRecord(body)) return invalid("Request body must be an object");
   if (body.description !== undefined && typeof body.description !== "string") {
     return invalid("description must be a string");
   }
@@ -143,10 +144,6 @@ function projectBundle(bundle: ContextBundleRecord): Record<string, unknown> {
 function nullableExpectedVersion(value: unknown): AtomContextsParse<number | null> {
   if (value === null) return { ok: true, value: null };
   return positiveInteger(value, "expected_version");
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function invalid<T>(error: string): AtomContextsParse<T> {

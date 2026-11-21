@@ -9,6 +9,7 @@ import {
   type ReasoningEffort,
   type AgentBackend,
 } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ModelCatalogSource } from "./model_catalog_source.js";
 import type {
   UsageSummaryQuota,
@@ -555,8 +556,4 @@ function isUsageProvider(
 ): value is StaticModelPreset["usage_provider"] {
   return value === "claude" || value === "codex" || value === "antigravity"
     || value === "opencode_go" || value === null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

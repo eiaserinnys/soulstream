@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   NodeWsFrameController,
   type NodeWsFrameCloseResult,
   type NodeWsFrameControllerResult,
 } from "./ws_frame_controller.js";
-import type { InMemoryNodeRegistry } from "./registry.js";
-import type { NodeRegistryEvent } from "./registry.js";
+import type { InMemoryNodeRegistry, NodeRegistryEvent } from "./registry.js";
 import type {
   NodeCommandTransport,
   NodeCommandTransportAttachment,
@@ -628,8 +628,4 @@ function parseJsonFrame(payload: unknown): JsonFrameParseResult {
     };
   }
   return { ok: true, frame: decoded };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

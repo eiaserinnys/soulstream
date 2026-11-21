@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { internalMcpPath } from "../mcp/endpoint_paths.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
 
@@ -57,8 +58,4 @@ export function mergeSoulstreamAgentSessionHeader(
   }
   merged[SOULSTREAM_AGENT_SESSION_HEADER] = agentSessionId;
   return merged;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

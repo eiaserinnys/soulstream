@@ -1,13 +1,10 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { copyClaudeSdkEventMetadata } from "./claude_sdk_event_metadata.js";
 import { isExpectedInterruptTerminalEvent } from "./claude_sdk_persistent_session_support.js";
 
 type ResultEvent = Extract<ClaudeClientEvent, { type: "result" }>;
 type CarriedUsage = Pick<ResultEvent, "usage" | "turnCostUsd" | "firstCall" | "model">;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Numeric counters accumulate; iteration arrays and other values describe the latest Result. */
 function mergeUsage(earlier: unknown, later: unknown): unknown {

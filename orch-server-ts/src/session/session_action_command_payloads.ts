@@ -2,7 +2,8 @@ import type { RequestResponseNodeCommandPayload } from "../node/pending_commands
 import type { ControlCommandType } from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
-import { isJsonObject, parseObjectBody, type JsonObject } from "../http/route_validation.js";
+import { isRecord } from "@soulstream/wire-schema/json-record";
+import { parseObjectBody, type JsonObject } from "../http/route_validation.js";
 
 export type SessionParams = {
   session_id: string;
@@ -304,7 +305,7 @@ function optionalObject(
   if (value === undefined || value === null) {
     return { ok: true, value: undefined };
   }
-  return isJsonObject(value)
+  return isRecord(value)
     ? { ok: true, value }
     : { ok: false, message: `${field} must be a JSON object` };
 }
@@ -333,7 +334,7 @@ export function parseInlineAttachments(
   const uploads: InlineAttachmentUpload[] = [];
   let totalBytes = 0;
   for (const item of value) {
-    if (!isJsonObject(item)) {
+    if (!isRecord(item)) {
       return { ok: false, message: "each attachment must be a JSON object" };
     }
     const name = item.name;
@@ -412,7 +413,7 @@ function optionalObjectArrayAlias(
 ): ParseResult<JsonObject[] | undefined> {
   const [field, value] = firstAliasValue(body, aliases);
   if (value === undefined) return { ok: true, value: undefined };
-  return Array.isArray(value) && value.every(isJsonObject)
+  return Array.isArray(value) && value.every(isRecord)
     ? { ok: true, value }
     : { ok: false, message: `${field} must be an array of JSON objects` };
 }

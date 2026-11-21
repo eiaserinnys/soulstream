@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { sanitizeChildProcessEnv } from "../runtime/child_process_env.js";
 
 export const CODEX_REASONING_EFFORTS = [
@@ -623,10 +624,6 @@ function classifyAttemptError(error: unknown): {
     code: "CODEX_EXEC_FAILED",
     message: error instanceof Error ? error.message : "codex exec failed",
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function pickUsage(value: Record<string, unknown>): CodexEphemeralUsage | undefined {

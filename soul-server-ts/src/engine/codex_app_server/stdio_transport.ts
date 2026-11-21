@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { terminateWindowsProcessTree } from "../../process/terminate_windows_process_tree.js";
 import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import {
@@ -289,8 +290,4 @@ function exitError(code: number | null, signal: NodeJS.Signals | null): Error | 
   if (code !== null) return new Error(`Codex app-server exited with code ${code}`);
   if (signal) return new Error(`Codex app-server exited with signal ${signal}`);
   return new Error("Codex app-server exited");
-}
-
-function isRecord(value: unknown): value is AppServerJsonMessage {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

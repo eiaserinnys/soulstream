@@ -4,6 +4,7 @@ import {
   normalizeCardQuestionOptions,
   type CardQuestionAttachment,
 } from "@soulstream/wire-schema/card-questions";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { projectAttachmentDescriptor, type AttachmentAssetRow } from "../attachments/attachment_read_service.js";
 import {
   collectCardLegacyLocations,
@@ -377,8 +378,4 @@ function evidenceOf(item: unknown): unknown[] {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

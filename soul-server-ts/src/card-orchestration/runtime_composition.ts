@@ -81,10 +81,6 @@ export async function readDecisionCredential(backend: 'claude' | 'codex',
   } catch { return undefined; }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 /** Host admission applies only to explicit orchestration tokens; caller cannot choose node identity. */
 export function composeWorkerAdmissionAuthorizer(orch: OrchProxyConfig, nodeId: string): AuthorizeOrchestrationWorker {
   return async (request) => {
@@ -96,3 +92,4 @@ export function composeWorkerAdmissionAuthorizer(orch: OrchProxyConfig, nodeId: 
     return (await response.json() as { allowed?: unknown }).allowed === true;
   };
 }
+import { isRecord } from "@soulstream/wire-schema/json-record";

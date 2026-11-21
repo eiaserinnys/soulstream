@@ -13,6 +13,7 @@ import {
   resolveMcpPrincipal,
 } from "../mcp/auth.js";
 import type { McpAuthConfig } from "@soulstream/mcp-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   extractBearerToken,
   isRestrictedMcpToken,
@@ -106,8 +107,4 @@ function readDeliveryId(body: unknown): string | undefined {
   const raw = isRecord(body) ? body.deliveryId : undefined;
   const trimmed = typeof raw === "string" ? raw.trim() : "";
   return trimmed ? trimmed : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

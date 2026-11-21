@@ -1,4 +1,5 @@
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { requireCardAttachmentTx } from "./card_attachment_policy.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
 
@@ -266,10 +267,6 @@ async function assertCommittedAttachmentTx(sql: RepositorySql, id: string): Prom
     throw attachmentError(404, "ATTACHMENT_NOT_FOUND", "첨부를 찾을 수 없습니다.");
   if (row.upload_status !== "committed")
     throw attachmentError(409, "ATTACHMENT_NOT_COMMITTED", "아직 커밋되지 않은 첨부입니다.");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function invalidReference(message: string): Error {

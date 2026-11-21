@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   bindAttachmentReadAbortSignal,
   readOptionalAttachmentContext,
@@ -244,7 +245,7 @@ export function registerAttachmentRoutes(
 
       try {
         const result = await options.transport.deleteSessionAttachments(node.value, sessionId);
-        if (!isPlainObject(result)) {
+        if (!isRecord(result)) {
           return reply.code(502).send({ detail: "Node returned malformed delete response" });
         }
         return reply.send({
@@ -425,7 +426,7 @@ export async function legacyOwnedUploadCache(
 
 function requiredQueryString(request: FastifyRequest, name: string): Validation<string> {
   const query = request.query;
-  const value = isPlainObject(query) ? query[name] : undefined;
+  const value = isRecord(query) ? query[name] : undefined;
   if (typeof value !== "string" || value === "") {
     return { ok: false, message: `${name} is required`, statusCode: 422 };
   }
@@ -436,7 +437,7 @@ function accessEmailFromCallerInfo(callerInfo: string | null): string | null {
   if (callerInfo === null) return null;
   try {
     const parsed: unknown = JSON.parse(callerInfo);
-    if (isPlainObject(parsed) && typeof parsed.email === "string") return parsed.email;
+    if (isRecord(parsed) && typeof parsed.email === "string") return parsed.email;
   } catch {
     return null;
   }
@@ -445,7 +446,7 @@ function accessEmailFromCallerInfo(callerInfo: string | null): string | null {
 
 function projectUploadResult(result: unknown): { ok: true; value: Record<string, unknown> } | { ok: false; error: AttachmentRouteError } {
   if (
-    !isPlainObject(result) ||
+    !isRecord(result) ||
     typeof result.path !== "string" ||
     typeof result.filename !== "string" ||
     typeof result.size !== "number" ||
@@ -475,7 +476,7 @@ function projectUploadResult(result: unknown): { ok: true; value: Record<string,
 function projectDownloadResult(
   result: unknown,
 ): { ok: true; value: { content: Buffer; filename: string; contentType: string } } | { ok: false; error: AttachmentRouteError } {
-  const object = isPlainObject(result) ? result : {};
+  const object = isRecord(result) ? result : {};
   const contentB64 = object.content_b64;
   const filename = object.filename;
   if (typeof contentB64 !== "string" || typeof filename !== "string") {
@@ -587,10 +588,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function integerOrDefault(value: unknown, fallback: number): number {
   const numberValue = Number(value ?? fallback);
   return Number.isFinite(numberValue) ? Math.trunc(numberValue) : fallback;
@@ -606,7 +603,7 @@ function readDownloadQuery(
   request: FastifyRequest,
 ): { ok: true; value: boolean } | { ok: false; error: string } {
   const query = request.query;
-  const value = isPlainObject(query) ? query.download : undefined;
+  const value = isRecord(query) ? query.download : undefined;
   if (value === undefined || value === "false") return { ok: true, value: false };
   if (value === "true") return { ok: true, value: true };
   return { ok: false, error: "download must be true or false" };

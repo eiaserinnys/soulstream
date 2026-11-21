@@ -6,6 +6,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { AgentAtomContextSchema, type AgentProfile } from "@soulstream/agent-profile-contract";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import {
   authenticateDashboardHttpRequest,
@@ -135,8 +136,4 @@ async function authorize(
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AgentBackendSchema, MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import {
   stripRunnerJsonUndefined,
@@ -614,10 +615,6 @@ export function hostCallAppliedControlFrame(
     kind: "host_call_applied",
     correlationId,
   }) as Extract<RunnerControlFrame, { kind: "host_call_applied" }>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function runnerCommandResultFrame(

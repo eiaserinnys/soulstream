@@ -7,6 +7,7 @@ import type {
   UiEventRow,
 } from "../ui-events/ui_event_routes.js";
 import type { UiEventEntry, UiEventTargetKind, UiEventType } from "@soulstream/wire-schema/ui-events";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { UiEventClientKind } from "../ui-events/ui_event_contract.js";
 import { readUiEventCollectionConfig } from "../ui-events/ui_event_settings.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
@@ -192,8 +193,4 @@ function optionalText(value: unknown): string | undefined {
 function timestamp(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return typeof value === "string" ? value : "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

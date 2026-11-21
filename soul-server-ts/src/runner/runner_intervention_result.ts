@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type {
   EngineInterventionResult,
   EngineInterventionMechanism,
@@ -46,10 +47,6 @@ export function normalizeRunnerInterventionResult(
     reason: "verdict_unknown",
     message: "Runner child returned an invalid intervention result",
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isInterventionMechanism(

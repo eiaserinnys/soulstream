@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 export type SystemPortraitSource = "system" | "channel_observer" | "trello_watcher";
 
@@ -236,8 +237,4 @@ function decodeBody(body: SystemPortraitBody, encoding?: "base64"): Buffer {
   if (typeof body === "string") return Buffer.from(body);
   if (Buffer.isBuffer(body)) return body;
   return Buffer.from(body);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

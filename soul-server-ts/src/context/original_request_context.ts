@@ -8,6 +8,7 @@
 
 import type { Logger } from "pino";
 import type { ContextItem } from "@soulstream/wire-schema";
+import { isRecord } from "@soulstream/wire-schema/json-record";
 
 import { formatContextItems } from "./prompt_assembler.js";
 
@@ -79,8 +80,4 @@ export async function buildOriginalRequestContextItem(
 
 function isContextItem(value: unknown): value is ContextItem {
   return isRecord(value) && typeof value.key === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

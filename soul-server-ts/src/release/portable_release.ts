@@ -1,6 +1,7 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, posix } from "node:path";
 
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import { RUNNER_RELEASE_ARTIFACTS } from "../runner/runner_release_materializer.js";
 import { HOST_RELEASE_ARTIFACTS } from "./release_artifacts.js";
 import { sha256Digest } from "./release_generations.js";
@@ -234,8 +235,4 @@ function requireExactKeys(
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
     throw new Error(`invalid ${label} keys: ${actual.join(", ")}`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

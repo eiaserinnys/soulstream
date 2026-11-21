@@ -1,3 +1,4 @@
+import { isRecord } from "@soulstream/wire-schema/json-record";
 import type { AddInterventionResult } from "./task_intervention_route.js";
 
 export type CompletionDeliveryVerdict =
@@ -87,10 +88,6 @@ function classifySuppressedReason(reason: string): CompletionDeliveryVerdict {
     return { kind: "unknown", reason };
   }
   return { kind: "failed", reason };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string | undefined {
