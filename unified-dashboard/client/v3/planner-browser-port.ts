@@ -1,4 +1,5 @@
 import type { BlockDto, PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
+import { operationId } from "./folder-star-actions";
 
 export class BrowserPlannerMutationPort {
   constructor(
@@ -61,9 +62,4 @@ function decodeStateVector(value: string): Uint8Array {
   }
   const binary = globalThis.atob(value);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-function operationId(prefix: string): string {
-  if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
-  return `${prefix}-${globalThis.crypto.randomUUID()}`;
 }
