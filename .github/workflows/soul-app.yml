@@ -37,6 +37,9 @@ jobs:
           cache-dependency-path: soul-app/package-lock.json
       - name: Install independent app dependencies
         run: npm ci --include=dev --no-audit --no-fund
+      - name: Check source guards
+        working-directory: .
+        run: node scripts/check-source-guards.mjs
       - name: Typecheck app
         run: npx --no-install tsc --noEmit
       - name: Test app

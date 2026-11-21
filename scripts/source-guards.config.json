@@ -1,0 +1,88 @@
+{
+  "packages": {
+    "orch": "orch-server-ts/src",
+    "worker": "soul-server-ts/src",
+    "soul-ui": "packages/soul-ui/src",
+    "web": "unified-dashboard/client",
+    "app": "soul-app/src",
+    "wire": "packages/wire-schema/src",
+    "mcpc": "packages/mcp-contract/src"
+  },
+  "generatedIndex": "packages/wire-schema/generated/typescript/index.ts",
+  "sseTypesFile": "packages/soul-ui/src/shared/sse-events.ts",
+  "sseSourcePackages": ["orch", "worker", "wire"],
+  "canonicalModules": {
+    "orch": [
+      "http/route_validation.ts",
+      "board/board_access.ts",
+      "auth/service_bearer.ts",
+      "session/session_command_router.ts",
+      "session/session_action_command_payloads.ts",
+      "session/session_action_command_errors.ts",
+      "session/session_status.ts",
+      "page/page_host_operations.ts",
+      "runtime/live_session_link_sql.ts",
+      "turn-summary/turn_summary_count_query.ts",
+      "control_plane/repositories/session_delivery_repository.ts"
+    ],
+    "worker": [
+      "runner/state/runner_recovery_decision.ts",
+      "runner/state/runner_central_check_decision.ts",
+      "runner/state/runner_handle_decision.ts"
+    ]
+  },
+  "fingerprints": [
+    {
+      "label": "카드 상태 라벨 맵",
+      "pattern": "(?<![\\w\"'])awaiting_verification[\"']?\\s*:\\s*[\"'][^\"']+[\"']",
+      "canonical": ["packages/wire-schema/src/card_status_labels.ts"],
+      "hint": "@soulstream/wire-schema/card-status-labels의 CARD_STATUS_LABELS를 쓴다"
+    },
+    {
+      "label": "미리보기 MIME 목록",
+      "pattern": "text/x-script\\.python",
+      "canonical": ["packages/wire-schema/src/attachments.ts"],
+      "hint": "SAFE_TEXT_PREVIEW_MIME_TYPES를 import한다"
+    },
+    {
+      "label": "보고 링크 문법",
+      "pattern": "\\(https:\\\\/\\\\/\\[\\^\\\\s\\)\\]\\+\\)",
+      "canonical": ["packages/wire-schema/src/persistent_report.ts"],
+      "hint": "reportActionParts를 쓴다"
+    }
+  ],
+  "reexportPackages": ["orch", "worker", "soul-ui", "web", "app"],
+  "crossPackages": ["orch", "worker", "soul-ui", "web", "app"],
+  "packagePairs": [
+    ["orch", "worker"],
+    ["soul-ui", "app"],
+    ["web", "app"],
+    ["soul-ui", "web"]
+  ],
+  "intraPackages": ["orch", "worker", "soul-ui", "web", "app"],
+  "deadModule": {
+    "packages": ["orch", "worker", "soul-ui", "web", "app", "wire", "mcpc"],
+    "extra": [
+      "soul-app/scripts/review-metro-config.cjs",
+      "orch-server-ts/scripts",
+      "soul-server-ts/scripts",
+      "soul-server-ts/tsup.portable.config.ts",
+      "portable-node",
+      "soul-app/App.tsx",
+      "soul-app/metro.config.js",
+      "soul-app/scripts",
+      "soul-app/card-image-review",
+      "unified-dashboard/vite.config.ts",
+      "unified-dashboard/index.html",
+      ".easignore",
+      "packages/wire-schema/package.json",
+      "deploy"
+    ],
+    "extensions": [".ts", ".tsx", ".mjs", ".cjs", ".js", ".json", ".html", ".sh", ".py", ".easignore"],
+    "testDirectories": ["orch-server-ts/tests", "soul-server-ts/tests", "unified-dashboard/e2e"],
+    "testExtensions": [".ts", ".tsx", ".mjs", ".cjs", ".js"],
+    "allow": "\\.(type-test|type-contract|test-fixture|fixture|native|web|ios|android)\\.|(^|/)(index|main|production_main|App)\\.tsx?$|^soul-app/src/(test-support|test-utils)/",
+    "wireSchemaPackage": "packages/wire-schema/package.json"
+  },
+  "stateMachinePackages": ["orch", "worker"]
+}
