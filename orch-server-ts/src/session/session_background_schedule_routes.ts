@@ -6,6 +6,7 @@ import {
   sendDeleteScheduleCommand,
   type SessionBackgroundScheduleCommandDispatchOptions,
 } from "./session_background_schedule_errors.js";
+import type { SessionParams } from "./session_action_command_payloads.js";
 import {
   backgroundTasksPayload,
   deleteSchedulePayload,
@@ -14,7 +15,6 @@ import {
   stopTaskPayload,
   taskOutputPayload,
   type ScheduleParams,
-  type SessionParams,
   type TaskParams,
 } from "./session_background_schedule_payloads.js";
 import {

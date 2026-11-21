@@ -2,6 +2,7 @@ import type { NodeRegistryEvent } from "../node/registry.js";
 import type { CardNotification } from "../cards/card_dispatcher.js";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { PushNotificationData } from "@soulstream/wire-schema/push-notification";
+import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import { clip } from "../session/persistent_report_service.js";
 import type { PushRegistrationRepository } from "./push_routes.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
@@ -293,8 +294,8 @@ export class PushNotifier {
   private async folderExcludes(folderId: string): Promise<boolean> {
     const folders = await this.options.catalog.listFolders();
     return folders.some((folder) => {
-      const record = recordValue(folder);
-      const settings = recordValue(record?.settings);
+      const record = jsonObjectOrUndefined(folder);
+      const settings = jsonObjectOrUndefined(record?.settings);
       return record?.id === folderId && settings?.excludeFromNotification === true;
     });
   }
@@ -377,10 +378,4 @@ function truncate(value: string, maxLength: number): string {
   const lastSpace = text.lastIndexOf(" ");
   if (lastSpace > (maxLength - 1) * 0.6) text = text.slice(0, lastSpace);
   return `${text}…`;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }

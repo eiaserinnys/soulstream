@@ -2,6 +2,7 @@ import type { Readable } from "node:stream";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { isJsonObject } from "../http/route_validation.js";
 import {
   parseExecuteProxyPayload,
   type ExecuteProxyNewProviderRequest,
@@ -159,10 +160,6 @@ function rawEventToFrame(raw: ExecuteProxyRawEvent): ExecuteProxySseFrame {
 
 function isTextResult(result: ExecuteProxyResult): result is ExecuteProxyTextResult {
   return "body" in result;
-}
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export type {

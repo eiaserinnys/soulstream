@@ -1,13 +1,13 @@
-// Existing session route helpers remain together during parallel MCP extraction; the create-only response mapping is in session_create_route_response.ts. The create attachment admission step stays beside the create route it gates (#245).
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
-import { badRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, type SessionCreateRouteResponse } from "./session_create_route_response.js";
+import { sessionCreateBadRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, createAckErrorStatus, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
-import { isJsonObject, parseAttachmentIds, parseAttachmentPaths, parseObjectBody } from "./session_action_command_payloads.js";
+import { isJsonObject, parseObjectBody, type JsonObject } from "../http/route_validation.js";
+import { parseAttachmentIds, parseAttachmentPaths } from "./session_action_command_payloads.js";
 import { invalidRequest } from "./session_action_command_errors.js";
 import { isUuid } from "../http/uuid.js";
 
@@ -83,19 +83,6 @@ export const CREATE_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
   UNSUPPORTED_REASONING_EFFORT: 422,
 };
 
-function createAckErrorStatus(code: unknown): number | undefined {
-  // Own-property check: the code comes from a node, and a bare index would let
-  // "toString" resolve to a function rather than falling through to 503.
-  return typeof code === "string"
-    && Object.hasOwn(CREATE_ACK_ERROR_HTTP_STATUS, code)
-    ? CREATE_ACK_ERROR_HTTP_STATUS[code]
-    : undefined;
-}
-
-/**
- * Sends a create-path node failure, preserving the node's own code and message.
- * Input errors become 4xx; everything else stays 503.
- */
 function sendCreateAckError(
   reply: FastifyReply,
   response: { code?: unknown; message?: unknown },
@@ -122,8 +109,6 @@ const RESPOND_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
   INPUT_RESPONSE_NOT_SUPPORTED: 422,
 };
 
-type JsonObject = Record<string, unknown>;
-
 const WAIT_FOR_INSTRUCTION_PROMPT =
   "업무 현황을 파악한 후, 사용자의 다음 지시를 대기해주세요.";
 const EXECUTE_INSTRUCTION_PROMPT =
@@ -148,10 +133,11 @@ export function registerSessionCommandRoutes(
       request.params.session_id,
     );
     if (denied) return reply;
-    const body = parseObjectBody(request.body);
-    if (body === undefined) {
-      return invalidRequest(reply, "Request body must be a JSON object");
+    const parsedBody = parseObjectBody(request.body);
+    if (!parsedBody.ok) {
+      return invalidRequest(reply, parsedBody.message);
     }
+    const body = parsedBody.value;
     const inputRequestId = Object.prototype.hasOwnProperty.call(body, "request_id")
       ? body.request_id
       : body.requestId;
@@ -197,10 +183,11 @@ export async function executeCreateSessionRoute(
   logger: Pick<import("fastify").FastifyRequest["log"], "warn">,
   reservedSessionId?: string,
 ): Promise<SessionCreateRouteResponse> {
-    const body = parseObjectBody(input);
-    if (body === undefined) {
-      return createBadRequest("Request body must be a JSON object");
+    const parsedBody = parseObjectBody(input);
+    if (!parsedBody.ok) {
+      return createBadRequest(parsedBody.message);
     }
+    const body = parsedBody.value;
     if (body.worktree_id !== undefined) {
       const authorization = isServiceCaller(request) ? { ok: true as const } : verifyServiceBearerAuthorization(
         request.headers.authorization,

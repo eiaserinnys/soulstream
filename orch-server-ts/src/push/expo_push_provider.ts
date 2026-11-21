@@ -1,3 +1,4 @@
+import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import type {
   PushNotificationProvider,
   PushSendResult,
@@ -67,13 +68,13 @@ async function sendExpoPush(
 }
 
 export function parseExpoPushResponse(payload: unknown): PushSendResult {
-  const data = recordValue(payload)?.data;
-  const ticket = Array.isArray(data) ? recordValue(data[0]) : recordValue(data);
+  const data = jsonObjectOrUndefined(payload)?.data;
+  const ticket = Array.isArray(data) ? jsonObjectOrUndefined(data[0]) : jsonObjectOrUndefined(data);
   if (ticket === undefined) {
     return { ok: false, invalidToken: false, error: "unexpected response shape" };
   }
   if (ticket.status !== "error") return { ok: true, invalidToken: false };
-  const details = recordValue(ticket.details);
+  const details = jsonObjectOrUndefined(ticket.details);
   const error = stringValue(details?.error, ticket.message) || "unknown";
   return {
     ok: false,
@@ -95,10 +96,4 @@ function stringValue(...values: unknown[]): string {
     if (typeof value === "string" && value.length > 0) return value;
   }
   return "";
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }

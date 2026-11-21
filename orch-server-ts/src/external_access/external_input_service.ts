@@ -11,7 +11,7 @@ import {
   executeSessionIntervention,
   type SessionActionCommandRouteOptions,
 } from "../session/session_action_command_routes.js";
-import type { JsonObject } from "../session/session_action_command_payloads.js";
+import type { JsonObject } from "../http/route_validation.js";
 import type { ExternalAccessGrant } from "./external_access_grant_repository.js";
 import { ExternalAccessTokenBucket } from "./external_access_token_bucket.js";
 

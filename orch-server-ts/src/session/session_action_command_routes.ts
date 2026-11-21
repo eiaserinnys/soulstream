@@ -24,9 +24,9 @@ import {
   sendToolApprovalAckError,
   type SessionActionCommandDispatchOptions,
 } from "./session_action_command_errors.js";
+import { parseObjectBody, type JsonObject } from "../http/route_validation.js";
 import {
   intervenePayload,
-  parseObjectBody,
   realtimeCreateCallPayload,
   realtimeEventPayload,
   realtimeResolveToolApprovalPayload,
@@ -35,7 +35,6 @@ import {
   type InlineAttachmentUpload,
   type InterveneNodeCommandPayload,
   type InterruptNodeCommandPayload,
-  type JsonObject,
   type AcknowledgeSessionReviewNodeCommandPayload,
   type SessionParams,
 } from "./session_action_command_payloads.js";
@@ -227,11 +226,11 @@ export function registerSessionActionCommandRoutes(
       );
       if (denied) return reply;
       const body = parseObjectBody(request.body);
-      if (body === undefined) {
-        return invalidRequest(reply, "Request body must be a JSON object");
+      if (!body.ok) {
+        return invalidRequest(reply, body.message);
       }
 
-      const payload = realtimeCreateCallPayload(sessionId, body);
+      const payload = realtimeCreateCallPayload(sessionId, body.value);
       if (!payload.ok) return invalidRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
@@ -250,11 +249,11 @@ export function registerSessionActionCommandRoutes(
       );
       if (denied) return reply;
       const body = parseObjectBody(request.body);
-      if (body === undefined) {
-        return invalidRequest(reply, "Request body must be a JSON object");
+      if (!body.ok) {
+        return invalidRequest(reply, body.message);
       }
 
-      const payload = realtimeEventPayload(sessionId, body);
+      const payload = realtimeEventPayload(sessionId, body.value);
       if (!payload.ok) return invalidRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendRealtimeAckError);
@@ -272,13 +271,13 @@ export function registerSessionActionCommandRoutes(
       );
       if (denied) return reply;
       const body = parseObjectBody(request.body);
-      if (body === undefined) {
-        return invalidRequest(reply, "Request body must be a JSON object");
+      if (!body.ok) {
+        return invalidRequest(reply, body.message);
       }
 
       const payload = realtimeResolveToolApprovalPayload(
         approvalParams(request),
-        body,
+        body.value,
       );
       if (!payload.ok) return invalidRequest(reply, payload.message);
 
@@ -295,8 +294,8 @@ export async function executeSessionIntervention(
   input: unknown,
 ): Promise<SessionActionResponse> {
   const body = parseObjectBody(input);
-  if (body === undefined) return { status: 400, body: { error: { code: "INVALID_REQUEST", message: "Request body must be a JSON object" } } };
-  const payload = intervenePayload(targetSessionId, body);
+  if (!body.ok) return { status: 400, body: { error: { code: "INVALID_REQUEST", message: body.message } } };
+  const payload = intervenePayload(targetSessionId, body.value);
   if (!payload.ok) return { status: 400, body: { error: { code: "INVALID_REQUEST", message: payload.message } } };
   if (options.resolveCallerInfo !== undefined) {
     payload.value.caller_info = await options.resolveCallerInfo(caller, payload.value.caller_info, targetSessionId);
