@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { isActiveTaskStatus, isTerminalTaskStatus, type Task } from "../task/task_models.js";
 import { releaseTaskRunner } from "../task/task_runner_release.js";
 import {
-  lifecycleCommandMatchesRegistration,
+  executionIsSuccessorTurn,
   registrationCommandIdFromLifecycle,
 } from "../task/execution_registration.js";
 import {
@@ -28,7 +28,6 @@ import {
 } from "./runner_recovery_disposition.js";
 import { classifyRunnerRegistrationSafely } from "./runner_recovery_classification.js";
 import {
-  hasRecordedTerminal,
   markRegistrationReaped,
   prepareRecoveredTask,
   requireRecoveryTask,
@@ -36,6 +35,7 @@ import {
 import { RunnerRegistrationControl } from "./runner_registration_control.js";
 import {
   classifyRunnerCentralLookup,
+  hasRecordedTerminal,
   registrationAppliedAndTurnRunning,
   terminalRetainedForRegistration,
 } from "./runner_central_check.js";
@@ -1709,22 +1709,6 @@ export class RunnerRecoveryCoordinator {
     );
     return true;
   }
-}
-
-/**
- * task의 실행 슬롯이 종료가 기록된 명령 다음에 시작된 턴의 것인지 가른다. 시동 장벽
- * (executionActivation)은 중앙이 새 실행 등록을 받을 때까지 서 있고(task_executor), 그 뒤에는 실행
- * 등록이 새 명령 번호를 단다. 종료 명령 자신의 실행에는 둘 다 없거나(중앙이 종료에서 등록을 비운
- * 뒤) 같은 번호가 있다. 종료 명령 번호를 몰라 번호를 견줄 수 없으면 뒤이은 턴으로 보아 미룬다.
- */
-function executionIsSuccessorTurn(
-  task: Task,
-  terminalExecutionCommandId: string | undefined,
-): boolean {
-  if (task.executionActivation !== undefined) return true;
-  const registeredCommandId = task.executionRegistration?.executionCommandId;
-  if (registeredCommandId === undefined) return false;
-  return !lifecycleCommandMatchesRegistration(terminalExecutionCommandId, registeredCommandId);
 }
 
 function registrationOwnsAttachedRunner(

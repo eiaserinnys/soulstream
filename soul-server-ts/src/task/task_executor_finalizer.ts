@@ -8,7 +8,6 @@ import type {
 
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import {
-  isTerminalTaskStatus,
   type RunnerReleaseClaim,
   type Task,
 } from "./task_models.js";
@@ -16,6 +15,7 @@ import {
   completeTaskRunnerReleaseClaim,
   releaseTaskRunner,
 } from "./task_runner_release.js";
+import { hasRecordedTerminal } from "../runner/runner_central_check.js";
 import { RunnerNotAliveError } from "../runner/runner_process_runtime_factory.js";
 import { countPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 import {
@@ -371,14 +371,6 @@ function codexActivityIsEmpty(
   return activity.activeForegroundCount === 0
     && activity.detachedRunningCount === 0
     && activity.retainedTerminalResultCount === 0;
-}
-
-function hasRecordedTerminal(task: Task): boolean {
-  return isTerminalTaskStatus(task.status)
-    && task.terminationEventRecorded === true
-    && typeof task.terminalEventId === "number"
-    && Number.isSafeInteger(task.terminalEventId)
-    && task.terminalEventId > 0;
 }
 
 function createRunnerReleaseClaim(

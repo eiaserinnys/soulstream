@@ -261,7 +261,7 @@ async function publishCompleteRecord(
   }
 }
 
-async function pathExists(path: string): Promise<boolean> {
+export async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;

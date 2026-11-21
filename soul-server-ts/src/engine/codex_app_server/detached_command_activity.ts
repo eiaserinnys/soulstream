@@ -1,3 +1,4 @@
+import { asRecord } from "../claude_sdk_helpers.js";
 import type { CodexDetachedCommandRuntimeActivity } from "../protocol.js";
 import type { AppServerNotification } from "./protocol.js";
 
@@ -65,7 +66,7 @@ export class CodexDetachedCommandActivityTracker {
   }
 
   observe(notification: AppServerNotification): void {
-    const params = record(notification.params);
+    const params = asRecord(notification.params);
     const threadId = text(params, "threadId");
     const turnId = text(params, "turnId");
     switch (notification.method) {
@@ -80,12 +81,12 @@ export class CodexDetachedCommandActivityTracker {
         return;
       }
       case "turn/started": {
-        const startedTurnId = text(record(params?.turn), "id");
+        const startedTurnId = text(asRecord(params?.turn), "id");
         if (threadId && startedTurnId) this.bindForegroundTurn(threadId, startedTurnId);
         return;
       }
       case "turn/completed": {
-        const completedTurnId = text(record(params?.turn), "id");
+        const completedTurnId = text(asRecord(params?.turn), "id");
         if (threadId && completedTurnId) this.completeForeground(threadId, completedTurnId);
         return;
       }
@@ -164,14 +165,8 @@ function commandKey(threadId: string, turnId: string, itemId: string): string {
 }
 
 function commandItemId(value: unknown): string | undefined {
-  const item = record(value);
+  const item = asRecord(value);
   return item?.type === "commandExecution" ? text(item, "id") : undefined;
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 function text(value: Record<string, unknown> | undefined, key: string): string | undefined {

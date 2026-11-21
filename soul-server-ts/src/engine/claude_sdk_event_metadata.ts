@@ -92,7 +92,7 @@ export function fallbackClaudeSdkMessageIdentity(
   return `content:${role}:${hash}`;
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === undefined) return "undefined";
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value) ?? String(value);

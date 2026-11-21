@@ -56,7 +56,6 @@ const DELIVERY_SOURCE_FILES = [
   "soul-server-ts/src/control_plane/persistence_host_clients.ts",
   "soul-server-ts/src/task/completion_delivery_coordinator.ts",
   "soul-server-ts/src/task/completion_notifier.ts",
-  "soul-server-ts/src/task/delivery_contract.ts",
   "soul-server-ts/src/task/delivery_row_intervention.ts",
   "soul-server-ts/src/task/notification_receipt_projection.ts",
   "soul-server-ts/src/task/queued_delivery_transcript_recovery.ts",

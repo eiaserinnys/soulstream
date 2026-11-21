@@ -1,21 +1,9 @@
 import type { Logger } from "pino";
 
-import { isTerminalTaskStatus, type Task } from "../task/task_models.js";
+import type { Task } from "../task/task_models.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import { RunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
-
-/**
- * 그 세션의 종료 사건이 기록된 확정 종료인가. 등록 은퇴는 되돌릴 수 없으므로
- * 종료를 잃을 수 있는 등록은 은퇴하지 않는다.
- */
-export function hasRecordedTerminal(task: Task): boolean {
-  return isTerminalTaskStatus(task.status)
-    && task.terminationEventRecorded === true
-    && typeof task.terminalEventId === "number"
-    && Number.isSafeInteger(task.terminalEventId)
-    && task.terminalEventId > 0;
-}
 
 export async function markRegistrationReaped(
   registration: RunnerRegistration,

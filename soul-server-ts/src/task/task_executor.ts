@@ -177,8 +177,8 @@ import {
   publishStarted as publishGenerationStarted,
 } from "./persistent_generation_rollover.js";
 import {
+  executionIsSuccessorTurn,
   isCompleteRunnerExecutionIdentity,
-  lifecycleCommandMatchesRegistration,
   type RunnerTerminalFact,
 } from "./execution_registration.js";
 import {
@@ -249,34 +249,13 @@ interface SuspendedRecoveredExecution {
   terminalObservation?: RecoveredRunnerTerminalObservation;
 }
 
-/**
- * offline replay가 읽은 러너 lifecycle 종료가 이 task의 이번 실행이 아니라 뒤이은
- * 턴의 것인지 가른다. 기준은 runner_recovery_coordinator의 executionIsSuccessorTurn과
- * 같다: 시동 장벽(executionActivation)이 서 있거나, lifecycle의 실행 명령 번호가 지금
- * 등록된 실행 명령 번호와 다르면 뒤이은 턴이다. lifecycle 쪽 번호를 몰라 견줄 수
- * 없을 때도 뒤이은 턴으로 본다. 등록 명령 번호가 없으면 예전처럼 lifecycle 종료를
- * 이번 실행의 것으로 읽는다.
- */
-function recoveredTerminalBelongsToSuccessorTurn(
-  task: Task,
-  terminalExecutionCommandId: string | undefined,
-): boolean {
-  if (task.executionActivation !== undefined) return true;
-  const registeredCommandId = task.executionRegistration?.executionCommandId;
-  if (registeredCommandId === undefined) return false;
-  return !lifecycleCommandMatchesRegistration(terminalExecutionCommandId, registeredCommandId);
-}
-
 function recoveredRunnerTerminalObservation(
   task: Task,
   registration: RunnerRegistration,
 ): RecoveredRunnerTerminalObservation | undefined {
   const lifecycle = registration.lifecycle;
   if (!lifecycle || lifecycle.execution_state === "running") return undefined;
-  if (recoveredTerminalBelongsToSuccessorTurn(task, lifecycle.execution_command_id)) {
-    // 러너가 남긴 종료는 이전 실행의 것이다. 이번 실행이 어떻게 끝났는지는
-    // 어디에도 남지 않았으므로 그 종료를 completed_ok로 확정하지 않고 실패로
-    // 닫는다. 재시작 전에 시작된 턴의 출력을 이전 턴 완료로 덮어쓰던 자리다(카드 #1514).
+  if (executionIsSuccessorTurn(task, lifecycle.execution_command_id)) {
     return {
       fact: "failed",
       detail:

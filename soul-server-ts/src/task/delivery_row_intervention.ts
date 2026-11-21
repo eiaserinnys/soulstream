@@ -72,7 +72,7 @@ export async function redeliverStoredDeliveryContent(
   }
 }
 
-function requiredTarget(row: SessionDeliveryRow): string {
+export function requiredTarget(row: SessionDeliveryRow): string {
   if (!row.target_session_id) {
     throw new Error(`Delivery ${row.delivery_id} has no resolved target`);
   }

@@ -12,6 +12,8 @@ import {
   EVENT_OUTBOX_MAX_BATCH_BYTES,
   EVENT_OUTBOX_MAX_BATCH_EVENTS,
   EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES,
+  assertBatchEventLimit,
+  buildBatch,
   computeEventOutboxPayloadHash,
   normalizeEventOutboxAppendInput,
   type EventOutboxAppendInput,
@@ -35,7 +37,6 @@ import {
 import { engineEventFrame, type RunnerEventFrame } from "./frame_protocol.js";
 import {
   assertRunnerEventFits,
-  buildRunnerEventBatch,
   runnerRowToBootstrap,
   runnerRowToRecord,
   sameRunnerBootstrapInput,
@@ -733,7 +734,7 @@ export class RunnerSqliteEventOutbox {
         candidateArray[0]!,
         ...candidateArray.slice(1),
       ];
-      const frame = buildRunnerEventBatch(bootstrap.stream_id, candidate);
+      const frame = buildBatch(bootstrap.stream_id, candidate);
       const frameBytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
       if (frameBytes > EVENT_OUTBOX_MAX_BATCH_BYTES) {
         if (selected.length === 0 && frameBytes <= EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES) {
@@ -746,7 +747,7 @@ export class RunnerSqliteEventOutbox {
     if (selected.length === 0) {
       throw new Error("event outbox record exceeds 2 MiB single-event contract");
     }
-    return buildRunnerEventBatch(
+    return buildBatch(
       bootstrap.stream_id,
       selected as [EventOutboxRecord, ...EventOutboxRecord[]],
     );
@@ -1063,12 +1064,6 @@ async function readOutboxRegistrationId(
 function assertAcknowledgedThrough(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new Error("runner event outbox acknowledged_through is invalid");
-  }
-}
-
-function assertBatchEventLimit(value: number): void {
-  if (!Number.isSafeInteger(value) || value <= 0 || value > EVENT_OUTBOX_MAX_BATCH_EVENTS) {
-    throw new Error(`event outbox batch event limit must be 1-${EVENT_OUTBOX_MAX_BATCH_EVENTS}`);
   }
 }
 

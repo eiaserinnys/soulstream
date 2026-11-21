@@ -1,6 +1,5 @@
 import type {
   DeliveryAggregateState,
-  DeliveryIntent,
 } from "@soulstream/wire-schema/session-delivery";
 
 export const DELIVERY_ATTEMPT_OUTCOMES = [
@@ -27,17 +26,4 @@ export function isDeliveryLayerCombinationAllowed(input: {
     return input.aggregateState === "pending" && !input.hasTargetReceipt;
   }
   return input.aggregateState === "dead_letter" && !input.hasTargetReceipt;
-}
-
-export interface DeliveryMetadata {
-  deliveryId?: string;
-  deliveryIntent?: DeliveryIntent;
-  source?: string;
-  completionId?: string;
-  relationKey?: string;
-  producerTerminalRevision?: string;
-  parentDeliveryId?: string;
-  callerTurnId?: string;
-  createdAt?: string;
-  deliveryAttemptToken?: string;
 }

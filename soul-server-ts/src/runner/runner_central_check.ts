@@ -66,7 +66,7 @@ export function registrationAppliedAndTurnRunning(
   return runner.dispatcher.hasActiveExecution() === true;
 }
 
-function hasRecordedTerminal(task: Task): boolean {
+export function hasRecordedTerminal(task: Task): boolean {
   return isTerminalTaskStatus(task.status)
     && task.terminationEventRecorded === true
     && typeof task.terminalEventId === "number"

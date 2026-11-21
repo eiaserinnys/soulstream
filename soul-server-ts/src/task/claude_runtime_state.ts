@@ -1,4 +1,6 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { asRecord } from "../engine/claude_sdk_helpers.js";
+import { parseRuntimeTaskStatus } from "../engine/claude_sdk_runtime_state.js";
 import { readClaudeBackgroundProvenance } from
   "../engine/claude_background_provenance.js";
 
@@ -199,7 +201,7 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
 
     case "claude_runtime_task_updated": {
       const patch = asRecord(payload.patch) ?? {};
-      const status = parseTaskStatus(patch.status);
+      const status = parseRuntimeTaskStatus(patch.status);
       if (status) runtimeTask.status = status;
       const toolUseId = asString(patch.tool_use_id);
       if (toolUseId) runtimeTask.toolUseId = toolUseId;
@@ -238,7 +240,7 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       if (readClaudeBackgroundProvenance(payload)) {
         runtimeTask.isBackgrounded = true;
       }
-      const status = parseTaskStatus(payload.status);
+      const status = parseRuntimeTaskStatus(payload.status);
       if (status) runtimeTask.status = status;
       copyString(payload, "output_file", runtimeTask, "outputFile");
       copyString(payload, "summary", runtimeTask);
@@ -343,17 +345,6 @@ function parseRemoteTriggerSource(value: unknown): "message_origin" | "tool_use"
   return value === "message_origin" || value === "tool_use" ? value : undefined;
 }
 
-function parseTaskStatus(value: unknown): ClaudeRuntimeTaskStatus | undefined {
-  return value === "pending" ||
-    value === "running" ||
-    value === "completed" ||
-    value === "failed" ||
-    value === "stopped" ||
-    value === "killed"
-    ? value
-    : undefined;
-}
-
 function copyString(
   source: Record<string, unknown>,
   sourceKey: string,
@@ -387,12 +378,6 @@ function copyNumber(
 function timestampToEpochMs(value: unknown): number | undefined {
   const seconds = asNumber(value);
   return seconds === undefined ? undefined : seconds * 1000;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function asString(value: unknown): string | undefined {

@@ -11,7 +11,10 @@ import {
 import {
   buildCanonicalDeliveryPayload,
 } from "./delivery_payload.js";
-import { deliveryRowToInterventionParams } from "./delivery_row_intervention.js";
+import {
+  deliveryRowToInterventionParams,
+  requiredTarget,
+} from "./delivery_row_intervention.js";
 import type { CallerInfo } from "./task_models.js";
 import {
   DELIVERY_NOTIFICATION_MAX_AGE_MS,
@@ -429,13 +432,6 @@ function buildCompletionRegistration(
 
 function isRecoverable(row: SessionDeliveryRow): boolean {
   return row.state === "pending" || row.state === "claimed";
-}
-
-function requiredTarget(row: SessionDeliveryRow): string {
-  if (!row.target_session_id) {
-    throw new Error(`Delivery ${row.delivery_id} has no resolved target`);
-  }
-  return row.target_session_id;
 }
 
 function requiredAttemptToken(row: SessionDeliveryRow): string {

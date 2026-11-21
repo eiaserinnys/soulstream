@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, rename } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 import {
@@ -15,6 +15,7 @@ import { readRunnerRegistrationIdentity } from "./runner_registration_identity.j
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import {
   inspectRunnerWriterLock,
+  pathExists,
   type RunnerWriterLockState,
 } from "./runner_writer_lock.js";
 
@@ -57,7 +58,7 @@ export async function quarantineUnreadableRunnerRegistration(
     return { status: "retained", reason: "unsupported_failure_stage" };
   }
   return await withRunnerSessionMutationLock(failure.directory, async () => {
-    if (!await exists(failure.directory)) return { status: "missing" };
+    if (!await pathExists(failure.directory)) return { status: "missing" };
     try {
       await readRunnerRegistrationSummary(failure.directory, {
         verifyProcessIdentity: true,
@@ -118,16 +119,6 @@ async function readPidIfValid(path: string): Promise<number | null> {
     return await readRunnerPid(path);
   } catch {
     return null;
-  }
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
   }
 }
 
