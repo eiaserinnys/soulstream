@@ -1,6 +1,5 @@
+import type { ClaudeAccount, ClaudeAccountPool } from '../../../packages/wire-schema/generated/typescript/index';
 import type {
-  ClaudeAccount,
-  ClaudeAccountPool,
   UsageSummaryNode,
   UsageSummaryProvider,
   UsageSummarySnapshot,

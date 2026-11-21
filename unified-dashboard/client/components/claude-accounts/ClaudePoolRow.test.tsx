@@ -4,7 +4,8 @@ import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
+import type { ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 import { ClaudePoolRow } from "./ClaudePoolRow";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
@@ -41,6 +42,7 @@ function account(id: string, priority: number | null, email = `${id}@example.tes
     enabled: true,
     priority,
     auth_state: "ok",
+    source: "local",
     usage: {
       five_hour: { used_percent: (priority ?? 0) * 10, resets_at: reset },
       seven_day: { used_percent: (priority ?? 0) * 12, resets_at: reset },
@@ -979,9 +981,6 @@ describe("ClaudePoolRow node target with central accounts", () => {
     {
       ...account("central-a", 1),
       source: "central",
-      expires_at: "2030-01-01T01:00:00.000Z",
-      refreshed_at: "2030-01-01T00:00:00.000Z",
-      relogin_reason: null,
     },
   ], { available_count: 2, total_count: 3 });
 

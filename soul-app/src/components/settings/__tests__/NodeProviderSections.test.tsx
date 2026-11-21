@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
@@ -7,12 +6,8 @@ jest.mock('expo-web-browser', () => ({
   openBrowserAsync: jest.fn().mockResolvedValue({ type: 'cancel' }),
 }));
 
-import type {
-  ClaudeAccountList,
-  UsageSummaryProvider,
-  UsageSummaryQuota,
-  UsageSummarySnapshot,
-} from '../../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountList } from '../../../../../packages/wire-schema/generated/typescript/index';
+import type { UsageSummaryProvider, UsageSummaryQuota } from '../../../../../packages/soul-ui/src/lib/usage-summary';
 import type { AppUsageSummarySnapshot } from '../../../api/usageEndpoints';
 import { NodeProviderSections, type NodeProviderSectionsApi } from '../NodeProviderSections';
 import { SettingsSurface } from '../SettingsSurface';
@@ -86,7 +81,7 @@ const poolClaudeList: ClaudeAccountList = {
   accounts: [
     {
       id: 'review-one', email: 'primary@example.invalid', plan: 'Max 20x', enabled: true, priority: 1,
-      auth_state: 'ok', usage: {
+      auth_state: 'ok', source: 'local', usage: {
         five_hour: { used_percent: 24, resets_at: '2026-10-28T12:00:00.000Z' },
         seven_day: { used_percent: 13, resets_at: '2026-10-29T12:00:00.000Z' },
         fable_weekly: { used_percent: 18, resets_at: '2026-10-29T12:00:00.000Z' },
@@ -94,7 +89,7 @@ const poolClaudeList: ClaudeAccountList = {
     },
     {
       id: 'review-two', email: 'backup@example.invalid', plan: 'Max 5x', enabled: true, priority: 2,
-      auth_state: 'ok', usage: {
+      auth_state: 'ok', source: 'local', usage: {
         five_hour: { used_percent: 100, resets_at: '2026-10-28T14:30:00.000Z' },
         seven_day: { used_percent: 68, resets_at: '2026-10-30T12:00:00.000Z' },
         fable_weekly: { used_percent: 82, resets_at: '2026-10-30T12:00:00.000Z' },
@@ -103,7 +98,7 @@ const poolClaudeList: ClaudeAccountList = {
     },
     {
       id: 'review-three', email: 'reserve@example.invalid', plan: 'Pro', enabled: true, priority: 3,
-      auth_state: 'idle', usage: { five_hour: null, seven_day: null, fable_weekly: null },
+      auth_state: 'idle', source: 'local', usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: '2026-10-27T23:10:00.000Z', blocked: null, active_sessions: 0,
     },
   ],

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, type ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
-import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow } from "../../../../packages/wire-schema/generated/typescript/index";
 import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
 import { clockLabel } from "../CogitoNodeHealthClock";
 import {

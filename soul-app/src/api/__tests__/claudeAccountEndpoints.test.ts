@@ -1,7 +1,7 @@
 import { createApiClient } from '../client';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import type { ClaudeAccountDeleteResult, ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountDeleteResult, ClaudeAccountList } from '../../../../packages/wire-schema/generated/typescript/index';
 
 function jsonResponse(body: unknown): Response {
   return {

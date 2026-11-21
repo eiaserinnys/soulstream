@@ -1,6 +1,7 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { toggleDailyFolderMembership } from "./daily-folder-membership";
+import { operationId } from "./folder-star-actions";
 import type { PlannerFolder } from "./planner-data";
 
 type OperationIdFactory = (prefix: string) => string;
@@ -15,12 +16,8 @@ export async function togglePlannerFolderToday(
     api,
     dailyPageId: daily.page.id,
     folderPage: task.page,
-    idempotencyKey: () => idFactory("daily-toggle"),
+    idempotencyKey: () => idFactory("v3-daily-toggle"),
     reason: "v3 planner daily task toggle",
   });
 }
 
-function operationId(prefix: string): string {
-  if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
-  return `v3-${prefix}-${globalThis.crypto.randomUUID()}`;
-}

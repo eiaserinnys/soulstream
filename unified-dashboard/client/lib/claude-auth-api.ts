@@ -1,11 +1,10 @@
 import type {
-  ClaudeAccountDeleteResult,
   ClaudeAccountList,
   ClaudeAccount,
   ClaudeAuthError,
   ClaudeAuthLoginFlow,
-  ClaudeCentralSettings,
-} from "@seosoyoung/soul-ui";
+} from "../../../packages/wire-schema/generated/typescript/index";
+import type { ClaudeCentralSettings } from "@seosoyoung/soul-ui";
 
 export type ClaudeAccountPatch = {
   enabled?: boolean;
@@ -170,5 +169,3 @@ export function requestErrorMessage(error: unknown): string {
   }
   return error instanceof Error ? error.message : "Claude 계정 요청에 실패했습니다.";
 }
-
-export type { ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthError, ClaudeAuthLoginFlow };

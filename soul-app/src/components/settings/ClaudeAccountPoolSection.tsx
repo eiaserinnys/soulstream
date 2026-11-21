@@ -7,12 +7,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
-import type {
-  ClaudeAccount,
-  ClaudeAccountList,
-  ClaudeAccountPool,
-  ClaudeAuthLoginFlow,
-} from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAccountPool, ClaudeAuthLoginFlow } from '../../../../packages/wire-schema/generated/typescript/index';
 import type { ApiClient } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
 import { useDeviceType, useTokens } from '../../theme';

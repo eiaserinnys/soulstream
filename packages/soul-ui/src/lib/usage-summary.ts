@@ -1,67 +1,9 @@
+import type { ClaudeAccount, ClaudeAccountPool } from "../../../wire-schema/generated/typescript/index";
+
 export const USAGE_SUMMARY_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
 export type UsageSummaryProviderName = "claude" | "codex" | "antigravity" | "opencode_go";
 
-export type ClaudeAccountUsageWindow = {
-  readonly used_percent: number;
-  readonly resets_at: string | null;
-};
-
-export type ClaudeAccountBlocked = {
-  readonly until: string | null;
-  readonly scope: "all" | "fable";
-};
-
-/** 노드 목록에서 이 계정이 중앙 풀에서 내려온 것인지. 칸이 없으면 local로 본다. */
-export type ClaudeAccountSource = "central" | "local";
-
-export type ClaudeAccount = {
-  readonly id: string;
-  readonly email: string;
-  readonly plan: string | null;
-  readonly enabled: boolean;
-  readonly priority: number | null;
-  readonly auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
-  /** 로그인 중인 계정에만 있는 진행 중 흐름의 만료 시각(ISO 8601). */
-  readonly login_expires_at?: string;
-  readonly usage: {
-    readonly five_hour: ClaudeAccountUsageWindow | null;
-    readonly seven_day: ClaudeAccountUsageWindow | null;
-    readonly fable_weekly: ClaudeAccountUsageWindow | null;
-  };
-  readonly observed_at: string | null;
-  readonly blocked: ClaudeAccountBlocked | null;
-  readonly active_sessions: number;
-  /** 노드 목록에서만 오는 출처 칸. 중앙 목록에는 없다. */
-  readonly source?: ClaudeAccountSource;
-  /** 중앙 목록에만 있는 토큰 만료·갱신·재로그인 사유. */
-  readonly expires_at?: string | null;
-  readonly refreshed_at?: string | null;
-  readonly relogin_reason?: string | null;
-};
-
-export type ClaudeAccountPool = {
-  readonly available_count: number;
-  readonly total_count: number;
-  readonly best_weekly_remaining_percent: number | null;
-  readonly best_weekly_resets_at: string | null;
-  readonly earliest_available_at: string | null;
-};
-
-export type ClaudeAccountList = {
-  readonly mode: "legacy" | "pool";
-  readonly accounts: readonly ClaudeAccount[];
-  readonly pool: ClaudeAccountPool | null;
-  readonly fable_pool: ClaudeAccountPool | null;
-};
-
-export type ClaudeAccountDeleteResult = {
-  readonly deferred: boolean;
-  readonly accounts: readonly ClaudeAccount[];
-  readonly pool: ClaudeAccountPool | null;
-};
-
-/** 중앙 설정 `effective`의 노드 한 줄. 그 노드가 지금 중앙 풀을 받는지다. */
 export type ClaudeCentralEffectiveNode = {
   readonly node_id: string;
   readonly receive: boolean;
@@ -72,28 +14,6 @@ export type ClaudeCentralSettings = {
   readonly default_receive: boolean;
   readonly nodes: Readonly<Record<string, boolean>>;
   readonly effective: readonly ClaudeCentralEffectiveNode[];
-};
-
-export type ClaudeAuthError = {
-  readonly code: string;
-  readonly message: string;
-  readonly existing_account_id?: string;
-};
-
-export type ClaudeAuthLoginFlow = {
-  readonly login_id: string;
-  readonly account_id: string | null;
-  readonly state:
-    | "requested"
-    | "url_ready"
-    | "code_submitted"
-    | "verifying"
-    | "done"
-    | "failed"
-    | "cancelled";
-  readonly auth_url: string | null;
-  readonly expires_at: string;
-  readonly error: ClaudeAuthError | null;
 };
 
 export type UsageSummaryQuota = {

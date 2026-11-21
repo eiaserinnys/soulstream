@@ -1,10 +1,4 @@
-export type ClaudeRuntimeTaskStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "stopped"
-  | "killed";
+import type { ClaudeRuntimeTaskStatus } from "../../../wire-schema/generated/typescript/index";
 
 export interface ClaudeRuntimeTaskView {
   taskId: string;

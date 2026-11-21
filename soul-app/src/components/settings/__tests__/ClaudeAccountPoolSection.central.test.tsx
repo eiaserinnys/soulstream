@@ -1,14 +1,9 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import type {
-  ClaudeAccount,
-  ClaudeAccountList,
-  ClaudeAuthLoginFlow,
-  ClaudeCentralSettings,
-} from '../../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../../../packages/wire-schema/generated/typescript/index';
+import type { ClaudeCentralSettings } from '../../../../../packages/soul-ui/src/lib/usage-summary';
 import {
   ClaudeAccountPoolSection,
   type ClaudeAccountPoolApi,
@@ -26,6 +21,7 @@ function account(id: string, priority: number | null, overrides: Partial<ClaudeA
     enabled: true,
     priority,
     auth_state: 'ok',
+    source: 'local',
     usage: {
       five_hour: { used_percent: 24, resets_at: reset },
       seven_day: { used_percent: 13, resets_at: reset },
@@ -238,7 +234,7 @@ describe('ClaudeAccountPoolSection central target', () => {
     const nodeList = list([
       account('local-a', 1),
       account('local-b', 2),
-      account('central-a', 1, { source: 'central', expires_at: reset, refreshed_at: null, relogin_reason: null }),
+      account('central-a', 1, { source: 'central' }),
     ], 2);
     const harness = createApi(nodeList);
     const view = renderNode(harness);

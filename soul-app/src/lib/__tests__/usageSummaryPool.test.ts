@@ -1,11 +1,12 @@
-import type { ClaudeAccount, UsageSummarySnapshot } from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount } from '../../../../packages/wire-schema/generated/typescript/index';
+import type { UsageSummarySnapshot } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import { usageSummaryGaugesForApp } from '../usage-summary-pool';
 import type { AppUsageSummarySnapshot } from '../../api/usageEndpoints';
 
 function account(id: string): ClaudeAccount {
   return {
     id, email: `${id}@example.invalid`, plan: null, enabled: true, priority: 1,
-    auth_state: 'ok', usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    auth_state: 'ok', source: 'local', usage: { five_hour: null, seven_day: null, fable_weekly: null },
     observed_at: null, blocked: null, active_sessions: 0,
   };
 }

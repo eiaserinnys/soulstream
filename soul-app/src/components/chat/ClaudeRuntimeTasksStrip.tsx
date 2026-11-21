@@ -13,8 +13,8 @@ import type { ClaudeRuntimeTaskOutputResponse } from '../../../../packages/soul-
 import type {
   ClaudeRuntimeModeView,
   ClaudeRuntimeTaskView,
-  ClaudeRuntimeTaskStatus,
 } from '../../../../packages/soul-ui/src/lib/claude-runtime-projection';
+import type { ClaudeRuntimeTaskStatus } from '../../../../packages/wire-schema/generated/typescript/index';
 import { useChatStore } from '../../store/chatStore';
 import { DESIGN_ICON_SIZE, useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';

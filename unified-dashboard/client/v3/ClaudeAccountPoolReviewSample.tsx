@@ -4,6 +4,8 @@ import type {
   ClaudeAccount,
   ClaudeAccountList,
   ClaudeAuthLoginFlow,
+} from "../../../packages/wire-schema/generated/typescript/index";
+import type {
   ClaudeCentralSettings,
   UsageSummaryGauge,
   UsageSummaryNode,
@@ -40,9 +42,9 @@ function sampleAccounts(): ClaudeAccountList {
       enabled: true,
       priority: 1,
       auth_state: "ok",
+      source: "local",
       usage: {
         five_hour: { used_percent: 24, resets_at: isoIn(resetSoon) },
-        // 빨리 씀: 지난 50%, 사용 72%. 여유: 지난 60%, 사용 20%.
         seven_day: { used_percent: 72, resets_at: isoIn(resetHalf) },
         fable_weekly: { used_percent: 20, resets_at: isoIn(resetSixty) },
       },
@@ -57,9 +59,9 @@ function sampleAccounts(): ClaudeAccountList {
       enabled: true,
       priority: 2,
       auth_state: "ok",
+      source: "local",
       usage: {
         five_hour: { used_percent: 100, resets_at: isoIn(resetSoon) },
-        // 맞춤: 지난 50%, 사용 48%. 리셋 모름: 칸막이만 남고 커서가 없다.
         seven_day: { used_percent: 48, resets_at: isoIn(resetHalf) },
         fable_weekly: { used_percent: 46, resets_at: null },
       },
@@ -74,6 +76,7 @@ function sampleAccounts(): ClaudeAccountList {
       enabled: true,
       priority: 3,
       auth_state: "idle",
+      source: "local",
       usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: isoIn(nowSeconds - 26 * HOUR),
       blocked: null,
@@ -86,6 +89,7 @@ function sampleAccounts(): ClaudeAccountList {
       enabled: true,
       priority: 4,
       auth_state: "logging_in",
+      source: "local",
       login_expires_at: new Date(Date.now() + 8 * 60_000).toISOString(),
       usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: isoIn(nowSeconds - 2 * HOUR),
@@ -310,6 +314,7 @@ export function createProviderPanelReviewRequest(
             enabled: true,
             priority: list.accounts.length + 1,
             auth_state: "ok",
+            source: "local",
             usage: { five_hour: null, seven_day: null, fable_weekly: null },
             observed_at: null,
             blocked: null,
@@ -389,6 +394,7 @@ function centralAccountList(): ClaudeAccountList {
       enabled: true,
       priority: 1,
       auth_state: "ok",
+      source: "local",
       usage: {
         five_hour: { used_percent: 18, resets_at: isoIn(resetSoon) },
         seven_day: { used_percent: 64, resets_at: isoIn(resetHalf) },
@@ -397,9 +403,6 @@ function centralAccountList(): ClaudeAccountList {
       observed_at: isoIn(nowSeconds - 5 * 60),
       blocked: null,
       active_sessions: 0,
-      expires_at: isoIn(nowSeconds + 2 * HOUR),
-      refreshed_at: isoIn(nowSeconds - 5 * 60),
-      relogin_reason: null,
     },
     {
       id: "2d7a90fe-6c3b-4a18-b2f4-9e8d7c650a13",
@@ -408,13 +411,11 @@ function centralAccountList(): ClaudeAccountList {
       enabled: true,
       priority: 2,
       auth_state: "needs_relogin",
+      source: "local",
       usage: { five_hour: null, seven_day: null, fable_weekly: null },
       observed_at: isoIn(nowSeconds - 3 * DAY),
       blocked: null,
       active_sessions: 0,
-      expires_at: isoIn(nowSeconds - 2 * DAY),
-      refreshed_at: isoIn(nowSeconds - 3 * DAY),
-      relogin_reason: "refresh_token_expired",
     },
     {
       id: "c56e18b9-3f04-4d72-a0c8-51b9e2f74d68",
@@ -423,6 +424,7 @@ function centralAccountList(): ClaudeAccountList {
       enabled: false,
       priority: 3,
       auth_state: "ok",
+      source: "local",
       usage: {
         five_hour: { used_percent: 9, resets_at: isoIn(resetSoon) },
         seven_day: { used_percent: 31, resets_at: isoIn(resetWeek) },
@@ -431,9 +433,6 @@ function centralAccountList(): ClaudeAccountList {
       observed_at: isoIn(nowSeconds - 26 * HOUR),
       blocked: null,
       active_sessions: 0,
-      expires_at: isoIn(nowSeconds + 6 * HOUR),
-      refreshed_at: isoIn(nowSeconds - 26 * HOUR),
-      relogin_reason: null,
     },
   ];
   return {
@@ -466,6 +465,7 @@ function centralNodeAccounts(scene: CentralReviewScene): ClaudeAccountList {
         enabled: true,
         priority: 1,
         auth_state: "ok",
+        source: "local",
         usage: {
           five_hour: { used_percent: 42, resets_at: isoIn(resetSoon) },
           seven_day: { used_percent: 36, resets_at: isoIn(resetWeek) },
@@ -482,6 +482,7 @@ function centralNodeAccounts(scene: CentralReviewScene): ClaudeAccountList {
         enabled: true,
         priority: 2,
         auth_state: "idle",
+        source: "local",
         usage: { five_hour: null, seven_day: null, fable_weekly: null },
         observed_at: isoIn(nowSeconds - 2 * DAY),
         blocked: null,

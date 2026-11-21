@@ -1,13 +1,9 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import type {
-  ClaudeAccount,
-  ClaudeAccountList,
-  ClaudeCentralSettings,
-} from '../../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccount, ClaudeAccountList } from '../../../../../packages/wire-schema/generated/typescript/index';
+import type { ClaudeCentralSettings } from '../../../../../packages/soul-ui/src/lib/usage-summary';
 import type { AppUsageSummarySnapshot } from '../../../api/usageEndpoints';
 import { AIBackendSettingsSection } from '../AIBackendSettingsSection';
 import type { NodeProviderSectionsApi } from '../NodeProviderSections';

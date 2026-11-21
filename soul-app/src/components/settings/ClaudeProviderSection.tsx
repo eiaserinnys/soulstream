@@ -13,7 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
 import type { AccountProfile } from '../../api/claudeAuthTypes';
 import type { ApiClient } from '../../api/client';
-import type { ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
+import type { ClaudeAccountList } from '../../../../packages/wire-schema/generated/typescript/index';
 import type { AppUsageSummaryProvider } from '../../api/usageEndpoints';
 import { useTokens, type DesignTokens } from '../../theme';
 import { useAuthStore } from '../../store/authStore';

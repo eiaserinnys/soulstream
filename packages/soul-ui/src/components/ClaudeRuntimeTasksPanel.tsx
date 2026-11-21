@@ -1,5 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Bot, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
 
 import {
@@ -10,10 +9,10 @@ import {
 } from "../lib/claude-runtime-actions";
 import type {
   ClaudeRuntimeModeView,
-  ClaudeRuntimeTaskStatus,
   ClaudeRuntimeTaskView,
   ClaudeRuntimeView,
 } from "../lib/claude-runtime-projection";
+import type { ClaudeRuntimeTaskStatus } from "@soulstream/wire-schema";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";

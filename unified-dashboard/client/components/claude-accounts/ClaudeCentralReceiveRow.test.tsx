@@ -4,7 +4,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClaudeAccountList, ClaudeCentralSettings } from "@seosoyoung/soul-ui";
+import type { ClaudeAccountList } from "../../../../packages/wire-schema/generated/typescript/index";
+import type { ClaudeCentralSettings } from "@seosoyoung/soul-ui";
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   Button: ({ children, render: _render, variant: _variant, size: _size, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
