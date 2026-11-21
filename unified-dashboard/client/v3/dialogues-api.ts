@@ -406,7 +406,6 @@ export function createDialoguesApi() {
   const persistentStoryState = new URLSearchParams(window.location.search).get("persistentStoryState") ?? "full";
   const cogitoState = new URLSearchParams(window.location.search).get("cogitoState") ?? "normal";
   const assemblyState = new URLSearchParams(window.location.search).get("assemblyState") ?? "normal";
-  let assemblyRequestCount = 0;
   let persistentStoryRequestCount = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -555,7 +554,15 @@ export function createDialoguesApi() {
       value = orchestration;
     } else if (path === "/api/agent-profiles") value = { profiles: [profile, { ...profile, agent_id: "empty-sample", name: "소스 없는 프로필", context_bundles: [], atom_contexts: [], effective_atom_contexts: [] }] };
     else if (path.startsWith("/api/agent-profiles/")) {
-      if (method !== "GET") profile = { ...profile, ...body, version: profile.version + 1 };
+      if (method !== "GET") {
+        const contextBundles: string[] = body.context_bundles ?? profile.context_bundles;
+        const atomContexts = body.atom_contexts ?? profile.atom_contexts;
+        const effective = contextBundles.flatMap(id => {
+          const bundle = bundles.find(item => item.bundle_id === id);
+          return Array.isArray(bundle?.atom_contexts) ? bundle.atom_contexts : [];
+        });
+        profile = { ...profile, ...body, effective_atom_contexts: [...effective, ...atomContexts], version: profile.version + 1 };
+      }
       value = profile;
     } else if (path === "/api/context-bundles") value = { bundles };
     else if (path.startsWith("/api/context-bundles/")) {
@@ -574,11 +581,11 @@ export function createDialoguesApi() {
         value = next;
       } else value = existing ?? {};
     } else if (path.includes("/agents/context-preview")) {
-      assemblyRequestCount += 1;
       if (assemblyState === "loading") {
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-      if (assemblyState === "failure" || (assemblyState === "retry" && assemblyRequestCount === 1)) {
+      const currentAssemblyState = new URLSearchParams(window.location.search).get("assemblyState");
+      if (currentAssemblyState === "failure" || currentAssemblyState === "retry") {
         return Response.json({ detail: "노드에 연결하지 못했습니다." }, { status: 503 });
       }
       value = assemblyPreview(body);

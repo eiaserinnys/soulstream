@@ -304,7 +304,7 @@ function SourceDetail({ row, data, focusSkill, onBack, onOpenSkill, onRetry }: {
   const atomUrl = !all && data.atom_base_url ? `${data.atom_base_url}/#${row.nodeId}` : null;
   const meta = all
     ? `${formatChars(data.manifest.total_chars ?? 0)} · 예상 ${(data.manifest.total_token_estimate ?? 0).toLocaleString()} 토큰`
-    : [row.origin, contextShape(row.context), row.chars !== null ? `${formatChars(row.chars)} · 예상 ${(row.tokens ?? 0).toLocaleString()} 토큰` : null].filter(Boolean).join(" · ");
+    : [row.origin, contextShape(row.context), row.chars !== null ? formatChars(row.chars) : null, row.status === "ok" && row.tokens !== null ? `예상 ${row.tokens.toLocaleString()} 토큰` : null].filter(Boolean).join(" · ");
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="agent-context-assembly-detail">
       <DetailHeader title={all ? "전체" : rowTitle(row)} meta={meta} copyText={text ?? null} copyLabel={all ? "전체 복사" : "본문 복사"} atomUrl={atomUrl} onBack={onBack} backLabel="소스 목록으로" />

@@ -52,3 +52,15 @@ it("returns the assembly contract for central and node-only profiles", async () 
   const agents = await (await api.request("/api/nodes/sample-node/agents")).json();
   expect(agents.agents).toContainEqual(expect.objectContaining({ id: "node-sample", source: "yaml" }));
 });
+it("keeps the failure scene failing until the scene is changed for retry", async () => {
+  history.replaceState(null, "", "/dialogues?sample=settings&assemblyState=retry");
+  const api = createDialoguesApi();
+  const request = () => api.request("/api/nodes/sample-node/agents/context-preview", {
+    method: "POST", body: JSON.stringify({ atom_contexts: [], session: { source: "browser" } }),
+  });
+  expect((await request()).status).toBe(503);
+  expect((await request()).status).toBe(503);
+  history.replaceState(null, "", "/dialogues?sample=settings&assemblyState=normal");
+  expect((await request()).status).toBe(200);
+  history.replaceState(null, "", "/");
+});
