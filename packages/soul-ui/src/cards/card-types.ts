@@ -7,8 +7,8 @@ export type { CardColor } from "@soulstream/wire-schema/card-colors";
 export { CARD_COLOR_KEYS, CARD_COLORS } from "@soulstream/wire-schema/card-colors";
 import type { CardStatus } from "@soulstream/wire-schema";
 export type { CardStatus } from "@soulstream/wire-schema";
+import type { CardItemDisplay } from "@soulstream/wire-schema/card-item-display";
 export interface CardActivity { kind: "instruction" | "report"; body: string; createdAt: string; format: "markdown" | "html" }
-export type CardItemDisplay = "todo" | "doing" | "reported" | "changed" | "fix" | "confirmed" | "dropped";
 export interface CardItemEvidence {
   type: "image" | "link";
   url: string;
@@ -58,7 +58,6 @@ export interface CardQuestion {
   attachments?: CardQuestionAttachment[]; selectedOption?: string | null; revision?: number; revisedAt?: string | null;
 }
 export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("../shared/session-types").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string
-  /** GET /api/sessions 행과 같은 이름과 값으로 상세 응답이 싣는다. */
   agentName?: string | null; agentPortraitUrl?: string | null;
   modelPreset?: string | null; modelLabel?: string | null; backend?: string | null }
 export interface CardComment { id: string; cardId: string; authorKind: "user" | "agent"; authorId: string; sessionId: string | null; kind: "comment" | "spoken" | "note"; itemId?: number | null; questionId?: string | null; body: string; createdAt: string }

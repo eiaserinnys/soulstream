@@ -28,6 +28,10 @@
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
 !/packages/soul-ui/src/lib/action-failure.ts
+!/packages/soul-ui/src/lib/claude-runtime-actions.ts
+!/packages/soul-ui/src/lib/owned-agents.ts
+!/packages/soul-ui/src/lib/planner-folder-status.ts
+!/packages/soul-ui/src/lib/wallpaper-settings.ts
 !/packages/soul-ui/src/lib/turn-usage-format.ts
 !/packages/soul-ui/src/lib/usage-summary.ts
 !/packages/soul-ui/src/lib/usage-stats-format.ts
@@ -46,14 +50,25 @@
 !/packages/soul-ui/src/lib/card-board-status-labels.ts
 !/packages/wire-schema
 /packages/wire-schema/*
+!/packages/wire-schema/generated
+/packages/wire-schema/generated/*
+!/packages/wire-schema/generated/typescript
+/packages/wire-schema/generated/typescript/*
+!/packages/wire-schema/generated/typescript/index.ts
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/attachments.ts
+!/packages/wire-schema/src/attachment_path_notes.ts
+!/packages/wire-schema/src/card_attachments.ts
+!/packages/wire-schema/src/card_item_display.ts
+!/packages/wire-schema/src/card_questions.ts
+!/packages/wire-schema/src/catalog.ts
 !/packages/wire-schema/src/card_colors.ts
 !/packages/wire-schema/src/card_status_labels.ts
 !/packages/wire-schema/src/conversation_visibility.ts
 !/packages/wire-schema/src/persistent_jev_candidates.ts
 !/packages/wire-schema/src/persistent_report.ts
+!/packages/wire-schema/src/persistent_session_settings.ts
 !/packages/wire-schema/src/push_notification.ts
 !/packages/wire-schema/src/session_statistics.ts
 

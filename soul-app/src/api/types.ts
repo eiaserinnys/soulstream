@@ -1,14 +1,6 @@
-// /api/sessions `sessionList[]` 정본 (Phase A-bis, 2026-05-16).
-// orch-server `_session_to_response()`가 모든 키를 camelCase로 직렬화한다.
-// snake_case 잔재가 있는 SSE wire(`session_created.session` to_session_info,
-// `session_updated` payload)는 mappers.ts의 toSession/applySessionUpdates가
-// 정규화하여 본 타입으로 변환한다 — 클라이언트 store는 항상 camelCase 단일 정본.
-//
-// 비교: `packages/soul-ui/src/shared/types.ts:SessionSummary`. soul-app은
-// llmProvider/llmModel/llmUsage 같은 web 전용 필드를 두지 않는다 (앱이 llm
-// 세션 채팅 UI 미지원). 필요 시 후속에서 확장.
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
+import type { CatalogSessionAssignment } from '../../../packages/wire-schema/src/catalog';
 export type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 export type MessageContextItem = { key: string; content: unknown };
 export type ReviewState = 'not_required' | 'needs_review' | 'acknowledged';
@@ -189,17 +181,9 @@ export interface FolderMutationResult {
   idempotent: boolean;
 }
 
-export interface CatalogAssignment {
-  folderId: string | null;
-  displayName: string | null;
-}
-
-export type CatalogSessionsDelta = Record<string, CatalogAssignment | null>;
-
-// 서버의 CatalogState 타입 기반
 export interface Catalog {
   folders: Folder[];
-  sessions: Record<string, CatalogAssignment>;
+  sessions: Record<string, CatalogSessionAssignment>;
 }
 
 export interface SessionListResponse {

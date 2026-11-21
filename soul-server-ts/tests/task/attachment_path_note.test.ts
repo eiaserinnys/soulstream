@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { appendAttachmentPathNotes } from "../../src/task/attachment_path_note.js";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 
 describe("appendAttachmentPathNotes", () => {
   it("appends every attachment path as model-visible note lines", () => {

@@ -1,6 +1,6 @@
 import type { Session } from '../../api/types';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
-import { appendAttachmentPathNotes } from '../../utils/attachmentPathNotes';
+import { appendAttachmentPathNotes } from '../../../../packages/wire-schema/src/attachment_path_notes';
 import {
   buildOptimisticSession,
   resolveOptimisticAgent,

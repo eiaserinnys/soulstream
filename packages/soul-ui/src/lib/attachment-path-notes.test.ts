@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { appendAttachmentPathNotes, removeRepresentedAttachmentPathNotes } from "./attachment-path-notes";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
+import { removeRepresentedAttachmentPathNotes } from "./attachment-path-notes";
 
 describe("appendAttachmentPathNotes", () => {
   it("adds model-visible local path notes and avoids duplicates", () => {

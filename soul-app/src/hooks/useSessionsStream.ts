@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createApiClient } from '../api/client';
 import { applySessionUpdated, toSession } from '../api/mappers';
-import type { Catalog, CatalogSessionsDelta, Folder, Session } from '../api/types';
+import type { Catalog, Folder, Session } from '../api/types';
+import type { CatalogSessionsDelta } from '../../../packages/wire-schema/src/catalog';
 import {
   applyPendingAttentionDelta,
   createPendingAttentionVersionState,
 } from '../lib/session-attention';
 import { useSettingsStore } from '../store/settingsStore';
-import { useSessionStore } from '../store/sessionStore';
+import { useSessionStore, type PersistentReportBaseline } from '../store/sessionStore';
 import { useChatStore } from '../store/chatStore';
-import type { PersistentReportBaseline } from '../store/sessionStore';
 import { useSSEStream, CATALOG_STREAM_EVENTS } from './useSSEStream';
 import { plannerSourceForStreamEvent } from '../lib/planner-invalidation';
 import { usePlannerStore } from '../store/plannerStore';

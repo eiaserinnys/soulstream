@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { PlannerFolder, PlannerFolderStatus } from '../../api/plannerTypes';
+import type { PlannerFolder } from '../../api/plannerTypes';
+import type { PlannerFolderStatus } from '../../../../packages/soul-ui/src/lib/planner-folder-status';
 import { splitPlannerContentLabel } from '../../lib/planner-project-tree';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { GroupedGlassRow } from './GroupedGlassSheet';

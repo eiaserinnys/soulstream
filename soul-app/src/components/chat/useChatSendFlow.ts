@@ -3,7 +3,7 @@ import type { ApiClient } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
 import type { Session } from '../../api/types';
 import type { ReportReplyDraft, ReportSendContext } from '../../lib/persistent-report';
-import { appendAttachmentPathNotes } from '../../utils/attachmentPathNotes';
+import { appendAttachmentPathNotes } from '../../../../packages/wire-schema/src/attachment_path_notes';
 import {
   useChatStore,
   createOptimisticUserEvent,

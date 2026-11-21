@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { TouchableWithoutFeedback, Text, View } from 'react-native';
-import type { CardAttachment, CardComment, CardDetail, CardQuestion, CardReport } from '../../api/cardTypes';
+import type { CardComment, CardDetail, CardQuestion, CardReport } from '../../api/cardTypes';
+import type { CardAttachment } from '../../../../packages/wire-schema/src/card_attachments';
 import type { Session, SessionEvent } from '../../api/types';
 import { cardItemTargetText, formatCardTime } from '../../lib/card-check-item-summary';
 import { useSessionStore } from '../../store/sessionStore';

@@ -1,4 +1,5 @@
-import type { CardCheckItem, CardItemDisplay } from '../api/cardTypes';
+import type { CardCheckItem } from '../api/cardTypes';
+import type { CardItemDisplay } from '../../../packages/wire-schema/src/card_item_display';
 import type { ColorScheme } from '../theme/colors';
 
 export const EMPTY_PENDING_ITEM_CONFIRMATIONS: Record<number, { confirmed: boolean; requestId: string }> = {};

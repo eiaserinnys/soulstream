@@ -3,6 +3,8 @@ import type { CardColor } from '../../../packages/wire-schema/src/card_colors';
 import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
 import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
+import type { CardItemDisplay } from '../../../packages/wire-schema/src/card_item_display';
 
 export type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 
@@ -32,13 +34,6 @@ export type CardAttachmentEvidence =
   | { type: 'image' | 'link'; url: string; label: string }
   | CardAttachmentAssetEvidence;
 
-export interface CardAttachment {
-  nodeId: string;
-  path: string;
-  name: string;
-  mimeType: string;
-}
-export type CardItemDisplay = 'todo' | 'doing' | 'reported' | 'changed' | 'fix' | 'confirmed' | 'dropped';
 export interface CardCheckItem {
   id: number;
   title: string;

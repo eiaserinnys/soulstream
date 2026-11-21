@@ -1,14 +1,17 @@
 import type { AgentProfile } from "../agent_registry.js";
-import type { BackendRolloverContext, GenerationPreparedContext } from "../context/context_builder.js";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
-import { composeFirstTurnPromptWithMaterial } from "../context/context_builder.js";
+import {
+  composeFirstTurnPromptWithMaterial,
+  type BackendRolloverContext,
+  type GenerationPreparedContext,
+} from "../context/context_builder.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
 import {
   createInputMaterialPart,
   inputMaterialPartsMatchText,
 } from "../context/input_material_parts.js";
 
-import { appendAttachmentPathNotes } from "./attachment_path_note.js";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import {
   truncateClaudeTextToEstimatedTokens,
   type ClaudeBackendRolloverReason,

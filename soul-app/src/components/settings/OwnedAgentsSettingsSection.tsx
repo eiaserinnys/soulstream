@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { createApiClient } from '../../api/client';
-import type { OwnedAgent, OwnedAgentKey, OwnedAgentsApi, OwnedAgentsResponse } from '../../api/ownedAgentsEndpoints';
+import type { OwnedAgentsApi } from '../../api/ownedAgentsEndpoints';
+import type { OwnedAgent, OwnedAgentKey, OwnedAgentsResponse } from '../../../../packages/soul-ui/src/lib/owned-agents';
 import { useTokens, type DesignTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';
 import { FrameLoading } from '../FrameLoading';

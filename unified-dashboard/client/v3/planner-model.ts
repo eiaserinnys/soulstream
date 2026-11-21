@@ -5,13 +5,12 @@ import type {
 } from "@seosoyoung/soul-ui/page";
 import type {
   CatalogFolder,
+  PlannerFolderStatus,
   SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type {
   FolderSnapshot,
 } from "@seosoyoung/soul-ui/stores/folder-card-store";
-
-export type PlannerFolderStatus = "open" | "in_progress" | "review" | "completed";
 
 const STATUS_PRESENTATION = {
   open: { icon: "○", label: "Open" },

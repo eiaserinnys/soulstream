@@ -1,9 +1,8 @@
-import React from 'react';
 import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { OwnedAgentsSettingsSection } from '../OwnedAgentsSettingsSection';
 import * as Clipboard from 'expo-clipboard';
-import type { OwnedAgent, OwnedAgentKey } from '../../../api/ownedAgentsEndpoints';
+import type { OwnedAgent, OwnedAgentKey } from '../../../../../packages/soul-ui/src/lib/owned-agents';
 import { LIGHT_COLORS } from '../../../theme/colors';
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 

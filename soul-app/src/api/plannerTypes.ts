@@ -1,8 +1,7 @@
 import { plannerContextCount } from '../lib/planner-context-chips';
 import type { CatalogFolder } from './types';
 import type { CardDto } from './cardTypes';
-
-export type PlannerFolderStatus = 'open' | 'in_progress' | 'review' | 'completed';
+import type { PlannerFolderStatus } from '../../../packages/soul-ui/src/lib/planner-folder-status';
 
 export interface PlannerPageWire {
   id: string;

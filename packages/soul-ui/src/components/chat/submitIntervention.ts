@@ -1,11 +1,4 @@
-/**
- * submitIntervention — 실행 중(running) 세션에 메시지를 주입한다.
- *
- * `POST /api/sessions/{sessionId}/intervene` 로 텍스트 + 첨부를 전송한다.
- * 세션 lifecycle은 sessions stream이 갱신하며 이 채팅 명령 경로는 건드리지 않는다.
- */
-
-import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import { extractErrorMessage } from "./submitErrors";
 import type { InterveneResponse } from "../../shared/api-types";
 import type { ReportContextItem } from '../../shared/persistent-report';

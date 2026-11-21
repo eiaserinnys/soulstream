@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorText } from "./v3-dashboard-utils";
-import { useDashboardStore, appendAttachmentPathNotes, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { useDashboardStore, type CatalogFolder } from "@seosoyoung/soul-ui";
+import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 import { CardHandoffView } from "./CardHandoffView";
 import { useFileUpload } from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import { useQueryClient } from "@tanstack/react-query";

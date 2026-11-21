@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import type { OwnedAgent, OwnedAgentKey, OwnedAgentsApi } from '../api/ownedAgentsEndpoints';
+import { useMemo, useState } from 'react';
+import type { OwnedAgentsApi } from '../api/ownedAgentsEndpoints';
+import type { OwnedAgent, OwnedAgentKey } from '../../../packages/soul-ui/src/lib/owned-agents';
 import { OwnedAgentsSettingsSection } from '../components/settings/OwnedAgentsSettingsSection';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 

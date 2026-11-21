@@ -9,7 +9,7 @@ import type {
   EngineInterventionFailureReason,
   ReasoningEffort,
 } from "../engine/protocol.js";
-import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type {
   AddInterventionResult,

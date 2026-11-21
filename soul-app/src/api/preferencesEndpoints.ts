@@ -1,13 +1,8 @@
 import type { ApiRequestContext } from './clientCore';
 import { appendNativeUploadFile, type NativeUploadFile } from './nativeUpload';
+import type { WallpaperMode, WallpaperSettings } from '../../../packages/soul-ui/src/lib/wallpaper-settings';
 
 export type Appearance = 'system' | 'light' | 'dark';
-export type WallpaperMode = 'bokeh' | 'metal' | 'photo' | 'plain';
-
-export interface WallpaperSettings {
-  mode: WallpaperMode;
-  customImage?: string;
-}
 
 export interface UserPreferencesSnapshot {
   appearance: Appearance;

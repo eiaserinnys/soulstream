@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SoulSSEEvent } from "@shared/types";
 import type { PendingChatSend } from "./dashboard-store-types";
-import { ATTACHMENT_PATH_NOTE_PREFIX } from "../lib/attachment-path-notes";
+import { ATTACHMENT_PATH_NOTE_PREFIX } from "@soulstream/wire-schema/attachment-path-notes";
 import { pendingChatSendMatchesEvent } from "./pending-chat-send-match";
 
 const attachmentPath = "/tmp/scene.png";

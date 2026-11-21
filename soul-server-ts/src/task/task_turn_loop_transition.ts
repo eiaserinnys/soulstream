@@ -9,7 +9,7 @@ import {
 } from "../context/input_material_parts.js";
 import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 
-import { appendAttachmentPathNotes } from "./attachment_path_note.js";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";

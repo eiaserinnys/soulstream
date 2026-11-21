@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, FrameLoading, Input, Switch } from '@seosoyoung/soul-ui';
-import { createOwnedAgentsApi, type OwnedAgent, type OwnedAgentKey, type OwnedAgentsResponse } from '../lib/owned-agents-api';
+import { Button, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle, FrameLoading, Input, Switch, type OwnedAgent, type OwnedAgentKey, type OwnedAgentsResponse } from '@seosoyoung/soul-ui';
+import { createOwnedAgentsApi } from '../lib/owned-agents-api';
 import './config/owned-agents.css';
 
 export function OwnedAgentsTab({ request = fetch }: { request?: typeof fetch }) {

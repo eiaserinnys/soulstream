@@ -17,7 +17,7 @@ export function appendAttachmentPathNotes(text: string, paths?: readonly string[
   return `${text}${separator}${missing.join("\n")}`;
 }
 
-function collectAttachmentPathNotes(paths?: readonly string[]): string[] {
+export function collectAttachmentPathNotes(paths?: readonly string[]): string[] {
   const seen = new Set<string>();
   const notes: string[] = [];
   for (const path of paths ?? []) {

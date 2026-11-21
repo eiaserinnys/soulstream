@@ -1,6 +1,5 @@
-import type { OwnedAgent, OwnedAgentKey } from '../lib/owned-agents-api';
+import type { OwnedAgent, OwnedAgentKey } from '@seosoyoung/soul-ui';
 
-/** In-memory review transport. No real credentials or ownership changes. */
 export function createOwnedAgentsFixture(scenario = 'normal') {
   const now = '2026-10-04T12:00:00Z';
   let agents: OwnedAgent[] = [];

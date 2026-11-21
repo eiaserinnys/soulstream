@@ -2,10 +2,10 @@ import type {
   CatalogBoardItem,
   CatalogBoardItemsDelta,
   CatalogFolder,
-  CatalogSessionsDelta,
   CatalogState,
   SessionSummary,
 } from "../shared/types";
+import type { CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
 import { applyCatalogSessionDisplayName } from "../shared/session-projections";
 import { retainEqualValue } from "../lib/structural-sharing";
 

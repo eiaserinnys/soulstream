@@ -3,7 +3,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { OwnedAgentsTab } from './OwnedAgentsTab';
-import type { OwnedAgent, OwnedAgentKey } from '../lib/owned-agents-api';
+import type { OwnedAgent, OwnedAgentKey } from '@seosoyoung/soul-ui';
 
 let root: Root;
 const key: OwnedAgentKey = { id: 'k1', createdAt: '2026-10-04T00:00:00Z', lastUsedAt: null, revokedAt: null, isExistingConnection: true };

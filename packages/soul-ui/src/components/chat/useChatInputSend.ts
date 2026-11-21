@@ -10,7 +10,7 @@ import type { EventTreeNode } from "@shared/types";
 import type { FlattenTreeCache } from "../../lib/flatten-tree";
 import type { PendingChatSend, PendingChatSendAttachment } from "../../stores/dashboard-store-types";
 import { useAuth } from "../../providers/AuthProvider";
-import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 import { submitLlmContinuation } from "./submitLlmContinuation";

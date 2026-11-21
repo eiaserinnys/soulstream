@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Asset } from 'expo-asset';
 import { ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
@@ -30,7 +30,7 @@ import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
-import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
+import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 
 const reviewImageUris = [
   Asset.fromModule(require('../../assets/icon.png')).uri,

@@ -1,5 +1,5 @@
 import type { SoulSSEEvent } from "@shared/types";
-import { ATTACHMENT_PATH_NOTE_PREFIX } from "../lib/attachment-path-notes";
+import { ATTACHMENT_PATH_NOTE_PREFIX } from "@soulstream/wire-schema/attachment-path-notes";
 import type { PendingChatSend } from "./dashboard-store-types";
 
 function samePathSet(left: readonly string[], right: readonly string[]): boolean {

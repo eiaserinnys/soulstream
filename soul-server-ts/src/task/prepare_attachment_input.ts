@@ -1,6 +1,6 @@
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 
-import { formatAttachmentPathNote } from "./attachment_path_note.js";
+import { formatAttachmentPathNote } from "@soulstream/wire-schema/attachment-path-notes";
 import { splitAttachmentPaths } from "./attachment_context.js";
 
 export interface AttachmentTurnSource {

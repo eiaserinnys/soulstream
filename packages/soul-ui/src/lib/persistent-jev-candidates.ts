@@ -8,9 +8,7 @@ export interface PersistentJevCandidate {
   score: number;
 }
 
-export type PersistentJevObservation = Omit<WirePersistentJevObservation, "selected"> & {
-  selected: PersistentJevCandidate[];
-};
+export type PersistentJevObservation = { [K in keyof WirePersistentJevObservation as K extends "selected" ? never : K]: WirePersistentJevObservation[K] } & { selected: PersistentJevCandidate[] };
 
 export interface PersistentJevCandidatesProjectionItem {
   treeNodeId: string;

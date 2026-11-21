@@ -1,4 +1,4 @@
-import type { PlannerFolderStatus } from '../api/plannerTypes';
+import type { PlannerFolderStatus } from '../../../packages/soul-ui/src/lib/planner-folder-status';
 import type { DesignTokens } from './tokens';
 
 export interface PlannerVisualRoles {

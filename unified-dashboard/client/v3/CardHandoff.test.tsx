@@ -11,7 +11,6 @@ vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),
   DashboardIconCap: ({ label, ...props }: HTMLAttributes<HTMLButtonElement> & {label: string}) => createElement("button", {...props,"aria-label":label}),
   Button: (props: HTMLAttributes<HTMLButtonElement>) => createElement("button", props),
-  appendAttachmentPathNotes:(text:string)=>text,
   Input: (props: HTMLAttributes<HTMLInputElement>) => createElement("input", props),
   Popover: ({ children }: HTMLAttributes<HTMLDivElement>) => children,
   PopoverTrigger: (props: HTMLAttributes<HTMLButtonElement>) => createElement("button", props),
@@ -92,6 +91,6 @@ it.each(["folder","picker"])("allows a %s node change and submits only the hook'
   Object.assign(uploadFiles,{isReady:true,uploadedPaths:["/other/image.png"]});
   flushSync(()=>root.render(createElement(CardHandoff,props)));
   flushSync(()=>send.click());
-  await vi.waitFor(()=>expect(sessionCreate).toHaveBeenCalledWith(expect.objectContaining({nodeId:"other",attachmentPaths:["/other/image.png"],initialInstruction:"첨부와 초안을 보존합니다"})));
+  await vi.waitFor(()=>expect(sessionCreate).toHaveBeenCalledWith(expect.objectContaining({nodeId:"other",attachmentPaths:["/other/image.png"],initialInstruction:"첨부와 초안을 보존합니다\n\n[첨부 파일 로컬 경로: /other/image.png]"})));
  } finally {flushSync(()=>root.unmount());}
 });
