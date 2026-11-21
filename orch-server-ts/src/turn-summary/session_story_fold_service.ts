@@ -17,6 +17,14 @@ import type {
   TurnSummaryUsage,
 } from "./turn_summarizer.js";
 import { errorCodeOf, errorMessageOf } from "./error_chain.js";
+import {
+  buildSessionStoryPrompt,
+  markerOrderStats,
+  observeOutputShape,
+  parseSessionStoryOutput,
+  type SessionStoryOutput,
+} from "./session_story_output.js";
+export { markerOrderStats } from "./session_story_output.js";
 
 const STORY_OUTPUT_SCHEMA = {
   type: "object",
@@ -31,7 +39,15 @@ const STORY_OUTPUT_SCHEMA = {
   },
 } as const;
 
-const MARKER_PATTERN = /\[T(\d+)(?:-T(\d+))?\]/g;
+
+type FoldKind = "batch" | "completed_chunk" | "completed";
+type FoldContext = {
+  foldKind: FoldKind;
+  summaryCount: number;
+  promptChars: number;
+  timeoutMs: number | null;
+  startedAt: number;
+};
 
 export interface SessionStoryGenerator {
   generate(
@@ -43,6 +59,7 @@ export interface SessionStoryGenerator {
 
 export class SessionStoryFoldService {
   private readonly inFlight = new Set<string>();
+  private readonly failureCooldownUntil = new Map<string, number>();
   private readonly nowMs: () => number;
 
   constructor(private readonly deps: {
@@ -56,9 +73,7 @@ export class SessionStoryFoldService {
   }
 
   async foldIfNeeded(sessionId: string): Promise<void> {
-    await this.runExclusive(sessionId, async (startedAt) => {
-      const config = this.deps.configService.read();
-      if (!config.enabled) return;
+    await this.runExclusive(sessionId, "batch", async (startedAt, context, config) => {
       const digest = await this.deps.repository.loadDigest(sessionId);
       let narrative = digest?.narrative ?? null;
       let watermark = digest?.narrativeThroughEventId ?? null;
@@ -83,6 +98,7 @@ export class SessionStoryFoldService {
           }
           return;
         }
+        Object.assign(context, { foldKind: "batch", summaryCount: 0, promptChars: 0, startedAt: this.nowMs() });
         const summaries = await this.deps.repository.loadUnfoldedSummaries(
           sessionId,
           watermark,
@@ -103,6 +119,8 @@ export class SessionStoryFoldService {
           foldCount,
           summaries,
           startedAt,
+          context,
+          foldKind: "batch",
           conflictReason: "version_conflict",
           store: async (input) => await this.deps.repository.storeDigest(input),
         });
@@ -122,9 +140,7 @@ export class SessionStoryFoldService {
     completedBefore: Date,
     minimumSummaryCount: number,
   ): Promise<void> {
-    await this.runExclusive(candidate.sessionId, async (startedAt) => {
-      const config = this.deps.configService.read();
-      if (!config.enabled) return;
+    await this.runExclusive(candidate.sessionId, "completed", async (startedAt, context, config) => {
       const digest = await this.deps.repository.loadDigest(candidate.sessionId);
       const counts = await this.deps.repository.countTurnSummaries(
         candidate.sessionId,
@@ -147,6 +163,7 @@ export class SessionStoryFoldService {
       let remaining = counts.undigestedCount;
       const maxSummaries = config.storyCompletedFoldMaxSummaries;
       while (remaining > maxSummaries) {
+        Object.assign(context, { foldKind: "completed_chunk", summaryCount: 0, promptChars: 0, startedAt: this.nowMs() });
         const summaries = await this.deps.repository.loadUnfoldedSummaries(
           candidate.sessionId,
           watermark,
@@ -167,6 +184,8 @@ export class SessionStoryFoldService {
           foldCount,
           summaries,
           startedAt,
+          context,
+          foldKind: "completed_chunk",
           conflictReason: "completion_guard_conflict",
           store: async (input) => await this.deps.repository.storeDigest(input),
         });
@@ -179,6 +198,7 @@ export class SessionStoryFoldService {
         foldCount += 1;
         remaining -= maxSummaries;
       }
+      Object.assign(context, { foldKind: "completed", summaryCount: 0, promptChars: 0, startedAt: this.nowMs() });
       const summaries = await this.deps.repository.loadUnfoldedSummaries(
         candidate.sessionId,
         watermark,
@@ -199,6 +219,8 @@ export class SessionStoryFoldService {
         foldCount,
         summaries,
         startedAt,
+        context,
+        foldKind: "completed",
         conflictReason: "completion_guard_conflict",
         store: async (input) =>
           await this.deps.repository.storeCompletedDigest({
@@ -213,7 +235,8 @@ export class SessionStoryFoldService {
 
   private async runExclusive(
     sessionId: string,
-    action: (startedAt: number) => Promise<void>,
+    foldKind: FoldKind,
+    action: (startedAt: number, context: FoldContext, config: TurnSummaryConfig) => Promise<void>,
   ): Promise<void> {
     if (this.inFlight.has(sessionId)) {
       this.deps.logger.info?.(
@@ -224,12 +247,29 @@ export class SessionStoryFoldService {
     }
     this.inFlight.add(sessionId);
     const startedAt = this.nowMs();
+    const context: FoldContext = { foldKind, summaryCount: 0, promptChars: 0, timeoutMs: null, startedAt };
+    let config: TurnSummaryConfig | undefined;
     try {
-      await action(startedAt);
+      config = this.deps.configService.read();
+      context.timeoutMs = config.storyTimeoutMs;
+      if (!config.enabled) return;
+      const cooldownUntil = this.failureCooldownUntil.get(sessionId);
+      if (cooldownUntil !== undefined && startedAt < cooldownUntil) {
+        this.debugSkip(sessionId, "failure_cooldown");
+        return;
+      }
+      if (cooldownUntil !== undefined) this.failureCooldownUntil.delete(sessionId);
+      await action(startedAt, context, config);
     } catch (error) {
+      if (config !== undefined) this.setFailureCooldown(sessionId, config);
       this.deps.logger.warn(
         {
           sessionId,
+          foldKind: context.foldKind,
+          summaryCount: context.summaryCount,
+          promptChars: context.promptChars,
+          timeoutMs: context.timeoutMs,
+          elapsedMs: Math.max(0, this.nowMs() - context.startedAt),
           reason: "fold_error",
           errorCode: errorCodeOf(error),
           error: errorMessageOf(error),
@@ -249,20 +289,35 @@ export class SessionStoryFoldService {
     readonly foldCount: number;
     readonly summaries: readonly SessionStoryTurnSummary[];
     readonly startedAt: number;
+    readonly context: FoldContext;
+    readonly foldKind: FoldKind;
     readonly conflictReason: string;
     readonly store: (value: StoreSessionStoryDigestInput) => Promise<boolean>;
   }): Promise<string | null> {
+    input.context.foldKind = input.foldKind;
+    input.context.summaryCount = input.summaries.length;
     const prompt = buildSessionStoryPrompt(
       input.config.storyInstruction,
+      input.config.storyNarrativeMaxChars,
       input.narrative,
       input.summaries,
     );
+    Object.assign(input.context, {
+      foldKind: input.foldKind,
+      summaryCount: input.summaries.length,
+      promptChars: Array.from(prompt).length,
+      startedAt: this.nowMs(),
+    });
     const generated = await this.generateStructuredStory(
       prompt,
       input.config,
       input.sessionId,
+      input.context,
     );
-    if (generated === null) return null;
+    if (generated === null) {
+      this.setFailureCooldown(input.sessionId, input.config);
+      return null;
+    }
     const lastSummary = input.summaries[input.summaries.length - 1];
     if (lastSummary === undefined) return null;
     observeOutputShape(
@@ -289,10 +344,15 @@ export class SessionStoryFoldService {
       );
       return null;
     }
+    this.failureCooldownUntil.delete(input.sessionId);
     const markerStats = markerOrderStats(generated.output.narrative);
     this.deps.logger.info?.(
       {
         sessionId: input.sessionId,
+        foldKind: input.foldKind,
+        summaryCount: input.summaries.length,
+        promptChars: input.context.promptChars,
+        timeoutMs: input.config.storyTimeoutMs,
         model: generated.model,
         latencyMs: Math.max(0, this.nowMs() - input.startedAt),
         modelLatencyMs: generated.latencyMs,
@@ -315,6 +375,7 @@ export class SessionStoryFoldService {
     prompt: string,
     config: TurnSummaryConfig,
     sessionId: string,
+    context: FoldContext,
   ): Promise<{
     readonly output: SessionStoryOutput;
     readonly model: string;
@@ -325,7 +386,7 @@ export class SessionStoryFoldService {
     let lastError: unknown;
     let modelLatencyMs = 0;
     let usage: TurnSummaryUsage | undefined;
-    const storyConfig = { ...config, model: config.storyModel };
+    const storyConfig = { ...config, model: config.storyModel, timeoutMs: config.storyTimeoutMs };
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const result = await this.deps.generator.generate(prompt, storyConfig, {
@@ -349,6 +410,11 @@ export class SessionStoryFoldService {
     this.deps.logger.warn(
       {
         sessionId,
+        foldKind: context.foldKind,
+        summaryCount: context.summaryCount,
+        promptChars: context.promptChars,
+        timeoutMs: context.timeoutMs,
+        elapsedMs: Math.max(0, this.nowMs() - context.startedAt),
         reason: "invalid_structured_output",
         errorCode: errorCodeOf(lastError),
         error: errorMessageOf(lastError),
@@ -363,6 +429,10 @@ export class SessionStoryFoldService {
     return null;
   }
 
+  private setFailureCooldown(sessionId: string, config: TurnSummaryConfig): void {
+    this.failureCooldownUntil.set(sessionId, this.nowMs() + config.storyFoldFailureCooldownMs);
+  }
+
   private debugSkip(
     sessionId: string,
     reason: string,
@@ -373,105 +443,6 @@ export class SessionStoryFoldService {
       "Session story fold skipped",
     );
   }
-}
-
-export function markerOrderStats(narrative: string): {
-  readonly markerCount: number;
-  readonly inversionPairs: number;
-} {
-  const starts = [...narrative.matchAll(MARKER_PATTERN)]
-    .map((match) => Number(match[1]));
-  let inversionPairs = 0;
-  for (let left = 0; left < starts.length; left += 1) {
-    for (let right = left + 1; right < starts.length; right += 1) {
-      if ((starts[left] ?? 0) > (starts[right] ?? 0)) inversionPairs += 1;
-    }
-  }
-  return { markerCount: starts.length, inversionPairs };
-}
-
-function buildSessionStoryPrompt(
-  instruction: string,
-  existingNarrative: string | null,
-  summaries: readonly SessionStoryTurnSummary[],
-): string {
-  const narrative = existingNarrative?.trim() || "(아직 접힌 줄거리 없음)";
-  const turns = summaries
-    .map((summary) => `[T${summary.turnNumber}] ${summary.content}`)
-    .join("\n");
-  return [
-    instruction,
-    "",
-    "[기존 줄거리]",
-    narrative,
-    "",
-    "[새 턴 요약]",
-    turns,
-  ].join("\n");
-}
-
-type SessionStoryOutput = {
-  readonly narrative: string;
-  readonly highlight: string;
-};
-
-function parseSessionStoryOutput(content: string): SessionStoryOutput {
-  const value = JSON.parse(content) as unknown;
-  if (!isRecord(value)) throw new Error("story output must be an object");
-  const narrative = stringValue(value.narrative);
-  const highlight = stringValue(value.highlight);
-  if (narrative === null || highlight === null) {
-    throw new Error("story output requires narrative and highlight strings");
-  }
-  if (markerOrderStats(narrative).markerCount === 0) {
-    throw new Error("story narrative contains no parseable turn marker");
-  }
-  if (markerOrderStats(highlight).markerCount > 0) {
-    throw new Error("story highlight must not contain turn markers");
-  }
-  return { narrative, highlight };
-}
-
-function observeOutputShape(
-  output: SessionStoryOutput,
-  config: TurnSummaryConfig,
-  sessionId: string,
-  logger: TurnSummaryLogger,
-): void {
-  const highlightSentenceCount = countSentences(output.highlight);
-  const narrativeChars = Array.from(output.narrative).length;
-  if (
-    narrativeChars > config.storyNarrativeMaxChars ||
-    highlightSentenceCount < 5 ||
-    highlightSentenceCount > 6
-  ) {
-    logger.debug?.(
-      {
-        sessionId,
-        narrativeChars,
-        narrativeMaxChars: config.storyNarrativeMaxChars,
-        highlightSentenceCount,
-      },
-      "Session story output exceeds advisory shape",
-    );
-  }
-}
-
-function countSentences(value: string): number {
-  return value
-    .split(/(?<=[.!?。！？])\s*/)
-    .filter((sentence) => sentence.trim().length > 0)
-    .length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
 }
 
 function sumUsage(

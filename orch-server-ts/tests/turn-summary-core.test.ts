@@ -80,6 +80,8 @@ const CONFIG: TurnSummaryConfig = {
   storyCompletionMinSummaries: 5,
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
+  storyTimeoutMs: 90_000,
+  storyFoldFailureCooldownMs: 900_000,
   catchUpIntervalMs: 900_000,
   catchUpWindowHours: 72,
   catchUpMaxJobsPerRound: 100,
@@ -278,6 +280,8 @@ describe("TurnSummaryConfigService", () => {
       storyCompletionMinSummaries: 5,
       storyCompletionSweepIntervalMs: 60_000,
       storyNarrativeMaxChars: 1_500,
+      storyTimeoutMs: 90_000,
+      storyFoldFailureCooldownMs: 900_000,
       catchUpIntervalMs: 900_000,
       catchUpWindowHours: 72,
       catchUpMaxJobsPerRound: 100,
@@ -339,7 +343,7 @@ describe("TurnSummaryConfigService", () => {
     writeFileSync(path, yamlConfig("gpt-5.6-terra", false), "utf8");
     writeFileSync(
       join(dir, "turn-summary.local.yaml"),
-      "enabled: true\nmodel: gpt-5.4-mini\nstory_fold_threshold: 12\n",
+      "enabled: true\nmodel: gpt-5.4-mini\nstory_fold_threshold: 12\nstory_timeout_ms: 45000\nstory_fold_failure_cooldown_ms: 60000\n",
       "utf8",
     );
 
@@ -350,6 +354,8 @@ describe("TurnSummaryConfigService", () => {
       storyModel: "gpt-5.4-mini",
       codexConcurrencyLimit: 2,
       storyFoldThreshold: 12,
+      storyTimeoutMs: 45_000,
+      storyFoldFailureCooldownMs: 60_000,
     });
   });
 
@@ -611,6 +617,7 @@ describe("Codex turn summary provider", () => {
       peakConcurrentSpawns: 1,
     });
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[0]?.[2]).toBe(30_000);
     expect(execute.mock.calls[0]?.[0].cwd).not.toBe(execute.mock.calls[1]?.[0].cwd);
   });
 
@@ -854,6 +861,8 @@ function yamlConfig(model: string, enabled: boolean): string {
     `story_completion_min_summaries: ${CONFIG.storyCompletionMinSummaries}`,
     `story_completion_sweep_interval_ms: ${CONFIG.storyCompletionSweepIntervalMs}`,
     `story_narrative_max_chars: ${CONFIG.storyNarrativeMaxChars}`,
+    `story_timeout_ms: ${CONFIG.storyTimeoutMs}`,
+    `story_fold_failure_cooldown_ms: ${CONFIG.storyFoldFailureCooldownMs}`,
     `catch_up_interval_ms: ${CONFIG.catchUpIntervalMs}`,
     `catch_up_window_hours: ${CONFIG.catchUpWindowHours}`,
     `catch_up_max_jobs_per_round: ${CONFIG.catchUpMaxJobsPerRound}`,

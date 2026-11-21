@@ -31,6 +31,8 @@ const CONFIG: TurnSummaryConfig = {
   storyCompletionMinSummaries: 5,
   storyCompletionSweepIntervalMs: 60_000,
   storyNarrativeMaxChars: 1_500,
+  storyTimeoutMs: 90_000,
+  storyFoldFailureCooldownMs: 900_000,
   catchUpIntervalMs: 900_000,
   catchUpWindowHours: 72,
   catchUpMaxJobsPerRound: 100,
@@ -49,6 +51,140 @@ const CONFIG: TurnSummaryConfig = {
 };
 
 describe("SessionStoryFoldService", () => {
+  it.each(["batch", "completed_chunk", "completed"] as const)(
+    "uses the story timeout, length instruction, and context in %s logs",
+    async (kind) => {
+      const summaries = bulkSummaries(kind === "completed_chunk" ? 41 : 5)
+        .map((item, index) => index === 0 ? { ...item, content: `${item.content} 🧭` } : item);
+      const repository = fakeRepository({ count: summaries.length, totalCount: summaries.length, summaries });
+      if (kind === "batch") repository.countUnfoldedSummaries.mockReset().mockResolvedValue(10);
+      if (kind === "completed_chunk") {
+        repository.loadUnfoldedSummaries
+          .mockResolvedValueOnce(summaries.slice(0, 40))
+          .mockResolvedValueOnce(summaries.slice(40));
+      }
+      const generator = fakeGenerator({ narrative: "[T1] 접었다.", highlight: "완료." });
+      const info = vi.fn();
+      const service = new SessionStoryFoldService({
+        repository, generator,
+        configService: { read: () => ({ ...CONFIG, storyFoldMaxBatchesPerRun: 1 }) },
+        logger: { debug: vi.fn(), info, warn: vi.fn() },
+      });
+      await runFold(service, kind);
+
+      const [prompt, config] = generator.generate.mock.calls[0]!;
+      expect(config.timeoutMs).toBe(90_000);
+      expect(prompt).toContain(`${CONFIG.storyInstruction}\nnarrative는 공백 포함 1500자 이내로 쓴다. 넘칠 것 같으면 오래된 턴을 더 줄여 쓴다.\n\n[기존 줄거리]`);
+      expect(info).toHaveBeenCalledWith(expect.objectContaining({
+        foldKind: kind, summaryCount: kind === "completed_chunk" ? 40 : 5,
+        promptChars: Array.from(prompt).length, timeoutMs: 90_000,
+      }), "Session story fold stored");
+    },
+  );
+
+  it("stores a narrative longer than the advisory limit", async () => {
+    const repository = fakeRepository({ count: 10 });
+    const generator = fakeGenerator({ narrative: `[T1] ${"가".repeat(1501)}`, highlight: "완료." });
+    const debug = vi.fn();
+    const service = new SessionStoryFoldService({
+      repository, generator, configService: { read: () => CONFIG },
+      logger: { debug, info: vi.fn(), warn: vi.fn() },
+    });
+    await service.foldIfNeeded("session-a");
+    expect(repository.storeDigest).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith(expect.objectContaining({ narrativeMaxChars: 1500 }), "Session story output exceeds advisory shape");
+  });
+
+  it.each(["batch", "completed_chunk", "completed"] as const)(
+    "logs two failed attempts and elapsed time for %s",
+    async (kind) => {
+      const summaries = bulkSummaries(kind === "completed_chunk" ? 41 : 5);
+      const repository = fakeRepository({ count: summaries.length, totalCount: summaries.length, summaries });
+      if (kind === "batch") repository.countUnfoldedSummaries.mockReset().mockResolvedValue(10);
+      if (kind === "completed_chunk") repository.loadUnfoldedSummaries.mockResolvedValue(summaries.slice(0, 40));
+      let now = 100;
+      const generate = vi.fn().mockImplementation(async () => { now += 25; throw new Error("timeout"); });
+      const warn = vi.fn();
+      const service = new SessionStoryFoldService({
+        repository, generator: { generate }, configService: { read: () => CONFIG },
+        logger: { debug: vi.fn(), info: vi.fn(), warn }, nowMs: () => now,
+      });
+      await runFold(service, kind);
+      const prompt = generate.mock.calls[0]![0] as string;
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+        foldKind: kind, summaryCount: kind === "completed_chunk" ? 40 : 5,
+        promptChars: prompt.length, timeoutMs: 90_000, elapsedMs: 50,
+      }), "Session story fold failed");
+    },
+  );
+
+  it.each(["batch", "completed"] as const)(
+    "shares the failure cooldown across both entry points after %s fails",
+    async (firstKind) => {
+      let now = 100;
+      const repository = fakeRepository({ count: 5, totalCount: 5 });
+      repository.countUnfoldedSummaries.mockReset().mockResolvedValue(10);
+      const generate = vi.fn().mockRejectedValue(new Error("timeout"));
+      const debug = vi.fn();
+      const service = new SessionStoryFoldService({
+        repository, generator: { generate },
+        configService: { read: () => ({ ...CONFIG, storyFoldMaxBatchesPerRun: 1 }) },
+        logger: { debug, info: vi.fn(), warn: vi.fn() }, nowMs: () => now,
+      });
+      await runFold(service, firstKind);
+      expect(generate).toHaveBeenCalledTimes(2);
+      await runFold(service, "batch");
+      await runFold(service, "completed");
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect(debug).toHaveBeenCalledWith(expect.objectContaining({ reason: "failure_cooldown" }), "Session story fold skipped");
+      now += CONFIG.storyFoldFailureCooldownMs;
+      generate.mockResolvedValue({ content: JSON.stringify({ narrative: "[T1] 복구.", highlight: "완료." }), model: "test", latencyMs: 1, attempts: 1 });
+      await runFold(service, firstKind);
+      await runFold(service, firstKind);
+      expect(generate).toHaveBeenCalledTimes(4);
+    },
+  );
+
+  it("cools down exceptions during a fold and does not affect other sessions", async () => {
+    const repository = fakeRepository({ count: 10 });
+    repository.countUnfoldedSummaries.mockReset().mockResolvedValue(10);
+    repository.storeDigest.mockRejectedValueOnce(new Error("store unavailable"));
+    const generator = fakeGenerator({ narrative: "[T1] 완료.", highlight: "완료." });
+    const warn = vi.fn();
+    const service = new SessionStoryFoldService({
+      repository, generator, configService: { read: () => ({ ...CONFIG, storyFoldMaxBatchesPerRun: 1 }) },
+      logger: { debug: vi.fn(), info: vi.fn(), warn }, nowMs: () => 100,
+    });
+    await service.foldIfNeeded("session-a");
+    await service.foldIfNeeded("session-a");
+    await service.foldIfNeeded("session-b");
+    expect(generator.generate).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "fold_error", foldKind: "batch", summaryCount: 5,
+      promptChars: expect.any(Number), timeoutMs: 90_000, elapsedMs: expect.any(Number),
+    }), "Session story fold failed");
+  });
+
+  it.each(["batch", "completed_chunk", "completed"] as const)(
+    "does not cool down a %s storage conflict",
+    async (kind) => {
+      const summaries = bulkSummaries(kind === "completed_chunk" ? 41 : 5);
+      const repository = fakeRepository({ count: summaries.length, totalCount: summaries.length, summaries });
+      if (kind === "batch") repository.countUnfoldedSummaries.mockReset().mockResolvedValue(10);
+      if (kind === "completed_chunk") repository.loadUnfoldedSummaries.mockResolvedValue(summaries.slice(0, 40));
+      if (kind === "completed") repository.storeCompletedDigest.mockResolvedValue(false);
+      else repository.storeDigest.mockResolvedValue(false);
+      const generator = fakeGenerator({ narrative: "[T1] 완료.", highlight: "완료." });
+      const service = new SessionStoryFoldService({
+        repository, generator, configService: { read: () => CONFIG },
+        logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, nowMs: () => 100,
+      });
+      await runFold(service, kind);
+      await runFold(service, kind);
+      expect(generator.generate).toHaveBeenCalledTimes(2);
+    },
+  );
   it("folds the five oldest summaries at the threshold and advances the durable watermark atomically", async () => {
     const summaries = practicalSummaryFixture();
     const repository = fakeRepository({ count: 10, summaries });
@@ -186,13 +322,14 @@ describe("SessionStoryFoldService", () => {
       })
     );
     const info = vi.fn();
+    const generator = fakeGenerator({
+      narrative: "[T1] 완료했다.",
+      highlight: "하나. 둘. 셋. 넷. 다섯.",
+    });
     const service = new SessionStoryFoldService({
       repository,
       configService: { read: () => CONFIG },
-      generator: fakeGenerator({
-        narrative: "[T1] 완료했다.",
-        highlight: "하나. 둘. 셋. 넷. 다섯.",
-      }),
+      generator,
       logger: { debug: vi.fn(), info, warn: vi.fn() },
     });
 
@@ -207,6 +344,10 @@ describe("SessionStoryFoldService", () => {
       expect.objectContaining({ reason: "already_in_flight" }),
       "Session story fold skipped",
     );
+    repository.loadDigest.mockResolvedValue(null);
+    repository.countUnfoldedSummaries.mockReset().mockResolvedValueOnce(10).mockResolvedValue(0);
+    await service.foldIfNeeded("session-a");
+    expect(generator.generate).toHaveBeenCalledTimes(2);
   });
 
   it.each([1, 2, 3, 4, 5])(
@@ -458,6 +599,14 @@ describe("SessionStoryFoldService", () => {
     });
   });
 });
+
+async function runFold(service: SessionStoryFoldService, kind: "batch" | "completed_chunk" | "completed"): Promise<void> {
+  if (kind === "batch") return await service.foldIfNeeded("session-a");
+  return await service.foldCompletedIfNeeded(
+    { sessionId: "session-a", completedAt: new Date("2026-07-31T00:30:00Z") },
+    new Date("2026-07-31T01:00:00Z"), 5,
+  );
+}
 
 function practicalSummaryFixture(): SessionStoryTurnSummary[] {
   return [
