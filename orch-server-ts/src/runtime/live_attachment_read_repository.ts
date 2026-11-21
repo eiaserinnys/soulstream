@@ -138,23 +138,23 @@ export function createLiveAttachmentReadRepository(
   };
 }
 
-function assetFromRow(row: Record<string, unknown>): AttachmentAssetRow {
+export function assetFromRow(row: Record<string, unknown>): AttachmentAssetRow {
   const uploadStatus = row.upload_status;
   if (uploadStatus !== "pending" && uploadStatus !== "committed") {
     throw new Error("Invalid attachment upload status");
   }
   return {
-    id: requiredString(row.id),
-    storageKey: requiredString(row.storage_key),
-    storagePurpose: requiredString(row.storage_purpose),
+    id: requiredRowString(row.id),
+    storageKey: requiredRowString(row.storage_key),
+    storagePurpose: requiredRowString(row.storage_purpose),
     storageEndpoint: nullableString(row.storage_endpoint),
     storageBucket: nullableString(row.storage_bucket),
     ownerKind: nullableString(row.owner_kind),
     ownerKey: nullableString(row.owner_key),
     registrationScope: row.registration_scope,
     sourceSessionId: nullableString(row.source_session_id),
-    originalName: requiredString(row.original_name),
-    mimeType: requiredString(row.mime_type),
+    originalName: requiredRowString(row.original_name),
+    mimeType: requiredRowString(row.mime_type),
     byteSize: Number(row.byte_size),
     width: nullableNumber(row.width),
     height: nullableNumber(row.height),
@@ -175,7 +175,7 @@ function evidenceFromRows(
   };
 }
 
-function requiredString(value: unknown): string {
+function requiredRowString(value: unknown): string {
   if (typeof value !== "string") throw new Error("Invalid attachment database row");
   return value;
 }
