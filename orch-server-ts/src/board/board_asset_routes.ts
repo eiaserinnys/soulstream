@@ -164,7 +164,7 @@ function parseInitBody(
   if (!name.ok) return name;
   const mime = requiredString(object.value, "mime");
   if (!mime.ok) return mime;
-  const size = requiredInteger(object.value, "size");
+  const size = requiredBoardInteger(object.value, "size");
   if (!size.ok) return size;
   return { ok: true, value: { name: name.value, mime: mime.value, size: size.value } };
 }
@@ -219,7 +219,7 @@ function parseParts(value: unknown): Validation<readonly BoardAssetCommitPart[]>
       return { ok: false, message: "parts entries must be JSON objects" };
     }
     const part = item as Record<string, unknown>;
-    const partNumber = requiredInteger(part, "partNumber");
+    const partNumber = requiredBoardInteger(part, "partNumber");
     if (!partNumber.ok) return partNumber;
     const etag = requiredString(part, "etag");
     if (!etag.ok) return etag;
@@ -241,7 +241,7 @@ async function ensureFolderAccess(
   return undefined;
 }
 
-function requiredInteger(
+export function requiredBoardInteger(
   body: Record<string, unknown>,
   key: string,
 ): Validation<number> {

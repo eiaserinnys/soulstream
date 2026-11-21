@@ -1,5 +1,7 @@
 import { Readable } from "node:stream";
 
+import type { FastifyReply } from "fastify";
+
 export const SSE_STREAM_HIGH_WATER_MARK = 1024 * 1024;
 export const SSE_STREAM_STALL_TIMEOUT_MS = 60_000;
 
@@ -52,4 +54,11 @@ function assertPositiveInteger(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`SSE stream ${name} must be a positive integer`);
   }
+}
+
+export function setSseHeaders(reply: FastifyReply): void {
+  reply
+    .header("content-type", "text/event-stream; charset=utf-8")
+    .header("cache-control", "no-cache")
+    .header("connection", "keep-alive");
 }

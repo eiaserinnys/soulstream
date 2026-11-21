@@ -9,6 +9,7 @@ import {
 } from "./replay_broadcaster.js";
 import {
   createSseStream,
+  setSseHeaders,
   type SseStreamPush,
 } from "./sse_stream.js";
 
@@ -291,8 +292,8 @@ function parseCursorFromRequest(
   try {
     return resolveSseResumeCursor({
       lastEventIdHeader: headerValue(request.headers["last-event-id"]),
-      lastEventIdQuery: queryValue(request.query, "lastEventId"),
-      instanceIdQuery: queryValue(request.query, "instanceId"),
+      lastEventIdQuery: stringQueryValue(request.query, "lastEventId"),
+      instanceIdQuery: stringQueryValue(request.query, "instanceId"),
     });
   } catch (error) {
     reply.code(400).send({
@@ -312,7 +313,7 @@ function headerValue(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-function queryValue(query: unknown, key: string): string | null {
+function stringQueryValue(query: unknown, key: string): string | null {
   if (typeof query !== "object" || query === null || !(key in query)) {
     return null;
   }
@@ -325,22 +326,14 @@ function queryValue(query: unknown, key: string): string | null {
 }
 
 function queryBool(query: unknown, key: string): boolean {
-  const value = queryValue(query, key);
+  const value = stringQueryValue(query, key);
   return value !== null && ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
-/** `types` picks the event names a client wants; absent means every event. */
 function queryEventTypes(query: unknown): ReadonlySet<string> | null {
-  const value = queryValue(query, "types");
+  const value = stringQueryValue(query, "types");
   if (value === null) return null;
   return new Set(
     value.split(",").map((type) => type.trim()).filter((type) => type.length > 0),
   );
-}
-
-function setSseHeaders(reply: FastifyReply): void {
-  reply
-    .header("content-type", "text/event-stream; charset=utf-8")
-    .header("cache-control", "no-cache")
-    .header("connection", "keep-alive");
 }

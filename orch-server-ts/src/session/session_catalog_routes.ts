@@ -13,8 +13,10 @@ import {
   hasOwn,
   optionalStringOrNull,
   parseObjectBody,
+  requiredInteger,
   type Validation,
 } from "../http/route_validation.js";
+import type { SessionParams } from "./session_action_command_payloads.js";
 
 export type SessionCatalogCallerInfo = Record<string, unknown> | null | undefined;
 
@@ -96,10 +98,6 @@ export class SessionCatalogRouteError extends Error {
   }
 }
 
-type SessionParams = {
-  session_id: string;
-};
-
 export const sessionCatalogRouteAuthRequirements = {
   "PATCH /api/sessions/:session_id/display-name": true,
   "PUT /api/sessions/folder": true,
@@ -125,12 +123,12 @@ export function registerSessionCatalogRoutes(
     "/api/sessions/:session_id/display-name",
     async (request, reply) => {
       const body = parseObjectBody(request.body, { allowEmpty: true });
-      if (!body.ok) return badRequest(reply, body.message);
+      if (!body.ok) return catalogBadRequest(reply, body.message);
 
       const displayName = optionalStringOrNull(body.value, "displayName");
-      if (!displayName.ok) return badRequest(reply, displayName.message);
+      if (!displayName.ok) return catalogBadRequest(reply, displayName.message);
       const callerInfo = optionalCallerInfo(body.value);
-      if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
+      if (!callerInfo.ok) return catalogBadRequest(reply, callerInfo.message);
 
       try {
         await requireSessionAccess(
@@ -156,12 +154,12 @@ export function registerSessionCatalogRoutes(
     "/api/sessions/:session_id",
     async (request, reply) => {
       const body = parseObjectBody(request.body, { allowEmpty: true });
-      if (!body.ok) return badRequest(reply, body.message);
+      if (!body.ok) return catalogBadRequest(reply, body.message);
 
       const update = sessionCatalogUpdate(body.value);
-      if (!update.ok) return badRequest(reply, update.message);
+      if (!update.ok) return catalogBadRequest(reply, update.message);
       const callerInfo = optionalCallerInfo(body.value);
-      if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
+      if (!callerInfo.ok) return catalogBadRequest(reply, callerInfo.message);
 
       try {
         await requireSessionAccess(
@@ -195,9 +193,9 @@ export function registerSessionCatalogRoutes(
     "/api/sessions/:session_id",
     async (request, reply) => {
       const body = parseObjectBody(request.body, { allowEmpty: true });
-      if (!body.ok) return badRequest(reply, body.message);
+      if (!body.ok) return catalogBadRequest(reply, body.message);
       const callerInfo = optionalCallerInfo(body.value);
-      if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
+      if (!callerInfo.ok) return catalogBadRequest(reply, callerInfo.message);
 
       let outcome: SessionDeleteOutcome;
       try {
@@ -248,12 +246,12 @@ export function registerSessionCatalogRoutes(
     "/api/sessions/:session_id/read-position",
     async (request, reply) => {
       const body = parseObjectBody(request.body, { allowEmpty: true });
-      if (!body.ok) return badRequest(reply, body.message);
+      if (!body.ok) return catalogBadRequest(reply, body.message);
 
       const lastReadEventId = requiredInteger(body.value, "last_read_event_id");
-      if (!lastReadEventId.ok) return badRequest(reply, lastReadEventId.message);
+      if (!lastReadEventId.ok) return catalogBadRequest(reply, lastReadEventId.message);
       const callerInfo = optionalCallerInfo(body.value);
-      if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
+      if (!callerInfo.ok) return catalogBadRequest(reply, callerInfo.message);
 
       try {
         await requireSessionAccess(
@@ -296,14 +294,14 @@ async function batchMoveFolder(
   options: SessionCatalogRouteOptions,
 ): Promise<FastifyReply> {
   const body = parseObjectBody(request.body, { allowEmpty: true });
-  if (!body.ok) return badRequest(reply, body.message);
+  if (!body.ok) return catalogBadRequest(reply, body.message);
 
   const sessionIds = requiredStringArray(body.value, "sessionIds");
-  if (!sessionIds.ok) return badRequest(reply, sessionIds.message);
+  if (!sessionIds.ok) return catalogBadRequest(reply, sessionIds.message);
   const folderId = optionalStringOrNull(body.value, "folderId");
-  if (!folderId.ok) return badRequest(reply, folderId.message);
+  if (!folderId.ok) return catalogBadRequest(reply, folderId.message);
   const callerInfo = optionalCallerInfo(body.value);
-  if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
+  if (!callerInfo.ok) return catalogBadRequest(reply, callerInfo.message);
 
   try {
     await requireFolderAccess(
@@ -401,17 +399,6 @@ function requiredStringArray(
   return { ok: true, value };
 }
 
-function requiredInteger(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return { ok: false, message: `${key} must be an integer` };
-  }
-  return { ok: true, value };
-}
-
 function parsePayload(payload: unknown): unknown {
   if (typeof payload !== "string") return payload;
   try {
@@ -433,7 +420,7 @@ function accessEmailFromCallerInfo(
   return null;
 }
 
-function badRequest(reply: FastifyReply, message: string): FastifyReply {
+function catalogBadRequest(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(400).send({
     error: {
       code: "INVALID_SESSION_CATALOG_REQUEST",

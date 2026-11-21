@@ -1,6 +1,7 @@
 import { reconcileFolderParentMounts } from "./folder_parent_mounts.js";
 import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
+import { hasOwn } from "../http/route_validation.js";
 import { CardVersionConflict } from "../cards/control_plane/card_models.js";
 import { Buffer } from "node:buffer";
 
@@ -364,10 +365,6 @@ function recordValue(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
-}
-
-function hasOwn(value: object, key: PropertyKey): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function assertSameRequest(operation: OperationRow, request: Record<string, unknown>): void {

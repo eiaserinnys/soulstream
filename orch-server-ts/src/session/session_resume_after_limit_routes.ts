@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import type { SessionParams } from "./session_action_command_payloads.js";
 import {
   SCHEDULE_PROMPT,
   SOURCE_TOOL,
@@ -28,8 +30,6 @@ const REUSABLE_SCHEDULE_STATUSES = new Set<SoulstreamScheduleStatus>([
   "firing",
   "orphaned",
 ]);
-
-type SessionParams = { session_id: string };
 
 export type SessionResumeAfterLimitRouteOptions = {
   accessProvider: SessionResourceAccessProvider;

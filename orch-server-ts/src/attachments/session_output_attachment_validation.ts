@@ -27,7 +27,7 @@ export function createSessionOutputAttachmentValidation(input: {
       || attachmentIds.some((attachmentId) => typeof attachmentId !== "string" || attachmentId.length === 0)
       || producer.outputCommandId.length === 0
     ) {
-      throw validationError(422, "ATTACHMENT_INVALID_OUTPUT", "출력 첨부 ID가 필요합니다.");
+      throw attachmentValidationError(422, "ATTACHMENT_INVALID_OUTPUT", "출력 첨부 ID가 필요합니다.");
     }
 
     const uniqueIds = [...new Set(attachmentIds)];
@@ -38,7 +38,7 @@ export function createSessionOutputAttachmentValidation(input: {
       LIMIT 1
     `;
     if (sessions[0] === undefined || sessions[0].node_id !== producer.nodeId) {
-      throw validationError(403, "ATTACHMENT_PRODUCER_MISMATCH", "첨부 생산 세션을 확인할 수 없습니다.");
+      throw attachmentValidationError(403, "ATTACHMENT_PRODUCER_MISMATCH", "첨부 생산 세션을 확인할 수 없습니다.");
     }
 
     const assets = await sql<SessionOutputAttachmentRow[]>`
@@ -56,10 +56,10 @@ export function createSessionOutputAttachmentValidation(input: {
         || asset.garbage_collected_at !== null
         || asset.storage_purpose !== "attachment"
       ) {
-        throw validationError(404, "ATTACHMENT_NOT_FOUND", "세션 출력 첨부를 찾을 수 없습니다.");
+        throw attachmentValidationError(404, "ATTACHMENT_NOT_FOUND", "세션 출력 첨부를 찾을 수 없습니다.");
       }
       if (asset.upload_status !== "committed") {
-        throw validationError(409, "ATTACHMENT_NOT_COMMITTED", "세션 출력 첨부가 아직 커밋되지 않았습니다.");
+        throw attachmentValidationError(409, "ATTACHMENT_NOT_COMMITTED", "세션 출력 첨부가 아직 커밋되지 않았습니다.");
       }
       if (
         asset.owner_kind !== "agent_session"
@@ -68,7 +68,7 @@ export function createSessionOutputAttachmentValidation(input: {
         || asset.source_node_id !== producer.nodeId
         || asset.output_command_id !== producer.outputCommandId
       ) {
-        throw validationError(403, "ATTACHMENT_PRODUCER_MISMATCH", "첨부 생산 정보가 현재 출력과 일치하지 않습니다.");
+        throw attachmentValidationError(403, "ATTACHMENT_PRODUCER_MISMATCH", "첨부 생산 정보가 현재 출력과 일치하지 않습니다.");
       }
     }
 
@@ -76,6 +76,6 @@ export function createSessionOutputAttachmentValidation(input: {
   };
 }
 
-function validationError(statusCode: number, code: string, message: string): Error {
+function attachmentValidationError(statusCode: number, code: string, message: string): Error {
   return Object.assign(new Error(message), { statusCode, code });
 }

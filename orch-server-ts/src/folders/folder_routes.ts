@@ -22,6 +22,8 @@ import {
   folderAccessDenied,
   hasOwn,
   optionalStringOrNull,
+  queryValue,
+  requiredInteger,
   requiredString,
   type Validation,
 } from "../http/route_validation.js";
@@ -205,12 +207,6 @@ export function registerFolderRoutes(
 
 }
 
-function queryValue(query: unknown, key: string): unknown {
-  if (typeof query !== "object" || query === null || !(key in query)) return undefined;
-  const value = (query as Record<string, unknown>)[key];
-  return Array.isArray(value) ? value[0] : value;
-}
-
 async function dashboardActor(
   request: FastifyRequest,
   options: FolderRouteOptions,
@@ -301,17 +297,6 @@ function systemUpdateGuard(
 function rejectSystemFolderMutation(folderId: string, operation: string): string | null {
   if (!SYSTEM_FOLDER_IDS.has(folderId)) return null;
   return `System folder '${folderId}' cannot be ${operation}.`;
-}
-
-function requiredInteger(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be an integer` };
 }
 
 function optionalInteger(

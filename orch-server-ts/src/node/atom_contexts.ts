@@ -9,9 +9,9 @@ export type AgentAtomContext = {
   readonly applies_when?: Readonly<Record<string, unknown>>;
 };
 
-export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type AtomContextsParse<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export function parseAtomContexts(value: unknown): ParseResult<AgentAtomContext[]> {
+export function parseAtomContexts(value: unknown): AtomContextsParse<AgentAtomContext[]> {
   if (!Array.isArray(value)) return invalid("atom_contexts must be an array");
   const result: AgentAtomContext[] = [];
   for (const entry of value) {
@@ -37,6 +37,6 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function invalid<T>(error: string): ParseResult<T> {
+function invalid<T>(error: string): AtomContextsParse<T> {
   return { ok: false, error };
 }

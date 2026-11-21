@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
+import { badRequest } from "../http/route_validation.js";
 import {
   AttachmentReadError,
   attachmentReadContext,
@@ -31,7 +32,7 @@ export function registerAttachmentReadRoutes(
     async (request, reply) => {
       setPrivateReadHeaders(reply);
       const query = readQuery(request);
-      if (!query.ok) return validationError(reply, query.error);
+      if (!query.ok) return badRequest(reply, query.error);
       let context: AttachmentReadContext;
       try {
         context = attachmentReadContext(query.value.contextType, query.value.contextId);
@@ -55,7 +56,7 @@ export function registerAttachmentReadRoutes(
   const sendContent = async (request: FastifyRequest, reply: FastifyReply) => {
     setPrivateReadHeaders(reply);
     const query = readQuery(request);
-    if (!query.ok) return validationError(reply, query.error);
+    if (!query.ok) return badRequest(reply, query.error);
     let context: AttachmentReadContext;
     try {
       context = attachmentReadContext(query.value.contextType, query.value.contextId);
@@ -63,7 +64,7 @@ export function registerAttachmentReadRoutes(
       return sendAttachmentReadError(reply, error);
     }
     const download = parseDownload(query.value.download);
-    if (!download.ok) return validationError(reply, download.error);
+    if (!download.ok) return badRequest(reply, download.error);
     if (request.method === "GET" && request.headers["sec-fetch-dest"] === "document" && !download.value) {
       const params = [`attachment=${encodeURIComponent((request.params as AttachmentReadParams).attachment_id)}`];
       if (query.value.contextType !== undefined) {
@@ -186,9 +187,9 @@ function readQuery(request: FastifyRequest):
     return { ok: false, error: "Invalid attachment query" };
   }
   const values = query as Record<string, unknown>;
-  const contextType = queryValue(values.context_type);
-  const contextId = queryValue(values.context_id);
-  const download = queryValue(values.download);
+  const contextType = parseOptionalQueryString(values.context_type);
+  const contextId = parseOptionalQueryString(values.context_id);
+  const download = parseOptionalQueryString(values.download);
   if (!contextType.ok || !contextId.ok || !download.ok) {
     return { ok: false, error: "Invalid attachment query" };
   }
@@ -228,14 +229,10 @@ function parseDownload(value: string | undefined):
   return { ok: false, error: "download must be true or false" };
 }
 
-function queryValue(value: unknown): { readonly ok: true; readonly value: string | undefined } | { readonly ok: false } {
+function parseOptionalQueryString(value: unknown): { readonly ok: true; readonly value: string | undefined } | { readonly ok: false } {
   if (value === undefined) return { ok: true, value: undefined };
   if (typeof value !== "string" || value.length === 0) return { ok: false };
   return { ok: true, value };
-}
-
-function validationError(reply: FastifyReply, message: string): FastifyReply {
-  return reply.code(400).send({ detail: message });
 }
 
 export function sendAttachmentReadError(reply: FastifyReply, error: unknown): FastifyReply {

@@ -2,8 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   createSseStream,
+  setSseHeaders,
   type SseStreamPush,
 } from "../sse/sse_stream.js";
+import { queryValue } from "../http/route_validation.js";
+import type { SessionParams } from "./session_action_command_payloads.js";
 import {
   SessionHistoryReadService,
   type SessionHistoryProvider,
@@ -64,10 +67,6 @@ export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/turn-summaries": true,
   "GET /api/sessions/:session_id/events": true,
 } as const;
-
-type SessionParams = {
-  session_id: string;
-};
 
 type TimelineTraceParams = SessionParams & {
   timeline_id: string;
@@ -268,14 +267,6 @@ function positiveIntegerQueryValue(value: unknown, field: string): QueryParseRes
 function optionalStringQuery(query: unknown, key: string): string | null {
   const value = queryValue(query, key);
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function queryValue(query: unknown, key: string): unknown {
-  if (typeof query !== "object" || query === null || !(key in query)) {
-    return undefined;
-  }
-  const value = (query as Record<string, unknown>)[key];
-  return Array.isArray(value) ? value[0] : value;
 }
 
 function queryValues(query: unknown, key: string): unknown {
@@ -546,11 +537,4 @@ function liveSequence(envelope: Record<string, unknown>): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function setSseHeaders(reply: FastifyReply): void {
-  reply
-    .header("content-type", "text/event-stream; charset=utf-8")
-    .header("cache-control", "no-cache")
-    .header("connection", "keep-alive");
 }

@@ -64,7 +64,7 @@ function webhookTool<Definition extends WebhookToolDefinition>(
       const input = schema.parse(args);
       return await work(options.webhooks, ownerEmail, input);
     } catch (error) {
-      if (error instanceof z.ZodError) return errorResult(invalidRequest(error));
+      if (error instanceof z.ZodError) return errorResult(zodInvalidRequestMessage(error));
       logSafeFailure(options, definition.name, error);
       return errorResult("unavailable");
     }
@@ -134,8 +134,7 @@ function fromOutcome(outcome: WebhookManagementResult<unknown>): CallToolResult 
   );
 }
 
-/** Only the path of the first problem: zod messages may echo the rejected value. */
-function invalidRequest(error: z.ZodError): string {
+function zodInvalidRequestMessage(error: z.ZodError): string {
   const path = error.issues[0]?.path.join(".") ?? "";
   return path ? `invalid_request: ${path}` : "invalid_request";
 }

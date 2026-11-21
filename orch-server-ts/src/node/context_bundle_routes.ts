@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
-import type { AgentProfileRepository } from "./agent_profile_routes.js";
-import { parseAtomContexts, type AgentAtomContext, type ParseResult } from "./atom_contexts.js";
+import { expectedVersion, positiveInteger, type AgentProfileRepository } from "./agent_profile_routes.js";
+import { parseAtomContexts, type AgentAtomContext, type AtomContextsParse } from "./atom_contexts.js";
 
 export type ContextBundleRecord = {
   readonly bundleId: string;
@@ -103,7 +103,7 @@ export function registerContextBundleRoutes(
   });
 }
 
-function parseContextBundleWrite(bundleId: string, body: unknown): ParseResult<ContextBundleWrite> {
+function parseContextBundleWrite(bundleId: string, body: unknown): AtomContextsParse<ContextBundleWrite> {
   if (!isObject(body)) return invalid("Request body must be an object");
   if (body.description !== undefined && typeof body.description !== "string") {
     return invalid("description must be a string");
@@ -123,7 +123,7 @@ function parseContextBundleWrite(bundleId: string, body: unknown): ParseResult<C
   };
 }
 
-function parseBundleId(value: string): ParseResult<string> {
+function parseBundleId(value: string): AtomContextsParse<string> {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)
     ? { ok: true, value }
     : invalid("bundle_id format is invalid");
@@ -140,26 +140,16 @@ function projectBundle(bundle: ContextBundleRecord): Record<string, unknown> {
   };
 }
 
-function expectedVersion(body: unknown): ParseResult<number> {
-  return isObject(body) ? positiveInteger(body.expected_version, "expected_version") : invalid("expected_version is required");
-}
-
-function nullableExpectedVersion(value: unknown): ParseResult<number | null> {
+function nullableExpectedVersion(value: unknown): AtomContextsParse<number | null> {
   if (value === null) return { ok: true, value: null };
   return positiveInteger(value, "expected_version");
-}
-
-function positiveInteger(value: unknown, name: string): ParseResult<number> {
-  return Number.isInteger(value) && (value as number) > 0
-    ? { ok: true, value: value as number }
-    : invalid(`${name} must be a positive integer`);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function invalid<T>(error: string): ParseResult<T> {
+function invalid<T>(error: string): AtomContextsParse<T> {
   return { ok: false, error };
 }
 

@@ -1,6 +1,6 @@
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Validation } from "../http/route_validation.js";
+import { queryValue, rawQueryValue, type Validation } from "../http/route_validation.js";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
@@ -681,19 +681,6 @@ function booleanQuery(query: unknown, key: string, fallback: boolean): boolean |
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return undefined;
-}
-
-function queryValue(query: unknown, key: string): unknown {
-  if (!isRecord(query) || !(key in query)) return undefined;
-  const value = query[key];
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function rawQueryValue(query: unknown, key: string): unknown {
-  if (typeof query !== "object" || query === null || !(key in query)) {
-    return undefined;
-  }
-  return (query as Record<string, unknown>)[key];
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

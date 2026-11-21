@@ -87,12 +87,12 @@ async function dispatch(
   switch (method) {
     case "createSchedule": return await repository.createSchedule(input as never);
     case "createScheduleIfAbsent": return await repository.createScheduleIfAbsent(input as never);
-    case "listSchedules": return await repository.listSchedules(requiredString(input, "sessionId"));
+    case "listSchedules": return await repository.listSchedules(requiredScheduleString(input, "sessionId"));
     case "cancelSchedule": return await repository.cancelSchedule(
-      requiredString(input, "sessionId"), requiredString(input, "scheduleId"),
+      requiredScheduleString(input, "sessionId"), requiredScheduleString(input, "scheduleId"),
     );
     case "touchNodeHeartbeat": return await repository.touchNodeHeartbeat(
-      requiredString(input, "nodeId"),
+      requiredScheduleString(input, "nodeId"),
     );
     case "repairExpiredClaims": return await repository.repairExpiredClaims(input as never);
     case "claimDueSchedules": return await repository.claimDueSchedules(input as never);
@@ -100,10 +100,10 @@ async function dispatch(
     case "restoreOrphanSchedulesForLiveNodes":
       return await repository.restoreOrphanSchedulesForLiveNodes(input as never);
     case "consumeClaimedSchedule": return await repository.consumeClaimedSchedule(
-      requiredString(input, "scheduleId"), requiredString(input, "claimToken"),
+      requiredScheduleString(input, "scheduleId"), requiredScheduleString(input, "claimToken"),
     );
     case "confirmScheduleStillFiring": return await repository.confirmScheduleStillFiring(
-      requiredString(input, "scheduleId"), requiredString(input, "claimToken"),
+      requiredScheduleString(input, "scheduleId"), requiredScheduleString(input, "claimToken"),
     );
     case "hasContinuousLimitWindow": return await repository.hasContinuousLimitWindow(
       requiredScheduleIdentity(input.schedule),
@@ -116,9 +116,9 @@ async function dispatch(
     case "deferScheduleDispatch": return await repository.deferScheduleDispatch(input as never);
     case "finishScheduleDispatch": return await repository.finishScheduleDispatch(input as never);
     case "failScheduleDispatch": return await repository.failScheduleDispatch(
-      requiredString(input, "scheduleId"),
-      requiredString(input, "claimToken"),
-      requiredString(input, "error"),
+      requiredScheduleString(input, "scheduleId"),
+      requiredScheduleString(input, "claimToken"),
+      requiredScheduleString(input, "error"),
     );
   }
 }
@@ -166,7 +166,7 @@ function withoutLegacyStaleBefore(
   return { ...currentInput, staleAfterMs };
 }
 
-function requiredString(input: Record<string, unknown>, key: string): string {
+function requiredScheduleString(input: Record<string, unknown>, key: string): string {
   const value = input[key];
   if (typeof value !== "string" || value.length === 0) throw new Error(`${key} is required`);
   return value;
@@ -190,10 +190,10 @@ function requiredScheduleIdentity(value: unknown) {
   const schedule = toInput(value);
   if (!schedule) throw new Error("schedule is required");
   return {
-    scheduleId: requiredString(schedule, "scheduleId"),
-    sessionId: requiredString(schedule, "sessionId"),
-    sourceTool: requiredString(schedule, "sourceTool"),
-    toolUseId: requiredString(schedule, "toolUseId"),
+    scheduleId: requiredScheduleString(schedule, "scheduleId"),
+    sessionId: requiredScheduleString(schedule, "sessionId"),
+    sourceTool: requiredScheduleString(schedule, "sourceTool"),
+    toolUseId: requiredScheduleString(schedule, "toolUseId"),
   };
 }
 

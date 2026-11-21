@@ -49,6 +49,39 @@ export function requiredFiniteNumber(
   return { ok: false, message: `${key} must be a number` };
 }
 
+export function requiredInteger(
+  body: Record<string, unknown>,
+  key: string,
+): Validation<number> {
+  const value = body[key];
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return { ok: true, value };
+  }
+  return { ok: false, message: `${key} must be an integer` };
+}
+
+export function queryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  const value = (query as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export function rawQueryValue(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  return (query as Record<string, unknown>)[key];
+}
+
+export function queryInteger(query: unknown, key: string): number | undefined {
+  const value = queryValue(query, key);
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export function optionalStringOrNull(
   body: Record<string, unknown>,
   key: string,

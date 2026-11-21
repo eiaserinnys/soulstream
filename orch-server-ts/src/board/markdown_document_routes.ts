@@ -7,6 +7,7 @@ import {
   visibleBoardFolderIds,
   type BoardAccess,
 } from "./board_access.js";
+import { requiredBoardInteger } from "./board_asset_routes.js";
 import type { MarkdownDocumentService } from "./markdown_document_service.js";
 import {
   createLocalMarkdownDocument,
@@ -250,7 +251,7 @@ function parseUpdateBody(
   if (!hasOwn(object.value, "expectedVersion")) {
     return { ok: false, message: "expectedVersion must be a number" };
   }
-  const expectedVersion = requiredInteger(object.value, "expectedVersion");
+  const expectedVersion = requiredBoardInteger(object.value, "expectedVersion");
   if (!expectedVersion.ok) return expectedVersion;
 
   const payload: { expectedVersion: number; title?: string; body?: string } = {
@@ -278,17 +279,6 @@ function optionalBodyString(
 ): string | undefined {
   const value = body[key];
   return typeof value === "string" ? value : undefined;
-}
-
-function requiredInteger(
-  body: Record<string, unknown>,
-  key: string,
-): Validation<number> {
-  const value = body[key];
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false, message: `${key} must be a number` };
 }
 
 function documentNotFound(reply: FastifyReply): FastifyReply {

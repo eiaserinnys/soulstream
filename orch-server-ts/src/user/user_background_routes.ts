@@ -37,7 +37,7 @@ export type UserBackgroundRouteOptions = {
   resolveAuthenticatedEmail: UserPreferencesEmailResolver;
 };
 
-type Validation<T> =
+type BackgroundValidation<T> =
   | { ok: true; value: T }
   | { ok: false; statusCode: number; body: unknown };
 
@@ -116,7 +116,7 @@ export function registerUserBackgroundRoutes(
   });
 }
 
-function validateBackgroundMime(value: string): Validation<UserBackgroundMimeType> {
+function validateBackgroundMime(value: string): BackgroundValidation<UserBackgroundMimeType> {
   const mime = normalizeBackgroundMime(value);
   if (mime === null) {
     return {
@@ -139,7 +139,7 @@ export function normalizeBackgroundMime(value: string | null | undefined): UserB
   return mime as UserBackgroundMimeType;
 }
 
-function validateBackgroundBlob(value: Buffer): Validation<Buffer> {
+function validateBackgroundBlob(value: Buffer): BackgroundValidation<Buffer> {
   if (value.length > MAX_BACKGROUND_BYTES) {
     return {
       ok: false,

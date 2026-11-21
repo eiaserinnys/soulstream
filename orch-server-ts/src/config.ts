@@ -133,7 +133,7 @@ export function parseOrchServerConfig(input: unknown): OrchServerTsConfig {
 export function loadOrchServerEnvironment(
   env: EnvironmentSource = process.env,
 ): OrchServerEnvironmentConfig {
-  const environment = requiredString(env, "ENVIRONMENT");
+  const environment = requiredEnvString(env, "ENVIRONMENT");
   const isProduction = environment.toLowerCase() === "production";
   const corsAllowedOrigins = parseCorsOrigins(env.CORS_ALLOWED_ORIGINS);
   if (isProduction && corsAllowedOrigins.length === 0) {
@@ -148,12 +148,12 @@ export function loadOrchServerEnvironment(
     node_name: optionalString(env.NODE_NAME),
     default_execution_node_id:
       (env.DEFAULT_EXECUTION_NODE_ID?.trim() ?? "") || DEFAULT_EXECUTION_NODE_ID,
-    host: requiredString(env, "HOST"),
+    host: requiredEnvString(env, "HOST"),
     port: parsePort(env.PORT),
     trusted_proxy: DEFAULT_TRUSTED_PROXY,
-    database_url: requiredString(env, "DATABASE_URL"),
+    database_url: requiredEnvString(env, "DATABASE_URL"),
     dashboard_dir: env.DASHBOARD_DIR ?? "",
-    soulstream_public_url: publicOrigin(requiredString(env, "SOULSTREAM_PUBLIC_URL")),
+    soulstream_public_url: publicOrigin(requiredEnvString(env, "SOULSTREAM_PUBLIC_URL")),
     dashboard_user_folder_access_configured:
       (env.DASHBOARD_USER_FOLDER_ACCESS?.trim() ?? "").length > 0,
     atom_enabled: parseBoolean(env.ATOM_ENABLED, "ATOM_ENABLED", false),
@@ -171,8 +171,8 @@ export function loadOrchServerEnvironment(
     allowed_email: env.ALLOWED_EMAIL ?? "",
     jwt_secret: env.JWT_SECRET ?? "",
     environment,
-    claude_oauth_client_id: requiredString(env, "CLAUDE_OAUTH_CLIENT_ID"),
-    claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    claude_oauth_client_id: requiredEnvString(env, "CLAUDE_OAUTH_CLIENT_ID"),
+    claude_oauth_callback_url: requiredEnvString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
     codex_cli_path: optionalString(env.CODEX_CLI_PATH),
     antigravity_cli_path: optionalString(env.AGY_CLI_PATH),
     typesafe_api_key: env.TYPESAFE_API_KEY ?? "",
@@ -228,7 +228,7 @@ export function createEnvironmentConfigProvider(
   };
 }
 
-function requiredString(env: EnvironmentSource, key: OrchServerEnvironmentVariable): string {
+function requiredEnvString(env: EnvironmentSource, key: OrchServerEnvironmentVariable): string {
   const value = env[key];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${key} is required`);

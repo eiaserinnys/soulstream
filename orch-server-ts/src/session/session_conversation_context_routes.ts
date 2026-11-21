@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { queryValue } from "../http/route_validation.js";
+import type { SessionParams } from "./session_action_command_payloads.js";
+
 import type {
   SessionConversationContextQuery,
   SessionConversationContextResponse,
 } from "./session_conversation_context.js";
-
-type SessionParams = { session_id: string };
 
 export type SessionConversationContextRouteOptions = {
   readonly read: (
@@ -110,12 +111,3 @@ function adjacentTurns(
   }
   return { ok: true, value: parsed };
 }
-
-function queryValue(query: unknown, key: string): unknown {
-  if (query === null || typeof query !== "object" || !(key in query)) {
-    return undefined;
-  }
-  const value = (query as Record<string, unknown>)[key];
-  return Array.isArray(value) ? value[0] : value;
-}
-
