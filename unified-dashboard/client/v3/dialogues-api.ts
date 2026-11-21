@@ -21,7 +21,7 @@ function usageFixtureIso(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toISOString();
 }
 
-function usageFixtureQuota(
+export function usageFixtureQuota(
   id: string,
   label: string,
   window: string | null,
@@ -31,7 +31,7 @@ function usageFixtureQuota(
   return { id, label, window, model: null, remainingPercent, resetAt };
 }
 
-function usageFixtureProvider(
+export function usageFixtureProvider(
   quotas: UsageSummaryQuota[],
   overrides: Partial<UsageSummaryProvider> = {},
 ): UsageSummaryProvider {

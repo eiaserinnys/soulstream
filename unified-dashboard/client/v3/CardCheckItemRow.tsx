@@ -87,7 +87,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  </div>;
 }
 
-function formatTime(value:string) {
+export function formatTime(value:string) {
  const date=new Date(value);
  return Number.isNaN(date.getTime())?"":date.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
 }

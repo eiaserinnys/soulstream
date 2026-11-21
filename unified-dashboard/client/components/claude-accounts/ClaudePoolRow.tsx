@@ -4,6 +4,7 @@ import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
 import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
+import { clockLabel } from "../CogitoNodeHealthClock";
 import {
   accountPath,
   CENTRAL_CLAUDE_TARGET,
@@ -53,13 +54,6 @@ function summaryText(list: ClaudeAccountList): string {
   const pool = list.pool;
   if (!pool) return `${list.accounts.length}개 계정`;
   return `${pool.available_count}/${pool.total_count} 가용`;
-}
-
-function localClock(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
 function existingAccountId(error: unknown): string | null {
@@ -328,7 +322,7 @@ export function ClaudePoolRow(props: Props) {
   const available = list.pool?.available_count ?? accounts.filter((account) => account.enabled && account.auth_state !== "idle" && !account.blocked).length;
   const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
   const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
-  const releaseLabel = poolBlocked ? localClock(earliestAvailableAt) : null;
+  const releaseLabel = poolBlocked ? clockLabel(earliestAvailableAt) : null;
   const sessionCount = list.accounts.reduce((total, account) => total + account.active_sessions, 0);
   const statusColor = available > 0
     ? "var(--color-emerald-400)"

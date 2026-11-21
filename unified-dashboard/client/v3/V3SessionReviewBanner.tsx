@@ -64,7 +64,7 @@ export function V3SessionReviewBanner({
   );
 }
 
-function reviewErrorMessage(error: unknown): string {
+export function reviewErrorMessage(error: unknown): string {
   if (error instanceof SessionReviewAcknowledgeError) {
     if (error.status === 404) return "세션을 찾을 수 없습니다. 목록을 새로 고쳐주세요.";
     if (error.status === 409) return "검수 상태가 바뀌었습니다. 목록을 새로 고쳐주세요.";

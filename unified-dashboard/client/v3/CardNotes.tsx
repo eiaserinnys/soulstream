@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MarkdownContent, ProfileAvatar } from "@seosoyoung/soul-ui";
 import type { CardComment, CardLinkedSession } from "@seosoyoung/soul-ui/cards/card-types";
+import { formatTime } from "./CardCheckItemRow";
 import "./v3-card-check-items.css";
 
 export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,onImageClick}: {
@@ -33,9 +34,4 @@ export function CardNotes({brief,notes,sessions=[],portraitUrl,userPortraitUrl,o
    })}
   </section>
  </div>;
-}
-
-function formatTime(value:string) {
- const date=new Date(value);
- return Number.isNaN(date.getTime())?"":date.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
 }

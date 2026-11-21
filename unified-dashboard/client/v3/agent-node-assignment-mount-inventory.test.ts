@@ -14,7 +14,6 @@ describe("agent/node/model assignment mount inventory", () => {
 
     expect(mounts).toEqual([
       "CardCreateDialog.tsx",
-      "CardMenu.tsx",
       "FolderDefaultAssignment.tsx",
       "ProjectContextFormFields.tsx",
       "SessionSuccessionModal.tsx",

@@ -18,7 +18,7 @@ export async function setFolderStarred(
   return updated.page;
 }
 
-function operationId(prefix: string): string {
+export function operationId(prefix: string): string {
   if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
   return `${prefix}-${globalThis.crypto.randomUUID()}`;
 }

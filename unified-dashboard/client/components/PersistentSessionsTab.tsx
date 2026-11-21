@@ -18,7 +18,8 @@ import {
 } from "../lib/persistent-sessions";
 import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
-import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
+import { SettingFieldWidget } from "./config/SettingFieldWidget";
+import { currentModelText, textField } from "./persistent-session-fields";
 import {
   SettingsAlert,
   SettingsDetailHeader,
@@ -309,18 +310,8 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
   );
 }
 
-function textField(key: string, label: string, value: string, readOnly: boolean, description = ""): SettingField {
-  return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: readOnly };
-}
-
 function agentLabel(session: PersistentSession): string {
   return session.agent_name ?? session.agent_id ?? "에이전트 정보 없음";
-}
-
-function currentModelText(session: PersistentSession): string {
-  const { model_preset, model, reasoning_effort } = session.runtime.current_model;
-  const parts = [model ?? model_preset, reasoning_effort].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(" · ") : "모델 정보 없음";
 }
 
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }

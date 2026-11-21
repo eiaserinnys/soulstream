@@ -13,6 +13,7 @@ import type {
 } from "@seosoyoung/soul-ui";
 import { NodePanel } from "../components/NodePanel";
 import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
+import { usageFixtureProvider, usageFixtureQuota } from "./dialogues-api";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 import { PersistentSessionWeeklyUsage } from "./PersistentSessionWeeklyUsage";
 
@@ -28,31 +29,6 @@ const resetSixty = nowSeconds + Math.round(2.8 * DAY);
 
 function isoIn(seconds: number): string {
   return new Date(seconds * 1000).toISOString();
-}
-
-function quota(
-  id: string,
-  label: string,
-  window: string | null,
-  remainingPercent: number,
-  resetAt: number | null,
-): UsageSummaryQuota {
-  return { id, label, window, model: null, remainingPercent, resetAt };
-}
-
-function providerOf(
-  quotas: UsageSummaryQuota[],
-  overrides: Partial<UsageSummaryProvider> = {},
-): UsageSummaryProvider {
-  return {
-    status: "auto",
-    weeklyRemainingPercent: null,
-    weeklyResetAt: null,
-    shortRemainingPercent: null,
-    shortResetAt: null,
-    quotas,
-    ...overrides,
-  };
 }
 
 function sampleAccounts(): ClaudeAccountList {
@@ -147,34 +123,32 @@ const NODE_BY_STATE: Record<ProviderPanelReviewState, string> = {
   codex: "sample-provider-codex",
 };
 
-/** 남은 비율이 아니라 게이지에 찍히는 사용 비율이다(5시간 38% = remaining 62). */
 const CLAUDE_QUOTAS = (): UsageSummaryQuota[] => [
-  quota("claude:5h", "5시간", "5h", 62, resetSoon),
-  quota("claude:weekly", "7일", "7d", 66, resetWeek),
-  quota("claude:weekly_scoped:fable", "Fable", "7d", 88, resetWeek),
+  usageFixtureQuota("claude:5h", "5시간", "5h", 62, resetSoon),
+  usageFixtureQuota("claude:weekly", "7일", "7d", 66, resetWeek),
+  usageFixtureQuota("claude:weekly_scoped:fable", "Fable", "7d", 88, resetWeek),
 ];
 
 const OPENCODE_QUOTAS = (): UsageSummaryQuota[] => [
-  quota("opencode:short", "5시간", "5h", 75, resetSoon),
-  quota("opencode:weekly", "7일", "168h", 39, resetWeek),
-  quota("opencode:monthly", "월간", "monthly", 52, resetMonth),
+  usageFixtureQuota("opencode:short", "5시간", "5h", 75, resetSoon),
+  usageFixtureQuota("opencode:weekly", "7일", "168h", 39, resetWeek),
+  usageFixtureQuota("opencode:monthly", "월간", "monthly", 52, resetMonth),
 ];
 
-// 168시간 한도 하나만 있는 공급자는 둘째 칸에만 값이 차고 1·3열은 빈 채로 남아야 한다.
 const CODEX_ONLY_WEEKLY = (): UsageSummaryQuota[] => [
-  quota("codex:weekly", "7일", "168h", 48, resetWeek),
+  usageFixtureQuota("codex:weekly", "7일", "168h", 48, resetWeek),
 ];
 
 const ANTIGRAVITY_QUOTAS = (): UsageSummaryQuota[] => [
-  quota("antigravity:short", "5시간", "5h", 81, resetSoon),
-  quota("antigravity:weekly", "7일", "7d", 56, resetWeek),
+  usageFixtureQuota("antigravity:short", "5시간", "5h", 81, resetSoon),
+  usageFixtureQuota("antigravity:weekly", "7일", "7d", 56, resetWeek),
 ];
 
 function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
   const nodeId = NODE_BY_STATE[state];
   const poolList = sampleAccounts();
   const claude: UsageSummaryProvider = state === "pool"
-    ? providerOf(CLAUDE_QUOTAS(), {
+    ? usageFixtureProvider(CLAUDE_QUOTAS(), {
       mode: "pool",
       accounts: poolList.accounts,
       pool: poolList.pool,
@@ -184,7 +158,7 @@ function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
       shortRemainingPercent: 62,
       shortResetAt: resetSoon,
     })
-    : providerOf(CLAUDE_QUOTAS(), {
+    : usageFixtureProvider(CLAUDE_QUOTAS(), {
       mode: "legacy",
       weeklyRemainingPercent: 66,
       weeklyResetAt: resetWeek,
@@ -193,22 +167,22 @@ function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
     });
 
   const opencodeGo = state === "legacy"
-    ? providerOf([], { status: "not_configured" })
-    : providerOf(OPENCODE_QUOTAS());
+    ? usageFixtureProvider([], { status: "not_configured" })
+    : usageFixtureProvider(OPENCODE_QUOTAS());
 
   const codex = state === "pool"
-    ? providerOf(CODEX_ONLY_WEEKLY())
+    ? usageFixtureProvider(CODEX_ONLY_WEEKLY())
     : state === "legacy"
       ? null
-      : providerOf([
-        quota("codex:5h", "5시간", "5h", 90, resetSoon),
-        quota("codex:weekly", "7일", "168h", 80, resetWeek),
+      : usageFixtureProvider([
+        usageFixtureQuota("codex:5h", "5시간", "5h", 90, resetSoon),
+        usageFixtureQuota("codex:weekly", "7일", "168h", 80, resetWeek),
       ]);
 
   const antigravity = state === "pool"
-    ? providerOf(ANTIGRAVITY_QUOTAS())
+    ? usageFixtureProvider(ANTIGRAVITY_QUOTAS())
     : state === "legacy"
-      ? providerOf([], { status: "error" })
+      ? usageFixtureProvider([], { status: "error" })
       : null;
 
   return {
