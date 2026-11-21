@@ -36,6 +36,16 @@
 /* 탭 본문 자체가 로딩일 때: 제목 아래 남는 높이를 채우고 그 안에서 가운데에 선다. */
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) { display:flex; flex-direction:column; }
 .config-dialog .config-detail:has(> :is([data-slot="frame-loading"], [data-slot="frame-notice"])) > .config-detail-heading { flex:none; }
+@media (min-width:40rem) {
+ .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) { display:flex; flex-direction:column; padding-bottom:var(--v3-space-3); }
+ .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) > .config-detail-heading { flex:none; }
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] { min-height:min-content; }
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] > :last-child { min-height:calc(var(--container-sm) - var(--v3-space-6)); contain:size; }
+}
+/* 기존 xl 구간에서는 넓은 목록의 네 행이 보이도록 최소 높이를 키운다. */
+@media (min-width:80rem) {
+ .config-dialog .config-detail > [data-testid="agent-profile-settings"] > :last-child { min-height:calc(var(--container-sm) + var(--v3-space-4)); }
+}
 .config-dialog .config-appearance { display:flex; flex-direction:column; gap:var(--v3-space-6); }
 .config-dialog .config-wallpaper { padding:0 0 var(--v3-space-6); border-bottom:1px solid var(--border); }
 .config-dialog .config-wallpaper-options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--v3-space-2); margin-top:var(--v3-space-4); }
@@ -98,6 +108,7 @@
  .config-dialog .config-layout[data-mobile-index="false"] .config-category-nav { display:none; }
  .config-dialog .config-back { display:flex; align-items:center; gap:var(--v3-space-2); color:var(--primary); font:var(--v3-type-body) var(--v3-font-family); min-height:var(--v3-action-size); margin-bottom:var(--v3-space-3); }
  .config-dialog .config-save-state, .config-dialog .config-discard > div { width:100%; }
+ .config-dialog .config-detail:has(> [data-testid="agent-profile-settings"]) { padding-bottom:var(--v3-space-3); }
 }
 
 @media (max-width:40rem) {

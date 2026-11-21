@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 
-export type AppliesWhenField = "source" | "node_id" | "container_kind" | "agent" | "backend" | "os" | "card_role";
+export type AppliesWhenField = "source" | "node_id" | "folder_id" | "agent" | "backend" | "os" | "card_role";
 export type AtomContextMode = "full" | "index" | "titles";
 
 export interface AgentAtomContext {
@@ -16,14 +16,14 @@ export interface AgentAtomContext {
 const CONDITION_FIELDS: ReadonlyArray<{ field: AppliesWhenField; label: string }> = [
   { field: "source", label: "호출 소스" },
   { field: "node_id", label: "세션 노드" },
-  { field: "container_kind", label: "컨테이너 종류" },
+  { field: "folder_id", label: "폴더 ID" },
   { field: "agent", label: "에이전트" },
   { field: "backend", label: "백엔드" },
   { field: "os", label: "OS" },
   { field: "card_role", label: "카드 역할" },
 ];
 
-export const inputClassName = "mt-1 h-8 w-full rounded-floor border border-border bg-background px-2 text-sm";
+export const inputClassName = "mt-1 h-8 w-full rounded-floor border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 export function LabeledInput({ label, value, onChange, ...props }: {
   label: string;
@@ -46,12 +46,12 @@ export function AgentAtomContextFields({ context, index, onChange, onRemove }: {
 }) {
   return (
     <div className="rounded-floor border border-border bg-muted/10 p-3">
-      <div className="grid grid-cols-[minmax(0,1fr)_7rem_5rem_auto] gap-2">
-        <LabeledInput
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 lg:grid-cols-[minmax(0,1fr)_7rem_5rem_auto]">
+        <div className="col-span-full min-w-0 lg:col-span-1"><LabeledInput
           label="Atom node UUID"
           value={context.node_id}
           onChange={(value) => onChange({ ...context, node_id: value })}
-        />
+        /></div>
         <label className="text-xs font-medium">
           모드
           <select

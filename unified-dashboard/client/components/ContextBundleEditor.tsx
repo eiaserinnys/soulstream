@@ -123,8 +123,8 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
   };
 
   return (
-    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-floor border border-border">
-      <header className="col-span-2 border-b border-border px-4 py-3">
+    <div className="grid h-[520px] min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,2fr)] overflow-hidden rounded-floor border border-border sm:h-auto sm:flex-1 sm:grid-cols-[13rem_minmax(0,1fr)] sm:grid-rows-[auto_minmax(0,1fr)]">
+      <header className="border-b border-border px-4 py-3 sm:col-span-2">
         <h2 className="text-sm font-semibold">컨텍스트 번들</h2>
         <p className="mt-1 text-xs text-muted-foreground">여러 프로필이 함께 쓰는 atom 컨텍스트 묶음입니다. 여기서 번들을 만들고 고치면, 각 프로필의 「컨텍스트 번들」 절에서 참조합니다. 참조 중인 번들은 삭제할 수 없습니다.</p>
       </header>
@@ -146,7 +146,7 @@ export function ContextBundleEditor({ bundles, onBundlesChanged, request = fetch
         ))}
       </aside>
 
-      <div className="min-h-0 overflow-y-auto p-4" data-testid="context-bundle-editor">
+      <div className="min-h-0 overflow-y-auto overscroll-contain p-4" data-testid="context-bundle-editor">
         {!draft ? (
           <div className="py-10 text-center text-sm text-muted-foreground">편집할 번들을 선택하거나 새로 만드세요.</div>
         ) : (
