@@ -1,4 +1,4 @@
-import type { ModelPresetAvailability } from "./api-types";
+import type { ModelPresetAvailability } from "../lib/model-preset-availability";
 
 export async function fetchNodeModelPresets(
   nodeId: string,

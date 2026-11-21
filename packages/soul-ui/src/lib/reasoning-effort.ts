@@ -1,11 +1,5 @@
-import type { ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "./model-preset-availability";
 
-/**
- * Everything about "which efforts exist" comes from the model preset the node
- * advertised. There is deliberately no client-side table of models or defaults:
- * the repository's `model-catalog.yaml` is the single source of truth, and a preset
- * that advertises nothing renders as "auto (backend default)".
- */
 export type EffortPreset = Pick<
   ModelPresetAvailability,
   "supported_efforts" | "default_effort"
@@ -18,7 +12,6 @@ export function effortOptionsForPreset(
   return supported && supported.length > 0 ? supported : [];
 }
 
-/** True when the preset offers an effort choice at all. */
 export function presetSupportsEffort(
   preset: EffortPreset | null | undefined,
 ): boolean {
@@ -31,10 +24,6 @@ export function defaultEffortForPreset(
   return preset?.default_effort;
 }
 
-/**
- * True when a previously chosen value is still offered by the current preset.
- * A false result must prompt re-selection — never a silent substitution.
- */
 export function isEffortSupported(
   preset: EffortPreset | null | undefined,
   selected: string | null | undefined,
@@ -43,11 +32,6 @@ export function isEffortSupported(
   return effortOptionsForPreset(preset).includes(selected);
 }
 
-/**
- * Value to put on the create request. Omitting it makes the node apply the
- * preset default, so an unset or unsupported selection is sent as `undefined`
- * rather than being quietly rewritten to another level.
- */
 export function reasoningEffortForSubmit(
   preset: EffortPreset | null | undefined,
   selected: string | null | undefined,
@@ -56,9 +40,16 @@ export function reasoningEffortForSubmit(
   return isEffortSupported(preset, selected) ? selected : undefined;
 }
 
-export function selectedAgentBackend<
-  T extends { id: string; backend?: string | null },
->(agents: T[], selectedAgentId: string): string | null {
-  if (!selectedAgentId) return null;
-  return agents.find((agent) => agent.id === selectedAgentId)?.backend ?? null;
+const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X High",
+  max: "Max",
+  ultra: "Ultra",
+};
+
+export function reasoningEffortLabel(value: string): string {
+  return REASONING_EFFORT_LABELS[value] ?? value;
 }

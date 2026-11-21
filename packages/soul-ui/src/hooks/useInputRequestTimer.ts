@@ -1,30 +1,18 @@
-/**
- * useInputRequestTimer - AskUserQuestion 타임아웃 카운트다운 훅
- *
- * receivedAt(수신 시각)과 timeoutSec(타임아웃 초)를 기반으로
- * 남은 시간과 만료 여부를 1초 단위로 갱신합니다.
- */
-
 import { useState, useEffect } from 'react';
-
-const calcRemaining = (at: number | undefined, timeoutSec: number): number => {
-  if (!at) return timeoutSec;
-  return Math.max(0, timeoutSec - Math.floor((Date.now() - at) / 1000));
-};
+import { INPUT_REQUEST_TIMEOUT_SEC, inputRequestRemainingSec } from '../lib/input-request-countdown';
 
 export function useInputRequestTimer(
   receivedAt: number | undefined,
-  timeoutSec: number = 300
+  timeoutSec: number = INPUT_REQUEST_TIMEOUT_SEC
 ): { remainingSec: number; isExpired: boolean } {
-  const [remainingSec, setRemainingSec] = useState<number>(() => calcRemaining(receivedAt, timeoutSec));
+  const [remainingSec, setRemainingSec] = useState<number>(() => inputRequestRemainingSec(receivedAt, timeoutSec));
 
   useEffect(() => {
     if (!receivedAt) return;
 
     let intervalId: ReturnType<typeof setInterval>;
     const update = () => {
-      const elapsed = Math.floor((Date.now() - receivedAt) / 1000);
-      const remaining = Math.max(0, timeoutSec - elapsed);
+      const remaining = inputRequestRemainingSec(receivedAt, timeoutSec);
       setRemainingSec(remaining);
       if (remaining === 0) {
         clearInterval(intervalId);

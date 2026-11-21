@@ -1,8 +1,6 @@
 import { useEffect, useMemo } from "react";
-import {
-  Badge,
-  type ModelPresetAvailability,
-} from "@seosoyoung/soul-ui";
+import { Badge } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { CatalogSelectionField } from "./CatalogSelectionField";
 

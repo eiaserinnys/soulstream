@@ -1,23 +1,8 @@
-/**
- * Wire → Session 정규화 정본.
- *
- * orch wire는 3변형(REST `/api/sessions` 정본 camelCase + SSE `session_created.session`
- * MIXED + SSE `session_updated` MIXED)이므로, soul-app 안에서는 한 mapper가 모든 입력을
- * 받아 camelCase `Session`(api/types.ts) 단일 정본으로 변환한다 — design-principles
- * §3 정본 하나.
- *
- * 비교: `packages/soul-ui/src/shared/mappers.ts:toSessionSummary` (web 정본).
- * soul-app은 llm 세션 채팅 UI 미지원이라 llmProvider 등 web 전용 필드를 두지 않는다.
- *
- * 본 mapper는 snake/camel 양쪽 키를 받는다 — REST는 camel 단일이지만 SSE의 to_session_info
- * 결과는 mixed라 한 함수로 통합한다. snake 기존 표시 정본은 점진적으로 사라질 예정.
- */
-
 import type {
-  ReviewState,
   Session,
   SessionEndedReconciliation,
 } from './types';
+import type { ReviewState } from '../../../packages/wire-schema/src/session_review';
 import { normalizeFeedLastMessage } from '../lib/session-feed-activity';
 import { normalizePendingAttentionSnapshot } from '../lib/session-attention';
 

@@ -52,7 +52,6 @@ export type {
   SessionMessageSearchStatus,
   SessionSearchProjection,
   SessionSearchFilters,
-  SearchMatchSource,
   SearchNavigationResult,
   SessionMetadataSearchPage,
   SessionMetadataSearchParams,

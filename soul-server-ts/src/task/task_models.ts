@@ -20,6 +20,7 @@ import type {
   ClaudeRuntimeTaskStatus,
   SessionLifecycleStatus,
 } from "@soulstream/wire-schema";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
@@ -62,8 +63,6 @@ export function isTerminalTaskStatus(status: TaskStatus): boolean {
 export function isActiveTaskStatus(status: TaskStatus): boolean {
   return status === "initializing" || status === "running";
 }
-
-export type ReviewState = "not_required" | "needs_review" | "acknowledged";
 
 export interface PersistentGenerationFirstCall {
   generation: number;

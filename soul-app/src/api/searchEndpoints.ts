@@ -1,6 +1,7 @@
 import type { ApiRequestContext } from './clientCore';
 import { toSession } from './mappers';
 import type { Session } from './types';
+import type { SearchMatchSource } from '../../../packages/search-contract/src/search_core';
 
 export interface SessionMetadataSearchParams {
   query: string;
@@ -40,12 +41,6 @@ export interface SessionSearchFilters {
   backends?: readonly string[];
   updatedAfter?: string | null;
 }
-
-export type SearchMatchSource =
-  | 'message'
-  | 'turn_summary'
-  | 'highlight'
-  | 'story';
 
 export interface SessionMessageSearchResult {
   sessionId: string;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { PersistentSessionDetails, persistentSessionDetailsDraft } from "../components/PersistentSessionDetails";
 import { PersistentSessionMonitoring } from "../components/PersistentSessionMonitoring";

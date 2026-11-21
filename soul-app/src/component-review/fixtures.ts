@@ -3,9 +3,8 @@ import type { CardCheckItem, CardDto, CardPatch, CardStatus } from '../api/cardT
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { reviewSessionEventsUrl } from './chat-fixtures';
-import { exhaustiveList } from '../lib/exhaustive';
+import { exhaustiveList } from '../../../packages/soul-ui/src/shared/exhaustive';
 
-// Invented public data only. No IDs or assets from an actual account.
 const time = '2026-10-01T00:00:00Z';
 const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 export const folders: CatalogFolder[] = [

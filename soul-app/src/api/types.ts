@@ -1,12 +1,10 @@
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
-import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
 import type { CatalogSessionAssignment } from '../../../packages/wire-schema/src/catalog';
+import type { EventTruncation } from '../../../packages/wire-schema/generated/typescript/index';
+import type { ReviewState } from '../../../packages/wire-schema/src/session_review';
 export type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 export type MessageContextItem = { key: string; content: unknown };
-export type ReviewState = 'not_required' | 'needs_review' | 'acknowledged';
 
-// Server-owned v2 feed wire: contract 0ff47de3, producer 7caf0414. 앱은 소비만 하며
-// server contract/fixture의 필드명과 enum을 임의로 확장하지 않는다.
 export type PendingAttentionKind =
   | 'input_request'
   | 'permission'
@@ -267,11 +265,6 @@ export type SessionEventType =
   | 'claude_runtime_schedule_deleted'
   | 'text_snapshot'
   | 'history_sync';
-
-export interface EventTruncation {
-  original_bytes: number;
-  attachment: AttachmentDescriptor | null;
-}
 
 export interface SessionEventData extends Record<string, unknown> {
   truncation?: EventTruncation;

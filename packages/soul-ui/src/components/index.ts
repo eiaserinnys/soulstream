@@ -44,7 +44,6 @@ export type { StatusConfig } from "./SessionItem";
 export { CustomViewIframe } from "../custom-view/CustomViewRenderer";
 export type {
   CustomViewBindingData,
-  CustomViewBindingRecord,
 } from "../custom-view/CustomViewRenderer";
 export { useCustomViewBindings } from "../custom-view/use-custom-view-bindings";
 export { BoardAssetCard } from "./BoardAssetCard";

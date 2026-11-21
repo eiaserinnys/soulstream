@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { EventTruncation, SessionEvent } from '../../api/types';
+import type { SessionEvent } from '../../api/types';
+import type { EventTruncation } from '../../../../packages/wire-schema/generated/typescript/index';
 import type { ToolTraceResponse } from '../../api/client';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';

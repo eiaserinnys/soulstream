@@ -8,7 +8,8 @@ import type {
 } from '../../../packages/wire-schema/src/attachments';
 import { ApiHttpError, createApiRequestContext } from '../api/clientCore';
 import { AttachmentReadError, createAttachmentEndpoints } from '../api/attachmentEndpoints';
-import type { EventTruncation, SessionEvent } from '../api/types';
+import type { SessionEvent } from '../api/types';
+import type { EventTruncation } from '../../../packages/wire-schema/generated/typescript/index';
 import {
   attachmentContentUrl,
   attachmentMediaKind,

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import type { EventTruncation, SessionEvent } from '../../api/types';
+import type { SessionEvent } from '../../api/types';
+import type { EventTruncation } from '../../../../packages/wire-schema/generated/typescript/index';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';

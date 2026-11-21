@@ -1,18 +1,9 @@
-/**
- * Soul Dashboard - Session Storage Provider Types
- *
- * 세션 데이터의 소스를 추상화하는 Provider 인터페이스 정의.
- * Soul Server API + SSE 스트림을 통한 실시간 업데이트.
- */
-
 import type {
   SessionSummary,
-  ReviewState,
   SoulSSEEvent,
 } from "@shared/types";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 import type { DetailCursorStore } from "./detail-cursor-store";
-
-// === Provider 인터페이스 ===
 
 /** 세션 목록 조회 옵션 */
 export interface FetchSessionsOptions {

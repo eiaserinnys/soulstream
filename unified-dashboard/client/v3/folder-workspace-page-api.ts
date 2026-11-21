@@ -1,8 +1,8 @@
 import type {
   PageApiClient,
   PageDto,
-  PageStructureOperation,
 } from "@seosoyoung/soul-ui/page";
+import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
 import {
   buildContextBlockOperations,

@@ -1,7 +1,7 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { FrameLoading } from '../FrameLoading';
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,7 @@ import {
   type RecurringJobWrite,
 } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { useSessionStore } from '../../store/sessionStore';
 import { useTokens } from '../../theme';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';

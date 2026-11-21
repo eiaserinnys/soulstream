@@ -1,12 +1,6 @@
 import type { FolderSnapshot } from '../api/cardTypes';
 import type { Session } from '../api/types';
-
-export interface CustomViewBindingRecord {
-  title?: string | null;
-  status?: string | null;
-  completed?: number | string | null;
-  total?: number | string | null;
-}
+import { CUSTOM_VIEW_CSP, type CustomViewBindingRecord } from '../../../packages/soul-ui/src/lib/custom-view-binding';
 
 export interface CustomViewBindings {
   cards: Record<string, CustomViewBindingRecord>;
@@ -16,13 +10,6 @@ export interface CustomViewBindings {
 
 const SOUL_BIND_RE = /<soul-bind\b([^>]*)>\s*<\/soul-bind>/gi;
 const ATTRIBUTE_RE = /([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
-const CUSTOM_VIEW_CSP = [
-  "default-src 'none'",
-  "style-src 'unsafe-inline'",
-  "script-src 'unsafe-inline'",
-  'img-src data: https:',
-  'frame-src https://pages.eiaserinnys.me',
-].join('; ') + ';';
 
 export function buildCustomViewBindings(
   snapshot: FolderSnapshot | null | undefined,

@@ -4,9 +4,9 @@ import {
   isTaskStatus,
   isTerminationReason,
   isTerminalTaskStatus,
-  type ReviewState,
   type Task,
 } from "./task_models.js";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 
 const REVIEW_STATES = new Set<ReviewState>([
   "not_required",

@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  AgentInfo,
-  ModelPresetAvailability,
-} from "@seosoyoung/soul-ui";
+import type { AgentInfo } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { AgentSelectionField } from "./AgentSelectionField";
 import { CatalogSelectionField } from "../components/CatalogSelectionField";

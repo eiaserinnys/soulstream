@@ -3,12 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
-  CUSTOM_VIEW_CSP,
-  CUSTOM_VIEW_FRAME_ORIGINS,
   CustomViewIframe,
   renderCustomViewFragment,
   renderCustomViewSrcDoc,
 } from "./CustomViewRenderer";
+import {
+  CUSTOM_VIEW_CSP,
+  CUSTOM_VIEW_FRAME_ORIGINS,
+} from "../lib/custom-view-binding";
 
 describe("CustomViewRenderer", () => {
   it("renders a sandboxed iframe without same-origin access", () => {

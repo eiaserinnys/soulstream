@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, FrameLoading, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import { Button, FrameLoading } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 import { pairTurnUsage } from "@seosoyoung/soul-ui/lib/persistent-turn-usage";
 import { formatTurnUsageCaptionTitle } from "@seosoyoung/soul-ui/lib/turn-usage-format";
 import { HISTORY_PAGE_SIZE } from "@seosoyoung/soul-ui/components/chat/useMessageHistoryBuffer";

@@ -11,16 +11,8 @@ import { useUiEventTracker } from "@seosoyoung/soul-ui";
 import {
   DEFAULT_SEARCH_CATEGORIES,
   type SearchEventCategory,
+  type SearchResultItem,
 } from "@soulstream/search-contract";
-
-export interface SearchResultItem {
-  session_id: string;
-  event_id: number;
-  score: number;
-  preview: string;
-  event_type: string;
-  match_source: SearchMatchSource;
-}
 
 export interface SearchSessionResult {
   session_id: string;
@@ -57,12 +49,6 @@ export interface SearchStatus {
   search_latency_ms?: number;
   db_cancel?: "failed";
 }
-
-export type SearchMatchSource =
-  | "message"
-  | "turn_summary"
-  | "highlight"
-  | "story";
 
 export interface SearchFilters {
   searchSessionId: boolean;

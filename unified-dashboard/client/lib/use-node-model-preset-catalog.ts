@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import {
   fetchNodeModelPresets,

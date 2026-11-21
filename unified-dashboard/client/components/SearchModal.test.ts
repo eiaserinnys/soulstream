@@ -14,9 +14,9 @@ import {
 } from "@seosoyoung/soul-ui";
 import type {
   SearchNavigationResult,
-  SearchResultItem,
   SearchSessionResult,
 } from "../hooks/useSessionSearch";
+import type { SearchResultItem } from "@soulstream/search-contract";
 
 const searchHarness = vi.hoisted(() => ({
   results: [] as SearchResultItem[],

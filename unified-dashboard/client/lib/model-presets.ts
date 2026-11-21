@@ -1,7 +1,5 @@
-import {
-  fetchNodeModelPresets,
-  type ModelPresetAvailability,
-} from "@seosoyoung/soul-ui";
+import { fetchNodeModelPresets } from "@seosoyoung/soul-ui";
+import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 export { fetchNodeModelPresets };
 

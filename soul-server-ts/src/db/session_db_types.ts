@@ -9,10 +9,10 @@ export type {
 } from "@soulstream/wire-schema";
 
 import type {
-  ReviewState,
   TaskStatus as SessionTaskStatus,
   TerminationReason,
 } from "../task/task_models.js";
+import type { ReviewState } from "@soulstream/wire-schema/session-review";
 
 export type SessionType = "claude" | "llm";
 

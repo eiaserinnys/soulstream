@@ -1,7 +1,7 @@
 import type { CardStatus } from '../api/cardTypes';
 import { completedGridLayout } from '../../../packages/soul-ui/src/cards/completed-cards';
 import { CARD_BOARD_STATUS_LABELS } from '../../../packages/soul-ui/src/lib/card-board-status-labels';
-import { exhaustiveList } from './exhaustive';
+import { exhaustiveList } from '../../../packages/soul-ui/src/shared/exhaustive';
 
 export const BOARD_COLUMNS = exhaustiveList<CardStatus>()([
   'todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled',
