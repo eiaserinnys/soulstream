@@ -10,7 +10,7 @@ import {
   LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES,
   type LiveTextEventMetadata,
   type LiveTextSnapshotStream,
-} from "../session/session_feed_contract.js";
+} from "@soulstream/wire-schema/session-feed-contract";
 
 export type RuntimeSessionEvent = {
   readonly nodeId: string;

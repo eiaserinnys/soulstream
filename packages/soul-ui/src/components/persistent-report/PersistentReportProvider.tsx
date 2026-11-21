@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from 'react';
 import { useDashboardStore } from '../../stores/dashboard-store';
-import type { PersistentReportEntry } from '../../shared/session-types';
+import type { PersistentReportEntry } from '@soulstream/wire-schema/persistent-report';
 import { matchesReportReply, reportMessageContext, selectReportKey, type ReportContextItem, type ReportReplyReceipt, type ReportSendContext, type ReportSendOperation } from '../../shared/persistent-report';
 
 type Controller = {

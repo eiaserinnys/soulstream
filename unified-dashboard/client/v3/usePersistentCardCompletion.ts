@@ -1,6 +1,5 @@
-import { CARD_COMPLETION_UNDO_MS } from '../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 
 export type CardCompletionTarget = 'done' | 'on_hold';

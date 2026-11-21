@@ -1,6 +1,6 @@
 import {ReadOnlyCardList} from './ReadOnlyCardList';
 import {useState} from 'react';
-import type { CardStatus } from '@seosoyoung/soul-ui/cards/card-types';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 import { exhaustiveList } from '@shared/exhaustive';
 const cards=exhaustiveList<CardStatus|'unknown'>()(['review','blocked','running','awaiting_verification','queued','todo','on_hold','done','cancelled','unknown']).map((status,index)=>({
  id:`readonly-sample-${index}`,title:'같은 정본 카드 본문을 표시합니다',status,assignee:'로젤린',updatedAt:null,

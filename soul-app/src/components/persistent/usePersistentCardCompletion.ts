@@ -1,8 +1,7 @@
-import { CARD_COMPLETION_UNDO_MS } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { CardDto } from '../../api/cardTypes';
-import type { PersistentReportEntry } from '../../api/types';
 import { cardOperationId } from '../../hooks/useCardActions';
 import { performCardTransition } from '../../lib/card-transition';
 import { isReviewCardEntry, persistentReportStatusCard } from '../../lib/persistent-report-card';

@@ -1,12 +1,8 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
-export type {CardAttachment} from "@soulstream/wire-schema/card-attachments";
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from "@soulstream/wire-schema/card-questions";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
-export type { CardColor } from "@soulstream/wire-schema/card-colors";
-export { CARD_COLOR_KEYS, CARD_COLORS } from "@soulstream/wire-schema/card-colors";
 import type { CardStatus } from "@soulstream/wire-schema";
-export type { CardStatus } from "@soulstream/wire-schema";
 import type { CardItemDisplay } from "@soulstream/wire-schema/card-item-display";
 export interface CardActivity { kind: "instruction" | "report"; body: string; createdAt: string; format: "markdown" | "html" }
 export interface CardItemEvidence {
@@ -57,7 +53,7 @@ export interface CardQuestion {
   title?: string | null; kind?: CardQuestionKind; optionDetails?: CardQuestionOption[];
   attachments?: CardQuestionAttachment[]; selectedOption?: string | null; revision?: number; revisedAt?: string | null;
 }
-export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("../shared/session-types").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string
+export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("@soulstream/wire-schema").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string
   agentName?: string | null; agentPortraitUrl?: string | null;
   modelPreset?: string | null; modelLabel?: string | null; backend?: string | null }
 export interface CardComment { id: string; cardId: string; authorKind: "user" | "agent"; authorId: string; sessionId: string | null; kind: "comment" | "spoken" | "note"; itemId?: number | null; questionId?: string | null; body: string; createdAt: string }

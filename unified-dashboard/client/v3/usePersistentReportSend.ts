@@ -1,5 +1,6 @@
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
-import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import { useDashboardStore } from '@seosoyoung/soul-ui';
 import type { PendingChatSend } from '@seosoyoung/soul-ui/stores/dashboard-store-types';
 import { submitIntervention, SubmitInterventionHttpError } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 

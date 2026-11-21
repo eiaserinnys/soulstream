@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { ChatAttachmentLoaderProvider, ChatView, useDashboardStore, type ChatAttachmentItem, type ChatAttachmentLoader, type PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
+import type { PersistentTurnUsageMode } from "../../../packages/wire-schema/src/persistent_session_settings";
+import { ChatAttachmentLoaderProvider, ChatView, useDashboardStore, type ChatAttachmentItem, type ChatAttachmentLoader } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { ClaudeRuntimeSchedulesPanel } from "@seosoyoung/soul-ui/components/ClaudeRuntimeSchedulesPanel";

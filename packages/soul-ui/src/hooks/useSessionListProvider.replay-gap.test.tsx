@@ -6,9 +6,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+import type { SessionNotice } from "@soulstream/wire-schema/session-feed-contract";
 import type {
-  PersistentReportEntry,
-  SessionNotice,
   SessionSummary,
   SoulSSEEvent,
 } from "../shared/types";

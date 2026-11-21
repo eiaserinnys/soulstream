@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
 import {
-  fetchNodeModelPresets,
   modelPresetUnavailableReason,
   modelPresetOptionLabel,
   modelPresetSelectionState,

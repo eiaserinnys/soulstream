@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import type { PageDto } from "../../../packages/page-model/src/types";
 import type {
   PageApiClient,
-  PageDto,
   PageMutationResponse,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useReducer, useRef } from 'react';
-import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
-import { EMPTY_REPORT } from '../../../packages/wire-schema/src/persistent_report';
+import { useDashboardStore } from '@seosoyoung/soul-ui';
+import { EMPTY_REPORT, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import type { ChatUiOperationsHandle } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { createPersistentSessionsApi } from '../lib/persistent-sessions';
 

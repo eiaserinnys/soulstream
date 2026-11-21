@@ -2,11 +2,10 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
 import { usePersistentCardCompletion } from './usePersistentCardCompletion';
-import { CARD_COMPLETION_UNDO_MS } from '../../../packages/wire-schema/src/persistent_report';
+import { CARD_COMPLETION_UNDO_MS, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const cardId = 'card-for-completion';

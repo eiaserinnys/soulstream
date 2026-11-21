@@ -8,7 +8,7 @@ import { useCardNavigation } from "./card-navigation";
 import { TASK_TITLE_PREVIEW_LENGTH, singleLinePreview } from "./session-preview";
 import "./v3-run-history.css";
 import "./v3-cards.css";
-import { cardActivityPreview } from "./card-activity-preview";
+import { cardActivityPreview } from "@seosoyoung/soul-ui/cards/card-activity-preview";
 import { summarizeCardItems } from "./card-item-summary";
 import { CardProgressSummary } from "./CardProgressSummary";
 const NO_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};

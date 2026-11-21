@@ -2,8 +2,9 @@ jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'completion-operatio
 
 import { act, renderHook } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
-import type { CardDetail, CardDto, CardMutationResult, CardStatus } from '../../../api/cardTypes';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { CardStatus } from '../../../../../packages/wire-schema/generated/typescript/index';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
+import type { CardDetail, CardDto, CardMutationResult } from '../../../api/cardTypes';
 import { cardFixture } from '../../../test-support/cards';
 import { usePersistentCardCompletion } from '../usePersistentCardCompletion';
 

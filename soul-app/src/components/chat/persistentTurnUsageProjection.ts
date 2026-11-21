@@ -7,7 +7,7 @@ import {
   TURN_USAGE_SEPARATOR,
 } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import type { SessionEvent } from '../../api/types';
-import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import type {
   ChatRenderItem,
   PersistentInstructionRecordedCaption,

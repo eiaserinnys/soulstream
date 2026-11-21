@@ -1,12 +1,14 @@
 import { Fragment,useLayoutEffect,useRef,useState,type ReactNode } from "react";
-import type { CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
+import type { CompletedGridSnapshot } from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { CARD_BOARD_STATUS_LABELS } from "@seosoyoung/soul-ui/lib/card-board-status-labels";
 import { PostItGrid } from "./PostItCard";
 import type { CardCompletionOption } from "./CardCompletionFilter";
 import "./v3-card-board.css";
 import { useBoardPan } from "./use-board-pan";
 import { completedGridLayout } from "@seosoyoung/soul-ui/cards/completed-cards";
-import { CompletedCardGrid, type CompletedGridSnapshot } from "./CompletedCardGrid";
+import { CompletedCardGrid } from "./CompletedCardGrid";
 import type { CompletedBrowser } from "./use-completed-cards";
 import { exhaustiveList } from "@shared/exhaustive";
 

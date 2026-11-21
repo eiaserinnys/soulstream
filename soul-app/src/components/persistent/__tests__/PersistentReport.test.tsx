@@ -1,6 +1,5 @@
 import React from 'react';
-import { AccessibilityInfo, Keyboard, Platform, StyleSheet, Text } from 'react-native';
-import * as ReactNative from 'react-native';
+import { AccessibilityInfo, Keyboard, Platform, ScrollView, StyleSheet, Text, type View, type ViewProps } from 'react-native';
 import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { PersistentReportSheet } from '../PersistentReportSheet';
@@ -12,7 +11,7 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { reportSendContext, type ReportReplyDraft } from '../../../lib/persistent-report';
 import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDisplaySettings';
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
 import { usePersistentCardCompletion } from '../usePersistentCardCompletion';
 import { cardFixture } from '../../../test-support/cards';
@@ -24,7 +23,7 @@ jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'report-operation-id
 // measurement boundary rather than the preset's inert class method.
 jest.mock('react-native/Libraries/Components/View/View', () => {
   const ReactModule = jest.requireActual<typeof import('react')>('react');
-  return { __esModule: true, default: ReactModule.forwardRef<ReactNative.View, ReactNative.ViewProps>(
+  return { __esModule: true, default: ReactModule.forwardRef<View, ViewProps>(
     (props, ref) => ReactModule.createElement('View', { ...props, ref })) };
 });
 let mockDevice = 'phone';
@@ -39,7 +38,7 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 test.each(['before layout', 'after layout'] as const)('vertical reveal scrolls to the target %s', timing => {
-  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
   const onRevealed = jest.fn();
   const entries = reportReviewEntries.slice(0, 3);
   const target = entries[2].key;
@@ -60,7 +59,7 @@ test.each(['before layout', 'after layout'] as const)('vertical reveal scrolls t
 });
 
 test('vertical list does not scroll on layout or index changes without a reveal key', () => {
-  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
   const entries = reportReviewEntries.slice(0, 3);
   const viewFor = (index: number) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
     <PersistentReportPager entries={entries} index={index} api={null} verticalList
@@ -94,7 +93,7 @@ function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) =>
 }
 
 test('vertical report list renders every active card without page navigation and selects the acted-on card', () => {
-  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
   const onReady = jest.fn();
   const entries: PersistentReportEntry[] = [
     { ...reportReviewEntries[0], key: 'see_804', title: '첫 번째 보고' },
@@ -677,8 +676,7 @@ test('removing the focused sheet focuses the accessible replacement title, not i
   act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB]));
   const response = deferred<any>();
   const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
-  // Spy on the module used by named imports, not Babel's namespace copy.
-  const find = jest.spyOn(require('react-native') as typeof ReactNative, 'findNodeHandle').mockImplementation(node => {
+  const find = jest.spyOn(require('react-native') as typeof import('react-native'), 'findNodeHandle').mockImplementation((node: unknown) => {
     const props = (node as { props?: { children?: string } } | null)?.props;
     return props?.children === seeB.title ? 22 : 11;
   });
@@ -1009,7 +1007,7 @@ test.each([false, true])('a presented deck stays visible while added/revised pub
 });
 
 
-import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+import { LayoutContinuityProvider } from '../../../navigation/LayoutContinuityContext';
 test('selected report key survives the presentation unmount and remount', () => {
   let report!: ReturnType<typeof usePersistentReport>;
   function Probe() {

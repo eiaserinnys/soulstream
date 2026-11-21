@@ -29,7 +29,7 @@ import { EventRenderer } from '../components/events/EventRenderer';
 import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
-import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
 import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 
 const reviewImageUris = [

@@ -1,8 +1,5 @@
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import type {
-  BlockDto,
-  PageDto,
-} from "@seosoyoung/soul-ui/page";
+import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type {
   CatalogFolder,
   PlannerFolderStatus,

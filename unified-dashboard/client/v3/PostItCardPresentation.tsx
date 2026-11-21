@@ -1,5 +1,5 @@
 import type {CSSProperties, HTMLAttributes, ReactNode, Ref} from 'react';
-import {CARD_COLORS, type CardColor} from '@seosoyoung/soul-ui/cards/card-types';
+import { CARD_COLORS, type CardColor } from '../../../packages/wire-schema/src/card_colors';
 
 export type PostItVariant='default'|'compact';
 export type PostItActivity={kind:'instruction'|'report';text:string};

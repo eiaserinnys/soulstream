@@ -1,9 +1,8 @@
-import React from 'react';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { usePersistentReportSend, FAILED_REPORT_SEND_REMAINS } from '../usePersistentReportSend';
 import { reportReviewEntries } from '../../../component-review/persistent-report-fixtures';
 import { useChatStore, createOptimisticUserEvent } from '../../../store/chatStore';
-import type { PersistentReportEntry } from '../../../api/types';
+import type { PersistentReportEntry } from '../../../../../packages/wire-schema/src/persistent_report';
 import type { ApiClient } from '../../../api/client';
 import { useChatSendFlow } from '../../chat/useChatSendFlow';
 import { PersistentReportPager } from '../PersistentReportPager';

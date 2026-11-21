@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "./fixtures/session-feed-v2-wire.json" with { type: "json" };
 import { LIVE_TEXT_SNAPSHOT_MAX_UTF8_BYTES } from
-  "../src/session/session_feed_contract.js";
+  "@soulstream/wire-schema/session-feed-contract";
 
 describe("session feed v2 exact wire fixture", () => {
   it("carries a revision on both attention values and tombstones", () => {

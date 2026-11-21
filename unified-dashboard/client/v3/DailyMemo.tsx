@@ -1,4 +1,4 @@
-import type { BlockDto } from "@seosoyoung/soul-ui/page";
+import type { BlockDto } from "../../../packages/page-model/src/types";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";

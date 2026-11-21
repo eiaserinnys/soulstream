@@ -1,7 +1,8 @@
 import type { CardExecutionState } from '../../../packages/soul-ui/src/cards/card-execution-state';
 import {ApiHttpError} from '../api/clientCore';
 import type { ApiClient } from '../api/client';
-import type { CardDetail, CardDto, CardStatus, CardExecutionResult, CardMutationResult } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardDetail, CardDto, CardExecutionResult, CardMutationResult } from '../api/cardTypes';
 import { captureAuthScope, subscribeAuthScope } from './auth-scope';
 import { useCardStore } from '../store/cardStore';
 

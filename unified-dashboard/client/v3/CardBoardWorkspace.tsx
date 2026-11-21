@@ -4,7 +4,8 @@ import { DashboardIconCap } from "@seosoyoung/soul-ui";
 import { Maximize2, X } from "lucide-react";
 import { CardBoard, boardColumns } from "./CardBoard";
 import { CardCompletionFilter } from "./CardCompletionFilter";
-import { CompletedCardBrowserControls, type CompletedGridSnapshot } from "./CompletedCardGrid";
+import type { CompletedGridSnapshot } from "@seosoyoung/soul-ui/cards/CompletedVirtualGrid";
+import { CompletedCardBrowserControls } from "./CompletedCardGrid";
 import { CardBoardLayerContext } from "./card-board-layer";
 import { useCardNavigation } from "./card-navigation";
 

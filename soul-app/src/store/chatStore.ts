@@ -7,7 +7,7 @@ import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeTasksResponse,
 } from '../../../packages/soul-ui/src/lib/claude-runtime-actions';
-import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
 import {
   isAssistantUiPublication,
   mergeAppendOnlyStreamingDelta,

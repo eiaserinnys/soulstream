@@ -1,9 +1,7 @@
-// 카드 #1197: 카드 질문 장의 실제 구현 표본. 검수 창(/components)과 시각 검증 스크립트가
-// 운영과 같은 부품(CardDetailPane, PersistentReportDeck + pasCardQuestion, PasCardExpansion)을
-// 같은 폭과 상태로 연다. 장면 이름은 시안(df63ae1b1)의 ga, na, da, ra, legacy를 그대로 쓴다.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import { useDashboardStore } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
 
 import {
   clearFolderStarChange,

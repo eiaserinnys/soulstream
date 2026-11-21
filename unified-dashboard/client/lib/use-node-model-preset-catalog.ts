@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
-import {
-  fetchNodeModelPresets,
-  MODEL_PRESET_FETCH_ERROR,
-} from "./model-presets";
+import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
+import { MODEL_PRESET_FETCH_ERROR } from "./model-presets";
 
 const MODEL_PRESET_FETCH_TIMEOUT_MS = 10_000;
 

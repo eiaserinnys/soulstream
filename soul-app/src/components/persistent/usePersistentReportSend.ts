@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '../../api/client';
-import type { PersistentReportEntry, Session } from '../../api/types';
-import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../../packages/wire-schema/src/persistent_report';
+import type { Session } from '../../api/types';
+import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { pendingReportClosed, pendingReportReply, reportSendContext } from '../../lib/persistent-report';
 import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { getSendFailureReason, CARD_QUESTION_ANSWERED_REASON } from '../chat/useChatSendFlow';

@@ -1,4 +1,6 @@
-import type { AgentInfo, PersistentTurnUsageMode, PersistentReportEntry } from "@seosoyoung/soul-ui";
+import type { PersistentTurnUsageMode } from "../../../packages/wire-schema/src/persistent_session_settings";
+import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
+import type { AgentInfo } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "./http-response-error";
 

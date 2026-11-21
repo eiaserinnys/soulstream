@@ -6,8 +6,6 @@ import type { CardStatus } from '../../../packages/wire-schema/generated/typescr
 import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
 import type { CardItemDisplay } from '../../../packages/wire-schema/src/card_item_display';
 
-export type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
-
 export type CardAttachmentAssetEvidence =
   | {
     type: 'image' | 'link';

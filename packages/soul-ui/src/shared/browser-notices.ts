@@ -1,4 +1,5 @@
-import type { SessionNotice, SoulSSEEvent } from "./types";
+import type { SessionNotice } from "@soulstream/wire-schema/session-feed-contract";
+import type { SoulSSEEvent } from "./types";
 import { formatRetryingErrorHistory } from "./sse-events";
 import { formatRateLimitNotice } from "../lib/rate-limit-notice";
 

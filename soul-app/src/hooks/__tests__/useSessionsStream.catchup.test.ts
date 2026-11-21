@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import type { PersistentReportEntry, Session } from '../../api/types';
+import type { PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
+import type { Session } from '../../api/types';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSessionsStream } from '../useSessionsStream';
 

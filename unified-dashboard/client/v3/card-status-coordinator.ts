@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { CardColor, CardDetail, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardColor } from "../../../packages/wire-schema/src/card_colors";
+import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
+import type { CardDetail, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 export interface CardStatusControl {
   pending: boolean;

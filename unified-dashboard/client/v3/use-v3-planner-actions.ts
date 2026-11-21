@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { useDashboardStore, type CatalogFolder } from "@seosoyoung/soul-ui";
 
 import { moveSessionTree } from "../lib/move-sessions";

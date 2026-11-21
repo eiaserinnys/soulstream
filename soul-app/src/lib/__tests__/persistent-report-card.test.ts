@@ -1,4 +1,4 @@
-import type { PersistentReportEntry } from '../../api/types';
+import type { PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { persistentReportStatusCard } from '../persistent-report-card';
 
 const entry: PersistentReportEntry = {

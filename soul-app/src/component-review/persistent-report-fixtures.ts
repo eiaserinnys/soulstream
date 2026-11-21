@@ -1,7 +1,7 @@
 import type { ApiClient } from '../api/client';
-import { Keyboard, Platform } from 'react-native';
-import type { KeyboardEvent, KeyboardEventName } from 'react-native';
-import type { MessageContextItem, PersistentReportEntry } from '../api/types';
+import { Keyboard, Platform, type KeyboardEvent, type KeyboardEventName } from 'react-native';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import type { MessageContextItem } from '../api/types';
 import { useSessionStore } from '../store/sessionStore';
 import { pendingReportReply } from '../lib/persistent-report';
 

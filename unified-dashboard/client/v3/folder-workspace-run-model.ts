@@ -1,8 +1,5 @@
 import type { SessionSummary } from "@seosoyoung/soul-ui";
-import type {
-  BlockDto,
-  PageDto,
-} from "@seosoyoung/soul-ui/page";
+import type { BlockDto, PageDto } from "../../../packages/page-model/src/types";
 import type { PageStructureOperation } from "@seosoyoung/soul-ui/page/page-structure-operation";
 
 import {

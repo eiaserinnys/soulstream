@@ -9,9 +9,6 @@ import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { SessionSummary } from "./session-types";
 
-export type { ReasoningEffort } from "@soulstream/model-catalog";
-
-/** EventStore JSONL 레코드 형식 (파일의 한 줄) */
 export interface EventRecord {
   id: number;
   event: Record<string, unknown>;

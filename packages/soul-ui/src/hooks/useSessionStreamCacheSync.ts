@@ -16,9 +16,9 @@ import {
 } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { toSessionSummary } from "../shared/mappers";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type {
   CatalogState,
-  PersistentReportEntry,
   SessionSummary,
 } from "../shared/types";
 import type {

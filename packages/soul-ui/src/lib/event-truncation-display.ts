@@ -1,4 +1,4 @@
-import type { EventTruncation } from "../shared/sse-events";
+import type { EventTruncation } from "@soulstream/wire-schema";
 
 const EVENT_TRUNCATION_SUFFIX = "\n[잘림]";
 

@@ -1,9 +1,10 @@
 import {cardExecutionPending,subscribeCardExecution} from "@seosoyoung/soul-ui/cards/card-execution";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
-import type { CardColor, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardColor } from "../../../packages/wire-schema/src/card_colors";
+import type { CardStatus } from "../../../packages/wire-schema/generated/typescript/index";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
-/** Completion and the picker share one write lock, including within a render. */
 export function usePostItStatus(card: CardRow) {
   const lock = useRef(false);
   const [pending, setPending] = useState(false);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { comparePositionKeys, generateKeyBetween } from "./fractional-position";
+import { comparePositionKeys, generateKeyBetween } from "@soulstream/fractional-position";
 
 function expectBetween(key: string, lower: string | null, upper: string | null) {
   if (lower !== null) expect(key > lower).toBe(true);

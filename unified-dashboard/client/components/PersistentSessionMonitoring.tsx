@@ -6,7 +6,7 @@ import { formatTurnUsageCaptionTitle } from "@seosoyoung/soul-ui/lib/turn-usage-
 import { HISTORY_PAGE_SIZE } from "@seosoyoung/soul-ui/components/chat/useMessageHistoryBuffer";
 
 import type { PersistentSession } from "../lib/persistent-sessions";
-import { fetchNodeModelPresets } from "../lib/model-presets";
+import { fetchNodeModelPresets } from "@seosoyoung/soul-ui/shared/model-presets";
 import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
 import { SettingsAlert, SettingsGroupBox } from "./config/SettingsListDetail";
 

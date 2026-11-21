@@ -2,7 +2,8 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import { useDashboardStore } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { usePersistentReportSend } from './usePersistentReportSend';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

@@ -1,4 +1,5 @@
-import type { MessageContextItem, PersistentReportEntry } from '../api/types';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import type { MessageContextItem } from '../api/types';
 
 export type ReportReplyDraft = { key: string; option: string; text: string };
 export type ReportSendContext = {

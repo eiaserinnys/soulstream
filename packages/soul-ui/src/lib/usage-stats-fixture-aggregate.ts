@@ -1,14 +1,12 @@
-// Pure aggregation helpers shared by the public synthetic fixture builders.
-import type {
-  MissingTurnRecord,
-  PendingTurnRecord,
-  RawUsageRecord,
-  UsageStatsAggregate,
-  UsageStatsCoverage,
-  UsageStatsMetrics,
-  UsageStatsQuery,
+import type { UsageStatsAggregate, UsageStatsCoverage, UsageStatsMetrics, UsageStatsQuery } from "../../../wire-schema/src/session_statistics";
+import {
+  MISSING_TURNS,
+  PENDING_TURNS,
+  USAGE_STATS_COLLECTION,
+  type MissingTurnRecord,
+  type PendingTurnRecord,
+  type RawUsageRecord,
 } from "./usage-stats-fixture-data";
-import { MISSING_TURNS, PENDING_TURNS, USAGE_STATS_COLLECTION } from "./usage-stats-fixture-data";
 
 export function aggregateFixtureUsage(
   records: RawUsageRecord[], missing: MissingTurnRecord[], pending: PendingTurnRecord[],

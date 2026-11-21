@@ -2,7 +2,7 @@ import type {
   PendingAttention,
   SessionFeedDelta,
   SessionNotice,
-} from "../session/session_feed_contract.js";
+} from "@soulstream/wire-schema/session-feed-contract";
 import type {
   EventFeedProjectionApplier,
   EventIngressQuerySql,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
 import { createPlannerDataDependencies, loadStarredFolders, starredFolderPage } from "./planner-data";
 import { applyStarredFolderChanges, useFolderStarChanges } from "./folder-star-store";
 

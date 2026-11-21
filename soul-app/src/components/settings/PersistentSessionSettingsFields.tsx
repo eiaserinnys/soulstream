@@ -1,9 +1,9 @@
 import { ActivityIndicator, Text, View } from 'react-native';
 
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import type {
   PersistentSessionInstruction,
   PersistentSessionResource,
-  PersistentTurnUsageMode,
 } from '../../api/persistentSessionEndpoints';
 import type { ModelPresetAvailability } from '../../../../packages/soul-ui/src/lib/model-preset-availability';
 import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';

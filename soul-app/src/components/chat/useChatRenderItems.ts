@@ -1,8 +1,7 @@
 import { useMemo, useRef } from 'react';
 import type { SessionEvent } from '../../api/types';
-import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
+import type { PersistentTurnUsageMode } from '../../../../packages/wire-schema/src/persistent_session_settings';
 import type { StreamingSlots } from '../../store/chatStore';
-import type { PersistentDisplayProjectionSettings } from './groupChatEvents';
 import {
   groupChatEvents,
   projectManuscriptMessages,
@@ -10,6 +9,7 @@ import {
   placePendingOptimistic,
   streamingSlotRenderItems,
   type ChatRenderItem,
+  type PersistentDisplayProjectionSettings,
 } from './groupChatEvents';
 import { projectManuscriptActivity } from './manuscriptActivityProjection';
 import { projectPersistentWorkDetails } from './persistentWorkDetailsProjection';

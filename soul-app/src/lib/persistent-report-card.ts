@@ -1,6 +1,6 @@
-import type { CardDto, CardStatus } from '../api/cardTypes';
-import type { PersistentReportEntry } from '../api/types';
-import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../packages/wire-schema/src/persistent_report';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
+import type { CardDto } from '../api/cardTypes';
+import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { exhaustiveList } from '../../../packages/soul-ui/src/shared/exhaustive';
 
 const cardStatuses = exhaustiveList<CardStatus>()(['todo', 'queued', 'blocked', 'running', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled']);

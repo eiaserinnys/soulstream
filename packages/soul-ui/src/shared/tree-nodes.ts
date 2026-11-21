@@ -1,11 +1,5 @@
-/**
- * Soul Dashboard - 이벤트 트리 노드 타입 정의
- *
- * SSE 이벤트 lifecycle을 단일 노드로 표현하는 EventTreeNode discriminated union.
- * dashboard-store가 SSE 이벤트를 흡수하여 만드는 트리 표현의 source of truth입니다.
- */
-
-import type { CallerInfo, ContextItem, EventTruncation, InputRequestQuestion } from "./sse-events";
+import type { CallerInfo, ContextItem, EventTruncation } from "@soulstream/wire-schema";
+import type { InputRequestQuestion } from "./sse-events";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { PersistentJevCandidate } from "../lib/persistent-jev-candidates";
 import type { ReportTimelineLine, ReportTimelineQuestionClosed } from "@soulstream/wire-schema/persistent-report";

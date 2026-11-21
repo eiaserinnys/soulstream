@@ -3,7 +3,7 @@ import {useCallback,useRef,useState} from "react";
 import {Button,Dialog,DialogPopup,DialogHeader,DialogTitle,DialogPanel,DialogFooter,Input,Popover,PopoverTrigger,PopoverPopup,useFileUpload,type AgentInfo,type CatalogFolder} from "@seosoyoung/soul-ui";
 import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
 import {CardApiError,cardMutationKey} from "@seosoyoung/soul-ui/cards/card-api";
-import type {CardAttachment} from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardAttachment } from "../../../packages/wire-schema/src/card_attachments";
 import type {UseFileUploadReturn} from "@seosoyoung/soul-ui/hooks/useFileUpload";
 import {useTextareaAutoHeight} from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import {handleClipboardFiles} from "@seosoyoung/soul-ui/lib/clipboard-files";

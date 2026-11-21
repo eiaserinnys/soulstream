@@ -4,7 +4,8 @@ import {
   type CatalogFolder,
   type CatalogFolderReorderItem,
 } from "@seosoyoung/soul-ui";
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
   archiveFolder,

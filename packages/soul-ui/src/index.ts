@@ -16,10 +16,3 @@ export * from "./components";
 export * from "./folder-status";
 export * from "./page";
 export * from "./pending-mutation-registry";
-export type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
-export { REPORT_TIMELINE_STATUS_LABEL, REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE } from "@soulstream/wire-schema/persistent-report";
-export { collapseReportTimeline } from "@soulstream/wire-schema/persistent-report";
-export type {
-  ReportTimelineLine, ReportTimelineQuestionClosed, ReportTimelineQuestionClosedStatus,
-  ReportTimelineRowLine, ReportTimelineRowStatus, ReportTimelineStatus,
-} from "@soulstream/wire-schema/persistent-report";

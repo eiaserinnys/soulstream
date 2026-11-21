@@ -1,4 +1,5 @@
-import type { PendingAttention, SessionNotice, SessionSummary } from "../shared/types";
+import type { PendingAttention, SessionNotice } from "@soulstream/wire-schema/session-feed-contract";
+import type { SessionSummary } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 
 const MAX_LOCAL_NOTICES = 50;

@@ -1,8 +1,7 @@
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import { useCallback, useState } from 'react';
 import type { ApiClient } from '../../api/client';
-import type { PersistentReportEntry } from '../../api/types';
-import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX, EMPTY_REPORT } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX, EMPTY_REPORT, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import { pendingReportReply, reportSendContext, type ReportReplyDraft } from '../../lib/persistent-report';
 import { useSessionStore } from '../../store/sessionStore';
 import type { PendingOptimisticEvent } from '../../store/chatStore';

@@ -1,5 +1,5 @@
 import type { LastChatMessage, LastChatMessageType } from
-  "../session/session_feed_contract.js";
+  "@soulstream/wire-schema/session-feed-contract";
 import type { EventIngressEnvelope } from "./event_ingress_types.js";
 
 const PREVIEW_CODEPOINT_LIMIT = 200;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, useDashboardStore } from '@seosoyoung/soul-ui';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { REPORT_BUBBLE_MINIMUM_HEIGHT } from './use-persistent-session-geometry';

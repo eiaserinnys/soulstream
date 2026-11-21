@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createFolder } from "../lib/folder-operations";
 import { resolveProjectPage } from "./project-page-actions";

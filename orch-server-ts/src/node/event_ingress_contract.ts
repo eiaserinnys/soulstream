@@ -70,11 +70,9 @@ export type EventSessionRejectionReason =
 export type EventSessionEffectResult = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
-  canonicalLastMessage?: import("../session/session_feed_contract.js").LastChatMessage | null;
+  canonicalLastMessage?: import("@soulstream/wire-schema/session-feed-contract").LastChatMessage | null;
   canonicalExecutionRegistration?: EventCanonicalExecutionRegistrationProjection | null;
-  /** One-release response compatibility for a legacy execution_acquire. */
   canonicalExecutionOwnership?: EventCanonicalExecutionOwnershipProjection | null;
-  /** 세션 기계가 거절한 까닭. 사유를 싣지 않는 기계 사유도 있다. */
   rejectionReason?: EventSessionRejectionReason;
 };
 

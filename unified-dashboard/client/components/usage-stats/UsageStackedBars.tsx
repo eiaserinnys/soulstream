@@ -1,7 +1,6 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { FrameLoading, usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
-import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "@seosoyoung/soul-ui";
-import { formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS } from "@seosoyoung/soul-ui";
+import { FrameLoading, formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS, usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
+import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "../../../../packages/wire-schema/src/session_statistics";
 
 export interface UsageChartSeries {
   key: string;

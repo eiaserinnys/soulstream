@@ -1,10 +1,8 @@
 import { useId } from "react";
 import { FileAttachmentPreview } from "../FileAttachmentPreview";
 import { ChatImageAttachments } from "./ChatImageAttachments";
-import {
-  isImagePreviewMimeType,
-  type ChatAttachmentItem,
-} from "../../lib/chat-attachment-model";
+import { isImagePreviewMimeType } from "@soulstream/wire-schema/attachments";
+import { type ChatAttachmentItem } from "../../lib/chat-attachment-model";
 import type { ChatImageItem, ChatImageMetadata, ChatImageRole } from "../../lib/chat-markdown-images";
 
 const EMPTY_METADATA: Record<string, ChatImageMetadata> = {};

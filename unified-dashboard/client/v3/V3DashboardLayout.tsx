@@ -1,7 +1,7 @@
 import {flushSync} from "react-dom";
 import {useQueryClient} from "@tanstack/react-query";
 import {useCardStore} from "@seosoyoung/soul-ui/cards/card-store";
-import {registerConnectionRecovery} from "../connection/connection-monitor";
+import { registerConnectionRecovery } from "@seosoyoung/soul-ui/lib/orchestrator-connection";
 import { SessionMenuProvider } from "./SessionMenuProvider";
 import { CardWorkspace } from "./CardWorkspace";
 import type { CardSessionSelection } from "./CardSessionHistory";

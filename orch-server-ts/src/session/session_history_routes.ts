@@ -31,7 +31,7 @@ import { registerSessionConversationContextRoute } from
 import type { RuntimeLiveTextSnapshot } from
   "../runtime/session_event_hub.js";
 import type { SessionHistoryResetReason } from
-  "./session_feed_contract.js";
+  "@soulstream/wire-schema/session-feed-contract";
 import { registerSessionConversationRoute } from "./session_conversation_routes.js";
 
 export type SessionHistoryRouteOptions = {

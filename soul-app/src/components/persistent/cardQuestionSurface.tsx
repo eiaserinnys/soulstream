@@ -4,11 +4,10 @@ import React from 'react';
 import { Text } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardMutationResult } from '../../api/cardTypes';
-import type { PersistentReportEntry } from '../../api/types';
 import type { DesignTokens } from '../../theme';
 import { cardOperationId } from '../../hooks/useCardActions';
 import { formatCardTime } from '../../lib/card-check-item-summary';
-import { CARD_QUESTION_KEY_PREFIX } from '../../../../packages/wire-schema/src/persistent_report';
+import { CARD_QUESTION_KEY_PREFIX, type PersistentReportEntry } from '../../../../packages/wire-schema/src/persistent_report';
 import {
   answerCardQuestionChoice, CardQuestionActions, CardQuestionAnswered, CardQuestionBody,
   setCardQuestionTarget, type CardQuestionTarget,

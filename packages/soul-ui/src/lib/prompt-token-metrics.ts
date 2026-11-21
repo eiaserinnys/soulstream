@@ -1,4 +1,4 @@
-import type { ContextItem } from "@shared/types";
+import type { ContextItem } from "@soulstream/wire-schema";
 
 const FORMAT_KEY_INVALID_CHARS = /[^a-zA-Z0-9_]/g;
 const ASCII_WORD_RE = /^[A-Za-z0-9_]+$/;

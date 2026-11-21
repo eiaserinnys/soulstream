@@ -9,18 +9,13 @@ import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { SessionStatus } from "@soulstream/wire-schema";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { ReviewState } from "@soulstream/wire-schema/session-review";
-export type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
-
-export type { SessionStatus } from "@soulstream/wire-schema";
 
 import type { EventRecord } from "./api-types";
 import type {
   LastChatMessage,
   PendingAttention,
   SessionNotice,
-} from "../../../../orch-server-ts/src/session/session_feed_contract";
-
-export type { PendingAttention, SessionNotice } from "../../../../orch-server-ts/src/session/session_feed_contract";
+} from "@soulstream/wire-schema/session-feed-contract";
 
 export interface LlmUsage {
   inputTokens: number;

@@ -1,7 +1,6 @@
-import type { SSEEventType } from './types';
 import {
   SSE_EVENT_TYPES as GENERATED_SSE_EVENT_TYPES,
-  type SSEEventType as GeneratedSSEEventType,
+  type SSEEventType,
 } from "@soulstream/wire-schema";
 
 export const SYSTEM_FOLDER_IDS = {
@@ -39,7 +38,7 @@ const SSE_EXCLUDED_TYPES: ReadonlySet<_SSEExcludedTypes> = new Set([
 ]);
 
 export const SSE_EVENT_TYPES = GENERATED_SSE_EVENT_TYPES.filter(
-  (eventType): eventType is Exclude<GeneratedSSEEventType, _SSEExcludedTypes> =>
+  (eventType): eventType is Exclude<SSEEventType, _SSEExcludedTypes> =>
     !SSE_EXCLUDED_TYPES.has(eventType as _SSEExcludedTypes),
 ) satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];
 

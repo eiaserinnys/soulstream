@@ -1,10 +1,7 @@
 import type { ApiRequestContext } from './clientCore';
-import type { PersistentReportEntry } from './types';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
 
-export type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
-
-/** A model choice as the server stores it. The preset is null only when nothing valid was recorded. */
 export interface PersistentSessionModel {
   model_preset: string | null;
   reasoning_effort: string | null;

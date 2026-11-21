@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChatInput } from "./ChatInput";
 import { PersistentReportProvider, usePersistentReport } from "./persistent-report/PersistentReportProvider";
-import type { PersistentReportEntry } from "../shared/session-types";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import { createChatSessionStore, useDashboardStore } from "../stores/dashboard-store";
 import { ChatStoreScopeProvider } from "../stores/chat-store-scope";
 import type { ChatUiComposerHandle } from "./chat-ui/chat-ui-composer";

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PageApiClient, PageDto, PageReadResponse } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import type { PageApiClient, PageReadResponse } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerFolder } from "./planner-data";
 import { togglePlannerFolderToday } from "./folder-card-actions";

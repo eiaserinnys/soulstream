@@ -1,14 +1,3 @@
-/**
- * UI 사용 로그 공통 규약 v1 — 서버·웹 공통 정본.
- *
- * 이 파일은 orch-server-ts와 packages/soul-ui가 **함께** 쓴다.
- * soul-ui는 `shared/session-types.ts`가 `session_feed_contract`를 끌어오는 것과 같은
- * 상대경로 import로 이 모듈을 참조한다. 런타임 의존성이 없어야 하므로 여기에는
- * fastify·postgres 등 어떤 것도 import하지 않는다.
- *
- * soul-app(별도 리포)은 코드를 공유할 수 없으므로 이 규약을 손으로 미러링한다.
-*/
-
 import { isUuid } from "../http/uuid.js";
 
 export const UI_EVENT_SCHEMA_VERSION = "soulstream.ui_event.v1";

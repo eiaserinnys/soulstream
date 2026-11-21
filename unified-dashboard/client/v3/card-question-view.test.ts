@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CardComment, CardQuestion } from "@seosoyoung/soul-ui/cards/card-types";
-import type { PersistentReportEntry } from "@seosoyoung/soul-ui";
+import type { PersistentReportEntry } from "../../../packages/wire-schema/src/persistent_report";
 import { cardQuestionDetailView, cardQuestionSheetView } from "./CardQuestionBlock";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 12, 5, minute)).toISOString();

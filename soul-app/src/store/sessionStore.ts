@@ -1,6 +1,6 @@
 import { create } from 'zustand';
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 import type {
-  PersistentReportEntry,
   Session,
   Catalog,
   Folder,

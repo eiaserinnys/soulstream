@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Button, type PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
+import type { PersistentTurnUsageMode } from "../../../packages/wire-schema/src/persistent_session_settings";
+import { Button } from "@seosoyoung/soul-ui";
 import type { ModelPresetAvailability } from "@seosoyoung/soul-ui/lib/model-preset-availability";
 
 import { HttpResponseError } from "../lib/http-response-error";

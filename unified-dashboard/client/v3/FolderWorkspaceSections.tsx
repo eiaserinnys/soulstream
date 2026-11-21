@@ -6,7 +6,8 @@ import {
   type CatalogFolder,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+import type { PageDto } from "../../../packages/page-model/src/types";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ChevronsDown, FolderPlus } from "lucide-react";
 
 import { PlannerFolderCard } from "./PlannerFolderCard";

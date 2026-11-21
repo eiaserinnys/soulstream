@@ -1,4 +1,4 @@
-import type { CardStatus } from '../api/cardTypes';
+import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 import { completedGridLayout } from '../../../packages/soul-ui/src/cards/completed-cards';
 import { CARD_BOARD_STATUS_LABELS } from '../../../packages/soul-ui/src/lib/card-board-status-labels';
 import { exhaustiveList } from '../../../packages/soul-ui/src/shared/exhaustive';

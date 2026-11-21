@@ -2,7 +2,6 @@ import type { PersistentReportEntry } from '../../../packages/wire-schema/src/pe
 import type { CatalogSessionAssignment } from '../../../packages/wire-schema/src/catalog';
 import type { EventTruncation } from '../../../packages/wire-schema/generated/typescript/index';
 import type { ReviewState } from '../../../packages/wire-schema/src/session_review';
-export type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 export type MessageContextItem = { key: string; content: unknown };
 
 export type PendingAttentionKind =

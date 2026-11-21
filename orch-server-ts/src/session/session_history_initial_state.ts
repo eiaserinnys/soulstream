@@ -4,7 +4,7 @@ import {
   type SessionHistoryRawEvent,
 } from "./session_history_service.js";
 import { shouldPublishSessionEventSemantically } from "./session_event_semantic_publication.js";
-import type { SessionHistoryResetReason } from "./session_feed_contract.js";
+import type { SessionHistoryResetReason } from "@soulstream/wire-schema/session-feed-contract";
 
 export type SessionHistorySseFrame = {
   event: string;

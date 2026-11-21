@@ -128,7 +128,6 @@ export * from "./session/session_history_routes.js";
 export * from "./session/session_history_service.js";
 export * from "./session/session_conversation_context.js";
 export * from "./session/session_conversation_context_routes.js";
-export * from "./session/session_feed_contract.js";
 export * from "./session/session_feed_projection.js";
 export * from "./session/session_feed_state_repository.js";
 export * from "./session/session_story_read_service.js";
