@@ -14,7 +14,7 @@ import type {
   CardAttachmentSourceStoreDeps,
 } from "../src/attachments/card_attachment_source_import.js";
 import type { CommitResult, UploadSpec } from "../src/attachments/attachment_commit_contract.js";
-import type { FolderActorParams, RepositorySql } from "../src/cards/control_plane/card_types.js";
+import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 
 const NODE = "attachment-node";
 const SESSION = "attachment-create-session";

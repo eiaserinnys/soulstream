@@ -7,8 +7,7 @@ import {
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
 } from "./attachment_transport_errors.js";
-import type { LegacyUploadResult } from "./attachment_upload_http.js";
-import { AttachmentUploadHttpError } from "./attachment_upload_http.js";
+import { AttachmentUploadHttpError, type LegacyUploadResult } from "./attachment_upload_http.js";
 
 export type FinishLegacyUploadInput = {
   readonly committed: CommitResult;

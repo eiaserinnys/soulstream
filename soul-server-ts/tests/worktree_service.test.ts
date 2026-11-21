@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  promises as fs,
   realpathSync,
   readFileSync,
   rmSync,
@@ -12,7 +13,6 @@ import {
   writeFileSync,
   utimesSync,
 } from "node:fs";
-import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
