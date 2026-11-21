@@ -12,7 +12,7 @@ import {
   refreshRuntimeMarkdownPreview,
   useBoardRuntime,
 } from "./markdown-document-runtime";
-import { MarkdownContent } from "./MarkdownContent";
+import { DocumentMarkdown } from "./DocumentMarkdown";
 import type { MarkdownCodeMirrorEditorHandle } from "./MarkdownCodeMirrorEditor";
 import {
   captureMarkdownReadViewport,
@@ -477,7 +477,7 @@ export function MarkdownDocumentPanel({
             }}
             data-testid="markdown-read-body"
           >
-            {body.trim() ? <MarkdownContent content={body} codeBlockLayout="document" /> : <span className="select-none text-sm text-[var(--v3-text-tertiary)]" data-testid="markdown-empty">빈 문서</span>}
+            {body.trim() ? <DocumentMarkdown content={body} /> : <span className="select-none text-sm text-[var(--v3-text-tertiary)]" data-testid="markdown-empty">빈 문서</span>}
           </div>
         )}
       </div>
