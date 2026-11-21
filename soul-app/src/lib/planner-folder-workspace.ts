@@ -17,9 +17,9 @@ import {
   SessionFolderResolutionCancelledError,
   SessionFolderResolutionError,
   createSessionFolderResolver,
-  createSessionFolderWorkspaceController,
   type SessionFolderResolverScope,
 } from './session-folder-resolver';
+import { createSessionFolderWorkspaceController } from './session-folder-workspace-controller';
 import {
   coordinateFolderWorkspaceClose,
 } from './planner-folder-title-save';

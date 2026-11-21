@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import * as Crypto from 'expo-crypto';
@@ -26,7 +26,7 @@ import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { SessionSelectionRow } from './SessionSelectionRow';
 import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { makeStyles } from './SessionSuccessionSheet.styles';
-import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
 export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { api: ApiClient | null; onClose(): void; folderId?: string }) {
   const t = useTokens();

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { Keyboard, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getDefaultTabBarStyle } from './TabNavigator';
+import { getDefaultTabBarStyle } from './tabBarStyle';
 import { useTokens } from '../theme';
 import { useDuoSideBand } from './duoSideBand';
 

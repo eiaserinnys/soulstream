@@ -1,7 +1,6 @@
 jest.mock('../navigationRef', () => ({ navigationRef: { isReady: () => false } }));
 import fs from 'node:fs';
 import path from 'node:path';
-import React from 'react';
 import { render } from '@testing-library/react-native';
 import {
   getBottomTabCaptures,
@@ -41,7 +40,8 @@ jest.mock('../phonePanelHistory', () => ({
 }));
 
 import { PersistentSessionProvider } from '../PersistentSessionContext';
-import { ROOT_TAB_ORDER, TabNavigator } from '../TabNavigator';
+import { ROOT_TAB_ORDER } from '../tabContract';
+import { TabNavigator } from '../TabNavigator';
 
 beforeEach(() => {
   resetNavigationCapture();

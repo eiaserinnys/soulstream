@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 import { Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { NavigationContext } from '@react-navigation/native';
@@ -9,7 +9,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useUIStore } from '../store/uiStore';
 import { useDeviceType } from '../theme/useDeviceType';
 import { useOptionalPersistentSessionHost } from '../navigation/PersistentSessionContext';
-import { useAttachmentBlockLinks, useAttachmentReadContext, useContentLinkImageHost } from '../navigation/ContentLinkProvider';
+import { useAttachmentBlockLinks, useAttachmentReadContext, useContentLinkImageHost } from '../navigation/ContentLinkContexts';
 import type { AttachmentLink } from '../lib/attachment-link-view';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 import {

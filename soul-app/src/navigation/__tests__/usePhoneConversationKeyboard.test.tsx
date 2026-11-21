@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { Keyboard } from 'react-native';
 import { usePhoneConversationKeyboard } from '../usePhoneConversationKeyboard';
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (effect: () => void) => require('react').useEffect(effect, [effect]) }));
-jest.mock('../TabNavigator', () => ({ getDefaultTabBarStyle: () => ({ backgroundColor: 'transparent' }) }));
+jest.mock('../tabBarStyle', () => ({ getDefaultTabBarStyle: () => ({ backgroundColor: 'transparent' }) }));
 
 test('키보드가 숨기지 않은 탭 바는 blur 때 다음 카드 상세의 숨김을 덮지 않는다', () => {
   const parent = { setOptions: jest.fn() };

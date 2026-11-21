@@ -34,14 +34,13 @@ jest.mock('../PersistentSessionContext', () => ({
 }));
 
 import React from 'react';
-import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
-import { StyleSheet, View } from 'react-native';
+import { PhoneRailTabCluster } from '../TabNavigator';
+import { StyleSheet, View, Text } from 'react-native';
 import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailActions';
-import { PhoneRailModeContext } from '../tabContract';
+import { PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../tabContract';
 import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
-import { Text } from 'react-native';
 import { useSettingsStore } from '../../store/settingsStore';
 import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
 import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';

@@ -1,13 +1,12 @@
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import type { AttachmentView } from '../../lib/attachment-view';
+import { ContentLinkProvider } from '../ContentLinkProvider';
 import {
   AttachmentReadContextProvider,
-  ContentLinkProvider,
   useAttachmentReadContext,
   useContentLinkImageHost,
-} from '../ContentLinkProvider';
+} from '../ContentLinkContexts';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 

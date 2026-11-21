@@ -8,7 +8,7 @@ jest.mock('@react-navigation/native', () => ({
   useFocusEffect: jest.fn(),
   useIsFocused: () => mockIsFocused,
 }));
-jest.mock('../../navigation/TabNavigator', () => ({
+jest.mock('../../navigation/tabBarStyle', () => ({
   getDefaultTabBarStyle: () => ({ display: 'flex' }),
 }));
 jest.mock('../../hooks/usePlannerContextMenus', () => ({
@@ -35,12 +35,12 @@ import { Keyboard, Platform, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
-import type { PhonePanelHistory } from '../../navigation/phonePanelHistory';
 import { DuoSideBandContext } from '../../navigation/tabContract';
 import { usePhoneRailActions } from '../../navigation/phoneRailActions';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
+  type PhonePanelHistory,
 } from '../../navigation/phonePanelHistory';
 import { useSessionStore } from '../../store/sessionStore';
 import { ChatScreen } from '../ChatScreen';

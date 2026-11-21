@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { Image, Platform } from 'react-native';
 import { CardTimeline } from '../CardTimeline';
@@ -12,7 +11,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { cardFixture } from '../../../test-support/cards';
 import type { CardDetail } from '../../../api/cardTypes';
 import type { AttachmentReadContext } from '../../../../../packages/wire-schema/src/attachments';
-import { AttachmentReadContextProvider, useAttachmentReadContext, useAttachmentBlockLinks } from '../../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider, useAttachmentReadContext, useAttachmentBlockLinks } from '../../../navigation/ContentLinkContexts';
 import { useOpenContentLink } from '../../../hooks/useOpenContentLink';
 import { openContentLinkNavigation } from '../../../lib/content-link-navigation';
 
@@ -23,7 +22,7 @@ jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }:
   const React = require('react');
   const { Pressable, Text } = require('react-native');
   const { useOpenContentLink } = require('../../../hooks/useOpenContentLink');
-  const { useAttachmentReadContext, useAttachmentBlockLinks } = jest.requireActual('../../../navigation/ContentLinkProvider');
+  const { useAttachmentReadContext, useAttachmentBlockLinks } = jest.requireActual('../../../navigation/ContentLinkContexts');
   const openContentLink = useOpenContentLink();
   const context = useAttachmentReadContext();
   const href = markdown.match(/\[[^\]]*\]\(([^)]+)\)/)?.[1];

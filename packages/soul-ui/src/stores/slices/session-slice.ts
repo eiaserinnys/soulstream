@@ -12,9 +12,9 @@
 
 import type { StateCreator } from "zustand";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
-import type { InputRequestNodeDef, SessionDetail } from "@shared/types";
+import type { InputRequestNodeDef } from "@shared/types";
 import { clearFlattenTreeCache } from "../../lib/flatten-tree";
-import { getSessionResetState } from "./_session-reset";
+import { getSessionResetState, getSessionSliceInitialState } from "./_session-reset";
 import { getEventProcessingInitialState } from "./event-processing-slice";
 
 export type SessionSlice = Pick<
@@ -33,29 +33,6 @@ export type SessionSlice = Pick<
     | "expireInputRequest"
     | "clearActiveSession"
   >;
-
-/**
- * session-slice가 소유하는 활성 세션 상태의 초기값.
- * 슬라이스 초기 state와 세션 리셋(_session-reset)이 같은 정본을 공유한다 (§3 정본 하나).
- *
- * NOTE: `activeSessionSummary`는 세션 리셋 spread에 포함되지 *않는* 의도된 누락이다.
- *       caller가 setActiveSessionSummary로 별도 갱신하기 때문 (기존 동작 보존).
- *       따라서 slice 초기값과 reset 정본을 분리한다.
- */
-export function getSessionSliceInitialState(): Pick<
-  DashboardState,
-  | "activeSessionKey"
-  | "activeSession"
-  | "activeSessionSummary"
-  | "persistentSessionDisplaySettings"
-> {
-  return {
-    activeSessionKey: null as string | null,
-    activeSession: null as SessionDetail | null,
-    activeSessionSummary: null,
-    persistentSessionDisplaySettings: null,
-  };
-}
 
 export function createSessionSlice(
   clearMessageCache: () => void = clearFlattenTreeCache,

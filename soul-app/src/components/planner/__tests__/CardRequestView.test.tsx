@@ -1,4 +1,3 @@
-import React from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Image, StyleSheet } from 'react-native';
@@ -7,7 +6,8 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import { CardRequestView } from '../CardRequestView';
 import { AttachmentSvg } from '../../AttachmentSvg';
-import { AttachmentReadContextProvider, ContentLinkProvider } from '../../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider } from '../../../navigation/ContentLinkContexts';
+import { ContentLinkProvider } from '../../../navigation/ContentLinkProvider';
 
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 // The shared viewer reads attachment details lazily; keep that read pending so the test sees only the opening.

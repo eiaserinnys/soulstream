@@ -56,7 +56,8 @@ jest.mock('../../components/planner/FolderWorkspace', () => ({
 }));
 
 import { PersistentSessionProvider } from '../PersistentSessionContext';
-import { ROOT_TAB_ORDER, TabNavigator } from '../TabNavigator';
+import { ROOT_TAB_ORDER } from '../tabContract';
+import { TabNavigator } from '../TabNavigator';
 import { ROOT_SECTION_CONFIG } from '../rootSectionConfig';
 import { useSettingsStore } from '../../store/settingsStore';
 

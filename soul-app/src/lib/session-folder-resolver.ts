@@ -1,8 +1,6 @@
 import type { PlannerFolder } from '../api/plannerTypes';
 import type { Session } from '../api/types';
 
-export { createSessionFolderWorkspaceController, type SessionFolderWorkspaceUI } from './session-folder-workspace-controller';
-
 export type SessionFolderResolution = { kind: 'linked'; folder: PlannerFolder } | { kind: 'unlinked' };
 
 export class SessionFolderResolutionError extends Error {
