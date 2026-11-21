@@ -30,8 +30,6 @@ import {
   markDeliveryIdentityConflict,
 } from "./session_delivery_repository.js";
 
-export type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
-
 export { compareRuntimeFollowupCandidates } from
   "./session_delivery_runtime_followup_repository.js";
 

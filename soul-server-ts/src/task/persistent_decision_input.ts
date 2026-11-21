@@ -19,7 +19,7 @@ import type {
 } from "./persistent_decision.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
-import type { SessionEventRow } from "../control_plane/session_data_host_client.js";
+import type { SessionEventRow } from "@soulstream/mcp-contract";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";

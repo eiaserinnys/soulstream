@@ -10,11 +10,11 @@ import {
   attachClaudeBackgroundDeliveryMetadata,
   type ClaudeBackgroundDeliveryMetadata,
 } from "../engine/claude_background_delivery_metadata.js";
+import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
 import type {
-  ClaudeRuntimeHostClient,
   ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTerminalStatus,
-} from "../control_plane/persistence_host_clients.js";
+} from "@soulstream/mcp-contract";
 import type {
   RegisterSessionDeliveryParams,
   SessionDeliveryRow,

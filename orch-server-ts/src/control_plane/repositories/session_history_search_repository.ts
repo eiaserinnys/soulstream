@@ -1,18 +1,16 @@
-import type { SessionHistorySearchParams } from "@soulstream/mcp-contract";
+import type {
+  SessionEventSearchRow,
+  SessionHistorySearchParams,
+  SessionHistorySearchResult,
+} from "@soulstream/mcp-contract";
 import {
   withLiveSearchDbConnection,
   type LiveSearchDbConnectionFactory,
 } from "../../runtime/live_db_sql.js";
-import { EventReadRepository, type HostEventSearchRow } from "./event_read_repository.js";
+import { EventReadRepository } from "./event_read_repository.js";
 import {
   SessionStoryReadRepository,
 } from "./session_story_read_repository.js";
-
-export interface HostSessionHistorySearchResult {
-  readonly events: HostEventSearchRow[];
-  readonly sessionIdEvents: HostEventSearchRow[];
-  readonly digests: Array<Record<string, unknown>>;
-}
 
 export class SessionHistorySearchDeadlineError extends Error {
   readonly statusCode = 504;
@@ -34,7 +32,7 @@ export class SessionHistorySearchRepository {
   async search(
     params: SessionHistorySearchParams,
     signal: AbortSignal,
-  ): Promise<HostSessionHistorySearchResult> {
+  ): Promise<SessionHistorySearchResult> {
     try {
       return await withLiveSearchDbConnection(
         this.searchConnectionFactory,

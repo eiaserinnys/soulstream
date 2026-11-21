@@ -1,7 +1,9 @@
-import type { SessionEventRow } from "@soulstream/mcp-contract";
-import type { HostEventSearchRow } from "./event_read_repository.js";
+import type {
+  SessionEventRow,
+  SessionEventSearchRow,
+} from "@soulstream/mcp-contract";
 
-export type EventSearchRecord = Omit<HostEventSearchRow, "payload"> & { payload: unknown };
+export type EventSearchRecord = Omit<SessionEventSearchRow, "payload"> & { payload: unknown };
 
 export function isPostgresStatementTimeout(error: unknown): boolean {
   return typeof error === "object"

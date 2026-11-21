@@ -18,10 +18,8 @@ import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
   deliveryRetryDelayMs,
 } from "./session_delivery_notification_policy.js";
-import type {
-  RegisterSessionDeliveryRequest,
-  SessionDeliveryHostClient,
-} from "../control_plane/persistence_host_clients.js";
+import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
+import type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
 import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,

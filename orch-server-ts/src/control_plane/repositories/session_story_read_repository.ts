@@ -7,6 +7,7 @@ import type {
   LiveSearchSql,
 } from "../../runtime/live_db_sql.js";
 import type {
+  SessionDigestSearchMatch,
   SessionReadPeriod,
   SessionStoryTurnSummary,
   SessionStoryView,
@@ -292,7 +293,7 @@ ${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
     includeHighlight: boolean,
     includeStory: boolean,
     signal?: AbortSignal,
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<SessionDigestSearchMatch[]> {
     if (!includeHighlight && !includeStory) return [];
     const createQuery = (sql: LiveSearchSql) => sessionIds === null
       ? this.searchAll(sql, query, limit, includeHighlight, includeStory)
@@ -316,7 +317,7 @@ ${this.sql.unsafe(LINKED_CARD_LATERAL_SQL)}
     includeHighlight: boolean,
     includeStory: boolean,
     runQuery: LiveSearchQueryRunner,
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<SessionDigestSearchMatch[]> {
     if (!includeHighlight && !includeStory) return [];
     const createQuery = (sql: LiveSearchSql) => sessionIds === null
       ? this.searchAll(sql, query, limit, includeHighlight, includeStory)
@@ -498,7 +499,7 @@ function normalizeSummary(row: SummaryRow): SessionStoryTurnSummary | null {
   };
 }
 
-function normalizeDigestSearchMatch(row: DigestSearchRow): Record<string, unknown> {
+function normalizeDigestSearchMatch(row: DigestSearchRow): SessionDigestSearchMatch {
   if (row.event_type !== "session_highlight" && row.event_type !== "session_story") {
     throw new Error(`invalid digest search event type: ${row.event_type}`);
   }

@@ -1,5 +1,10 @@
 import type { SqlClient } from "../control_plane_types.js";
-import type { SessionEventRow, SessionReadPeriod } from "@soulstream/mcp-contract";
+import type {
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionReadPeriod,
+} from "@soulstream/mcp-contract";
 import { projectInputAttachments } from "../../session/attachment_history_projection.js";
 import {
   isPostgresStatementTimeout,
@@ -27,11 +32,6 @@ import {
   type TurnUsageSummaryQuery,
 } from "./turn_usage_repository.js";
 
-export interface HostEventSearchRow extends SessionEventRow {
-  score: number;
-}
-
-/** sources를 생략한 list_user_messages가 제외하는 발신 경로. SQL과 응답의 excluded_sources가 이 상수 하나를 쓴다. */
 export const DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES = [
   "agent",
   "api",
@@ -488,7 +488,7 @@ export class EventReadRepository {
   async readOneEvent(
     sessionId: string,
     eventId: number,
-  ): Promise<(SessionEventRow & { parent_event_id: number | null }) | null> {
+  ): Promise<SessionEventDetailRow | null> {
     const rows = await this.sql<Array<Omit<SessionEventRow, "payload"> & {
       parent_event_id: number | null;
       payload: unknown;
@@ -514,7 +514,7 @@ export class EventReadRepository {
     limit: number,
     eventTypes?: string[] | null,
     signal?: AbortSignal,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await this.runSearch(signal, (searchSql) =>
@@ -528,7 +528,7 @@ export class EventReadRepository {
     limit: number,
     eventTypes: string[] | null,
     runQuery: LiveSearchQueryRunner,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await runQuery((searchSql) =>
@@ -541,7 +541,7 @@ export class EventReadRepository {
     eventTypes: string[] | null,
     limit: number,
     signal?: AbortSignal,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await this.runSearch(signal, (searchSql) =>
       this.createSessionIdSearchQuery(searchSql, query, types, limit));
@@ -553,7 +553,7 @@ export class EventReadRepository {
     eventTypes: string[] | null,
     limit: number,
     runQuery: LiveSearchQueryRunner,
-  ): Promise<HostEventSearchRow[]> {
+  ): Promise<SessionEventSearchRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await runQuery((searchSql) =>
       this.createSessionIdSearchQuery(searchSql, query, types, limit));

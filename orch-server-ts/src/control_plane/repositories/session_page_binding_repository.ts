@@ -1,18 +1,8 @@
-import type { SessionPageBindingRow } from "@soulstream/mcp-contract";
+import type {
+  EnqueueSessionPageBinding,
+  SessionPageBindingRow,
+} from "@soulstream/mcp-contract";
 import type { SqlClient } from "../control_plane_types.js";
-
-export interface EnqueueSessionPageBinding {
-  sessionId: string;
-  nodeId: string;
-  targetPageId: string | null;
-  targetBlockId: string | null;
-  targetExpectedVersion: number | null;
-  /** `bound` also completes a policy-excluded page stage; legacy replay stays independent. */
-  initialPageState: "pending" | "bound";
-  dailyDate: string;
-  sessionType: string;
-  legacyFolderId: string | null;
-}
 
 export class SessionPageBindingRepository {
   constructor(private readonly sql: SqlClient) {}

@@ -1,41 +1,15 @@
 import type {
-  RegisterSessionDeliveryParams,
-  SessionDeliveryRow,
-} from "@soulstream/wire-schema/session-delivery";
-import type { ClaudeBackgroundTaskGenerationRow, ResolveClaudeBackgroundTaskGenerationResult } from "@soulstream/mcp-contract";
+  ClaudeBackgroundTaskGenerationRow,
+  ObserveClaudeBackgroundTaskGenerationParams,
+  ResolveClaudeBackgroundTaskGenerationResult,
+  TerminalizeClaudeBackgroundTaskGenerationParams,
+  TerminalizeClaudeBackgroundTaskGenerationResult,
+} from "@soulstream/mcp-contract";
 import {
   ORCH_HOST_REQUEST_TIMEOUT_MS,
   requestHostOperationWithRetry,
   type PersistenceHostTransport,
 } from "./persistence_host_transport.js";
-
-export type ClaudeBackgroundGenerationStatus =
-  | "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
-export type ClaudeBackgroundGenerationTerminalStatus = Exclude<
-  ClaudeBackgroundGenerationStatus,
-  "pending" | "running"
->;
-
-export interface ObserveClaudeBackgroundTaskGenerationParams {
-  idempotencyKey?: string;
-  sourceNode: string; sessionId: string; taskId: string; sdkSessionId: string;
-  initiatingToolUseId: string; generationKey: string; relationKey: string;
-  completionId: string; status?: "pending" | "running"; description?: string;
-  runnerRegistrationId?: string; executionCommandId?: string;
-  summary?: string; outputFile?: string; observedAt?: Date;
-}
-
-export interface TerminalizeClaudeBackgroundTaskGenerationParams
-  extends Omit<ObserveClaudeBackgroundTaskGenerationParams, "status"> {
-  status: ClaudeBackgroundGenerationTerminalStatus;
-  closeReason: string;
-  terminalRevision: string;
-  delivery?: RegisterSessionDeliveryParams;
-}
-
-export type TerminalizeClaudeBackgroundTaskGenerationResult =
-  | { accepted: true; row: ClaudeBackgroundTaskGenerationRow; delivery?: SessionDeliveryRow }
-  | { accepted: false; row: ClaudeBackgroundTaskGenerationRow };
 
 export const CLAUDE_BACKGROUND_GENERATION_RETRY_DELAYS_MS = [
   500, 1_000, 2_000, 4_000, 8_000, 12_000, 15_000, 15_000, 15_000, 15_000,

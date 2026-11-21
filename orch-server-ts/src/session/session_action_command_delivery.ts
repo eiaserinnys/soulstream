@@ -8,18 +8,8 @@ import {
 import type {
   RegisterSessionDeliveryResult,
 } from "@soulstream/wire-schema/session-delivery";
-import type { RegisterSessionDeliveryRequest } from
-  "../control_plane/repositories/session_delivery_relation_repository.js";
+import type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
 
-/**
- * The canonical durable payload for a human live-steer intervention.
- *
- * Both the HTTP intervention body and ExternalInputService assemble through
- * this one function so a retry after the admission commit registers the same
- * normalized payload hash. `register` is supplied by the caller so a caller can
- * bind it to its own transaction (`registerSessionDelivery(tx, params)` runs
- * in place when `tx` has no `begin`).
- */
 export interface DurableHumanInterventionInput {
   agentSessionId: string;
   text: string;

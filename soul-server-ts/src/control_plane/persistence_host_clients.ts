@@ -23,16 +23,20 @@ import {
 } from "./persistence_host_transport.js";
 import { ClaudeBackgroundGenerationHostClient } from
   "./claude_background_generation_host_client.js";
-import type { ObserveClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
-import type { ClaudeBackgroundTaskRow, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
 import type {
   ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTaskKey,
+  ClaudeBackgroundTaskRow,
+  EnqueueSessionPageBinding,
+  ObserveClaudeBackgroundTaskGenerationParams,
   ObserveClaudeBackgroundTaskParams,
   RegisterSessionDeliveryRequest,
   ResolveClaudeBackgroundTaskGenerationResult,
   SessionPageBindingRow,
+  TerminalizeClaudeBackgroundTaskGenerationParams,
+  TerminalizeClaudeBackgroundTaskGenerationResult,
   TerminalizeClaudeBackgroundTaskParams,
+  TerminalizeClaudeBackgroundTaskResult,
 } from "@soulstream/mcp-contract";
 
 export {
@@ -40,21 +44,6 @@ export {
   PersistenceHostTransport,
   type HostClientConfig,
 } from "./persistence_host_transport.js";
-export type { ObserveClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
-export type { ClaudeBackgroundTaskRow, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
-export type {
-  BindingStepState,
-  ClaudeBackgroundTaskGenerationRow,
-  ClaudeBackgroundTaskKey,
-  ClaudeBackgroundTaskStatus,
-  ClaudeBackgroundTerminalStatus,
-  ObserveClaudeBackgroundTaskParams,
-  RegisterSessionDeliveryRequest,
-  ResolveClaudeBackgroundTaskGenerationResult,
-  SessionPageBindingRow,
-  TerminalizeClaudeBackgroundTaskParams,
-} from "@soulstream/mcp-contract";
-
 export type SessionTransitionFields = Pick<
   SessionUpdateFields,
   | "status"
@@ -532,12 +521,6 @@ export class ClaudeRuntimeHostClient {
   ): Promise<ResolveClaudeBackgroundTaskGenerationResult> {
     return this.generations.resolve(sourceNode, sessionId, sdkSessionId, taskId);
   }
-}
-
-export interface EnqueueSessionPageBinding {
-  sessionId: string; nodeId: string; targetPageId: string | null; targetBlockId: string | null;
-  targetExpectedVersion: number | null; initialPageState: "pending" | "bound";
-  dailyDate: string; sessionType: string; legacyFolderId: string | null;
 }
 
 export class SessionPageBindingHostClient {

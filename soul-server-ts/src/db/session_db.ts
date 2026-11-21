@@ -8,17 +8,23 @@ import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js"
 import type { ScheduleHostClient } from "../schedule/schedule_host_client.js";
 import type {
   SessionDataHost,
-  SessionEventDetailRow,
-  SessionEventRow,
-  SessionEventSearchRow,
-  SessionHistorySearchParams,
-  SessionHistorySearchResult,
   SessionReadOptions,
   SessionReadOrder,
   SessionResumeContext,
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
-import type { CardReferenceLookupResult, GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
+import type {
+  CardReferenceLookupResult,
+  GenerationCheckpointMaterial,
+  GenerationCheckpointReadLimits,
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionHistorySearchParams,
+  SessionHistorySearchResult,
+  SessionReadPeriod,
+  SupervisedCardSnapshot,
+} from "@soulstream/mcp-contract";
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { FolderService } from "../folder/folder_service.js";

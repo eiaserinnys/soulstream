@@ -25,8 +25,16 @@ import {
   type RestartWindowRetryEvent,
   type RestartWindowRetryPolicy,
 } from "./persistence_host_transport.js";
-import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionEventRow, SessionHistorySearchParams, SessionReadPeriod } from "@soulstream/mcp-contract";
-export type { SessionEventRow, SessionHistorySearchParams } from "@soulstream/mcp-contract";
+import type {
+  GenerationCheckpointMaterial,
+  GenerationCheckpointReadLimits,
+  SessionEventDetailRow,
+  SessionEventRow,
+  SessionEventSearchRow,
+  SessionHistorySearchParams,
+  SessionHistorySearchResult,
+  SessionReadPeriod,
+} from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
   "get",
@@ -54,20 +62,6 @@ export const SESSION_DATA_READ_OPERATIONS = [
 ] as const;
 
 export type SessionReadOrder = "asc" | "desc";
-
-export interface SessionEventDetailRow extends SessionEventRow {
-  parent_event_id: number | null;
-}
-
-export interface SessionEventSearchRow extends SessionEventRow {
-  score: number;
-}
-
-export interface SessionHistorySearchResult {
-  events: SessionEventSearchRow[];
-  sessionIdEvents: SessionEventSearchRow[];
-  digests: SessionDigestSearchMatch[];
-}
 
 export interface SessionTurnExcerptItem {
   event_id: number;

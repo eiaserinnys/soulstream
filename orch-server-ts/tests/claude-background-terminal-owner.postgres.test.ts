@@ -6,7 +6,7 @@ import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import type {
   ObserveClaudeBackgroundTaskGenerationParams,
   TerminalizeClaudeBackgroundTaskGenerationParams,
-} from "../src/control_plane/repositories/claude_background_task_repository.js";
+} from "@soulstream/mcp-contract";
 import {
   ClaudeBackgroundExecutionOwnerConflictError,
   ClaudeBackgroundTaskGenerationRepository,

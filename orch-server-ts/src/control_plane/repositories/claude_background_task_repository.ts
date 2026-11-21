@@ -1,19 +1,16 @@
 import type {
-  RegisterSessionDeliveryParams,
-  SessionDeliveryRow,
-} from "@soulstream/wire-schema/session-delivery";
-import type {
   ClaudeBackgroundTaskGenerationRow,
   ClaudeBackgroundTaskKey,
+  ClaudeBackgroundTaskRow,
   ClaudeBackgroundTaskStatus,
   ClaudeBackgroundTerminalStatus,
+  ObserveClaudeBackgroundTaskGenerationParams,
   ObserveClaudeBackgroundTaskParams,
   ResolveClaudeBackgroundTaskGenerationResult,
+  TerminalizeClaudeBackgroundTaskGenerationParams,
+  TerminalizeClaudeBackgroundTaskGenerationResult,
   TerminalizeClaudeBackgroundTaskParams,
-} from "@soulstream/mcp-contract";
-export type {
-  ClaudeBackgroundTaskGenerationRow,
-  ResolveClaudeBackgroundTaskGenerationResult,
+  TerminalizeClaudeBackgroundTaskResult,
 } from "@soulstream/mcp-contract";
 import type {
   SqlClient,
@@ -22,66 +19,6 @@ import { SessionDeliveryRepository } from "./session_delivery_repository.js";
 import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 import { ClaudeBackgroundTaskGenerationRepository } from
   "./claude_background_task_generation_repository.js";
-
-export interface ClaudeBackgroundTaskRow {
-  source_node: string;
-  session_id: string;
-  task_id: string;
-  sdk_session_id: string | null;
-  status: ClaudeBackgroundTaskStatus;
-  close_reason: string | null;
-  description: string | null;
-  summary: string | null;
-  output_file: string | null;
-  tool_use_id: string | null;
-  terminal_revision: string | null;
-  notification_delivery_id: string | null;
-  created_at: Date;
-  updated_at: Date;
-  terminal_at: Date | null;
-  startup_reconciled_at: Date | null;
-}
-
-export interface ObserveClaudeBackgroundTaskGenerationParams
-  extends Omit<ObserveClaudeBackgroundTaskParams, "sdkSessionId" | "toolUseId"> {
-  sdkSessionId: string;
-  initiatingToolUseId: string;
-  generationKey: string;
-  relationKey: string;
-  completionId: string;
-  runnerRegistrationId?: string;
-  executionCommandId?: string;
-}
-
-export interface TerminalizeClaudeBackgroundTaskGenerationParams
-  extends Omit<ObserveClaudeBackgroundTaskGenerationParams, "status"> {
-  status: ClaudeBackgroundTerminalStatus;
-  closeReason: string;
-  terminalRevision: string;
-  delivery?: RegisterSessionDeliveryParams;
-}
-
-export type TerminalizeClaudeBackgroundTaskResult =
-  | {
-      accepted: true;
-      row: ClaudeBackgroundTaskRow;
-      delivery: SessionDeliveryRow;
-    }
-  | {
-      accepted: false;
-      row: ClaudeBackgroundTaskRow;
-    };
-
-export type TerminalizeClaudeBackgroundTaskGenerationResult =
-  | {
-      accepted: true;
-      row: ClaudeBackgroundTaskGenerationRow;
-      delivery?: SessionDeliveryRow;
-    }
-  | {
-      accepted: false;
-      row: ClaudeBackgroundTaskGenerationRow;
-    };
 
 export class ClaudeBackgroundTaskRepository {
   private readonly generations: ClaudeBackgroundTaskGenerationRepository;

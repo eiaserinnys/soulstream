@@ -4,7 +4,7 @@ import type {
   ResolveClaudeBackgroundTaskGenerationResult,
   TerminalizeClaudeBackgroundTaskGenerationParams,
   TerminalizeClaudeBackgroundTaskGenerationResult,
-} from "./claude_background_task_repository.js";
+} from "@soulstream/mcp-contract";
 import type { SqlClient } from "../control_plane_types.js";
 import { runIdempotentSessionMutation } from "./idempotent_session_mutation.js";
 import { SessionDeliveryRepository } from "./session_delivery_repository.js";

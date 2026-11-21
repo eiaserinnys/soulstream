@@ -30,22 +30,15 @@ import {
 } from "./session_delivery_retry_policy.js";
 import { settleTerminalTargetCompletionDeliveries } from
   "./session_delivery_terminal_target_transition.js";
+import type { RegisterSessionDeliveryRequest } from "@soulstream/mcp-contract";
 import {
   getSessionDeliveryRelationConsumption,
   recordObservedChildCompletion,
   recordObservedChildCompletions,
   recordSessionDeliveryRelationConsumed,
   registerSessionDelivery,
-  type RegisterSessionDeliveryRequest,
 } from "./session_delivery_relation_repository.js";
 
-/**
- * claim의 15초는 짧은 구간(claim 직후 beginDispatch)을 덮는 값이다. 발송 중
- * (dispatching)에는 러너 해제 대기, execution drain, 중앙 running 전이 대기처럼
- * 정상 상황에서도 15초를 넘길 수 있는 구간이 있어, 그동안 만료 sweep이 진행 중인
- * 발송을 pending으로 되돌리면 뒤따르는 markQueued가 토큰 CAS를 잃는다. 발송
- * 단계의 시한은 이 값으로 따로 잡는다.
- */
 const DEFAULT_DISPATCH_LEASE_MS = 120_000;
 
 /**
