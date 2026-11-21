@@ -1,5 +1,5 @@
 import { File } from 'expo-file-system';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Text,
@@ -46,10 +46,14 @@ export function AttachmentSvg({
   const [loaded, setLoaded] = useState<{ key: string; xml?: string; failed: boolean }>({ key: '', failed: false });
   const current: { key: string; xml?: string; failed: boolean } = loaded.key === key ? loaded : { key, failed: false };
   const [area, setArea] = useState<Area | null>(null);
+  // The viewer lifts a read failure to its own failure cover; the tile passes no handler.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     if (!uri) {
       setLoaded({ key, failed: true });
+      onErrorRef.current?.();
       return;
     }
     let active = true;
@@ -59,9 +63,13 @@ export function AttachmentSvg({
         if (!active) return;
         const drawing = /<svg[\s>]/i.test(xml) ? xml : undefined;
         setLoaded({ key, ...(drawing ? { xml: drawing } : {}), failed: !drawing });
+        if (!drawing) onErrorRef.current?.();
       })
       .catch(() => {
-        if (active) setLoaded({ key, failed: true });
+        if (active) {
+          setLoaded({ key, failed: true });
+          onErrorRef.current?.();
+        }
       });
     return () => {
       active = false;
@@ -100,7 +108,7 @@ export function AttachmentSvg({
             height={box.height}
             onError={() => {
               setLoaded({ key, failed: true });
-              onError?.();
+              onErrorRef.current?.();
             }}
             fallback={<View style={{ width: box.width, height: box.height, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ ...attachment.metadata, color: attachment.textMuted, textAlign: 'center' }}>불러오지 못함</Text>

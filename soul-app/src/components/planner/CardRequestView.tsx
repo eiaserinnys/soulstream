@@ -54,6 +54,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
       ? <AttachmentImage key={`${attachment.url}-${index}`} testID={`card-request-image-${index}`} accessibilityLabel={attachment.name}
         onOpen={internal(attachment.url) ? restoreFocus => { void openContentLink(attachment.url, attachment.name, restoreFocus); } : undefined}
         mimeType={attachment.mimeType} filename={attachment.name}
+        mimeTypes={images.map(image => image.mimeType)}
         source={source(attachment.url)} sources={sources} index={images.indexOf(attachment)} variant={attachmentImageVariant} />
       : <CompactTouchTarget key={`${attachment.url}-${index}`} accessibilityRole="link" accessibilityLabel={attachment.name}
         frameStyle={{ alignSelf: 'flex-start' }} onPress={() => { void openContentLink(attachment.url, attachment.name); }}>

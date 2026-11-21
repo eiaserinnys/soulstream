@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """카드 #429 앱 단위: 첨부 미리보기 창의 PDF·SVG·고정폭 텍스트 시각 검수.
 
-실제 컴포넌트(MessageAttachments → AttachmentPreviewModal)를 웹으로 내보내
-헤드리스 Chromium에서 장면을 캡처하고, 목록/PDF/텍스트/마크다운/HTML/zip/실패/
+실제 컴포넌트(MessageAttachments → AttachmentPreviewModal, CardQuestionBody → ImageViewerModal)를
+웹으로 내보내 헤드리스 Chromium에서 장면을 캡처하고, 목록/PDF/텍스트/마크다운/HTML/zip/실패/
 빈 파일/SVG/받는 중과 목록→PDF→닫기→zip→닫기→SVG→실패→다시 시도 흐름을 확인한다.
+질문 본문 첨부의 보기 창 SVG, 보기 창 SVG 바탕의 각진 모서리, SVG와 래스터의 같은 실패 표시도 잰다.
 390 폭과 넓은 폭을 캡처하며, 단언이 깨지면 0이 아닌 코드로 끝난다.
 
 사용:
@@ -213,17 +214,24 @@ def svg_light_backing(page, screenshot: Path, label: str, check: Check) -> str:
     background = computed(holder, "background-color")
     if background != "rgb(255, 255, 255)":
         raise AssertionError(f"SVG 바탕이 밝지 않습니다: {background}")
+    radius = computed(holder, "border-radius")
+    if float(radius.replace("px", "").split()[0]) != 0:
+        raise AssertionError(f"보기 창 SVG 바탕의 모서리가 둥급니다: {radius}")
     x, y, width, height = box_of(svg)
-    # 모서리는 둥근 테두리 밖이라 바탕 화소가 아니다. 위쪽 가운데와 한가운데를 본다.
-    backing, middle = read_pixels(screenshot, [
+    corner, backing, middle = read_pixels(screenshot, [
+        (int(x) + 2, int(y) + 2),
         (int(x + width / 2), int(y) + min(4, int(height / 4))),
         (int(x + width / 2), int(y + height / 2)),
     ])
+    if not all(channel > 240 for channel in corner):
+        raise AssertionError(f"보기 창 SVG 바탕의 모서리가 흰색이 아닙니다: {corner}")
     if not all(channel > 240 for channel in backing):
         raise AssertionError(f"SVG 바탕 화소가 밝지 않습니다: {backing}")
     if not all(channel < 90 for channel in middle):
         raise AssertionError(f"SVG 도형이 그려지지 않았습니다: {middle}")
     check.record(f"svg-light-backing-{label}", "SVG 보기의 바탕이 밝다", "pass", background)
+    check.record(f"svg-corner-{label}", "보기 창 SVG 바탕은 모서리가 각지다", "pass",
+                 f"radius={radius} corner={corner}")
     check.record(f"svg-pixels-{label}", "캡처 화소로 SVG 바탕과 도형을 확인", "pass",
                  f"backing={backing} center={middle}")
     return background
@@ -480,12 +488,86 @@ def run_viewport(browser, base_url: str, out: Path, check: Check, label: str, wi
             check.run("resize-keeps-pdf", "창 크기를 바꿔도 PDF 보기와 창 폭이 유지된다(ui-design §0-18)", resize_case)
             safe_close(page)
 
+        # 실패 표시: SVG와 래스터가 같은 덮개를 쓰는지 본다. 404로 두 픽스처를 막는다.
+        def failed_renders():
+            page.route("**/fixtures/vector.svg", lambda route: route.fulfill(status=404, body=""))
+            page.route("**/fixtures/raster.png", lambda route: route.fulfill(status=404, body=""))
+            page.reload(wait_until="load")
+            page.wait_for_selector(READY_SEL, timeout=60000)
+            page.wait_for_timeout(800)
+            tile_texts = page.locator(TILES).locator('div[dir="auto"]').filter(has_text="불러오지 못함")
+            tile_texts.first.wait_for(timeout=20000)
+            if tile_texts.count() != 2:
+                raise AssertionError(f"실패한 타일 문구가 둘이 아닙니다: {tile_texts.count()}")
+            tile_sizes = [computed(tile_texts.nth(index), "font-size") for index in range(tile_texts.count())]
+            if len(set(tile_sizes)) != 1 or tile_sizes[0] != "13px":
+                raise AssertionError(f"타일 실패 문구 크기가 다릅니다: {tile_sizes}")
+
+            def open_failed(index: int, name: str) -> tuple[str, str]:
+                page.locator(f'[data-testid="message-attachments-images-image-{index}"]').click()
+                page.wait_for_selector(FRAME, timeout=15000)
+                # Pages scroll horizontally and all stay in the DOM; read only the active page.
+                message = page.locator(f'[data-testid="image-viewer-page-{index}"] div[dir="auto"]') \
+                    .filter(has_text="불러오지 못함").first
+                message.wait_for(timeout=20000)
+                style = (computed(message, "font-size"), computed(message, "color"))
+                page.screenshot(path=str(out / f"{name}-{label}.png"))
+                close_modal(page)
+                return style
+
+            raster = open_failed(0, "failure-raster")
+            svg = open_failed(1, "failure-svg")
+            if raster != svg:
+                raise AssertionError(f"SVG와 래스터의 보기 창 실패 표시가 다릅니다: svg={svg} raster={raster}")
+            return f"tile={tile_sizes} viewer={svg}"
+
+        check.run(f"failure-parity-{label}", "SVG와 래스터의 실패 표시가 보기 창과 타일에서 같다", failed_renders)
+
         same_origin = [url for url in requests if not url.startswith((base_url, "data:", "blob:", "about:"))]
         check.record(f"same-origin-{label}", "검수 페이지가 다른 출처를 부르지 않는다",
                      "pass" if not same_origin else "fail", json.dumps(same_origin[:5], ensure_ascii=False))
         check.record(f"no-page-errors-{label}", "페이지 예외 없이 장면이 끝난다",
                      "pass" if not page_errors else "fail", json.dumps(page_errors[:3], ensure_ascii=False))
     finally:
+        context.close()
+
+
+def run_question(browser, base_url: str, out: Path, check: Check, label: str, width: int, height: int) -> None:
+    """질문 본문 첨부 타일을 눌러 연 보기 창이 서술자 mime으로 SVG를 그리는지 본다."""
+    context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1)
+    page = context.new_page()
+    try:
+        page.goto(f"{base_url}/?section=question&theme=light", wait_until="load", timeout=60000)
+        page.wait_for_selector('[data-testid="attachment-preview-question"]', timeout=60000)
+        page.wait_for_timeout(400)
+
+        def question_scene():
+            tile = page.get_by_label("흐름 도면").first
+            tile.wait_for(timeout=15000)
+            page.screenshot(path=str(out / f"question-tile-{label}.png"))
+            tile.click()
+            pages = page.locator('[data-testid="image-viewer-pages"]')
+            pages.wait_for(timeout=15000)
+            pages.locator("svg").first.wait_for(timeout=20000)
+            svg_count = pages.locator("svg").count()
+            img_count = pages.locator("img").count()
+            if svg_count < 1:
+                raise AssertionError("질문 첨부의 보기 창에 svg가 없습니다.")
+            if img_count != 0:
+                raise AssertionError(f"질문 첨부의 보기 창이 img로 그려졌습니다: img={img_count}")
+            page.wait_for_timeout(300)
+            page.screenshot(path=str(out / f"question-svg-{label}.png"))
+            return f"svg={svg_count} img={img_count}"
+
+        check.run(f"question-svg-{label}",
+                  "질문 첨부의 서술자 mime SVG가 보기 창에서도 react-native-svg로 그려진다", question_scene)
+    finally:
+        try:
+            if page.locator('[data-testid="image-viewer-pages"]').count():
+                page.keyboard.press("Escape")
+                page.wait_for_selector('[data-testid="image-viewer-pages"]', state="detached", timeout=10000)
+        except Exception:  # noqa: BLE001 - 닫기 실패는 장면 실패로 이미 남는다
+            pass
         context.close()
 
 
@@ -593,6 +675,10 @@ def main() -> int:
                         run_viewport(browser, base_url, out, check, label, width, height)
                     except Exception as error:  # noqa: BLE001 - 장면 묶음 실패도 보고에 남긴다
                         check.record(f"viewport-{label}", "장면 묶음 실행", "fail", str(error)[:400])
+                    try:
+                        run_question(browser, base_url, out, check, label, width, height)
+                    except Exception as error:  # noqa: BLE001
+                        check.record(f"question-viewport-{label}", "질문 장면 묶음 실행", "fail", str(error)[:400])
                 for name, run in (("min-width", lambda: run_min_width(browser, base_url, out, check)),
                                   ("dark", lambda: run_dark(browser, base_url, out, check))):
                     try:

@@ -13,7 +13,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { isSvgImageMimeType, isSvgImageName, isSvgImageUri, type AttachmentView } from '../lib/attachment-view';
-import { createSessionVisualRoles, useTokens } from '../theme';
+import { useTokens } from '../theme';
 import { AttachmentSvg } from './AttachmentSvg';
 
 export function ImageViewerPages({
@@ -38,7 +38,6 @@ export function ImageViewerPages({
   renderAttachment?(item: AttachmentView, index: number): React.ReactNode;
 }) {
   const t = useTokens();
-  const roles = createSessionVisualRoles(t).chat.attachment;
   const window = useWindowDimensions();
   const [viewport, setViewport] = useState({ width: window.width, height: window.height });
   const scrollRef = useRef<ScrollView | null>(null);
@@ -98,7 +97,6 @@ export function ImageViewerPages({
           failed={failed}
           failureMessage={failureMessage}
           onError={() => setFailedPages((previous) => ({ ...previous, [sourceKey]: true }))}
-          roleStyles={roles}
           tokens={t}
           imageTestID={index === boundedIndex ? activeImageTestID : undefined}
         />;
@@ -107,7 +105,7 @@ export function ImageViewerPages({
   </View>;
 }
 
-function ViewerImagePage({ source, index, name, caption, svg = false, viewport, failed, failureMessage, onError, roleStyles, tokens, imageTestID }: {
+function ViewerImagePage({ source, index, name, caption, svg = false, viewport, failed, failureMessage, onError, tokens, imageTestID }: {
   source: ImageSourcePropType;
   index: number;
   name?: string;
@@ -117,7 +115,6 @@ function ViewerImagePage({ source, index, name, caption, svg = false, viewport, 
   failed: boolean;
   failureMessage: string;
   onError(): void;
-  roleStyles: ReturnType<typeof createSessionVisualRoles>['chat']['attachment'];
   tokens: ReturnType<typeof useTokens>;
   imageTestID?: string;
 }) {
@@ -131,16 +128,17 @@ function ViewerImagePage({ source, index, name, caption, svg = false, viewport, 
       <ScrollView testID="image-viewer-zoom" style={{ flex: 1 }} contentContainerStyle={imageArea}
         minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
         showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-        {svg
-          ? <View style={imageArea}>
-            <AttachmentSvg source={imageSource} label={name || `이미지 ${index + 1}`}
-              radius={roleStyles.radius} testID={imageTestID ?? `image-viewer-svg-${index}`} onError={onError} />
+        {failed
+          ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+            <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary, textAlign: 'center' }}>{failureMessage}</Text>
           </View>
-          : <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
-            accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />}
-        {failed && !svg ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-          <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary, textAlign: 'center' }}>{failureMessage}</Text>
-        </View> : null}
+          : svg
+            ? <View style={imageArea}>
+              <AttachmentSvg source={imageSource} label={name || `이미지 ${index + 1}`}
+                radius={0} testID={imageTestID ?? `image-viewer-svg-${index}`} onError={onError} />
+            </View>
+            : <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
+              accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />}
       </ScrollView>
     </View>
     {caption ? <Text testID={`image-viewer-caption-${index}`} numberOfLines={1} ellipsizeMode="tail" style={{
