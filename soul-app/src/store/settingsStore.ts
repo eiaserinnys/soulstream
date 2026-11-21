@@ -8,12 +8,9 @@ import {
   normalizeWallpaperSettings,
   type Appearance,
   type UserPreferencesSnapshot,
-  type WallpaperMode,
-  type WallpaperSettings,
 } from '../api/preferencesEndpoints';
+import type { WallpaperMode, WallpaperSettings } from '../../../packages/soul-ui/src/lib/wallpaper-settings';
 
-// 사용자가 설정 탭에서 선택하는 서버 유형 레이블 (UI 표시·도움말 용도)
-// 런타임 서버 모드는 앱 초기화 시 /api/config에서 별도 조회
 export type ServerType = 'soul-server' | 'orchestrator';
 
 export interface PersistentSessionDevicePreference {

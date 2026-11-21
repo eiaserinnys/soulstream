@@ -1,14 +1,12 @@
-// Size exception: atomic session/feed actions share one store; independent
-// attention/report domains are projected here without splitting public actions.
 import { create } from 'zustand';
-import type { PersistentReportEntry } from '../api/types';
 import type {
+  PersistentReportEntry,
   Session,
   Catalog,
-  CatalogSessionsDelta,
   Folder,
   SessionEndedReconciliation,
 } from '../api/types';
+import type { CatalogSessionsDelta } from '../../../packages/wire-schema/src/catalog';
 import type { FeedPage } from '../api/feedPage';
 import { preserveNewestLastMessage } from '../lib/session-last-message';
 import { filterFeedSessions } from '../lib/feed-filter';

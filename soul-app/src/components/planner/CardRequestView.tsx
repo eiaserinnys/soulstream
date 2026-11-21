@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { Platform, Text, View, type TextStyle } from 'react-native';
 import { cardAttachmentUrl, parseCardRequest } from '../../lib/card-attachments';
 import { cardImageSource } from '../../lib/card-image-source';
-import type { CardAttachment } from '../../api/cardTypes';
+import type { CardAttachment } from '../../../../packages/wire-schema/src/card_attachments';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens } from '../../theme';

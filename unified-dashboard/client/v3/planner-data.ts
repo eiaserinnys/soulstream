@@ -7,12 +7,11 @@ import type {
   PageDto,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
-import { type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { type CatalogFolder, type PlannerFolderStatus, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   derivePlannerFolderStatus,
   folderContextCount,
-  type PlannerFolderStatus,
 } from "./planner-model";
 
 export interface PlannerFolder {

@@ -7,6 +7,7 @@
 
 import type { SessionSummary } from "./session-types";
 import type { BoardItemType } from "@soulstream/wire-schema";
+import type { CatalogSessionAssignment } from "@soulstream/wire-schema/catalog";
 
 export type BoardContainerKind = "folder";
 
@@ -48,15 +49,6 @@ export interface CatalogFolderReorderItem {
   sortOrder: number;
   parentFolderId?: string | null;
 }
-
-/** 카탈로그 세션 배치 정보 */
-export interface CatalogAssignment {
-  folderId: string | null;
-  displayName: string | null;
-}
-
-/** catalog_updated 신형 payload의 세션별 변경분. null은 카탈로그 제거를 뜻한다. */
-export type CatalogSessionsDelta = Record<string, CatalogAssignment | null>;
 
 export type CatalogBoardItemType = Extract<BoardItemType,
   "session" | "markdown" | "subfolder" | "asset" | "frame" | "custom_view">;
@@ -103,10 +95,9 @@ export interface CustomViewDocument {
   updatedAt?: string;
 }
 
-/** 카탈로그 상태 */
 export interface CatalogState {
   folders: CatalogFolder[];
-  sessions: Record<string, CatalogAssignment>;
+  sessions: Record<string, CatalogSessionAssignment>;
   boardItems?: CatalogBoardItem[];
   sessionList?: SessionSummary[];
 }

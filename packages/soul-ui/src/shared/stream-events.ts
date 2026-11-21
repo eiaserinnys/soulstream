@@ -8,9 +8,9 @@
 import type {
   CatalogBoardItemsDelta,
   CatalogFolder,
-  CatalogSessionsDelta,
   CatalogState,
 } from "./catalog-types";
+import type { CatalogSessionsDelta } from "@soulstream/wire-schema/catalog";
 import type {
   LastMessage,
   MetadataEntry,

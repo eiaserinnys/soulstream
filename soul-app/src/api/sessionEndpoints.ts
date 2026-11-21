@@ -5,6 +5,7 @@ import type {
   ClaudeRuntimeDeleteScheduleResponse,
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeStopTaskResponse,
+  ResumeAfterLimitScheduleView,
 } from '../../../packages/soul-ui/src/lib/claude-runtime-actions';
 import type {
   InterveneResponse,
@@ -14,7 +15,7 @@ import type { MessagesResponse, ToolTraceResponse } from './historyTypes';
 import { useAuthStore } from '../store/authStore';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { buildSoulAppCallerInfo } from '../auth/caller-info';
-import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
+import { appendAttachmentPathNotes } from '../../../packages/soul-ui/src/lib/attachment-path-notes';
 import { parseReviewAcknowledgeResponse } from './reviewAcknowledge';
 
 export interface CreateSessionRequest {
@@ -60,17 +61,11 @@ export interface SessionStoryResponse {
   [key: string]: unknown;
 }
 
-export interface ResumeAfterLimitSchedule {
-  schedule_id: string;
-  run_at: string;
-  status: string;
-}
-
 export interface ResumeAfterLimitResponse {
   eligible: boolean;
   reason: string | null;
   resets_at: string | null;
-  schedule: ResumeAfterLimitSchedule | null;
+  schedule: ResumeAfterLimitScheduleView | null;
 }
 
 export interface ScheduleResumeAfterLimitResponse {

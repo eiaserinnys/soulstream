@@ -98,8 +98,6 @@ export type {
   FolderSettings,
   CatalogFolder,
   CatalogFolderReorderItem,
-  CatalogAssignment,
-  CatalogSessionsDelta,
   CatalogBoardItemsDelta,
   BoardContainerRef,
   CatalogBoardItem,

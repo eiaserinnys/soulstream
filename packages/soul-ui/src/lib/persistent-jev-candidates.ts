@@ -8,7 +8,11 @@ export interface PersistentJevCandidate {
   score: number;
 }
 
-export type PersistentJevObservation = Omit<WirePersistentJevObservation, "selected"> & {
+type PersistentJevObservationFields = {
+  [K in keyof WirePersistentJevObservation as K extends "selected" ? never : K]: WirePersistentJevObservation[K];
+};
+
+export type PersistentJevObservation = PersistentJevObservationFields & {
   selected: PersistentJevCandidate[];
 };
 

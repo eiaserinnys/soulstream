@@ -1,8 +1,8 @@
 import type { ApiRequestContext } from './clientCore';
 import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
-import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAttachment, CardAssignment, CardExecutionResult } from './cardTypes';
+import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
+import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAssignment, CardExecutionResult } from './cardTypes';
 
-/** 화면 계약 2절의 답 요청 본문. wire 패키지에 아직 없으므로 카드 API 모듈에 둔다. */
 export type CardQuestionAnswerInput =
   | { mode: 'choice'; option: string; idempotencyKey: string }
   | { mode: 'text'; answer: string; idempotencyKey: string };

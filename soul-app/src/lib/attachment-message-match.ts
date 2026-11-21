@@ -1,6 +1,6 @@
 import type { SessionEvent } from '../api/types';
 import type { PendingOptimisticEvent } from '../store/chatStore';
-import { ATTACHMENT_PATH_NOTE_PREFIX } from '../utils/attachmentPathNotes';
+import { ATTACHMENT_PATH_NOTE_PREFIX } from '../../../packages/soul-ui/src/lib/attachment-path-notes';
 
 function textOf(event: SessionEvent): string | undefined {
   const text = event.data?.text;
