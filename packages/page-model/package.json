@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@soulstream/fractional-position": "workspace:*"
+    "@soulstream/fractional-position": "workspace:*",
+    "@soulstream/wire-schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
