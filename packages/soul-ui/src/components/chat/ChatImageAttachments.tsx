@@ -118,6 +118,7 @@ function ChatImageThumbnail({
         <MarkdownImage
           src={image.src}
           alt={image.alt}
+          mimeType={image.mimeType ?? metadata?.mimeType}
           ariaLabel={filename ? `이미지 확대: ${filename}` : "이미지 확대"}
           variant="chatRefined"
           className="chat-image-thumbnail-image"

@@ -204,24 +204,27 @@ it("collapses several failed attachments in one row into one failure text at the
  expect(linkRow.lastElementChild?.textContent).toBe("파일을 불러오지 못했습니다");
  expect(linkRow.querySelectorAll("a")).toHaveLength(1);
 });
-it("hides a failed preview in the viewer and keeps only the caption error",async()=>{
+it("hides a failed preview in the viewer and keeps the original caption",async()=>{
  const onClose=vi.fn();
  await act(()=>root.render(<CardImageViewer image={{src:"/gone.png",alt:"없는 이미지"}} onClose={onClose}/>));
  await act(()=>document.body.querySelector<HTMLImageElement>('[role="dialog"] img')!.dispatchEvent(new Event("error")));
  expect(document.body.querySelector('[role="dialog"] img')).toBeNull();
- expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("파일을 불러오지 못했습니다");
+ expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("없는 이미지");
+ expect(document.body.querySelector('[role="dialog"] .attachment-viewer-state')?.textContent).toContain("파일을 불러오지 못했습니다");
  expect(document.body.querySelector('[role="dialog"] figure')?.hasAttribute("data-image-failed")).toBe(true);
 });
-it("shows preview load errors in the caption and clears them for a new source",async()=>{
+it("keeps the caption on a load error and clears the failed state for a new source",async()=>{
  const onClose=vi.fn();
  const render=(src:string,alt:string)=>root.render(<CardImageViewer image={{src,alt}} onClose={onClose}/>);
  await act(()=>render("/first.png","첫 이미지"));
  const first=document.body.querySelector<HTMLImageElement>('[role="dialog"] img')!;
  await act(()=>first.dispatchEvent(new Event("error")));
- expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("파일을 불러오지 못했습니다");
+ expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("첫 이미지");
+ expect(document.body.querySelector('[role="dialog"] .attachment-viewer-state')?.textContent).toContain("파일을 불러오지 못했습니다");
  await act(()=>render("/second.png","다음 이미지"));
  expect(document.body.querySelector<HTMLImageElement>('[role="dialog"] img')?.getAttribute("src")).toBe("/second.png");
  expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("다음 이미지");
+ expect(document.body.textContent).not.toContain("파일을 불러오지 못했습니다");
  await act(()=>render("/first.png","첫 이미지"));
  expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("첫 이미지");
 });

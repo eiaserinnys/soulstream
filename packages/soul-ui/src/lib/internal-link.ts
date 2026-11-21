@@ -1,3 +1,8 @@
+// The React Native app typechecks this file through a relative import and its
+// resolver does not read package subpath exports, so reach the canonical module
+// by path as the app itself does for wire-schema sources.
+import { isImagePreviewMimeType, mimeTypeForFileName } from "../../../wire-schema/src/attachments";
+
 export type AttachmentLinkContext =
   | { type: "owner" }
   | { type: "session" | "card" | "page" | "board_item"; id: string };
@@ -13,7 +18,6 @@ export type InternalLinkTarget =
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]*$/;
 const EVENT_ID_PATTERN = /^\d+$/;
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 
 function isIdentifier(value: string): boolean {
   return value.length >= 1 && value.length <= 200 && IDENTIFIER_PATTERN.test(value);
@@ -78,13 +82,8 @@ function parseQuery(query: string): Map<string, string> | null {
 }
 
 function isImagePath(path: string): boolean {
-  const filename = path.slice(path.lastIndexOf("/") + 1);
-  const extensionStart = filename.lastIndexOf(".");
-  if (extensionStart === -1) {
-    return false;
-  }
-
-  return IMAGE_EXTENSIONS.has(filename.slice(extensionStart + 1).toLowerCase());
+  const mimeType = mimeTypeForFileName(path);
+  return mimeType !== null && isImagePreviewMimeType(mimeType);
 }
 
 function attachmentLinkContext(queryValues: Map<string, string>): AttachmentLinkContext | null | undefined {

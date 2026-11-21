@@ -189,12 +189,14 @@ describe("attachment read service", () => {
       "text/css",
       "text/csv",
     ];
-    const infoMimeTypes = [
-      "text/x-unknown",
-      "application/xhtml+xml",
+    const imageMimeTypes = [
       "image/svg+xml",
       "image/heic",
       "image/heif",
+    ];
+    const infoMimeTypes = [
+      "text/x-unknown",
+      "application/xhtml+xml",
       "audio/mpeg",
       "application/pdf",
       "application/octet-stream",
@@ -224,6 +226,18 @@ describe("attachment read service", () => {
     )).resolves.toMatchObject({
       descriptor: { preview_kind: "text", preview_mime_type: "text/html" },
     });
+
+    for (const mimeType of imageMimeTypes) {
+      const asset = { ...committedAsset, originalName: "picture.bin", mimeType };
+      const { service } = makeService({ asset });
+      await expect(service.metadata(
+        { kind: "user", email: "owner@example.com" },
+        asset.id,
+        { type: "owner" },
+      )).resolves.toMatchObject({
+        descriptor: { preview_kind: "image", preview_mime_type: mimeType },
+      });
+    }
 
     for (const mimeType of infoMimeTypes) {
       const asset = { ...committedAsset, originalName: "script.py", mimeType };

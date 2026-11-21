@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isSvgImageSource, useHeicImageSource } from "../lib/image-source";
 
 /** The image presentation already used in chat markdown. */
 export function MarkdownImage({
   src,
   alt = "",
   ariaLabel,
+  mimeType,
   onOpen,
   onLoad,
   onError,
@@ -16,6 +18,8 @@ export function MarkdownImage({
   src?: string;
   alt?: string;
   ariaLabel?: string;
+  /** Lets HEIC sources fall back to the lazily loaded decoder when the browser cannot paint them. */
+  mimeType?: string | null;
   onOpen?(src: string, alt: string, trigger: HTMLImageElement): void;
   onLoad?(src: string): void;
   onError?(src: string): void;
@@ -28,6 +32,9 @@ export function MarkdownImage({
     src: string | undefined;
     status: "loading" | "loaded" | "error";
   }>({ src, status: "loading" });
+  const heic = useHeicImageSource(src, mimeType);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const isChatRefined = variant === "chatRefined";
   const loadStatus = !src
     ? "loaded"
@@ -46,12 +53,21 @@ export function MarkdownImage({
     if (src) onOpen?.(src, alt, trigger);
   };
 
+  // The decoder also fails after the <img> error event has already passed, so
+  // report the failure from here instead of the event handler.
+  useEffect(() => {
+    if (!src || !heic.decodeFailed) return;
+    if (isChatRefined) setLoadState({ src, status: "error" });
+    onErrorRef.current?.(src);
+  }, [heic.decodeFailed, src, isChatRefined]);
+
   const image = (
     <img
-      src={src}
+      src={heic.displaySrc}
       alt={alt}
       className={classes}
       loading={loading}
+      data-image-format={isSvgImageSource(mimeType, src) ? "svg" : undefined}
       role={onOpen ? "button" : undefined}
       aria-label={onOpen ? ariaLabel : undefined}
       tabIndex={onOpen ? 0 : undefined}
@@ -62,6 +78,9 @@ export function MarkdownImage({
       }}
       onError={() => {
         if (!src) return;
+        // A browser that cannot paint HEIC reports an error first; hand the
+        // source to the decoder and report only if that also fails.
+        if (heic.tryDecode()) return;
         if (isChatRefined) setLoadState({ src, status: "error" });
         onError?.(src);
       }}

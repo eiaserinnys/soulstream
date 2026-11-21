@@ -1,4 +1,8 @@
 import {
+  IMAGE_PREVIEW_MIME_TYPES,
+  MIME_BY_EXTENSION,
+  isImagePreviewMimeType,
+  mimeTypeForFileName,
   SAFE_RASTER_PREVIEW_MIME_TYPES,
   SAFE_TEXT_PREVIEW_MIME_TYPES,
   type AttachmentReadContext,
@@ -6,6 +10,13 @@ import {
   type SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
 import { orchestratorFetch } from "./orchestrator-connection";
+
+export {
+  IMAGE_PREVIEW_MIME_TYPES,
+  MIME_BY_EXTENSION,
+  isImagePreviewMimeType,
+  mimeTypeForFileName,
+};
 
 export type ChatAttachmentSource =
   | { kind: "asset"; attachmentId: string; context: AttachmentReadContext }
@@ -215,7 +226,7 @@ function sessionEventAttachmentUrl(sessionId: string, eventId: number): string {
 
 function previewKindFromMime(mimeType: string | null): ChatAttachmentItem["previewKind"] {
   const normalized = normalizeMimeType(mimeType);
-  if (SAFE_RASTER_PREVIEW_MIME_TYPES.has(normalized)) return "image";
+  if (isImagePreviewMimeType(normalized)) return "image";
   if (SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalized)) return "text";
   return "info";
 }
@@ -228,7 +239,7 @@ function safePreviewKind(
   advertisedKind: ChatAttachmentItem["previewKind"],
   mimeType: string | null,
 ): ChatAttachmentItem["previewKind"] {
-  if (advertisedKind === "image" && isSafeRasterPreviewMimeType(mimeType)) return "image";
+  if (advertisedKind === "image" && isImagePreviewMimeType(mimeType)) return "image";
   const normalized = normalizeMimeType(mimeType);
   if (advertisedKind === "text" && (
     normalized === "text/html" || SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalized)

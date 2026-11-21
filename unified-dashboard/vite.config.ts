@@ -115,6 +115,9 @@ export default defineConfig(({ command, mode, isPreview }: ConfigEnv) => {
             if (id.includes("/react/") || id.includes("/scheduler/")) {
               return "vendor-react";
             }
+            if (id.includes("/heic2any/")) {
+              return "vendor-heic2any";
+            }
             return "vendor";
           },
         },

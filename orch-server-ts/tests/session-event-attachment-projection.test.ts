@@ -125,7 +125,7 @@ describe("projectSessionEventAttachments", () => {
         path: "/legacy/first.txt",
         name: "first.txt",
         availability: "unresolved",
-        mime_type: null,
+        mime_type: "text/plain",
         byte_size: null,
       }),
       expect.objectContaining({

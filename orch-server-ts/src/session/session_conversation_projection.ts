@@ -1,3 +1,4 @@
+import { MIME_BY_EXTENSION } from "@soulstream/wire-schema/attachments";
 import type { SqlClient } from "../cards/control_plane/card_types.js";
 import { HISTORY_PAYLOAD, TYPES, sourceEvent } from "../conversation/conversation_history_source.js";
 import { ConversationProjection, type Item } from "../conversation/conversation_projection.js";
@@ -16,11 +17,6 @@ type AttachmentContext = {
   nodeId: string;
   assetsById: Map<string, AssetRow>;
   pathMetadata: Map<string, PathMetadata>;
-};
-
-const MIME_BY_EXTENSION: Record<string, string> = {
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-  webp: "image/webp", txt: "text/plain", md: "text/markdown", pdf: "application/pdf",
 };
 
 export type CardSessionMessage = {

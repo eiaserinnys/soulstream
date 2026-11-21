@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import {
+  IMAGE_PREVIEW_MIME_TYPES,
   SAFE_RASTER_PREVIEW_MIME_TYPES,
   SAFE_TEXT_PREVIEW_MIME_TYPES,
   type AttachmentDescriptor,
@@ -78,10 +79,15 @@ export function normalizedMimeType(value: string): string {
   return value.trim().toLowerCase().split(";", 1)[0] ?? "";
 }
 
+/** Card item evidence keeps the stricter rule: only the safe raster list counts as an image. */
+export function isRasterPreviewMimeType(mimeType: string): boolean {
+  return SAFE_RASTER_PREVIEW_MIME_TYPES.has(normalizedMimeType(mimeType));
+}
+
 export function previewInfo(
   mimeType: string,
 ): { kind: AttachmentDescriptor["preview_kind"]; mimeType: string | null } {
-  if (SAFE_RASTER_PREVIEW_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
+  if (IMAGE_PREVIEW_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
   if (mimeType === "text/markdown" || mimeType === "text/html") {
     return { kind: "text", mimeType };
   }
@@ -107,8 +113,12 @@ export function responseHeaders(
     : null;
   const effectiveBaseMimeType = inferredMimeType ?? baseMimeType;
   const contentType = inferredMimeType ?? responseMimeType(asset.mimeType);
+  // Rasters, HEIC/HEIF and media open inline. SVG stays `attachment`: opening a
+  // fresh tab downloads it instead of running the document as a page.
+  const inlineImage = effectiveBaseMimeType !== "image/svg+xml" &&
+    IMAGE_PREVIEW_MIME_TYPES.has(effectiveBaseMimeType);
   const inline = !download && (
-    SAFE_RASTER_PREVIEW_MIME_TYPES.has(effectiveBaseMimeType) ||
+    inlineImage ||
     effectiveBaseMimeType === "text/plain" ||
     SAFE_INLINE_MEDIA_MIME_TYPES.has(effectiveBaseMimeType)
   );

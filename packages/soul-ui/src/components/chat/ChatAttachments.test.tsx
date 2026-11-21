@@ -80,17 +80,25 @@ describe("ChatAttachments", () => {
     expect(onOpen).toHaveBeenLastCalledWith(2, expect.any(HTMLImageElement));
   });
 
-  it("keeps SVG and HEIC items in the info rows even when marked as images", async () => {
+  it("places SVG and HEIC items in the image grid and keeps PDF in the info rows", async () => {
     const items = [
       attachment("vector", { name: "vector.svg", mimeType: "image/svg+xml", previewUrl: "/vector.svg" }),
       attachment("photo", { name: "photo.heic", mimeType: "image/heic", previewUrl: "/photo.heic" }),
+      attachment("paper", {
+        name: "paper.pdf",
+        mimeType: "application/pdf",
+        previewKind: "info",
+        previewUrl: null,
+      }),
     ];
     await act(async () => root.render(<ChatAttachments items={items} role="assistant" onOpen={() => {}} />));
 
-    expect(container.querySelectorAll(".chat-image-grid img")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-chat-image-index] img")).toHaveLength(2);
+    expect([...container.querySelectorAll("[data-chat-image-index]")]
+      .map(node => node.getAttribute("data-chat-image-index"))).toEqual(["0", "1"]);
     expect([...container.querySelectorAll("[data-chat-attachment-index]")].map(node => node.textContent))
-      .toEqual(expect.arrayContaining([expect.stringContaining("vector.svg"), expect.stringContaining("photo.heic")]));
-    expect(container.querySelector(".chat-image-grid")).toBeNull();
+      .toEqual([expect.stringContaining("paper.pdf")]);
+    expect(container.querySelector(".chat-image-grid")).not.toBeNull();
   });
 
   it("deduplicates repeated item IDs and preserves the first display position", async () => {

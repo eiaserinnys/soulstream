@@ -1,9 +1,10 @@
 import path from "node:path";
 
-import type {
-  AttachmentReadContext,
-  SessionEventAttachmentResponse,
-  SessionEventAttachmentView,
+import {
+  mimeTypeForFileName,
+  type AttachmentReadContext,
+  type SessionEventAttachmentResponse,
+  type SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
 import {
   normalizeAttachmentLegacyPath,
@@ -164,7 +165,9 @@ function legacyView(
     node_id: nodeId,
     path: legacyPath,
     name: path.posix.basename(legacyPath),
-    mime_type: null,
+    // Legacy events stored no MIME type. Fill it from the extension so SVG,
+    // HEIC and HTML previews classify the same way as registered attachments.
+    mime_type: mimeTypeForFileName(legacyPath),
     byte_size: null,
     availability,
     read_context: readContext,

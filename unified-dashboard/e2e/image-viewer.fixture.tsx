@@ -16,14 +16,26 @@ const width = Number(params.get("width") ?? 800);
 const height = Number(params.get("height") ?? 600);
 const svg = (w: number, h: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="steelblue"/><text x="12" y="40" fill="white" font-size="24">${w} × ${h}</text></svg>`;
 const image = svg(width, height);
+const customName = params.get("name");
 const sampleSrc = params.get("sample") === "dark" ? "/image-viewer-screen.png"
-  : params.get("sample") === "bright" ? "/e2e/fixtures/image-viewer-bright.png" : null;
+  : params.get("sample") === "bright" ? "/e2e/fixtures/image-viewer-bright.png"
+  : params.get("sample") === "tall-screen" ? "/e2e/fixtures/tall-screen.svg"
+  : params.get("sample") === "tall-screen-dark" ? "/e2e/fixtures/tall-screen-dark.svg"
+  : params.get("sample") === "fail" ? "/image-viewer-screen-fail.png" : null;
+const sampleMime = params.get("sample") === "tall-screen" || params.get("sample") === "tall-screen-dark"
+  ? "image/svg+xml" : "image/png";
 const src = sampleSrc ?? "data:image/svg+xml," + encodeURIComponent(image);
 const file = new File([sampleSrc ? await fetch(sampleSrc).then(response => response.blob()) : image],
   sampleSrc ? "screen.png" : "fixture.svg", {type:sampleSrc ? "image/png" : "image/svg+xml"});
 // 검수 반려 2: 320보다 좁은 동영상도 단독 창에서 가운데에 서는지 재는 표본.
 const narrowVideo = new File([await fetch("/e2e/fixtures/sample-video.mp4").then(response => response.blob())],
   "sample-video.mp4", {type:"video/mp4"});
+// 카드 #429: 크롬이 그리지 못하는 실제 HEIC 표본(100KB 안). 해독기는 그때 동적으로 불러온다.
+const heicFile = new File([await fetch("/e2e/fixtures/sample.heic").then(response => response.blob())],
+  "IMG_0412.HEIC", {type:"image/heic"});
+// 투명 바탕 SVG. 어두운 테마에서도 그림 뒤에 밝은 바탕이 깔리는지 잰다.
+const transparentSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><circle cx="120" cy="80" r="60" fill="#c85028"/></svg>`;
+const transparentSrc = "data:image/svg+xml," + encodeURIComponent(transparentSvg);
 const caption = params.get("caption") === "none" ? "" : params.get("caption") === "long"
   ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(5)
   : params.get("caption") === "one" ? "화면 캡처"
@@ -89,6 +101,30 @@ function attachmentItem(kind: string): ChatAttachmentItem {
     previewKind: "image", availability: "ready", previewUrl: src, originalUrl, legacySources: [],
     source: {kind: "asset", attachmentId: "fixture-image", context},
   };
+  if (kind === "image-tall" || kind === "image-wide") return {
+    key: `asset:${kind}`,
+    name: customName ?? (kind === "image-tall" ? "IMG_0398.PNG" : "timeline-2611.png"),
+    mimeType: sampleSrc ? sampleMime : "image/png", byteSize: kind === "image-tall" ? 369747 : 89177,
+    previewKind: "image", availability: "ready", previewUrl: src, originalUrl, legacySources: [],
+    source: {kind: "asset", attachmentId: kind, context},
+  };
+  if (kind === "image-slow" || kind === "image-fail") return {
+    key: `asset:${kind}`, name: "IMG_0399.PNG", mimeType: "image/png", byteSize: 4096,
+    previewKind: "image", availability: "ready",
+    previewUrl: `/api/attachments/${kind}/content?context_type=card&context_id=card-1`,
+    originalUrl: `/api/attachments/${kind}/content?context_type=card&context_id=card-1&download=true`,
+    legacySources: [], source: {kind: "asset", attachmentId: kind, context},
+  };
+  if (kind === "image-svg") return {
+    key: "asset:image-svg", name: "diagram.svg", mimeType: "image/svg+xml", byteSize: transparentSvg.length,
+    previewKind: "image", availability: "ready", previewUrl: transparentSrc, originalUrl, legacySources: [],
+    source: {kind: "asset", attachmentId: "image-svg", context},
+  };
+  if (kind === "image-heic") return {
+    key: "local:image-heic", name: "IMG_0412.HEIC", mimeType: "image/heic", byteSize: heicFile.size,
+    previewKind: "image", availability: "ready", previewUrl: null, originalUrl: null,
+    legacySources: [], source: {kind: "local", file: heicFile},
+  };
   if (kind === "slow-doc") return {
     key: "asset:slow-doc", name: "느린 문서.md", mimeType: "text/markdown", byteSize: 4096,
     previewKind: "text", availability: "ready",
@@ -129,6 +165,15 @@ function attachmentItems(kind: string): ChatAttachmentItem[] {
   return [attachmentItem(kind)];
 }
 
+// 카드 #429 보완: 넘기기 창의 두 축(세로 읽기 틀과 가로 읽기 틀), 주소 쿼리와 path 인자로
+// 판정해야 하는 SVG. 장면마다 첫 장의 축이 달라야 ←/→와 스크롤을 가려 잴 수 있다.
+function chatContent(width: number, height: number, gallery: string): string {
+  if (gallery === "reading") return "![tall.svg](/tall.svg?width=1170&height=7200)\n\n![wide.svg](/wide.svg?width=7200&height=600)";
+  if (gallery === "reading-wide") return "![wide.svg](/wide.svg?width=7200&height=600)\n\n![tall.svg](/tall.svg?width=1170&height=7200)";
+  if (gallery === "svgurls") return "![query.svg](/fixture.svg?width=480&height=320)\n\n![path.svg](/api/attachments/files?nodeId=fixture&path=chart.svg&context_type=session&context_id=fixture)";
+  return `![fixture.svg](/fixture.svg?width=${width}&height=${height})${gallery === "single" ? "" : "\n\n![next.svg](/next.svg)"}${gallery === "mixed" ? "\n\n![third.svg](/third.svg?width=800&height=600)\n\n![last.svg](/last.svg?width=200&height=120)" : ""}`;
+}
+
 function AttachmentFixture({kind}:{kind:string}) {
   const [index, setIndex] = useState<number|null>(0);
   const items = attachmentItems(kind);
@@ -141,7 +186,7 @@ function Fixture() {
   return <main>
     {viewer === "card" && <CardImageViewer image={open ? {src, alt:caption} : null} onClose={() => setOpen(false)}/>}
     {viewer === "file" && <FileAttachmentPreview initialImageOpen file={file} status="done" onRemove={() => {}}/>}
-    {viewer === "chat" && <MarkdownContent content={`![fixture.svg](/fixture.svg?width=${width}&height=${height})${params.get("gallery") === "single" ? "" : "\n\n![next.svg](/next.svg)"}${params.get("gallery") === "mixed" ? "\n\n![third.svg](/third.svg?width=800&height=600)\n\n![last.svg](/last.svg?width=200&height=120)" : ""}`} chatImages={{role:"assistant"}} />}
+    {viewer === "chat" && <MarkdownContent content={chatContent(width, height, params.get("gallery") ?? "")} chatImages={{role:"assistant"}} />}
     {viewer === "ordinary" && <Dialog open={open} onOpenChange={setOpen}><DialogPopup><DialogHeader><DialogTitle>기존 다이얼로그</DialogTitle></DialogHeader></DialogPopup></Dialog>}
     {viewer === "attachment" && <AttachmentFixture kind={params.get("attachment") ?? "doc-long"}/>}
   </main>;

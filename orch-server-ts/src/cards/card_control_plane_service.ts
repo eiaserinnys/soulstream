@@ -19,7 +19,7 @@ import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, collectCardItemAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
 import { requireCardAttachmentReuse, requireCardAttachmentTx } from "./card_attachment_policy.js";
-import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
+import { isRasterPreviewMimeType } from "../attachments/attachment_read_http.js";
 import { normalizeAttachmentLegacyPath, attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
 import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
@@ -861,7 +861,7 @@ async function assertKeptEvidenceUsableTx(sql:RepositorySql,id:string,type:"imag
   if (!row) throw Object.assign(new Error("첨부를 찾을 수 없습니다."),{statusCode:404,code:"ATTACHMENT_NOT_FOUND"});
   if (row.upload_status !== "committed")
     throw Object.assign(new Error("아직 커밋되지 않은 첨부입니다."),{statusCode:409,code:"ATTACHMENT_NOT_COMMITTED"});
-  if (type === "image" && previewInfo(normalizedMimeType(row.mime_type)).kind !== "image")
+  if (type === "image" && !isRasterPreviewMimeType(row.mime_type))
     throw Object.assign(new Error("이미지 첨부가 아닙니다."),{statusCode:422,code:"ATTACHMENT_IMAGE_REQUIRED"});
 }
 function invalid(message:string) { return Object.assign(new Error(message),{ statusCode:422,code:"INVALID_CARD_REQUEST" }); }
