@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { ReleaseExecutableIdentity } from "./release_manifest.js";
+import type { ReleaseExecutableIdentity } from "@soulstream/wire-schema";
 
 const FILE_SET_DOMAIN = "soulstream.release.file-set.v1\0";
 const EXECUTABLE_DOMAIN = "soulstream.release.executable.v1\0";

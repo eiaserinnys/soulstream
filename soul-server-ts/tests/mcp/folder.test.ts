@@ -8,7 +8,7 @@ import type { CatalogService } from "../../src/catalog/catalog_service.js";
 import * as persistenceHostTransport from "../../src/control_plane/persistence_host_transport.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { FolderService } from "../../src/folder/folder_service.js";
-import { jsonResult } from "../../src/mcp/result.js";
+import { jsonResult } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";

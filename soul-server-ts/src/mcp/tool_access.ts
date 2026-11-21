@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { callWithReferenceTranslation, type CallToolResult } from "@soulstream/mcp-contract";
+import { callWithReferenceTranslation, type CallToolResult, errorResult } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "./runtime.js";
-import { errorResult } from "./result.js";
 import { runIsolationToolGuard } from "./isolation_tool_guards.js";
 import {
   PROFILE_LOOKUP_UNAVAILABLE_MESSAGE,

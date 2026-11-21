@@ -1,7 +1,8 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionMutationHost } from
   "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";

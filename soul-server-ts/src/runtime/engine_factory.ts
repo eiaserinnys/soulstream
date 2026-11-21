@@ -16,7 +16,7 @@ import type { McpConfigService, ResolvedMcpServer } from "../mcp_config_service.
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import { withFullSessionCredential } from "../runner/full_session_credential.js";
 import type { EngineFactory } from "../task/task_executor.js";
-import type { ModelCatalogConfig } from "../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 
 type EngineFactoryEnv = Pick<
   Env,

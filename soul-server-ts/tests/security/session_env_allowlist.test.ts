@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { restrictedSessionEnvKeys } from
   "../../src/runner/runner_process_isolation.js";
 import {

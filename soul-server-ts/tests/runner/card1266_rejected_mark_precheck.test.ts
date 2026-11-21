@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { RunnerRecoveryCoordinator } from "../../src/runner/runner_recovery_coordinator.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { createExecutionActivation, type Task } from "../../src/task/task_models.js";

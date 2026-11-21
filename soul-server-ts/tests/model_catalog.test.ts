@@ -12,10 +12,9 @@ import {
 
 import {
   ModelCatalog,
-  ModelCatalogSchema,
-  parseModelCatalogYaml,
   type ModelCatalogOptions,
 } from "../src/model_catalog.js";
+import { ModelCatalogSchema, parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import { makeTempDirSync } from "./helpers/temp_dir.js";
 

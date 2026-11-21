@@ -33,7 +33,7 @@ import type { SessionCostBase } from "../engine/session_cost.js";
 import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import type { ClaudeBackendRolloverReason } from "./claude_context_recovery.js";
 import type { DeliveryIntent } from "@soulstream/wire-schema/session-delivery";
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { NodeBarrierKind } from "./state/node_barrier_machine.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {

@@ -1,7 +1,7 @@
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { compileContexts, type ContextFilterParameters } from "../../src/context/compiler/index.js";
 import type { AtomFetchConfig } from "../../src/context/atom_context.js";
 import { buildContextFilterParameters } from "../../src/context/context_builder_helpers.js";

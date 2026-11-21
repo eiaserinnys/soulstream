@@ -1,13 +1,13 @@
 import allowlistDocument from "./release_env_allowlist.json" with { type: "json" };
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { Env } from "../config.js";
 import {
   computeRuntimeEnvIdentity,
   type CanonicalJsonValue,
-  type ReleaseExecutableIdentity,
   type RuntimeCredentialDescriptor,
 } from "./release_manifest.js";
+import type { ReleaseExecutableIdentity } from "@soulstream/wire-schema";
 
 /**
  * `identity_scope` splits the two jobs this allowlist does.

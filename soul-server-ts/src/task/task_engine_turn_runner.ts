@@ -1,9 +1,8 @@
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ExecutionInputV1, UsageSnapshotV1 } from "@soulstream/wire-schema";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import type {
   EngineExecuteParams,
-  EnginePort,
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
   ScheduleToolUseHandler,

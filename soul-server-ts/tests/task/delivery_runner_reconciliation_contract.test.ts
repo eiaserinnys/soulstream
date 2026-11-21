@@ -4,10 +4,10 @@ import type { Socket } from "node:net";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { EngineExecuteParams, SSEEventPayload } from "../../src/engine/protocol.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import type { EngineExecuteParams } from "../../src/engine/protocol.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import {
   engineEventFrame,
   invokeCommandFrame,

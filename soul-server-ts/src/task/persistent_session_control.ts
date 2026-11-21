@@ -8,11 +8,11 @@ import {
   type PersistentSettingsPatch,
   type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
-import { resolveModelPreset } from "@soulstream/model-catalog";
+import { resolveModelPreset, UnknownModelPresetError } from "@soulstream/model-catalog";
 import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 
 import type { EventPersistence } from "../db/event_persistence.js";
-import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
 import { savePersistentMetadata } from "./persistent_metadata_write.js";

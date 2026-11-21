@@ -13,7 +13,7 @@ import { isRecoverableExecutionDiagnostic, resultErrorCode } from "./claude_sdk_
 import { attachClaudeResultInputReceipt } from "./claude_sdk_event_metadata.js";
 import { claudeTurnCostUsd } from "./list_price.js";
 import { readTranscriptTurnIterationUsage } from "./claude_sdk_transcript_usage.js";
-import type { ModelCatalogConfig } from "../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 
 const STRIPPED_HOOK_OUTPUT = "[stripped: persisted in tool_result]";
 const GENERIC_HOOK_OUTPUT_FIELDS = new Set([

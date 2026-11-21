@@ -9,7 +9,7 @@ import {
   type ClaudeBackgroundConsumptionProof,
   type ClaudeToolStartObservation,
 } from "./claude_background_result_consumption.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import {
   isRuntimeFollowup,

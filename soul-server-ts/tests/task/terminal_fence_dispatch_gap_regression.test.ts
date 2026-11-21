@@ -2,7 +2,8 @@ import pino from "pino";
 import { setImmediate } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile, AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionMutationHost } from
   "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -10,7 +11,7 @@ import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
-import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";

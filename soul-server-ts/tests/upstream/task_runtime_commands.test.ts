@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import {
   TaskRuntimeCommands,
   UnknownAgentProfileError,
@@ -14,7 +15,7 @@ import {
   createExecutionActivation,
   type Task,
 } from "../../src/task/task_models.js";
-import type { ModelPreset } from "../../src/model_catalog.js";
+import type { ModelPreset } from "@soulstream/model-catalog";
 import type { NewSessionAgentProfileSource } from "../../src/agent_profile_source.js";
 import { CommandDispatchError } from "../../src/upstream/command_family.js";
 import { createSessionCommandFamily } from "../../src/upstream/session_command_family.js";

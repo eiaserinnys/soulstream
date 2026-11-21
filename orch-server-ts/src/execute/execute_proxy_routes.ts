@@ -168,5 +168,4 @@ export type {
   ExecuteProxyContextItem,
   ExecuteProxyNewProviderRequest,
   ExecuteProxyResumeProviderRequest,
-  ReasoningEffort,
 } from "./execute_proxy_payloads.js";

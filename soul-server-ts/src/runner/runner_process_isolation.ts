@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { BackendId } from "../engine/protocol.js";
 import type {
   IsolationBackend,

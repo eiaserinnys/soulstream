@@ -16,12 +16,12 @@
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionMutationHost } from
   "../../src/control_plane/persistence_host_clients.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
-import type { SessionDB, SqlClient } from "../../src/db/session_db.js";
-import { SessionDB as SessionDBClass } from "../../src/db/session_db.js";
+import { type SqlClient, SessionDB as SessionDBClass } from "../../src/db/session_db.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskManager } from "../../src/task/task_manager.js";

@@ -24,18 +24,16 @@ import type {
   SessionHistorySearchResult,
   SessionReadPeriod,
   SupervisedCardSnapshot,
+  SessionDigestSearchMatch,
+  SessionStoryTurnSummary,
+  SessionStoryView,
+  SessionSearchMetadata,
+  SessionTurnSummaryCounts,
 } from "@soulstream/mcp-contract";
 import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { FolderService } from "../folder/folder_service.js";
 import type { ClaudeRuntimeHostClient, SessionPageBindingHostClient, SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import {
-  type SessionDigestSearchMatch,
-  type SessionStoryTurnSummary,
-  type SessionStoryView,
-  type SessionSearchMetadata,
-  type SessionTurnSummaryCounts,
-} from "./session_story_types.js";
 import type { CatalogBoardItemRow, ListFolderItemsParams, ListFolderItemsResult, MarkdownDocumentRow } from "@soulstream/wire-schema/catalog";
 import type { CatalogFolderRow, CatalogSessionAssignmentRow, FolderRow, ListSessionSummaryRow, RunningSessionSummaryRow, SessionExecutionChain, SessionOwnerNode, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 

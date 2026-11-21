@@ -11,12 +11,9 @@ import {
   AgentConfigService,
   toAgentConfigSemanticChangeWire,
 } from "../../agent_config_service.js";
-import {
-  AgentAtomContextSchema,
-  AgentProfilePatchSchema,
-} from "../../agent_registry.js";
+import { AgentAtomContextSchema, AgentProfilePatchSchema } from "@soulstream/agent-profile-contract";
 import { McpConfigService } from "../../mcp_config_service.js";
-import { errorResult, jsonResult } from "../result.js";
+import { errorResult, jsonResult } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "../runtime.js";
 
 export function registerAgentConfigTools(

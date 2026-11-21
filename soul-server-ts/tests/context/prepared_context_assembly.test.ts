@@ -1,7 +1,7 @@
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { ContextManifest } from "../../src/context/compiler/index.js";
 import { assemblePreparedContext } from "../../src/context/prepared_context_assembly.js";
 import type { Task } from "../../src/task/task_models.js";

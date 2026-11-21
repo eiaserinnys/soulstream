@@ -3,10 +3,10 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { SessionRow } from "../db/session_db_types.js";
-import { buildDeliveryInputUuid } from "../task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { parseClaudeNativeTaskNotification } from
   "../task/claude_native_task_notification.js";
 import { userMessageText } from "./claude_sdk_event_mapper_helpers.js";

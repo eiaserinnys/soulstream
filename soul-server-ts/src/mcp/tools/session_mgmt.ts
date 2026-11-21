@@ -1,5 +1,5 @@
 import { registerOrchestratorTools } from "../orchestrator_tools.js";
-import { sessionMessageTools, sessionTools } from "@soulstream/mcp-contract";
+import { sessionMessageTools, sessionTools, errorResult, jsonResult } from "@soulstream/mcp-contract";
 /**
  * session_mgmt 도구 — Python `mcp_session_mgmt.py` 정합 (키 호환).
  */
@@ -18,13 +18,12 @@ const ReasoningEffortToolSchema = z.enum(
   REASONING_EFFORT_ACCEPT_SET as unknown as [ReasoningEffort, ...ReasoningEffort[]],
 );
 
-import type { AgentProfile } from "../../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { AgentProfileResolution } from "../../agent_profile_source.js";
-import { UnknownModelPresetError } from "../../model_catalog.js";
+import { UnknownModelPresetError } from "@soulstream/model-catalog";
 import { resolveDelegatedFolderId } from "../../session_folder_fallback.js";
 import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
-import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";

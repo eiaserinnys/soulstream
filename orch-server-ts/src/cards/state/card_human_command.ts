@@ -1,4 +1,5 @@
-import type { CardStatus, CardRow } from '../control_plane/card_types.js';
+import type { CardRow } from "../control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 import type { CardAssigneeInput } from '../control_plane/card_models.js';
 import type { CardQuestionKind, CardQuestionOption } from '@soulstream/wire-schema/card-questions';
 

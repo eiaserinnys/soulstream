@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   EnginePort,
@@ -10,7 +10,7 @@ import type {
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
-import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 

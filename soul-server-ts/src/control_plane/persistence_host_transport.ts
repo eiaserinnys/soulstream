@@ -9,8 +9,6 @@ export type HostClientConfig = { orch: OrchProxyConfig; logger: Logger };
 
 export const ORCH_HOST_REQUEST_TIMEOUT_MS = 10_000;
 
-export type { OrchErrorEnvelope } from "@soulstream/mcp-contract";
-
 export async function fetchOrchResponse(
   orch: Pick<OrchProxyConfig, "baseUrl" | "headers">,
   method: "GET" | "POST" | "PATCH",

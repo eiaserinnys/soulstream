@@ -3,11 +3,6 @@ import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { CardStatus } from "@soulstream/wire-schema";
 
-export type {
-  BoardItemType,
-  CardStatus,
-} from "@soulstream/wire-schema";
-
 import type {
   TaskStatus as SessionTaskStatus,
   TerminationReason,

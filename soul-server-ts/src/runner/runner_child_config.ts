@@ -2,11 +2,8 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
-import {
-  AgentBackendSchema,
-  AgentProfileSchema,
-  AgentsSdkMcpServerSchema,
-} from "../agent_registry.js";
+import { AgentBackendSchema } from "@soulstream/model-catalog";
+import { AgentProfileSchema, AgentsSdkMcpServerSchema } from "@soulstream/agent-profile-contract";
 import { assertRunnerJsonValue } from "./frame_protocol.js";
 import { RunnerIsolationChildConfigSchema } from "./runner_isolation_config.js";
 

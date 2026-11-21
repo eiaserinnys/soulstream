@@ -32,7 +32,7 @@ import {
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";
 import { registerTaskSession } from "./task_creation_registration.js";
 

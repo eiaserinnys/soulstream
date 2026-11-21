@@ -3,13 +3,13 @@ import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
 
-import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
-import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
+import { AgentRegistry } from "../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { UpstreamAdapter, isConnectionError, type ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { SessionDB } from "../src/db/session_db.js";
 import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
-import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
 import { ReleaseActivationState } from "../src/release/release_activation_state.js";
 import type { ReleaseManifestV1 } from "../src/release/release_manifest.js";
 import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";

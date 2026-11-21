@@ -1,7 +1,8 @@
 import pino from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import {
   ExecutionContextBuilder,
   type ContextBuilderConfig,

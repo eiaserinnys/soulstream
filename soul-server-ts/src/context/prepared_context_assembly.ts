@@ -1,4 +1,4 @@
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { InputMaterialPartV1, ContextItem } from "@soulstream/wire-schema";
 import type { Task } from "../task/task_models.js";
 import { SYSTEM_ABORT_NOTICE_KEY } from "../task/system_abort_notice.js";

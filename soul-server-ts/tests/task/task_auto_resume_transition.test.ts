@@ -5,15 +5,15 @@ import type { AgentRegistry } from "../../src/agent_registry.js";
 import type { ExecutionContextBuilder } from "../../src/context/context_builder.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { EnginePort, SupportsCodexDetachedCommandRuntime } from "../../src/engine/protocol.js";
-import { createInProcessTaskRunnerRuntime } from
-  "../../src/runner/task_runner_runtime.js";
-import { createTaskRunnerRuntime } from
-  "../../src/runner/task_runner_runtime.js";
+import {
+  createInProcessTaskRunnerRuntime,
+  createTaskRunnerRuntime,
+} from "../../src/runner/task_runner_runtime.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 

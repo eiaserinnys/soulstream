@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../soul-server-ts/src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../soul-server-ts/src/db/session_db.js";
 import type {
   RegisterSessionDeliveryParams,
@@ -17,12 +17,9 @@ import { AutoResumeTransition } from
   "../../soul-server-ts/src/task/task_auto_resume_transition.js";
 import { TaskDeliveryLedgerGate } from
   "../../soul-server-ts/src/task/task_delivery_ledger_gate.js";
-import { buildCanonicalDeliveryPayload } from
-  "../../soul-server-ts/src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload, buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { redeliverStoredDeliveryContent } from
   "../../soul-server-ts/src/task/delivery_row_intervention.js";
-import { buildDeliveryInputUuid } from
-  "../../soul-server-ts/src/task/delivery_identity.js";
 import { hydrateEvictedTaskFromSessionRow } from
   "../../soul-server-ts/src/task/task_evicted_hydration.js";
 import { TaskExecutor } from "../../soul-server-ts/src/task/task_executor.js";

@@ -10,7 +10,7 @@ import {
   buildModelPresetFallbackMetadataEntry,
 } from "@soulstream/wire-schema/model-preset-fallbacks";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { AntigravityEventMapper } from "../../src/engine/antigravity/events.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";

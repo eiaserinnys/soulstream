@@ -1,4 +1,4 @@
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 
 /**

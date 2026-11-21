@@ -1,4 +1,4 @@
-import type { AgentProfile } from '../agent_registry.js';
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { buildSystemCallerInfo } from '../caller_info.js';
 import type { EventPersistence } from '../db/event_persistence.js';
 import type { SSEEventPayload } from '../engine/protocol.js';

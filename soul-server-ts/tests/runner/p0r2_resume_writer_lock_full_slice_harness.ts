@@ -45,7 +45,8 @@ import {
 } from "../../../orch-server-ts/src/runtime/session_event_hub.js";
 import { registerSessionHistoryRoutes } from
   "../../../orch-server-ts/src/session/session_history_routes.js";
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { parseEnv } from "../../src/config.js";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import { SessionDB } from "../../src/db/session_db.js";

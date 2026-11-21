@@ -1,12 +1,11 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
-import { TaskExecutor } from "../../src/task/task_executor.js";
-import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
+import { TaskExecutor, type RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { centralSessionFactsOf } from "../../src/task/state/node_response_handling.js";
 import type { NodeResponseFacts } from "../../src/task/state/node_response_machine.js";

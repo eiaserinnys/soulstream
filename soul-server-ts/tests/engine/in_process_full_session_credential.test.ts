@@ -12,9 +12,8 @@ import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
-import { McpConfigService } from "../../src/mcp_config_service.js";
-import type { ResolvedMcpServer } from "../../src/mcp_config_service.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import { McpConfigService, type ResolvedMcpServer } from "../../src/mcp_config_service.js";
 import { createEngineFactory } from "../../src/runtime/engine_factory.js";
 import {
   FULL_SESSION_MCP_TOKEN_PREFIX,

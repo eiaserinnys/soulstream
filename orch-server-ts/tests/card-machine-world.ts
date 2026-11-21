@@ -1,19 +1,15 @@
-import {readCardBoardSessions} from "../src/session/card_board_connections.js";
-import {cardBoardEntries,dismissalMatches} from "../src/session/card_board_entries.js";
-import {readDismissedCards} from "../src/session/persistent_report_service.js";
+import { PersistentReportService } from "../src/session/persistent_report_service.js";
 import { readFile } from "node:fs/promises";
 import { expect } from "vitest";
-import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
-import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
-import { appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
+import { createPagePostgresHarness } from "./page/page_postgres_harness.js";
+import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService } from "../src/cards/card_execution_service.js";
 import { CardOrchestrationRepository } from "../src/cards/card_orchestration_repository.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
-import { PersistentReportService } from "../src/session/persistent_report_service.js";
-import type { CardStatus } from "../src/cards/control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 
 const human={actorKind:"user" as const,actorSessionId:null,actorUserId:"director"};
 const execution={registrationId:"machine-registration",executionCommandId:"machine-command"};

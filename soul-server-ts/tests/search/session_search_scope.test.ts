@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { searchSessionEvents } from "../../src/search/session_search.js";
+import { searchSessionEvents } from "@soulstream/search-contract";
 
 describe("searchSessionEvents derived-text scope", () => {
   it("forwards cancellation through one combined host search request", async () => {

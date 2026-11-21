@@ -1,4 +1,4 @@
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { formatContextItemsWithMaterial } from "../context/prompt_assembler.js";
 import {

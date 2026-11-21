@@ -17,7 +17,7 @@
  * 세션의 `agent_id`는 바뀌지 않으므로, 찾은 sessionId → agentId 대응은 프로세스 안에
  * 기억한다. 프로필 내용은 매번 registry에서 꺼내 프로필 수정이 곧바로 반영되게 한다.
  */
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { isSoulstreamMcpServerName } from "../engine/soulstream_internal_mcp.js";
 import type { McpRuntime } from "./runtime.js";
 

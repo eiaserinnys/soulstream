@@ -17,7 +17,8 @@ import {
   verifyFullSessionMcpToken,
   verifyRestrictedMcpToken,
 } from "../../src/security/restricted_mcp_auth.js";
-import { resolveMcpPrincipal, type McpAuthConfig } from "../../src/mcp/auth.js";
+import { resolveMcpPrincipal } from "../../src/mcp/auth.js";
+import type { McpAuthConfig } from "@soulstream/mcp-contract";
 
 const KEY = "test-bearer-key-0001";
 const SESSION_A = "11111111-1111-4111-8111-111111111111";

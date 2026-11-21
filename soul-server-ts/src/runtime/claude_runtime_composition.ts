@@ -9,7 +9,8 @@ import { ClaudeCliCredentialRenewer } from "../claude_accounts/credential_renewa
 import type { AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
-import type { ModelCatalog, ModelCatalogConfig } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { ClaudeSdkClient } from "../engine/claude_adapter.js";
 import { ClaudeDeliveryTranscriptReceiptReader } from
   "../engine/claude_delivery_transcript_receipt.js";

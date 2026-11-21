@@ -9,7 +9,7 @@ import {
 import type { ProviderLimits } from "../auth/provider_limits.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import { DEFAULT_CONFIG, GENERATION_COST_SEEDS, firstCallCacheEstimate } from "./persistent_decision_config.js";
-import { findModelRow } from "@soulstream/model-catalog";
+import { findModelRow, UnknownModelPresetError } from "@soulstream/model-catalog";
 import { extractPersistentGeneration } from "./task_metadata.js";
 import type { GenerationCostProfile } from "./persistent_generation_cost.js";
 import type {
@@ -17,7 +17,7 @@ import type {
   DecisionInput,
   DecisionTrigger,
 } from "./persistent_decision.js";
-import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionEventRow } from "@soulstream/mcp-contract";
 import { asRecord } from "../engine/claude_sdk_helpers.js";

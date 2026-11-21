@@ -7,10 +7,8 @@ import { withDeadline } from "../runtime/deadline.js";
 import type { AddInterventionParams } from "./task_intervention_route.js";
 import {
   buildDeterministicDeliveryIdentity,
-} from "./delivery_identity.js";
-import {
   buildCanonicalDeliveryPayload,
-} from "./delivery_payload.js";
+} from "@soulstream/wire-schema/delivery";
 import {
   deliveryRowToInterventionParams,
   requiredTarget,

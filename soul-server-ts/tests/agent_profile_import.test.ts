@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AgentProfileSchema } from "../src/agent_registry.js";
+import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
 import {
   buildAgentProfileImportPlan,
   assertAgentProfileImportApproval,

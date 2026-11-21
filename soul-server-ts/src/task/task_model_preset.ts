@@ -1,9 +1,8 @@
-import type { AgentProfile } from "../agent_registry.js";
-import {
-  UnknownModelPresetError,
-  type ModelCatalog,
-  type ModelPreset,
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
+import type {
+  ModelCatalog,
 } from "../model_catalog.js";
+import { UnknownModelPresetError, type ModelPreset } from "@soulstream/model-catalog";
 
 import type { CreateTaskParams } from "./task_creation.js";
 import type { Task } from "./task_models.js";

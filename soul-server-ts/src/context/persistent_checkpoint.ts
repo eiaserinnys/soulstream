@@ -7,8 +7,6 @@ import {
 import type { ContextItem } from "@soulstream/wire-schema";
 import { estimateClaudeTextTokens, truncateClaudeTextToEstimatedTokens } from "../task/claude_context_recovery.js";
 
-export type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SupervisedCardSnapshot };
-
 export interface PersistentCheckpointBudget {
   totalTokens: number;
   stateTokens: number;

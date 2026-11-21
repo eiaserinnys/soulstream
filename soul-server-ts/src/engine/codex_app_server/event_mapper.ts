@@ -14,10 +14,10 @@ import {
   nowEpochSec,
   rawContext,
   timestampFromMs,
+  type CodexTurnTokenUsage,
 } from "./event_mapper_helpers.js";
-import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
 import { codexTurnCostUsd } from "../list_price.js";
-import type { ModelCatalogConfig } from "../../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { mapItemCompleted, mapItemStarted } from "./item_mapper.js";
 import { firstMeaningfulText } from "./text_sanitizer.js";
 import { isUsageLimitTurnError } from "./usage_limit.js";

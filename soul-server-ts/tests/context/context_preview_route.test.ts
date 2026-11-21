@@ -2,7 +2,8 @@ import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerContextPreviewRoute } from "../../src/context/context_preview_route.js";
-import { AgentProfileSchema, AgentRegistry } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import { AgentProfileSchema } from "@soulstream/agent-profile-contract";
 
 const auth = {
   authBearerToken: "",

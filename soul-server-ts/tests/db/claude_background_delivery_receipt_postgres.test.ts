@@ -1,15 +1,13 @@
 import { spawnSync } from "node:child_process";
 
-import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import type { SqlClient } from "../../src/db/session_db.js";
-import { buildDeterministicDeliveryIdentity } from
-  "../../src/task/delivery_identity.js";
-import { buildCanonicalDeliveryPayload } from
-  "../../src/task/delivery_payload.js";
+import {
+  buildDeterministicDeliveryIdentity,
+  buildCanonicalDeliveryPayload,
+} from "@soulstream/wire-schema/delivery";
 import { CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE } from
   "../../src/task/claude_runtime_task_followup.js";
 import { TaskDeliveryLedgerGate } from

@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { attachClaudeBackgroundDeliveryMetadata } from "../../src/engine/claude_background_delivery_metadata.js";
 import { attachClaudeBackgroundProvenance } from "../../src/engine/claude_background_provenance.js";
@@ -15,7 +15,7 @@ import {
   ClaudeRuntimeTaskFollowupController,
   type ClaudeRuntimeTaskFollowupPort,
 } from "../../src/task/claude_runtime_task_followup.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";

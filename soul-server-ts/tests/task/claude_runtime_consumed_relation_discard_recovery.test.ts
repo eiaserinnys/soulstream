@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
 import type { EngineExecuteParams } from "../../src/engine/protocol.js";
@@ -12,7 +12,7 @@ import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js"
 import { TaskDeliveryLedgerGate } from
   "../../src/task/task_delivery_ledger_gate.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 

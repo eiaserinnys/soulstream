@@ -1,19 +1,17 @@
 import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import { readSessionConversation } from "../session/session_conversation_projection.js";
-import type {
-  SessionDeliveryFailureRecord,
-  SessionHistoryEventRecord,
-  SessionHistoryProvider,
-  SessionHistoryRawEvent,
-  SessionHistoryReplayRange,
-  RequestedTimelineDebugKind,
-  RequestedTimelineEventType,
-} from "../session/session_history_service.js";
 import {
+  type SessionDeliveryFailureRecord,
+  type SessionHistoryEventRecord,
+  type SessionHistoryProvider,
+  type SessionHistoryRawEvent,
+  type SessionHistoryReplayRange,
+  type RequestedTimelineDebugKind,
+  type RequestedTimelineEventType,
   DEFAULT_TIMELINE_DEBUG_KINDS,
-  SESSION_TIMELINE_EVENT_TYPES,
 } from "../session/session_history_service.js";
+import { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 import { SessionStoryReadService } from "../session/session_story_read_service.js";
 import { SessionTurnSummaryReadService } from
   "../session/session_turn_summary_read_service.js";

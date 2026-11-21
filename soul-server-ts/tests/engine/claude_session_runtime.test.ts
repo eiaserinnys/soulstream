@@ -5,7 +5,7 @@ import {
   type ClaudeInterruptReceipt,
   type ClaudePersistentQuery,
 } from "../../src/engine/claude_session_runtime.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 
 function makeSubject(receipt: ClaudeInterruptReceipt = { still_queued: [] }) {
   const query: ClaudePersistentQuery = {

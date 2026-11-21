@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildCanonicalDeliveryPayload,
   readCanonicalDeliveryPayload,
 } from "../../src/task/delivery_payload.js";
+import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 
 describe("canonical delivery payload", () => {
   it.each([

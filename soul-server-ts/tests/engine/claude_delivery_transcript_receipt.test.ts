@@ -11,7 +11,7 @@ import type {
 import type {
   SessionRow,
 } from "../../src/db/session_db_types.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 
 function message(
   type: "user" | "assistant",

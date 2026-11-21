@@ -18,8 +18,8 @@ import {
   ModelCatalog,
   assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
-  parseModelCatalogGroups,
 } from "./model_catalog.js";
+import { parseModelCatalogGroups } from "@soulstream/model-catalog";
 import {
   openModelCatalogFile,
   type ModelCatalogFileStore,

@@ -15,7 +15,8 @@ import {
   type PersistentReportEntry, type PersistentReportIssue, type PersistentReportReplyInput, type PersistentReportResult,
   type ReportTimelineLine, type ReportTimelineQuestionClosed, type ReportTimelineStatus,
 } from "@soulstream/wire-schema/persistent-report";
-import { isCardOffBoard, type CardStatus, type SqlClient, type RepositorySql } from "../cards/control_plane/card_types.js";
+import { isCardOffBoard, type SqlClient, type RepositorySql } from "../cards/control_plane/card_types.js";
+import type { CardStatus } from "@soulstream/wire-schema";
 import type { AppendReportTimeline } from "./report_timeline_publisher.js";
 
 export type PersistentReportUpdate = { agent_session_id: string; node_id: string | null; persistent_report: PersistentReportEntry[] };

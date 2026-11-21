@@ -8,7 +8,7 @@ import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import { buildSystemAbortNoticeItem } from "../../src/task/system_abort_notice.js";
 import { resolveTurnLoopTransition } from "../../src/task/task_turn_loop_transition.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";

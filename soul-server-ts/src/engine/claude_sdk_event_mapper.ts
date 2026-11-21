@@ -31,7 +31,7 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
-import type { ModelCatalogConfig } from "../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 
 /** Latest catalogue snapshot, read once per terminal result message. */
 export type ModelCatalogGetter = () => ModelCatalogConfig;

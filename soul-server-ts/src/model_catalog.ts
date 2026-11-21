@@ -1,13 +1,11 @@
 import {
-  ModelCatalogSchema,
-  parseModelCatalogYaml,
   selectModelPresets,
   UnknownModelPresetError,
   type ModelCatalogConfig,
   type ModelPreset,
+  type ReasoningEffort,
 } from "@soulstream/model-catalog";
 import type { ModelCatalogFileStore } from "@soulstream/model-catalog/file-loader";
-import type { ReasoningEffort } from "@soulstream/model-catalog";
 
 import {
   antigravityTransportEfforts,
@@ -18,21 +16,6 @@ import {
   ANTHROPIC_API_KEY_ENV,
   isModelPresetEnvResolvable,
 } from "./model_preset_env.js";
-
-export {
-  ModelCatalogSchema,
-  ModelPresetSchema,
-  parseModelCatalogGroups,
-  parseModelCatalogYaml,
-  resolveModelPreset,
-  UnknownModelPresetError,
-} from "@soulstream/model-catalog";
-export type {
-  AgentBackend,
-  ModelCatalogConfig,
-  ModelPreset,
-  ReasoningEffort,
-} from "@soulstream/model-catalog";
 
 /**
  * A non-empty list of efforts, spelled the way the wire contract states it

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
-import type { McpAuthConfig, McpRestrictedAuthConfig } from "./mcp/auth.js";
+import type { McpRestrictedAuthConfig } from "./mcp/auth.js";
+import type { McpAuthConfig } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";

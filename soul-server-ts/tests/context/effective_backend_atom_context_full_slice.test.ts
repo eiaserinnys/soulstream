@@ -3,7 +3,7 @@ import { type as getOsType } from "node:os";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { AtomContextSpec, AtomFetchConfig } from "../../src/context/atom_context.js";
 import { buildContextFilterParameters } from "../../src/context/context_builder_helpers.js";
 import { compileContexts } from "../../src/context/compiler/index.js";

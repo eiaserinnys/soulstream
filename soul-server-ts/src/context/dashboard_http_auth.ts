@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 
-import { constantTimeStringEqual } from "../security/constant_time_string_equal.js";
+import { constantTimeStringEqual } from "@soulstream/mcp-contract";
 
 export const DASHBOARD_AUTH_COOKIE_NAME = "soul_dashboard_auth";
 

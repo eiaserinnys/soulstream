@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildPreview,
-  resolveSearchEventTypes,
-} from "../../src/search/session_search.js";
+import { buildPreview, resolveSearchEventTypes } from "@soulstream/search-contract";
 
 /**
  * A well-formed JS string only contains surrogate code units as matched

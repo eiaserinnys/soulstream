@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDeliveryInputDedupeKey,
+} from "../../src/task/delivery_identity.js";
+import {
   buildDeliveryInputUuid,
   buildDeterministicDeliveryIdentity,
   hashDeliveryPayload,
-} from "../../src/task/delivery_identity.js";
+} from "@soulstream/wire-schema/delivery";
 
 describe("delivery identity", () => {
   it("keeps one semantic relation stable when a delivery target is replaced", () => {

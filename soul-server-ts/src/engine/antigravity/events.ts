@@ -1,7 +1,7 @@
 import type { SSEEventPayload } from "../protocol.js";
 import { makeContextUsagePayload } from "../context_usage.js";
 import { antigravityTurnCostUsd } from "../list_price.js";
-import type { ModelCatalogConfig } from "../../model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { ANTIGRAVITY_QUOTA_ERROR_CODE } from "../usage_limit_stop.js";
 import { splitAntigravityGatewayToolName } from "./mcp_gateway.js";
 

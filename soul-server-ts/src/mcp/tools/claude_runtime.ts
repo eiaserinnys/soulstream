@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { errorResult, jsonResult } from "../result.js";
+import { errorResult, jsonResult } from "@soulstream/mcp-contract";
 import type { McpRuntime } from "../runtime.js";
 
 export function registerClaudeRuntimeTools(

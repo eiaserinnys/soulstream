@@ -2,9 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { AGENT_PROFILE_PORTRAIT_MAX_BYTES } from "@soulstream/agent-profile-contract";
+import { AGENT_PROFILE_PORTRAIT_MAX_BYTES, type AgentProfile } from "@soulstream/agent-profile-contract";
 
-import type { AgentProfile } from "./agent_registry.js";
 import { RemoteAgentProfileSchema, type RemoteAgentProfile } from "./agent_profile_source.js";
 
 export type ImportPortrait = {

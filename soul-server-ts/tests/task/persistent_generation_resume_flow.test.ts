@@ -1,11 +1,13 @@
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile, AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
 import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
-import type { ModelCatalog, ModelCatalogConfig } from "../../src/model_catalog.js";
+import type { ModelCatalog } from "../../src/model_catalog.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import type { TaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutor, type RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";

@@ -7,8 +7,6 @@ import {
   type ReasoningEffort,
 } from "@soulstream/model-catalog";
 
-export type { ReasoningEffort };
-
 /**
  * Accept-set, mirroring packages/wire-schema CreateSession.reasoningEffort and
  * soul-server-ts/src/engine/protocol.ts. Whether a value is usable for a given

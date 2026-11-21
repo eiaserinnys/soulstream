@@ -2,12 +2,7 @@ import {
   findModelRow,
   type ModelCatalogConfig,
 } from "@soulstream/model-catalog";
-import {
-  normalizePricedModelId,
-  priceInferenceUsage,
-} from "@soulstream/model-catalog/inference-pricing";
-
-export { normalizePricedModelId, priceInferenceUsage };
+import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

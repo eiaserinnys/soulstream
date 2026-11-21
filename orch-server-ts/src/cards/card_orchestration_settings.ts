@@ -3,7 +3,6 @@ import {
   type OrchestrationSettings,
 } from "@soulstream/wire-schema/card-orchestration";
 import type { SqlClient } from "./control_plane/card_types.js";
-export type { OrchestrationSettings };
 type Row = {
   value: unknown;
   version: unknown;

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { buildInternalMcpServer } from "../../src/server.js";
-import type { AgentProfile } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { SessionExecutionChain } from "../../src/db/session_db_types.js";

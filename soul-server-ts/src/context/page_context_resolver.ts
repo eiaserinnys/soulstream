@@ -6,7 +6,7 @@ import {
 import type { BlockDto } from "@soulstream/page-model";
 import type { ContextItem } from "@soulstream/wire-schema";
 
-import type { AgentProfile } from "../agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import type { Task } from "../task/task_models.js";
 import type { AtomFetchConfig } from "./atom_context.js";
 import type { ContextManifest } from "./compiler/index.js";

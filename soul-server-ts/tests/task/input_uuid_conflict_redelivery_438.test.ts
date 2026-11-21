@@ -2,7 +2,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "@soulstream/agent-profile-contract";
 import { ExecutionContextBuilder } from "../../src/context/context_builder.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SessionDeliveryRow } from "@soulstream/wire-schema/session-delivery";
@@ -11,7 +12,7 @@ import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_cli
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { deliveryRowToInterventionParams, redeliverStoredDeliveryContent } from "../../src/task/delivery_row_intervention.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import { buildDeliveryInputUuid } from "@soulstream/wire-schema/delivery";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import type { Task } from "../../src/task/task_models.js";

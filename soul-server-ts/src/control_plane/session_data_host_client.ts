@@ -6,13 +6,6 @@ import type {
   SessionRow,
   UpstreamSessionDumpRow,
 } from "../db/session_db_types.js";
-import type {
-  SessionDigestSearchMatch,
-  SessionSearchMetadata,
-  SessionStoryTurnSummary,
-  SessionStoryView,
-  SessionTurnSummaryCounts,
-} from "../db/session_story_types.js";
 import {
   type HostClientConfig,
   PersistenceHostRequestError,
@@ -34,6 +27,11 @@ import type {
   SessionHistorySearchParams,
   SessionHistorySearchResult,
   SessionReadPeriod,
+  SessionDigestSearchMatch,
+  SessionSearchMetadata,
+  SessionStoryTurnSummary,
+  SessionStoryView,
+  SessionTurnSummaryCounts,
 } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
