@@ -39,7 +39,7 @@ import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
 } from "./session_event_hub.js";
-import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_command_routes.js";
+import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_create_route_response.js";
 import {
   ModelPresetAvailabilityError,
   type StaticModelPreset,

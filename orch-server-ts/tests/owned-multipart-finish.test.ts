@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import { registerMultipartAttachmentRoutes, type MultipartAttachmentOptions } from "../src/attachments/multipart_attachment_routes.js";
-import { AttachmentTransportConnectionError, AttachmentTransportTimeoutError } from "../src/attachments/attachment_routes.js";
+import { AttachmentTransportConnectionError, AttachmentTransportTimeoutError } from "../src/attachments/attachment_transport_errors.js";
 import { issueAttachmentTicket } from "../src/attachments/attachment_upload_ticket.js";
 import { AttachmentUploadHttpError, type AttachmentUploadOptions } from "../src/attachments/attachment_upload_http.js";
 import type {

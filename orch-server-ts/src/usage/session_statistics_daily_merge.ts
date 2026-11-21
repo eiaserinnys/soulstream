@@ -7,7 +7,7 @@ import { emptySessionStatisticsMetricState, finalizeSessionStatisticsMetrics, se
 import { addDecimal, decimalString, parseDecimal } from "./session_statistics_decimal.js";
 import { buildSessionStatisticsMaterial } from "./session_statistics_material.js";
 import { finalizeSessionStatisticsOptions } from "./session_statistics_options.js";
-import { visibleProject } from "./session_statistics_repository.js";
+import { visibleProject } from "./session_statistics_visible_project.js";
 import { buildDay, buildOverview, finalizeSessionStatisticsAggregate, type SessionStatisticsView } from "./session_statistics_service.js";
 import { dailySelectorKey, type DailyAggregateState, type DailyMaterial, type DailySessionState, type DailyGroupState, type DailyOverviewAggregateState,
   type SessionStatisticsDailyState } from "./session_statistics_daily_state.js";

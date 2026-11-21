@@ -5,11 +5,9 @@ import {
   type SkillCatalogEntry,
 } from "./skill_catalog.js";
 import type { LinkBlock, LinkFields } from "./link_blocks.js";
-import {
-  JEV_TIMEOUT_MARGIN_MS,
-  type CompileSkillInput,
-  type SkillCompileWarning,
-} from "./skill_compile.js";
+import type { CompileSkillInput, SkillCompileWarning } from "./skill_compile.js";
+
+export const JEV_TIMEOUT_MARGIN_MS = 15_000;
 
 export interface ResolvedIncludeTarget {
   skill?: SkillCatalogEntry;

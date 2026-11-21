@@ -5,10 +5,10 @@ import {
   executionIsSuccessorTurn,
   registrationCommandIdFromLifecycle,
 } from "../task/execution_registration.js";
+import { isTerminalRunnerExecutionState } from "./runner_lifecycle_record.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
-  isTerminalRunnerExecutionState,
   readRunnerRegistrationSummary,
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,

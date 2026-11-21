@@ -83,15 +83,6 @@ export interface RunnerDurableRetentionProbe {
 
 export { probeRunnerDurableRetention } from "./runner_durable_retention_probe.js";
 
-export function isTerminalRunnerExecutionState(
-  state: RunnerLifecycleRecord["execution_state"],
-): boolean {
-  return state === "completed"
-    || state === "failed"
-    || state === "reaped"
-    || state === "closed";
-}
-
 export interface LiveRunnerSessionIdsOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;

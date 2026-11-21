@@ -19,6 +19,15 @@ export interface RunnerInFlightTool {
   started_at: string;
 }
 
+export function isTerminalRunnerExecutionState(
+  state: RunnerLifecycleRecord["execution_state"],
+): boolean {
+  return state === "completed"
+    || state === "failed"
+    || state === "reaped"
+    || state === "closed";
+}
+
 export function readRunnerLifecycleRecord(
   database: DatabaseSync,
 ): RunnerLifecycleRecord | null {

@@ -8,7 +8,7 @@ import type {
 import {
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
-} from "../src/attachments/attachment_routes.js";
+} from "../src/attachments/attachment_transport_errors.js";
 import { finishLegacyUpload } from "../src/attachments/attachment_upload_legacy.js";
 
 const committed: CommitResult = {

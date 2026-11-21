@@ -18,6 +18,7 @@ import type {
   SessionStatisticsRepositoryPort,
   SessionStatisticsScopeSession,
 } from "./session_statistics_types.js";
+import { resolveVisibleProject } from "./session_statistics_visible_project.js";
 
 type SessionSqlRow = {
   session_id: string;
@@ -193,32 +194,6 @@ async function readAuthorizedSessions(
       projectLabel: project?.label ?? "미분류",
     };
   });
-}
-
-export function visibleProject(
-  visibleFolders: SessionStatisticsReadRequest["visibleFolders"],
-  sourceFolderId: string | null,
-): { id: string; label: string } | null {
-  if (sourceFolderId === null) return null;
-  return resolveVisibleProject(sourceFolderId, new Map(visibleFolders.map((folder) => [folder.id, folder])));
-}
-
-function resolveVisibleProject(
-  sourceFolderId: string,
-  visibleFolderById: ReadonlyMap<string, SessionStatisticsReadRequest["visibleFolders"][number]>,
-): { id: string; label: string } | null {
-  let current = visibleFolderById.get(sourceFolderId);
-  if (current === undefined) return null;
-  while (typeof current.parentFolderId === "string") {
-    const parent = visibleFolderById.get(current.parentFolderId);
-    if (parent === undefined) break;
-    current = parent;
-  }
-  const label = current.name;
-  if (typeof label !== "string") {
-    throw new Error("session statistics visible project name is invalid");
-  }
-  return { id: current.id, label };
 }
 
 async function readProjectionState(sql: FolderContentQuerySql): Promise<ProjectionState> {

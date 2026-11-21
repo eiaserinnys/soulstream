@@ -75,15 +75,6 @@ export const sessionCommandRouteAuthRequirements = {
   "POST /api/sessions/{session_id}/respond": true,
 } as const;
 
-/**
- * Create-path failures that are the caller's input problem, not the node being
- * unavailable. Anything absent from this table keeps the historical 503, so
- * timeouts, offline nodes and unknown internal failures retain their meaning.
- */
-export const CREATE_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
-  UNSUPPORTED_REASONING_EFFORT: 422,
-};
-
 function sendCreateAckError(
   reply: FastifyReply,
   response: { code?: unknown; message?: unknown },

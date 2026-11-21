@@ -11,9 +11,9 @@ import type {
 import { normalizeAttachmentLegacyPath } from "./attachment_read_service.js";
 import {
   AttachmentRouteError,
-  AttachmentTransportConnectionError,
   MAX_ATTACHMENT_SIZE_BYTES,
 } from "./attachment_routes.js";
+import { AttachmentTransportConnectionError } from "./attachment_transport_errors.js";
 
 export type AttachmentSourceReadFile = {
   readonly content: Uint8Array;

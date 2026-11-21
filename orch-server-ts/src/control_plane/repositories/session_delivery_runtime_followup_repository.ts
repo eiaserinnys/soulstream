@@ -15,7 +15,7 @@ import { discardSessionDeliveryNotificationProjections } from
 import {
   insertSessionDeliveryRow,
   markDeliveryIdentityConflict,
-} from "./session_delivery_repository.js";
+} from "./session_delivery_identity_repository.js";
 
 export interface RuntimeFollowupCandidate {
   followupKey: string;

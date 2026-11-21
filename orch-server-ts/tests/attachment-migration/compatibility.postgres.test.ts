@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFolderContentSqlAdapter } from "../../src/board/folder_content_sql.js";
 import { projectCardAttachmentRows } from "../../src/cards/card_attachment_projection.js";
 import {
-  AttachmentTransportConnectionError,
   registerAttachmentRoutes,
   type AttachmentRouteOptions,
 } from "../../src/attachments/attachment_routes.js";
+import { AttachmentTransportConnectionError } from "../../src/attachments/attachment_transport_errors.js";
 import { createLiveAttachmentReadOptions } from "../../src/runtime/live_attachment_read_provider.js";
 import { createLiveAttachmentReadRepository } from "../../src/runtime/live_attachment_read_repository.js";
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";

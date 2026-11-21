@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   compileSkill,
   IncludeResolutionError,
-  JEV_TIMEOUT_MARGIN_MS,
   type SkillScoreInput,
 } from "../src/skills/skill_compile.js";
+import { JEV_TIMEOUT_MARGIN_MS } from "../src/skills/skill_pick_planner.js";
 import type { DomainCatalogEntry, LoadedAtomBody, SkillCatalogEntry } from "../src/skills/skill_catalog.js";
 
 function body(nodeId: string, markdown: string, version = 1, childCount = 0): LoadedAtomBody {
