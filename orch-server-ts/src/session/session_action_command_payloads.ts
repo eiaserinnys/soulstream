@@ -2,8 +2,7 @@ import type { RequestResponseNodeCommandPayload } from "../node/pending_commands
 import type { ControlCommandType } from "@soulstream/wire-schema";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
-
-export type JsonObject = Record<string, unknown>;
+import { isJsonObject, parseObjectBody, type JsonObject } from "../http/route_validation.js";
 
 export type SessionParams = {
   session_id: string;
@@ -77,18 +76,6 @@ export type RealtimeResolveToolApprovalNodeCommandPayload =
 export type ParseResult<TValue> =
   | { ok: true; value: TValue }
   | { ok: false; message: string };
-
-export function parseObjectBody(body: unknown): JsonObject | undefined {
-  return isJsonObject(body) ? body : undefined;
-}
-
-export function parseOptionalObjectBody(body: unknown): ParseResult<JsonObject> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  const parsed = parseObjectBody(body);
-  return parsed === undefined
-    ? { ok: false, message: "Request body must be a JSON object" }
-    : { ok: true, value: parsed };
-}
 
 export function intervenePayload(
   agentSessionId: string,
@@ -199,7 +186,7 @@ export function toolApprovalPayload(
   body: unknown,
   type: "approve_tool" | "reject_tool",
 ): ParseResult<ToolApprovalNodeCommandPayload> {
-  const parsedBody = parseOptionalObjectBody(body);
+  const parsedBody = parseObjectBody(body, { allowEmpty: true });
   if (!parsedBody.ok) return parsedBody;
   const payload: ToolApprovalNodeCommandPayload = {
     type,
@@ -285,14 +272,6 @@ export function realtimeResolveToolApprovalPayload(
   if (source.value !== undefined) payload.source = source.value;
   if (callId !== undefined) payload.callId = callId;
   return { ok: true, value: payload };
-}
-
-export function isJsonObject(value: unknown): value is JsonObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -438,7 +417,7 @@ function optionalObjectArrayAlias(
     : { ok: false, message: `${field} must be an array of JSON objects` };
 }
 
-function firstAliasValue(
+export function firstAliasValue(
   body: JsonObject,
   aliases: readonly string[],
 ): [string, unknown] {

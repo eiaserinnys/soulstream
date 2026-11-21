@@ -1,19 +1,31 @@
 import type { FastifyReply } from "fastify";
 
+export type JsonObject = Record<string, unknown>;
+
 export type Validation<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; statusCode?: number };
 
+export function isJsonObject(value: unknown): value is JsonObject {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+export function jsonObjectOrUndefined(value: unknown): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined;
+}
+
 export function parseObjectBody(
   body: unknown,
   options: { allowEmpty?: boolean } = {},
-): Validation<Record<string, unknown>> {
+): Validation<JsonObject> {
   if (options.allowEmpty && (body === undefined || body === null)) {
     return { ok: true, value: {} };
   }
-  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
+  if (isJsonObject(body)) return { ok: true, value: body };
   return { ok: false, message: "Request body must be a JSON object" };
 }
 

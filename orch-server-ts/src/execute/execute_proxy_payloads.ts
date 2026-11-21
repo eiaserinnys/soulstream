@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import { isDeliveryIntent, type DeliveryMetadataWireFields } from "@soulstream/wire-schema/session-delivery";
+import { isJsonObject, type JsonObject } from "../http/route_validation.js";
 import { parseAttachmentIds } from "../session/session_action_command_payloads.js";
 import {
   MODEL_REASONING_EFFORTS,
@@ -82,13 +83,11 @@ const claudePermissionModes = new Set<ClaudePermissionMode>([
   "auto",
 ]);
 
-type JsonObject = Record<string, unknown>;
-
 export function parseExecuteProxyPayload(
   body: unknown,
   request: FastifyRequest,
 ): ExecuteProxyPayloadValidation {
-  const object = parseObjectBody(body);
+  const object = parseExecuteObjectBody(body);
   if (!object.ok) return object;
 
   const prompt = optionalStringWithDefault(object.value, "prompt", "");
@@ -283,7 +282,7 @@ function buildExecuteProxyCallerInfo(request: FastifyRequest): ExecuteProxyCalle
   };
 }
 
-function parseObjectBody(
+function parseExecuteObjectBody(
   body: unknown,
 ): { ok: true; value: JsonObject } | { ok: false; statusCode: number; detail: string } {
   if (isJsonObject(body)) return { ok: true, value: body };
@@ -412,10 +411,6 @@ function optionalClaudePermissionModeAlias(
     return { ok: true, value: value.value as ClaudePermissionMode };
   }
   return { ok: false, statusCode: 422, detail: `${firstKey} must be a valid permission mode` };
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function headerValue(value: string | string[] | undefined): string | null {

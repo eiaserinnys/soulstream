@@ -6,12 +6,11 @@ import type {
   BoardItemRecord,
   BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
+import { isJsonObject, type JsonObject } from "../http/route_validation.js";
 import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
-
-type JsonObject = Record<string, unknown>;
 
 export type SessionCallerInfoResolver = (
   request: FastifyRequest | ServiceCaller,
@@ -160,10 +159,6 @@ function callerInfoEmail(callerInfo: JsonObject | null | undefined): string | nu
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeLifecycleError(error: unknown): SessionCreateLifecycleError {

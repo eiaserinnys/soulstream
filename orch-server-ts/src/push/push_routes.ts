@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { isJsonObject } from "../http/route_validation.js";
+
 export type PushJwtUser = {
   email?: string | null;
   [key: string]: unknown;
@@ -94,8 +96,4 @@ function parseRegisterPayload(
       deviceId: body.deviceId,
     },
   };
-}
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

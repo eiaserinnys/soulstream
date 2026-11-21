@@ -1,11 +1,11 @@
 import type { RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import type { ControlCommandType } from "@soulstream/wire-schema";
-
-export type JsonObject = Record<string, unknown>;
-
-export type SessionParams = {
-  session_id: string;
-};
+import { parseObjectBody } from "../http/route_validation.js";
+import {
+  firstAliasValue,
+  type ParseResult,
+  type SessionParams,
+} from "./session_action_command_payloads.js";
 
 export type TaskParams = SessionParams & {
   task_id: string;
@@ -54,10 +54,6 @@ export type SessionBackgroundSchedulePayload =
   | ClaudeRuntimeListSchedulesPayload
   | ClaudeRuntimeDeleteSchedulePayload;
 
-export type ParseResult<TValue> =
-  | { ok: true; value: TValue }
-  | { ok: false; message: string };
-
 export function listTasksPayload(
   agentSessionId: string,
 ): ClaudeRuntimeListTasksPayload {
@@ -87,7 +83,7 @@ export function backgroundTasksPayload(
   agentSessionId: string,
   body: unknown,
 ): ParseResult<ClaudeRuntimeBackgroundTasksPayload> {
-  const parsed = parseOptionalObjectBody(body);
+  const parsed = parseObjectBody(body, { allowEmpty: true });
   if (!parsed.ok) return parsed;
 
   const [field, toolUseId] = firstAliasValue(parsed.value, [
@@ -123,29 +119,4 @@ export function deleteSchedulePayload(
     agentSessionId: params.session_id,
     scheduleId: params.schedule_id,
   };
-}
-
-function parseOptionalObjectBody(body: unknown): ParseResult<JsonObject> {
-  if (body === undefined || body === null) return { ok: true, value: {} };
-  return isJsonObject(body)
-    ? { ok: true, value: body }
-    : { ok: false, message: "Request body must be a JSON object" };
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
-}
-
-function firstAliasValue(
-  body: JsonObject,
-  aliases: readonly string[],
-): [string, unknown] {
-  for (const alias of aliases) {
-    if (alias in body) return [alias, body[alias]];
-  }
-  return [aliases[0] ?? "field", undefined];
 }

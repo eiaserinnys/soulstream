@@ -6,7 +6,7 @@ import { SessionCreateNodeSelectionError } from "./session_create_node_selector.
 import { CREATE_ACK_ERROR_HTTP_STATUS } from "./session_command_routes.js";
 
 export type SessionCreateRouteResponse = { status: number; body: Record<string, unknown> };
-export function badRequest(message: string): SessionCreateRouteResponse {
+export function sessionCreateBadRequest(message: string): SessionCreateRouteResponse {
   return { status: 400, body: {
     error: {
       code: "INVALID_REQUEST",

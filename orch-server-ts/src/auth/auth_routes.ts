@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { parseObjectBody } from "../http/route_validation.js";
 import { extractBearerToken } from "./service_bearer.js";
 
 export const AUTH_COOKIE_NAME = "soul_dashboard_auth";
@@ -136,7 +137,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
 
   app.post("/api/auth/google/native", async (request, reply) => {
     const body = parseObjectBody(request.body);
-    if (!body.ok) return routeError(reply, 422, body.detail);
+    if (!body.ok) return routeError(reply, 422, body.message);
     const idToken = body.value.id_token;
     if (typeof idToken !== "string") return routeError(reply, 422, "id_token is required");
 
@@ -262,7 +263,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       return routeError(reply, 500, "JWT_SECRET not configured");
     }
     const body = parseObjectBody(request.body);
-    if (!body.ok) return routeError(reply, 400, body.detail);
+    if (!body.ok) return routeError(reply, 400, body.message);
     const email = normalizeOptionalString(body.value.email);
     if (!email) return routeError(reply, 400, "Email is required");
 
@@ -381,15 +382,6 @@ function redirectWithCookies(
   cookies: readonly string[],
 ): FastifyReply {
   return reply.header("set-cookie", [...cookies]).redirect(location);
-}
-
-function parseObjectBody(
-  body: unknown,
-): { ok: true; value: Record<string, unknown> } | { ok: false; detail: string } {
-  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
-    return { ok: true, value: body as Record<string, unknown> };
-  }
-  return { ok: false, detail: "Request body must be a JSON object" };
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {

@@ -2,6 +2,7 @@ import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "./registry.js";
+import { jsonObjectOrUndefined } from "../http/route_validation.js";
 import type { AgentProfileRecord } from "./agent_profile_routes.js";
 
 export type AgentProfileIdentityOverlay = Pick<
@@ -23,7 +24,7 @@ export function findNodeAgentProfile(
   overlays: readonly AgentProfileIdentityOverlay[] = [],
 ): RegisteredAgentProfile | undefined {
   const profiles = node.agents.flatMap((candidate) => {
-    const agent = asRecord(candidate);
+    const agent = jsonObjectOrUndefined(candidate);
     const id = nonEmptyString(agent?.id);
     const overlay = id
       ? overlays.find((candidate) => candidate.agentId === id)
@@ -134,7 +135,7 @@ function aliases(
       const id = nonEmptyString(candidate);
       return id ? [{ id }] : [];
     }
-    const record = asRecord(candidate);
+    const record = jsonObjectOrUndefined(candidate);
     const id = nonEmptyString(record?.id);
     if (!id) return [];
     const defaultPreset = nonEmptyString(record?.default_preset);
@@ -147,10 +148,4 @@ function aliases(
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
