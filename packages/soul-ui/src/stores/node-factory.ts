@@ -274,7 +274,6 @@ export function createNodeFromEvent(
         inputTruncation: e.truncation,
         toolUseId: e.tool_use_id,
         toolTraceId: e.timeline_id,
-        parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
       });
     }
@@ -362,7 +361,6 @@ export function createNodeFromEvent(
         requestId: e.request_id,
         toolUseId: e.tool_use_id,
         questions: e.questions,
-        parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
         responded: false,
         receivedAt: e.started_at * 1000,
@@ -439,7 +437,6 @@ export function createNodeFromEvent(
       const e = event as AwaySummaryEvent;
       return makeNode(`away-summary-${eventId}`, "away_summary", e.content, {
         completed: true,
-        parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
       });
     }
@@ -524,7 +521,6 @@ export function createNodeFromEvent(
           errorType: e.error_type,
           model: e.model,
           messageId: e.message_id,
-          parentEventId: e.parent_event_id,
           timestamp: e.timestamp,
         },
       );

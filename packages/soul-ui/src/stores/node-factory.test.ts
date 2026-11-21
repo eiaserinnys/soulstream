@@ -683,7 +683,6 @@ describe("createNodeFromEvent", () => {
       expect((node as ToolNode).toolName).toBe("Bash");
       expect((node as ToolNode).toolInput).toEqual({ command: "ls -la" });
       expect((node as ToolNode).toolUseId).toBe("toolu_001");
-      expect(node!.parentEventId).toBe("toolu_parent");
       expect(node!.timestamp).toBe(1700000001);
     });
 
@@ -850,7 +849,6 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("input_request");
       expect(node!.content).toBe("Which database should we use?");
       expect(node!.completed).toBe(false);
-      expect(node!.parentEventId).toBe("toolu_parent");
       expect(node!.timestamp).toBe(1700000020);
       const irNode = node as InputRequestNodeDef;
       expect(irNode.requestId).toBe("req-001");

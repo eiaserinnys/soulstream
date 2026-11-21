@@ -15,13 +15,11 @@ export type EventTreeNodeType = EventTreeNode["type"];
 
 // === EventTreeNode Discriminated Union ===
 
-/** 모든 노드 타입의 공통 필드 */
 interface BaseNode {
   id: string;
   children: EventTreeNode[];
   content: string;
   completed: boolean;
-  parentEventId?: string;
   timestamp?: number;
 }
 
