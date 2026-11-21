@@ -89,10 +89,11 @@ describe("local usage warm-up after a node restart", () => {
       centralAccount(),
       centralAccount({ id: OTHER_CENTRAL_ID, priority: 1 }),
     ],
+    clockMs: number = nowMs,
   ): Promise<void> {
     const before = createService(vi.fn());
     const pending = await before.createPendingDir("login-local");
-    writeCredentials(pending, nowMs + 24 * 3_600_000);
+    writeCredentials(pending, clockMs + 24 * 3_600_000);
     await before.registerFromPending({
       loginId: "login-local",
       id: LOCAL_ID,
@@ -309,7 +310,7 @@ describe("local usage warm-up after a node restart", () => {
     }, logger);
 
     it("measures local usage once and starts even when that request fails", async () => {
-      await prepareNode([]);
+      await prepareNode([], Date.now());
       vi.stubEnv("HOME", homeDir);
       const fetchSpy = vi.fn(async () => {
         throw new Error("network down");
@@ -333,7 +334,7 @@ describe("local usage warm-up after a node restart", () => {
     });
 
     it("lets the first select join the startup measurement", async () => {
-      await prepareNode();
+      await prepareNode(undefined, Date.now());
       vi.stubEnv("HOME", homeDir);
       const fetchSpy = vi.fn(async () => usageResponse({ status: 200 }));
       vi.stubGlobal("fetch", fetchSpy);
