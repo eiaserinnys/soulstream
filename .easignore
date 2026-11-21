@@ -48,6 +48,7 @@
 /packages/wire-schema/*
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
+!/packages/wire-schema/src/attachments.ts
 !/packages/wire-schema/src/card_colors.ts
 !/packages/wire-schema/src/card_status_labels.ts
 !/packages/wire-schema/src/conversation_visibility.ts
