@@ -20,6 +20,7 @@ import type {
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionEventRow } from "@soulstream/mcp-contract";
+import { asRecord } from "../engine/claude_sdk_helpers.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
@@ -464,12 +465,6 @@ function resolveProvider(
       ? backend
       : undefined,
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 export function completeEventEndedAt(event: SSEEventPayload): string | undefined {

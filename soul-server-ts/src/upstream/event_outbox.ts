@@ -336,13 +336,13 @@ export class EventOutbox {
   }
 }
 
-function assertBatchEventLimit(value: number): void {
+export function assertBatchEventLimit(value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0 || value > EVENT_OUTBOX_MAX_BATCH_EVENTS) {
     throw new Error(`event outbox batch event limit must be 1-${EVENT_OUTBOX_MAX_BATCH_EVENTS}`);
   }
 }
 
-function buildBatch(
+export function buildBatch(
   streamId: string,
   events: [EventOutboxRecord, ...EventOutboxRecord[]],
 ): EventOutboxBatch {

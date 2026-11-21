@@ -17,7 +17,7 @@ import { RunnerProcessDispatcher } from
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
 import { isDeliveryLayerCombinationAllowed } from
-  "../../src/task/delivery_contract.js";
+  "./delivery_contract_oracle.js";
 import {
   createFullSchemaPostgresHarness,
   hasFullSchemaPostgresBackend,

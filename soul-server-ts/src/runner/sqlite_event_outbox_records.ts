@@ -2,9 +2,9 @@ import { isDeepStrictEqual } from "node:util";
 
 import {
   EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES,
+  buildBatch,
   computeEventOutboxPayloadHash,
   type EventOutboxAppendInput,
-  type EventOutboxBatch,
   type EventOutboxRecord,
 } from "../upstream/event_outbox.js";
 import {
@@ -60,22 +60,9 @@ export function runnerRowToRecord(row: RunnerEventOutboxRow): EventOutboxRecord 
   };
 }
 
-export function buildRunnerEventBatch(
-  streamId: string,
-  events: [EventOutboxRecord, ...EventOutboxRecord[]],
-): EventOutboxBatch {
-  return {
-    type: "event_append_batch",
-    protocol_version: 1,
-    stream_id: streamId,
-    first_seq: events[0].source_seq,
-    events,
-  };
-}
-
 export function assertRunnerEventFits(record: EventOutboxRecord): void {
   if (
-    Buffer.byteLength(JSON.stringify(buildRunnerEventBatch(record.stream_id, [record])), "utf8")
+    Buffer.byteLength(JSON.stringify(buildBatch(record.stream_id, [record])), "utf8")
     > EVENT_OUTBOX_MAX_SINGLE_EVENT_BYTES
   ) {
     throw new Error("event payload exceeds 2 MiB ingress single-event contract");

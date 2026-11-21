@@ -1,3 +1,4 @@
+import { asRecord } from "../engine/claude_sdk_helpers.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { readClaudeResultReceiptMetadata } from
   "../engine/claude_result_receipt_metadata.js";
@@ -142,7 +143,7 @@ export class TaskDeliveryTurnReceipt {
     if (event.type === "tool_start") {
       const toolUseId = stringValue(payload.tool_use_id);
       const toolName = stringValue(payload.tool_name);
-      const toolInput = recordValue(payload.tool_input);
+      const toolInput = asRecord(payload.tool_input);
       if (toolUseId && toolName && toolInput) {
         this.toolStarts.set(toolUseId, { toolUseId, toolName, toolInput });
       }
@@ -276,12 +277,6 @@ function queuedForNextTurn(
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 function turnReceiptId(task: Task): string {

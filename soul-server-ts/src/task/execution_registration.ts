@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   terminalTaskStatusForReason,
+  type Task,
   type TaskStatus,
   type TerminationReason,
 } from "./task_models.js";
@@ -52,6 +53,16 @@ export function lifecycleCommandMatchesRegistration(
 ): boolean {
   return lifecycleCommandId !== undefined
     && registrationCommandIdFromLifecycle(lifecycleCommandId) === registeredCommandId;
+}
+
+export function executionIsSuccessorTurn(
+  task: Task,
+  terminalExecutionCommandId: string | undefined,
+): boolean {
+  if (task.executionActivation !== undefined) return true;
+  const registeredCommandId = task.executionRegistration?.executionCommandId;
+  if (registeredCommandId === undefined) return false;
+  return !lifecycleCommandMatchesRegistration(terminalExecutionCommandId, registeredCommandId);
 }
 
 export function isCompleteRunnerExecutionIdentity(

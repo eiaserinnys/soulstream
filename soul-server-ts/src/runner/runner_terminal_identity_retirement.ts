@@ -1,9 +1,9 @@
 import type { RunnerProcessPaths } from "./runner_process_paths.js";
 import {
   type RunnerProcessTerminationDependencies,
+  identityProofFailure,
   inspectRunnerLivenessLock,
 } from "./runner_process_termination.js";
-import { RunnerMutationFailure } from "./runner_mutation_failure.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import {
   removeRunnerRegistrationEvidenceForReplacementLocked,
@@ -67,12 +67,4 @@ async function requireRetirementStillValid(
       `released terminal retirement is no longer valid: ${paths.sessionDirectory}`,
     );
   }
-}
-
-function identityProofFailure(message: string, cause?: unknown): RunnerMutationFailure {
-  return new RunnerMutationFailure(
-    "runner_registration_identity_proof_failed",
-    message,
-    cause === undefined ? undefined : { cause },
-  );
 }

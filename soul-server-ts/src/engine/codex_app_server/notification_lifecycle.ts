@@ -1,3 +1,4 @@
+import { asRecord } from "../claude_sdk_helpers.js";
 import type { SSEEventPayload } from "../protocol.js";
 import type { ModelCatalogConfig } from "../../model_catalog.js";
 import { mapAppServerNotification } from "./event_mapper.js";
@@ -288,12 +289,6 @@ function notificationIdentity(
   }
 
   return { threadId, turnId };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
 }
 
 function stringField(

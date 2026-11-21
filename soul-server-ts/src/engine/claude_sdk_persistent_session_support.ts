@@ -10,6 +10,7 @@ import type { ClaudeAccountRateLimitSwitchRequest } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { messageContent, userMessageText } from "./claude_sdk_event_mapper_helpers.js";
+import { canonicalJson } from "./claude_sdk_event_metadata.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import type {
@@ -435,20 +436,6 @@ export function normalizePersistentTurnOwner(
     kind: turnOrigin?.kind ?? "initial_prompt",
     id: turnOrigin?.id ?? uuid,
   };
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === undefined) return "undefined";
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? String(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) =>
-    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
-  ).join(",")}}`;
 }
 
 export function turnInactivityError(timeoutMs: number): ClaudeClientEvent {

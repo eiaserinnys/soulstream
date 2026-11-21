@@ -336,7 +336,7 @@ function refuseSelfTarget(pid: number, action: string): void {
   );
 }
 
-function identityProofFailure(message: string, cause?: unknown): RunnerMutationFailure {
+export function identityProofFailure(message: string, cause?: unknown): RunnerMutationFailure {
   return new RunnerMutationFailure(
     "runner_registration_identity_proof_failed",
     message,

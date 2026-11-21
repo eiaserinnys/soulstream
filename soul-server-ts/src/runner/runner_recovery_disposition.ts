@@ -11,10 +11,8 @@ import {
 } from "./runner_process_registry.js";
 import type { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import { closedRunnerTailRequiresDrain } from "./runner_recovery_scan_observer.js";
-import {
-  hasRecordedTerminal,
-  prepareRecoveredTask,
-} from "./runner_recovery_task.js";
+import { hasRecordedTerminal } from "./runner_central_check.js";
+import { prepareRecoveredTask } from "./runner_recovery_task.js";
 
 export type RecoverableRunnerDisposition = Extract<
   RunnerRecoveryDisposition,
