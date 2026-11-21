@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { createCardAttachmentSourceImport } from "../src/attachments/card_attachment_source_import.js";
-import { AttachmentTransportConnectionError } from "../src/attachments/attachment_routes.js";
+import { AttachmentTransportConnectionError } from "../src/attachments/attachment_transport_errors.js";
 import { normalizeAttachmentLegacyPath } from "../src/attachments/attachment_read_service.js";
 import { createCardDispatchRuntime } from "../src/cards/card_dispatch_runtime.js";
 import { recordWorkReceipt, prepareCardWorkSchema } from "./card-work-postgres-fixture.js";

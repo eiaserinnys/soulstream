@@ -28,7 +28,7 @@ import { isTerminalSessionStatus } from "../../session/session_status.js";
 import {
   insertSessionDeliveryRow,
   markDeliveryIdentityConflict,
-} from "./session_delivery_repository.js";
+} from "./session_delivery_identity_repository.js";
 
 export { compareRuntimeFollowupCandidates } from
   "./session_delivery_runtime_followup_repository.js";

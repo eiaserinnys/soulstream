@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
-import { WorktreeServiceError } from "./worktree_service.js";
+import { WorktreeServiceError } from "./worktree_errors.js";
 import { baseDependencyLinksIntoWorktree, dependencyLinksIntoWorktree, type CollectedBaseDependencyLink } from "./worktree_dependency_links.js";
 import { cleanupTrashItem } from "./worktree_trash.js";
 import type { WorktreeHost, WorktreeRecord, WorktreeRemovalActor } from "./worktree_types.js";

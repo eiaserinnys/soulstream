@@ -7,14 +7,14 @@ import { prepareCardAttachmentInput } from "../src/cards/card_attachment_paths.j
 import { createLiveAttachmentCommitRepository } from "../src/runtime/live_attachment_commit_repository.js";
 import { createLiveAttachmentReadRepository } from "../src/runtime/live_attachment_read_repository.js";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
-import { AttachmentTransportConnectionError } from "../src/attachments/attachment_routes.js";
+import { AttachmentTransportConnectionError } from "../src/attachments/attachment_transport_errors.js";
 import { normalizeAttachmentLegacyPath } from "../src/attachments/attachment_read_service.js";
 import type {
   AttachmentSourceReadFile,
   CardAttachmentSourceStoreDeps,
 } from "../src/attachments/card_attachment_source_import.js";
 import type { CommitResult, UploadSpec } from "../src/attachments/attachment_commit_contract.js";
-import type { FolderActorParams, RepositorySql } from "../src/cards/control_plane/card_types.js";
+import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 
 const NODE = "attachment-node";
 const SESSION = "attachment-create-session";

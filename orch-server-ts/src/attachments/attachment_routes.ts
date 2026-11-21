@@ -12,6 +12,10 @@ import {
 import {
   normalizeAttachmentLegacyPath,
 } from "./attachment_read_service.js";
+import {
+  AttachmentTransportConnectionError,
+  AttachmentTransportTimeoutError,
+} from "./attachment_transport_errors.js";
 import { registerMultipartAttachmentRoutes, multipartAttachmentRouteAuthRequirements, type MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
 import {
   AttachmentUploadHttpError,
@@ -139,20 +143,6 @@ export class AttachmentRouteError extends Error {
     this.name = "AttachmentRouteError";
     this.code = code;
     this.statusCode = statusCode;
-  }
-}
-
-export class AttachmentTransportConnectionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AttachmentTransportConnectionError";
-  }
-}
-
-export class AttachmentTransportTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AttachmentTransportTimeoutError";
   }
 }
 

@@ -5,10 +5,10 @@ import {
   executionIsSuccessorTurn,
   registrationCommandIdFromLifecycle,
 } from "../task/execution_registration.js";
+import { isTerminalRunnerExecutionState } from "./runner_lifecycle_record.js";
 import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
-  isTerminalRunnerExecutionState,
   readRunnerRegistrationSummary,
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
@@ -51,16 +51,14 @@ import {
   decideRunnerHandle,
   type RunnerHandleFacts,
 } from "./state/runner_handle_decision.js";
-import type {
-  RunnerAdoptionApplication,
+import {
+  RunnerAdoptionRejectedError,
+  type RunnerAdoptionApplication,
 } from "../task/runner_adoption_rejected_error.js";
-import { RunnerAdoptionRejectedError } from "../task/runner_adoption_rejected_error.js";
 import {
   NodeAdoptionRejectedError,
   type NodeAdoptionApplication,
 } from "../task/state/node_response_handling.js";
-import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
-import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import { readClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
 import {

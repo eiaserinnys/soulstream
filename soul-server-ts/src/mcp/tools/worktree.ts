@@ -5,7 +5,7 @@ import { jsonResult } from "@soulstream/mcp-contract";
 import { getCurrentMcpPrincipal } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireMcpMutationActor } from "./caller_session.js";
-import { WorktreeServiceError } from "../../worktree/worktree_service.js";
+import { WorktreeServiceError } from "../../worktree/worktree_errors.js";
 
 type WorktreeOperation = "list" | "create" | "remove" | "delete-branch";
 

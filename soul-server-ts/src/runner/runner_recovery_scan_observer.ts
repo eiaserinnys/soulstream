@@ -1,9 +1,7 @@
 import type { Logger } from "pino";
 
-import {
-  isTerminalRunnerExecutionState,
-  type RunnerRegistration,
-} from "./runner_process_registry.js";
+import { isTerminalRunnerExecutionState } from "./runner_lifecycle_record.js";
+import type { RunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerDatabaseObservationSummary } from "./runner_phase_observation.js";
 import type { RunnerRegistrationCacheMissCounts } from "./runner_registration_scan_cache.js";
 

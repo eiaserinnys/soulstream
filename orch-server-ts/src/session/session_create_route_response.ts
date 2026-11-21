@@ -3,7 +3,10 @@ import { ModelPresetAvailabilityError } from "../model/model_preset_availability
 import { SessionCommandRouteError, sessionCommandRouteErrorResponse } from "./session_command_router.js";
 import { SessionCreateLifecycleError } from "./session_create_lifecycle.js";
 import { SessionCreateNodeSelectionError } from "./session_create_node_selector.js";
-import { CREATE_ACK_ERROR_HTTP_STATUS } from "./session_command_routes.js";
+
+export const CREATE_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
+  UNSUPPORTED_REASONING_EFFORT: 422,
+};
 
 export type SessionCreateRouteResponse = { status: number; body: Record<string, unknown> };
 export function sessionCreateBadRequest(message: string): SessionCreateRouteResponse {

@@ -3,14 +3,16 @@ import { randomUUID } from "node:crypto";
 import { isRecord } from "@soulstream/wire-schema/json-record";
 import {
   AttachmentRouteError,
-  AttachmentTransportConnectionError,
-  AttachmentTransportTimeoutError,
   MAX_ATTACHMENT_SIZE_BYTES,
   type AttachmentNode,
   type AttachmentRouteOptions,
   type AttachmentTransport,
   type AttachmentUploadInput,
 } from "../attachments/attachment_routes.js";
+import {
+  AttachmentTransportConnectionError,
+  AttachmentTransportTimeoutError,
+} from "../attachments/attachment_transport_errors.js";
 import type {
   AttachmentSourceReadFile,
   AttachmentSourceReader,

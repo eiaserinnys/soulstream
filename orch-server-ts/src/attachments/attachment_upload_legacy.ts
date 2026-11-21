@@ -6,9 +6,8 @@ import { normalizeAttachmentLegacyPath } from "./attachment_read_service.js";
 import {
   AttachmentTransportConnectionError,
   AttachmentTransportTimeoutError,
-} from "./attachment_routes.js";
-import type { LegacyUploadResult } from "./attachment_upload_http.js";
-import { AttachmentUploadHttpError } from "./attachment_upload_http.js";
+} from "./attachment_transport_errors.js";
+import { AttachmentUploadHttpError, type LegacyUploadResult } from "./attachment_upload_http.js";
 
 export type FinishLegacyUploadInput = {
   readonly committed: CommitResult;

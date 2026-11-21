@@ -31,8 +31,7 @@ import {
   withRunnerRecoveryStorage,
   type RunnerRecoveryStorage,
 } from "./runner_recovery_storage.js";
-import { decideRunnerRecovery } from "./state/runner_recovery_decision.js";
-import type { RunnerRecoveryDisposition } from "./state/runner_recovery_decision.js";
+import { decideRunnerRecovery, type RunnerRecoveryDisposition } from "./state/runner_recovery_decision.js";
 
 export type { RunnerRecoveryDisposition } from "./state/runner_recovery_decision.js";
 
@@ -82,15 +81,6 @@ export interface RunnerDurableRetentionProbe {
 }
 
 export { probeRunnerDurableRetention } from "./runner_durable_retention_probe.js";
-
-export function isTerminalRunnerExecutionState(
-  state: RunnerLifecycleRecord["execution_state"],
-): boolean {
-  return state === "completed"
-    || state === "failed"
-    || state === "reaped"
-    || state === "closed";
-}
 
 export interface LiveRunnerSessionIdsOptions {
   stateDirectory: string;

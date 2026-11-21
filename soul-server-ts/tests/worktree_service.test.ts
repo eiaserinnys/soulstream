@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  promises as fs,
   realpathSync,
   readFileSync,
   rmSync,
@@ -12,7 +13,6 @@ import {
   writeFileSync,
   utimesSync,
 } from "node:fs";
-import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -21,7 +21,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as dependencyLinks from "../src/worktree/worktree_dependency_links.js";
 import { WorktreeGit, type WorktreeListEntry } from "../src/worktree/worktree_git.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
-import { WorktreeService, WorktreeServiceError } from "../src/worktree/worktree_service.js";
+import { WorktreeServiceError } from "../src/worktree/worktree_errors.js";
+import { WorktreeService } from "../src/worktree/worktree_service.js";
 import type { WorktreeHost, WorktreeRecord } from "../src/worktree/worktree_types.js";
 
 const roots: string[] = [];

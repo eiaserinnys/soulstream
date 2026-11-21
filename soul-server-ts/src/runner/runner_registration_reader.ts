@@ -33,7 +33,8 @@ import {
   readRunnerRegistrationIdentity,
   recoverRunnerDirectoryIdentity,
 } from "./runner_registration_identity.js";
-import { isTerminalRunnerExecutionState, type RunnerRegistration } from "./runner_process_registry.js";
+import { isTerminalRunnerExecutionState } from "./runner_lifecycle_record.js";
+import type { RunnerRegistration } from "./runner_process_registry.js";
 
 type RegistrationStage = "config" | "summary" | "identity" | "sqlite";
 const UNAVAILABLE_LOCK_SCAN_LIMIT = 3;

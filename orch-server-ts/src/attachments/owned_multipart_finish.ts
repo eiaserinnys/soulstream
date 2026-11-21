@@ -7,7 +7,7 @@ import type {
   VerifiedAttachmentUploadTicket,
 } from "./attachment_commit_contract.js";
 import { bindAttachmentReadAbortSignal } from "./attachment_read_routes.js";
-import { AttachmentTransportConnectionError } from "./attachment_routes.js";
+import { AttachmentTransportConnectionError } from "./attachment_transport_errors.js";
 import { finishLegacyUpload } from "./attachment_upload_legacy.js";
 import {
   AttachmentUploadHttpError,

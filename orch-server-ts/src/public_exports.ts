@@ -3,6 +3,7 @@ export * from "./admin/admin_settings_routes.js";
 export * from "./app.js";
 export * from "./atom/atom_routes.js";
 export * from "./attachments/attachment_routes.js";
+export * from "./attachments/attachment_transport_errors.js";
 export * from "./attachments/attachment_read_routes.js";
 export * from "./attachments/attachment_read_service.js";
 export * from "./auth/auth_routes.js";

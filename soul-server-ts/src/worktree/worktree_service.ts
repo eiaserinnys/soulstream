@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
+import { WorktreeServiceError } from "./worktree_errors.js";
 import { WorktreeGit, WorktreeGitError, type WorktreeListEntry } from "./worktree_git.js";
 import {
   decodeWorktreeListCursor,
@@ -19,17 +20,6 @@ import type {
   WorktreeRecord,
   WorktreeSetupMode,
 } from "./worktree_types.js";
-
-export class WorktreeServiceError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = "WorktreeServiceError";
-  }
-}
 
 export interface CreateWorktreeInput {
   actorSessionId: string;

@@ -18,10 +18,8 @@ import {
   type OpencodeGoUsageConfig,
 } from "./opencode_go_usage.js";
 import { emptyLimits, type ProviderLimits, type ProviderQuota } from "./provider_limits.js";
-import {
-  claudeLimitsFromAccountPool,
-  type ClaudeAccountService,
-} from "../claude_accounts/index.js";
+import { claudeLimitsFromAccountPool } from "../claude_accounts/pool.js";
+import type { ClaudeAccountService } from "../claude_accounts/service.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { ModelPreset } from "@soulstream/model-catalog";
 import { isRecord } from "@soulstream/wire-schema/json-record";
