@@ -1,0 +1,226 @@
+name: Soul App TestFlight
+
+# 매일 05:00 KST에 앱 입력이 지난 성공 빌드 이후 바뀌었으면 TestFlight에 제출한다.
+# 기준은 main의 schedule/workflow_dispatch 실행 중 testflight 잡이 성공한 가장 최근 head_sha다.
+# force는 변경 판단을 건너뛰고, notify_test는 빌드 없이 실패 알림을 시험한다.
+# 필요한 시크릿: EXPO_TOKEN, PAS_FAILURE_WEBHOOK_URL.
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 변경 판단 없이 빌드한다
+        type: boolean
+        default: false
+      notify_test:
+        description: 빌드 없이 실패 알림을 시험한다
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/soul-app-testflight.yml
+
+concurrency:
+  group: soul-app-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      build: ${{ steps.judge.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: 지난 제출과 앱 입력 견주기
+        id: judge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+          NOTIFY_TEST: ${{ inputs.notify_test }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          event="$GITHUB_EVENT_NAME"
+          target="$GITHUB_SHA"
+          input_paths=(
+            ':(glob)soul-app/**'
+            ':(exclude,glob)soul-app/docs/**'
+            ':(exclude,glob)soul-app/**/__tests__/**'
+            ':(exclude,glob)soul-app/**/*.test.*'
+            ':(exclude,glob)soul-app/**/*.md'
+            'packages/chat-ui'
+            'packages/soul-ui/src/cards'
+            'packages/soul-ui/src/lib'
+            'packages/wire-schema/src'
+            'packages/wire-schema/generated/typescript'
+            '.easignore'
+          )
+
+          # 현재 실행의 workflow_id를 쓰면 기본 브랜치에 아직 없는 PR 워크플로도 조회할 수 있다.
+          workflow_id=$(gh api "repos/$repo/actions/runs/$GITHUB_RUN_ID" --jq '.workflow_id')
+          runs_file="$RUNNER_TEMP/soul-app-testflight-runs.txt"
+          gh api "repos/$repo/actions/workflows/$workflow_id/runs?status=success&branch=main&per_page=100" \
+            --paginate --jq '.workflow_runs[] | select(.event == "schedule" or .event == "workflow_dispatch") | "\(.id) \(.head_sha)"' > "$runs_file"
+
+          baseline_run=""
+          baseline_sha=""
+          while read -r run_id run_sha; do
+            if [ "$run_id" = "$GITHUB_RUN_ID" ]; then
+              continue
+            fi
+            conclusion=$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name == "testflight") | .conclusion] | first // ""')
+            if [ "$conclusion" = "success" ]; then
+              baseline_run="$run_id"
+              baseline_sha="$run_sha"
+              break
+            fi
+          done < "$runs_file"
+
+          changed_files=""
+          if [ -z "$baseline_run" ]; then
+            change="기준 실행이 없음"
+            would="빌드(기준 실행 없음)"
+          elif ! git cat-file -e "${baseline_sha}^{commit}" 2>/dev/null; then
+            change="기준 커밋이 checkout에 없음"
+            would="빌드(기준 커밋 없음)"
+          else
+            changed_files=$(git diff --name-only "$baseline_sha" "$target" -- "${input_paths[@]}")
+            if [ -z "$changed_files" ]; then
+              change="앱 입력 변경 없음"
+              would="건너뜀(앱 입력 변경 없음)"
+            else
+              change="앱 입력 변경 있음"
+              would="빌드(앱 입력 변경 있음)"
+            fi
+          fi
+
+          build="true"
+          if [ "$event" = "pull_request" ]; then
+            build="false"
+            decision="빌드하지 않음(PR, schedule이었다면 $would)"
+          elif [ "$event" = "workflow_dispatch" ] && [ "${NOTIFY_TEST:-false}" = "true" ]; then
+            build="false"
+            decision="실패 알림 시험(빌드하지 않음)"
+          elif [ "$event" = "workflow_dispatch" ] && [ "${FORCE:-false}" = "true" ]; then
+            decision="빌드(force 입력, $change)"
+          elif [ "$would" = "건너뜀(앱 입력 변경 없음)" ]; then
+            build="false"
+            decision="$would"
+          else
+            decision="$would"
+          fi
+
+          echo "이벤트: $event"
+          echo "대상 커밋: $target"
+          echo "기준 실행: ${baseline_run:-없음}, head_sha: ${baseline_sha:-없음} ($change)"
+          echo "결정: $decision"
+          {
+            echo "### Soul App TestFlight 빌드 판단"
+            echo ""
+            echo "- 이벤트: $event"
+            echo "- 대상 커밋: $target"
+            echo "- 기준 실행: ${baseline_run:-없음}"
+            echo "- 기준 head_sha: ${baseline_sha:-없음}"
+            echo "- 결정: $decision"
+            if [ -n "$changed_files" ]; then
+              echo ""
+              echo "변경된 앱 입력(최대 30개):"
+              echo '```'
+              printf '%s\n' "$changed_files" | sed -n '1,30p'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+          if [ "$event" = "workflow_dispatch" ] && [ "${NOTIFY_TEST:-false}" = "true" ]; then
+            exit 1
+          fi
+
+  testflight:
+    needs: decide
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.decide.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: soul-app/package-lock.json
+      - name: 의존성 설치
+        working-directory: soul-app
+        run: npm ci --include=dev --no-audit --no-fund
+      - name: Expo 토큰 확인
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN 시크릿이 없습니다"
+            exit 1
+          fi
+      - name: TestFlight 빌드와 제출
+        working-directory: soul-app
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx --yes eas-cli@27.11.0 build --platform ios --profile production --auto-submit --freeze-credentials --non-interactive --wait
+      - name: 잡 요약
+        run: |
+          {
+            echo "### Soul App TestFlight 제출"
+            echo "- 이벤트: $GITHUB_EVENT_NAME"
+            echo "- 커밋: $GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    needs: [decide, testflight]
+    if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 실패 알림 보내기
+        env:
+          WEBHOOK_URL: ${{ secrets.PAS_FAILURE_WEBHOOK_URL }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          DECIDE_RESULT: ${{ needs.decide.result }}
+          TESTFLIGHT_RESULT: ${{ needs.testflight.result }}
+          NOTIFY_TEST: ${{ inputs.notify_test }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "웹훅 미설정, 건너뜀"
+            exit 0
+          fi
+          summary="decide: ${DECIDE_RESULT:-unknown}, testflight: ${TESTFLIGHT_RESULT:-unknown}"
+          body="$RUNNER_TEMP/soul-app-testflight-failure.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$WORKFLOW_NAME" \
+            --arg run_url "$RUN_URL" \
+            --arg event "$EVENT_NAME" \
+            --arg branch "$REF_NAME" \
+            --arg sha "$COMMIT_SHA" \
+            --arg summary "$summary" \
+            --argjson test "${NOTIFY_TEST:-false}" \
+            '{repository: $repository, workflow: $workflow, run_url: $run_url, event: $event, branch: $branch, sha: $sha, summary: $summary, test: $test}' > "$body"
+          if ! curl -sS --fail --max-time 20 -X POST -H 'Content-Type: application/json' --data @"$body" "$WEBHOOK_URL" > /dev/null 2>&1; then
+            echo "::warning::실패 알림 웹훅 전송이 실패했습니다"
+          fi
