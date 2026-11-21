@@ -4,8 +4,8 @@ import {
   readPersistentPendingTarget,
   readStoredPersistentSettings,
   type PersistentModelSelection,
-  type PersistentTurnUsageMode,
   type PersistentPendingTarget,
+  type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
 import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 
@@ -16,19 +16,8 @@ export type PersistentModelSelectionView = {
   node_id?: string;
 };
 
-export type PersistentSettingsView = {
-  default_model: PersistentModelSelectionView;
-  fallback_models: PersistentModelSelectionView[];
-  /** Read-only projection for deployed app compatibility; fallback_models is canonical. */
-  fallback_model: PersistentModelSelectionView | null;
-  show_generation_separator: boolean;
-  show_character: boolean;
-  show_jev_candidates: boolean;
-  turn_usage_mode: PersistentTurnUsageMode;
-  show_turn_usage: boolean;
-  animate_character: boolean;
-  show_work_details: boolean;
-};
+export type PersistentSettingsView = Omit<StoredPersistentSettings, "default_model" | "fallback_models"> &
+  { default_model: PersistentModelSelectionView; fallback_models: PersistentModelSelectionView[] };
 
 export type PersistentSessionResource = {
   persistent_report: PersistentReportEntry[];
@@ -71,7 +60,6 @@ export function buildPersistentSessionResource(
     ? {
         default_model: { model_preset: current.model_preset, reasoning_effort: current.reasoning_effort },
         fallback_models: [],
-        fallback_model: null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
@@ -87,14 +75,6 @@ export function buildPersistentSessionResource(
           reasoning_effort: model.reasoning_effort,
           ...(model.node_id === undefined ? {} : { node_id: model.node_id }),
         })),
-        // Read-only projection for deployed app compatibility; fallback_models is canonical.
-        fallback_model: stored.fallback_models[0]
-          ? {
-              model_preset: stored.fallback_models[0].model_preset,
-              reasoning_effort: stored.fallback_models[0].reasoning_effort,
-              ...(stored.fallback_models[0].node_id === undefined ? {} : { node_id: stored.fallback_models[0].node_id }),
-            }
-          : null,
         show_generation_separator: stored.show_generation_separator,
         show_character: stored.show_character,
         show_jev_candidates: stored.show_jev_candidates,

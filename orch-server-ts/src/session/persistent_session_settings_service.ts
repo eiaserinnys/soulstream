@@ -36,9 +36,11 @@ import {
   type PersistentSettingsView,
 } from "./persistent_session_resource.js";
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
-import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
+import {
+  PersistentSessionInstructionsService,
+  requireObjectBody,
+} from "./persistent_session_instructions_service.js";
 
-/** Used when the first message is left empty; ordinary session creation keeps its own empty-input prompt. */
 export const PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
 
@@ -488,9 +490,6 @@ export class PersistentSessionSettingsService {
       settings: {
         default_model: defaultModel,
         fallback_models: persistedDefaults.fallback_models.map((model) => ({ ...model })),
-        fallback_model: persistedDefaults.fallback_models[0]
-          ? { ...persistedDefaults.fallback_models[0] }
-          : null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
@@ -593,13 +592,6 @@ function parseSettings(value: unknown): PersistentSettingsPatch {
   const parsed = parsePersistentSettingsPatch(value);
   if (!parsed.ok) throw invalid(parsed.message);
   return parsed.value;
-}
-
-function requireObjectBody(input: unknown): Record<string, unknown> {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new PersistentSessionApiError(400, "INVALID_REQUEST", "Request body must be a JSON object");
-  }
-  return input as Record<string, unknown>;
 }
 
 function rejectUnknownKeys(body: Record<string, unknown>, allowed: readonly string[]): void {

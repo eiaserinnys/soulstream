@@ -159,7 +159,7 @@ function firstInstructionResult(results: PersistentInstructionsAck["results"]) {
   return result;
 }
 
-function requireObjectBody(input: unknown): Record<string, unknown> {
+export function requireObjectBody(input: unknown): Record<string, unknown> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new PersistentSessionApiError(400, "INVALID_REQUEST", "Request body must be a JSON object");
   }

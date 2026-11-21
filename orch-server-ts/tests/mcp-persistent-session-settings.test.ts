@@ -173,7 +173,6 @@ describe("update_persistent_session_settings MCP tool", () => {
     expect(h.commandPayloads[0]).toMatchObject({ settings: { fallback_models: fallbacks } });
     expect((updated.structuredContent as { settings: unknown }).settings).toMatchObject({
       fallback_models: fallbacks,
-      fallback_model: fallbacks[0],
     });
     expect(reloaded.session.settings.fallback_models).toEqual(fallbacks);
   });
