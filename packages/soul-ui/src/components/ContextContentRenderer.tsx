@@ -11,16 +11,24 @@
 
 interface ContextContentRendererProps {
   content: unknown;
+  /**
+   * 시안(카드 #1764): 글 상자가 부모가 준 높이를 채우고 그 안에서 스크롤한다.
+   * 채팅의 맥락 블록은 기본값(200px에서 멈춤)을 그대로 쓴다.
+   */
+  fill?: boolean;
 }
 
-export function ContextContentRenderer({ content }: ContextContentRendererProps) {
+export function ContextContentRenderer({ content, fill = false }: ContextContentRendererProps) {
   if (content === null || content === undefined) {
     return <span className="text-muted-foreground">—</span>;
   }
 
   if (typeof content === "string") {
     return (
-      <pre className="text-xs whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1">
+      <pre
+        className={`text-xs whitespace-pre-wrap break-words overflow-y-auto bg-input px-2 py-1 rounded-floor flex-1 ${fill ? "min-h-0" : "max-h-[200px]"}`}
+        data-slot={fill ? "context-content-fill" : undefined}
+      >
         {content}
       </pre>
     );

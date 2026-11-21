@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Button, FrameLoading, FrameNotice } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
+import { DetailTabs } from "../v3/DetailTabs";
 import {
   AgentAtomContextFields,
   LabeledInput,
-  conditionSummary,
   inputClassName,
   type AgentAtomContext,
 } from "./AgentAtomContextFields";
+import { AgentContextAssemblyView } from "./AgentContextAssemblyView";
 import { ContextBundleEditor, type ContextBundle } from "./ContextBundleEditor";
 
 type AgentAlias = string | { id: string; default_preset?: string };
@@ -40,12 +41,12 @@ interface ProfileDraft extends Omit<AgentProfile, "aliases"> {
   aliases: AliasDraft[];
 }
 
-interface ManifestSource {
+interface NodeAgent {
   id: string;
-  label: string;
-  status: "ok" | "empty" | "error" | "filtered";
-  chars: number;
-  token_estimate: number;
+  name: string;
+  backend?: string;
+  portraitUrl?: string;
+  source?: "db" | "yaml";
 }
 
 const VERSION_CONFLICT_MESSAGE =
@@ -60,15 +61,16 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
   const [selectedBundleToAdd, setSelectedBundleToAdd] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [portraitFile, setPortraitFile] = useState<File | null>(null);
   const [portraitPreviewUrl, setPortraitPreviewUrl] = useState<string | null>(null);
   const [removePortrait, setRemovePortrait] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [previewSource, setPreviewSource] = useState("browser");
-  const [previewSources, setPreviewSources] = useState<ManifestSource[]>([]);
+  const [nodeAgents, setNodeAgents] = useState<NodeAgent[]>([]);
+  // 노드 설정에만 있는 프로필을 고르면 draft 대신 이 ID가 선택이다(읽기 전용).
+  const [nodeProfileId, setNodeProfileId] = useState<string | null>(null);
+  const [pane, setPane] = useState<"edit" | "assembly">("assembly");
 
   const connectedNodeIds = useMemo(
     () => Array.from(nodes.values())
@@ -103,6 +105,32 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     }
   }, [connectedNodeIds, selectedNodeId]);
 
+  useEffect(() => {
+    if (!selectedNodeId) { setNodeAgents([]); return; }
+    let alive = true;
+    void (async () => {
+      try {
+        const response = await request(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`, { credentials: "same-origin" });
+        const body = await responseJson(response);
+        if (alive) setNodeAgents(response.ok && Array.isArray(body.agents) ? body.agents as NodeAgent[] : []);
+      } catch {
+        if (alive) setNodeAgents([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [request, selectedNodeId]);
+
+  const nodeOnlyProfiles = useMemo(
+    () => nodeAgents.filter((agent) => agent.source === "yaml"),
+    [nodeAgents],
+  );
+  useEffect(() => {
+    if (nodeProfileId && !nodeOnlyProfiles.some((agent) => agent.id === nodeProfileId)) setNodeProfileId(null);
+  }, [nodeOnlyProfiles, nodeProfileId]);
+  const selectedNodeProfile = nodeOnlyProfiles.find((agent) => agent.id === nodeProfileId) ?? null;
+  const assemblyAgentId = selectedNodeProfile?.id ?? draft?.agent_id ?? "";
+  const nodeAgent = nodeAgents.find((agent) => agent.id === assemblyAgentId) ?? null;
+
   const loadProfiles = async (preferredAgentId?: string) => {
     setLoading(true);
     setError(null);
@@ -123,7 +151,6 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
       setSelectedBundleToAdd("");
       setPortraitFile(null);
       setRemovePortrait(false);
-      setPreviewSources([]);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -142,12 +169,12 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
 
   const selectProfile = (profile: AgentProfile) => {
     setDraft(profileDraft(profile));
+    setNodeProfileId(null);
     setSelectedBundleToAdd("");
     setMessage(null);
     setError(null);
     setPortraitFile(null);
     setRemovePortrait(false);
-    setPreviewSources([]);
   };
 
   const startProfile = () => {
@@ -171,7 +198,8 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     setError(null);
     setPortraitFile(null);
     setRemovePortrait(false);
-    setPreviewSources([]);
+    setNodeProfileId(null);
+    setPane("edit");
   };
 
   const save = async () => {
@@ -214,42 +242,6 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
     }
   };
 
-  const preview = async () => {
-    if (!draft || !selectedNodeId) {
-      setError("미리보기를 실행할 연결 노드를 선택하세요.");
-      return;
-    }
-    setPreviewing(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const response = await request(
-        `/api/nodes/${encodeURIComponent(selectedNodeId)}/agents/context-preview`,
-        {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            atom_contexts: effectiveContexts.map(({ context }) => context),
-            session: {
-              source: previewSource,
-              container_kind: "folder",
-              agent: draft.agent_id,
-            },
-          }),
-        },
-      );
-      const body = await responseJson(response);
-      if (!response.ok) throw new Error(responseMessage(body, "미리보기 컴파일에 실패했습니다."));
-      setPreviewSources(Array.isArray(body.manifest?.sources) ? body.manifest.sources : []);
-      setMessage("현재 편집 중인 명세로 dry-run을 완료했습니다.");
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setPreviewing(false);
-    }
-  };
-
   if (loading) return <FrameLoading label="프로필을 불러오는 중..." />;
   // 첫 읽기 실패: 편집 영역 안의 오류 줄만 남기지 않고, 로더와 같은 자리에서
   // 실패 안내를 보여 준다. 프로필이 이미 있으면 종전처럼 편집기 안 오류 줄을 쓴다.
@@ -259,16 +251,53 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
 
   return (
     <div>
-      <div className="mb-2 flex justify-end">
-        <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
-          {managingBundles ? "← 프로필 편집으로" : "컨텍스트 번들 편집"}
-        </Button>
+      {/* 설정 창이 한 칸이 되는 좁은 폭(40rem 미만)에서는 프로필 목록 대신 위쪽 선택 칸으로 고른다. */}
+      <div className="mb-2 grid grid-cols-2 items-end gap-2 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-0">
+        {managingBundles ? <span /> : (
+          <label className="text-xs font-medium">
+            실행 노드
+            <select aria-label="실행 노드" className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
+              {connectedNodeIds.length === 0 && <option value="">연결된 노드 없음</option>}
+              {connectedNodeIds.map((nodeId) => <option key={nodeId} value={nodeId}>{nodeId}</option>)}
+            </select>
+          </label>
+        )}
+        {!managingBundles && (
+          <label className="min-w-0 text-xs font-medium sm:hidden">
+            프로필
+            <select
+              aria-label="프로필"
+              className={inputClassName}
+              value={selectedNodeProfile ? `node:${selectedNodeProfile.id}` : draft?.version ? `central:${draft.agent_id}` : ""}
+              onChange={(event) => {
+                const [kind, id] = event.target.value.split(/:(.*)/s);
+                if (kind === "node") setNodeProfileId(id!);
+                const profile = profiles.find((candidate) => candidate.agent_id === id);
+                if (kind === "central" && profile) selectProfile(profile);
+              }}
+            >
+              {!draft?.version && !selectedNodeProfile && <option value="">새 프로필</option>}
+              {profiles.map((profile) => <option key={profile.agent_id} value={`central:${profile.agent_id}`}>{profile.name}</option>)}
+              {nodeOnlyProfiles.length > 0 && (
+                <optgroup label="노드 설정">
+                  {nodeOnlyProfiles.map((agent) => <option key={agent.id} value={`node:${agent.id}`}>{agent.name}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </label>
+        )}
+        <div className="col-span-2 flex justify-end gap-2 sm:col-span-1">
+          {!managingBundles && <Button type="button" size="sm" variant="outline" className="sm:hidden" onClick={startProfile}>새 프로필</Button>}
+          <Button type="button" size="sm" variant="outline" onClick={() => setManagingBundles(!managingBundles)}>
+            {managingBundles ? "← 프로필 편집으로" : "컨텍스트 번들 편집"}
+          </Button>
+        </div>
       </div>
       {managingBundles ? (
         <ContextBundleEditor request={request} bundles={bundles} onBundlesChanged={refreshBundles} />
       ) : (
-    <div className="grid h-[520px] min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-floor border border-border">
-      <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2">
+    <div className="grid h-[520px] min-h-0 grid-cols-1 overflow-hidden rounded-floor border border-border sm:grid-cols-[13rem_minmax(0,1fr)]">
+      <aside className="min-h-0 overflow-y-auto border-r border-border bg-muted/20 p-2 max-sm:hidden">
         <Button type="button" size="sm" variant="outline" className="mb-2 w-full" onClick={startProfile}>
           새 프로필
         </Button>
@@ -276,7 +305,7 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
           <button
             key={profile.agent_id}
             type="button"
-            className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${!selectedNodeProfile && draft?.agent_id === profile.agent_id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
             onClick={() => selectProfile(profile)}
           >
             {profile.has_portrait ? (
@@ -292,13 +321,76 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
             </span>
           </button>
         ))}
+        {nodeOnlyProfiles.length > 0 && <p className="mb-1 mt-3 px-3 text-xs text-muted-foreground">노드 설정</p>}
+        {nodeOnlyProfiles.map((agent) => (
+          <button
+            key={agent.id}
+            type="button"
+            className={`mb-1 flex w-full items-center gap-2 rounded-floor px-3 py-2 text-left text-sm ${selectedNodeProfile?.id === agent.id ? "bg-accent-blue/15 text-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            onClick={() => setNodeProfileId(agent.id)}
+          >
+            {agent.portraitUrl ? (
+              <img src={agent.portraitUrl} alt={agent.name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground" aria-hidden="true">
+                {agent.name.charAt(0)}
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate font-semibold">{agent.name}</span>
+              <span className="block truncate text-xs">{agent.id}</span>
+            </span>
+          </button>
+        ))}
       </aside>
 
-      <div className="min-h-0 overflow-y-auto p-4" data-testid="agent-profile-editor">
-        {!draft ? (
+      <div className="flex min-h-0 flex-col p-4" data-testid="agent-profile-editor">
+        {selectedNodeProfile ? (
+          <>
+          {/* 노드 설정 전용 프로필은 여기서 고치지 않는다. 편집 탭을 끈 채로 두어 자리와 읽기 전용임을 함께 보인다. */}
+          <DetailTabs<"assembly" | "edit">
+            id="agent-profile-pane"
+            label="프로필 보기"
+            panelId="agent-profile-pane-panel"
+            tabs={[["assembly", "조립"], ["edit", "편집", true]]}
+            value="assembly"
+            onChange={() => undefined}
+          />
+          <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
+            <AgentContextAssemblyView
+              key={`node:${selectedNodeProfile.id}`}
+              target={{ kind: "node", agentId: selectedNodeProfile.id }}
+              nodeId={selectedNodeId}
+              initialBackend={selectedNodeProfile.backend ?? "claude"}
+              presentOnNode
+              request={request}
+            />
+          </div>
+          </>
+        ) : !draft ? (
           <div className="py-10 text-center text-sm text-muted-foreground">편집할 프로필을 선택하거나 새로 만드세요.</div>
         ) : (
-          <div className="space-y-5">
+          <>
+          <DetailTabs<"assembly" | "edit">
+            id="agent-profile-pane"
+            label="프로필 보기"
+            panelId="agent-profile-pane-panel"
+            tabs={[["assembly", "조립"], ["edit", "편집"]]}
+            value={pane}
+            onChange={setPane}
+          />
+          <div id="agent-profile-pane-panel" role="tabpanel" className="mt-3 flex min-h-0 flex-1 flex-col">
+          {pane === "assembly" ? (
+            <AgentContextAssemblyView
+              key={`central:${draft.agent_id}`}
+              target={{ kind: "central", agentId: draft.agent_id, specs: effectiveContexts }}
+              nodeId={selectedNodeId}
+              initialBackend={nodeAgent?.backend ?? "claude"}
+              presentOnNode={Boolean(nodeAgent) || nodeAgents.length === 0}
+              request={request}
+            />
+          ) : (
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
             <section className="grid grid-cols-2 gap-3">
               <LabeledInput
                 label="에이전트 ID"
@@ -420,26 +512,6 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               </div>
             </section>
 
-            <section data-testid="effective-atom-contexts">
-              <SectionHeading title="실제 주입 순서 (effective)" />
-              <div className="space-y-1">
-                {effectiveContexts.map(({ context, source }, index) => (
-                  <div key={index} data-testid="effective-context-row" data-source={source} className="rounded-floor border border-border/60 px-3 py-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-mono" data-v3-selectable-content="true">{context.node_id}</span>
-                      <span data-v3-selectable-content="true">mode: {context.mode ?? "full"}</span>
-                      <span data-v3-selectable-content="true">depth: {context.depth ?? "기본값"}</span>
-                      <span className="ml-auto font-medium">{source}</span>
-                    </div>
-                    {conditionSummary(context.applies_when) && (
-                      <div className="mt-1 text-muted-foreground" data-v3-selectable-content="true">{conditionSummary(context.applies_when)}</div>
-                    )}
-                  </div>
-                ))}
-                {effectiveContexts.length === 0 && <p className="text-xs text-muted-foreground">주입할 컨텍스트가 없습니다.</p>}
-              </div>
-            </section>
-
             <section>
               <SectionHeading
                 title="별칭"
@@ -457,40 +529,6 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               </div>
             </section>
 
-            <section className="rounded-floor border border-border p-3">
-              <SectionHeading title="컴파일 미리보기" />
-              <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs font-medium">
-                  실행 노드
-                  <select aria-label="미리보기 실행 노드" className={inputClassName} value={selectedNodeId} onChange={(event) => setSelectedNodeId(event.target.value)}>
-                    {connectedNodeIds.length === 0 && <option value="">연결된 노드 없음</option>}
-                    {connectedNodeIds.map((nodeId) => <option key={nodeId} value={nodeId}>{nodeId}</option>)}
-                  </select>
-                </label>
-                <label className="text-xs font-medium">
-                  호출 소스
-                  <select aria-label="미리보기 호출 소스" className={inputClassName} value={previewSource} onChange={(event) => setPreviewSource(event.target.value)}>
-                    {["browser", "agent", "api", "channel_observer", "execute-proxy", "llm", "slack", "soul-app", "system", "trello_watcher"].map((value) => <option key={value} value={value}>{value}</option>)}
-                  </select>
-                </label>
-              </div>
-              <Button type="button" size="sm" variant="outline" className="mt-3" disabled={previewing || !selectedNodeId} onClick={() => void preview()}>
-                {previewing ? "컴파일 중..." : "dry-run 실행"}
-              </Button>
-              {previewSources.length > 0 && (
-                <div className="mt-3 overflow-x-auto" data-testid="context-preview-results">
-                  <table className="w-full min-w-[32rem] text-left text-xs">
-                    <thead><tr className="border-b border-border"><th className="py-1">소스</th><th>상태</th><th>자수</th><th>예상 토큰</th></tr></thead>
-                    <tbody>{previewSources.map((source) => (
-                      <tr key={source.id} className="border-b border-border/50">
-                        <td className="py-1" data-v3-selectable-content="true">{source.label || source.id}</td><td data-v3-selectable-content="true">{source.status}</td><td data-v3-selectable-content="true">{source.chars}</td><td data-v3-selectable-content="true">{source.token_estimate}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-
             {error && <p role="alert" className="rounded-floor bg-accent-red/10 px-3 py-2 text-sm text-destructive-foreground" data-v3-selectable-content="true">{error}</p>}
             {message && <p role="status" className="rounded-floor bg-accent-blue/10 px-3 py-2 text-sm">{message}</p>}
             <div className="flex justify-end gap-2">
@@ -500,6 +538,9 @@ export function AgentProfileEditorTab({ request = fetch }: { request?: typeof fe
               <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>{saving ? "저장 중..." : "프로필 저장"}</Button>
             </div>
           </div>
+          )}
+          </div>
+          </>
         )}
       </div>
     </div>
