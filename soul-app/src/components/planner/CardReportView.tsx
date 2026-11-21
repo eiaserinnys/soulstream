@@ -16,7 +16,7 @@ import { cardDetailStyles } from './CardDetail.styles';
 import { extractCardBodyLinks, withCardBodyReferences } from '../../lib/card-body-attachments';
 import { parseExactAttachmentLink, scopedAttachmentUrl } from '../../lib/attachment-link-view';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
-import { AttachmentBlockProvider, AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
+import { AttachmentBlockProvider, AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
 export function CardReportView({ report }: { report: CardReport }) {
   return <AttachmentReadContextProvider context={{ type: 'card', id: report.cardId }}>

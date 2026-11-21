@@ -2,7 +2,8 @@ jest.mock('../navigationRef', () => ({ navigationRef: { isReady: () => false } }
 import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
-import { PhoneCardDetail, TabNavigator } from '../TabNavigator';
+import { PhoneCardDetail } from '../PhoneContentScreens';
+import { TabNavigator } from '../TabNavigator';
 import { getBottomTabCaptures, getNativeStackCaptures, resetNavigationCapture } from './navigationCaptureMock';
 const mockList = jest.fn();
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');

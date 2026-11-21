@@ -10,7 +10,7 @@ import { AttachmentImage } from '../AttachmentImage';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { cardDetailStyles } from './CardDetail.styles';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
-import { AttachmentBlockProvider, useAttachmentReadContext } from '../../navigation/ContentLinkProvider';
+import { AttachmentBlockProvider, useAttachmentReadContext } from '../../navigation/ContentLinkContexts';
 import { segmentCardReportImages } from '../../lib/card-report-images';
 import { extractCardBodyLinks, withCardBodyReferences } from '../../lib/card-body-attachments';
 import { parseExactAttachmentLink, scopedAttachmentUrl } from '../../lib/attachment-link-view';

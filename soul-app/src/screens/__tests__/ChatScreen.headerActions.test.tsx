@@ -8,7 +8,7 @@ jest.mock('@react-navigation/native', () => ({
   useFocusEffect: jest.fn(),
   useIsFocused: () => mockIsFocused,
 }));
-jest.mock('../../navigation/TabNavigator', () => ({
+jest.mock('../../navigation/tabBarStyle', () => ({
   getDefaultTabBarStyle: () => ({ display: 'flex' }),
 }));
 jest.mock('../../hooks/usePlannerContextMenus', () => ({

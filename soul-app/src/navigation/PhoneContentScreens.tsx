@@ -1,25 +1,17 @@
 import React, { useCallback, useMemo } from 'react';
-import type { ViewStyle } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createApiClient } from '../api/client';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { MarkdownDocumentContent } from '../components/planner/MarkdownDocumentContent';
 import { useSettingsStore } from '../store/settingsStore';
-import { useTokens, type DesignTokens } from '../theme';
+import { useTokens } from '../theme';
 import { openPhoneChat } from './phoneSessionNavigation';
+import { getDefaultTabBarStyle } from './tabBarStyle';
 import { usePhoneRailMode } from './tabContract';
 import { useDuoSideBand } from './duoSideBand';
 
 export type MarkdownDocumentRouteParams = { documentId: string };
-
-export function getDefaultTabBarStyle(colors: DesignTokens['colors']): ViewStyle {
-  return {
-    backgroundColor: 'transparent',
-    borderTopColor: colors.border,
-    overflow: 'hidden',
-  };
-}
 
 function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; children: React.ReactNode }) {
   const t = useTokens();

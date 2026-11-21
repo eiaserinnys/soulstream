@@ -46,7 +46,8 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { openPhoneChat, openPhoneSearchSession } from './phoneSessionNavigation';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
-import { PhoneCardDetail, PhoneMarkdownDocument, getDefaultTabBarStyle, type MarkdownDocumentRouteParams } from './PhoneContentScreens';
+import { PhoneCardDetail, PhoneMarkdownDocument, type MarkdownDocumentRouteParams } from './PhoneContentScreens';
+import { getDefaultTabBarStyle } from './tabBarStyle';
 import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersistentSession';
 import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
 import type { PhoneReturnTab } from './phonePanelHistory';
@@ -63,8 +64,6 @@ import {
 
 export { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
 export { RAIL_MIN_INSET_WIDTH } from './tabContract';
-
-export { PhoneCardDetail, getDefaultTabBarStyle } from './PhoneContentScreens';
 
 function TabBarGlassBackground() {
   return (

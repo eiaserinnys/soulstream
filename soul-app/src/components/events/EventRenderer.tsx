@@ -16,7 +16,7 @@ import { getMessageAttachmentSignals } from '../../hooks/useMessageAttachments';
 import { extractAttachments } from './UserMessage';
 import { MessageAttachments } from '../MessageAttachments';
 import { useMessageAttachments } from '../../hooks/useMessageAttachments';
-import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
 export type ChatMessageSession = Pick<Session,
   'agentSessionId' | 'nodeId' | 'agentName' | 'agentPortraitUrl' | 'displayName' | 'userName' | 'userPortraitUrl'>;

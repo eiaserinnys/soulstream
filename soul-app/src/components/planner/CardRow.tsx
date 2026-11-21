@@ -25,7 +25,7 @@ import { cardAskPreview, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS,
 import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
-import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkContexts';
 
 export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme }) {
   const t = useTokens();
