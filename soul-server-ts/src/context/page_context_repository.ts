@@ -2,7 +2,7 @@ import type { BlockDto, PageDto } from "@soulstream/page-model";
 import { compareLexicographically } from "@soulstream/fractional-position";
 
 import type { PageYjsHostClient } from "../page/page_host_client.js";
-import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
+import type { SessionPageBindingHostClient } from "../control_plane/persistence_host_clients.js";
 
 export interface PageContextAnchor {
   pageId: string;
@@ -32,7 +32,7 @@ export interface PageContextRepository {
 
 export class HostPageContextRepository implements PageContextRepository {
   constructor(
-    private readonly bindings: Pick<SessionPageBindingRepository, "get">,
+    private readonly bindings: Pick<SessionPageBindingHostClient, "get">,
     private readonly pageHost: Pick<PageYjsHostClient, "getPage" | "getBacklinks">,
     private readonly maxMountParents = 1_000,
   ) {}

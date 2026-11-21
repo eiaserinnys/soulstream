@@ -154,7 +154,7 @@ export function registerMcpRoutes(
       if (config.statelessTransport) {
         writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
       } else {
-        await dispatchGet(req, reply, sessions, resolution);
+        await dispatchSessionRequest(req, reply, sessions, resolution);
       }
     } catch (err) {
       runtime.logger.error({ err }, "MCP GET dispatch threw");
@@ -170,7 +170,7 @@ export function registerMcpRoutes(
       if (config.statelessTransport) {
         writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
       } else {
-        await dispatchDelete(req, reply, sessions, resolution);
+        await dispatchSessionRequest(req, reply, sessions, resolution);
       }
     } catch (err) {
       runtime.logger.error({ err }, "MCP DELETE dispatch threw");
@@ -315,35 +315,7 @@ async function dispatchPost(
   writeJsonRpcError(reply, 400, "missing session id and not an initialize request");
 }
 
-async function dispatchGet(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  sessions: Map<string, SessionEntry>,
-  resolution: AuthenticatedResolution,
-): Promise<void> {
-  const sessionId = headerValue(req.headers["mcp-session-id"]);
-  if (!sessionId) {
-    writeJsonRpcError(reply, 400, "missing session id");
-    return;
-  }
-  const entry = sessions.get(sessionId);
-  if (!entry) {
-    writeJsonRpcError(reply, 404, `unknown session: ${sessionId}`);
-    return;
-  }
-  if (!samePrincipal(entry.principal, resolution.principal)) {
-    writeJsonRpcError(reply, 403, "principal mismatch");
-    return;
-  }
-  await withMcpRequestContext(
-    requestContext(resolution.principal, req),
-    async () => {
-      await entry.transport.handleRequest(req.raw, reply.raw);
-    },
-  );
-}
-
-async function dispatchDelete(
+async function dispatchSessionRequest(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,

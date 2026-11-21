@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { ProviderLimits, ProviderUsageCommandHandler } from "../../src/auth/provider_usage.js";
+import type { ProviderLimits } from "../../src/auth/provider_limits.js";
+import type { ProviderUsageCommandHandler } from "../../src/auth/provider_usage.js";
 import {
   rememberProviderUsageObservation,
   resetProviderUsageObservationMemo,

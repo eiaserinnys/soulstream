@@ -1,4 +1,4 @@
-import type { ProviderLimits, ProviderQuota } from "../auth/provider_usage.js";
+import type { ProviderLimits, ProviderQuota } from "../auth/provider_limits.js";
 import {
   effectiveWindowUsedPercent,
   isBlockedForScope,

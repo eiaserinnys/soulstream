@@ -19,11 +19,10 @@ import {
   OPENCODE_GO_USAGE_URL,
   type OpencodeGoUsageConfig,
 } from "./opencode_go_usage.js";
+import { emptyLimits, type ProviderLimits, type ProviderQuota } from "./provider_limits.js";
 import {
   claudeLimitsFromAccountPool,
-  type ClaudeAccountPoolSummary,
   type ClaudeAccountService,
-  type ClaudeAccountView,
 } from "../claude_accounts/index.js";
 import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
 import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
@@ -43,45 +42,6 @@ import {
 } from "./provider_usage_telemetry.js";
 
 export type ProviderUsageName = "claude" | "codex" | "antigravity" | "opencode_go";
-
-export interface ProviderQuota {
-  id: string;
-  label: string;
-  window: string | null;
-  unit: string | null;
-  used: number | null;
-  remaining: number | null;
-  limit: number | null;
-  usedPercent: number | null;
-  remainingPercent: number | null;
-  resetAt: number | null;
-  model: string | null;
-  source: string | null;
-  purpose?: "execution" | "code_review" | "other";
-}
-
-export interface ProviderLimits {
-  status: "auto" | "not_configured" | "error";
-  source: string;
-  sourceKind?: "remote" | "rollout" | "unknown";
-  /** Source observation time, never the summary serialization time. */
-  observedAt?: string | null;
-  weeklyTokens: number | null;
-  monthlyTokens: number | null;
-  sessionTokens: number | null;
-  weeklyUsedPercent: number | null;
-  weeklyResetAt: number | null;
-  shortUsedPercent: number | null;
-  shortWindowMinutes: number | null;
-  shortResetAt: number | null;
-  planType: string | null;
-  quotas: ProviderQuota[];
-  error?: string;
-  mode?: "pool" | "legacy";
-  accounts?: ClaudeAccountView[];
-  pool?: ClaudeAccountPoolSummary;
-  fable_pool?: ClaudeAccountPoolSummary | null;
-}
 
 export interface ProviderUsageSnapshot {
   generatedAt: string;
@@ -1121,29 +1081,6 @@ function quotaEntry(
     model: values.model ?? null,
     source: values.source ?? null,
     purpose: (values.unit ?? "percent") === "percent" ? "execution" : "other",
-  };
-}
-
-function emptyLimits(
-  status: ProviderLimits["status"] = "not_configured",
-  error?: string,
-): ProviderLimits {
-  return {
-    status,
-    source: "",
-    sourceKind: "unknown",
-    observedAt: null,
-    weeklyTokens: null,
-    monthlyTokens: null,
-    sessionTokens: null,
-    weeklyUsedPercent: null,
-    weeklyResetAt: null,
-    shortUsedPercent: null,
-    shortWindowMinutes: null,
-    shortResetAt: null,
-    planType: null,
-    quotas: [],
-    ...(error ? { error } : {}),
   };
 }
 

@@ -1,6 +1,5 @@
-import type { ProviderLimits, ProviderQuota } from "./provider_usage.js";
+import { emptyLimits, type ProviderLimits, type ProviderQuota } from "./provider_limits.js";
 
-/** OpenCode Go subscription usage endpoint (measured 261107). */
 export const OPENCODE_GO_USAGE_URL = "https://opencode.ai/inference/go/v1/usage";
 
 export interface OpencodeGoUsageConfig {
@@ -31,7 +30,7 @@ export async function collectOpencodeGoUsage(
   signal: AbortSignal,
 ): Promise<ProviderLimits> {
   const apiKey = config?.apiKey;
-  if (!apiKey) return blankLimits("not_configured");
+  if (!apiKey) return emptyLimits("not_configured");
   const fetchImpl = config?.fetchImpl ?? globalThis.fetch;
   let response: Response;
   try {
@@ -41,18 +40,18 @@ export async function collectOpencodeGoUsage(
       signal,
     });
   } catch {
-    return blankLimits("error", "OpenCode Go usage request failed");
+    return emptyLimits("error", "OpenCode Go usage request failed");
   }
-  if (response.status === 401) return blankLimits("error", "OpenCode Go 키 오류");
-  if (response.status === 403) return blankLimits("error", "OpenCode Go 구독 없음");
+  if (response.status === 401) return emptyLimits("error", "OpenCode Go 키 오류");
+  if (response.status === 403) return emptyLimits("error", "OpenCode Go 구독 없음");
   if (!response.ok) {
-    return blankLimits("error", `OpenCode Go usage HTTP ${response.status}`);
+    return emptyLimits("error", `OpenCode Go usage HTTP ${response.status}`);
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    return blankLimits("error", "Invalid OpenCode Go usage response");
+    return emptyLimits("error", "Invalid OpenCode Go usage response");
   }
   return limitsFromResponse(body);
 }
@@ -63,12 +62,12 @@ function limitsFromResponse(body: unknown): ProviderLimits {
     const usage = readUsage(body);
     quotas = USAGE_WINDOWS.map((entry) => quotaFromWindow(usage[entry.key], entry));
   } catch {
-    return blankLimits("error", "Invalid OpenCode Go usage response");
+    return emptyLimits("error", "Invalid OpenCode Go usage response");
   }
   const weekly = quotas.find((quota) => quota.window === "7d");
   const short = quotas.find((quota) => quota.window === "5h");
   return {
-    ...blankLimits("auto"),
+    ...emptyLimits("auto"),
     source: OPENCODE_GO_USAGE_URL,
     sourceKind: "remote",
     observedAt: new Date().toISOString(),
@@ -118,15 +117,5 @@ function quotaFromWindow(value: unknown, entry: UsageWindow): ProviderQuota {
     resetAt: resetMs / 1000,
     source: OPENCODE_GO_USAGE_URL,
     purpose: "execution",
-  };
-}
-
-function blankLimits(status: ProviderLimits["status"], error?: string): ProviderLimits {
-  return {
-    status, source: "", sourceKind: "unknown", observedAt: null,
-    weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
-    weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
-    shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
-    ...(error ? { error } : {}),
   };
 }

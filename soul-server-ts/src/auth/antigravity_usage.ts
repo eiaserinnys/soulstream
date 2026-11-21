@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProviderLimits, ProviderQuota } from "./provider_usage.js";
+import { emptyLimits, type ProviderLimits, type ProviderQuota } from "./provider_limits.js";
 
 export interface AntigravityUsageConfig {
   cliPath?: string;
@@ -14,7 +14,7 @@ export async function collectAntigravityUsage(
   config: AntigravityUsageConfig | undefined,
   signal: AbortSignal,
 ): Promise<ProviderLimits> {
-  if (!config?.cliPath) return blankLimits("not_configured");
+  if (!config?.cliPath) return emptyLimits("not_configured");
   try {
     const logPath = join(config.stateDirectory, "antigravity-usage.log");
     await mkdir(config.stateDirectory, { recursive: true });
@@ -38,7 +38,7 @@ export async function collectAntigravityUsage(
     });
     return limitsFromOutput(output);
   } catch (error) {
-    return blankLimits("error", error instanceof Error ? error.message : "Antigravity usage failed");
+    return emptyLimits("error", error instanceof Error ? error.message : "Antigravity usage failed");
   }
 }
 
@@ -64,21 +64,11 @@ function limitsFromOutput(output: string): ProviderLimits {
     const weekly = quotas.find(quota => quota.window === "7d")!;
     const short = quotas.find(quota => quota.window === "5h")!;
     return {
-      ...blankLimits("auto"), source: "agy:/usage", sourceKind: "remote", observedAt: new Date().toISOString(),
+      ...emptyLimits("auto"), source: "agy:/usage", sourceKind: "remote", observedAt: new Date().toISOString(),
       weeklyUsedPercent: weekly.usedPercent, weeklyResetAt: weekly.resetAt,
       shortUsedPercent: short.usedPercent, shortResetAt: short.resetAt, shortWindowMinutes: 300, quotas,
     };
   } catch {
     throw new Error("Invalid Antigravity /usage response");
   }
-}
-
-function blankLimits(status: ProviderLimits["status"], error?: string): ProviderLimits {
-  return {
-    status, source: "", sourceKind: "unknown", observedAt: null,
-    weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
-    weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
-    shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
-    ...(error ? { error } : {}),
-  };
 }

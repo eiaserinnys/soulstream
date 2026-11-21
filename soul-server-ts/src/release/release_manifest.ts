@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 
+import type {
+  ReleaseExecutableIdentity as WireReleaseExecutableIdentity,
+  ReleaseManifestV1 as WireReleaseManifestV1,
+} from "@soulstream/wire-schema";
+
 const MANIFEST_HASH_DOMAIN = "soulstream.release.manifest.v1\0";
 const COHORT_HASH_DOMAIN = "soulstream.release.cohort.v1\0";
 const RUNTIME_ENV_HASH_DOMAIN = "soulstream.runtime.env.v1\0";
@@ -12,11 +17,7 @@ export type CanonicalJsonValue =
   | readonly CanonicalJsonValue[]
   | { readonly [key: string]: CanonicalJsonValue };
 
-export interface ReleaseExecutableIdentity {
-  kind: "claude" | "codex";
-  path: string | null;
-  identity: string | null;
-}
+export type ReleaseExecutableIdentity = WireReleaseExecutableIdentity;
 
 export interface ReleaseManifestBuildInput {
   sourceCommit: string;
@@ -35,29 +36,13 @@ export interface ReleaseManifestBuildInput {
   modelCatalogPath?: string;
 }
 
-export interface ReleaseManifestV1 {
-  schema_version: 1;
-  manifest_id: string;
-  release_cohort_id: string;
-  source_commit: string;
-  host_bundle_hash: string;
-  runner_release_id: string;
-  runner_artifact_hash: string;
-  schema_generation: string;
-  wire_generation: string;
-  node: {
-    version: string;
-    platform: NodeJS.Platform;
-    arch: string;
+export type ReleaseManifestV1 =
+  Omit<WireReleaseManifestV1, "node"> & {
+    node: Omit<WireReleaseManifestV1["node"], "platform"> & {
+      platform: NodeJS.Platform;
+    };
+    model_catalog_path?: string;
   };
-  deployment_env_identity: string;
-  executables: {
-    claude: ReleaseExecutableIdentity;
-    codex: ReleaseExecutableIdentity;
-  };
-  /** Absolute model catalogue path this release was bound with. */
-  model_catalog_path?: string;
-}
 
 export interface RuntimeCredentialDescriptor {
   slot: string;

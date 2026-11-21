@@ -145,19 +145,19 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     { nodeId: env.SOULSTREAM_NODE_ID },
     "Folder content delegated to orchestrator",
   );
-  const sessionPageBindingRepository = db.sessionPageBindings();
+  const sessionPageBindingHost = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient(orchHostClientDeps);
   db.configureFolderHost(new FolderHostClient(orchHostClientDeps));
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
-    repository: sessionPageBindingRepository,
+    repository: sessionPageBindingHost,
     pageHost,
     legacyProjection: new SessionLegacyProjection(db, folderContentHost),
     logger,
   });
   sessionPageBindingService.start();
   const pageContextResolver = new AncestorPageContextResolver(
-    new HostPageContextRepository(sessionPageBindingRepository, pageHost),
+    new HostPageContextRepository(sessionPageBindingHost, pageHost),
     new DefaultPageContextAssembler(),
     logger,
   );

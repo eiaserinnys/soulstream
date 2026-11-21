@@ -1057,7 +1057,7 @@ describe("ProviderUsageService", () => {
         "claude",
       );
       expect(partialRes.success).toBe(true);
-      const partialData = partialRes.data as import("../../src/auth/provider_usage.js").ProviderLimits | undefined;
+      const partialData = partialRes.data as import("../../src/auth/provider_limits.js").ProviderLimits | undefined;
       expect(partialData?.status).toBe("auto");
       expect(partialData?.mode).toBe("pool");
       expect(partialData?.accounts).toHaveLength(2);

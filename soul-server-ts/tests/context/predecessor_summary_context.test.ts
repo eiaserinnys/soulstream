@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildPredecessorSummaryContextItem } from
   "../../src/context/predecessor_summary_context.js";
-import { buildSessionTurnExcerpt } from
-  "../../src/context/session_turn_summary.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
 import type {
@@ -97,10 +95,7 @@ describe("buildPredecessorSummaryContextItem", () => {
       omitted_turns_notice: string;
       unfolded_turn_summaries: Array<{ turn_number: number }>;
     };
-    const legacyExcerpt = await buildSessionTurnExcerpt(
-      db,
-      PREDECESSOR_SESSION_ID,
-    );
+    const legacyExcerpt = await db.getTurnExcerpt(PREDECESSOR_SESSION_ID);
     const legacyContent = JSON.stringify({
       session_id: PREDECESSOR_SESSION_ID,
       source: "turn_excerpt",
