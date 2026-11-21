@@ -25,14 +25,10 @@
 !/packages/soul-ui/src/cards
 /packages/soul-ui/src/cards/*
 !/packages/soul-ui/src/cards/completed-cards.ts
-!/packages/soul-ui/src/cards/card-types.ts
 !/packages/soul-ui/src/lib
 /packages/soul-ui/src/lib/*
 !/packages/soul-ui/src/lib/action-failure.ts
-!/packages/soul-ui/src/lib/attachment-path-notes.ts
-!/packages/soul-ui/src/lib/chat-attachment-model.ts
 !/packages/soul-ui/src/lib/claude-runtime-actions.ts
-!/packages/soul-ui/src/lib/orchestrator-connection.ts
 !/packages/soul-ui/src/lib/owned-agents.ts
 !/packages/soul-ui/src/lib/planner-folder-status.ts
 !/packages/soul-ui/src/lib/wallpaper-settings.ts
@@ -62,7 +58,9 @@
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/attachments.ts
+!/packages/wire-schema/src/attachment_path_notes.ts
 !/packages/wire-schema/src/card_attachments.ts
+!/packages/wire-schema/src/card_item_display.ts
 !/packages/wire-schema/src/card_questions.ts
 !/packages/wire-schema/src/catalog.ts
 !/packages/wire-schema/src/card_colors.ts

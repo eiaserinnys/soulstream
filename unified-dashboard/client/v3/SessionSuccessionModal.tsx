@@ -1,4 +1,5 @@
 import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
+import { appendAttachmentPathNotes } from "../../../packages/wire-schema/src/attachment_path_notes";
 import { ProjectAtomFields, isProjectAtomValid, type ProjectAtomFieldValue } from "./ProjectContextFormFields";
 import {CreationDisclosure} from "./CreationDisclosure";
 import {SessionAttachmentFields} from "./SessionAttachmentFields";
@@ -14,7 +15,6 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
-  appendAttachmentPathNotes,
   useFileUpload,
   useDashboardStore,
   type AgentInfo,

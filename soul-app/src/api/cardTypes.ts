@@ -4,7 +4,7 @@ import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/att
 import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
 import type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 import type { CardAttachment } from '../../../packages/wire-schema/src/card_attachments';
-import type { CardItemDisplay } from '../../../packages/soul-ui/src/cards/card-types';
+import type { CardItemDisplay } from '../../../packages/wire-schema/src/card_item_display';
 
 export type { CardStatus } from '../../../packages/wire-schema/generated/typescript/index';
 

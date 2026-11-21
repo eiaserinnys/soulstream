@@ -11,7 +11,6 @@ export { submitInputResponse } from "./input-request-actions";
 export { formatTime } from "./input-request-utils";
 export { fetchWithProjectionRetry } from "./projection-retry";
 export { retainEqualSet, retainEqualValue } from "./structural-sharing";
-export { appendAttachmentPathNotes } from "./attachment-path-notes";
 export type { OwnedAgent, OwnedAgentKey, OwnedAgentsResponse } from "./owned-agents";
 export type { PlannerFolderStatus } from "./planner-folder-status";
 export { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";

@@ -1,4 +1,4 @@
-export type CardItemDisplay = "todo" | "doing" | "reported" | "changed" | "fix" | "confirmed" | "dropped";
+import type { CardItemDisplay } from "@soulstream/wire-schema/card-item-display";
 export type CardItemState = "todo" | "doing" | "done" | "dropped";
 export type CardItemEvidence = { type: "image" | "link"; label: string } & (
   | { attachment_id: string; url?: never }

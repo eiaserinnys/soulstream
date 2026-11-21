@@ -30,7 +30,7 @@ import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
-import { appendAttachmentPathNotes } from '../../../packages/soul-ui/src/lib/attachment-path-notes';
+import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 
 const reviewImageUris = [
   Asset.fromModule(require('../../assets/icon.png')).uri,

@@ -15,7 +15,7 @@ import type { MessagesResponse, ToolTraceResponse } from './historyTypes';
 import { useAuthStore } from '../store/authStore';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { buildSoulAppCallerInfo } from '../auth/caller-info';
-import { appendAttachmentPathNotes } from '../../../packages/soul-ui/src/lib/attachment-path-notes';
+import { appendAttachmentPathNotes } from '../../../packages/wire-schema/src/attachment_path_notes';
 import { parseReviewAcknowledgeResponse } from './reviewAcknowledge';
 
 export interface CreateSessionRequest {

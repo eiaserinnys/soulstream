@@ -2,13 +2,6 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "types": ["jest"],
-    "paths": {
-      "@soulstream/wire-schema": ["../packages/wire-schema/generated/typescript/index.ts"],
-      "@soulstream/wire-schema/attachments": ["../packages/wire-schema/src/attachments.ts"],
-      "@soulstream/wire-schema/card-attachments": ["../packages/wire-schema/src/card_attachments.ts"],
-      "@soulstream/wire-schema/card-colors": ["../packages/wire-schema/src/card_colors.ts"],
-      "@soulstream/wire-schema/card-questions": ["../packages/wire-schema/src/card_questions.ts"]
-    }
+    "types": ["jest"]
   }
 }

@@ -19,7 +19,7 @@ import {
 } from "../context/input_material_parts.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
-import { appendAttachmentPathNotes } from "./attachment_path_note.js";
+import { appendAttachmentPathNotes } from "@soulstream/wire-schema/attachment-path-notes";
 import {
   truncateClaudeTextToEstimatedTokens,
   type ClaudeBackendRolloverReason,

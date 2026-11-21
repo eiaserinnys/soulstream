@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardCheckItem } from '../../api/cardTypes';
-import type { CardItemDisplay } from '../../../../packages/soul-ui/src/cards/card-types';
+import type { CardItemDisplay } from '../../../../packages/wire-schema/src/card_item_display';
 import { formatCardTime } from '../../lib/card-check-item-summary';
 import { toCardAttachmentView, type AttachmentView } from '../../lib/attachment-view';
 import { attachmentLinkView, scopedAttachmentUrl } from '../../lib/attachment-link-view';

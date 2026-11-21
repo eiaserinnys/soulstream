@@ -8,13 +8,7 @@ export interface PersistentJevCandidate {
   score: number;
 }
 
-type PersistentJevObservationFields = {
-  [K in keyof WirePersistentJevObservation as K extends "selected" ? never : K]: WirePersistentJevObservation[K];
-};
-
-export type PersistentJevObservation = PersistentJevObservationFields & {
-  selected: PersistentJevCandidate[];
-};
+export type PersistentJevObservation = { [K in keyof WirePersistentJevObservation as K extends "selected" ? never : K]: WirePersistentJevObservation[K] } & { selected: PersistentJevCandidate[] };
 
 export interface PersistentJevCandidatesProjectionItem {
   treeNodeId: string;
