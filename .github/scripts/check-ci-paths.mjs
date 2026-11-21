@@ -13,7 +13,7 @@
 // - scripts/*.sh와 packages/*/scripts/*.sh에는 npx와 command -v 폴백이 없어야 한다.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -363,17 +363,9 @@ function findMissingRunPaths(source, filePath, trackedFiles) {
       if (start === -1) continue;
       const base = resolveBase(tokens, block.base);
       if (base === null) continue;
-      let optionValue = false;
       for (let index = start; index < tokens.length; index += 1) {
         const token = tokens[index];
-        if (token.startsWith('-')) {
-          optionValue = !token.includes('=');
-          continue;
-        }
-        if (optionValue) {
-          optionValue = false;
-          continue;
-        }
+        if (token.startsWith('-')) continue;
         if (!isTestPathToken(token)) continue;
         checked += 1;
         const resolved = posix.normalize(posix.join(base, token));
@@ -389,7 +381,6 @@ function findMissingRunPaths(source, filePath, trackedFiles) {
 
 function findDeadIncludes(root, trackedFiles) {
   const filePath = join(root, '.easignore');
-  if (!existsSync(filePath)) return { checked: 0, problems: [] };
   const problems = [];
   let checked = 0;
   readFileSync(filePath, 'utf8')

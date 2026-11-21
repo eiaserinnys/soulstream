@@ -12,6 +12,7 @@ const scriptPath = fileURLToPath(new URL('./check-ci-paths.mjs', import.meta.url
 
 function makeRepository(files, workflow) {
   const root = mkdtempSync(join(tmpdir(), 'check-ci-paths-'));
+  writeFileSync(join(root, '.easignore'), '');
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
