@@ -50,8 +50,10 @@ export type RollbackAgentsConfigInput = {
   includeTextDiff: boolean;
 };
 
-export type AgentContextPreviewInput = {
-  readonly atom_contexts: readonly unknown[];
+export type AgentContextPreviewInput = (
+  | { readonly atom_contexts: readonly unknown[]; readonly agent_id?: never }
+  | { readonly agent_id: string; readonly atom_contexts?: never }
+) & {
   readonly session?: Readonly<Record<string, unknown>>;
 };
 
@@ -429,8 +431,11 @@ function rollbackInput(
 function contextPreviewInput(
   body: Record<string, unknown>,
 ): Validation<AgentContextPreviewInput> {
-  if (!Array.isArray(body.atom_contexts)) {
-    return { ok: false, message: "atom_contexts must be an array", statusCode: 422 };
+  const hasContexts = hasOwn(body, "atom_contexts");
+  const hasAgent = hasOwn(body, "agent_id");
+  if (hasContexts === hasAgent || (hasContexts && !Array.isArray(body.atom_contexts))
+    || (hasAgent && (typeof body.agent_id !== "string" || !body.agent_id))) {
+    return { ok: false, message: "provide exactly one of atom_contexts or agent_id", statusCode: 422 };
   }
   if (body.session !== undefined && (
     typeof body.session !== "object" || body.session === null || Array.isArray(body.session)
@@ -440,7 +445,7 @@ function contextPreviewInput(
   return {
     ok: true,
     value: {
-      atom_contexts: body.atom_contexts,
+      ...(hasContexts ? { atom_contexts: body.atom_contexts as unknown[] } : { agent_id: body.agent_id as string }),
       ...(body.session ? { session: body.session as Record<string, unknown> } : {}),
     },
   };

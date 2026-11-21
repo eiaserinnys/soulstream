@@ -415,6 +415,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
     contextPreview: {
       nodeId: env.SOULSTREAM_NODE_ID,
+      agentRegistry, agentProfileSource,
       atom: {
         enabled: Boolean(env.ATOM_ENABLED),
         serverUrl: env.ATOM_SERVER_URL ?? "",
